@@ -12,6 +12,7 @@ import os
 import warnings
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -34,7 +35,7 @@ from pymatgen.entries.computed_entries import (
 )
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
-from pymatgen.io.vasp.outputs import UnconvergedVASPWarning
+from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
 from scipy.interpolate import griddata, interp1d
@@ -42,9 +43,10 @@ from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
+from doped.generation import _element_sort_func
 from doped.utils.parsing import _get_output_files_and_check_if_multiple, get_vasprun
 from doped.utils.plotting import get_colormap
-from doped.utils.symmetry import get_primitive_structure
+from doped.utils.symmetry import _round_floats, get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
 # globally ignore:
@@ -179,7 +181,7 @@ def make_molecular_entry(computed_entry, legacy_MP=False):
     molecular_entry.data["nelements"] = 1
     molecular_entry.data["elements"] = [formula]
     molecular_entry.data["molecule"] = True
-    molecular_entry.data["band_gap"] = 50  # not included by default in new MP entries, set to large value
+    molecular_entry.data["band_gap"] = None  # not included by default in new MP entries
     molecular_entry.data["database_IDs"] = "N/A"
     molecular_entry.data["material_id"] = "mp-0"
     molecular_entry.data["icsd_id"] = None
@@ -213,6 +215,9 @@ def _calculate_formation_energies(data: list, elemental: dict):
     formation_energy_df["num_species"] = formation_energy_df["Formula"].apply(
         lambda x: len(Composition(x).as_dict())
     )
+    formation_energy_df["periodic_group_ordering"] = formation_energy_df["Formula"].apply(
+        lambda x: tuple(sorted([_element_sort_func(i.symbol) for i in Composition(x).elements]))
+    )
 
     # get energy per fu then subtract elemental energies later, to get formation energies
     if "DFT Energy (eV/fu)" in formation_energy_df.columns:
@@ -245,12 +250,13 @@ def _calculate_formation_energies(data: list, elemental: dict):
     )
     formation_energy_df = formation_energy_df.drop(columns=["formation_energy_calc"])
 
-    # sort by num_species, then alphabetically, then by num_atoms_in_fu, then by formation_energy
+    # sort by num_species, then by periodic group/row of elements, then by num_atoms_in_fu,
+    # then by formation_energy
     formation_energy_df = formation_energy_df.sort_values(
-        by=["num_species", "Formula", "num_atoms_in_fu", "Formation Energy (eV/fu)"],
+        by=["num_species", "periodic_group_ordering", "num_atoms_in_fu", "Formation Energy (eV/fu)"],
     )
     # drop num_atoms_in_fu and num_species
-    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species"])
+    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species", "periodic_group_ordering"])
 
 
 def _renormalise_entry(entry, renormalisation_energy_per_atom, name=None, description=None):
@@ -375,6 +381,7 @@ def get_entries_in_chemsys(
     api_key: Optional[str] = None,
     e_above_hull: Optional[float] = None,
     return_all_info: bool = False,
+    bulk_composition: Optional[Union[str, Composition]] = None,
     **kwargs,
 ):
     """
@@ -394,7 +401,8 @@ def get_entries_in_chemsys(
     (in eV/atom) will be returned.
 
     The output entries list is sorted by energy above hull, then by the number
-    of elements in the formula, then alphabetically by formula.
+    of elements in the formula, then by the position of elements in the
+    periodic table (main group elements, then transition metals, sorted by row).
 
     Args:
         chemsys (str, list[str]):
@@ -419,6 +427,10 @@ def get_entries_in_chemsys(
             field names for the new or legacy Materials Project API (corresponding to
             the current API key). Mainly intended for internal ``doped`` usage for
             provenance tracking. Default is ``False``.
+        bulk_composition (str/Composition):
+            Optional input; formula of the bulk host material, to use for sorting
+            the output entries (with all those matching the bulk composition first).
+            Default is ``None``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             ``get_entries_in_chemsys()`` query.
@@ -445,6 +457,7 @@ def get_entries_in_chemsys(
     for entry in MP_full_pd_entries:
         # reparse energy above hull, to avoid mislabelling issues noted in (legacy) Materials Project
         # database; e.g. search "F", or ZnSe2 on Zn-Se convex hull from MP PD, but EaH = 0.147 eV/atom?
+        # or Immm phases for Br, I...
         entry.data[property_key_dict["energy_above_hull"]] = temp_phase_diagram.get_e_above_hull(entry)
 
     if e_above_hull is not None:
@@ -452,8 +465,8 @@ def get_entries_in_chemsys(
             entry for entry in MP_full_pd_entries if _get_e_above_hull(entry.data) <= e_above_hull
         ]
 
-    # sort by energy above hull, num_species, then alphabetically:
-    MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
+    # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+    MP_full_pd_entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=bulk_composition))
 
     if return_all_info:
         return MP_full_pd_entries, property_key_dict, property_data_fields
@@ -462,7 +475,10 @@ def get_entries_in_chemsys(
 
 
 def get_entries(
-    chemsys_formula_id_criteria: Union[str, dict[str, Any]], api_key: Optional[str] = None, **kwargs
+    chemsys_formula_id_criteria: Union[str, dict[str, Any]],
+    api_key: Optional[str] = None,
+    bulk_composition: Optional[Union[str, Composition]] = None,
+    **kwargs,
 ):
     """
     Convenience function to get a list of ``ComputedStructureEntry``s for an
@@ -475,7 +491,8 @@ def get_entries(
 
     The output entries list is sorted by energy per atom (equivalent sorting as
     energy above hull), then by the number of elements in the formula, then
-    alphabetically by formula.
+    by the position of elements in the periodic table (main group elements,
+    then transition metals, sorted by row).
 
     Args:
         chemsys_formula_id_criteria (str/dict):
@@ -489,6 +506,10 @@ def get_entries(
             - see the ``doped`` Installation docs page:
             https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials
             -project-api
+        bulk_composition (str/Composition):
+            Optional input; formula of the bulk host material, to use for sorting
+            the output entries (with all those matching the bulk composition first).
+            Default is ``None``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             ``get_entries()`` query.
@@ -507,8 +528,8 @@ def get_entries(
             **kwargs,
         )
 
-    # sort by energy above hull, num_species, then alphabetically:
-    entries.sort(key=lambda x: _entries_sorting_func(x))
+    # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+    entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=bulk_composition))
 
     return entries
 
@@ -683,6 +704,7 @@ def get_MP_summary_docs(
     for entry in entries:
         doc = MP_docs.get(entry.data["material_id"])
         if doc:
+            entry.MP_doc = doc  # for user convenience, can query the MP doc later
             for data_field in data_fields:
                 if (
                     data_field not in entry.data
@@ -695,19 +717,28 @@ def get_MP_summary_docs(
                 f"(new) Materials Project API database. Assuming that it is an insulating (non-metallic) "
                 f"and non-magnetic compound."
             )
-            entry.data["band_gap"] = 50
-            entry.data["total_magnetization"] = 0
+            entry.data["band_gap"] = None
+            entry.data["total_magnetization"] = None
             entry.data["database_IDs"] = "N/A"
 
     return MP_docs
 
 
-def _entries_sorting_func(entry: ComputedEntry, use_e_per_atom: bool = False):
+def _entries_sort_func(
+    entry: ComputedEntry,
+    use_e_per_atom: bool = False,
+    bulk_composition: Optional[Union[str, Composition, dict, list]] = None,
+):
     """
     Function to sort ``ComputedEntry``s by energy above hull, then by the
-    number of elements in the formula, then alphabetically by formula.
+    number of elements in the formula, then by the position of elements in the
+    periodic table (main group elements, then transition metals, sorted by
+    row), then alphabetically.
 
-    Usage: ``entries_list.sort(key=_entries_sorting_func)``
+    If ``bulk_composition`` is provided, then entries matching the bulk
+    composition are sorted first, followed by all other entries.
+
+    Usage: ``entries_list.sort(key=_entries_sort_func)``
 
     Args:
         entry (ComputedEntry):
@@ -715,15 +746,23 @@ def _entries_sorting_func(entry: ComputedEntry, use_e_per_atom: bool = False):
         use_e_per_atom (bool):
             If ``True``, sort by energy per atom rather than energy above hull.
             Default is ``False``.
+        bulk_composition (str/Composition/dict/list):
+            Bulk composition; to sort entries matching this composition first.
+            Default is ``None`` (don't sort according to this).
 
     Returns:
         tuple:
-            Tuple of the energy above hull (or energy per atom), number of elements
-            in the formula, and formula name of the entry.
+            Tuple of ``True``/``False`` (if composition matches bulk composition),
+            the energy above hull (or energy per atom), number of elements in the
+            formula, and sorted (group, row) list of elements in the formula, and
+            the formula name.
     """
+    bulk_reduced_comp = Composition(bulk_composition).reduced_composition if bulk_composition else None
     return (
+        entry.composition.reduced_composition == bulk_reduced_comp,
         entry.energy_per_atom if use_e_per_atom else _get_e_above_hull(entry.data),
         len(Composition(entry.name).as_dict()),
+        sorted([_element_sort_func(i.symbol) for i in Composition(entry.name).elements]),
         entry.name,
     )
 
@@ -804,7 +843,7 @@ def prune_entries_to_border_candidates(
     # relative energy was downshifted by ``e_above_hull``:
     # only check if not already bordering; can just use names for this:
     entries_to_test = [entry for entry in entries if entry.name not in bordering_entry_names]
-    entries_to_test.sort(key=_entries_sorting_func)  # sort by energy above hull
+    entries_to_test.sort(key=_entries_sort_func)  # sort by energy above hull
     # to save unnecessary looping, whenever we encounter a phase that is not being added to the border
     # candidates list, skip all following phases with this composition (because they have higher
     # energies above hull (because we've sorted by this) and so will also not border the host):
@@ -860,9 +899,16 @@ def get_and_set_competing_phase_name(
     """
     if not entry.data.get("doped_name") or regenerate:  # not set, so generate
         rounded_eah = round(_get_e_above_hull(entry.data), ndigits)
+
         if np.isclose(rounded_eah, 0):
             rounded_eah = 0
-        space_group = entry.structure.get_space_group_info()[0] if hasattr(entry, "structure") else "NA"
+
+        if entry.data.get("molecule"):
+            space_group = "mmm"  # just point group
+        elif hasattr(entry, "structure"):
+            space_group = entry.structure.get_space_group_info()[0]
+        else:
+            space_group = "NA"
         entry.data["doped_name"] = f"{entry.name}_{space_group}_EaH_{rounded_eah}"
 
     return entry.data.get("doped_name")
@@ -931,6 +977,7 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
 
 
 # TODO: Make these classes MSONable
+# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class CompetingPhases:
     def __init__(
         self,
@@ -1017,12 +1064,12 @@ class CompetingPhases:
             "ignore", message="You are using the legacy MPRester"
         )  # previously relied on this so shouldn't show warning, `message` only needs to match start
 
-        # TODO: Should hard code S (solid + S8), P, Te and Se in here too. Common anions with a
-        #  lot of unnecessary polymorphs on MP. Should at least scan over elemental phases and hard code
-        #  any particularly bad cases. E.g. P_EaH=0 is red phosphorus (HSE06 groundstate), P_EaH=0.037
-        #  is black phosphorus (thermo stable at RT), so only need to generate these. Same for all
-        #  alkali and alkaline earth metals (ask the battery boyos), TiO2, SnO2, WO3 (particularly bad
-        #  cases).
+        # TODO: Should hard code S (solid + S8 (mp-994911), + S2 (molecule in a box)), P, Te and Se in
+        #  here too. Common anions with a lot of unnecessary polymorphs on MP. Should at least scan over
+        #  elemental phases and hard code any particularly bad cases. E.g. P_EaH=0 is red phosphorus
+        #  (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo stable at RT), so only need to
+        #  generate these. Same for all alkali and alkaline earth metals (ask the battery boys), TiO2,
+        #  SnO2, WO3 (particularly bad cases).
         # Can have a data file with a list of known, common cases?
         # With Materials Project querying, can check if the structure has a database ID (i.e. is
         # experimentally observed) with icsd_id(s) / theoretical (same thing). Could have 'lean' option
@@ -1066,6 +1113,7 @@ class CompetingPhases:
                 api_key=self.api_key,
                 e_above_hull=self.e_above_hull,
                 return_all_info=True,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
             )
         )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
@@ -1087,7 +1135,9 @@ class CompetingPhases:
             ]  # lowest energy entry for bulk (after sorting)
         else:  # no EaH=0 bulk entries in pruned phase diagram, check first if present (but unstable)
             if bulk_entries := get_entries(  # composition present in MP, but not stable
-                self.composition.reduced_formula, api_key=self.api_key
+                self.composition.reduced_formula,
+                api_key=self.api_key,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
             ):
                 self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[
                     0
@@ -1126,8 +1176,8 @@ class CompetingPhases:
                     self.MP_full_pd.get_hull_energy(self.composition) - 1e-4,
                     data={
                         self.property_key_dict["energy_above_hull"]: 0.0,
-                        "band_gap": 50,
-                        "total_magnetization": 0,
+                        "band_gap": None,
+                        "total_magnetization": None,
                         "database_IDs": "N/A",
                         "material_id": "mp-0",
                         "molecule": False,
@@ -1181,8 +1231,8 @@ class CompetingPhases:
         else:  # self.full_phase_diagram = True
             self.entries = formatted_entries
 
-        # sort by energy above hull, num_species, then alphabetically:
-        self.entries.sort(key=lambda x: _entries_sorting_func(x))
+        # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+        self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
@@ -1190,6 +1240,39 @@ class CompetingPhases:
                 entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
                 api_key=self.api_key,
             )
+
+    @property
+    def metallic_entries(self) -> list[ComputedEntry]:
+        """
+        Returns a list of entries in ``self.entries`` which are metallic (i.e.
+        have a band gap = 0) according to the Materials Project database.
+        """
+        return [entry for entry in self.entries if entry.data.get("band_gap") == 0]
+
+    @property
+    def nonmetallic_entries(self) -> list[ComputedEntry]:
+        """
+        Returns a list of entries in ``self.entries`` which are non-metallic
+        (i.e. have a band gap > 0, or no recorded band gap) according to the
+        Materials Project database.
+
+        Note that the ``doped``-generated diatomic molecule phases,
+        which are insulators, are not included here.
+        """
+        return [
+            entry
+            for entry in self.entries
+            if (entry.data.get("band_gap") is None or entry.data.get("band_gap") > 0)
+            and not entry.data.get("molecule")
+        ]
+
+    @property
+    def molecular_entries(self) -> list[ComputedEntry]:
+        """
+        Returns a list of entries in ``self.entries`` which are diatomic
+        molecules generated by ``doped`` (i.e. O2, N2, H2, F2 or Cl2).
+        """
+        return [entry for entry in self.entries if entry.data.get("molecule")]
 
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
@@ -1228,73 +1311,52 @@ class CompetingPhases:
                 ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default settings.
             **kwargs: Additional kwargs to pass to ``DictSet.write_input()``
         """
-        # by default uses pbesol, but easy to switch to pbe or pbe+u using user_incar_settings
+        # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
+        base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
+        base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
-        # kpoints should be set as (min, max, step)
-        min_nm, max_nm, step_nm = kpoints_nonmetals
-        min_m, max_m, step_m = kpoints_metals
+        for entry_list, type in [
+            (self.nonmetallic_entries, "non-metals"),
+            (self.metallic_entries, "metals"),
+        ]:  # no molecular entries as they don't need convergence testing
+            # kpoints should be set as (min, max, step):
+            min_k, max_k, step_k = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}[type]
+            for entry in entry_list:
+                uis = copy.deepcopy(base_incar_settings or {})
+                self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
+                if type == "metals":
+                    self._set_default_metal_smearing(uis, user_incar_settings or {})
 
-        base_user_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
-        base_user_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+                    dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                        structure=entry.structure,
+                        user_incar_settings=uis,
+                        user_kpoints_settings={"reciprocal_density": min_k},
+                        user_potcar_settings=user_potcar_settings or {},
+                        user_potcar_functional=user_potcar_functional,
+                        force_gamma=True,
+                    )
 
-        # separate metals and non-metals
-        self.nonmetals = []
-        self.metals = []
-        for e in self.entries:
-            if e.data["molecule"]:
-                print(f"{e.name} is a molecule in a box, does not need convergence testing")
+                    for kpoint in range(min_k, max_k, step_k):
+                        dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                        kname = (
+                            "k"
+                            + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                            + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
+                        )
+                        fname = (
+                            f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
+                            f"/{kname}"
+                        )
+                        dict_set.write_input(fname, **kwargs)
 
-            elif e.data["band_gap"] > 0:
-                self.nonmetals.append(e)
-            else:
-                self.metals.append(e)
-
-        for e in self.nonmetals:
-            uis = copy.deepcopy(base_user_incar_settings)  # don't overwrite base_user_incar_settings
-            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
-
-            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
-                user_incar_settings=uis,
-                user_kpoints_settings={"reciprocal_density": min_nm},
-                user_potcar_settings=user_potcar_settings or {},
-                user_potcar_functional=user_potcar_functional,
-                force_gamma=True,
+        if self.molecular_entries:
+            print(
+                f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
+                f"({', '.join([e.name for e in self.molecular_entries])} in this case), do not require "
+                f"k-point convergence testing, as Γ-only sampling is sufficient."
             )
-
-            for kpoint in range(min_nm, max_nm, step_nm):
-                dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                kname = (
-                    "k"
-                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
-                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                )
-                fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/kpoint_converge/{kname}"
-                dict_set.write_input(fname, **kwargs)
-
-        for e in self.metals:
-            uis = copy.deepcopy(base_user_incar_settings)  # don't overwrite base_user_incar_settings
-            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
-            self._set_default_metal_smearing(uis, user_incar_settings or {})
-
-            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
-                user_kpoints_settings={"reciprocal_density": min_m},
-                user_incar_settings=uis,
-                user_potcar_settings=user_potcar_settings or {},
-                user_potcar_functional=user_potcar_functional,
-                force_gamma=True,
-            )
-
-            for kpoint in range(min_m, max_m, step_m):
-                dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                kname = (
-                    "k"
-                    + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
-                    + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                )
-                fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/kpoint_converge/{kname}"
-                dict_set.write_input(fname, **kwargs)
 
     # TODO: Add vasp_ncl_setup()
     def vasp_std_setup(
@@ -1344,74 +1406,45 @@ class CompetingPhases:
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
-        # separate metals, non-metals and molecules
-        self.nonmetals = []
-        self.metals = []
-        self.molecules = []
-        for e in self.entries:
-            if e.data["molecule"]:
-                self.molecules.append(e)
-            elif e.data["band_gap"] > 0:
-                self.nonmetals.append(e)
-            else:
-                self.metals.append(e)
-
-        for e in self.nonmetals:
-            uis = copy.deepcopy(base_incar_settings or {})
-            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
-
-            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
-                user_incar_settings=uis,
-                user_kpoints_settings={"reciprocal_density": kpoints_nonmetals},
-                user_potcar_settings=user_potcar_settings or {},
-                user_potcar_functional=user_potcar_functional,
-                force_gamma=True,
-            )
-
-            fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/vasp_std"
-            dict_set.write_input(fname, **kwargs)
-
-        for e in self.metals:
-            uis = copy.deepcopy(base_incar_settings or {})
-            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
-            self._set_default_metal_smearing(uis, user_incar_settings or {})
-
-            dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                structure=e.structure,
-                user_incar_settings=uis,
-                user_kpoints_settings={"reciprocal_density": kpoints_metals},
-                user_potcar_settings=user_potcar_settings or {},
-                user_potcar_functional=user_potcar_functional,
-                force_gamma=True,
-            )
-
-            fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/vasp_std"
-            dict_set.write_input(fname, **kwargs)
-
-        for e in self.molecules:  # gamma-only for molecules
-            uis = copy.deepcopy(base_incar_settings or {})
-            uis["ISIF"] = 2  # can't change the volume
-            uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
-            self._set_spin_polarisation(uis, user_incar_settings or {}, e)
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message="KPOINTS are Γ-only")  # Γ only KPAR warning
-                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                    structure=e.structure,  # molecule in a box structure
-                    user_incar_settings=uis,
-                    user_kpoints_settings=Kpoints().from_dict(
-                        {
-                            "comment": "Gamma-only kpoints for molecule-in-a-box",
-                            "generation_style": "Gamma",
-                        }
-                    ),
-                    user_potcar_settings=user_potcar_settings or {},
-                    user_potcar_functional=user_potcar_functional,
-                    force_gamma=True,
+        for entry_list, type in [
+            (self.nonmetallic_entries, "non-metals"),
+            (self.metallic_entries, "metals"),
+            (self.molecular_entries, "molecules"),
+        ]:
+            if type == "molecules":
+                user_kpoints_settings = Kpoints().from_dict(
+                    {
+                        "comment": "Gamma-only kpoints for molecule-in-a-box",
+                        "generation_style": "Gamma",
+                    }
                 )
-                fname = f"CompetingPhases/{_get_competing_phase_folder_name(e)}/vasp_std"
-                dict_set.write_input(fname, **kwargs)
+            elif type == "non-metals":
+                user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
+            else:  # metals
+                user_kpoints_settings = {"reciprocal_density": kpoints_metals}
+
+            for entry in entry_list:
+                uis = copy.deepcopy(base_incar_settings or {})
+                if type == "molecules":
+                    uis["ISIF"] = 2  # can't change the volume
+                    uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
+                self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
+                if type == "metals":
+                    self._set_default_metal_smearing(uis, user_incar_settings or {})
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+                    dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                        structure=entry.structure,
+                        user_incar_settings=uis,
+                        user_kpoints_settings=user_kpoints_settings,
+                        user_potcar_settings=user_potcar_settings or {},
+                        user_potcar_functional=user_potcar_functional,
+                        force_gamma=True,
+                    )
+
+                    fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
+                    dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """
@@ -1420,13 +1453,20 @@ class CompetingPhases:
         polarisation) and ``NUPDOWN`` equal to the integer-rounded total
         magnetisation.
 
+        Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed
+        (as typically desired for non-magnetic phases, for efficiency).
+
         See
         https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
         """
-        if entry.data["total_magnetization"] > 0.1:  # account for magnetic moment
-            incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
-            if "NUPDOWN" not in incar_settings and int(entry.data["total_magnetization"]) > 0:
-                incar_settings["NUPDOWN"] = int(entry.data["total_magnetization"])
+        magnetization = entry.data.get("total_magnetization")
+        with contextlib.suppress(TypeError):  # if magnetization is None, fine, skip
+            if magnetization > 0.1:  # account for magnetic moment
+                incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
+                if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
+                    incar_settings["NUPDOWN"] = int(magnetization)
+
+        # otherwise ISPIN not set, so no spin polarisation
 
     def _set_default_metal_smearing(self, incar_settings, user_incar_settings):
         """
@@ -1451,7 +1491,8 @@ class CompetingPhases:
         in ``entries`` (``True`` for diatomic gases, ``False`` for all others).
 
         The output entries list is sorted by energy above hull, then by the number
-        of elements in the formula, then alphabetically by formula.
+        of elements in the formula, then by the position of elements in the
+        periodic table (main group elements, then transition metals, sorted by row).
 
         Args:
             entries (list[ComputedEntry]):
@@ -1483,8 +1524,8 @@ class CompetingPhases:
                 entry.data["molecule"] = False
                 formatted_entries.append(entry)
 
-        # sort by energy above hull, num_species, then alphabetically:
-        formatted_entries.sort(key=lambda x: _entries_sorting_func(x))
+        # sort by energy above hull, num_species, then by periodic table positioning:
+        formatted_entries.sort(key=lambda x: _entries_sort_func(x))
 
         return formatted_entries
 
@@ -1666,6 +1707,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                 chemsys=self.intrinsic_species + self.extrinsic_species,
                 api_key=self.api_key,
                 e_above_hull=self.e_above_hull,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
             )
             self.entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
 
@@ -1683,6 +1725,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
                     [*self.intrinsic_species, sub_el],
                     api_key=self.api_key,
                     e_above_hull=self.e_above_hull,
+                    bulk_composition=self.composition.reduced_formula,  # for sorting
                 )
                 sub_el_pd_entries = self._generate_elemental_diatomic_phases(sub_el_MP_full_pd_entries)
                 self.MP_full_pd_entries.extend(
@@ -1769,10 +1812,14 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
                     self.entries += single_bordering_sub_el_entries
 
-        # sort all entries by energy above hull, num_species, then alphabetically:
-        self.MP_full_pd_entries.sort(key=lambda x: _entries_sorting_func(x))
+        # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+        self.MP_full_pd_entries.sort(
+            key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
+        )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
-        self.entries.sort(key=lambda x: _entries_sorting_func(x))
+        self.entries.sort(
+            key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
+        )
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
@@ -1851,7 +1898,8 @@ def get_doped_chempots_from_entries(
             relative_chempot_dict[e] -= chempots["elemental_refs"][e]
         chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
 
-    return chempots
+    # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
+    return _round_floats(chempots, 4)
 
 
 class CompetingPhasesAnalyzer:
@@ -1894,23 +1942,29 @@ class CompetingPhasesAnalyzer:
     #  or a csv path); see shelved changes for this
     def from_vaspruns(
         self,
-        path="CompetingPhases",
+        path: Union[PathLike, list[PathLike]] = "CompetingPhases",
         subfolder: Optional[PathLike] = "vasp_std",
-        csv_path=None,
-        verbose=True,
+        csv_path: Optional[PathLike] = None,
+        verbose: bool = True,
+        processes: Optional[int] = None,
     ):
         """
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         computes the formation energies and generates the
         ``CompetingPhasesAnalyzer`` object.
 
+        By default, tries multiprocessing to speed up parsing, which can be
+        controlled with ``processes``. If parsing hangs, this may be due to
+        memory issues, in which case you should reduce ``processes`` (e.g.
+        4 or less).
+
         Args:
             path (PathLike or list):
                 Either a path to the base folder in which you have your
                 competing phase calculation outputs (e.g.
-                formula_EaH_X/vasp_std/vasprun.xml(.gz), or
-                formula_EaH_X/vasprun.xml(.gz)), or a list of strings/Paths
-                to vasprun.xml(.gz) files.
+                ``formula_EaH_X/vasp_std/vasprun.xml(.gz)``, or
+                ``formula_EaH_X/vasprun.xml(.gz)``), or a list of strings/Paths
+                to ``vasprun.xml(.gz)`` files.
             subfolder (PathLike):
                 The subfolder in which your vasprun.xml(.gz) output files
                 are located (e.g. a file-structure like:
@@ -1925,6 +1979,11 @@ class CompetingPhasesAnalyzer:
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml`` files being found).
                 Default is ``True``.
+            processes (int):
+                Number of processes to use for multiprocessing for expedited
+                parsing. If not set, defaults to one less than the number of
+                CPUs available, or 1 if less than 10 phases to parse. Set to
+                1 for no multiprocessing.
 
         Returns:
             None, sets ``self.data``, ``self.formation_energy_df`` and ``self.elemental_energies``
@@ -2022,17 +2081,36 @@ class CompetingPhasesAnalyzer:
 
         self.vaspruns = []
         failed_parsing_dict: dict[str, list] = {}
+        if processes is None:  # multiprocessing?
+            if len(self.vasprun_paths) < 10:
+                processes = 1
+            else:  # only multiprocess as much as makes sense:
+                processes = min(max(1, cpu_count() - 1), len(self.vasprun_paths) - 1)
+
+        parsing_results = []
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
-            for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
-                try:
-                    self.vaspruns.append(get_vasprun(vasprun_path))
-                    self.parsed_folders.append(vasprun_path.rstrip(".gz").rstrip("vasprun.xml"))
-                except Exception as e:
-                    if str(e) in failed_parsing_dict:
-                        failed_parsing_dict[str(e)] += [vasprun_path]
-                    else:
-                        failed_parsing_dict[str(e)] = [vasprun_path]
+            if processes > 1:  # multiprocessing
+                with Pool(processes=processes) as pool:  # result is parsed vasprun
+                    for result in tqdm(
+                        pool.imap_unordered(_parse_vasprun_and_catch_exception, self.vasprun_paths),
+                        total=len(self.vasprun_paths),
+                        desc="Parsing vaspruns...",
+                    ):
+                        parsing_results.append(result)
+            else:
+                for vasprun_path in tqdm(self.vasprun_paths, desc="Parsing vaspruns..."):
+                    parsing_results.append(_parse_vasprun_and_catch_exception(vasprun_path))
+
+        for result in parsing_results:
+            if isinstance(result[0], Vasprun):  # successful parse; result is vr and parsed folder
+                self.vaspruns.append(result[0])
+                self.parsed_folders.append(result[1])
+            else:  # failed parse; result is error message and path
+                if str(result[0]) in failed_parsing_dict:
+                    failed_parsing_dict[str(result[0])] += [result[1]]
+                else:
+                    failed_parsing_dict[str(result[0])] = [result[1]]
 
         if failed_parsing_dict:
             warning_string = (
@@ -2097,11 +2175,11 @@ class CompetingPhasesAnalyzer:
             }
             data.append(d)
 
-        # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
-        # self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
+        # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
+        # and add to self.elements:
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sort_func)
         self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
+            sorted(self.elemental_energies.items(), key=lambda x: _element_sort_func(x[0]))
         )
         self.elements += self.extrinsic_elements
 
@@ -2112,6 +2190,7 @@ class CompetingPhasesAnalyzer:
 
         if csv_path is not None:
             self.to_csv(csv_path)
+            print(f"Competing phase formation energies have been saved to {csv_path}")
 
     def _get_and_sort_formation_energy_data(self, sort_by_energy=False, prune_polymorphs=False):
         data = copy.deepcopy(self.data)
@@ -2128,9 +2207,9 @@ class CompetingPhasesAnalyzer:
         # moves the bulk composition to the top of the list
         _move_dict_to_start(data, "Formula", self.composition.reduced_formula)
 
-        # for each dict in data list, sort the keys as formula, formation_energy, energy_per_atom,
-        # energy_per_fu, energy, kpoints, then by order of appearance in composition dict,
-        # then alphabetically for any remaining:
+        # for each dict in data list, sort the _keys_ as formula, formation_energy, energy_per_atom,
+        # energy_per_fu, energy, kpoints, then element stoichiometries in order of appearance in
+        # composition dict + extrinsic elements:
         copied_data = copy.deepcopy(data)
         formation_energy_data = [
             {
@@ -2152,19 +2231,7 @@ class CompetingPhasesAnalyzer:
                         self.composition.elements,
                         key=lambda x: self.composition.reduced_formula.index(str(x)),
                     )
-                },
-                **{
-                    k: v
-                    for k, v in d.items()
-                    if not any(
-                        i in k
-                        for i in [
-                            "Formula",
-                            "Formation Energy",
-                            "DFT Energy",
-                            "k-points",
-                        ]
-                    )
+                    + self.extrinsic_elements
                 },
             }
             for d in copied_data
@@ -2194,7 +2261,6 @@ class CompetingPhasesAnalyzer:
         """
         formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
         pd.DataFrame(formation_energy_data).set_index("Formula").to_csv(csv_path)
-        print(f"Competing phase formation energies have been saved to {csv_path}")
 
     def from_csv(self, csv_path: PathLike):
         """
@@ -2245,17 +2311,17 @@ class CompetingPhasesAnalyzer:
         self.formation_energy_df = pd.DataFrame(self._get_and_sort_formation_energy_data())  # sort data
         self.formation_energy_df.set_index("Formula")
 
-        # sort extrinsic elements and energies dict by atomic number (deterministically), and add to
-        # self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=lambda x: Element(x).Z)
+        # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
+        # and add to self.elements:
+        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sort_func)
         self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: Element(x[0]).Z)
+            sorted(self.elemental_energies.items(), key=lambda x: _element_sort_func(x[0]))
         )
         self.elements += self.extrinsic_elements
 
     def calculate_chempots(
         self,
-        extrinsic_species: Optional[str] = None,
+        extrinsic_species: Optional[Union[str, Element, list[str], list[Element]]] = None,
         csv_path: Optional[PathLike] = None,
         sort_by: Optional[str] = None,
         verbose: bool = True,
@@ -2268,12 +2334,15 @@ class CompetingPhasesAnalyzer:
         then the limiting chemical potential for ``extrinsic_species`` at the
         `intrinsic` chemical potential limits is calculated and also returned
         (corresponds to ``full_sub_approach=False`` in pycdt).
+        ``extrinsic_species`` is set to ``self.extrinsic_elements`` if not
+        specified.
 
         Args:
-            extrinsic_species (str):
+            extrinsic_species (str, Element, list):
                 If set, will calculate the limiting chemical potential for the
                 specified extrinsic species at the intrinsic chemical potential
-                limits. Default is None.
+                limits. Can be a single element (str or ``Element``), or a list
+                of elements. If ``None`` (default), uses ``self.extrinsic_elements``.
             csv_path (PathLike):
                 If set, will save the calculated chemical potential limits to ``csv_path``.
             sort_by (str):
@@ -2286,14 +2355,26 @@ class CompetingPhasesAnalyzer:
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
+        # TODO: Is outputting the chempot limits to `csv` useful? If so, should also be able to load from
+        #  csv? Show this in tutorials, or at least add easy function
+        if extrinsic_species is None:
+            extrinsic_species = self.extrinsic_elements
+        if not isinstance(extrinsic_species, list):
+            extrinsic_species = [extrinsic_species]
+        extrinsic_elements: list[Element] = [Element(e) for e in extrinsic_species]
+
         intrinsic_phase_diagram_entries = []
         extrinsic_formation_energies = []
         bulk_pde_list = []
+
         for d in self.data:
             pd_entry = PDEntry(d["Formula"], d["DFT Energy (eV/fu)"])
             if (np.isinf(d["Formation Energy (eV/fu)"]) or np.isnan(d["Formation Energy (eV/fu)"])) and (
                 set(Composition(d["Formula"]).elements).issubset(self.composition.elements)
-                or (extrinsic_species and Element(extrinsic_species) in Composition(d["Formula"]).elements)
+                or (
+                    extrinsic_elements
+                    and any(elt in Composition(d["Formula"]).elements for elt in extrinsic_elements)
+                )
             ):
                 warnings.warn(
                     f"Entry for {d['Formula']} has an infinite/NaN calculated formation energy, "
@@ -2306,7 +2387,10 @@ class CompetingPhasesAnalyzer:
                 intrinsic_phase_diagram_entries.append(pd_entry)  # intrinsic phase
                 if pd_entry.composition == self.composition:  # bulk phase
                     bulk_pde_list.append(pd_entry)
-            elif extrinsic_species and Element(extrinsic_species) in Composition(d["Formula"]).elements:
+
+            elif extrinsic_elements and any(
+                elt in Composition(d["Formula"]).elements for elt in extrinsic_elements
+            ):
                 # only take entries with the extrinsic species present, otherwise is additionally parsed
                 # (but irrelevant) phases --- would need to be updated if adding codoping chemical
                 # potentials _parsing_ functionality # TODO: ?
@@ -2379,35 +2463,30 @@ class CompetingPhasesAnalyzer:
         )
 
         # get chemical potentials as pandas dataframe
-        chemical_potentials = []
-        for _, chempot_dict in self._intrinsic_chempots["limits_wrt_el_refs"].items():
-            phase_energy_list = []
-            phase_name_columns = []
-            for k, v in chempot_dict.items():
-                phase_name_columns.append(str(k))
-                phase_energy_list.append(round(v, 4))
-            chemical_potentials.append(phase_energy_list)
-
-        # make df, will need it in next step
-        chempots_df = pd.DataFrame(
-            chemical_potentials,
-            index=list(self._intrinsic_chempots["limits_wrt_el_refs"].keys()),
-            columns=phase_name_columns,
+        chempots_df = pd.DataFrame.from_dict(
+            {k: list(v.values()) for k, v in self._intrinsic_chempots["limits_wrt_el_refs"].items()},
+            orient="index",
         )
+        chempots_df.columns = [
+            str(k) for k in next(iter(self._intrinsic_chempots["limits_wrt_el_refs"].values()))
+        ]
         chempots_df.index.name = "Limit"
 
-        if extrinsic_species is None:  # intrinsic only
+        missing_extrinsic = [
+            elt for elt in extrinsic_elements if elt.symbol not in self.elemental_energies
+        ]
+        if not extrinsic_elements:  # intrinsic only
             self._chempots = self._intrinsic_chempots
-
-        elif extrinsic_species not in self.elemental_energies:
-            raise ValueError(
-                f"Elemental reference phase for the specified extrinsic species {extrinsic_species} was "
-                f"not parsed, but is necessary for chemical potential calculations. Please ensure that "
-                f"this phase is present in the calculation directory and is being correctly parsed."
+        elif missing_extrinsic:
+            raise ValueError(  # TODO: Test this
+                f"Elemental reference phase for the specified extrinsic species "
+                f"{[elt.symbol for elt in missing_extrinsic]} was not parsed, but is necessary for "
+                f"chemical potential calculations. Please ensure that this phase is present in the "
+                f"calculation directory and is being correctly parsed."
             )
         else:
             self._calculate_extrinsic_chempot_lims(  # updates self._chempots
-                extrinsic_species=extrinsic_species,
+                extrinsic_elements=extrinsic_elements,
                 extrinsic_formation_energy_df=extrinsic_formation_energy_df,
                 chempots_df=chempots_df,
             )
@@ -2423,30 +2502,42 @@ class CompetingPhasesAnalyzer:
 
         return chempots_df
 
+    # TODO: Add chempots df as a property? Then don't need to print here
+
     # TODO: This code (in all this module) should be rewritten to be more readable (re-used and
-    #  uninformative variable names, missing informative comments...)
+    #  uninformative variable names, missing informative comments, typing...)
     def _calculate_extrinsic_chempot_lims(
-        self, extrinsic_species, extrinsic_formation_energy_df, chempots_df
+        self, extrinsic_elements, extrinsic_formation_energy_df, chempots_df
     ):
         # gets the df into a slightly more convenient dict
         cpd = chempots_df.to_dict(orient="records")
-        mins = []
-        mins_formulas = []
-        for i, c in enumerate(cpd):
-            name = f"mu_{extrinsic_species}_{i}"
-            extrinsic_formation_energy_df[name] = extrinsic_formation_energy_df["Formation Energy (eV/fu)"]
-            for k, v in c.items():
-                extrinsic_formation_energy_df[name] -= extrinsic_formation_energy_df[k] * v
-            extrinsic_formation_energy_df[name] /= extrinsic_formation_energy_df[extrinsic_species]
-            # find min at that chempot
-            mins.append(extrinsic_formation_energy_df[name].min())
-            mins_formulas.append(
-                extrinsic_formation_energy_df.iloc[extrinsic_formation_energy_df[name].idxmin()]["Formula"]
-            )
+        extrinsic_chempots_dict: dict[str, list[float]] = {elt: [] for elt in extrinsic_elements}
+        extrinsic_limiting_phases_dict: dict[str, list[str]] = {elt: [] for elt in extrinsic_elements}
+        for extrinsic_elt in extrinsic_elements:
+            for i, c in enumerate(cpd):
+                name = f"mu_{extrinsic_elt.symbol}_{i}"
+                extrinsic_formation_energy_df[name] = extrinsic_formation_energy_df[
+                    "Formation Energy (eV/fu)"
+                ]
+                for k, v in c.items():
+                    extrinsic_formation_energy_df[name] -= extrinsic_formation_energy_df[k] * v
+                extrinsic_formation_energy_df[name] /= extrinsic_formation_energy_df[extrinsic_elt.symbol]
+                # omit infinity values:
+                non_infinite_formation_energy_df = extrinsic_formation_energy_df[
+                    ~extrinsic_formation_energy_df[name].isin([-np.inf, np.inf, np.nan])
+                ]
+                extrinsic_chempots_dict[extrinsic_elt].append(non_infinite_formation_energy_df[name].min())
+                extrinsic_limiting_phases_dict[extrinsic_elt].append(
+                    non_infinite_formation_energy_df.loc[non_infinite_formation_energy_df[name].idxmin()][
+                        "Formula"
+                    ]
+                )
+            chempots_df[f"{extrinsic_elt.symbol}"] = extrinsic_chempots_dict[extrinsic_elt]
 
-        chempots_df[extrinsic_species] = mins
-        col_name = f"{extrinsic_species}-Limiting Phase"
-        chempots_df[col_name] = mins_formulas
+        for extrinsic_elt in extrinsic_elements:  # add limiting phases after, so at end of df
+            chempots_df[f"{extrinsic_elt.symbol}-Limiting Phase"] = extrinsic_limiting_phases_dict[
+                extrinsic_elt
+            ]
 
         # 1. work out the formation energies of all dopant competing
         #    phases using the elemental energies
@@ -2467,9 +2558,14 @@ class CompetingPhasesAnalyzer:
         }
 
         for i, d in enumerate(chempot_lim_dict_list):
-            key = list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i] + "-" + d[col_name]
+            key = (
+                list(self._intrinsic_chempots["limits_wrt_el_refs"].keys())[i]
+                + "-"
+                + "-".join(d[col_name] for col_name in d if "Limiting Phase" in col_name)
+            )
             new_vals = list(self._intrinsic_chempots["limits_wrt_el_refs"].values())[i]
-            new_vals[f"{extrinsic_species}"] = d[f"{extrinsic_species}"]
+            for extrinsic_elt in extrinsic_elements:
+                new_vals[f"{extrinsic_elt.symbol}"] = d[f"{extrinsic_elt.symbol}"]
             chempot_lims_w_extrinsic["limits_wrt_el_refs"][key] = new_vals
 
         # relate the limits to the elemental
@@ -3025,6 +3121,20 @@ class CompetingPhasesAnalyzer:
             f"{len(self.parsed_folders)} folders parsed:\n{parsed_folder_list}\n\n"
             f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
+
+
+def _parse_vasprun_and_catch_exception(vasprun_path: PathLike) -> tuple[Union[str, Vasprun], PathLike]:
+    """
+    Parse a VASP vasprun.xml file, catching any exceptions and returning the
+    error message and the path to the vasprun.xml file if an exception is
+    raised.
+    """
+    try:
+        vasprun = get_vasprun(vasprun_path)
+        folder = vasprun_path.rstrip(".gz").rstrip("vasprun.xml")
+        return vasprun, folder
+    except Exception as e:
+        return str(e), vasprun_path
 
 
 def _possible_label_positions_from_bbox_intersections(

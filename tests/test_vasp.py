@@ -579,7 +579,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
-        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json.gz")
+        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
 
         self.prim_MgO = Structure.from_file(f"{self.example_dir}/MgO/Bulk_relax/CONTCAR")
@@ -748,7 +748,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             elif defect_gen_name == "SQS AgSbTe2 defect_gen":
                 defect_gen = DefectsGenerator(self.sqs_agsbte2, generate_supercell=False)
             else:
-                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz")
+                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
 
             # randomly choose a defect entry from the defect_gen dict:
             defect_entry = random.choice(list(defect_gen.values()))
@@ -786,7 +786,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cu_defect_gen",
         ]:
             print(f"Testing: {defect_gen_name}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
             defect_entry = random.choice(list(defect_gen.values()))
             print(f"Testing DefectRelaxSet with: {defect_entry.name}")
             drs = DefectRelaxSet(defect_entry)
@@ -882,7 +882,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cd_i_supercell_defect_gen",
         ]:
             defect_gen_test_list.append(
-                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz"), defect_gen_name)
+                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
             )
 
         for defect_gen, defect_gen_name in defect_gen_test_list:
@@ -943,7 +943,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not drs.bulk_vasp_ncl
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
-        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json.gz")
+        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
         defect_entries = random.sample(list(defect_gen.values()), min(5, len(defect_gen)))
 
         for defect_entry in defect_entries:
@@ -975,7 +975,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         defect_gen_test_list = [
             (
-                DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz"),
+                DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"),
                 defect_gen_name,
             )
             for defect_gen_name in [
@@ -1109,7 +1109,7 @@ class DefectsSetTest(unittest.TestCase):
         self.drs_test = DefectRelaxSetTest()
         self.drs_test.setUp()
 
-        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json.gz")
+        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
         self.structure_matcher = StructureMatcher(
             comparator=ElementComparator(), primitive_cell=False
         )  # ignore oxidation states when comparing structures
@@ -1133,6 +1133,8 @@ class DefectsSetTest(unittest.TestCase):
                 if_present_rm(folder)
 
         if_present_rm("AgSbTe2_test")
+        if_present_rm("CdTe_defects_generator.json")
+        if_present_rm("test_CdTe_defects_generator.json")
 
     def check_generated_vasp_inputs(
         self,
@@ -1476,7 +1478,7 @@ class DefectsSetTest(unittest.TestCase):
 
         def initialise_and_write_files(defect_gen_json):
             print(f"Initialising and testing: {defect_gen_json}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json.gz")
+            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json")
             defects_set = DefectsSet(defect_gen)
             if _potcars_available():
                 defects_set.write_files()
@@ -1777,6 +1779,28 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
             )
+
+        # test convenience methods for ``DefectsSet``, where dict methods are passed to
+        # ``self.defect_sets``:
+        assert len(ds) == len(ds.defect_sets)  # __len__ method
+        assert len(ds) == 2  # 2 entries provided above
+        assert hasattr(ds, "defect_sets")  # Test accessing attributes
+        assert "Ag_Sb_Cs_Te2.90_-2" in list(ds.keys())  # __getattr__ method
+        assert "Ag_Sb_Cs_Te2.90_-2" in ds  # __contains__ method
+        assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
+        assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
+
+        new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
+        ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
+        assert len(ds) == 3  # 3 entries now
+        assert "Ag_Sb_Cs_Te2.90_-1" in ds
+
+        del ds["Ag_Sb_Cs_Te2.90_0"]  # __delitem__ method
+        assert "Ag_Sb_Cs_Te2.90_0" not in ds
+        assert len(ds) == 2
+
+        for key in ds:
+            assert key in ["Ag_Sb_Cs_Te2.90_-2", "Ag_Sb_Cs_Te2.90_-1"]
 
 
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)

@@ -19,7 +19,6 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
-from pymatgen.util.coord import pbc_diff
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry
@@ -302,10 +301,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
-            defect_site_arg_idx = find_nearest_coords(
-                bulk_new_species_coords[:, None],
+            defect_site_arg_idx = find_idx_of_nearest_coords(
+                bulk_new_species_coords,
                 defect_new_species_coords,
-                bulk.lattice.matrix,
+                bulk.lattice,
                 defect_type="substitution",
                 searched_structure="defect",
             )
@@ -321,10 +320,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # again, make sure to use periodic boundaries
         bulk_old_species_coords, _bulk_old_species_idx = get_coords_and_idx_of_species(bulk, old_species)
 
-        bulk_site_arg_idx = find_nearest_coords(
+        bulk_site_arg_idx = find_idx_of_nearest_coords(
             bulk_old_species_coords,
             defect_coords,
-            bulk.lattice.matrix,
+            bulk.lattice,
             defect_type="substitution",
             searched_structure="bulk",
         )
@@ -349,10 +348,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect, old_species
         )
 
-        bulk_site_arg_idx = find_nearest_coords(
-            bulk_old_species_coords[:, None],
+        bulk_site_arg_idx = find_idx_of_nearest_coords(
+            bulk_old_species_coords,
             defect_old_species_coords,
-            bulk.lattice.matrix,
+            bulk.lattice,
             defect_type="vacancy",
             searched_structure="bulk",
         )
@@ -380,10 +379,10 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
-            defect_site_arg_idx = find_nearest_coords(
-                bulk_new_species_coords[:, None],
+            defect_site_arg_idx = find_idx_of_nearest_coords(
+                bulk_new_species_coords,
                 defect_new_species_coords,
-                bulk.lattice.matrix,
+                bulk.lattice,
                 defect_type="interstitial",
                 searched_structure="defect",
             )
@@ -442,10 +441,10 @@ def get_coords_and_idx_of_species(structure, species_name):
     return np.array(coords), np.array(idx)
 
 
-def find_nearest_coords(
+def find_idx_of_nearest_coords(
     bulk_coords,
     target_coords,
-    bulk_lattice_matrix,
+    bulk_lattice,
     defect_type="substitution",
     searched_structure="bulk",
     unique_tolerance=1,
@@ -453,9 +452,12 @@ def find_nearest_coords(
     """
     Find the nearest coords in bulk_coords to target_coords.
     """
-    distance_matrix = np.linalg.norm(
-        np.dot(pbc_diff(bulk_coords, target_coords), bulk_lattice_matrix), axis=-1
+    distance_matrix = bulk_lattice.get_all_distances(
+        bulk_coords,
+        target_coords,
     )
+    if distance_matrix.shape[1] == 1:  # Check if it is (X, 1)
+        distance_matrix = distance_matrix.ravel()
     site_matches = distance_matrix.argmin(axis=0 if defect_type == "vacancy" else -1)
 
     def _site_matching_failure_error(defect_type, searched_structure):
@@ -503,10 +505,10 @@ def _remove_and_insert_species_from_bulk(
     bulk_site_idx = None
 
     if site_arg_idx is not None:
-        bulk_site_idx = find_nearest_coords(
+        bulk_site_idx = find_idx_of_nearest_coords(
             bulk_coords,
             coords[site_arg_idx],
-            bulk.lattice.matrix,
+            bulk.lattice,
             defect_type=defect_type,
             searched_structure=searched_structure,
             unique_tolerance=unique_tolerance,
@@ -567,10 +569,10 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
 
     for site in defect:
         if site.distance_and_image_from_frac_coords(defect_coords)[0] > wigner_seitz_radius:
-            bulk_site_arg_idx = find_nearest_coords(  # get closest site in bulk to defect site
+            bulk_site_arg_idx = find_idx_of_nearest_coords(  # get closest site in bulk to defect site
                 bulk_species_coord_dict[site.specie.symbol],
                 site.frac_coords,
-                bulk.lattice.matrix,
+                bulk.lattice,
                 defect_type="substitution",
                 searched_structure="bulk",
             )
@@ -597,10 +599,12 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
         )
 
 
-def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, threshold=2.0):
+def get_site_mapping_indices(
+    structure_a: Structure, structure_b: Structure, threshold: float = 2.0, dists_only: bool = False
+):
     """
-    Reset the position of a partially relaxed structure to its unrelaxed
-    positions.
+    Get the site mapping indices between two structures, based on the
+    fractional coordinates of the sites.
 
     The template structure may have a different species ordering to the
     ``input_structure``.
@@ -613,18 +617,37 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     is only used for analysing site displacements in the ``displacements`` module
     so this is fine (user will already have been warned at this point if there is a
     possible mismatch).
+
+    Args:
+        structure_a (Structure):
+            The input structure.
+        structure_b (Structure):
+            The template structure.
+        threshold (float):
+            If the distance between a pair of matched sites is larger than this,
+            then a warning will be thrown. Default is 2.0 Å.
+        dists_only (bool):
+            Whether to return only the distances between matched sites, rather
+            than a list of lists containing the distance, index in structure_a
+            and index in structure_b. Default is False.
+
+    Returns:
+        list:
+            A list of lists containing the distance, index in structure_a and
+            index in structure_b for each matched site. If ``dists_only`` is
+            ``True``, then only the distances between matched sites are returned.
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
-    all_input_fcoords = [list(site.frac_coords.round(3)) for site in structure_a]
-    all_template_fcoords = [list(site.frac_coords.round(3)) for site in structure_b]
+    all_input_fcoords = [list(site.frac_coords) for site in structure_a]
+    all_template_fcoords = [list(site.frac_coords) for site in structure_b]
 
     for species in structure_a.composition.elements:
         input_fcoords = [
-            list(site.frac_coords.round(3)) for site in structure_a if site.specie.symbol == species.symbol
+            list(site.frac_coords) for site in structure_a if site.specie.symbol == species.symbol
         ]
         template_fcoords = [
-            list(site.frac_coords.round(3)) for site in structure_b if site.specie.symbol == species.symbol
+            list(site.frac_coords) for site in structure_b if site.specie.symbol == species.symbol
         ]
 
         dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
@@ -632,15 +655,18 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
             if coords in input_fcoords:
                 dists = dmat[input_fcoords.index(coords)]
                 current_dist = dists.min()
-                template_fcoord = template_fcoords[dists.argmin()]
-                template_index = all_template_fcoords.index(template_fcoord)
-                min_dist_with_index.append(
-                    [
-                        current_dist,
-                        index,
-                        template_index,
-                    ]
-                )
+                if dists_only:
+                    min_dist_with_index.append(current_dist)
+                else:
+                    template_fcoord = template_fcoords[dists.argmin()]
+                    template_index = all_template_fcoords.index(template_fcoord)
+                    min_dist_with_index.append(
+                        [
+                            current_dist,
+                            index,
+                            template_index,
+                        ]
+                    )
 
                 if current_dist > threshold:
                     site_a = structure_a[index]
@@ -653,7 +679,7 @@ def get_site_mapping_indices(structure_a: Structure, structure_b: Structure, thr
     return min_dist_with_index
 
 
-def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0):
+def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0) -> Structure:
     """
     Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
     the atoms in s2_structure.
@@ -672,6 +698,19 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     warning should be thrown anyway during parsing). Currently this function
     is no longer used, but if it is reintroduced at any point, this point should
     be noted!
+
+    Args:
+        s1_structure (Structure):
+            The input structure.
+        s2_structure (Structure):
+            The template structure.
+        threshold (float):
+            If the distance between a pair of matched sites is larger than this,
+            then a warning will be thrown. Default is 5.0 Å.
+
+    Returns:
+        Structure:
+            The reordered structure.
     """
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
@@ -1010,13 +1049,9 @@ def get_interstitial_site_and_orientational_degeneracy(
         ]
     )
 
-    distance_matrix = np.linalg.norm(
-        np.dot(
-            pbc_diff(defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array),
-            _get_bulk_supercell(interstitial_defect_entry).lattice.matrix,
-        ),
-        axis=-1,
-    )
+    distance_matrix = _get_bulk_supercell(interstitial_defect_entry).lattice.get_all_distances(
+        defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array
+    )[:, 0]
 
     return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
 
