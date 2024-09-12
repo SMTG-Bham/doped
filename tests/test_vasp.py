@@ -1780,6 +1780,28 @@ class DefectsSetTest(unittest.TestCase):
                 f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
             )
 
+        # test convenience methods for ``DefectsSet``, where dict methods are passed to
+        # ``self.defect_sets``:
+        assert len(ds) == len(ds.defect_sets)  # __len__ method
+        assert len(ds) == 2  # 2 entries provided above
+        assert hasattr(ds, "defect_sets")  # Test accessing attributes
+        assert "Ag_Sb_Cs_Te2.90_-2" in list(ds.keys())  # __getattr__ method
+        assert "Ag_Sb_Cs_Te2.90_-2" in ds  # __contains__ method
+        assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
+        assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
+
+        new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
+        ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
+        assert len(ds) == 3  # 3 entries now
+        assert "Ag_Sb_Cs_Te2.90_-1" in ds
+
+        del ds["Ag_Sb_Cs_Te2.90_0"]  # __delitem__ method
+        assert "Ag_Sb_Cs_Te2.90_0" not in ds
+        assert len(ds) == 2
+
+        for key in ds:
+            assert key in ["Ag_Sb_Cs_Te2.90_-2", "Ag_Sb_Cs_Te2.90_-1"]
+
 
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
 

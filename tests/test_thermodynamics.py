@@ -1540,7 +1540,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict  # the same
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
-
         self.CdTe_defect_thermo.chempots = None
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         manual_zeroed_rel_chempots_dict = deepcopy(semi_manual_chempots_dict)
@@ -1556,11 +1555,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]  # the same
         assert self.CdTe_defect_thermo.chempots == manual_zeroed_rel_chempots_dict  # the same
-
         self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
         self._check_chempots_dict(self.CdTe_defect_thermo.chempots)
         assert self.CdTe_defect_thermo.chempots == semi_manual_chempots_dict
-
         defect_thermo = deepcopy(orig_cdte_defect_thermo)
         defect_thermo.chempots = {"Cd": -1.25, "Te": 0}  # Te-rich
         self._check_chempots_dict(defect_thermo.chempots)
@@ -1622,6 +1619,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_chempots_dict(defect_thermo.chempots)
         assert defect_thermo.chempots == manual_zeroed_rel_chempots_dict
         assert defect_thermo.el_refs == self.CdTe_chempots["elemental_refs"]
+
+        # test updating chempots with a set of elements greater than original:
+        manual_chempots_dict = deepcopy(manual_zeroed_rel_chempots_dict)
+        manual_chempots_dict["limits_wrt_el_refs"]["User Chemical Potentials"]["H"] = -2
+        manual_chempots_dict["elemental_refs"]["H"] = -5.4
+        defect_thermo.chempots = manual_chempots_dict
+        self._check_chempots_dict(defect_thermo.chempots)
+        assert defect_thermo.chempots["elemental_refs"].get("H") == -5.4
+        assert defect_thermo.chempots["limits"]["User Chemical Potentials"].get("H") == -7.4
 
     def test_add_entries(self):
         partial_defect_thermo = DefectThermodynamics(list(self.CdTe_defect_dict.values())[:4])

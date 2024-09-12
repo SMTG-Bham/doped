@@ -116,21 +116,23 @@ def _get_limit_name_from_dict(limit, limit_rich_poor_dict, bracket=False):
     return limit
 
 
-def _update_old_chempots_dict(chempots: dict) -> dict:
+def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]:
     """
     Update a chempots dict in the old ``doped`` format (i.e. with ``facets``
     rather than ``limits``) to that of the new format.
-    """
-    if "facets" in chempots:
-        chempots["limits"] = chempots.pop("facets")
 
-    if "facets_wrt_el_refs" in chempots:
-        chempots["limits_wrt_el_refs"] = chempots.pop("facets_wrt_el_refs")
+    Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
+    """
+    if chempots is not None:
+        for key, subdict in list(chempots.items()):
+            chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
 
     return chempots
 
 
-def _parse_chempots(chempots: Optional[dict] = None, el_refs: Optional[dict] = None):
+def _parse_chempots(
+    chempots: Optional[dict] = None, el_refs: Optional[dict] = None, update_el_refs: bool = False
+) -> tuple[dict | None, dict | None]:
     """
     Parse the chemical potentials input, formatting them in the ``doped``
     format for use in analysis functions.
@@ -139,14 +141,7 @@ def _parse_chempots(chempots: Optional[dict] = None, el_refs: Optional[dict] = N
 
     Returns parsed ``chempots`` and ``el_refs``
     """
-    if chempots is not None and "limits_wrt_elt_refs" in chempots:
-        chempots["limits_wrt_el_refs"] = chempots.pop("limits_wrt_elt_refs")
-
-    if chempots is not None and "facets_wrt_elt_refs" in chempots:
-        chempots["facets_wrt_el_refs"] = chempots.pop("facets_wrt_elt_refs")
-
-    if chempots is not None and ("facets" in chempots or "facets_wrt_el_refs" in chempots):
-        chempots = _update_old_chempots_dict(chempots)
+    chempots = _update_old_chempots_dict(chempots)
 
     if chempots is None:
         if el_refs is not None:
@@ -159,6 +154,9 @@ def _parse_chempots(chempots: Optional[dict] = None, el_refs: Optional[dict] = N
         return chempots, el_refs
 
     if "limits_wrt_el_refs" in chempots:  # doped format
+        if not update_el_refs:
+            el_refs = chempots.get("elemental_refs", el_refs)
+
         if el_refs is not None:  # update el_refs in chempots dict
             chempots["elemental_refs"] = el_refs
             chempots["limits"] = {
@@ -212,7 +210,7 @@ def raw_energy_from_chempots(composition: Union[str, dict, Composition], chempot
         composition = Composition(composition)
 
     if "limits" not in chempots:
-        chempots, _el_refs = _parse_chempots(chempots)
+        chempots, _el_refs = _parse_chempots(chempots)  # type: ignore
 
     raw_energies_dict = dict(next(iter(chempots["limits"].values())))
 
@@ -536,7 +534,7 @@ class DefectThermodynamics(MSONable):
             defect_entries = {entry.name: entry for entry in defect_entries}
 
         self._defect_entries = defect_entries
-        self._chempots, self._el_refs = _parse_chempots(chempots, el_refs)
+        self._chempots, self._el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
         self._dist_tol = dist_tol
         self.check_compatibility = check_compatibility
 
@@ -715,7 +713,9 @@ class DefectThermodynamics(MSONable):
         Parse chemical potentials, either using input values (after formatting
         them in the doped format) or using the class attributes if set.
         """
-        chempots, el_refs = _parse_chempots(chempots or self.chempots, el_refs or self.el_refs)
+        chempots, el_refs = _parse_chempots(
+            chempots or self.chempots, el_refs or self.el_refs, update_el_refs=True
+        )
         if self.check_compatibility:
             self._check_bulk_chempots_compatibility(chempots)
 
@@ -946,13 +946,14 @@ class DefectThermodynamics(MSONable):
         ``DefectThermodynamics``.
         """
         for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
-            with contextlib.suppress(ValueError):
-                return (
-                    list(self._defect_entries.keys()).index(name_wout_charge.rsplit("_", i)[0]),
-                    name_wout_charge,
-                )
+            split_name = name_wout_charge.rsplit("_", i)[0]
+            indices = [  # find first occurrence of name_wout_charge in defect_entries
+                i for i, name in enumerate(self._defect_entries.keys()) if name.startswith(split_name)
+            ]
+            if indices:
+                return min(indices), split_name
 
-        return 100, name_wout_charge  # if name not in defect_entries, put at end
+        return 100, split_name  # if name not in defect_entries, put at end
 
     def _check_bulk_compatibility(self):
         """
@@ -1177,7 +1178,9 @@ class DefectThermodynamics(MSONable):
         potentials can also be supplied later in each analysis function.
         (Default: None)
         """
-        self._chempots, self._el_refs = _parse_chempots(input_chempots, self._el_refs)
+        self._chempots, self._el_refs = _parse_chempots(
+            input_chempots, self._el_refs, update_el_refs=False
+        )
         if self.check_compatibility:
             self._check_bulk_chempots_compatibility(self._chempots)
 
@@ -1205,7 +1208,7 @@ class DefectThermodynamics(MSONable):
         Unnecessary if ``chempots`` is provided in format generated by ``doped``
         (see tutorials).
         """
-        self._chempots, self._el_refs = _parse_chempots(self._chempots, input_el_refs)
+        self._chempots, self._el_refs = _parse_chempots(self._chempots, input_el_refs, update_el_refs=True)
 
     @property
     def defect_names(self):

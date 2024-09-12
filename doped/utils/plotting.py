@@ -1094,7 +1094,7 @@ def _TLD_plot(
                 markersize=styled_markersize * (4 / 6),
                 fillstyle="full",
                 linestyle="",
-                alpha=0.5 if all_entries is True else 1,
+                alpha=0.5 if all_entries is True else None,
             )
             if auto_labels:
                 for index, coords in enumerate(zip(x_trans, y_trans)):
