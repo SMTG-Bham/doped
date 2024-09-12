@@ -818,65 +818,21 @@ class DefectEntry(thermo.DefectEntry):
 
         return get_eigenvalue_analysis(self, plot=plot, filename=filename, **kwargs)
 
-    def get_elt_changes(self) -> dict:
-        """
-        Get a dictionary of the element changes (composition difference)
-        between the defect and bulk supercells.
-
-        Used for calculating the chemical potential term in the defect
-        formation energy equation.
-        """
-        # attempt to extract from name, if it's a doped-formatted name (most efficient):
-        elt_changes = None
-        name_components = self.name.split("_")
-        if len(name_components) >= 2 and (
-            Element("H").is_valid_symbol(name_components[1]) or name_components[1] == "i"
-        ):  # should be doped name, try using this:
-
-            if name_components[1] == "i":
-                elt_changes = {name_components[0]: 1}
-
-            elif name_components[0] == "v":
-                elt_changes = {name_components[1]: -1}
-
-            elif Element("H").is_valid_symbol(name_components[0]):
-                elt_changes = {name_components[0]: 1, name_components[1]: -1}
-
-            # otherwise continue and use alternative approach, name not actually doped-formatted
-
-        # try using the defect_entry defect_supercell_site and calculation_metadata['bulk_site']:
-        if elt_changes is None and self.defect_supercell_site is not None:
-            try:
-                if self.defect.defect_type == core.DefectType.Vacancy:
-                    elt_changes = {self.defect_supercell_site.specie.symbol: -1}
-
-                if self.defect.defect_type == core.DefectType.Interstitial:
-                    elt_changes = {self.defect_supercell_site.specie.symbol: +1}
-
-                if self.defect.defect_type == core.DefectType.Substitution:
-                    elt_changes = {
-                        self.defect_supercell_site.specie.symbol: +1,
-                        self.calculation_metadata["bulk_site"].specie.symbol: -1,
-                    }
-            except Exception:
-                elt_changes = self.defect.element_changes  # slow, but fallback option here
-
-        if elt_changes is None:
-            raise ValueError(
-                f"Unable to determine element changes (composition difference) for defect entry "
-                f"{self.name}."
-            )
-
-        return elt_changes
-
     def _get_chempot_term(self, chemical_potentials=None) -> float:
         chemical_potentials = chemical_potentials or {}
-        elt_changes = self.get_elt_changes()
+        element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
+        missing_elts = [elt for elt in element_changes if elt not in chemical_potentials]
+        if missing_elts:
+            warnings.warn(
+                f"Chemical potentials not present for elements: {missing_elts}. Assuming zero chemical "
+                "potentials for these elements! (Absolute formation energies will likely be very "
+                "inaccurate)"
+            )
 
         return sum(
-            chem_pot * -elt_changes[el]
+            chem_pot * -element_changes[el]
             for el, chem_pot in chemical_potentials.items()
-            if el in elt_changes
+            if el in element_changes
         )
 
     def get_ediff(self) -> float:
@@ -1291,14 +1247,29 @@ class DefectEntry(thermo.DefectEntry):
     def __eq__(self, other):
         """
         Determine whether two ``DefectEntry`` objects are equal, by comparing
-        ``self.name``, ``self.sc_entry``, ``self.bulk_entry`` and
+        ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy`` and
         ``self.corrections`` (i.e. name and energy match).
         """
         return (
             self.name == other.name
-            and self.sc_entry == other.sc_entry
-            and self.bulk_entry == other.bulk_entry
+            and self.sc_entry_energy == other.sc_entry_energy
+            and self.bulk_entry_energy == other.bulk_entry_energy
             and self.corrections == other.corrections
+        )
+
+    def __hash__(self):
+        """
+        Hash the ``DefectEntry`` object by its name, supercell energy, bulk
+        energy and corrections (i.e. defined by name and energy, as in the
+        ``__eq__`` method).
+        """
+        return hash(
+            (
+                self.name,
+                self.sc_entry_energy,
+                self.bulk_entry_energy,
+                tuple(sorted(self.corrections.values())),
+            )
         )
 
     @property
@@ -1398,12 +1369,12 @@ def _get_dft_chempots(
     """
     from doped.thermodynamics import _parse_chempots, _parse_limit
 
-    chempots, _el_refs = _parse_chempots(chempots, el_refs)
+    chempots, _el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
     if chempots is not None:
         limit = _parse_limit(chempots, limit)
         if limit is None:
             limit = next(iter(chempots["limits"].keys()))
-            if "User" not in limit:
+            if len(chempots["limits"]) > 1:  # more than 1 limit, so warn
                 warnings.warn(
                     f"No chemical potential limit specified! Using {limit} for computing the "
                     f"formation energy"
@@ -1426,13 +1397,23 @@ def _guess_and_set_struct_oxi_states(structure):
     Tries to guess (and set) the oxidation states of the input structure, using
     the ``pymatgen`` ``BVAnalyzer`` class.
 
+    If a single-element structure is passed, the oxidation state is assumed to
+    be zero (no mixed-valence single-element systems that I know of, would be
+    pretty wild).
+
     Args:
         structure (Structure): The structure for which to guess the oxidation states.
 
     Returns:
-        Structure: The structure with oxidation states guessed and set, or ``False``
-        if oxidation states could not be guessed.
+        Structure:
+            The structure with oxidation states guessed and set, or ``False``
+            if oxidation states could not be guessed.
     """
+    if len(structure.composition.elements) == 1:
+        oxi_dec_structure = structure.copy()  # don't modify original structure
+        oxi_dec_structure.add_oxidation_state_by_element({str(structure.composition.elements[0]): 0})
+        return oxi_dec_structure
+
     bv_analyzer = BVAnalyzer()
     with contextlib.suppress(ValueError):
         # ValueError raised if oxi states can't be assigned
@@ -1828,7 +1809,7 @@ class Defect(core.Defect):
     def get_supercell_structure(
         self,
         sc_mat: Optional[np.ndarray] = None,
-        target_frac_coords: Optional[np.ndarray] = None,
+        target_frac_coords: Optional[Union[np.ndarray[float], list[float]]] = None,
         return_sites: bool = False,
         min_image_distance: float = 10.0,  # same as current ``pymatgen`` default
         min_atoms: int = 50,  # different to current ``pymatgen`` default (80)
@@ -1858,7 +1839,7 @@ class Defect(core.Defect):
                 from ``doped.generation``.
             target_frac_coords (3x1 matrix):
                 If set, the defect will be placed at the closest equivalent site to
-                these fractional coordinates (using self.equivalent_sites).
+                these fractional coordinates (using ``self.equivalent_sites``).
             return_sites (bool):
                 If True, returns a tuple of the defect supercell, defect supercell
                 site and list of equivalent supercell sites.
@@ -2065,6 +2046,21 @@ class Defect(core.Defect):
 
         return charges
 
+    def __setattr__(self, name, value):
+        """
+        Handle attribute updates.
+
+        Safety function to ensure properties (``defect_site``, ``volume``,
+        ``element_changes``) are recomputed whenever any defect attributes
+        are changed, to ensure consistency and correct predictions.
+        """
+        super().__setattr__(name, value)
+        if name in ["site", "structure"]:
+            # delete internal pre-computed attributes, so they are re-computed when needed:
+            for attr in ["_defect_site", "_volume", "_element_changes"]:
+                if hasattr(self, attr):
+                    delattr(self, attr)
+
     @property
     def defect_site(self) -> PeriodicSite:
         """
@@ -2104,6 +2100,31 @@ class Defect(core.Defect):
             self._volume = self.structure.volume
 
         return self._volume
+
+    @property
+    def element_changes(self) -> dict[Element, int]:
+        """
+        The stoichiometry changes of the defect, as a dict.
+
+        e.g. {"Mg": -1, "O": +1} for a O-on-Mg antisite in MgO.
+        Redefined from the ``pymatgen-analysis-defects`` method
+        to be far more efficient when used in loops (e.g. for
+        calculating defect concentrations as functions of chemical
+        potentials, temperature etc.).
+
+        Returns:
+            dict[Element, int]: The species changes of the defect.
+        """
+        if not hasattr(self, "_element_changes"):
+            self._element_changes = super().element_changes
+
+        return self._element_changes
+
+    def __hash__(self):
+        """
+        Hash the ``Defect`` object, based on the defect name and site.
+        """
+        return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
 
 
 def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):

@@ -232,8 +232,8 @@ def get_freysoldt_correction(
                 style_file=style_file,
             )
     else:
-        fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
-        # actually an axis object
+        plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
+        fig = plt.gcf()
 
     if filename:
         plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
@@ -536,15 +536,14 @@ def get_kumagai_correction(
     bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     if bulk_supercell.lattice != defect_supercell.lattice:  # pydefect will crash
         # check if the difference is tolerable (< 0.01 Å)
-        if np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
-            # scale bulk lattice to match defect lattice:
-            bulk_supercell.scale_lattice(defect_supercell.lattice.volume)
-        else:
+        if not np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
             warnings.warn(
                 f"Bulk and defect supercells have different lattices, and so the eFNV (Kumagai) "
-                f"correction is likely unreliable!"
+                f"correction may be unreliable!"
                 f"\nBulk lattice:\n{bulk_supercell.lattice}\nDefect lattice:\n{defect_supercell.lattice}"
             )
+        # scale bulk lattice to match defect lattice, so pydefect doesn't crash:
+        bulk_supercell.lattice = defect_supercell.lattice
 
     bulk_calc_results_for_eFNV = CalcResults(
         structure=bulk_supercell,

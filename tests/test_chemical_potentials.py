@@ -74,21 +74,21 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         assert len(cp.entries) == 13
         assert [entry.name for entry in cp.entries] == [
-            "O2",
             "Zr",
+            "O2",
             "Zr3O",
-            "ZrO2",
             "Zr3O",
             "Zr3O",
             "Zr2O",
+            "Zr",  # TODO: This should be higher at Zr??
             "ZrO2",
             "ZrO2",
-            "Zr",
+            "ZrO2",
             "ZrO2",
             "ZrO2",
             "ZrO2",
         ]
-        assert cp.entries[0].data["total_magnetization"] == 2
+        assert cp.entries[1].data["total_magnetization"] == 2
         for i, entry in enumerate(cp.entries):
             print(entry.name, entry.energy)
             if i < 4:
@@ -136,17 +136,16 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         assert len(cp.entries) == 14  # Zr4O now present
         assert [entry.name for entry in cp.entries] == [
-            "O2",
             "Zr",
+            "O2",
             "Zr3O",
             "Zr4O",
-            "ZrO2",
             "Zr3O",
             "Zr3O",
             "Zr2O",
             "ZrO2",
             "ZrO2",
-            "Zr",
+            "ZrO2",
             "ZrO2",
             "ZrO2",
             "ZrO2",
@@ -204,17 +203,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert [entry.data["doped_name"] for entry in cdte_cp.entries] == [
                 "Cd_P6_3/mmc_EaH_0",
                 "Te_P3_121_EaH_0",
-                "CdTe_F-43m_EaH_0",
                 "Te_P3_221_EaH_0",
                 "Cd_Fm-3m_EaH_0.001",
                 "Cd_R-3m_EaH_0.001",
-                "CdTe_P6_3mc_EaH_0.003",
-                "CdTe_Cmc2_1_EaH_0.006",
                 "Cd_P6_3/mmc_EaH_0.018",
                 "Te_C2/m_EaH_0.044",
                 "Te_Pm-3m_EaH_0.047",
                 "Te_Pmma_EaH_0.047",
                 "Te_Pmc2_1_EaH_0.049",
+                "CdTe_F-43m_EaH_0",
+                "CdTe_P6_3mc_EaH_0.003",
+                "CdTe_Cmc2_1_EaH_0.006",
             ]
         else:  # slightly different for new MP API, Te entries the same
             for i in [
@@ -497,10 +496,10 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         assert ex_cp.entries[1].name == "La2Zr2O7"  # definite ordering
         assert all(chemical_potentials._get_e_above_hull(entry.data) == 0 for entry in ex_cp.entries)
 
-        # names of intrinsic entries: ['O2', 'Zr', 'Zr3O', 'ZrO2']
+        # names of intrinsic entries: ['Zr', 'O2', 'Zr3O', 'ZrO2']
         assert len(ex_cp.intrinsic_entries) == 4
-        assert ex_cp.intrinsic_entries[0].name == "O2"
-        assert ex_cp.intrinsic_entries[1].name == "Zr"
+        assert ex_cp.intrinsic_entries[0].name == "Zr"
+        assert ex_cp.intrinsic_entries[1].name == "O2"
         assert ex_cp.intrinsic_entries[2].name == "Zr3O"
         assert ex_cp.intrinsic_entries[3].name == "ZrO2"
         assert all(
