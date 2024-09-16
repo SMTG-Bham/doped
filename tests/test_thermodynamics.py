@@ -1122,6 +1122,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     ]
                     with warnings.catch_warnings(record=True) as w:
                         _form_en = thermo_obj.get_formation_energy(entry, limit="test pop b...")
+                    print([str(warn.message) for warn in w])  # for debugging
                     assert len(w) == 2
                     assert "No chemical potentials supplied" in str(w[0].message)
                     assert (
@@ -1697,7 +1698,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         # hardcoded tests to ensure ordering is consistent (by defect type according to
         # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
-        # as would appear on a TL diagram)
+
         cdte_sym_degen_lists = [  # manually checked by SK (see thesis pg. 146/7)
             ["vac_1_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
             ["vac_1_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
@@ -1721,13 +1722,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ["as_1_Cd_on_Te", "0", "Td", "Cs", 12.0, 1, 12.0, 1.0],
             ["as_1_Cd_on_Te", "-1", "Td", "Td", 1.0, 2, 2.0, 1.0],
             ["as_1_Cd_on_Te", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
+            ["as_2_Cd_on_Te_metastable", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+            ["as_2_Cd_on_Te_orig_C2v", "0", "Td", "D2d", 3.0, 1, 3.0, 1.0],
             ["as_1_Te_on_Cd", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
             ["as_1_Te_on_Cd", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
             ["as_1_Te_on_Cd", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
             ["as_1_Te_on_Cd", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
             ["as_1_Te_on_Cd", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
-            ["as_2_Cd_on_Te_metastable", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["as_2_Cd_on_Te_orig_C2v", "0", "Td", "D2d", 3.0, 1, 3.0, 1.0],
             ["as_2_Te_on_Cd_C1_meta", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
             ["as_2_Te_on_Cd_C2v_meta", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
             ["as_2_Te_on_Cd_C3v_metastable", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],

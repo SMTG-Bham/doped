@@ -1788,7 +1788,9 @@ class DefectsSetTest(unittest.TestCase):
         assert "Ag_Sb_Cs_Te2.90_-2" in list(ds.keys())  # __getattr__ method
         assert "Ag_Sb_Cs_Te2.90_-2" in ds  # __contains__ method
         assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
-        assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
+        assert isinstance(ds["Ag_Sb_Cs_Te2.90_-2"], DefectRelaxSet)  # __getitem__
+        if _potcars_available():
+            assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
 
         new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
         ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
