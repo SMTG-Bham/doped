@@ -2673,7 +2673,7 @@ class DefectThermodynamics(MSONable):
                 colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
                 If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
                 lines to plot), ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more
-                than 20 lines).
+                than 20 lines; citation: https://zenodo.org/records/8409685).
             linestyles (list):
                 Linestyles to use for the formation energy lines, either as a single
                 linestyle (``str``) or list of linestyles (``list[str]``) in the order of

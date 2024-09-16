@@ -2808,6 +2808,9 @@ class CompetingPhasesAnalyzer:
         This is only the case for ``png`` output, so saving to e.g. ``svg`` or
         ``pdf`` instead will avoid this issue.
 
+        If using the default colour map (``batlow``) in publications, please
+        consider citing: https://zenodo.org/records/8409685
+
         Args:
             dependent_element (str or Element):
                 The element for which the chemical potential is plotted as a
