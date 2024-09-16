@@ -61,6 +61,8 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
 
     If ``_alpha_X`` in the colormap name, sets the alpha value to X (0-1).
 
+    ``cmcrameri`` colour maps citation: https://zenodo.org/records/8409685
+
     Args:
         colormap (str, matplotlib.colors.Colormap):
             Colormap to use, either as a string (which can be a colormap name
