@@ -815,8 +815,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
         assert any(
-            "O_Se_Cs_Sb2.00_+1, O_Se_Cs_Sb2.00_+1\nO_Se_Cs_Sb2.00_+2, O_Se_Cs_Sb2.00_+2, "
-            "O_Se_Cs_Sb2.00_+2, O_Se_Cs_Sb2.00_+2" in str(warn.message)
+            "O_Se_Cs_Sb2.00_+1 (O_1), O_Se_Cs_Sb2.00_+1 (O_b_1)\nO_Se_Cs_Sb2.00_+2 (O_2), "
+            "O_Se_Cs_Sb2.00_+2 (O_a_1), O_Se_Cs_Sb2.00_+2 (O_a_2), O_Se_Cs_Sb2.00_+2 (O_b_2)"
+            in str(warn.message)
             for warn in w
         )
         self._check_DefectsParser(Sb2Se3_O_dp)

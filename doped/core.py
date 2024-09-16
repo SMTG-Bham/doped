@@ -1978,7 +1978,9 @@ class Defect(core.Defect):
         Needs to be redefined because attributes not explicitly specified in
         subclasses, which is required for monty functions.
         """
-        return {"@module": type(self).__module__, "@class": type(self).__name__, **self.__dict__}
+        dict_wout_elt_changes = self.__dict__
+        dict_wout_elt_changes.pop("_element_changes", None)  # not JSON serializable and unnecessary
+        return {"@module": type(self).__module__, "@class": type(self).__name__, **dict_wout_elt_changes}
 
     def to_json(self, filename: Optional[PathLike] = None):
         """

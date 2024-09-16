@@ -132,7 +132,7 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
 
 def _parse_chempots(
     chempots: Optional[dict] = None, el_refs: Optional[dict] = None, update_el_refs: bool = False
-) -> tuple[dict | None, dict | None]:
+) -> tuple[Optional[dict], Optional[dict]]:
     """
     Parse the chemical potentials input, formatting them in the ``doped``
     format for use in analysis functions.
@@ -703,8 +703,8 @@ class DefectThermodynamics(MSONable):
             el_refs=d.get("el_refs"),
             vbm=d.get("vbm"),
             band_gap=d.get("band_gap"),
-            dist_tol=d.get("dist_tol"),
-            check_compatibility=d.get("check_compatibility"),
+            dist_tol=d.get("dist_tol", 1.5),
+            check_compatibility=d.get("check_compatibility", True),
             bulk_dos=FermiDos.from_dict(d.get("bulk_dos")) if d.get("bulk_dos") else None,
             skip_check=d.get("skip_check"),
         )
