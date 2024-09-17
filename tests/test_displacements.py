@@ -207,3 +207,17 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         return self.F_i_m1_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False
         )
+    
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_ellipsoid_plot.png")
+    def test_calc_displacements_ellipsoid_ellipsoid(self):
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
+        return_tuple = calc_displacements_ellipsoid(defect_entry, plot_ellipsoid=True)
+        # return fig object
+        return return_tuple[3]
+    
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_anisotropy_plot.png")
+    def test_calc_displacements_ellipsoid_anisotropy(self):
+        defect_entry = core.DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
+        return_tuple = calc_displacements_ellipsoid(defect_entry, plot_anisotropy=True)
+        # return fig object
+        return return_tuple[3]
