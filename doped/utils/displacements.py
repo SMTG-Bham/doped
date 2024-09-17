@@ -11,7 +11,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pymatgen.util.coord import pbc_shortest_vectors
+from pymatgen.util.coord import pbc_diff
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry
@@ -37,6 +37,7 @@ def calc_site_displacements(
     defect_entry: DefectEntry,
     vector_to_project_on: Optional[list] = None,
     relative_to_defect: bool = False,
+    ellipsoid: bool = False,
 ) -> dict:
     """
     Calculates the site displacements in the defect supercell, relative to the
@@ -57,6 +58,9 @@ def calc_site_displacements(
             positive values indicate the atom moves away from the defect.
             Defaults to False. If True, the relative displacements are stored in
             the `Displacement wrt defect` key of the returned dictionary.
+        ellipsoid (bool):
+            Whether to calculate the displacements in terms of the norm and 
+            cartesian coordinates relative to the defect site for ellipsoid fitting.
 
     Returns:
         Dictionary with site displacements (compared to pristine supercell).
@@ -78,14 +82,23 @@ def calc_site_displacements(
     if vector_to_project_on is not None:
         disp_dict["Displacement projected along vector"] = []
         disp_dict["Displacement perpendicular to vector"] = []
+    if ellipsoid:
+        disp_dict["Displacement Norm"] = []
+        disp_dict["X sites in cartesian coordinate (defect)"] = []
+        disp_dict["Y sites in cartesian coordinate (defect)"] = []
+        disp_dict["Z sites in cartesian coordinate (defect)"] = []
+        
     for i, site in enumerate(defect_sc_with_site):
+        # print(i, site.specie, site.frac_coords)  # debugging
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
         bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
         # Calculate displacement (need to account for pbc!)
         # First final point, then initial point
-        disp = pbc_shortest_vectors(bulk_sc.lattice, bulk_site.frac_coords, site.frac_coords)[0, 0]
+        frac_disp = pbc_diff(site.frac_coords, bulk_site.frac_coords)  # in fractional coords
+        disp = bulk_sc.lattice.get_cartesian_coords(frac_disp)  # in Angstroms
         # Distance to defect site (last site in defect sc)
         distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
+        # print(i, displacement, np.linalg.norm(abs_disp), "Distance:", distance)  # debugging
         disp_dict["Index (defect)"].append(i)
         disp_dict["Displacement"].append(disp)
         disp_dict["Distance to defect"].append(distance)
@@ -96,11 +109,11 @@ def calc_site_displacements(
             warnings.filterwarnings("ignore", "invalid value encountered in scalar divide")
             if relative_to_defect:
                 # Find vector from defect to site, accounting for periodic boundary conditions
-                vector_defect_to_site = pbc_shortest_vectors(
-                    bulk_sc.lattice, defect_sc_with_site[defect_site_index].frac_coords, site.frac_coords
-                )[0, 0]
+                vector_defect_to_site = pbc_diff(
+                    site.frac_coords, defect_sc_with_site[defect_site_index].frac_coords
+                )
                 norm = np.linalg.norm(vector_defect_to_site)
-                if np.isclose(norm, 0, atol=1e-4):  # If defect site and site are the same
+                if norm == 0:  # If defect site and site are the same
                     disp_dict["Displacement wrt defect"].append(0)
                 else:
                     proj = np.dot(disp, vector_defect_to_site / norm)
@@ -117,6 +130,32 @@ def calc_site_displacements(
                 rejection = np.linalg.norm(disp) * np.sin(angle)
                 disp_dict["Displacement projected along vector"].append(proj)
                 disp_dict["Displacement perpendicular to vector"].append(rejection)
+                
+            if ellipsoid:
+                sc_defect_frac_coords = _get_defect_supercell_bulk_site_coords(defect_entry)
+                if sc_defect_frac_coords is None:
+                    raise ValueError(
+                        "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
+                        "Please use `DefectsParser`/`DefectParser` to parse relaxed defect positions before "
+                        "calculating site displacements."
+                    )
+                
+                disp_dict["Displacement Norm"].append(np.linalg.norm(disp, ord=2))
+                disp_dict["X sites in cartesian coordinate (defect)"].append(
+                    _shift_defect_site_to_center_of_the_supercell(
+                        site.frac_coords, sc_defect_frac_coords, bulk_sc
+                    )[0]
+                )
+                disp_dict["Y sites in cartesian coordinate (defect)"].append(
+                    _shift_defect_site_to_center_of_the_supercell(
+                        site.frac_coords, sc_defect_frac_coords, bulk_sc
+                    )[1]
+                )
+                disp_dict["Z sites in cartesian coordinate (defect)"].append(
+                    _shift_defect_site_to_center_of_the_supercell(
+                        site.frac_coords, sc_defect_frac_coords, bulk_sc
+                    )[2]
+                )
 
     # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
     element_list = [
@@ -134,7 +173,61 @@ def calc_site_displacements(
     combined.sort(
         key=lambda x: (element_list.index(x[1]), x[4], x[0])
     )  # Sort by species, then distance, then index
-    if relative_to_defect and vector_to_project_on is not None:
+    if relative_to_defect and vector_to_project_on is not None and ellipsoid:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement wrt defect"],
+            disp_dict["Displacement projected along vector"],
+            disp_dict["Displacement perpendicular to vector"],
+            disp_dict["Displacement Norm"],
+            disp_dict["X sites in cartesian coordinate (defect)"],
+            disp_dict["Y sites in cartesian coordinate (defect)"],
+            disp_dict["Z sites in cartesian coordinate (defect)"],
+        ) = zip(*combined)
+    elif relative_to_defect and vector_to_project_on is None and ellipsoid:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement wrt defect"],
+            disp_dict["Displacement Norm"],
+            disp_dict["X sites in cartesian coordinate (defect)"],
+            disp_dict["Y sites in cartesian coordinate (defect)"],
+            disp_dict["Z sites in cartesian coordinate (defect)"],
+        ) = zip(*combined)
+    elif vector_to_project_on is not None and not relative_to_defect and ellipsoid:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement projected along vector"],
+            disp_dict["Displacement perpendicular to vector"],
+            disp_dict["Displacement Norm"],
+            disp_dict["X sites in cartesian coordinate (defect)"],
+            disp_dict["Y sites in cartesian coordinate (defect)"],
+            disp_dict["Z sites in cartesian coordinate (defect)"],
+        ) = zip(*combined)
+    elif vector_to_project_on is None and not relative_to_defect and ellipsoid:
+        (
+            disp_dict["Index (defect)"],
+            disp_dict["Species"],
+            disp_dict["Species_with_index"],
+            disp_dict["Displacement"],
+            disp_dict["Distance to defect"],
+            disp_dict["Displacement Norm"],
+            disp_dict["X sites in cartesian coordinate (defect)"],
+            disp_dict["Y sites in cartesian coordinate (defect)"],
+            disp_dict["Z sites in cartesian coordinate (defect)"],
+        ) = zip(*combined)
+    elif relative_to_defect and vector_to_project_on is not None and not ellipsoid:
         (
             disp_dict["Index (defect)"],
             disp_dict["Species"],
@@ -145,7 +238,7 @@ def calc_site_displacements(
             disp_dict["Displacement projected along vector"],
             disp_dict["Displacement perpendicular to vector"],
         ) = zip(*combined)
-    if relative_to_defect and vector_to_project_on is None:
+    elif relative_to_defect and vector_to_project_on is None and not ellipsoid:
         (
             disp_dict["Index (defect)"],
             disp_dict["Species"],
@@ -154,7 +247,7 @@ def calc_site_displacements(
             disp_dict["Distance to defect"],
             disp_dict["Displacement wrt defect"],
         ) = zip(*combined)
-    elif vector_to_project_on is not None and not relative_to_defect:
+    elif vector_to_project_on is not None and not relative_to_defect and not ellipsoid:
         (
             disp_dict["Index (defect)"],
             disp_dict["Species"],
@@ -782,24 +875,15 @@ def calc_displacements_ellipsoid(
                         marker={"size": 0.5, "color": "black"},
                         mode="lines",
                     )
-                )
-
+                )            
+            
                 for j in range(3):  # add other two lattice vectors
                     if i != j:
                         fig.add_trace(  # add one of the other lattice vectors
                             go.Scatter3d(
-                                x=[
-                                    lattice_matrix[i][0] * 0.1 * n + lattice_matrix[j][0]
-                                    for n in range(11)
-                                ],
-                                y=[
-                                    lattice_matrix[i][1] * 0.1 * n + lattice_matrix[j][1]
-                                    for n in range(11)
-                                ],
-                                z=[
-                                    lattice_matrix[i][2] * 0.1 * n + lattice_matrix[j][2]
-                                    for n in range(11)
-                                ],
+                                x=[lattice_matrix[i][0] * 0.1 * n + lattice_matrix[j][0] for n in range(11)],
+                                y=[lattice_matrix[i][1] * 0.1 * n + lattice_matrix[j][1] for n in range(11)],
+                                z=[lattice_matrix[i][2] * 0.1 * n + lattice_matrix[j][2] for n in range(11)],
                                 marker={"size": 0.5, "color": "black"},
                                 mode="lines",
                             )
@@ -984,131 +1068,7 @@ def calc_displacements_ellipsoid(
 
         return fig
 
-    def _shift_defect_site_to_center_of_the_supercell(sites_frac_coords, defect_frac_coords, bulk_sc):
-        """
-        Shifts the fractional coordinates of a site so that the defect site is
-        at the center of the supercell.
-
-        Parameters:
-        - sites_frac_coords (array-like): Fractional coordinates of the site to be shifted.
-        - defect_frac_coords (array-like): Fractional coordinates of the defect site.
-        - bulk_sc: Structure object of bulk supercell.
-
-        Returns:
-        - shifted_sites_cart_coords (np.array): Cartesian coordinates of the shifted site.
-        """
-        # Initialize the shifted fractional coordinates as a zero vector
-        shifted_sites_frac_coords = np.zeros(3)
-
-        # Define the fractional coordinates for the center of the supercell
-        center_frac_coors = np.array([0.5, 0.5, 0.5])
-
-        # Calculate the difference between the center of the supercell and the defect site
-        diff_frac_coords = center_frac_coors - defect_frac_coords
-
-        # Shift the site coordinates by the difference, bringing the defect site to the center
-        tmp_sites = sites_frac_coords + diff_frac_coords
-
-        # Adjust the fractional coordinates to ensure they stay within the unit cell [0, 1)
-        for i, tmp_site in enumerate(tmp_sites):
-            if tmp_site > 1:
-                shifted_sites_frac_coords[i] = tmp_site - 1
-            elif tmp_site < 0:
-                shifted_sites_frac_coords[i] = tmp_site + 1
-            else:
-                shifted_sites_frac_coords[i] = tmp_site
-
-        # Convert the shifted fractional coordinates to Cartesian coordinates using the lattice
-        return bulk_sc.lattice.get_cartesian_coords(shifted_sites_frac_coords)
-
-    bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
-
-    # Map sites in defect supercell to bulk supercell
-    mappings = get_site_mapping_indices(defect_sc_with_site, bulk_sc)
-    mappings_dict = {i[1]: i[2] for i in mappings}  # {defect_sc_index: bulk_sc_index}
-    # Loop over sites in defect sc
-    disp_dict = {  # mapping defect site index (in defect sc) to displacement
-        "Index (defect)": [],
-        "Species": [],
-        "Species_with_index": [],
-        "Displacement": [],
-        "Displacement Norm": [],
-        "Distance to defect": [],
-        "X sites in cartesian coordinate (defect)": [],
-        "Y sites in cartesian coordinate (defect)": [],
-        "Z sites in cartesian coordinate (defect)": [],
-    }  # type: dict
-
-    sc_defect_frac_coords = _get_defect_supercell_bulk_site_coords(defect_entry)
-    if sc_defect_frac_coords is None:
-        raise ValueError(
-            "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
-            "Please use `DefectsParser`/`DefectParser` to parse relaxed defect positions before "
-            "calculating site displacements."
-        )
-
-    for i, site in enumerate(defect_sc_with_site):
-        bulk_sc_index = mappings_dict[i]  # Map to bulk sc
-        bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
-        # Calculate displacement (need to account for pbc!)
-        # First final point, then initial point
-        disp = pbc_shortest_vectors(bulk_sc.lattice, bulk_site.frac_coords, site.frac_coords)[0, 0]
-        # Distance to defect site (last site in defect sc)
-        distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
-
-        disp_dict["Index (defect)"].append(i)
-        disp_dict["Displacement"].append(disp)
-        disp_dict["Displacement Norm"].append(np.linalg.norm(disp, ord=2))
-        disp_dict["Distance to defect"].append(distance)
-        disp_dict["Species_with_index"].append(f"{site.specie.name}({i})")
-        disp_dict["Species"].append(site.specie.name)
-        disp_dict["X sites in cartesian coordinate (defect)"].append(
-            _shift_defect_site_to_center_of_the_supercell(
-                site.frac_coords, sc_defect_frac_coords, bulk_sc
-            )[0]
-        )
-        disp_dict["Y sites in cartesian coordinate (defect)"].append(
-            _shift_defect_site_to_center_of_the_supercell(
-                site.frac_coords, sc_defect_frac_coords, bulk_sc
-            )[1]
-        )
-        disp_dict["Z sites in cartesian coordinate (defect)"].append(
-            _shift_defect_site_to_center_of_the_supercell(
-                site.frac_coords, sc_defect_frac_coords, bulk_sc
-            )[2]
-        )
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "invalid value encountered in scalar divide")
-
-    # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
-    element_list = [
-        el.symbol for el in defect_entry.defect.structure.composition.elements
-    ]  # host elements
-    element_list += sorted(
-        [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
-            el.symbol
-            for el in defect_entry.defect.defect_structure.composition.elements
-            if el.symbol not in element_list
-        ]
-    )
-    # Combine the lists into a list of tuples, then sort, then unpack:
-    combined = list(zip(*disp_dict.values()))
-    combined.sort(
-        key=lambda x: (element_list.index(x[1]), x[4], x[0])
-    )  # Sort by species, then distance, then index
-
-    (
-        disp_dict["Index (defect)"],
-        disp_dict["Species"],
-        disp_dict["Species_with_index"],
-        disp_dict["Displacement"],
-        disp_dict["Displacement Norm"],
-        disp_dict["Distance to defect"],
-        disp_dict["X sites in cartesian coordinate (defect)"],
-        disp_dict["Y sites in cartesian coordinate (defect)"],
-        disp_dict["Z sites in cartesian coordinate (defect)"],
-    ) = zip(*combined)
+    disp_dict = calc_site_displacements(defect_entry, ellipsoid=True)
 
     # Convert the displacement dictionary into a pandas DataFrame
     disp_df = pd.DataFrame(disp_dict)
@@ -1140,6 +1100,7 @@ def calc_displacements_ellipsoid(
 
             # If ellipsoid plotting is enabled, plot the ellipsoid with the given lattice matrix
             if plot_ellipsoid:
+                bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
                 lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
                 if use_plotly:
                     ellipsoid_fig = _plotly_plot_ellipsoid(
@@ -1242,3 +1203,41 @@ def _get_bulk_struct_with_defect(defect_entry) -> tuple:
     else:
         raise ValueError(f"Defect type {defect_type} not supported")
     return bulk_sc_with_defect, defect_sc_with_defect, defect_site_index
+
+
+def _shift_defect_site_to_center_of_the_supercell(sites_frac_coords, defect_frac_coords, bulk_sc):
+    """
+    Shifts the fractional coordinates of a site so that the defect site is
+    at the center of the supercell.
+
+    Parameters:
+    - sites_frac_coords (array-like): Fractional coordinates of the site to be shifted.
+    - defect_frac_coords (array-like): Fractional coordinates of the defect site.
+    - bulk_sc: Structure object of bulk supercell.
+
+    Returns:
+    - shifted_sites_cart_coords (np.array): Cartesian coordinates of the shifted site.
+    """
+    # Initialize the shifted fractional coordinates as a zero vector
+    shifted_sites_frac_coords = np.zeros(3)
+
+    # Define the fractional coordinates for the center of the supercell
+    center_frac_coors = np.array([0.5, 0.5, 0.5])
+
+    # Calculate the difference between the center of the supercell and the defect site
+    diff_frac_coords = center_frac_coors - defect_frac_coords
+
+    # Shift the site coordinates by the difference, bringing the defect site to the center
+    tmp_sites = sites_frac_coords + diff_frac_coords
+
+    # Adjust the fractional coordinates to ensure they stay within the unit cell [0, 1)
+    for i, tmp_site in enumerate(tmp_sites):
+        if tmp_site > 1:
+            shifted_sites_frac_coords[i] = tmp_site - 1
+        elif tmp_site < 0:
+            shifted_sites_frac_coords[i] = tmp_site + 1
+        else:
+            shifted_sites_frac_coords[i] = tmp_site
+
+    # Convert the shifted fractional coordinates to Cartesian coordinates using the lattice
+    return bulk_sc.lattice.get_cartesian_coords(shifted_sites_frac_coords)
