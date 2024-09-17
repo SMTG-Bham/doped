@@ -11,7 +11,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from pymatgen.util.coord import pbc_diff
+from pymatgen.util.coord import pbc_shortest_vectors
 from pymatgen.util.typing import PathLike
 
 from doped.core import DefectEntry
@@ -79,16 +79,13 @@ def calc_site_displacements(
         disp_dict["Displacement projected along vector"] = []
         disp_dict["Displacement perpendicular to vector"] = []
     for i, site in enumerate(defect_sc_with_site):
-        # print(i, site.specie, site.frac_coords)  # debugging
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
         bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
         # Calculate displacement (need to account for pbc!)
         # First final point, then initial point
-        frac_disp = pbc_diff(site.frac_coords, bulk_site.frac_coords)  # in fractional coords
-        disp = bulk_sc.lattice.get_cartesian_coords(frac_disp)  # in Angstroms
+        disp = pbc_shortest_vectors(bulk_sc.lattice, bulk_site.frac_coords, site.frac_coords)[0, 0]
         # Distance to defect site (last site in defect sc)
         distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
-        # print(i, displacement, np.linalg.norm(abs_disp), "Distance:", distance)  # debugging
         disp_dict["Index (defect)"].append(i)
         disp_dict["Displacement"].append(disp)
         disp_dict["Distance to defect"].append(distance)
@@ -99,11 +96,11 @@ def calc_site_displacements(
             warnings.filterwarnings("ignore", "invalid value encountered in scalar divide")
             if relative_to_defect:
                 # Find vector from defect to site, accounting for periodic boundary conditions
-                vector_defect_to_site = pbc_diff(
-                    site.frac_coords, defect_sc_with_site[defect_site_index].frac_coords
-                )
+                vector_defect_to_site = pbc_shortest_vectors(
+                    bulk_sc.lattice, defect_sc_with_site[defect_site_index].frac_coords, site.frac_coords
+                )[0, 0]
                 norm = np.linalg.norm(vector_defect_to_site)
-                if norm == 0:  # If defect site and site are the same
+                if np.isclose(norm, 0, atol=1e-4):  # If defect site and site are the same
                     disp_dict["Displacement wrt defect"].append(0)
                 else:
                     proj = np.dot(disp, vector_defect_to_site / norm)
@@ -785,15 +782,24 @@ def calc_displacements_ellipsoid(
                         marker={"size": 0.5, "color": "black"},
                         mode="lines",
                     )
-                )            
-            
+                )
+
                 for j in range(3):  # add other two lattice vectors
                     if i != j:
                         fig.add_trace(  # add one of the other lattice vectors
                             go.Scatter3d(
-                                x=[lattice_matrix[i][0] * 0.1 * n + lattice_matrix[j][0] for n in range(11)],
-                                y=[lattice_matrix[i][1] * 0.1 * n + lattice_matrix[j][1] for n in range(11)],
-                                z=[lattice_matrix[i][2] * 0.1 * n + lattice_matrix[j][2] for n in range(11)],
+                                x=[
+                                    lattice_matrix[i][0] * 0.1 * n + lattice_matrix[j][0]
+                                    for n in range(11)
+                                ],
+                                y=[
+                                    lattice_matrix[i][1] * 0.1 * n + lattice_matrix[j][1]
+                                    for n in range(11)
+                                ],
+                                z=[
+                                    lattice_matrix[i][2] * 0.1 * n + lattice_matrix[j][2]
+                                    for n in range(11)
+                                ],
                                 marker={"size": 0.5, "color": "black"},
                                 mode="lines",
                             )
@@ -1046,8 +1052,7 @@ def calc_displacements_ellipsoid(
         bulk_site = bulk_sc[bulk_sc_index]  # Get site in bulk sc
         # Calculate displacement (need to account for pbc!)
         # First final point, then initial point
-        frac_disp = pbc_diff(site.frac_coords, bulk_site.frac_coords)  # in fractional coords
-        disp = bulk_sc.lattice.get_cartesian_coords(frac_disp)  # in Angstroms
+        disp = pbc_shortest_vectors(bulk_sc.lattice, bulk_site.frac_coords, site.frac_coords)[0, 0]
         # Distance to defect site (last site in defect sc)
         distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
 

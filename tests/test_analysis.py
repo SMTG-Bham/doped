@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.structure import Structure
+from pymatgen.electronic_structure.dos import FermiDos
 from test_thermodynamics import custom_mpl_image_compare
 
 from doped.analysis import (
@@ -107,6 +108,16 @@ class DefectsParsingTestCase(unittest.TestCase):
         for i in os.listdir(f"{self.YTOS_EXAMPLE_DIR}/F_O_1"):
             if i.startswith("."):
                 if_present_rm(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/{i}")
+
+        for i in os.listdir(f"{self.Sb2Se3_DATA_DIR}/defect"):
+            if i.startswith(("O_a_", "O_b_")):
+                if_present_rm(f"{self.Sb2Se3_DATA_DIR}/defect/{i}")
+
+        if os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json")):
+            shutil.move(
+                os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            )
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
@@ -200,7 +211,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
         dumpfn(
-            CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz")
+            CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
         )  # for test_plotting
         with warnings.catch_warnings(record=True) as w:
             CdTe_thermo.plot()
@@ -233,7 +244,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
             or os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))  # custom json name
             or os.path.exists(
-                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json.gz")  # custom json name
+                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")  # custom json name
             )
         )
 
@@ -322,15 +333,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             default_dp = DefectsParser(
                 output_path=self.CdTe_EXAMPLE_DIR,
                 dielectric=9.13,
-                json_filename="CdTe_example_defect_dict.json.gz",
+                json_filename="CdTe_example_defect_dict.json",
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
-        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)  # saves CdTe_example_thermo.json.gz
+        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)  # saves CdTe_example_thermo.json
 
         # test reloading DefectsParser
-        reloaded_defect_dict = loadfn(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json.gz")
-        )
+        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
 
         for defect_name, defect_entry in reloaded_defect_dict.items():
             assert defect_entry.name == default_dp.defect_dict[defect_name].name
@@ -341,16 +350,20 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # integration test using parsed CdTe thermo and chempots for plotting:
-        default_thermo = default_dp.get_defect_thermodynamics()
+        default_thermo = default_dp.get_defect_thermodynamics(
+            bulk_dos=os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"),
+        )  # test providing bulk DOS
+        assert isinstance(default_thermo.bulk_dos, FermiDos)
+        assert np.isclose(default_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
 
         return default_thermo.plot(chempots=self.CdTe_chempots, limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_without_multiprocessing(self):
         shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-        )
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )  # moved back in tearDown
         # test same behaviour without multiprocessing:
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
@@ -364,18 +377,14 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
-        shutil.move(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-        )
         return default_thermo.plot(limit="CdTe-Te")
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_filterwarnings(self):
         shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-        )
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )  # moved back in tearDown
         # check using filterwarnings works as expected:
         warnings.filterwarnings("ignore", "Multiple")
         with warnings.catch_warnings(record=True) as w:
@@ -389,17 +398,13 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
-        shutil.move(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-        )
         return default_thermo.plot(limit="CdTe-Te")
 
     def test_DefectsParser_CdTe_dist_tol(self):
         shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-        )
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )  # moved back in tearDown
         # test with reduced dist_tol:
         # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
         with warnings.catch_warnings(record=True) as w:
@@ -408,10 +413,6 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         print([warn.message for warn in w])  # for debugging
         self._check_default_CdTe_DefectsParser_outputs(dp, w, dist_tol=0.1)
-        shutil.move(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-        )
 
     @custom_mpl_image_compare(filename="CdTe_Te_Cd_+1_eigenvalue_plot.png")
     def test_DefectsParser_CdTe_no_dielectric_json(self):
@@ -440,9 +441,9 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def test_DefectsParser_CdTe_custom_settings(self):
         shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-        )
+            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
+        )  # moved back in tearDown
 
         # test custom settings:
         with warnings.catch_warnings(record=True) as w:
@@ -471,11 +472,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         self._check_default_CdTe_DefectsParser_outputs(dp, w, test_attributes=False)  # same energies as
         # above
-
-        shutil.move(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json.gz"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json.gz"),
-        )
 
         # test changed attributes:
         assert dp.output_path == self.CdTe_EXAMPLE_DIR
@@ -637,14 +633,14 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 output_path=self.YTOS_EXAMPLE_DIR,
                 dielectric=self.ytos_dielectric,
-                json_filename="YTOS_example_defect_dict.json.gz",
+                json_filename="YTOS_example_defect_dict.json",
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         assert not w
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json.gz")
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -663,14 +659,14 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 output_path=self.YTOS_EXAMPLE_DIR,
                 dielectric=self.ytos_dielectric,
-                json_filename="YTOS_example_defect_dict.json.gz",
+                json_filename="YTOS_example_defect_dict.json",
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json.gz")
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -688,7 +684,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 output_path=self.YTOS_EXAMPLE_DIR,
                 dielectric=self.ytos_dielectric,
-                json_filename="YTOS_example_defect_dict.json.gz",
+                json_filename="YTOS_example_defect_dict.json",
                 parse_projected_eigen=False,
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
@@ -696,7 +692,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json.gz")
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -714,7 +710,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json.gz")
+            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -750,16 +746,15 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
                 bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
                 dielectric=self.Sb2Se3_dielectric,
-                json_filename="Sb2Se3_O_example_defect_dict.json.gz",
+                json_filename="Sb2Se3_O_example_defect_dict.json",
             )  # for testing in test_thermodynamics.py
         print([warn.message for warn in w])  # for debugging
         assert not w  # no warnings
         self._check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
         dumpfn(
-            Sb2Se3_O_thermo, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json.gz")
-        )  # for
-        # test_plotting
+            Sb2Se3_O_thermo, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
+        )  # for test_plotting
 
         # warning about negative corrections when using (fake) isotropic dielectric:
         with warnings.catch_warnings(record=True) as w:
@@ -802,13 +797,38 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
+    def test_duplicate_folders_Sb2Se3(self):
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_2", f"{self.Sb2Se3_DATA_DIR}/defect/O_a_2")
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_2", f"{self.Sb2Se3_DATA_DIR}/defect/O_b_2")
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_2", f"{self.Sb2Se3_DATA_DIR}/defect/O_a_1")
+        shutil.copytree(f"{self.Sb2Se3_DATA_DIR}/defect/O_1", f"{self.Sb2Se3_DATA_DIR}/defect/O_b_1")
+        with warnings.catch_warnings(record=True) as w:
+            Sb2Se3_O_dp = DefectsParser(
+                output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
+                bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+                dielectric=self.Sb2Se3_dielectric,
+            )  # for testing in test_thermodynamics.py
+        print([warn.message for warn in w])  # for debugging
+        assert any(
+            "The following parsed defect entries were found to be duplicates (exact same defect "
+            "supercell energies)" in str(warn.message)
+            for warn in w
+        )
+        assert any(
+            "O_Se_Cs_Sb2.00_+1 (O_1), O_Se_Cs_Sb2.00_+1 (O_b_1)\nO_Se_Cs_Sb2.00_+2 (O_2), "
+            "O_Se_Cs_Sb2.00_+2 (O_a_1), O_Se_Cs_Sb2.00_+2 (O_a_2), O_Se_Cs_Sb2.00_+2 (O_b_2)"
+            in str(warn.message)
+            for warn in w
+        )
+        self._check_DefectsParser(Sb2Se3_O_dp)
+
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
         with warnings.catch_warnings(record=True) as w:
             dp = DefectsParser(
                 self.Sb2Si2Te6_DATA_DIR,
                 dielectric=self.Sb2Si2Te6_dielectric,
-                json_filename="Sb2Si2Te6_example_defect_dict.json.gz",  # testing in test_thermodynamics.py
+                json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
                 parse_projected_eigen=False,
             )
         print([str(warning.message) for warning in w])  # for debugging
@@ -828,7 +848,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp)
 
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
-        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json.gz"))
+        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json"))
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
         print([str(warning.message) for warning in w])
@@ -887,7 +907,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dp = DefectsParser(
                 self.V2O5_DATA_DIR,
                 dielectric=[4.186, 19.33, 17.49],
-                json_filename="V2O5_example_defect_dict.json.gz",  # testing in test_thermodynamics.py
+                json_filename="V2O5_example_defect_dict.json",  # testing in test_thermodynamics.py
             )
         print([str(warning.message) for warning in w])  # for debugging
         assert not w  # no warnings
@@ -897,7 +917,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
         v2o5_thermo = dp.get_defect_thermodynamics(chempots=v2o5_chempots)
-        dumpfn(v2o5_thermo, os.path.join(self.V2O5_DATA_DIR, "V2O5_example_thermo.json.gz"))
+        dumpfn(v2o5_thermo, os.path.join(self.V2O5_DATA_DIR, "V2O5_example_thermo.json"))
 
         with warnings.catch_warnings(record=True) as w:
             v2o5_thermo.get_symmetries_and_degeneracies()
@@ -916,11 +936,18 @@ class DefectsParsingTestCase(unittest.TestCase):
                 shutil.move(f"V2O5_test/{i}", f"V2O5_test/unrecognised_{i[-1]}")
 
         with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("error")
             dp = DefectsParser("V2O5_test", dielectric=[4.186, 19.33, 17.49])
         print([str(warning.message) for warning in w])  # for debugging
-        assert not w  # no warnings
-        assert len(dp.defect_dict) == 5  # now 5 defects, all still included
+        assert any(
+            "The following parsed defect entries were found to be duplicates" in str(warning.message)
+            for warning in w
+        )
+        assert any(
+            "v_O_Cs_O2.54_0 (unrecognised_1), v_O_Cs_O2.54_0 (unrecognised_4), v_O_Cs_O2.54_0 ("
+            "unrecognised_5)" in str(warning.message)
+            for warning in w
+        )
+        assert len(dp.defect_dict) == 3  # only 3 defects, 2 duplicates warned and omitted
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
@@ -1190,7 +1217,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert list(interstitial_rows["Defect_Symm"].unique()) == ["C1"]
 
         thermo.dist_tol = 2.5  # merges Al interstitials together
-        thermo.to_json(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json.gz"))
+        # remove eigenvalue_data and run_metadata from each entry to save space:
+        for defect_entry in thermo.defect_entries.values():
+            defect_entry.calculation_metadata["eigenvalue_data"] = None
+            defect_entry.calculation_metadata["run_metadata"] = None
+        thermo.to_json(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json"))
         return thermo.plot()
 
     def test_solid_solution_oxi_state_handling(self):
@@ -2493,6 +2524,9 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "bulk/vasp_std/voronoi_nodes.json"))
 
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
+
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
         for defect_gen_name in [
@@ -2505,7 +2539,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
             if defect_gen_name == "zns_defect_gen":
                 defect_gen = DefectsGenerator(self.non_diagonal_ZnS)
             else:
-                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json.gz")
+                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
 
             for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
                 print(defect_entry.defect, defect_entry.defect_supercell_site)
@@ -2527,22 +2561,10 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         """
         from shakenbreak.distortions import rattle
 
-        zns_defect_thermo = loadfn(f"{self.ZnS_DATA_DIR}/ZnS_thermo.json.gz")
-        v_Zn_0 = next(
-            defect_entry
-            for defect_entry in zns_defect_thermo.defect_entries
-            if defect_entry.name == "vac_1_Zn_0"
-        )
-        Al_Zn_m1 = next(
-            defect_entry
-            for defect_entry in zns_defect_thermo.defect_entries
-            if defect_entry.name == "sub_1_Al_on_Zn_-1"
-        )
-        Al_i_2 = next(
-            defect_entry
-            for defect_entry in zns_defect_thermo.defect_entries
-            if defect_entry.name == "inter_26_Al_2"
-        )
+        zns_defect_thermo = loadfn(f"{self.ZnS_DATA_DIR}/ZnS_thermo.json")
+        v_Zn_0 = zns_defect_thermo.defect_entries["vac_1_Zn_0"]
+        Al_Zn_m1 = zns_defect_thermo.defect_entries["sub_1_Al_on_Zn_-1"]
+        Al_i_2 = zns_defect_thermo.defect_entries["inter_26_Al_2"]
 
         # test increasing stdev still gets correct site IDs:
         for defect_entry, type in [
@@ -3285,11 +3307,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         orbital and energy similarity criteria.
         """
         CdTe_defect_thermo = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_thermo_wout_meta.json.gz"))
-        v_Cd_minus1 = next(
-            defect_entry
-            for defect_entry in CdTe_defect_thermo.defect_entries
-            if defect_entry.name == "v_Cd_-1"
-        )
+        v_Cd_minus1 = CdTe_defect_thermo.defect_entries["v_Cd_-1"]
         with warnings.catch_warnings(record=True) as w:
             bes, fig = v_Cd_minus1.get_eigenvalue_analysis()
         print([str(warning.message) for warning in w])  # for debugging

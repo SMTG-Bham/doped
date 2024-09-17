@@ -416,8 +416,10 @@ def get_eigenvalue_analysis(
     files (slightly slower but more accurate), or failing that from ``PROCAR(.gz)``
     files if present.
 
-    This function uses code from ``pydefect``:
-    Citation: https://doi.org/10.1103/PhysRevMaterials.5.123803.
+    This function uses code from ``pydefect``, so please cite the ``pydefect`` paper:
+    "Insights into oxygen vacancies from high-throughput first-principles calculations"
+    Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+    Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
     Args:
         defect_entry (DefectEntry):

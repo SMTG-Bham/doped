@@ -2,8 +2,6 @@
 ## Chemical potential
 - Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases.
-- Publication ready chemical potential diagram plotting tool as in Adam Jackson's `plot-cplap-ternary` (3D) and Sungyhun's `cplapy` (4D) (see `doped_chempot_plotting_example.ipynb`; code there, just needs to be implemented in module functions). `ChemicalPotentialGrid` in `py-sc-fermi` interface could be quite useful for this? (Worth moving that part of code out of `interface` subpackage?) Also can see https://github.com/materialsproject/pymatgen-analysis-defects/blob/main/pymatgen/analysis/defects/plotting/phases.py for 2D chempot plotting.
-  - Also see `Cs2SnTiI6` notebooks for template code for this.
 
 ## Post-processing / analysis / plotting
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
@@ -21,7 +19,7 @@
 
 ## Housekeeping
 - Tutorials general structure clean-up
-- Clean up repo, removing old unnecessary git blobs
+- Remnant TODOs in code
 
 - Docs:
   - Update note at end of thermo tutorial to link to py-sc-fermi/doped interface.
@@ -89,9 +87,10 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
+- Clean up repo, removing old unnecessary git blobs
 - Note in chempots tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 - Quick-start tutorial suggested by Alex G
-- Add chempot grid plotting tool, shown in `JOSS_plots` using Alex's chemical potential grid, and test (and remove TODO from JOSS plots notebook).
+- Test chempot grid plotting tool.
 - `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
 - Plotting lines colour updates.
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise.

@@ -13,7 +13,7 @@ INCAR:
   LORBIT: 11  # lm-decomposed orbital projections; useful for DOS analysis (e.g. sumo-dosplot)
   LREAL: AUTO
   NCORE: 16
-  NEDOS: 2000  # dense energy mesh output in OUTCAR; useful for DOS analysis (e.g. sumo-dosplot)
+  NEDOS: 3000  # dense energy mesh output in OUTCAR; useful for DOS analysis (e.g. sumo-dosplot)
   NSW: 100
   PREC: Accurate
   SIGMA: 0.05
