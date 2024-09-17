@@ -232,8 +232,8 @@ def get_freysoldt_correction(
                 style_file=style_file,
             )
     else:
-        fig = plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
-        # actually an axis object
+        plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
+        fig = plt.gcf()
 
     if filename:
         plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
@@ -329,8 +329,12 @@ def get_kumagai_correction(
 
     This function `does not` add the correction to ``defect_entry.corrections``
     (but the defect_entry.get_kumagai_correction method does).
-    If this correction is used, please cite the Kumagai & Oba paper:
+    If this correction is used, please cite the Kumagai & Oba (eFNV) paper:
     10.1103/PhysRevB.89.195205
+    and the ``pydefect`` paper:
+    "Insights into oxygen vacancies from high-throughput first-principles calculations"
+    Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+    Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
     Typically for reasonably well-converged supercell sizes, the default
     ``defect_region_radius`` works perfectly well. However, for certain materials
@@ -532,15 +536,14 @@ def get_kumagai_correction(
     bulk_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
     if bulk_supercell.lattice != defect_supercell.lattice:  # pydefect will crash
         # check if the difference is tolerable (< 0.01 Å)
-        if np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
-            # scale bulk lattice to match defect lattice:
-            bulk_supercell.scale_lattice(defect_supercell.lattice.volume)
-        else:
+        if not np.allclose(bulk_supercell.lattice.matrix, defect_supercell.lattice.matrix, atol=1e-2):
             warnings.warn(
                 f"Bulk and defect supercells have different lattices, and so the eFNV (Kumagai) "
-                f"correction is likely unreliable!"
+                f"correction may be unreliable!"
                 f"\nBulk lattice:\n{bulk_supercell.lattice}\nDefect lattice:\n{defect_supercell.lattice}"
             )
+        # scale bulk lattice to match defect lattice, so pydefect doesn't crash:
+        bulk_supercell.lattice = defect_supercell.lattice
 
     bulk_calc_results_for_eFNV = CalcResults(
         structure=bulk_supercell,

@@ -21,6 +21,7 @@ from pymatgen.analysis.defects import core
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Structure
+from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
@@ -56,7 +57,7 @@ from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
     _get_all_equiv_sites,
-    _get_sga,
+    get_sga,
     point_symmetry_from_defect_entry,
 )
 
@@ -264,24 +265,7 @@ def defect_from_structures(
         if def_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
-            try:
-                if bulk_voronoi_node_dict is not None and not StructureMatcher(
-                    stol=0.05,
-                    primitive_cell=False,
-                    scale=False,
-                    attempt_supercell=False,
-                    allow_subset=False,
-                    comparator=ElementComparator(),
-                ).fit(bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
-                    warnings.warn(
-                        "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
-                        "supercell. Recalculating Voronoi nodes."
-                    )
-                    raise FileNotFoundError
-
-                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]  # type: ignore[index]
-
-            except Exception:  # first time parsing
+            if not bulk_voronoi_node_dict:  # first time parsing
                 from shakenbreak.input import _get_voronoi_nodes
 
                 voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
@@ -289,6 +273,8 @@ def defect_from_structures(
                     "bulk_supercell": bulk_supercell,
                     "Voronoi nodes": voronoi_frac_coords,
                 }
+            else:
+                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]  # type: ignore[index]
 
             closest_node_frac_coords = min(
                 voronoi_frac_coords,
@@ -969,6 +955,40 @@ class DefectsParser:
                 f"expected (see `DefectsParser` docstring)."
             )
 
+        # check if there are duplicate entries in the parsed defect entries, warn and remove:
+        energy_entries_dict: dict[float, list[DefectEntry]] = {}  # {energy: [defect_entry]}
+        for defect_entry in parsed_defect_entries:  # find duplicates by comparing supercell energies
+            if defect_entry.sc_entry_energy in energy_entries_dict:
+                energy_entries_dict[defect_entry.sc_entry_energy].append(defect_entry)
+            else:
+                energy_entries_dict[defect_entry.sc_entry_energy] = [defect_entry]
+
+        for energy, entries_list in energy_entries_dict.items():
+            if len(entries_list) > 1:  # More than one entry with the same energy
+                # sort any duplicates by name length, name, folder length, folder (shorter preferred)
+                energy_entries_dict[energy] = sorted(
+                    entries_list,
+                    key=lambda x: (
+                        len(x.name),
+                        x.name,
+                        len(self._get_defect_folder(x)),
+                        self._get_defect_folder(x),
+                    ),
+                )
+
+        if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
+            duplicate_entry_names_folders_string = "\n".join(
+                ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
+                for entries_list in energy_entries_dict.values()
+                if len(entries_list) > 1
+            )
+            warnings.warn(
+                f"The following parsed defect entries were found to be duplicates (exact same defect "
+                f"supercell energies). The first of each duplicate group shown will be kept and the "
+                f"other duplicate entries omitted:\n{duplicate_entry_names_folders_string}"
+            )
+        parsed_defect_entries = [next(iter(entries_list)) for entries_list in energy_entries_dict.values()]
+
         # get any defect entries in parsed_defect_entries that share the same name (without charge):
         # first get any entries with duplicate names:
         entries_to_rename = [
@@ -1181,12 +1201,18 @@ class DefectsParser:
 
         return ""
 
+    def _get_defect_folder(self, entry):
+        return (
+            entry.calculation_metadata["defect_path"]
+            .replace("/.", "")
+            .split("/")[-1 if self.subfolder == "." else -2]
+        )
+
     def _update_pbar_and_return_warnings_from_parsing(self, result, pbar):
         pbar.update()
 
         if result[0] is not None:
-            i = -1 if self.subfolder == "." else -2
-            defect_folder = result[0].calculation_metadata["defect_path"].replace("/.", "").split("/")[i]
+            defect_folder = self._get_defect_folder(result[0])
             pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
             if result[1]:
@@ -1274,6 +1300,8 @@ class DefectsParser:
         band_gap: Optional[float] = None,
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
+        bulk_dos: Optional[FermiDos] = None,
+        skip_check: bool = False,
     ) -> DefectThermodynamics:
         r"""
         Generates a DefectThermodynamics object from the parsed ``DefectEntry``
@@ -1341,6 +1369,26 @@ class DefectsParser:
                 Whether to check the compatibility of the bulk entry for each defect
                 entry (i.e. that all reference bulk energies are the same).
                 (Default: True)
+            bulk_dos (FermiDos or Vasprun or PathLike):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating Fermi level positions and defect/carrier concentrations.
+                Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
+                ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
+                Can also be provided later when using ``get_equilibrium_fermi_level()``,
+                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
+
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+                (Default: None)
+            skip_check (bool):
+                Whether to skip the warning about the DOS VBM differing from the defect
+                entries VBM by >0.05 eV. Should only be used when the reason for this
+                difference is known/acceptable. (Default: False)
 
         Returns:
             doped DefectThermodynamics object (``DefectThermodynamics``)
@@ -1360,6 +1408,8 @@ class DefectsParser:
             band_gap=band_gap,
             dist_tol=dist_tol,
             check_compatibility=check_compatibility,
+            bulk_dos=bulk_dos,
+            skip_check=skip_check,
         )
 
     def __repr__(self):
@@ -1701,9 +1751,23 @@ class DefectParser:
 
         if os.path.exists("voronoi_nodes.json.lock"):
             with FileLock("voronoi_nodes.json.lock"):
-                bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
+                prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
         else:
-            bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
+            prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
+
+        if prev_bulk_voronoi_node_dict and not StructureMatcher(
+            stol=0.05,
+            primitive_cell=False,
+            scale=False,
+            attempt_supercell=False,
+            allow_subset=False,
+            comparator=ElementComparator(),
+        ).fit(prev_bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
+            warnings.warn(
+                "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
+                "supercell. Recalculating Voronoi nodes."
+            )
+            prev_bulk_voronoi_node_dict = {}
 
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
@@ -1722,7 +1786,7 @@ class DefectParser:
                 bulk_supercell,
                 defect_structure.copy(),
                 return_all_info=True,
-                bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -1744,7 +1808,7 @@ class DefectParser:
                 bulk_supercell,
                 defect_structure_for_ID,
                 return_all_info=True,
-                bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -1797,7 +1861,7 @@ class DefectParser:
             degeneracy_factors=degeneracy_factors,
         )
 
-        bulk_supercell_symm_ops = _get_sga(
+        bulk_supercell_symm_ops = get_sga(
             defect_entry.defect.structure, symprec=0.01
         ).get_symmetry_operations()
         if defect.defect_type == core.DefectType.Interstitial:
@@ -1836,7 +1900,8 @@ class DefectParser:
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
-        if bulk_voronoi_node_dict and bulk_path:  # save to bulk folder for future expedited parsing:
+        if bulk_voronoi_node_dict and bulk_path and not prev_bulk_voronoi_node_dict:
+            # save to bulk folder for future expedited parsing:
             if os.path.exists("voronoi_nodes.json.lock"):
                 with FileLock("voronoi_nodes.json.lock"):
                     dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))

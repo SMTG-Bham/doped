@@ -2066,6 +2066,7 @@ class DefectsSet(MSONable):
                 "input/creation!"
             )
         defect_relax_set = list(self.defect_sets.values())[-1]
+        self.bulk_supercell = defect_relax_set.bulk_supercell
         self.bulk_vasp_gam = defect_relax_set.bulk_vasp_gam
         with warnings.catch_warnings():  # ignore vasp_std kpoints warnings if vasp_gam only here
             warnings.filterwarnings("ignore", "With the current")
@@ -2353,6 +2354,80 @@ class DefectsSet(MSONable):
             f"defect entries in self.defect_entries. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
+
+    def __getattr__(self, attr):
+        """
+        Redirects an unknown attribute/method call to the ``defect_sets``
+        dictionary attribute, if the attribute doesn't exist in ``DefectsSet``.
+        """
+        # Return the attribute if it exists in self.__dict__
+        if attr in self.__dict__:
+            return self.__dict__[attr]
+
+        # Check if the attribute exists in defect_sets:
+        if hasattr(self.defect_sets, attr):
+            return getattr(self.defect_sets, attr)
+
+        # If all else fails, raise an AttributeError
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
+
+    def __getitem__(self, key):
+        """
+        Makes ``DefectsSet`` object subscriptable, so that it can be indexed
+        like a dictionary, using the ``defect_sets`` dictionary attribute.
+        """
+        return self.defect_sets[key]
+
+    def __setitem__(self, key, value):
+        """
+        Set the value of a specific key (defect name) in the ``defect_sets``
+        dictionary.
+
+        Note that other ``DefectsSet`` attributes, like ``self.soc`` (whether
+        to perform SOC calculations) and ``self.bulk_vasp...`` are not changed.
+        """
+        # check the input, must be a ``DefectRelaxSet`` object:
+        if not isinstance(value, DefectRelaxSet):
+            raise TypeError(f"Value must be a DefectRelaxSet object, not {type(value).__name__}")
+
+        # check it has the same bulk supercell, and warn if not:
+        if value.bulk_supercell != self.bulk_supercell:
+            warnings.warn(
+                "Note that the bulk supercell of the input DefectRelaxSet differs from that of the "
+                "DefectsSet. This could lead to inaccuracies in parsing/predictions if the bulk "
+                "supercells are not the same!\n"
+                f"DefectRelaxSet bulk supercell:\n{value.bulk_supercell}\n"
+                f"DefectsSet bulk supercell:\n{self.bulk_supercell}"
+            )
+
+        self.defect_sets[key] = value
+
+    def __delitem__(self, key):
+        """
+        Deletes the specified ``DefectRelaxSet`` from the ``defect_sets``
+        dictionary.
+        """
+        del self.defect_sets[key]
+
+    def __contains__(self, key):
+        """
+        Returns True if the ``defect_sets`` dictionary contains the specified
+        defect name.
+        """
+        return key in self.defect_sets
+
+    def __len__(self):
+        r"""
+        Returns the number of ``DefectRelaxSet``\s in the ``defect_sets``
+        dictionary.
+        """
+        return len(self.defect_sets)
+
+    def __iter__(self):
+        """
+        Returns an iterator over the ``defect_sets`` dictionary.
+        """
+        return iter(self.defect_sets)
 
 
 # TODO: Go through and update docstrings with descriptions all the default behaviour (INCAR,
