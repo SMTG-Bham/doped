@@ -328,7 +328,10 @@ class FermiSolver(MSONable):
                 bandgap=self.defect_thermodynamics.band_gap,
             )
 
-        ms = next(iter(self.defect_thermodynamics.defect_entries)).sc_entry.structure.volume / self.volume
+        ms = (
+            next(iter(self.defect_thermodynamics.defect_entries.values())).sc_entry.structure.volume
+            / self.volume
+        )
         if not np.isclose(ms, round(ms), atol=3e-2):  # check multiplicity scaling is almost an integer
             warnings.warn(
                 f"The detected volume ratio ({ms:.3f}) between the defect supercells and the DOS "
@@ -455,6 +458,7 @@ class FermiSolver(MSONable):
         temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         append_chempots: bool = True,
+        fixed_defects: Optional[dict[str, float]] = None,
     ) -> pd.DataFrame:
         """
         Calculate the Fermi level and defect/carrier concentrations under
@@ -501,6 +505,13 @@ class FermiSolver(MSONable):
                 Whether to append the chemical potentials (and effective dopant
                 concentration, if provided) to the results ``DataFrame``.
                 Default is ``True``.
+            fixed_defects (Optional[dict[str, float]]):
+                Dictionary of defect concentrations to fix to specific values
+                during the calculation, in the format:
+                ``{defect_label: concentration}``. This can be used to fix the
+                concentrations of specific defects to specific values, which can
+                be useful for certain types of analysis.
+                Default is ``None``
 
         Returns:
         # TODO: Check this output format matches for both backends!
@@ -522,7 +533,14 @@ class FermiSolver(MSONable):
                     along with the self-consistent Fermi level. The DataFrame also includes the provided
                     chemical potentials as additional columns.
         """
-        if self.backend == "doped":
+        py_sc_fermi_required = fixed_defects is not None
+        if py_sc_fermi_required and self._DOS is None:
+            self._activate_py_sc_fermi_backend(
+                error_message="The `fix_charge_states` and `free_defects` options are only supported "
+                "for the py-sc-fermi backend"
+            )
+
+        if self.backend == "doped" and not py_sc_fermi_required:
             fermi_level, electrons, holes = self._get_fermi_level_and_carriers(
                 single_chempot_dict=single_chempot_dict,
                 el_refs=el_refs,
@@ -597,6 +615,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
         append_chempots: bool = True,
     ) -> pd.DataFrame:
@@ -701,6 +720,11 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to be fixed at specific values,
+                overriding the default fixed total defect concentrations at the annealing
+                temperature. The dictionary should be in the format:
+                ``{defect_name: concentration}``. Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -734,7 +758,7 @@ class FermiSolver(MSONable):
             using the pseudo-equilibrium approach, along with the provided chemical potentials
             as additional columns.
         """
-        py_sc_fermi_required = fix_charge_states or free_defects is not None
+        py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
             self._activate_py_sc_fermi_backend(
                 error_message="The `fix_charge_states` and `free_defects` options are only supported "
@@ -792,6 +816,7 @@ class FermiSolver(MSONable):
                 quenched_temperature=quenched_temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
                 free_defects=free_defects,
+                fixed_defects=fixed_defects,
                 fix_charge_states=fix_charge_states,
             )
 
@@ -835,6 +860,7 @@ class FermiSolver(MSONable):
         el_refs: Optional[dict[str, float]] = None,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         r"""
@@ -934,6 +960,11 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to be fixed at specific values,
+                overriding the default fixed total defect concentrations at the annealing
+                temperature. The dictionary should be in the format:
+                ``{defect_name: concentration}``. Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -963,6 +994,7 @@ class FermiSolver(MSONable):
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
+                        fixed_defects=fixed_defects,
                     )
                     for quench_temp, anneal_temp in tqdm(
                         product(quenched_temperature_range, annealing_temperature_range)
@@ -992,6 +1024,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         r"""
@@ -1086,6 +1119,11 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to be fixed at specific values,
+                overriding the default fixed total defect concentrations at the annealing
+                temperature. The dictionary should be in the format:
+                ``{defect_name: concentration}``. Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1113,6 +1151,7 @@ class FermiSolver(MSONable):
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
+                        fixed_defects=fixed_defects,
                     )
                     for effective_dopant_concentration in tqdm(effective_dopant_concentration_range)
                 ]
@@ -1125,6 +1164,7 @@ class FermiSolver(MSONable):
                     el_refs=el_refs,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
                 )
                 for effective_dopant_concentration in tqdm(effective_dopant_concentration_range)
             ]
@@ -1141,6 +1181,7 @@ class FermiSolver(MSONable):
         temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         """
@@ -1239,6 +1280,11 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to be fixed at specific values,
+                overriding the default fixed total defect concentrations at the quenched
+                temperature. The dictionary should be in the format:
+                ``{defect_name: concentration}``. Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1293,6 +1339,7 @@ class FermiSolver(MSONable):
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
+                        fixed_defects=fixed_defects,
                     )
                     for single_chempot_dict in tqdm(interpolated_chempots)
                 ]
@@ -1361,6 +1408,7 @@ class FermiSolver(MSONable):
         temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         """
@@ -1455,6 +1503,12 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. This can be used to
+                fix the concentrations of specific defects at the quenched temperature
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1521,6 +1575,7 @@ class FermiSolver(MSONable):
         temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         r"""
@@ -1590,6 +1645,11 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defects with fixed concentrations (in cm^-3) to
+                override the concentrations calculated at the annealing temperature
+                in the frozen defect approximation in the form ``{defect_name: concentration}``.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1615,6 +1675,7 @@ class FermiSolver(MSONable):
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
+                        fixed_defects=fixed_defects,
                     )
                     for _idx, chempot_series in tqdm(grid.iterrows())
                 ]
@@ -1689,6 +1750,7 @@ class FermiSolver(MSONable):
         n_points: int = 10,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         r"""
@@ -1771,6 +1833,10 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
+            fixed_defects (Optional[dict]):
+                A dictionary of fixed defect concentrations to be used in the
+                high-temperature concentration fixing, in the format:
+                ``{defect_name: concentration}``. Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1791,7 +1857,6 @@ class FermiSolver(MSONable):
         starting_grid = ChemicalPotentialGrid(chempots)
         current_vertices = starting_grid.vertices
         chempots_labels = list(current_vertices.columns)
-        print(current_vertices, chempots_labels)
         previous_value = None
 
         while True:
@@ -1808,6 +1873,7 @@ class FermiSolver(MSONable):
                             effective_dopant_concentration=effective_dopant_concentration,
                             fix_charge_states=fix_charge_states,
                             free_defects=free_defects,
+                            fixed_defects=fixed_defects,
                         )
                         for _idx, chempot_series in tqdm(starting_grid.get_grid(n_points).iterrows())
                     ]
@@ -1934,6 +2000,7 @@ class FermiSolver(MSONable):
         el_refs: Optional[dict[str, float]] = None,
         temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
     ) -> "DefectSystem":
         """
         Generates a ``DefectSystem`` object from ``self.defect_thermodynamics``
@@ -1972,6 +2039,10 @@ class FermiSolver(MSONable):
                 hypothetical doping conditions. A positive value corresponds to donor
                 doping, while a negative value corresponds to acceptor doping.
                 Defaults to ``None``, corresponding to no extrinsic dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of fixed defect concentrations to override the calculated
+                concentrations at the specified chemical potentials. These are specified
+                in the format: ``{defect_name: concentration}``.
 
         Returns:
             DefectSystem:
@@ -1982,7 +2053,8 @@ class FermiSolver(MSONable):
         self._check_required_backend_and_error("py-sc-fermi")
         assert self._DefectSpecies
         assert self._DefectSystem
-        entries = sorted(self.defect_thermodynamics.defect_entries, key=lambda x: x.name)
+        entries = list(self.defect_thermodynamics.defect_entries.values())
+        entries = sorted(entries, key=lambda x: x.name)
         labels = {_get_label_and_charge(entry.name)[0] for entry in entries}
         defect_species: dict[str, Any] = {
             label: {"charge_states": {}, "nsites": None, "name": label} for label in labels
@@ -2008,6 +2080,19 @@ class FermiSolver(MSONable):
             dopant = self._generate_dopant_for_py_sc_fermi(effective_dopant_concentration)
             all_defect_species.append(dopant)
 
+        if fixed_defects is not None:
+            for k, v in fixed_defects.items():
+                if k.split("_")[-1].strip("+-").isdigit():
+                    q = int(k.split("_")[-1])
+                    defect_name = "_".join(k.split("_")[:-1])
+                    next(d for d in all_defect_species if d.name == defect_name).charge_states[
+                        q
+                    ].fix_concentration(v / 1e24 * self.volume)
+                else:
+                    next(d for d in all_defect_species if d.name == k).fix_concentration(
+                        v / 1e24 * self.volume
+                    )
+
         return self._DefectSystem(
             defect_species=all_defect_species,
             dos=self.py_sc_fermi_dos,
@@ -2024,6 +2109,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         fix_charge_states: bool = False,
         effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
     ) -> "DefectSystem":
         """
@@ -2071,6 +2157,13 @@ class FermiSolver(MSONable):
                 the material. A positive value indicates donor doping, while a negative
                 value indicates acceptor doping. Defaults to ``None``, corresponding to
                 no extrinsic dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of fixed defect concentrations overriding the calculated
+                concentrations at the annealing temperature. These are specified
+                in the format: ``{defect_name: concentration}``. Defaults to ``None``.
+                If a specific charge state is desired, the defect name should be
+                formatted as ``"defect_name_charge"``. I.e. ``"v_O_+2"`` for a
+                doubly positively charged oxygen vacancy.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected to be
@@ -2120,6 +2213,37 @@ class FermiSolver(MSONable):
                     fixed_concs[defect_species.name] / 1e24 * defect_system.volume
                 )
 
+        fixed_charge_state_names = []
+        fixed_species_names = []
+        if fixed_defects is not None:
+            for k, v in fixed_defects.items():
+                if k.split("_")[-1].strip("+-").isdigit():
+                    q = int(k.split("_")[-1])
+                    defect_name = "_".join(k.split("_")[:-1])
+                    next(d for d in defect_system.defect_species if d.name == defect_name).charge_states[
+                        q
+                    ].fix_concentration(v / 1e24 * self.volume)
+                    fixed_charge_state_names.append(k)
+                    if v > fixed_concs[defect_name]:
+                        warnings.warn(
+                            f"""Fixed concentration of {k} ({v}) is higher than
+                            the total concentration of ({fixed_concs[defect_name]})
+                            at the annealing temperature. Adjusting the total
+                            concentration of {defect_name} to {v}. Check that
+                            this is the behavior you expect."""
+                        )
+                        defect_system.defect_species_by_name(defect_name).fix_concentration(
+                            v / 1e24 * self.volume
+                        )
+                else:
+                    next(d for d in defect_system.defect_species if d.name == k).fix_concentration(
+                        v / 1e24 * self.volume
+                    )
+                fixed_species_names.append(k)
+            target_system = deepcopy(defect_system)
+            target_system.temperature = quenched_temperature
+            return target_system
+
         target_system = deepcopy(defect_system)
         target_system.temperature = quenched_temperature
         return target_system
@@ -2133,9 +2257,7 @@ class ChemicalPotentialGrid:
 
     This class provides methods for handling and manipulating chemical
     potential data, including the creation of a grid that spans a specified
-    chemical potential space. It is particularly useful in materials science
-    for exploring different chemical environments and their effects on material
-    properties.
+    chemical potential space.
     """
 
     def __init__(self, chempots: dict[str, Any]):
@@ -2230,26 +2352,24 @@ class ChemicalPotentialGrid:
                 grid, with the last column containing the interpolated
                 dependent variable values.
         """
-        # Exclude the dependent variable from the vertices
         dependent_variable = mu_dataframe.columns[-1]
         dependent_var = mu_dataframe[dependent_variable].to_numpy()
         independent_vars = mu_dataframe.drop(columns=dependent_variable)
 
-        # Generate the complex number for grid spacing
-        complex_num = complex(0, n_points)
+        n_dims = independent_vars.shape[1]  # Get the number of independent variables (dimensions)
 
         # Get the convex hull of the vertices
-        print(independent_vars)
-        print(independent_vars.values)
         hull = ConvexHull(independent_vars.values)
 
         # Create a dense grid that covers the entire range of the vertices
-        x_min, y_min = independent_vars.min(axis=0)
-        x_max, y_max = independent_vars.max(axis=0)
-        grid_x, grid_y = np.mgrid[x_min:x_max:complex_num, y_min:y_max:complex_num]  # type: ignore
-        grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
+        grid_ranges = [
+            np.linspace(independent_vars.iloc[:, i].min(), independent_vars.iloc[:, i].max(), n_points)
+            for i in range(n_dims)
+        ]
+        grid = np.meshgrid(*grid_ranges, indexing="ij")  # Create N-dimensional grid
+        grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
 
-        # Delaunay triangulation to get points inside the hull
+        # Delaunay triangulation to get points inside the convex hull
         delaunay = Delaunay(hull.points[hull.vertices])
         inside_hull = delaunay.find_simplex(grid_points) >= 0
         points_inside = grid_points[inside_hull]
@@ -2260,7 +2380,7 @@ class ChemicalPotentialGrid:
         # Combine points with their corresponding interpolated values
         grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
-        # add vertices to the grid
+        # Add vertices to the grid
         grid_with_values = np.vstack((grid_with_values, mu_dataframe.to_numpy()))
 
         return pd.DataFrame(
