@@ -54,10 +54,8 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
-<!--
-Not currently cited but should be for chempot plot:
-- Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_arXiv_](https://arxiv.org/abs/2406.15637) 2024
--->
+- M-L. Wang et al. **_Impact of sulfur doping on copper-substituted lead apatite_** [_Physical Review B_](https://doi.org/10.1103/PhysRevB.110.104109) 2024
+- S. Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_Advanced Energy Materials_](https://doi.org/10.1002/aenm.202402640) 2024
 - M. Elgaml et al. **_Controlling the Superconductivity of Nb<sub>2</sub>Pd<sub>x</sub>S<sub>5</sub> via Reversible Li Intercalation_** [_Inorganic Chemistry_](https://pubs.acs.org/doi/full/10.1021/acs.inorgchem.3c03524) 2024
 - Z. Yuan & G. Hautier **_First-principles study of defects and doping limits in CaO_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0211707) 2024
 - B. E. Murdock et al. **_Li-Site Defects Induce Formation of Li-Rich Impurity Phases: Implications for Charge Distribution and Performance of LiNi<sub>0.5-x</sub>M<sub>x</sub>Mn<sub>1.5</sub>O<sub>4</sub> Cathodes (M = Fe and Mg; x = 0.05–0.2)_** [_Advanced Materials_](https://doi.org/10.1002/adma.202400343) 2024
@@ -87,7 +85,7 @@ Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_arXiv_](htt
 - C. J. Krajewska et al. **_Enhanced visible light absorption in layered Cs<sub>3</sub>Bi<sub>2</sub>Br<sub>9</sub> through mixed-valence Sn(II)/Sn(IV) doping_** [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
 
 ## Acknowledgments
-`doped` (née `DefectsWithTheBoys` #iykyk) has benefitted from feedback from many users, in particular
+`doped` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular
 members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya Aggarwal.
 
 `doped` was originally based on the excellent `PyCDT` (no longer maintained), but transformed and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was entirely refactored and rewritten, to work with the new

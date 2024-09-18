@@ -89,14 +89,13 @@ the
 Studies using ``doped``, so far
 ===============================
 
-.. Not currently cited but should be for chempot plot:
-   Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_arXiv_](https://arxiv.org/abs/2406.15637) 2024
-
+- M-L\. Wang et al. **Impact of sulfur doping on copper-substituted lead apatite** `Physical Review B <https://doi.org/10.1103/PhysRevB.110.104109>`_ 2024
+- S\. Quadir et al. **Low-Temperature Synthesis of Stable CaZn** :sub:`2` **P** :sub:`2` **Zintl Phosphide Thin Films as Candidate Top Absorbers** `Advanced Energy Materials <https://doi.org/10.1002/aenm.202402640>`__ 2024
 - M\. Elgaml et al. **Controlling the Superconductivity of Nb** :sub:`2` **Pd** :sub:`x` **S** :sub:`5`  **via Reversible Li Intercalation** `Inorganic Chemistry <https://pubs.acs.org/doi/full/10.1021/acs.inorgchem.3c03524>`__ 2024
 - Z\. Yuan & G. Hautier **First-principles study of defects and doping limits in CaO** `Applied Physics Letters <https://doi.org/10.1063/5.0211707>`__ 2024
 - B\. E. Murdock et al. **Li-Site Defects Induce Formation of Li-Rich Impurity Phases: Implications for Charge Distribution and Performance of LiNi** :sub:`0.5-x` **M** :sub:`x` **Mn** :sub:`1.5` **O** :sub:`4`  **Cathodes (M = Fe and Mg; x = 0.05–0.2)** `Advanced Materials <https://doi.org/10.1002/adma.202400343>`_ 2024
 - A\. G. Squires et al. **Oxygen dimerization as a defect-driven process in bulk LiNiO₂** `ACS Energy Letters <https://pubs.acs.org/doi/10.1021/acsenergylett.4c01307>`__ 2024
-- Y\. Fu & H. Lohan et al. **Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>** `arXiv <https://doi.org/10.48550/arXiv.2401.02257>`_ 2024
+- Y\. Fu & H. Lohan et al. **Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe** :sub:`2` `arXiv <https://doi.org/10.48550/arXiv.2401.02257>`_ 2024
 - S\. Hachmioune et al. **Exploring the Thermoelectric Potential of MgB4: Electronic Band Structure, Transport Properties, and Defect Chemistry** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.4c00584>`__ 2024
 - J\. Hu et al. **Enabling ionic transport in Li3AlP2 the roles of defects and disorder** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-3s0kh>`__ 2024
 - X\. Wang et al. **Upper efficiency limit of Sb₂Se₃ solar cells** `Joule <https://doi.org/10.1016/j.joule.2024.05.004>`_ 2024
@@ -137,7 +136,7 @@ Studies using ``doped``, so far
 Acknowledgements
 ================
 
-``doped`` (née `DefectsWithTheBoys` #iykyk) has benefitted from feedback from many users, in particular
+``doped`` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular
 members of the `Scanlon <http://davidscanlon.com/>`_ and
 `Walsh <https://wmd-group.github.io/>`_ research groups who have / are using it in their work.
 Direct contributors are listed in the GitHub ``Contributors`` sidebar; including Seán Kavanagh,
