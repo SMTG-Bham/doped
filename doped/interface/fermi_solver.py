@@ -580,6 +580,7 @@ class FermiSolver(MSONable):
                 el_refs=el_refs,
                 temperature=temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
             )
 
             with np.errstate(all="ignore"):
@@ -1022,6 +1023,7 @@ class FermiSolver(MSONable):
                     el_refs=el_refs,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
                 )
                 for temperature in tqdm(temperature_range)
             ]
@@ -1577,6 +1579,7 @@ class FermiSolver(MSONable):
                         effective_dopant_concentration=effective_dopant_concentration,
                         fix_charge_states=fix_charge_states,
                         free_defects=free_defects,
+                        fixed_defects=fixed_defects,
                     )
                     for single_chempot_dict in chempots
                 ]
@@ -1588,6 +1591,7 @@ class FermiSolver(MSONable):
                     single_chempot_dict=single_chempot_dict,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
                 )
                 for single_chempot_dict in chempots
             ]
@@ -2374,8 +2378,8 @@ class ChemicalPotentialGrid:
         Generates a grid within the convex hull of the vertices.
 
         This method creates a grid of points within the convex hull
-        defined by the input ``DataFrame``\'s independent variables.
-        It interpolates the values of the dependent variable over this
+        defined by the input ``DataFrame``\.
+        It interpolates the values of chemical potentials over this
         grid, ensuring that all generated points lie within the convex
         hull of the given vertices.
 
@@ -2396,8 +2400,7 @@ class ChemicalPotentialGrid:
                 A ``DataFrame`` containing the points within the convex
                 hull along with their corresponding interpolated values of
                 the dependent variable. Each row represents a point in the
-                grid, with the last column containing the interpolated
-                dependent variable values.
+                grid.
         """
         dependent_variable = mu_dataframe.columns[-1]
         dependent_var = mu_dataframe[dependent_variable].to_numpy()
