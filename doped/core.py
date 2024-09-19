@@ -1313,15 +1313,18 @@ class DefectEntry(thermo.DefectEntry):
 
     def plot_site_displacements(
         self,
-        separated_by_direction: Optional[bool] = False,
-        relative_to_defect: Optional[bool] = False,
+        separated_by_direction: bool = False,
+        relative_to_defect: bool = False,
         vector_to_project_on: Optional[list] = None,
-        use_plotly: Optional[bool] = False,
-        mpl_style_file: Optional[PathLike] = "",
+        use_plotly: bool = False,
+        style_file: Optional[PathLike] = "",
     ):
         """
         Plot the site displacements as a function of distance from the defect
         site.
+
+        Set ``use_plotly = True`` to get an interactive ``plotly`` plot, useful
+        for analysis!
 
         Args:
             separated_by_direction (bool):
@@ -1337,8 +1340,9 @@ class DefectEntry(thermo.DefectEntry):
                 (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements are calculated
                 in the cartesian basis x, y, z).
             use_plotly (bool):
-                Whether to use plotly (True) or matplotlib (False).
-            mpl_style_file (PathLike):
+                Whether to use ``plotly`` (``True``) or ``matplotlib`` (``False``).
+                Defaults to ``False``. Set to ``True`` to get an interactive plot.
+            style_file (PathLike):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
@@ -1350,7 +1354,7 @@ class DefectEntry(thermo.DefectEntry):
             relative_to_defect=relative_to_defect,
             vector_to_project_on=vector_to_project_on,
             use_plotly=use_plotly,
-            style_file=mpl_style_file,
+            style_file=style_file,
         )
 
 
