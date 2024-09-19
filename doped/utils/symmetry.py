@@ -8,6 +8,7 @@ import warnings
 from typing import Optional, Union
 
 import numpy as np
+import pandas as pd
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
@@ -74,6 +75,11 @@ def _round_floats(obj, places=5):
         return {k: _round_floats(v, places) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_round_floats(x, places) for x in obj]
+    if isinstance(obj, np.ndarray):
+        return _vectorized_custom_round(obj, places) + 0.0
+    if isinstance(obj, pd.DataFrame):  # if dataframe, convert to dict and round floats
+        return pd.DataFrame(_round_floats(obj.to_dict(), places))
+
     return obj
 
 
