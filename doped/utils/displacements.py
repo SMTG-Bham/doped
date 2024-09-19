@@ -135,7 +135,7 @@ def calc_site_displacements(
         by=["Species", "Distance to defect", "Index (defect supercell)"],
         key=lambda col: col.map(element_list.index) if col.name == "Species" else col,
     )
-    disp_df = _round_floats(disp_df, 3)  # round numerical values to 3 dp
+    disp_df = _round_floats(disp_df, 4)  # round numerical values to 4 dp
     # reorder columns as species, distance, displacement, etc, then index last:
     initial_columns = ["Species", "Distance to defect", "Displacement", "Displacement vector"]
     disp_df = disp_df[
