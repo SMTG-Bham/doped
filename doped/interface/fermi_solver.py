@@ -506,12 +506,15 @@ class FermiSolver(MSONable):
                 concentration, if provided) to the results ``DataFrame``.
                 Default is ``True``.
             fixed_defects (Optional[dict[str, float]]):
-                Dictionary of defect concentrations to fix to specific values
-                during the calculation, in the format:
-                ``{defect_label: concentration}``. This can be used to fix the
-                concentrations of specific defects to specific values, which can
-                be useful for certain types of analysis.
-                Default is ``None``
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
 
         Returns:
         # TODO: Check this output format matches for both backends!
@@ -721,10 +724,15 @@ class FermiSolver(MSONable):
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of defect concentrations to be fixed at specific values,
-                overriding the default fixed total defect concentrations at the annealing
-                temperature. The dictionary should be in the format:
-                ``{defect_name: concentration}``. Defaults to ``None``.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -961,10 +969,15 @@ class FermiSolver(MSONable):
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of defect concentrations to be fixed at specific values,
-                overriding the default fixed total defect concentrations at the annealing
-                temperature. The dictionary should be in the format:
-                ``{defect_name: concentration}``. Defaults to ``None``.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1120,10 +1133,15 @@ class FermiSolver(MSONable):
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of defect concentrations to be fixed at specific values,
-                overriding the default fixed total defect concentrations at the annealing
-                temperature. The dictionary should be in the format:
-                ``{defect_name: concentration}``. Defaults to ``None``.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1281,10 +1299,15 @@ class FermiSolver(MSONable):
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of defect concentrations to be fixed at specific values,
-                overriding the default fixed total defect concentrations at the quenched
-                temperature. The dictionary should be in the format:
-                ``{defect_name: concentration}``. Defaults to ``None``.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -1505,9 +1528,13 @@ class FermiSolver(MSONable):
                 physically sensible in most cases. Defaults to ``False``.
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix at the quenched temperature,
-                in the format: ``{defect_name: concentration}``. This can be used to
-                fix the concentrations of specific defects at the quenched temperature
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
                 (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
@@ -1646,9 +1673,14 @@ class FermiSolver(MSONable):
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of defects with fixed concentrations (in cm^-3) to
-                override the concentrations calculated at the annealing temperature
-                in the frozen defect approximation in the form ``{defect_name: concentration}``.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
@@ -1833,10 +1865,16 @@ class FermiSolver(MSONable):
                 (``True``) or allow charge states to vary while keeping total defect
                 concentrations fixed (``False``) upon quenching. Not expected to be
                 physically sensible in most cases. Defaults to ``False``.
-            fixed_defects (Optional[dict]):
-                A dictionary of fixed defect concentrations to be used in the
-                high-temperature concentration fixing, in the format:
-                ``{defect_name: concentration}``. Defaults to ``None``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected
@@ -2040,9 +2078,15 @@ class FermiSolver(MSONable):
                 doping, while a negative value corresponds to acceptor doping.
                 Defaults to ``None``, corresponding to no extrinsic dopant.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of fixed defect concentrations to override the calculated
-                concentrations at the specified chemical potentials. These are specified
-                in the format: ``{defect_name: concentration}``.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
 
         Returns:
             DefectSystem:
@@ -2158,12 +2202,15 @@ class FermiSolver(MSONable):
                 value indicates acceptor doping. Defaults to ``None``, corresponding to
                 no extrinsic dopant.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of fixed defect concentrations overriding the calculated
-                concentrations at the annealing temperature. These are specified
-                in the format: ``{defect_name: concentration}``. Defaults to ``None``.
-                If a specific charge state is desired, the defect name should be
-                formatted as ``"defect_name_charge"``. I.e. ``"v_O_+2"`` for a
-                doubly positively charged oxygen vacancy.
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``.
+                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
                 fixing, useful for highly mobile defects that are not expected to be
