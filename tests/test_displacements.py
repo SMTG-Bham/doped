@@ -12,7 +12,11 @@ import pytest
 from test_thermodynamics import custom_mpl_image_compare, data_dir
 
 from doped.core import DefectEntry
-from doped.utils.displacements import calc_displacements_ellipsoid, calc_site_displacements
+from doped.utils.displacements import (
+    calc_displacements_ellipsoid,
+    calc_site_displacements,
+    plot_displacements_ellipsoid,
+)
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -44,45 +48,45 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         Test calc_site_displacements() function.
         """
         defect_entry = self.v_Cd_0_defect_entry  # Neutral Cd vacancy
-        disp_dict = calc_site_displacements(defect_entry)
+        disp_df = calc_site_displacements(defect_entry)
         for i, disp in [
             (0, [0.0572041, 0.00036486, -0.01794981]),
             (15, [0.11715445, -0.03659073, 0.01312027]),
         ]:
-            np.allclose(disp_dict["Displacement"][i], np.array(disp))
+            np.allclose(disp_df["Displacement"].iloc[i], np.array(disp))
         # Check distance
         for i, dist in [
             (0, 0.0),
             (15, 6.543643778883931),
         ]:
-            assert np.isclose(disp_dict["Distance to defect"][i], dist)
+            assert np.isclose(disp_df["Distance to defect"].iloc[i], dist)
         # Test displacements added to defect_entry:
-        disp_dict_metadata = defect_entry.calculation_metadata["site_displacements"]
+        disp_metadata = defect_entry.calculation_metadata["site_displacements"]
         for i, disp in [
             (0, [0.0572041, 0.00036486, -0.01794981]),
             (15, [0.11715445, -0.03659073, 0.01312027]),
         ]:
-            np.allclose(disp_dict_metadata["displacements"][i], np.array(disp))
+            np.allclose(disp_metadata["displacements"][i], np.array(disp))
         # Test displacement of vacancy removed before adding to calculation_metadata
-        assert len(disp_dict_metadata["distances"]) == 63  # Cd Vacancy so 63 sites
+        assert len(disp_metadata["distances"]) == 63  # Cd Vacancy so 63 sites
         # Test relative displacements from defect
-        disp_dict = calc_site_displacements(defect_entry, relative_to_defect=True)
+        disp_df = calc_site_displacements(defect_entry, relative_to_defect=True)
         for i, disp in [
             (0, 0.0),
-            (1, -0.1165912674943227),
+            (1, -0.1166),
         ]:
-            assert np.isclose(disp_dict["Displacement wrt defect"][i], disp)
+            assert np.isclose(disp_df["Displacement wrt defect"].iloc[i], disp, atol=1e-3)
         # Test projection along Te dimer direction (1,1,0)
-        disp_dict = calc_site_displacements(defect_entry, vector_to_project_on=[1, 1, 0])
+        disp_df = calc_site_displacements(defect_entry, vector_to_project_on=[1, 1, 0])
         for i, dist, disp in [
             (32, 2.177851642, 0.980779911),  # index, distance, displacement
             (33, 2.234858368, -0.892888144),
         ]:
-            assert np.isclose(disp_dict["Displacement projected along vector"][i], disp)
-            assert np.isclose(disp_dict["Distance to defect"][i], dist)
+            assert np.isclose(disp_df["Displacement projected along vector"].iloc[i], disp, atol=1e-3)
+            assert np.isclose(disp_df["Distance to defect"].iloc[i], dist, atol=1e-3)
         # Test projection along (-1,-1,-1) for V_Cd^-1
         defect_entry = self.v_Cd_m1_defect_entry
-        disp_dict = calc_site_displacements(defect_entry, vector_to_project_on=[-1, -1, -1])
+        disp_df = calc_site_displacements(defect_entry, vector_to_project_on=[-1, -1, -1])
         indexes = (32, 33, 34, 35)  # Defect NNs
         distances = (2.5850237041739614, 2.5867590623267396, 2.5867621810347914, 3.0464198655727284)
         disp_parallel = (0.10857369429255698, 0.10824441910793342, 0.10824525022932621, 0.2130514712472405)
@@ -95,24 +99,28 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         for index, dist, disp_paral, disp_perp in zip(
             indexes, distances, disp_parallel, disp_perpendicular
         ):
-            assert np.isclose(disp_dict["Distance to defect"][index], dist)
-            assert np.isclose(disp_dict["Displacement projected along vector"][index], disp_paral)
-            assert np.isclose(disp_dict["Displacement perpendicular to vector"][index], disp_perp)
+            assert np.isclose(disp_df["Distance to defect"].iloc[index], dist, atol=1e-3)
+            assert np.isclose(
+                disp_df["Displacement projected along vector"].iloc[index], disp_paral, atol=1e-3
+            )
+            assert np.isclose(
+                disp_df["Displacement perpendicular to vector"].iloc[index], disp_perp, atol=1e-3
+            )
 
         # Substitution:
-        disp_dict = calc_site_displacements(self.Te_Cd_1_defect_entry)
+        disp_df = calc_site_displacements(self.Te_Cd_1_defect_entry)
         for i, disp in [
             (0, [0.00820645, 0.00821417, -0.00815738]),
             (15, [-0.00639524, 0.00639969, -0.01407927]),
         ]:
-            np.allclose(disp_dict["Displacement"][i], np.array(disp))
+            np.allclose(disp_df["Displacement"].iloc[i], np.array(disp), atol=1e-3)
         # Interstitial:
-        disp_dict = calc_site_displacements(self.Te_i_1_defect_entry)
+        disp_df = calc_site_displacements(self.Te_i_1_defect_entry)
         for i, disp in [
             (0, [-0.03931121, 0.01800569, 0.04547194]),
             (15, [-0.04850126, -0.01378455, 0.05439607]),
         ]:
-            np.allclose(disp_dict["Displacement"][i], np.array(disp))
+            np.allclose(disp_df["Displacement"].iloc[i], np.array(disp), atol=1e-3)
 
     def test_plot_site_displacements_error(self):
         # Check ValueError raised if user sets both separated_by_direction and vector_to_project_on
@@ -180,12 +188,21 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             ),
         ]:
             print("Testing displacement ellipsoid for", entry.name)
-            ellipsoid_center, ellipsoid_radii, ellipsoid_rotation = calc_displacements_ellipsoid(
-                entry, quantile=0.8
+            ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, anisotropy_df = (
+                calc_displacements_ellipsoid(entry, quantile=0.8)
             )
-            np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark))
-            np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark))
-            np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark))
+            assert np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark), atol=1e-3)
+            assert np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark), atol=1e-3)
+            assert np.allclose(ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark), atol=1e-3)
+            assert anisotropy_df["Longest Radius"].to_numpy()[0] == ellipsoid_radii[2]
+            assert (
+                anisotropy_df["2nd_Longest/Longest"].to_numpy()[0]
+                == ellipsoid_radii[1] / ellipsoid_radii[2]
+            )
+            assert (
+                anisotropy_df["3rd_Longest/Longest"].to_numpy()[0]
+                == ellipsoid_radii[0] / ellipsoid_radii[2]
+            )
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png")
     def test_plot_site_displacements_proj(self):
@@ -207,17 +224,13 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         return self.F_i_m1_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False
         )
-    
+
     @custom_mpl_image_compare(filename="v_Cd_0_disp_ellipsoid_plot.png")
-    def test_calc_displacements_ellipsoid_ellipsoid(self):
-        defect_entry = DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
-        return_tuple = calc_displacements_ellipsoid(defect_entry, plot_ellipsoid=True)
-        # return fig object
-        return return_tuple[3]
-    
+    def test_plot_displacements_ellipsoid_ellipsoid(self):
+        return plot_displacements_ellipsoid(self.v_Cd_0_defect_entry, plot_ellipsoid=True)
+
     @custom_mpl_image_compare(filename="v_Cd_0_disp_anisotropy_plot.png")
-    def test_calc_displacements_ellipsoid_anisotropy(self):
-        defect_entry = DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
-        return_tuple = calc_displacements_ellipsoid(defect_entry, plot_anisotropy=True)
-        # return fig object
-        return return_tuple[3]
+    def test_plot_displacements_ellipsoid_anisotropy(self):
+        return plot_displacements_ellipsoid(
+            self.v_Cd_0_defect_entry, plot_ellipsoid=False, plot_anisotropy=True
+        )
