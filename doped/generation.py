@@ -220,14 +220,7 @@ def closest_site_info(
         )
 
     if element_list is None:
-        element_list = [el.symbol for el in defect.structure.composition.elements]  # host elements
-        element_list += sorted(
-            [  # extrinsic elements, sorted alphabetically for deterministic ordering in output:
-                el.symbol
-                for el in defect.defect_structure.composition.elements
-                if el.symbol not in element_list
-            ]
-        )
+        element_list = _get_element_list(defect)
 
     site_distances = sorted(
         [
@@ -1453,9 +1446,9 @@ class DefectsGenerator(MSONable):
                 extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
             else:
                 extrinsic_elements = []
+
             host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
-            # if any "extrinsic" elements are actually host elements, remove them from the list and warn
-            # user:
+            # if any "extrinsic" elements are actually host elements, remove them and warn user:
             if any(el in host_element_list for el in extrinsic_elements):
                 warnings.warn(
                     f"\nSpecified 'extrinsic' elements "
@@ -1463,8 +1456,12 @@ class DefectsGenerator(MSONable):
                     f"the host structure, so do not need to be specified as 'extrinsic' in "
                     f"DefectsGenerator(). These will be ignored."
                 )
-            # sort extrinsic elements alphabetically for deterministic ordering in output:
-            extrinsic_elements = sorted([el for el in extrinsic_elements if el not in host_element_list])
+
+            # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
+            extrinsic_elements = sorted(
+                [el for el in extrinsic_elements if el not in host_element_list],
+                key=_element_sort_func,
+            )
 
             substitution_generator_obj = SubstitutionGenerator()
             if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
@@ -2227,6 +2224,52 @@ class DefectsGenerator(MSONable):
         )
 
 
+def _get_element_list(defect: Union[Defect, DefectEntry, dict, list]) -> list[str]:
+    """
+    Given an input ``Defect`` or ``DefectEntry``, or dictionary/list of these,
+    return a (non-duplicated) list of elements present in the defect
+    structures.
+    """
+
+    def _get_single_defect_element_list(single_defect):
+        element_list = [el.symbol for el in single_defect.structure.composition.elements]
+        element_list += sorted(
+            [  # extrinsic elements, sorted by periodic group and atomic number for deterministic ordering
+                el.symbol
+                for el in single_defect.defect_structure.composition.elements
+                if el.symbol not in element_list
+            ],
+            key=_element_sort_func,
+        )
+        return element_list
+
+    if isinstance(defect, (Defect, DefectEntry)):
+        return _get_single_defect_element_list(defect if isinstance(defect, Defect) else defect.defect)
+
+    # else is dict/list
+    defect_list = defect if isinstance(defect, list) else list(defect.values())
+    defect_list = [
+        entry_or_defect.defect if isinstance(entry_or_defect, DefectEntry) else entry_or_defect
+        for entry_or_defect in defect_list
+    ]
+    host_element_list = [el.symbol for el in next(iter(defect_list)).structure.composition.elements]
+    extrinsic_element_list: list[str] = []
+    for single_defect in defect_list:
+        extrinsic_element_list.extend(
+            [
+                el.symbol
+                for el in single_defect.defect_structure.composition.elements
+                if el.symbol not in host_element_list
+            ]
+        )
+    # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
+    extrinsic_element_list = sorted(
+        set(extrinsic_element_list),
+        key=_element_sort_func,
+    )
+    return host_element_list + extrinsic_element_list
+
+
 def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     """
     Return a tuple of the first and second element in the defect name.
@@ -2292,27 +2335,7 @@ def _sort_defect_entries(
     state (from positive to negative).
     """
     if element_list is None:
-        host_element_list = [
-            el.symbol
-            for el in next(iter(defect_entries_dict.values())).defect.structure.composition.elements
-        ]
-        extrinsic_element_list: list[str] = []
-        for defect_entry in defect_entries_dict.values():
-            extrinsic_element_list.extend(
-                el.symbol
-                for el in [
-                    *defect_entry.defect.structure.composition.elements,
-                    *defect_entry.defect.site.species.elements,
-                ]
-                if el.symbol not in host_element_list
-            )
-
-        # sort extrinsic elements by periodic group and atomic number for deterministic ordering in output:
-        extrinsic_element_list = sorted(
-            [el for el in extrinsic_element_list if el not in host_element_list],
-            key=_element_sort_func,
-        )
-        element_list = host_element_list + extrinsic_element_list
+        element_list = _get_element_list(defect_entries_dict)
 
     try:
         return dict(
@@ -2373,24 +2396,11 @@ def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
 
     Sorts defects by defect type (vacancies, substitutions, interstitials),
     then by order of appearance of elements in the composition, then
-    alphabetically, then according to symmetry._frac_coords_sort_func.
+    by periodic group (main groups 1, 2, 13-18 first, then TMs), then by
+    atomic number, then according to ``symmetry._frac_coords_sort_func``.
     """
     if element_list is None:
-        all_elements: list[str] = []
-        host_element_list = [
-            el.symbol for el in next(iter(defects_dict.values())).structure.composition.elements
-        ]
-
-        for _defect_type, defect_list in defects_dict.items():
-            for defect in defect_list:
-                all_elements.extend(el.symbol for el in defect.defect_structure.composition.elements)
-        extrinsic_element_list = list(set(all_elements) - set(host_element_list))
-
-        # sort extrinsic elements alphabetically for deterministic ordering in output:
-        extrinsic_element_list = sorted(
-            [el for el in extrinsic_element_list if el not in host_element_list]
-        )
-        element_list = host_element_list + extrinsic_element_list
+        element_list = _get_element_list(defects_dict)
 
     return {
         defect_type: sorted(
