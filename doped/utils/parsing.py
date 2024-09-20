@@ -13,6 +13,7 @@ from functools import lru_cache
 from typing import Optional, Union
 
 import numpy as np
+from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import PeriodicSite, Structure
@@ -156,7 +157,9 @@ def get_outcar(outcar_path: PathLike):
     return Outcar(outcar_path)
 
 
-def get_core_potentials_from_outcar(outcar_path: PathLike, dir_type: str = ""):
+def get_core_potentials_from_outcar(
+    outcar_path: PathLike, dir_type: str = "", total_energy: Optional[Union[list, float]] = None
+):
     """
     Get the core potentials from the OUTCAR file, which are needed for the
     Kumagai-Oba (eFNV) finite-size correction.
@@ -164,21 +167,78 @@ def get_core_potentials_from_outcar(outcar_path: PathLike, dir_type: str = ""):
     This parser skips the full ``pymatgen`` ``Outcar`` initialisation/parsing,
     to expedite parsing and make it more robust (doesn't fail if ``OUTCAR`` is
     incomplete, as long as it has the core potentials information).
+
+    Args:
+        outcar_path (PathLike):
+            The path to the OUTCAR file.
+        dir_type (str):
+            The type of directory the OUTCAR is in (e.g. ``bulk`` or ``defect``)
+            for informative error messages.
+        total_energy (Optional[Union[list, float]]):
+            The already-parsed total energy for the structure. If provided,
+            will check that the total energy of the ``OUTCAR`` matches this
+            value / one of these values, and throw a warning if not.
+
+    Returns:
+        np.ndarray:
+            The core potentials from the last ionic step in the ``OUTCAR`` file.
     """
-    # TODO: Add check that the OUTCAR and vasprun energies match??
     # initialise Outcar class without running __init__ method:
     outcar = Outcar.__new__(Outcar)
     outcar.filename = _get_outcar_path(outcar_path)
     core_pots_list = outcar.read_avg_core_poten()
     if not core_pots_list:
         _raise_incomplete_outcar_error(outcar_path, dir_type=dir_type)
+
+    _check_outcar_energy(outcar_path, total_energy=total_energy)
+
     return -1 * np.array(core_pots_list[-1])  # core potentials from last step
 
 
-def _get_core_potentials_from_outcar_obj(outcar: Outcar, dir_type: str = ""):
+def _get_final_energy_from_outcar(outcar_path):
+    """
+    Get the final total energy from an ``OUTCAR`` file, even if the calculation
+    was not completed.
+
+    Templated on the ``OUTCAR`` parsing code from ``pymatgen``,
+    but works even if the ``OUTCAR`` is incomplete.
+    """
+    e0_pattern = re.compile(r"energy\(sigma->0\)\s*=\s+([\d\-\.]+)")
+    e0 = None
+    for line in reverse_readfile(outcar_path):
+        clean = line.strip()
+        if e0 is None and (match := e0_pattern.search(clean)):
+            e0 = float(match[1])
+
+    return e0
+
+
+def _get_core_potentials_from_outcar_obj(
+    outcar: Outcar, dir_type: str = "", total_energy: Optional[Union[list, float]] = None
+):
     if outcar.electrostatic_potential is None and not outcar.read_avg_core_poten():
         _raise_incomplete_outcar_error(outcar, dir_type=dir_type)
+    _check_outcar_energy(outcar, total_energy=total_energy)
+
     return -1 * np.array(outcar.electrostatic_potential) or -1 * np.array(outcar.read_avg_core_poten()[-1])
+
+
+def _check_outcar_energy(
+    outcar: Union[Outcar, PathLike], total_energy: Optional[Union[list, float]] = None
+):
+    if total_energy is not None:
+        outcar_energy = (
+            outcar.final_energy if isinstance(outcar, Outcar) else _get_final_energy_from_outcar(outcar)
+        )
+        total_energy = total_energy if isinstance(total_energy, list) else [total_energy]
+        if not any(np.isclose(outcar_energy, energy, atol=0.025) for energy in total_energy):
+            # 0.025 eV tolerance
+            warnings.warn(
+                f"The total energies of the provided `OUTCAR` ({outcar_energy:.3f} eV), "
+                f"used to obtain the atomic core potentials for the eFNV correction, and the "
+                f"`vasprun.xml` ({total_energy}), used for energies and structures, do not match. "
+                f"Please make sure the correct file combination is being used!"
+            )
 
 
 def _raise_incomplete_outcar_error(outcar: Union[PathLike, Outcar], dir_type: str = ""):
@@ -1538,7 +1598,9 @@ def _get_bulk_locpot_dict(bulk_path, quiet=False):
     return {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
 
 
-def _get_bulk_site_potentials(bulk_path, quiet=False):
+def _get_bulk_site_potentials(
+    bulk_path: PathLike, quiet: bool = False, total_energy: Optional[Union[list, float]] = None
+):
     bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
     if multiple and not quiet:
         _multiple_files_warning(
@@ -1547,7 +1609,7 @@ def _get_bulk_site_potentials(bulk_path, quiet=False):
             bulk_outcar_path,
             dir_type="bulk",
         )
-    return get_core_potentials_from_outcar(bulk_outcar_path, dir_type="bulk")
+    return get_core_potentials_from_outcar(bulk_outcar_path, dir_type="bulk", total_energy=total_energy)
 
 
 def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):

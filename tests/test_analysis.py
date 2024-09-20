@@ -208,6 +208,16 @@ class DefectsParsingTestCase(unittest.TestCase):
             "defects, while the Kumagai (eFNV) scheme has been used for others." in str(warn.message)
             for warn in recorded_warnings
         )  # multiple corrections warning
+        assert all(
+            any(i in str(warn.message) for warn in recorded_warnings)
+            for i in [
+                "Warning(s) encountered when parsing Te_Cd_+1 at ",
+                "The total energies of the provided `OUTCAR` (-218.565 eV), used to obtain the atomic "
+                "core potentials for the eFNV correction, and the `vasprun.xml` ([-218.51803182, "
+                "-218.51803182]), used for energies and structures, do not match. Please make sure the "
+                "correct file combination is being used!",
+            ]
+        )  # mismatched OUTCAR and vasprun energies warning
 
         CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
         dumpfn(
