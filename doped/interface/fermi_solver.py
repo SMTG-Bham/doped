@@ -1777,8 +1777,8 @@ class FermiSolver(MSONable):
     def min_max_X(
         self,
         target: str,
-        min_or_max: str,
-        chempots: dict,
+        min_or_max: str = "max",
+        chempots: Optional[dict] = None,
         annealing_temperature: Optional[float] = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
@@ -1897,7 +1897,7 @@ class FermiSolver(MSONable):
         """
         # Determine the dimensionality of the chemical potential space
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        n_chempots = len(chempots["elemental_refs"])
+        n_chempots = len(el_refs)
 
         # Call the appropriate method based on dimensionality
         if n_chempots == 2:
