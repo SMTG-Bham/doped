@@ -101,15 +101,22 @@ def _get_and_check_metadata(entry, key, display_name):
 
 
 def _check_if_pathlike_and_get_locpot_or_core_pots(
-    locpot_or_outcar: Union[Locpot, Outcar, PathLike, dict], obj_type: str = "locpot", dir_type: str = ""
+    locpot_or_outcar: Union[Locpot, Outcar, PathLike, dict],
+    obj_type: str = "locpot",
+    dir_type: str = "",
+    total_energy: Optional[Union[list, float]] = None,
 ):
     if isinstance(locpot_or_outcar, PathLike):
         if obj_type == "locpot":
             return get_locpot(locpot_or_outcar)
-        return get_core_potentials_from_outcar(locpot_or_outcar, dir_type=dir_type)  # otherwise OUTCAR
+        return get_core_potentials_from_outcar(  # otherwise OUTCAR
+            locpot_or_outcar, dir_type=dir_type, total_energy=total_energy
+        )
 
     if isinstance(locpot_or_outcar, Outcar):
-        return _get_core_potentials_from_outcar_obj(locpot_or_outcar, dir_type=dir_type)
+        return _get_core_potentials_from_outcar_obj(
+            locpot_or_outcar, dir_type=dir_type, total_energy=total_energy
+        )
 
     if not isinstance(locpot_or_outcar, (Locpot, Outcar, dict)):
         raise TypeError(
@@ -511,9 +518,16 @@ def get_kumagai_correction(
 
     core_potentials_dict = {}
     for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar]):
+        total_energy = [
+            defect_entry.sc_entry.energy if key == "defect" else defect_entry.bulk_entry.energy,
+            defect_entry.calculation_metadata["run_metadata"][f"{key}_vasprun_dict"]["output"][
+                "ionic_steps"
+            ][-1]["electronic_steps"][-1]["e_0_energy"],
+        ]
+
         if outcar is not None:
             core_potentials_dict[key] = _check_if_pathlike_and_get_locpot_or_core_pots(
-                outcar, obj_type="outcar", dir_type=key
+                outcar, obj_type="outcar", dir_type=key, total_energy=total_energy
             )
         else:
             core_potentials_dict[key] = _get_and_check_metadata(

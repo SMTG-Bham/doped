@@ -800,7 +800,12 @@ class DefectsParser:
                                 )
                             elif k == "bulk_site_potentials":
                                 self.bulk_corrections_data[k] = _get_bulk_site_potentials(
-                                    self.bulk_path, quiet=True
+                                    self.bulk_path,
+                                    quiet=True,
+                                    total_energy=[
+                                        self.bulk_vr.final_energy,
+                                        self.bulk_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"],
+                                    ],
                                 )
 
                 folders_to_process = [
@@ -2186,8 +2191,18 @@ class DefectParser:
 
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
         if bulk_site_potentials is None:
+            total_energies = [
+                self.defect_entry.bulk_entry.energy if self.defect_entry.bulk_entry else None,
+                (
+                    self.bulk_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"]
+                    if self.bulk_vr
+                    else None
+                ),
+            ]
+
             bulk_site_potentials = _get_bulk_site_potentials(
-                self.defect_entry.calculation_metadata["bulk_path"]
+                self.defect_entry.calculation_metadata["bulk_path"],
+                total_energy=[energy for energy in total_energies if energy is not None],
             )
 
         defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
@@ -2200,7 +2215,19 @@ class DefectParser:
                 defect_outcar_path,
                 dir_type="defect",
             )
-        defect_site_potentials = get_core_potentials_from_outcar(defect_outcar_path, dir_type="defect")
+        total_energies = [
+            self.defect_entry.sc_entry.energy,
+            (
+                self.defect_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"]
+                if self.defect_vr
+                else None
+            ),
+        ]
+        defect_site_potentials = get_core_potentials_from_outcar(
+            defect_outcar_path,
+            dir_type="defect",
+            total_energy=[energy for energy in total_energies if energy is not None],
+        )
 
         self.defect_entry.calculation_metadata.update(
             {
