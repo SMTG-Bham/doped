@@ -53,10 +53,11 @@ from shakenbreak.plotting import _install_custom_font
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.utils.parsing import (
     _get_bulk_supercell,
+    _get_core_potentials_from_outcar_obj,
     _get_defect_supercell,
     _get_defect_supercell_bulk_site_coords,
+    get_core_potentials_from_outcar,
     get_locpot,
-    get_outcar,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
 
@@ -99,16 +100,21 @@ def _get_and_check_metadata(entry, key, display_name):
     return value
 
 
-def _check_if_pathlike_and_get_pmg_obj(locpot_or_outcar, obj_type="locpot"):
+def _check_if_pathlike_and_get_locpot_or_core_pots(
+    locpot_or_outcar: Union[Locpot, Outcar, PathLike, dict], obj_type: str = "locpot", dir_type: str = ""
+):
     if isinstance(locpot_or_outcar, PathLike):
         if obj_type == "locpot":
             return get_locpot(locpot_or_outcar)
-        return get_outcar(locpot_or_outcar)
+        return get_core_potentials_from_outcar(locpot_or_outcar, dir_type=dir_type)  # otherwise OUTCAR
+
+    if isinstance(locpot_or_outcar, Outcar):
+        return _get_core_potentials_from_outcar_obj(locpot_or_outcar, dir_type=dir_type)
 
     if not isinstance(locpot_or_outcar, (Locpot, Outcar, dict)):
         raise TypeError(
             f"`{obj_type}` input must be either a path to a {obj_type.upper()} file or a pymatgen "
-            f"{obj_type.upper()[0]+obj_type[1:]} object, object, but got {type(locpot_or_outcar)} instead."
+            f"{obj_type.upper()[0]+obj_type[1:]} object, but got {type(locpot_or_outcar)} instead."
         )
 
     return locpot_or_outcar
@@ -198,8 +204,8 @@ def get_freysoldt_correction(
     )
     bulk_locpot = bulk_locpot or _get_and_check_metadata(defect_entry, "bulk_locpot_dict", "Bulk LOCPOT")
 
-    defect_locpot = _check_if_pathlike_and_get_pmg_obj(defect_locpot, obj_type="locpot")
-    bulk_locpot = _check_if_pathlike_and_get_pmg_obj(bulk_locpot, obj_type="locpot")
+    defect_locpot = _check_if_pathlike_and_get_locpot_or_core_pots(defect_locpot, obj_type="locpot")
+    bulk_locpot = _check_if_pathlike_and_get_locpot_or_core_pots(bulk_locpot, obj_type="locpot")
 
     fnv_correction = freysoldt.get_freysoldt_correction(
         q=defect_entry.charge_state,
@@ -503,25 +509,18 @@ def get_kumagai_correction(
         dielectric = _get_and_check_metadata(defect_entry, "dielectric", "Dielectric constant")
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
-    if defect_outcar is not None:
-        defect_outcar = _check_if_pathlike_and_get_pmg_obj(defect_outcar, obj_type="outcar")
-        if defect_outcar.electrostatic_potential is None:
-            _raise_incomplete_outcar_error(defect_outcar, dir_type="defect")
-        defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
-    else:
-        defect_site_potentials = _get_and_check_metadata(
-            defect_entry, "defect_site_potentials", "Defect OUTCAR (for atomic site potentials)"
-        )
-
-    if bulk_outcar is not None:
-        bulk_outcar = _check_if_pathlike_and_get_pmg_obj(bulk_outcar, obj_type="outcar")
-        if bulk_outcar.electrostatic_potential is None:
-            _raise_incomplete_outcar_error(bulk_outcar, dir_type="bulk")
-        bulk_site_potentials = -1 * np.array(bulk_outcar.electrostatic_potential)
-    else:
-        bulk_site_potentials = _get_and_check_metadata(
-            defect_entry, "bulk_site_potentials", "Bulk OUTCAR (for atomic site potentials)"
-        )
+    core_potentials_dict = {}
+    for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar]):
+        if outcar is not None:
+            core_potentials_dict[key] = _check_if_pathlike_and_get_locpot_or_core_pots(
+                outcar, obj_type="outcar", dir_type=key
+            )
+        else:
+            core_potentials_dict[key] = _get_and_check_metadata(
+                defect_entry,
+                f"{key}_site_potentials",
+                f"{key.capitalize()} OUTCAR (for atomic site potentials)",
+            )
 
     defect_supercell = _get_defect_supercell(defect_entry).copy()
     defect_supercell.remove_oxidation_states()  # pydefect needs structure without oxidation states
@@ -529,7 +528,7 @@ def get_kumagai_correction(
         structure=defect_supercell,
         energy=np.inf,
         magnetization=np.inf,
-        potentials=defect_site_potentials,
+        potentials=core_potentials_dict["defect"],
     )
 
     bulk_supercell = _get_bulk_supercell(defect_entry).copy()
@@ -549,7 +548,7 @@ def get_kumagai_correction(
         structure=bulk_supercell,
         energy=np.inf,
         magnetization=np.inf,
-        potentials=bulk_site_potentials,
+        potentials=core_potentials_dict["bulk"],
     )
 
     efnv_correction = doped_make_efnv_correction(
@@ -631,18 +630,3 @@ def get_kumagai_correction(
         spp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
 
     return kumagai_correction_result, fig
-
-
-def _raise_incomplete_outcar_error(outcar, dir_type="bulk"):
-    """
-    Raise error about supplied OUTCAR not having atomic core potential info.
-
-    Input outcar is either a path or a pymatgen Outcar object
-    """
-    outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, PathLike) else "`OUTCAR` object"
-    raise ValueError(
-        f"Unable to parse atomic core potentials from {dir_type} {outcar_info}. This can happen if "
-        f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
-        f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
-        f"without this data!"
-    )

@@ -45,11 +45,11 @@ from doped.utils.parsing import (
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
     defect_charge_from_vasprun,
+    get_core_potentials_from_outcar,
     get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
     get_locpot,
     get_orientational_degeneracy,
-    get_outcar,
     get_procar,
     get_vasprun,
 )
@@ -2180,8 +2180,6 @@ class DefectParser:
         Returns:
             ``bulk_site_potentials`` for reuse in parsing other defect entries
         """
-        from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
-
         if not self.defect_entry.charge_state:
             # don't need to load outcars if charge is zero
             return None
@@ -2202,12 +2200,7 @@ class DefectParser:
                 defect_outcar_path,
                 dir_type="defect",
             )
-        defect_outcar = get_outcar(defect_outcar_path)
-
-        if defect_outcar.electrostatic_potential is None:
-            _raise_incomplete_outcar_error(defect_outcar_path, dir_type="defect")
-
-        defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
+        defect_site_potentials = get_core_potentials_from_outcar(defect_outcar_path, dir_type="defect")
 
         self.defect_entry.calculation_metadata.update(
             {

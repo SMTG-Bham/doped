@@ -136,19 +136,66 @@ def get_locpot(locpot_path: PathLike):
     return locpot
 
 
+def _get_outcar_path(outcar_path: PathLike, raise_error=True):
+    outcar_path = str(outcar_path)  # convert to string if Path object
+    try:
+        return find_archived_fname(outcar_path)
+    except FileNotFoundError:
+        if raise_error:
+            raise FileNotFoundError(
+                f"OUTCAR file not found at {outcar_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+                f"Kumagai (eFNV) image charge correction."
+            ) from None
+
+
 def get_outcar(outcar_path: PathLike):
     """
     Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
     """
-    outcar_path = str(outcar_path)  # convert to string if Path object
-    try:
-        outcar = Outcar(find_archived_fname(outcar_path))
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            f"OUTCAR file not found at {outcar_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
-            f"Kumagai (eFNV) image charge correction."
-        ) from None
-    return outcar
+    outcar_path = _get_outcar_path(outcar_path)
+    return Outcar(outcar_path)
+
+
+def get_core_potentials_from_outcar(outcar_path: PathLike, dir_type: str = ""):
+    """
+    Get the core potentials from the OUTCAR file, which are needed for the
+    Kumagai-Oba (eFNV) finite-size correction.
+
+    This parser skips the full ``pymatgen`` ``Outcar`` initialisation/parsing,
+    to expedite parsing and make it more robust (doesn't fail if ``OUTCAR`` is
+    incomplete, as long as it has the core potentials information).
+    """
+    # TODO: Add check that the OUTCAR and vasprun energies match??
+    # initialise Outcar class without running __init__ method:
+    outcar = Outcar.__new__(Outcar)
+    outcar.filename = _get_outcar_path(outcar_path)
+    core_pots_list = outcar.read_avg_core_poten()
+    if not core_pots_list:
+        _raise_incomplete_outcar_error(outcar_path, dir_type=dir_type)
+    return -1 * np.array(core_pots_list[-1])  # core potentials from last step
+
+
+def _get_core_potentials_from_outcar_obj(outcar: Outcar, dir_type: str = ""):
+    if outcar.electrostatic_potential is None and not outcar.read_avg_core_poten():
+        _raise_incomplete_outcar_error(outcar, dir_type=dir_type)
+    return -1 * np.array(outcar.electrostatic_potential) or -1 * np.array(outcar.read_avg_core_poten()[-1])
+
+
+def _raise_incomplete_outcar_error(outcar: Union[PathLike, Outcar], dir_type: str = ""):
+    """
+    Raise error about supplied ``OUTCAR`` not having atomic core potential
+    info.
+
+    Input outcar is either a path or a ``pymatgen`` ``Outcar`` object
+    """
+    outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, PathLike) else "`OUTCAR` object"
+    dir_type = f"{dir_type} " if dir_type else ""
+    raise ValueError(
+        f"Unable to parse atomic core potentials from {dir_type}{outcar_info}. This can happen if "
+        f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the calculation was finished "
+        f"prematurely with a `STOPCAR`, or the calculation crashed. The Kumagai (eFNV) charge correction "
+        f"cannot be computed without this data!"
+    )
 
 
 def get_procar(procar_path: PathLike):
@@ -913,6 +960,8 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
     Returns:
         int or float: The number of electrons in the system.
     """
+    # can also obtain this (NELECT), charge and magnetisation from Outcar objects, worth keeping in mind
+    # but not needed atm
     # in theory should be able to use vasprun.idos (integrated dos), but this
     # doesn't show spin-polarisation / account for NELECT changes from neutral
     # apparently
@@ -1490,8 +1539,6 @@ def _get_bulk_locpot_dict(bulk_path, quiet=False):
 
 
 def _get_bulk_site_potentials(bulk_path, quiet=False):
-    from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
-
     bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
     if multiple and not quiet:
         _multiple_files_warning(
@@ -1500,12 +1547,7 @@ def _get_bulk_site_potentials(bulk_path, quiet=False):
             bulk_outcar_path,
             dir_type="bulk",
         )
-    bulk_outcar = get_outcar(bulk_outcar_path)
-
-    if bulk_outcar.electrostatic_potential is None:
-        _raise_incomplete_outcar_error(bulk_outcar_path, dir_type="bulk")
-
-    return -1 * np.array(bulk_outcar.electrostatic_potential)
+    return get_core_potentials_from_outcar(bulk_outcar_path, dir_type="bulk")
 
 
 def _update_defect_entry_charge_corrections(defect_entry, charge_correction_type):

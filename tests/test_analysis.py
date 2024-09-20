@@ -1688,9 +1688,9 @@ class DopedParsingTestCase(unittest.TestCase):
             f"in the defect or bulk folder were unable to be parsed, giving the following error message:\n"
             f"Unable to parse atomic core potentials from defect `OUTCAR` at "
             f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR_no_core_levels.gz. This can happen if "
-            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, or if the calculation was "
-            f"finished prematurely with a `STOPCAR`. The Kumagai charge correction cannot be computed "
-            f"without this data!\n{action}" in str(warnings[0].message)
+            f"`ICORELEVEL` was not set to 0 (= default) in the `INCAR`, the calculation was finished "
+            f"prematurely with a `STOPCAR`, or the calculation crashed. The Kumagai (eFNV) charge "
+            f"correction cannot be computed without this data!\n{action}" in str(warnings[0].message)
         )
 
         return result
