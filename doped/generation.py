@@ -24,10 +24,11 @@ from pymatgen.analysis.defects.generators import (
     VacancyGenerator,
     VoronoiInterstitialGenerator,
 )
+from pymatgen.analysis.defects.utils import get_labeled_inserted_structure
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
@@ -44,6 +45,8 @@ from doped.core import (
     guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
+from doped.utils.efficiency import Composition as doped_Composition
+from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
 
@@ -1270,6 +1273,12 @@ class DefectsGenerator(MSONable):
                 "with generate_supercell=False)! Vacancy defect will give empty cell!"
             )
 
+        # use lru_cache for Composition and PeriodicSite comparisons (speeds up structure matching
+        # dramatically):
+        Composition.__instances__ = {}
+        Composition.__eq__ = doped_Composition.__eq__
+        PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+
         pbar = tqdm(
             total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
         )  # tqdm progress
@@ -1518,36 +1527,21 @@ class DefectsGenerator(MSONable):
 
                 else:
                     # Generate interstitial sites using Voronoi tessellation
-                    interstitial_gen_kwargs = self.interstitial_gen_kwargs.copy()
-                    interstitial_gen_kwargs.setdefault("stol", 0.32)  # avoid overwriting input dict
-                    interstitial_gen_kwargs.setdefault("clustering_tol", 0.55)
-
-                    vig = VoronoiInterstitialGenerator(**interstitial_gen_kwargs)
                     tight_vig = VoronoiInterstitialGenerator(
                         stol=0.01
                     )  # for determining multiplicities of any merged/grouped interstitial sites from
                     # Voronoi tessellation + structure-matching
 
-                    # parallelize Voronoi interstitial site generation:
-                    if cpu_count() >= 2 and len(self.primitive_structure) > 8:  # skip for small systems as
-                        # communication overhead / process initialisation outweighs speedup
-                        with Pool(2) as p:
-                            interstitial_gen_mp_results = p.map(
-                                _get_interstitial_candidate_sites,
-                                [(vig, self.primitive_structure), (tight_vig, self.primitive_structure)],
-                            )
-
-                        cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[0]
-                        tight_cand_sites_mul_and_equiv_fpos = interstitial_gen_mp_results[1]
-
-                    else:
-                        cand_sites_mul_and_equiv_fpos = [
-                            *vig._get_candidate_sites(self.primitive_structure)
-                        ]
-                        tight_cand_sites_mul_and_equiv_fpos = [
-                            *tight_vig._get_candidate_sites(self.primitive_structure)
-                        ]
-
+                    tight_cand_sites_mul_and_equiv_fpos = [
+                        *tight_vig._get_candidate_sites(self.primitive_structure)
+                    ]
+                    cand_sites_mul_and_equiv_fpos = _get_cand_interstitial_sites_from_tight_sites(
+                        self.primitive_structure,
+                        tight_cand_sites_mul_and_equiv_fpos,
+                        min_dist=self.interstitial_gen_kwargs.get("min_dist", 0.9),
+                        clustering_tol=self.interstitial_gen_kwargs.get("clustering_tol", 0.55),
+                        stol=self.interstitial_gen_kwargs.get("stol", 0.32),
+                    )
                     structure_matcher = StructureMatcher(
                         self.interstitial_gen_kwargs.get("ltol", 0.2),
                         self.interstitial_gen_kwargs.get("stol", 0.3),
@@ -2416,16 +2410,41 @@ def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
     }
 
 
-def _get_interstitial_candidate_sites(args):
+def _get_cand_interstitial_sites_from_tight_sites(
+    host_structure, tight_cand_sites_mul_and_equiv_fpos, min_dist=0.9, clustering_tol=0.55, stol=0.32
+):
     """
-    Return a list of cand_sites_mul_and_equiv_fpos for interstitials in the
-    structure. Defined separately here to allow for multiprocessing.
+    Refactored from pymatgen.analysis.defects.generators to avoid recomputing
+    interstitial sites, when using looser stol / clustering / min_dist choices.
+    """
+    sm = StructureMatcher(stol=stol)
+    insert_sites = {}
+    multiplicity: dict[int, int] = {}
+    equiv_fpos: dict[int, list[list[float]]] = {}
+    for fpos, lab in get_labeled_inserted_structure(
+        [i[0] for i in tight_cand_sites_mul_and_equiv_fpos],
+        host_structure,
+        working_ion="X",
+        min_dist=min_dist,
+        clustering_tol=clustering_tol,
+        sm=sm,
+    ):
+        if lab in insert_sites:
+            multiplicity[lab] += 1
+            equiv_fpos[lab].append(fpos)
+            continue
+        insert_sites[lab] = fpos
+        multiplicity[lab] = 1
+        equiv_fpos[lab] = [fpos]
 
-    Args:
-        args: tuple of arguments (to work with multiprocessing.pool)
-            to be passed to the function, in the form:
-                interstitial_generator: InterstitialGenerator object
-                structure: Structure object
-    """
-    interstitial_generator, structure = args
-    return [*interstitial_generator._get_candidate_sites(structure)]
+    cand_sites_mul_and_equiv_fpos_from_tight = []
+    for key in insert_sites:
+        matching_tight_cand_sites = [
+            i for i in tight_cand_sites_mul_and_equiv_fpos if i[0] in equiv_fpos[key]
+        ]
+        all_equiv_sites = [site for i in matching_tight_cand_sites for site in i[2]]
+        cand_sites_mul_and_equiv_fpos_from_tight.append(
+            (insert_sites[key], len(all_equiv_sites), all_equiv_sites)
+        )
+
+    return cand_sites_mul_and_equiv_fpos_from_tight
