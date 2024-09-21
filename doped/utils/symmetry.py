@@ -5,6 +5,7 @@ Utility code and functions for symmetry analysis of structures and defects.
 import contextlib
 import os
 import warnings
+from functools import lru_cache
 from typing import Optional, Union
 
 import numpy as np
@@ -26,6 +27,14 @@ from doped.utils.parsing import (
     _get_unrelaxed_defect_structure,
     get_site_mapping_indices,
 )
+
+
+@lru_cache(maxsize=int(1e4))
+def cached_simplify(eq):
+    """
+    Cached simplification function for sympy equations, for efficiency.
+    """
+    return simplify(eq)
 
 
 def _set_spglib_warnings_env_var():
@@ -1073,7 +1082,7 @@ def get_wyckoff_dict_from_sgn(sgn):
     def _coord_string_to_array(coord_string):
         # Split string into substrings, parse each as a sympy expression,
         # then convert to list of sympy expressions
-        return [simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
+        return [cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
 
     for element in wyckoff["letters"]:
         label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
@@ -1144,7 +1153,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                 return [
                     np.array(
                         [
-                            np.mod(float(simplify(sympy_expr).subs(variable_dict)), 1)
+                            np.mod(float(cached_simplify(sympy_expr).subs(variable_dict)), 1)
                             for sympy_expr in sympy_array
                         ]
                     )
@@ -1173,12 +1182,12 @@ def get_wyckoff_label_and_equiv_coord_list(
         variable = next(iter(sympy_expr.free_symbols))
         variable_dict[variable] = solve(equation, variable)[0]
 
-        return simplify(sympy_expr).subs(variable_dict)
+        return cached_simplify(sympy_expr).subs(variable_dict)
 
     def add_new_variable_dict(
         sympy_expr_prepend, sympy_expr, coord, current_variable_dict, variable_dicts
     ):
-        new_sympy_expr = simplify(sympy_expr_prepend + str(sympy_expr))
+        new_sympy_expr = cached_simplify(sympy_expr_prepend + str(sympy_expr))
         new_dict = current_variable_dict.copy()
         evaluate_expression(new_sympy_expr, coord, new_dict)  # solve for new variable
         if new_dict not in variable_dicts:
@@ -1199,7 +1208,7 @@ def get_wyckoff_label_and_equiv_coord_list(
 
             for coord, sympy_expr in zip(coord_array, sympy_array):
                 # Evaluate the expression with the current variable_dict
-                expr_value = simplify(sympy_expr).subs(temp_dict)
+                expr_value = cached_simplify(sympy_expr).subs(temp_dict)
 
                 # If the expression cannot be evaluated to a float
                 # it means that there is a new variable in the expression
@@ -1210,9 +1219,9 @@ def get_wyckoff_label_and_equiv_coord_list(
                     # Assign the expression the value of the corresponding coordinate, and solve
                     # for the new variable
                     # first, special cases with two possible solutions due to PBC:
-                    if sympy_expr == simplify("-2*x"):
+                    if sympy_expr == cached_simplify("-2*x"):
                         add_new_variable_dict("1+", sympy_expr, coord, temp_dict, variable_dicts)
-                    elif sympy_expr == simplify("2*x"):
+                    elif sympy_expr == cached_simplify("2*x"):
                         add_new_variable_dict("-1+", sympy_expr, coord, temp_dict, variable_dicts)
 
                     expr_value = evaluate_expression(
