@@ -459,14 +459,13 @@ def _get_candidate_P_arrays(
         print(f"{label} closest integer transformation matrix (P_0, starting_P):")
         print(starting_P)
 
-    indices = np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit
-    dP_array = indices.reshape(-1, 3, 3)
-    P_array = starting_P[None, :, :] + dP_array
+    P_array = starting_P[None, :, :] + (np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit).reshape(
+        -1, 3, 3
+    )  # combined transformation functions to reduce memory demand, only having one big P array
 
     # Compute determinants and filter to only those with the correct size:
     dets = np.abs(_fast_3x3_determinant_vectorized(P_array))
-    rounded_dets = np.around(dets, 0).astype(int)
-    valid_P = P_array[rounded_dets == target_size]
+    valid_P = P_array[np.around(dets, 0).astype(int) == target_size]
 
     # any P in valid_P that are all negative, flip the sign of the matrix:
     valid_P[np.all(valid_P <= 0, axis=(1, 2))] *= -1
