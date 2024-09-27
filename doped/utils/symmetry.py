@@ -15,7 +15,7 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from sympy import Eq, simplify, solve, symbols
 
@@ -147,17 +147,15 @@ def get_sga(struct, symprec=0.01):
     Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting symprec if needs be.
     """
-    sga = SpacegroupAnalyzer(struct, symprec)  # default symprec of 0.01
-    if sga.get_symmetry_dataset() is not None:
-        return sga
-
-    for trial_symprec in [0.1, 0.001, 1, 0.0001]:  # go one up first, then down, then criss-cross (cha cha)
-        sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)  # go one up first
-        if sga.get_symmetry_dataset() is not None:
+    sga = None
+    for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
+        # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
+        with contextlib.suppress(SymmetryUndeterminedError):
+            sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
+        if sga:
             return sga
 
-    raise ValueError("Could not get SpacegroupAnalyzer symmetry dataset of input structure!")  # well
-    # shiiii...
+    raise SymmetryUndeterminedError("Could not determine symmetry of input structure!")  # well shiiii...
 
 
 def apply_symm_op_to_site(
