@@ -2876,10 +2876,18 @@ class DefectThermodynamics(MSONable):
             warnings.warn("No transition levels found for chosen parameters!")
             return None
         tl_df = pd.DataFrame(transition_level_map_list)
+
+        if "N(Metastable)" not in tl_df.columns:  # add, because we use it for sorting in case all=True
+            tl_df["N(Metastable)"] = 0
+
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
         tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._map_sort_func)
-        tl_df = tl_df.sort_values(by=["Defect Appearance Order", "Defect", "-q_i", "-q_j", "eV from VBM"])
+        tl_df = tl_df.sort_values(
+            by=["Defect Appearance Order", "Defect", "-q_i", "-q_j", "N(Metastable)", "eV from VBM"]
+        )
         tl_df = tl_df.drop(columns=["Defect Appearance Order", "-q_i", "-q_j"])
+        if not all:
+            tl_df = tl_df.drop(columns="N(Metastable)")
         return tl_df.set_index(["Defect", "Charges"])
 
     def print_transition_levels(self, all: bool = False):
@@ -3123,8 +3131,7 @@ class DefectThermodynamics(MSONable):
         """
         table = []
 
-        defect_entries = deepcopy(self.defect_entries)
-        for name, defect_entry in defect_entries.items():
+        for name, defect_entry in self.defect_entries.items():
             row = [
                 name.rsplit("_", 1)[0],  # name without charge,
                 (
@@ -3283,7 +3290,7 @@ class DefectThermodynamics(MSONable):
             defect_entry._parse_and_set_degeneracies(symprec=symprec)
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
-                    len(defect_entry.defect.structure.get_primitive_structure())
+                    len(defect_entry.defect.structure.to_primitive())  # spglib primitive
                     / len(defect_entry.defect.structure)
                 )
 
