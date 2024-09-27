@@ -2827,6 +2827,8 @@ class DefectThermodynamics(MSONable):
                         "Charges": "None",
                         "eV from VBM": np.inf,
                         "In Band Gap?": False,
+                        "-q_i": np.inf,  # for sorting
+                        "-q_j": np.inf,  # for sorting
                     }
                 )
                 if all:
@@ -2839,6 +2841,8 @@ class DefectThermodynamics(MSONable):
                         "Charges": _TL_naming_func(transition_level_charges),
                         "eV from VBM": round(TL, 3),
                         "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                        "-q_i": -transition_level_charges[0],  # for sorting
+                        "-q_j": -transition_level_charges[1],  # for sorting
                     }
                     for TL, transition_level_charges in transition_level_dict.items()
                 )
@@ -2863,6 +2867,8 @@ class DefectThermodynamics(MSONable):
                                 "eV from VBM": round(TL, 3),
                                 "In Band Gap?": (TL > 0) and (self.band_gap > TL),
                                 "N(Metastable)": [i_meta, j_meta].count(True),
+                                "-q_i": -i.charge_state,  # for sorting
+                                "-q_j": -j.charge_state,  # for sorting
                             }
                         )
 
@@ -2872,9 +2878,9 @@ class DefectThermodynamics(MSONable):
         tl_df = pd.DataFrame(transition_level_map_list)
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
         tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._map_sort_func)
-        tl_df = tl_df.sort_values(by=["Defect Appearance Order", "Defect", "eV from VBM"])
-        tl_df = tl_df.drop(columns="Defect Appearance Order")
-        return tl_df.reset_index(drop=True)
+        tl_df = tl_df.sort_values(by=["Defect Appearance Order", "Defect", "-q_i", "-q_j", "eV from VBM"])
+        tl_df = tl_df.drop(columns=["Defect Appearance Order", "-q_i", "-q_j"])
+        return tl_df.set_index(["Defect", "Charges"])
 
     def print_transition_levels(self, all: bool = False):
         """
@@ -3084,6 +3090,9 @@ class DefectThermodynamics(MSONable):
             Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
         - 'E_corr':
             Finite-size supercell charge correction.
+        - 'ΔE_corr':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
         - 'ΔEᶠᵒʳᵐ':
             Defect formation energy, with the specified chemical potentials and Fermi level.
             Equals the sum of all other terms.
@@ -3133,6 +3142,15 @@ class DefectThermodynamics(MSONable):
             row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
             row += [defect_entry._get_chempot_term(relative_chempots)]
             row += [sum(defect_entry.corrections.values())]
+            row += [
+                sum(
+                    [
+                        val
+                        for key, val in defect_entry.corrections_metadata.items()
+                        if "charge_correction_error" in key
+                    ]
+                )
+            ]
             dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
             formation_energy = defect_entry.formation_energy(
                 chempots=dft_chempots,
@@ -3155,13 +3173,15 @@ class DefectThermodynamics(MSONable):
                 "Σμ_ref",
                 "Σμ_formal",
                 "E_corr",
+                "ΔE_corr",
                 "ΔEᶠᵒʳᵐ",
                 "Path",
             ],
         )
 
         # round all floats to 3dp:
-        return formation_energy_df.round(3)
+        formation_energy_df = formation_energy_df.round(3)
+        return formation_energy_df.set_index(["Defect", "q"])
 
     def get_symmetries_and_degeneracies(
         self,
@@ -3300,7 +3320,7 @@ class DefectThermodynamics(MSONable):
         if not skip_formatting:
             symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
 
-        return symmetry_df.reset_index(drop=True)
+        return symmetry_df.set_index(["Defect", "q"])
 
     def __repr__(self):
         """
