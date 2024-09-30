@@ -18,12 +18,12 @@ from scipy.spatial import Voronoi
 pmg_Comp_eq = Composition.__eq__
 
 
-@lru_cache(maxsize=int(1e4))
-def cached_Comp_eq_func(self_id, other_id):
+@lru_cache(maxsize=int(1e8))
+def cached_Comp_eq_func(self_hash, other_hash):
     """
     Cached equality function for ``Composition`` instances.
     """
-    return pmg_Comp_eq(Composition.__instances__[self_id], Composition.__instances__[other_id])
+    return pmg_Comp_eq(Composition.__instances__[self_hash], Composition.__instances__[other_hash])
 
 
 def _comp__eq__(self, other):
@@ -31,16 +31,13 @@ def _comp__eq__(self, other):
     Custom ``__eq__`` method for ``Composition`` instances, using a cached
     equality function to speed up comparisons.
     """
-    if not isinstance(other, Composition):
-        return NotImplemented
+    self_hash = self.__hash__()  # object hash with instances to avoid recursion issues (for class method)
+    other_hash = other.__hash__()
 
-    self_id = id(self)  # Use object id to prevent recursion issues
-    other_id = id(other)
+    Composition.__instances__[self_hash] = self  # Ensure instances are stored for caching
+    Composition.__instances__[other_hash] = other
 
-    Composition.__instances__[self_id] = self  # Ensure instances are stored for caching
-    Composition.__instances__[other_id] = other
-
-    return cached_Comp_eq_func(self_id, other_id)
+    return cached_Comp_eq_func(self_hash, other_hash)
 
 
 Composition.__instances__ = {}
@@ -53,11 +50,9 @@ def cache_ready_PeriodicSite__eq__(self, other):
     Custom ``__eq__`` method for ``PeriodicSite`` instances, using a cached
     equality function to speed up comparisons.
     """
-    if not isinstance(other, type(self)):
-        return NotImplemented
-
     return (
-        self.species == other.species
+        self._species == other._species  # should always work fine (and is faster) if Site initialised
+        # without ``skip_checks`` (default)
         and cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
         and self.properties == other.properties
     )
