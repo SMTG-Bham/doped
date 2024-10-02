@@ -186,6 +186,10 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         # )  # not used twice yet
 
+        # cls.CdTe_fermi_dos = get_fermi_dos(
+        #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
+        # )  # not used twice yet
+
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
