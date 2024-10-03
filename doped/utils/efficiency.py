@@ -74,9 +74,13 @@ PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 class DopedTopographyAnalyzer:
     """
     This is a modified version of
-    pymatgen.analysis.defects.utils.TopographyAnalyzer to lean down the input
-    options and make initialisation far more efficient (~2 orders of magnitude
-    faster).
+    ``pymatgen.analysis.defects.utils.TopographyAnalyzer`` to lean down the
+    input options and make initialisation far more efficient (~2 orders of
+    magnitude faster).
+
+    The original code was written by Danny Broberg and colleagues
+    (10.1016/j.cpc.2018.01.004), which was then added to ``pymatgen`` before being
+    cut.
     """
 
     def __init__(
@@ -115,14 +119,13 @@ class DopedTopographyAnalyzer:
                 0.5.
             min_dist (float): Minimum distance between nodes. Default is 0.9.
         """
-        self.clustering_tol = clustering_tol
-        self.min_dist = min_dist
-
         # if input cell is very small (< 5 atoms) and max cell range is 1 (default), bump to 2 for
         # accurate Voronoi tessellation:
         if len(structure) < 5 and max_cell_range == 1:
             max_cell_range = 2
 
+        self.clustering_tol = clustering_tol
+        self.min_dist = min_dist
         self.structure = structure.copy()
         self.structure.remove_oxidation_states()
 
