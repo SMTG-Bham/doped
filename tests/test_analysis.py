@@ -1972,14 +1972,10 @@ class DopedParsingTestCase(unittest.TestCase):
 
             # assert auto-determined vacancy site is correct
             # should be: PeriodicSite: Cd (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
-            if name == "v_Cd_0":
-                np.testing.assert_array_almost_equal(
-                    parsed_vac_Cd_dict[name].defect_supercell_site.frac_coords, [0.5, 0.5, 0.5]
-                )
-            else:
-                np.testing.assert_array_almost_equal(
-                    parsed_vac_Cd_dict[name].defect_supercell_site.frac_coords, [0, 0, 0]
-                )
+            assert np.allclose(
+                parsed_vac_Cd_dict[name].defect_supercell_site.frac_coords,
+                [0.5, 0.5, 0.5] if name == "v_Cd_0" else [0, 0, 0],
+            )
 
     def test_interstitial_parsing_and_kumagai(self):
         """
@@ -1999,9 +1995,7 @@ class DopedParsingTestCase(unittest.TestCase):
         self._check_defect_entry_corrections(te_i_2_ent, -6.2009, 0.9038318161163628)
         # assert auto-determined interstitial site is correct
         # initial position is: PeriodicSite: Te (12.2688, 12.2688, 8.9972) [0.9375, 0.9375, 0.6875]
-        np.testing.assert_array_almost_equal(
-            te_i_2_ent.defect_supercell_site.frac_coords, [0.834511, 0.943944, 0.69776]
-        )
+        assert np.allclose(te_i_2_ent.defect_supercell_site.frac_coords, [0.834511, 0.943944, 0.69776])
 
         # run again to check parsing of previous Voronoi sites
         with patch("builtins.print") as mock_print:
@@ -2035,9 +2029,7 @@ class DopedParsingTestCase(unittest.TestCase):
         self._check_defect_entry_corrections(te_cd_1_ent, -2.6676, 0.23840982963691623)
         # assert auto-determined substitution site is correct
         # should be: PeriodicSite: Te (6.5434, 6.5434, 6.5434) [0.5000, 0.5000, 0.5000]
-        np.testing.assert_array_almost_equal(
-            te_cd_1_ent.defect_supercell_site.frac_coords, [0.475139, 0.475137, 0.524856]
-        )
+        assert np.allclose(te_cd_1_ent.defect_supercell_site.frac_coords, [0.475139, 0.475137, 0.524856])
 
     def test_extrinsic_interstitial_defect_ID(self):
         """
@@ -2093,12 +2085,8 @@ class DopedParsingTestCase(unittest.TestCase):
         assert bulk_site_idx == 0
         assert defect_site_idx == 63  # last site in structure
 
-        # assert auto-determined substitution site is correct
-        np.testing.assert_array_almost_equal(
-            unrelaxed_defect_structure[defect_site_idx].frac_coords,
-            [0.00, 0.00, 0.00],
-            decimal=2,  # exact match because perfect supercell
-        )
+        # assert auto-determined substitution site is correct (exact match because perfect supercell):
+        assert np.array_equal(unrelaxed_defect_structure[defect_site_idx].frac_coords, [0.00, 0.00, 0.00])
 
     @custom_mpl_image_compare("YTOS_Int_F_-1_eigenvalue_plot_ISPIN_1.png")
     def test_extrinsic_interstitial_parsing_and_kumagai(self):
