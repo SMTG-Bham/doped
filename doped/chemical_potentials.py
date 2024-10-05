@@ -1903,6 +1903,8 @@ def get_doped_chempots_from_entries(
 
 
 class CompetingPhasesAnalyzer:
+    # TODO: Rename `calculate_chempots()` to `calculate_chempot_df()` or something else to make clear
+    #  that it's _different_ to the chempot limits!! (or something along those lines)
     # TODO: Allow parsing using pymatgen ComputedEntries as well, to aid interoperability with
     #  high-throughput architectures like AiiDA or atomate2. See:
     #  https://github.com/SMTG-Bham/doped/commit/b4eb9a5083a0a2c9596be5ccc57d060e1fcec530
@@ -2355,6 +2357,11 @@ class CompetingPhasesAnalyzer:
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
+        if not self.data:
+            raise ValueError(
+                "No parsed data present in `CompetingPhasesAnalzer.data`. Please parse data first!"
+            )
+
         # TODO: Is outputting the chempot limits to `csv` useful? If so, should also be able to load from
         #  csv? Show this in tutorials, or at least add easy function
         if extrinsic_species is None:

@@ -1656,6 +1656,20 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert defect_thermo.chempots["elemental_refs"].get("H") == -5.4
         assert defect_thermo.chempots["limits"]["User Chemical Potentials"].get("H") == -7.4
 
+        # test error catch when someone tries to input a DataFrame for the chempots...
+        import pandas as pd
+
+        chempots_df = pd.DataFrame(self.CdTe_chempots["limits"]).T  # swap the columns and rows
+        with pytest.raises(ValueError) as exc:
+            self.CdTe_defect_thermo.chempots = chempots_df
+        for i in [
+            "Invalid chempots/el_refs format:",
+            "chempots: <class 'pandas.core.frame.DataFrame'>",
+            "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!",
+        ]:
+            print(i)
+            assert i in str(exc.value)
+
     def test_add_entries(self):
         partial_defect_thermo = DefectThermodynamics(list(self.CdTe_defect_dict.values())[:4])
         assert not partial_defect_thermo.get_formation_energies().equals(
