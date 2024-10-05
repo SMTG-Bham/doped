@@ -141,6 +141,13 @@ def _parse_chempots(
 
     Returns parsed ``chempots`` and ``el_refs``
     """
+    for i in [chempots, el_refs]:
+        if i is not None and not isinstance(i, dict):
+            raise ValueError(
+                f"Invalid chempots/el_refs format:\nchempots: {type(chempots)}\nel_refs: {type(el_refs)}\n"
+                "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!"
+            )
+
     chempots = _update_old_chempots_dict(chempots)
 
     if chempots is None:
