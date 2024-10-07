@@ -38,7 +38,7 @@ from doped.utils.parsing import (
     get_procar,
     get_vasprun,
 )
-from doped.utils.symmetry import point_symmetry
+from doped.utils.symmetry import point_symmetry_from_structure
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
@@ -2701,7 +2701,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert len(dp.defect_dict) == 17
 
         with warnings.catch_warnings(record=True) as w:
-            point_symm, periodicity_breaking = point_symmetry(
+            point_symm, periodicity_breaking = point_symmetry_from_structure(
                 dp.defect_dict["vac_1_Zn_0"].defect_supercell,
                 bulk_structure=dp.defect_dict["vac_1_Zn_0"].bulk_supercell,
                 return_periodicity_breaking=True,
@@ -2725,17 +2725,17 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         for name, defect_entry in dp.defect_dict.items():
             print(f"Checking symmetry for {name}")
             with warnings.catch_warnings(record=True) as w:
-                assert point_symmetry(defect_entry.defect_supercell) == "C1"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell) == "C1"
             print([str(warning.message) for warning in w])  # for debugging
             assert not w  # no warnings with just defect supercell as can't determine periodicity breaking
             with warnings.catch_warnings(record=True) as w:
-                assert point_symmetry(
+                assert point_symmetry_from_structure(
                     defect_entry.defect_supercell, defect_entry.bulk_supercell, relaxed=False
                 ) in ["Td", "C3v", "Cs", "C1"]
             print([str(warning.message) for warning in w])  # for debugging
             assert not w  # no periodicity breaking warning with `relaxed=False`
             with pytest.raises(RuntimeError) as excinfo:
-                point_symmetry(defect_entry.defect_supercell, relaxed=False)
+                point_symmetry_from_structure(defect_entry.defect_supercell, relaxed=False)
             assert "Please also supply the unrelaxed bulk structure" in str(excinfo.value)
 
     def test_bulk_defect_compatibility_checks(self):

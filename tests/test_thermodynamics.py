@@ -23,8 +23,8 @@ from pymatgen.electronic_structure.dos import FermiDos
 
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
-from doped.utils.parsing import get_vasprun
-from doped.utils.symmetry import get_sga, point_symmetry
+from doped.utils.parsing import _get_defect_supercell_bulk_site_coords, get_vasprun
+from doped.utils.symmetry import get_sga, point_symmetry_from_site, point_symmetry_from_structure
 
 # for pytest-mpl:
 module_path = os.path.dirname(os.path.abspath(__file__))
@@ -334,15 +334,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         with warnings.catch_warnings(record=True) as w:
             tl_df = defect_thermo.get_transition_levels()
-            assert set(tl_df.columns) == {"Charges", "Defect", "In Band Gap?", "eV from VBM"}
+            assert set(tl_df.columns) == {"In Band Gap?", "eV from VBM"}
+            assert set(tl_df.index.names) == {"Charges", "Defect"}
             all_tl_df = defect_thermo.get_transition_levels(all=True)
             assert set(all_tl_df.columns) == {
-                "Charges",
-                "Defect",
                 "In Band Gap?",
                 "eV from VBM",
                 "N(Metastable)",
             }
+            assert set(all_tl_df.index.names) == {"Charges", "Defect"}
             defect_thermo.print_transition_levels()
             defect_thermo.print_transition_levels(all=True)
         print([str(warning.message) for warning in w])  # for debugging
@@ -1699,10 +1699,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
         print(sym_degen_df)
-        assert sym_degen_df.shape == (50, 8)
+        assert sym_degen_df.shape == (50, 6)
         assert list(sym_degen_df.columns) == [
-            "Defect",
-            "q",
             "Site_Symm",
             "Defect_Symm",
             "g_Orient",
@@ -1710,9 +1708,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "g_Total",
             "Mult",
         ]
+        assert list(sym_degen_df.index.names) == ["Defect", "q"]
+
         # hardcoded tests to ensure ordering is consistent (by defect type according to
         # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
-
         cdte_sym_degen_lists = [  # manually checked by SK (see thesis pg. 146/7)
             ["vac_1_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
             ["vac_1_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
@@ -1769,9 +1768,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         for i, row in enumerate(cdte_sym_degen_lists):
             print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row
+            assert list(sym_degen_df.iloc[i]) == row[2:]
+            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
 
-        # test with direct use of point_symmetry function:
+        # test with direct use of point_symmetry_from_structure function:
         sym_degen_dict = {
             f"{row[0]}_{int(row[1])}": {"bulk site symmetry": row[2], "relaxed point symmetry": row[3]}
             for row in cdte_sym_degen_lists
@@ -1783,13 +1783,25 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         for name, defect_entry in cdte_defect_thermo.defect_entries.items():
             print(f"Testing point_symmetry for {defect_entry.name}")
             if name == "Int_Te_3_C3v_meta_2":  # C3v with symprec = 0.2, 0.15, C3 with 0.1
-                assert point_symmetry(defect_entry.defect_supercell) == "C3"
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.15) == "C3v"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell) == "C3"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.15) == "C3v"
+                assert (
+                    point_symmetry_from_site(
+                        defect_entry.sc_defect_frac_coords, defect_entry.defect_supercell, symprec=0.1
+                    )
+                    == "C3"
+                )
                 continue
 
             if name == "Int_Te_3_unperturbed_0":  # C2v with symprec = 0.2, Cs with 0.1
-                assert point_symmetry(defect_entry.defect_supercell) == "Cs"
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.2) == "C2v"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell) == "Cs"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.2) == "C2v"
+                assert (
+                    point_symmetry_from_site(
+                        defect_entry.sc_defect_frac_coords, defect_entry.defect_supercell, symprec=0.2
+                    )
+                    == "C2v"
+                )
                 continue
 
             if name not in sym_degen_dict:  # only v_Cd_1_not_in_gap_+1
@@ -1797,14 +1809,16 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 continue
 
             assert (
-                point_symmetry(defect_entry.defect_supercell)
+                point_symmetry_from_structure(defect_entry.defect_supercell)
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )
             assert (
-                point_symmetry(defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell)
+                point_symmetry_from_structure(
+                    defect_entry.defect_supercell, bulk_structure=defect_entry.bulk_supercell
+                )
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )
-            symm, matching = point_symmetry(
+            symm, matching = point_symmetry_from_structure(
                 defect_entry.defect_supercell,
                 bulk_structure=defect_entry.bulk_supercell,
                 symm_ops=bulk_symm_ops,
@@ -1814,19 +1828,45 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert not matching
 
             assert (
-                point_symmetry(
+                point_symmetry_from_structure(
                     defect_entry.defect_supercell,
                     bulk_structure=defect_entry.bulk_supercell,
                     relaxed=False,
                 )
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
             )
+            assert (
+                point_symmetry_from_site(
+                    _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False),
+                    defect_entry.bulk_supercell,
+                )
+                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
+            )
 
             assert (
-                point_symmetry(
+                point_symmetry_from_structure(
                     defect_entry.defect_supercell,
                     bulk_structure=defect_entry.bulk_supercell,
                     relaxed=False,
+                    symm_ops=bulk_symm_ops,
+                )
+                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
+            )
+            assert (
+                point_symmetry_from_site(
+                    _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False),
+                    defect_entry.bulk_supercell,
+                    symm_ops=bulk_symm_ops,
+                )
+                == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
+            )
+            assert (
+                point_symmetry_from_site(
+                    defect_entry.bulk_supercell.lattice.get_cartesian_coords(
+                        _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False)
+                    ),
+                    defect_entry.bulk_supercell,
+                    coords_are_cartesian=True,
                     symm_ops=bulk_symm_ops,
                 )
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
@@ -1839,14 +1879,24 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "Int_Te_3_unperturbed_0",
                 "as_2_Te_on_Cd_C3v_metastable_1",
             ]:
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "Cs"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "Cs"
+                if "vac" not in name:
+                    assert (
+                        point_symmetry_from_site(
+                            defect_entry.sc_defect_frac_coords,
+                            defect_entry.defect_supercell,
+                            symprec=0.0085,
+                        )  # default symprec for point_symmetry_from_site is 0.01
+                        == "Cs"  # "as_1_Te_on_Cd_0" and "as_2_Te_on_Cd_C3v_metastable_1" change
+                        # symmetries for symprec values just under 0.01 here
+                    )
             elif name in [
                 "vac_1_Cd_Td_0",
                 "as_1_Cd_on_Te_2",
             ]:
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "D2d"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "D2d"
             elif name == "vac_2_Te_orig_non_JT_distorted_0":
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C3v"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "C3v"
             elif name in [
                 "as_1_Te_on_Cd_-1",
                 "as_1_Cd_on_Te_1",
@@ -1856,13 +1906,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "Int_Te_3_C3v_meta_2",
                 "Int_Te_3_unperturbed_1",
             ]:
-                assert point_symmetry(defect_entry.defect_supercell, symprec=0.01) == "C1"
+                assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "C1"
             else:
-                print(name)
                 assert (
-                    point_symmetry(defect_entry.defect_supercell, symprec=0.01)
+                    point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01)
                     == sym_degen_dict[name]["relaxed point symmetry"]
                 )
+                if "vac" not in name:  # for vacancies, the centre of mass may be different to the V site!
+                    assert (
+                        point_symmetry_from_site(
+                            defect_entry.sc_defect_frac_coords,
+                            defect_entry.defect_supercell,
+                            symprec=0.011,  # default symprec for point_symmetry_from_site is 0.01
+                        )
+                        == sym_degen_dict[name]["relaxed point symmetry"]
+                    )
 
         assert skipped == 1  # only v_Cd_1_not_in_gap_+1, because different format ("_+1" vs "_1")
 
@@ -1881,19 +1939,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
         for i, row in enumerate(cdte_sym_degen_lists):
             print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row
+            assert list(sym_degen_df.iloc[i]) == row[2:]
+            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
 
         # delete symmetry info to force re-parsing, to test symmetry/degeneracy functions
         self._clear_symmetry_degeneracy_info(cdte_defect_thermo)
         sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
         for i, row in enumerate(cdte_sym_degen_lists):
             print(i, row)
-            if row[0] == "Int_Te_3_C3v_meta":
-                assert list(sym_degen_df.iloc[i])[3] == "C3"
-            elif row[0] == "Int_Te_3_unperturbed" and row[1] == "0":
-                assert list(sym_degen_df.iloc[i])[3] == "Cs"
+            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+            if sym_degen_df.index.to_numpy()[i][0] == "Int_Te_3_C3v_meta":
+                assert list(sym_degen_df.iloc[i])[1] == "C3"
+            elif sym_degen_df.index.to_numpy()[i][0] == "Int_Te_3_unperturbed" and row[1] == "0":
+                assert list(sym_degen_df.iloc[i])[1] == "Cs"
             else:
-                assert list(sym_degen_df.iloc[i]) == row
+                assert list(sym_degen_df.iloc[i]) == row[2:]
 
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(

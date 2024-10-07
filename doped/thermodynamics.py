@@ -2936,12 +2936,9 @@ class DefectThermodynamics(MSONable):
                 return
             for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
                 bold_print(f"Defect: {defect_name}")
-                for _, row in tl_df.iterrows():
-                    if row["Charges"] != "None":
-                        print(
-                            f"Transition level {row['Charges']} at {row['eV from VBM']:.3f} eV above the "
-                            f"VBM"
-                        )
+                for index, row in tl_df.iterrows():
+                    if index[1] != "None":  # charges
+                        print(f"Transition level {index[1]} at {row['eV from VBM']:.3f} eV above the VBM")
                 print("")  # add space
 
     def get_formation_energies(
