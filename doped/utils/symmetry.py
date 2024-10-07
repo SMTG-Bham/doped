@@ -1711,7 +1711,7 @@ def _check_relaxed_defect_symmetry_determination(
     return False  # return False if symmetry couldn't be checked
 
 
-def point_symmetry(
+def point_symmetry_from_structure(
     structure: Structure,
     bulk_structure: Optional[Structure] = None,
     symm_ops: Optional[list] = None,
@@ -1759,9 +1759,9 @@ def point_symmetry(
             is breaking the crystal periodicity (and thus preventing accurate
             determination of the relaxed defect point symmetry) and warn you if so.
         symm_ops (list):
-            List of symmetry operations of either the defect_entry.bulk_supercell
-            structure (if ``relaxed=False``) or defect_entry.defect_supercell (if
-            ``relaxed=True``), to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of either the ``bulk_structure`` structure
+            (if ``relaxed=False``) or ``structure`` (if ``relaxed=True``), to avoid
+            re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
             0.1 for relaxed (to account for residual structural noise, matching that
@@ -1850,6 +1850,50 @@ def point_symmetry(
         "Target site symmetry could not be determined using just the input structure. Please also supply "
         "the unrelaxed bulk structure (`bulk_structure`)."
     )
+
+
+def point_symmetry_from_site(
+    site: Union[PeriodicSite, np.ndarray, list],
+    structure: Structure,
+    coords_are_cartesian: bool = False,
+    symm_ops: Optional[list] = None,
+    symprec: float = 0.01,
+):
+    r"""
+    Get the point symmetry of a site in a structure.
+
+    Args:
+        site (Union[PeriodicSite, np.ndarray, list]):
+            Site for which to determine the point symmetry. Can be a
+            ``PeriodicSite`` object, or a list or numpy array of the
+            coordinates of the site (fractional coordinates by default,
+            or cartesian if ``coords_are_cartesian = True``).
+        structure (Structure):
+            ``Structure`` object for which to determine the point symmetry
+            of the site.
+        coords_are_cartesian (bool):
+            If True, the site coordinates are assumed to be in cartesian
+            coordinates. Default is False.
+        symm_ops (list):
+            List of symmetry operations of the ``structure`` to avoid
+            re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for ``spglib``. Default is 0.01. You may want
+            to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.).
+
+    Returns:
+        str: Site point symmetry.
+    """
+    if isinstance(site, (np.ndarray, list)):
+        site = PeriodicSite(
+            species="X", coords=site, lattice=structure.lattice, coords_are_cartesian=coords_are_cartesian
+        )
+
+    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec
+    )
+    return schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
