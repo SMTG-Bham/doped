@@ -195,29 +195,29 @@ O_S              [+1,0,-1]                    [0.000,0.000,0.205]  4e
 
 Interstitials    Guessed Charges        Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
-Y_i_C2v          [+3,+2,+1,0]           [0.000,0.500,0.184]  8g
+Y_i_C2v          [+3,+2,+1,0]           [0.000,0.500,0.185]  8g
 Y_i_C4v_O2.68    [+3,+2,+1,0]           [0.000,0.000,0.485]  4e
 Y_i_C4v_Y1.92    [+3,+2,+1,0]           [0.000,0.000,0.418]  4e
-Y_i_Cs_S1.71     [+3,+2,+1,0]           [0.180,0.180,0.143]  16m
 Y_i_Cs_Ti1.95    [+3,+2,+1,0]           [0.325,0.325,0.039]  16m
+Y_i_Cs_Y1.71     [+3,+2,+1,0]           [0.191,0.191,0.144]  16m
 Y_i_D2d          [+3,+2,+1,0]           [0.000,0.500,0.250]  4d
-Ti_i_C2v         [+4,+3,+2,+1,0]        [0.000,0.500,0.184]  8g
+Ti_i_C2v         [+4,+3,+2,+1,0]        [0.000,0.500,0.185]  8g
 Ti_i_C4v_O2.68   [+4,+3,+2,+1,0]        [0.000,0.000,0.485]  4e
 Ti_i_C4v_Y1.92   [+4,+3,+2,+1,0]        [0.000,0.000,0.418]  4e
-Ti_i_Cs_S1.71    [+4,+3,+2,+1,0]        [0.180,0.180,0.143]  16m
 Ti_i_Cs_Ti1.95   [+4,+3,+2,+1,0]        [0.325,0.325,0.039]  16m
+Ti_i_Cs_Y1.71    [+4,+3,+2,+1,0]        [0.191,0.191,0.144]  16m
 Ti_i_D2d         [+4,+3,+2,+1,0]        [0.000,0.500,0.250]  4d
-S_i_C2v          [+4,+3,+2,+1,0,-1,-2]  [0.000,0.500,0.184]  8g
+S_i_C2v          [+4,+3,+2,+1,0,-1,-2]  [0.000,0.500,0.185]  8g
 S_i_C4v_O2.68    [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.485]  4e
 S_i_C4v_Y1.92    [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.418]  4e
-S_i_Cs_S1.71     [+4,+3,+2,+1,0,-1,-2]  [0.180,0.180,0.143]  16m
 S_i_Cs_Ti1.95    [+4,+3,+2,+1,0,-1,-2]  [0.325,0.325,0.039]  16m
+S_i_Cs_Y1.71     [+4,+3,+2,+1,0,-1,-2]  [0.191,0.191,0.144]  16m
 S_i_D2d          [+4,+3,+2,+1,0,-1,-2]  [0.000,0.500,0.250]  4d
-O_i_C2v          [0,-1,-2]              [0.000,0.500,0.184]  8g
+O_i_C2v          [0,-1,-2]              [0.000,0.500,0.185]  8g
 O_i_C4v_O2.68    [0,-1,-2]              [0.000,0.000,0.485]  4e
 O_i_C4v_Y1.92    [0,-1,-2]              [0.000,0.000,0.418]  4e
-O_i_Cs_S1.71     [0,-1,-2]              [0.180,0.180,0.143]  16m
 O_i_Cs_Ti1.95    [0,-1,-2]              [0.325,0.325,0.039]  16m
+O_i_Cs_Y1.71     [0,-1,-2]              [0.191,0.191,0.144]  16m
 O_i_D2d          [0,-1,-2]              [0.000,0.500,0.250]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -256,32 +256,32 @@ O_Li             [0,-1,-2,-3]           [0.004,0.004,0.004]  8c
 O_Mn             [0,-1,-2,-3,-4,-5,-6]  [0.121,0.129,0.625]  12d
 O_Ni             [0,-1,-2,-3,-4]        [0.625,0.625,0.625]  4b
 
-Interstitials        Guessed Charges    Conv. Cell Coords    Wyckoff
--------------------  -----------------  -------------------  ---------
-Li_i_C1_O1.72        [+1,0]             [0.248,0.480,0.249]  24e
-Li_i_C1_O1.78        [+1,0]             [0.017,0.261,0.250]  24e
-Li_i_C2_Li1.84O1.84  [+1,0]             [0.073,0.177,0.125]  12d
-Li_i_C2_Li1.84O1.94  [+1,0]             [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86       [+1,0]             [0.086,0.375,0.336]  12d
-Li_i_C3              [+1,0]             [0.497,0.497,0.497]  8c
-Mn_i_C1_O1.72        [+4,+3,+2,+1,0]    [0.248,0.480,0.249]  24e
-Mn_i_C1_O1.78        [+4,+3,+2,+1,0]    [0.017,0.261,0.250]  24e
-Mn_i_C2_Li1.84O1.84  [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
-Mn_i_C2_Li1.84O1.94  [+4,+3,+2,+1,0]    [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86       [+4,+3,+2,+1,0]    [0.086,0.375,0.336]  12d
-Mn_i_C3              [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
-Ni_i_C1_O1.72        [+4,+3,+2,+1,0]    [0.248,0.480,0.249]  24e
-Ni_i_C1_O1.78        [+4,+3,+2,+1,0]    [0.017,0.261,0.250]  24e
-Ni_i_C2_Li1.84O1.84  [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
-Ni_i_C2_Li1.84O1.94  [+4,+3,+2,+1,0]    [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86       [+4,+3,+2,+1,0]    [0.086,0.375,0.336]  12d
-Ni_i_C3              [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
-O_i_C1_O1.72         [0,-1,-2]          [0.248,0.480,0.249]  24e
-O_i_C1_O1.78         [0,-1,-2]          [0.017,0.261,0.250]  24e
-O_i_C2_Li1.84O1.84   [0,-1,-2]          [0.073,0.177,0.125]  12d
-O_i_C2_Li1.84O1.94   [0,-1,-2]          [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86        [0,-1,-2]          [0.086,0.375,0.336]  12d
-O_i_C3               [0,-1,-2]          [0.497,0.497,0.497]  8c
+Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
+---------------  -----------------  -------------------  ---------
+Li_i_C1_Ni1.82   [+1,0]             [0.021,0.278,0.258]  24e
+Li_i_C1_O1.78    [+1,0]             [0.233,0.492,0.492]  24e
+Li_i_C2_Li1.84   [+1,0]             [0.073,0.177,0.125]  12d
+Li_i_C2_Li1.87   [+1,0]             [0.161,0.375,0.410]  12d
+Li_i_C2_Li1.90   [+1,0]             [0.074,0.375,0.324]  12d
+Li_i_C3          [+1,0]             [0.497,0.497,0.497]  8c
+Mn_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Mn_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
+Mn_i_C2_Li1.84   [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
+Mn_i_C2_Li1.87   [+4,+3,+2,+1,0]    [0.161,0.375,0.410]  12d
+Mn_i_C2_Li1.90   [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
+Mn_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
+Ni_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Ni_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
+Ni_i_C2_Li1.84   [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
+Ni_i_C2_Li1.87   [+4,+3,+2,+1,0]    [0.161,0.375,0.410]  12d
+Ni_i_C2_Li1.90   [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
+Ni_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
+O_i_C1_Ni1.82    [0,-1,-2]          [0.021,0.278,0.258]  24e
+O_i_C1_O1.78     [0,-1,-2]          [0.233,0.492,0.492]  24e
+O_i_C2_Li1.84    [0,-1,-2]          [0.073,0.177,0.125]  12d
+O_i_C2_Li1.87    [0,-1,-2]          [0.161,0.375,0.410]  12d
+O_i_C2_Li1.90    [0,-1,-2]          [0.074,0.375,0.324]  12d
+O_i_C3           [0,-1,-2]          [0.497,0.497,0.497]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
@@ -435,8 +435,6 @@ Cd_i_C3v_Cd2.83Te3.27Cd5.42a  [+2,+1,0]              [0.000,0.000,0.250]  3a
 Cd_i_C3v_Cd2.83Te3.27Cd5.42b  [+2,+1,0]              [0.000,0.000,0.917]  3a
 Cd_i_C3v_Te2.83Cd3.27Te5.42a  [+2,+1,0]              [0.000,0.000,0.167]  3a
 Cd_i_C3v_Te2.83Cd3.27Te5.42b  [+2,+1,0]              [0.000,0.000,0.833]  3a
-Cd_i_Cs_Cd2.59Cd2.65          [+2,+1,0]              [0.069,0.139,0.483]  9b
-Cd_i_Cs_Cd2.59Te2.65          [+2,+1,0]              [0.139,0.069,0.600]  9b
 Cd_i_Cs_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.500,0.500,0.042]  9b
 Cd_i_Cs_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.500,0.500,0.375]  9b
 Cd_i_Cs_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.500,0.500,0.708]  9b
@@ -480,8 +478,6 @@ Te_i_C3v_Cd2.83Te3.27Cd5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.250]  3a
 Te_i_C3v_Cd2.83Te3.27Cd5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.917]  3a
 Te_i_C3v_Te2.83Cd3.27Te5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.167]  3a
 Te_i_C3v_Te2.83Cd3.27Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.833]  3a
-Te_i_Cs_Cd2.59Cd2.65          [+4,+3,+2,+1,0,-1,-2]  [0.069,0.139,0.483]  9b
-Te_i_Cs_Cd2.59Te2.65          [+4,+3,+2,+1,0,-1,-2]  [0.139,0.069,0.600]  9b
 Te_i_Cs_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.042]  9b
 Te_i_Cs_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.375]  9b
 Te_i_Cs_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.708]  9b
@@ -639,7 +635,77 @@ N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.056,0.111,0.333]  9b
 
         self.zn3p2 = Structure.from_file(f"{self.data_dir}/Zn3P2_POSCAR")
         self.sb2se3 = Structure.from_file(f"{self.data_dir}/Sb2Se3_bulk_supercell_POSCAR")
+        self.sb2se3_defect_gen_info = (
+            """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
+--------------  -----------------  -------------------  ---------
+v_Sb_Cs_Se2.57  [+1,0,-1,-2,-3]    [0.537,0.250,0.355]  4c
+v_Sb_Cs_Se2.63  [+1,0,-1,-2,-3]    [0.328,0.250,0.032]  4c
+v_Se_Cs_Sb2.57  [+2,+1,0,-1]       [0.628,0.250,0.553]  4c
+v_Se_Cs_Sb2.63  [+2,+1,0,-1]       [0.192,0.250,0.210]  4c
+v_Se_Cs_Sb2.65  [+2,+1,0,-1]       [0.445,0.750,0.128]  4c
+
+Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Sb_Se_Cs_Sb2.57  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.628,0.250,0.553]  4c
+Sb_Se_Cs_Sb2.63  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.192,0.250,0.210]  4c
+Sb_Se_Cs_Sb2.65  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.445,0.750,0.128]  4c
+Se_Sb_Cs_Se2.57  [+1,0,-1,-2,-3,-4,-5]        [0.537,0.250,0.355]  4c
+Se_Sb_Cs_Se2.63  [+1,0,-1,-2,-3,-4,-5]        [0.328,0.250,0.032]  4c
+
+Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Sb_i_C1          [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.367,0.043,0.279]  8d
+Sb_i_Cs_Sb2.15   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.514,0.250,0.696]  4c
+Sb_i_Cs_Sb2.31   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.525,0.250,0.064]  4c
+Sb_i_Cs_Sb2.33   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.394,0.250,0.218]  4c
+Sb_i_Cs_Sb2.34   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.335,0.250,0.349]  4c
+Sb_i_Cs_Sb2.36   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.076,0.250,0.043]  4c
+Sb_i_Cs_Sb2.84   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.624,0.250,0.132]  4c
+Sb_i_Cs_Se2.36   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.241,0.750,0.112]  4c
+Sb_i_Cs_Se2.38   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.293,0.750,0.263]  4c
+Se_i_C1          [+4,+3,+2,+1,0,-1,-2]        [0.367,0.043,0.279]  8d
+Se_i_Cs_Sb2.15   [+4,+3,+2,+1,0,-1,-2]        [0.514,0.250,0.696]  4c
+Se_i_Cs_Sb2.31   [+4,+3,+2,+1,0,-1,-2]        [0.525,0.250,0.064]  4c
+Se_i_Cs_Sb2.33   [+4,+3,+2,+1,0,-1,-2]        [0.394,0.250,0.218]  4c
+Se_i_Cs_Sb2.34   [+4,+3,+2,+1,0,-1,-2]        [0.335,0.250,0.349]  4c
+Se_i_Cs_Sb2.36   [+4,+3,+2,+1,0,-1,-2]        [0.076,0.250,0.043]  4c
+Se_i_Cs_Sb2.84   [+4,+3,+2,+1,0,-1,-2]        [0.624,0.250,0.132]  4c
+Se_i_Cs_Se2.36   [+4,+3,+2,+1,0,-1,-2]        [0.241,0.750,0.112]  4c
+Se_i_Cs_Se2.38   [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+            "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
+        )
         self.ag2se = Structure.from_file(f"{self.data_dir}/Ag2Se_POSCAR")
+        self.ag2se_defect_gen_info = (
+            """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
+--------------  -----------------  -------------------  ---------
+v_Ag_C1         [+1,0,-1]          [0.103,0.005,0.244]  4e
+v_Ag_C2_Ag2.80  [+1,0,-1]          [0.391,0.000,0.000]  2a
+v_Ag_C2_Ag2.85  [+1,0,-1]          [0.615,0.500,0.500]  2b
+v_Se            [+2,+1,0,-1]       [0.294,0.520,0.251]  4e
+
+Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
+---------------  ---------------------  -------------------  ---------
+Ag_Se            [+3,+2,+1,0]           [0.294,0.520,0.251]  4e
+Se_Ag_C1         [+3,+2,+1,0,-1,-2,-3]  [0.103,0.005,0.244]  4e
+Se_Ag_C2_Ag2.80  [+3,+2,+1,0,-1,-2,-3]  [0.391,0.000,0.000]  2a
+Se_Ag_C2_Ag2.85  [+3,+2,+1,0,-1,-2,-3]  [0.615,0.500,0.500]  2b
+
+Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
+---------------  -----------------  -------------------  ---------
+Ag_i_C1_Ag2.04   [+2,+1,0]          [0.335,0.435,0.002]  4e
+Ag_i_C1_Ag2.09   [+2,+1,0]          [0.435,0.123,0.251]  4e
+Ag_i_C2_Ag2.02   [+2,+1,0]          [0.500,0.250,0.319]  2d
+Ag_i_C2_Ag2.48   [+2,+1,0]          [0.091,0.500,0.500]  2b
+Se_i_C1_Ag2.04   [0,-1,-2]          [0.335,0.435,0.002]  4e
+Se_i_C1_Ag2.09   [0,-1,-2]          [0.435,0.123,0.251]  4e
+Se_i_C2_Ag2.02   [0,-1,-2]          [0.500,0.250,0.319]  2d
+Se_i_C2_Ag2.48   [0,-1,-2]          [0.091,0.500,0.500]  2b
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+            "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
+        )
         self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
 
         self.sb2si2te6_defect_gen_info = (
@@ -660,18 +726,18 @@ Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.20   [+4,+3,+2,+1,0]              [0.179,0.359,0.167]  18f
-Si_i_C1_Si2.43   [+4,+3,+2,+1,0]              [0.341,0.341,0.458]  18f
+Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.158,0.359,0.167]  18f
+Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.348,0.348,0.457]  18f
 Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.336,0.335,0.711]  18f
 Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
 Si_i_C3i_Te2.81  [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.20   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.179,0.359,0.167]  18f
-Sb_i_C1_Si2.43   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.341,0.341,0.458]  18f
+Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.158,0.359,0.167]  18f
+Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.348,0.348,0.457]  18f
 Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.336,0.335,0.711]  18f
 Sb_i_C3_Si2.64   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.318]  6c
 Sb_i_C3i_Te2.81  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.20   [+4,+3,+2,+1,0,-1,-2]        [0.179,0.359,0.167]  18f
-Te_i_C1_Si2.43   [+4,+3,+2,+1,0,-1,-2]        [0.341,0.341,0.458]  18f
+Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.158,0.359,0.167]  18f
+Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.348,0.348,0.457]  18f
 Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.336,0.335,0.711]  18f
 Te_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.318]  6c
 Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
@@ -735,6 +801,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         if_present_rm(default_json_filename)
 
     def _general_defect_gen_check(self, defect_gen, charge_states_removed=False):
+        print("Checking general DefectsGenerator attributes")
         assert self.structure_matcher.fit(
             defect_gen.primitive_structure * defect_gen.supercell_matrix,
             defect_gen.bulk_supercell,
@@ -755,7 +822,8 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect_entry_name in defect_gen
             for defect_entry_name in defect_gen.defect_entries  # __contains__()
         )
-        # test no unwanted structure reordering
+
+        print("Checking structure (re)ordering")  # test no unwanted structure reordering
         if not np.isclose(abs(np.linalg.det(defect_gen.supercell_matrix)), 1):  # if input structure is
             # unordered/defective and used as supercell, then primitive_structure and bulk_supercell
             # attributes can be unordered, fine as not directly used for POSCAR file generation
@@ -772,6 +840,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         assert np.isclose(defect_gen.min_image_distance, get_min_image_distance(defect_gen.bulk_supercell))
 
+        print("Checking Defect/DefectEntry types")
         assert all(defect.defect_type == DefectType.Vacancy for defect in defect_gen.defects["vacancies"])
         if "substitutions" in defect_gen.defects:
             assert all(
@@ -782,16 +851,17 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect.defect_type == DefectType.Interstitial
             for defect in defect_gen.defects.get("interstitials", [])
         )
+        assert all(
+            isinstance(defect_entry, DefectEntry) for defect_entry in defect_gen.defect_entries.values()
+        )
+        print("Checking vacancy multiplicity")
         assert sum(vacancy.multiplicity for vacancy in defect_gen.defects["vacancies"]) == len(
             defect_gen.primitive_structure
         )
 
-        assert all(
-            isinstance(defect_entry, DefectEntry) for defect_entry in defect_gen.defect_entries.values()
-        )
-
         for defect_list in defect_gen.defects.values():
             for defect in defect_list:
+                print(f"Checking {defect.defect_type} {defect.name} attributes")
                 assert isinstance(defect, Defect)
                 assert defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
                 assert defect.structure == defect_gen.primitive_structure
@@ -825,6 +895,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             )
 
     def _check_defect_entry(self, defect_entry, defect_name, defect_gen, charge_states_removed=False):
+        print(f"Checking DefectEntry {defect_name} attributes")
         assert defect_entry.name == defect_name
         assert defect_entry.charge_state == int(defect_name.split("_")[-1])
         assert defect_entry.wyckoff
@@ -841,87 +912,95 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect_entry.sc_entry.structure.lattice.matrix,
             defect_gen.bulk_supercell.lattice.matrix,
         )
-        sga = SpacegroupAnalyzer(defect_gen.structure)
-        reoriented_conv_structure = swap_axes(
-            sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
-        )
-        assert np.array_equal(
-            defect_entry.conventional_structure.lattice.matrix,
-            defect_entry.defect.conventional_structure.lattice.matrix,
-        )
-        assert np.allclose(
-            defect_entry.conventional_structure.lattice.matrix,
-            reoriented_conv_structure.lattice.matrix,
-        )
-        # test no unwanted structure reordering
-        for structure in [
-            defect_entry.defect_supercell,
-            defect_entry.bulk_supercell,
-            defect_entry.sc_entry.structure,
-            defect_entry.conventional_structure,
-        ]:
-            assert len(Poscar(structure).site_symbols) == len(
-                set(Poscar(structure).site_symbols)
-            )  # no duplicates
 
-        # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
-        # defect_entry.conventional_structure
-        distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
-            defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
-        )[:, 0]
-        min_dist = distance_matrix[distance_matrix > 0.01].min()
-        if defect_gen.interstitial_gen_kwargs is not False:
-            assert min_dist > defect_gen.interstitial_gen_kwargs.get(
-                "min_dist", 0.9
-            )  # default min_dist = 0.9
-        for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+        # only run more intensive checks on neutral entries, as charged entries are just copies of this
+        if defect_entry.charge_state == 0:
+            sga = SpacegroupAnalyzer(defect_gen.structure)
+            reoriented_conv_structure = swap_axes(
+                sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
+            )
+            assert np.array_equal(
+                defect_entry.conventional_structure.lattice.matrix,
+                defect_entry.defect.conventional_structure.lattice.matrix,
+            )
+            assert np.allclose(
+                defect_entry.conventional_structure.lattice.matrix,
+                reoriented_conv_structure.lattice.matrix,
+            )
+            # test no unwanted structure reordering
+            for structure in [
+                defect_entry.defect_supercell,
+                defect_entry.bulk_supercell,
+                defect_entry.sc_entry.structure,
+                defect_entry.conventional_structure,
+            ]:
+                assert len(Poscar(structure).site_symbols) == len(
+                    set(Poscar(structure).site_symbols)
+                )  # no duplicates
+
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
             distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
-                defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
+                defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
             )[:, 0]
-            equiv_min_dist = distance_matrix[distance_matrix > 0.01].min()
-            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+            min_dist = distance_matrix[distance_matrix > 0.01].min()
+            if defect_gen.interstitial_gen_kwargs is not False:
+                assert min_dist > defect_gen.interstitial_gen_kwargs.get(
+                    "min_dist", 0.9
+                )  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
+                    defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
+                )[:, 0]
+                equiv_min_dist = distance_matrix[distance_matrix > 0.01].min()
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
-        # test equivalent_sites for defects:
-        assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
-        assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
-        for equiv_site in defect_entry.defect.equivalent_sites:
-            nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
-                equiv_site.coords,
-                5,
+            # test equivalent_sites for defects:
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
+                # conv_cell_frac_coords testing above
+
+            assert np.allclose(
+                defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
             )
-            nn_distances = np.array([nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms])
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
-            assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
-            # conv_cell_frac_coords testing above
-
-        assert np.allclose(
-            defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
-        )
-        num_prim_cells_in_conv_cell = len(defect_entry.conventional_structure) / len(
-            defect_entry.defect.structure
-        )
-        assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
-            defect_entry.wyckoff[:-1]
-        )
-        assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
-        assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
-        assert any(
-            np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
-            for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
-        )
-        for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+            num_prim_cells_in_conv_cell = len(defect_entry.conventional_structure) / len(
+                defect_entry.defect.structure
+            )
+            assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
+                defect_entry.wyckoff[:-1]
+            )
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
             assert any(
-                np.array_equal(equiv_conv_cell_frac_coords, x)
-                for x in defect_entry.defect.equiv_conv_cell_frac_coords
+                np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
+                for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
             )
-        assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
-            len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
-        )
-        assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
-        assert np.isclose(
-            defect_entry.defect_supercell_site.frac_coords, defect_entry.sc_defect_frac_coords, atol=1e-5
-        ).all()
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert any(
+                    np.array_equal(equiv_conv_cell_frac_coords, x)
+                    for x in defect_entry.defect.equiv_conv_cell_frac_coords
+                )
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
+            assert np.isclose(
+                defect_entry.defect_supercell_site.frac_coords,
+                defect_entry.sc_defect_frac_coords,
+                atol=1e-5,
+            ).all()
+
         assert defect_entry.bulk_entry is None
 
         # Sb2Se3 and Ag2Se are the 2 test cases included so far where the lattice vectors swap,
@@ -1012,6 +1091,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             )
 
     def _check_editing_defect_gen(self, random_defect_entry_name, defect_gen):
+        print(f"Checking editing DefectsGenerator, using {random_defect_entry_name}")
         assert (
             defect_gen[random_defect_entry_name] == defect_gen.defect_entries[random_defect_entry_name]
         )  # __getitem__()
@@ -1103,7 +1183,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].oxi_state == 0
             assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].multiplicity == 1
             assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].defect_site == PeriodicSite(
-                "Te", [0.25, 0.25, 0.25], extrinsic_CdTe_defect_gen.primitive_structure.lattice
+                "Te2-", [0.25, 0.25, 0.25], extrinsic_CdTe_defect_gen.primitive_structure.lattice
             )
             assert str(extrinsic_CdTe_defect_gen.defects["substitutions"][idx].site.specie) == f"{element}"
             assert np.isclose(
@@ -1804,10 +1884,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert CdTe_defect_gen.defects["vacancies"][0].oxi_state == -2
         assert CdTe_defect_gen.defects["vacancies"][0].multiplicity == 1
         assert CdTe_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert CdTe_defect_gen.defects["vacancies"][0].site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert (
             len(CdTe_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
@@ -2018,10 +2098,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].wyckoff == "4a"
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.defect_type == DefectType.Vacancy
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert np.allclose(
             CdTe_defect_gen.defect_entries["v_Cd_0"].conv_cell_frac_coords,
@@ -2432,7 +2512,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.multiplicity == 24
         )  # prim = conv structure in LMNO
         sc_frac_coords = np.array(
-            [0.378186, 0.622212, 0.61125] if generate_supercell else [0.500397, 0.510568, 0.766541]
+            [0.375325, 0.391795, 0.616475] if generate_supercell else [0.23288, 0.4918, 0.49173]
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
@@ -2444,12 +2524,12 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].conv_cell_frac_coords,
-            np.array([0.017, 0.261, 0.250]),
+            np.array([0.233, 0.492, 0.492]),
             atol=1e-3,
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.site.frac_coords,
-            np.array([0.017, 0.261, 0.250]),
+            np.array([0.233, 0.492, 0.492]),
             atol=1e-3,
         )
 
@@ -2872,7 +2952,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert len(cd_i_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(cd_i_defect_gen.defects["vacancies"]) == 21
         assert len(cd_i_defect_gen.defects["substitutions"]) == 21
-        assert len(cd_i_defect_gen.defects["interstitials"]) == 90
+        assert len(cd_i_defect_gen.defects["interstitials"]) == 86
 
         # explicitly test some relevant defect attributes
         assert cd_i_defect_gen.defects["vacancies"][1].name == "v_Cd"
@@ -3089,46 +3169,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # incorrectly determined if the pymatgen/spglib lattice vectors aren't swapped to match the BCS
         # convention, so this is a good check:
 
-        assert (
-            (
-                """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
---------------  -----------------  -------------------  ---------
-v_Sb_Cs_Se2.57  [+1,0,-1,-2,-3]    [0.537,0.250,0.355]  4c
-v_Sb_Cs_Se2.63  [+1,0,-1,-2,-3]    [0.328,0.250,0.032]  4c
-v_Se_Cs_Sb2.57  [+2,+1,0,-1]       [0.628,0.250,0.553]  4c
-v_Se_Cs_Sb2.63  [+2,+1,0,-1]       [0.192,0.250,0.210]  4c
-v_Se_Cs_Sb2.65  [+2,+1,0,-1]       [0.445,0.750,0.128]  4c
-
-Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
----------------  ---------------------------  -------------------  ---------
-Sb_Se_Cs_Sb2.57  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.628,0.250,0.553]  4c
-Sb_Se_Cs_Sb2.63  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.192,0.250,0.210]  4c
-Sb_Se_Cs_Sb2.65  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.445,0.750,0.128]  4c
-Se_Sb_Cs_Se2.57  [+1,0,-1,-2,-3,-4,-5]        [0.537,0.250,0.355]  4c
-Se_Sb_Cs_Se2.63  [+1,0,-1,-2,-3,-4,-5]        [0.328,0.250,0.032]  4c
-
-Interstitials         Guessed Charges              Conv. Cell Coords    Wyckoff
---------------------  ---------------------------  -------------------  ---------
-Sb_i_C1               [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.367,0.043,0.279]  8d
-Sb_i_Cs_Sb2.14        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.503,0.250,0.700]  4c
-Sb_i_Cs_Sb2.34        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.335,0.250,0.349]  4c
-Sb_i_Cs_Sb2.83        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.627,0.250,0.132]  4c
-Sb_i_Cs_Se2.32Sb2.33  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.393,0.250,0.217]  4c
-Sb_i_Cs_Se2.32Sb2.40  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.074,0.250,0.035]  4c
-Sb_i_Cs_Se2.38        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.293,0.750,0.263]  4c
-Se_i_C1               [+4,+3,+2,+1,0,-1,-2]        [0.367,0.043,0.279]  8d
-Se_i_Cs_Sb2.14        [+4,+3,+2,+1,0,-1,-2]        [0.503,0.250,0.700]  4c
-Se_i_Cs_Sb2.34        [+4,+3,+2,+1,0,-1,-2]        [0.335,0.250,0.349]  4c
-Se_i_Cs_Sb2.83        [+4,+3,+2,+1,0,-1,-2]        [0.627,0.250,0.132]  4c
-Se_i_Cs_Se2.32Sb2.33  [+4,+3,+2,+1,0,-1,-2]        [0.393,0.250,0.217]  4c
-Se_i_Cs_Se2.32Sb2.40  [+4,+3,+2,+1,0,-1,-2]        [0.074,0.250,0.035]  4c
-Se_i_Cs_Se2.38        [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
-\n"""
-                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
-                "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
-            )
-            in output
-        )
+        assert self.sb2se3_defect_gen_info in output
 
         # test get_defect_name_from_entry relaxed/unrelaxed warnings:
         with warnings.catch_warnings(record=True) as w:
@@ -3157,39 +3198,7 @@ Se_i_Cs_Se2.38        [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
         ag2se_defect_gen, output = self._generate_and_test_no_warnings(self.ag2se)
         self._general_defect_gen_check(ag2se_defect_gen)
 
-        assert (
-            (
-                """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
---------------  -----------------  -------------------  ---------
-v_Ag_C1         [+1,0,-1]          [0.103,0.005,0.244]  4e
-v_Ag_C2_Ag2.80  [+1,0,-1]          [0.391,0.000,0.000]  2a
-v_Ag_C2_Ag2.85  [+1,0,-1]          [0.615,0.500,0.500]  2b
-v_Se            [+2,+1,0,-1]       [0.294,0.520,0.251]  4e
-
-Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
----------------  ---------------------  -------------------  ---------
-Ag_Se            [+3,+2,+1,0]           [0.294,0.520,0.251]  4e
-Se_Ag_C1         [+3,+2,+1,0,-1,-2,-3]  [0.103,0.005,0.244]  4e
-Se_Ag_C2_Ag2.80  [+3,+2,+1,0,-1,-2,-3]  [0.391,0.000,0.000]  2a
-Se_Ag_C2_Ag2.85  [+3,+2,+1,0,-1,-2,-3]  [0.615,0.500,0.500]  2b
-
-Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
----------------  -----------------  -------------------  ---------
-Ag_i_C1_Ag2.04   [+2,+1,0]          [0.335,0.435,0.002]  4e
-Ag_i_C1_Ag2.05   [+2,+1,0]          [0.405,0.109,0.250]  4e
-Ag_i_C2_Ag2.02   [+2,+1,0]          [0.500,0.250,0.319]  2d
-Ag_i_C2_Ag2.48   [+2,+1,0]          [0.091,0.500,0.500]  2b
-Se_i_C1_Ag2.04   [0,-1,-2]          [0.335,0.435,0.002]  4e
-Se_i_C1_Ag2.05   [0,-1,-2]          [0.405,0.109,0.250]  4e
-Se_i_C2_Ag2.02   [0,-1,-2]          [0.500,0.250,0.319]  2d
-Se_i_C2_Ag2.48   [0,-1,-2]          [0.091,0.500,0.500]  2b
-\n"""
-                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
-                "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
-            )
-            in output
-        )
-
+        assert self.ag2se_defect_gen_info in output
         assert ag2se_defect_gen._BilbaoCS_conv_cell_vector_mapping == [1, 0, 2]
 
     def test_sb2si2te6(self):
@@ -3469,9 +3478,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
 
-        assert (  # TopographyAnalyzer.__init__() but only __init__() shown in python 3.9
-            "__init__() got an unexpected keyword argument 'unrecognised_kwarg'" in str(exc.value)
-        )
+        assert "interstitial_gen_kwargs must only contain the following keys" in str(exc.value)
 
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, charge_state_gen_kwargs={"unrecognised_kwarg": 1})

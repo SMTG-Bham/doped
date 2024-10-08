@@ -7,10 +7,12 @@ import copy
 import logging
 import operator
 import warnings
+from collections import defaultdict
+from collections.abc import Sequence
 from functools import partial, reduce
 from itertools import chain
 from multiprocessing import Pool, cpu_count
-from typing import Optional, Union, cast
+from typing import Any, Callable, Optional, Union, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -22,16 +24,19 @@ from pymatgen.analysis.defects.generators import (
     InterstitialGenerator,
     SubstitutionGenerator,
     VacancyGenerator,
-    VoronoiInterstitialGenerator,
 )
-from pymatgen.analysis.defects.utils import get_labeled_inserted_structure
-from pymatgen.analysis.structure_matcher import StructureMatcher
+from pymatgen.analysis.defects.utils import remove_collisions
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.core import Structure
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
+from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
 from tabulate import tabulate
 from tqdm import tqdm
 
@@ -46,6 +51,7 @@ from doped.core import (
 )
 from doped.utils import parsing, supercells, symmetry
 from doped.utils.efficiency import Composition as doped_Composition
+from doped.utils.efficiency import DopedTopographyAnalyzer
 from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
@@ -1108,8 +1114,7 @@ class DefectsGenerator(MSONable):
 
         Interstitial sites are generated using Voronoi tessellation by default (found
         to be the most reliable), which can be controlled using the
-        ``interstitial_gen_kwargs`` argument (passed as keyword arguments to the
-        ``VoronoiInterstitialGenerator`` class). Alternatively, a list of interstitial
+        ``interstitial_gen_kwargs`` argument. Alternatively, a list of interstitial
         sites (or single interstitial site) can be manually specified using the
         ``interstitial_coords`` argument.
 
@@ -1201,8 +1206,9 @@ class DefectsGenerator(MSONable):
                 - which enforces a (near-)cubic supercell output (default = False),
                 or ``force_diagonal`` (default = False)).
             interstitial_gen_kwargs (dict, bool):
-                Keyword arguments to be passed to the ``VoronoiInterstitialGenerator``
-                class (such as ``clustering_tol``, ``stol``, ``min_dist`` etc), or to
+                Keyword arguments to be passed to ``get_Voronoi_interstitial_sites``
+                (such as ``min_dist``, ``clustering_tol``, ``symmetry_preference``,
+                ``stol`` and ``tight_stol`` -- see its docstring), or
                 ``InterstitialGenerator`` if ``interstitial_coords`` is specified.
                 If set to False, interstitial generation will be skipped entirely.
             target_frac_coords (list):
@@ -1527,95 +1533,10 @@ class DefectsGenerator(MSONable):
 
                 else:
                     # Generate interstitial sites using Voronoi tessellation
-                    tight_vig = VoronoiInterstitialGenerator(
-                        stol=0.01
-                    )  # for determining multiplicities of any merged/grouped interstitial sites from
-                    # Voronoi tessellation + structure-matching
-
-                    tight_cand_sites_mul_and_equiv_fpos = [
-                        *tight_vig._get_candidate_sites(self.primitive_structure)
-                    ]
-                    cand_sites_mul_and_equiv_fpos = _get_cand_interstitial_sites_from_tight_sites(
-                        self.primitive_structure,
-                        tight_cand_sites_mul_and_equiv_fpos,
-                        min_dist=self.interstitial_gen_kwargs.get("min_dist", 0.9),
-                        clustering_tol=self.interstitial_gen_kwargs.get("clustering_tol", 0.55),
-                        stol=self.interstitial_gen_kwargs.get("stol", 0.32),
+                    sorted_sites_mul_and_equiv_fpos = get_Voronoi_interstitial_sites(
+                        host_structure=self.primitive_structure,
+                        interstitial_gen_kwargs=self.interstitial_gen_kwargs,
                     )
-                    structure_matcher = StructureMatcher(
-                        self.interstitial_gen_kwargs.get("ltol", 0.2),
-                        self.interstitial_gen_kwargs.get("stol", 0.3),
-                        self.interstitial_gen_kwargs.get("angle_tol", 5),
-                    )  # pymatgen-analysis-defects default
-                    unique_tight_cand_sites_mul_and_equiv_fpos = [
-                        cand_site_mul_and_equiv_fpos
-                        for cand_site_mul_and_equiv_fpos in tight_cand_sites_mul_and_equiv_fpos
-                        if cand_site_mul_and_equiv_fpos not in cand_sites_mul_and_equiv_fpos
-                    ]
-
-                    # structure-match the non-matching site & multiplicity tuples, and return the site &
-                    # multiplicity of the tuple with the lower multiplicity (i.e. higher symmetry site)
-                    output_sites_mul_and_equiv_fpos = []
-                    for cand_site_mul_and_equiv_fpos in cand_sites_mul_and_equiv_fpos:
-                        matching_sites_mul_and_equiv_fpos = []
-                        if cand_site_mul_and_equiv_fpos not in tight_cand_sites_mul_and_equiv_fpos:
-                            for (
-                                tight_cand_site_mul_and_equiv_fpos
-                            ) in unique_tight_cand_sites_mul_and_equiv_fpos:
-                                interstitial_struct = self.primitive_structure.copy()
-                                interstitial_struct.insert(
-                                    0, "H", cand_site_mul_and_equiv_fpos[0], coords_are_cartesian=False
-                                )
-                                tight_interstitial_struct = self.primitive_structure.copy()
-                                tight_interstitial_struct.insert(
-                                    0,
-                                    "H",
-                                    tight_cand_site_mul_and_equiv_fpos[0],
-                                    coords_are_cartesian=False,
-                                )
-                                if structure_matcher.fit(interstitial_struct, tight_interstitial_struct):
-                                    matching_sites_mul_and_equiv_fpos += [
-                                        tight_cand_site_mul_and_equiv_fpos
-                                    ]
-
-                        # take the site with the lower multiplicity (higher symmetry). If multiplicities
-                        # equal, then take site with larger distance to host atoms (then most ideal site
-                        # according to symmetry._frac_coords_sort_func if also equal):
-                        output_sites_mul_and_equiv_fpos.append(
-                            min(
-                                [cand_site_mul_and_equiv_fpos, *matching_sites_mul_and_equiv_fpos],
-                                key=lambda cand_site_mul_and_equiv_fpos: (
-                                    cand_site_mul_and_equiv_fpos[1],
-                                    # distance to nearest host atom (and invert so max -> min for sorting)
-                                    1
-                                    / (
-                                        np.min(
-                                            self.primitive_structure.lattice.get_all_distances(
-                                                cand_site_mul_and_equiv_fpos[0],
-                                                self.primitive_structure.frac_coords,
-                                            ),
-                                            axis=1,
-                                        )
-                                    ),
-                                    # return the minimum _frac_coords_sort_func for all equiv fpos:
-                                    *symmetry._frac_coords_sort_func(
-                                        sorted(
-                                            cand_site_mul_and_equiv_fpos[2],
-                                            key=symmetry._frac_coords_sort_func,
-                                        )[0]
-                                    ),
-                                ),
-                            )
-                        )
-
-                    sorted_sites_mul_and_equiv_fpos = []
-                    for _cand_site, multiplicity, equiv_fpos in output_sites_mul_and_equiv_fpos:
-                        # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
-                        sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
-                        ideal_cand_site = sorted_equiv_fpos[0]
-                        sorted_sites_mul_and_equiv_fpos.append(
-                            (ideal_cand_site, multiplicity, sorted_equiv_fpos)
-                        )
 
                 self.defects["interstitials"] = []
                 ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
@@ -2410,25 +2331,136 @@ def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
     }
 
 
-def _get_cand_interstitial_sites_from_tight_sites(
-    host_structure, tight_cand_sites_mul_and_equiv_fpos, min_dist=0.9, clustering_tol=0.55, stol=0.32
-):
+def get_Voronoi_interstitial_sites(
+    host_structure: Structure, interstitial_gen_kwargs: Optional[dict[str, Any]] = None
+) -> list:
     """
-    Refactored from pymatgen.analysis.defects.generators to avoid recomputing
-    interstitial sites, when using looser stol / clustering / min_dist choices.
+    Generate candidate interstitial sites using Voronoi analysis.
+
+    This function uses a similar approach to that in
+    ``VoronoiInterstitialGenerator`` from ``pymatgen-analysis-defects``,
+    but with modifications to make interstitial generation much faster,
+    fix bugs with interstitial grouping (which could lead to undesired
+    dropping of candidate sites) and achieve better control over site
+    placement in order to favour sites which are higher-symmetry and
+    furthest from the host lattice atoms (typically the most favourable
+    interstitial sites).
+
+    The logic for picking interstitial sites is as follows:
+    - Generate all candidate sites using (efficient) Voronoi analysis
+    - Remove any sites which are within ``min_dist`` of any host atoms
+    - Cluster the remaining sites using a tolerance of ``clustering_tol``
+      and symmetry-preference of ``symmetry_preference``
+      (see ``_doped_cluster_frac_coords``)
+    - Determine the multiplicities and symmetry-equivalent coordinates of
+      the clustered sites using tight structure matching (with ``tight_stol``).
+    - Group the clustered sites by symmetry using (looser) structure matching
+      as controlled by ``stol``.
+    - From each group, pick the site with the highest symmetry and furthest
+      distance from the host atoms, if its ``min_dist`` is no more than
+      ``symmetry_preference`` (0.1 Å by default) smaller than the site with
+      the largest ``min_dist`` (to the host atoms).
+    (Parameters mentioned here can be supplied via ``interstitial_gen_kwargs``
+    as noted in the args section below.)
+
+    The motivation for favouring high symmetry interstitial sites and then
+    distance to host atoms is because higher symmetry interstitial sites
+    are typically the more intuitive sites for placement, cleaner, easier
+    for analysis etc, and interstitials are often lowest-energy when
+    furthest from host atoms (i.e. in the largest interstitial voids --
+    particularly for fully-ionised charge states), and so this approach
+    tries to strike a balance between these two goals.
+
+    One caveat to this preference for high symmetry interstitial sites, is
+    that they can also be slightly more prone to being stuck in local minima
+    on the PES, and so as always it is **highly recommended** to use
+    ``ShakeNBreak`` or another structure-searching technique to account for
+    symmetry-breaking when performing defect relaxations!
+
+    Args:
+        host_structure (Structure): Host structure.
+        interstitial_gen_kwargs (dict):
+            Keyword arguments for interstitial generation. Supported kwargs are:
+
+            - min_dist (float):
+                Minimum distance from host atoms for interstitial sites.
+                Defaults to 0.9 Å.
+            - clustering_tol (float):
+                Tolerance for clustering interstitial sites. Defaults to 0.55 Å.
+            - symmetry_preference (float):
+                Symmetry preference for interstitial site selection. Defaults to 0.1 Å.
+            - stol (float):
+                Structure matcher tolerance for looser site matching. Defaults to 0.32.
+            - tight_stol (float):
+                Structure matcher tolerance for tighter site matching. Defaults to 0.02.
+
+    Returns:
+        list: List of interstitial sites as fractional coordinates
     """
-    sm = StructureMatcher(stol=stol)
+    # so we want to pick the higher symmetry sites because it's cleaner, more intuitive etc
+    # but, this is probably more likely to be stuck in local minima, compared to the (nearby)
+    # lower symmetry interstitial sites... but this would at least be avoided by rattling I guess
+    # so we should pick the high symmetry sites, but make sure we have clear warnings/notes in docs
+    # that if SnB is being skipped (bad practice), at the very least you should rattle defect structures!
+    # (which we can quickly add as an option in doped.vasp?) -- TODO!!
+
+    interstitial_gen_kwargs = interstitial_gen_kwargs or {}
+    supported_interstitial_gen_kwargs = {
+        "min_dist",
+        "clustering_tol",
+        "symmetry_preference",
+        "stol",
+        "tight_stol",
+    }
+    if any(  # check interstitial_gen_kwargs and warn if any missing:
+        i not in supported_interstitial_gen_kwargs for i in interstitial_gen_kwargs
+    ):
+        raise TypeError(
+            f"Invalid interstitial_gen_kwargs supplied!\nGot: {interstitial_gen_kwargs}\nbut "
+            f"only the following keys are supported: {supported_interstitial_gen_kwargs}"
+        )
+    top = DopedTopographyAnalyzer(host_structure)
+
+    interstitial_merging_sm = StructureMatcher(
+        stol=interstitial_gen_kwargs.get("stol", 0.32),
+        comparator=ElementComparator(),
+    )  # matches pymatgen-analysis-defects default
+    tight_sm = StructureMatcher(stol=interstitial_gen_kwargs.get("tight_stol", 0.02))
+
+    sites_list = [v.frac_coords for v in top.vnodes]
+    sites_list = remove_collisions(
+        sites_list, structure=host_structure, min_dist=interstitial_gen_kwargs.get("min_dist", 0.9)
+    )
+    sites: np.array = _doped_cluster_frac_coords(
+        sites_list,
+        host_structure,
+        tol=interstitial_gen_kwargs.get("clustering_tol", 0.55),
+        symmetry_preference=interstitial_gen_kwargs.get("symmetry_preference", 0.1),
+    )
+
+    def _get_inserted_structs(frac_coords_list: list, structure: Structure):
+        inserted_structs = []
+        for fpos in frac_coords_list:
+            tmp_struct = structure.copy()
+            get_valid_magmom_struct(tmp_struct, inplace=True, spin_mode="none")
+            tmp_struct.insert(
+                0,
+                "X",
+                fpos,
+            )
+            tmp_struct.sort()
+            inserted_structs.append(tmp_struct)
+        return inserted_structs
+
+    # Group the candidate sites by symmetry
     insert_sites = {}
     multiplicity: dict[int, int] = {}
     equiv_fpos: dict[int, list[list[float]]] = {}
-    for fpos, lab in get_labeled_inserted_structure(
-        [i[0] for i in tight_cand_sites_mul_and_equiv_fpos],
-        host_structure,
-        working_ion="X",
-        min_dist=min_dist,
-        clustering_tol=clustering_tol,
-        sm=sm,
-    ):
+    inserted_structs = _get_inserted_structs(sites, host_structure)
+
+    # Label the groups by tight structure matching first:
+    tight_site_labels = _generic_group_labels(inserted_structs, comp=tight_sm.fit)
+    for fpos, lab in [*zip(sites.tolist(), tight_site_labels)]:
         if lab in insert_sites:
             multiplicity[lab] += 1
             equiv_fpos[lab].append(fpos)
@@ -2437,14 +2469,211 @@ def _get_cand_interstitial_sites_from_tight_sites(
         multiplicity[lab] = 1
         equiv_fpos[lab] = [fpos]
 
-    cand_sites_mul_and_equiv_fpos_from_tight = []
-    for key in insert_sites:
-        matching_tight_cand_sites = [
-            i for i in tight_cand_sites_mul_and_equiv_fpos if i[0] in equiv_fpos[key]
-        ]
-        all_equiv_sites = [site for i in matching_tight_cand_sites for site in i[2]]
-        cand_sites_mul_and_equiv_fpos_from_tight.append(
-            (insert_sites[key], len(all_equiv_sites), all_equiv_sites)
-        )
+    tight_cand_site_mul_and_equiv_fpos_list = [
+        (insert_sites[key], multiplicity[key], equiv_fpos[key]) for key in insert_sites
+    ]
+    reduced_inserted_structs = _get_inserted_structs(
+        [insert_sites[k] for k in insert_sites], host_structure
+    )
 
-    return cand_sites_mul_and_equiv_fpos_from_tight
+    looser_site_matched_dict = defaultdict(list)
+    for tight_cand_site_mul_and_equiv_fpos, label in zip(
+        tight_cand_site_mul_and_equiv_fpos_list,
+        _generic_group_labels(reduced_inserted_structs, comp=interstitial_merging_sm.fit),
+    ):
+        looser_site_matched_dict[label].append(tight_cand_site_mul_and_equiv_fpos)
+
+    cand_site_mul_and_equiv_fpos_list = []
+    symmetry_preference = interstitial_gen_kwargs.get("symmetry_preference", 0.1)
+    for tight_cand_site_mul_and_equiv_fpos_sublist in looser_site_matched_dict.values():
+        if len(tight_cand_site_mul_and_equiv_fpos_sublist) == 1:
+            cand_site_mul_and_equiv_fpos_list.append(tight_cand_site_mul_and_equiv_fpos_sublist[0])
+
+        else:  # pick site with the highest symmetry and furthest distance from host atoms:
+            site_scores = [
+                (
+                    cand_site_mul_and_equiv_fpos[1],  # multiplicity (lower is higher symmetry)
+                    -np.min(  # distance to nearest host atom (minus; so max -> min for sorting)
+                        host_structure.lattice.get_all_distances(
+                            cand_site_mul_and_equiv_fpos[0], host_structure.frac_coords
+                        ),
+                        axis=1,
+                    ),
+                    *symmetry._frac_coords_sort_func(
+                        sorted(cand_site_mul_and_equiv_fpos[2], key=symmetry._frac_coords_sort_func)[0]
+                    ),
+                )
+                for cand_site_mul_and_equiv_fpos in tight_cand_site_mul_and_equiv_fpos_sublist
+            ]
+            symmetry_favoured_site_mul_and_equiv_fpos = tight_cand_site_mul_and_equiv_fpos_sublist[
+                site_scores.index(min(site_scores))
+            ]
+            dist_favoured_reordered_score = min(
+                [(score[1], score[0], *score[2:]) for score in site_scores]
+            )
+            dist_favoured_site_mul_and_equiv_fpos = tight_cand_site_mul_and_equiv_fpos_sublist[
+                site_scores.index(
+                    (
+                        dist_favoured_reordered_score[1],
+                        dist_favoured_reordered_score[0],
+                        *dist_favoured_reordered_score[2:],
+                    )
+                )
+            ]
+
+            cand_site_mul_and_equiv_fpos_list.append(
+                dist_favoured_site_mul_and_equiv_fpos
+                if (
+                    np.min(
+                        host_structure.lattice.get_all_distances(
+                            dist_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
+                        ),
+                        axis=1,
+                    )
+                    < np.min(
+                        host_structure.lattice.get_all_distances(
+                            symmetry_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
+                        ),
+                        axis=1,
+                    )
+                    - symmetry_preference
+                )
+                else symmetry_favoured_site_mul_and_equiv_fpos
+            )
+
+    sorted_sites_mul_and_equiv_fpos = []
+    for _cand_site, multiplicity, equiv_fpos in cand_site_mul_and_equiv_fpos_list:  # type: ignore
+        # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
+        sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
+        ideal_cand_site = sorted_equiv_fpos[0]
+        sorted_sites_mul_and_equiv_fpos.append((ideal_cand_site, multiplicity, sorted_equiv_fpos))
+
+    return sorted_sites_mul_and_equiv_fpos
+
+
+def _doped_cluster_frac_coords(
+    fcoords: np.typing.ArrayLike,
+    structure: Structure,
+    tol: float = 0.55,
+    symmetry_preference: float = 0.1,
+) -> np.typing.NDArray:
+    """
+    Cluster fractional coordinates that are within a certain distance tolerance
+    of each other, and return the cluster site.
+
+    Modified from the ``pymatgen-analysis-defects``` function as follows:
+    For each site cluster, the possible sites to choose from are the sites
+    in the cluster _and_ the cluster midpoint (average position). Of these
+    sites, the site with the highest symmetry, and then largest ``min_dist``
+    (distance to any host lattice site), is chosen -- if its ``min_dist`` is
+    no more than ``symmetry_preference`` (0.1 Å by default) smaller than
+    the site with the largest ``min_dist``. This is because we want to favour
+    the higher symmetry interstitial sites (as these are typically the more
+    intuitive sites for placement, cleaner, easier for analysis etc, and work
+    well when combined with ``ShakeNBreak`` or other structure-searching
+    techniques to account for symmetry-breaking), but also interstitials are
+    often lowest-energy when furthest from host atoms (i.e. in the largest
+    interstitial voids -- particularly for fully-ionised charge states), and
+    so this approach tries to strike a balance between these two goals.
+
+    In ``pymatgen-analysis-defects``, the average cluster position is used,
+    which breaks symmetries and is less easy to manipulate in the following
+    interstitial generation functions.
+
+    Args:
+        fcoords (npt.ArrayLike): Fractional coordinates of points to cluster.
+        structure (Structure): The host structure.
+        tol (float):
+            A distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
+        symmetry_preference (float):
+            A distance preference for symmetry over minimum distance to host atoms,
+            as detailed in docstring above.
+            Default is 0.1 Å.
+
+    Returns:
+        np.typing.NDArray: Clustered fractional coordinates
+    """
+    if len(fcoords) <= 1:
+        return None
+
+    lattice = structure.lattice
+    sga = symmetry.get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
+    symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
+    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
+    dist_matrix = (dist_matrix + dist_matrix.T) / 2
+
+    for i in range(len(dist_matrix)):
+        dist_matrix[i, i] = 0
+    condensed_m = squareform(dist_matrix)
+    z = linkage(condensed_m)
+    cn = fcluster(z, tol, criterion="distance")
+    unique_fcoords = []
+
+    for n in set(cn):
+        frac_coords = []
+        for i, j in enumerate(np.where(cn == n)[0]):
+            if i == 0:
+                frac_coords.append(fcoords[j])
+            else:
+                fcoord = fcoords[j]  # We need the image to combine the frac_coords properly:
+                d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
+                frac_coords.append(fcoord + image)
+
+        frac_coords.append(np.average(frac_coords, axis=0))  # midpoint of cluster
+        frac_coords_scores = {
+            tuple(x): (
+                -symmetry.group_order_from_schoenflies(
+                    symmetry.point_symmetry_from_site(x, structure, symm_ops=symm_ops)
+                ),  # higher order = higher symmetry
+                -np.min(lattice.get_all_distances(x, structure.frac_coords), axis=1),
+                *symmetry._frac_coords_sort_func(x),
+            )
+            for x in frac_coords
+        }
+        symmetry_favoured_site = sorted(frac_coords_scores.items(), key=lambda x: x[1])[0][0]
+        dist_favoured_site = sorted(
+            frac_coords_scores.items(), key=lambda x: (x[1][1], x[1][0], *x[1][2:])
+        )[0][0]
+
+        if (
+            np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
+            < np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
+            - symmetry_preference
+        ):
+            unique_fcoords.append(dist_favoured_site)
+        else:  # prefer symmetry over distance if difference is sufficiently small
+            unique_fcoords.append(symmetry_favoured_site)
+
+    return symmetry._vectorized_custom_round(
+        np.mod(symmetry._vectorized_custom_round(unique_fcoords, 5), 1), 4
+    )  # to unit cell
+
+
+def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:
+    """
+    Group a list of unsortable objects.
+
+    Templated off the ``pymatgen-analysis-defects`` function,
+    but fixed to avoid broken reassignment logic and overwriting
+    of labels (resulting in sites being incorrectly dropped).
+
+    Args:
+        list_in: A list of objects to group using ``comp``.
+        comp: Comparator function.
+
+    Returns:
+        list[int]: list of labels for the input list
+    """
+    list_out = [-1] * len(list_in)  # Initialize with -1 instead of None for clarity
+    label_num = 0
+
+    for i1 in range(len(list_in)):
+        if list_out[i1] != -1:  # Already labeled
+            continue
+        list_out[i1] = label_num
+        for i2 in range(i1 + 1, len(list_in)):
+            if list_out[i2] == -1 and comp(list_in[i1], list_in[i2]):
+                list_out[i2] = label_num
+        label_num += 1
+
+    return list_out
