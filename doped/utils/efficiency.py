@@ -90,8 +90,6 @@ class DopedTopographyAnalyzer:
         max_cell_range: int = 1,
         constrained_c_frac: float = 0.5,
         thickness: float = 0.5,
-        clustering_tol: float = 0.5,
-        min_dist: float = 0.9,
     ) -> None:
         """
         Args:
@@ -115,17 +113,12 @@ class DopedTopographyAnalyzer:
             thickness (float): Along with constrained_c_frac, limit the
                 thickness of the regions where we want to explore. Default is
                 0.5, which is mapping all the site of the unit cell.
-            clustering_tol (float): Tolerance for clustering nodes. Default is
-                0.5.
-            min_dist (float): Minimum distance between nodes. Default is 0.9.
         """
         # if input cell is very small (< 5 atoms) and max cell range is 1 (default), bump to 2 for
         # accurate Voronoi tessellation:
         if len(structure) < 5 and max_cell_range == 1:
             max_cell_range = 2
 
-        self.clustering_tol = clustering_tol
-        self.min_dist = min_dist
         self.structure = structure.copy()
         self.structure.remove_oxidation_states()
 
