@@ -958,19 +958,6 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             # test equivalent_sites for defects:
             assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
             assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
-            for equiv_site in defect_entry.defect.equivalent_sites:
-                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
-                    equiv_site.coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
-                )
-                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
-                assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
-                # conv_cell_frac_coords testing above
-
             assert np.allclose(
                 defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
             )
@@ -1000,6 +987,19 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 defect_entry.sc_defect_frac_coords,
                 atol=1e-5,
             ).all()
+
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
+                # conv_cell_frac_coords testing above
 
         assert defect_entry.bulk_entry is None
 
@@ -2969,7 +2969,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # 3x conv cell
 
         # explicitly test defect entries
-        assert len(cd_i_defect_gen.defect_entries) == 630
+        assert len(cd_i_defect_gen.defect_entries) == 610
 
         # explicitly test defect entry attributes
         assert (
@@ -3478,7 +3478,8 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
 
-        assert "interstitial_gen_kwargs must only contain the following keys" in str(exc.value)
+        assert "Invalid interstitial_gen_kwargs supplied!" in str(exc.value)
+        assert "only the following keys are supported:" in str(exc.value)
 
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, charge_state_gen_kwargs={"unrecognised_kwarg": 1})

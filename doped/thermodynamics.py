@@ -2974,9 +2974,14 @@ class DefectThermodynamics(MSONable):
             Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
         - 'E_corr':
             Finite-size supercell charge correction.
-        - 'ΔEᶠᵒʳᵐ':
+        - 'Eᶠᵒʳᵐ':
             Defect formation energy, with the specified chemical potentials and Fermi level.
             Equals the sum of all other terms.
+        - 'Path':
+            Path to the defect calculation folder.
+        - 'Δ[E_corr]':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
 
         Args:
             chempots (dict):
@@ -3039,10 +3044,9 @@ class DefectThermodynamics(MSONable):
 
         if chempots is None:
             _no_chempots_warning()
-            chempots = {
-                "limits": {"No User Chemical Potentials": {}},  # empty dict so is iterable (for
-                # following code)
-                "limits_wrt_el_refs": {"No User Chemical Potentials": {}},  # empty dict so is iterable
+            chempots = {  # empty sub-dicts so they're iterable (for following code)
+                "limits": {"No User Chemical Potentials": {}},
+                "limits_wrt_el_refs": {"No User Chemical Potentials": {}},
             }
 
         limit = _parse_limit(chempots, limit)
@@ -3102,13 +3106,14 @@ class DefectThermodynamics(MSONable):
             Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
         - 'E_corr':
             Finite-size supercell charge correction.
-        - 'ΔE_corr':
-            Estimated error in the charge correction, from the variance of the potential in
-            the sampling region.
-        - 'ΔEᶠᵒʳᵐ':
+        - 'Eᶠᵒʳᵐ':
             Defect formation energy, with the specified chemical potentials and Fermi level.
             Equals the sum of all other terms.
-
+        - 'Path':
+            Path to the defect calculation folder.
+        - 'Δ[E_corr]':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
 
         Args:
             relative_chempots (dict):
@@ -3153,6 +3158,14 @@ class DefectThermodynamics(MSONable):
             row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
             row += [defect_entry._get_chempot_term(relative_chempots)]
             row += [sum(defect_entry.corrections.values())]
+            dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
+            formation_energy = defect_entry.formation_energy(
+                chempots=dft_chempots,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+            )
+            row += [formation_energy]
+            row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
             row += [
                 sum(
                     [
@@ -3162,14 +3175,6 @@ class DefectThermodynamics(MSONable):
                     ]
                 )
             ]
-            dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
-            formation_energy = defect_entry.formation_energy(
-                chempots=dft_chempots,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
-            row += [formation_energy]
-            row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
 
             table.append(row)
 
@@ -3184,9 +3189,9 @@ class DefectThermodynamics(MSONable):
                 "Σμ_ref",
                 "Σμ_formal",
                 "E_corr",
-                "ΔE_corr",
-                "ΔEᶠᵒʳᵐ",
+                "Eᶠᵒʳᵐ",
                 "Path",
+                "Δ[E_corr]",
             ],
         )
 
