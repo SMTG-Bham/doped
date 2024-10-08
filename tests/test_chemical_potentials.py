@@ -661,7 +661,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
     def test_vaspruns(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        cpa.from_vaspruns(path=self.zro2_path, folder="relax", csv_path=self.csv_path)
+        cpa.from_vaspruns(path=self.zro2_path, subfolder="relax", csv_path=self.csv_path)
         assert len(cpa.elements) == 2
         assert cpa.data[0]["Formula"] == "O2"
 
@@ -673,7 +673,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             cpa_no.from_vaspruns(path=0)
 
         ext_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        ext_cpa.from_vaspruns(path=self.la_zro2_path, folder="relax", csv_path=self.csv_path_ext)
+        ext_cpa.from_vaspruns(path=self.la_zro2_path, subfolder="relax", csv_path=self.csv_path_ext)
         assert len(ext_cpa.elements) == 3
         assert len(ext_cpa.extrinsic_elements) == 1
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
@@ -767,14 +767,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             f.write("test pop")
 
         with warnings.catch_warnings(record=True) as w:
-            cpa.from_vaspruns(path=self.zro2_path, folder="relax", csv_path=self.csv_path)
+            cpa.from_vaspruns(path=self.zro2_path, subfolder="relax", csv_path=self.csv_path)
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
 
     def test_vaspruns_none_parsed(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
-            cpa.from_vaspruns(path=self.cp_examples_path, folder="relax", csv_path=self.csv_path)
+            cpa.from_vaspruns(path=self.cp_examples_path, subfolder="relax", csv_path=self.csv_path)
         print([str(warning.message) for warning in w])  # for debugging
         assert "vasprun.xml files could not be found in the following directories (in" in str(w[0].message)
         assert "ZrO2 or ZrO2/relax" in str(w[0].message)
@@ -811,7 +811,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
     def test_latex_table(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        cpa.from_vaspruns(path=self.zro2_path, folder="relax", csv_path=self.csv_path)
+        cpa.from_vaspruns(path=self.zro2_path, subfolder="relax", csv_path=self.csv_path)
 
         string = cpa.to_LaTeX_table(splits=1)
         assert (
@@ -935,7 +935,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         self.tearDown()  # clear out previous csvs
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        cpa.from_vaspruns(path=self.zro2_path, folder="relax")
+        cpa.from_vaspruns(path=self.zro2_path, subfolder="relax")
         formation_energy_data = cpa._get_and_sort_formation_energy_data()
         formation_energy_df = pd.DataFrame(formation_energy_data)
 

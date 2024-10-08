@@ -415,7 +415,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _check_CdTe_example_dist_tol(self, defect_thermo, num_grouped_defects):
         print(f"Testing CdTe updated dist_tol: {defect_thermo.dist_tol}")
         tl_df = defect_thermo.get_transition_levels()
-        assert tl_df.shape == (num_grouped_defects, 4)
+        assert tl_df.shape == (num_grouped_defects, 2)
         # number of entries in Figure label (i.e. grouped defects)
         assert len(defect_thermo.plot().get_axes()[0].get_legend().get_texts()) == num_grouped_defects
 
@@ -772,42 +772,60 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_get_transition_levels_CdTe(self):
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
-        assert tl_df.shape == (3, 4)
-        assert list(tl_df.iloc[0]) == ["v_Cd", "ε(0/-2)", 0.47, True]
-        assert list(tl_df.iloc[1]) == ["Te_Cd", "None", np.inf, False]
-        assert list(tl_df.iloc[2]) == ["Int_Te_3", "ε(+2/+1)", 0.035, True]
+        assert tl_df.shape == (3, 2)
+        assert list(tl_df.iloc[0]) == [0.47, True]
+        assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-2)"]
+        assert list(tl_df.iloc[1]) == [np.inf, False]
+        assert list(tl_df.index.to_numpy()[1]) == ["Te_Cd", "None"]
+        assert list(tl_df.iloc[2]) == [0.035, True]
+        assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3", "ε(+2/+1)"]
 
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
-        assert tl_df.shape == (5, 5)
-        assert list(tl_df.iloc[0]) == ["v_Cd", "ε(-1*/-2)", 0.399, True, 1]
-        assert list(tl_df.iloc[1]) == ["v_Cd", "ε(0/-1*)", 0.542, True, 1]
-        assert list(tl_df.iloc[2]) == ["Te_Cd", "None", np.inf, False, 0]
-        assert list(tl_df.iloc[3]) == ["Int_Te_3", "ε(+2/+1)", 0.035, True, 0]
-        assert list(tl_df.iloc[4]) == ["Int_Te_3", "ε(+2/+1*)", 0.09, True, 1]
+        assert tl_df.shape == (5, 3)
+        assert list(tl_df.iloc[0]) == [0.542, True, 1]
+        assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-1*)"]
+        assert list(tl_df.iloc[1]) == [0.399, True, 1]
+        assert list(tl_df.index.to_numpy()[1]) == ["v_Cd", "ε(-1*/-2)"]
+        assert list(tl_df.iloc[2]) == [np.inf, False, 0]
+        assert list(tl_df.index.to_numpy()[2]) == ["Te_Cd", "None"]
+        assert list(tl_df.iloc[3]) == [0.035, True, 0]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3", "ε(+2/+1)"]
+        assert list(tl_df.iloc[4]) == [0.09, True, 1]
+        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3", "ε(+2/+1*)"]
 
         self.CdTe_defect_thermo.dist_tol = 1
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
-        assert tl_df.shape == (4, 4)
-        assert list(tl_df.iloc[2]) == ["Int_Te_3_a", "None", np.inf, False]
-        assert list(tl_df.iloc[3]) == ["Int_Te_3_b", "ε(+2/+1)", 0.09, True]
+        assert tl_df.shape == (4, 2)
+        assert list(tl_df.iloc[2]) == [np.inf, False]
+        assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "None"]
+        assert list(tl_df.iloc[3]) == [0.09, True]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_b", "ε(+2/+1)"]
 
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
-        assert tl_df.shape == (5, 5)
-        assert list(tl_df.iloc[3]) == ["Int_Te_3_a", "None", np.inf, False, 0]
-        assert list(tl_df.iloc[4]) == ["Int_Te_3_b", "ε(+2/+1)", 0.09, True, 0]
+        assert tl_df.shape == (5, 3)
+        assert list(tl_df.iloc[3]) == [np.inf, False, 0]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "None"]
+        assert list(tl_df.iloc[4]) == [0.09, True, 0]
+        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "ε(+2/+1)"]
 
         self.CdTe_defect_thermo.dist_tol = 0.5
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
-        assert tl_df.shape == (5, 4)
-        assert list(tl_df.iloc[2]) == ["Int_Te_3_Unperturbed", "None", np.inf, False]
-        assert list(tl_df.iloc[3]) == ["Int_Te_3_a", "None", np.inf, False]
-        assert list(tl_df.iloc[4]) == ["Int_Te_3_b", "None", np.inf, False]
+        assert tl_df.shape == (5, 2)
+        assert list(tl_df.iloc[2]) == [np.inf, False]
+        assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "None"]
+        assert list(tl_df.iloc[3]) == [np.inf, False]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_b", "None"]
+        assert list(tl_df.iloc[4]) == [np.inf, False]
+        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_Unperturbed", "None"]
 
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
-        assert tl_df.shape == (6, 5)
-        assert list(tl_df.iloc[3]) == ["Int_Te_3_Unperturbed", "None", np.inf, False, 0]
-        assert list(tl_df.iloc[4]) == ["Int_Te_3_a", "None", np.inf, False, 0]
-        assert list(tl_df.iloc[5]) == ["Int_Te_3_b", "None", np.inf, False, 0]
+        assert tl_df.shape == (6, 3)
+        assert list(tl_df.iloc[3]) == [np.inf, False, 0]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "None"]
+        assert list(tl_df.iloc[4]) == [np.inf, False, 0]
+        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
+        assert list(tl_df.iloc[5]) == [np.inf, False, 0]
+        assert list(tl_df.index.to_numpy()[5]) == ["Int_Te_3_Unperturbed", "None"]
 
     def test_get_symmetries_degeneracies(self):
         """
@@ -841,10 +859,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _check_CdTe_symmetries_degeneracies(self, CdTe_defect_thermo: DefectThermodynamics):
         sym_degen_df = CdTe_defect_thermo.get_symmetries_and_degeneracies()
         print(sym_degen_df)
-        assert sym_degen_df.shape == (7, 8)
+        assert sym_degen_df.shape == (7, 6)
         assert list(sym_degen_df.columns) == [
-            "Defect",
-            "q",
             "Site_Symm",
             "Defect_Symm",
             "g_Orient",
@@ -852,6 +868,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "g_Total",
             "Mult",
         ]
+        assert list(sym_degen_df.index.names) == ["Defect", "q"]
         # hardcoded tests to ensure ordering is consistent (by defect type according to
         # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
         # as would appear on a TL diagram)
@@ -866,7 +883,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         for i, row in enumerate(cdte_sym_degen_lists):
             print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row
+            assert list(sym_degen_df.iloc[i]) == row[2:]
+            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
 
         non_formatted_sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies(
             skip_formatting=True
@@ -874,15 +892,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print(non_formatted_sym_degen_df)  # for debugging
         for i, row in enumerate(cdte_sym_degen_lists):
             row[1] = int(row[1])  # type: ignore
-            assert list(non_formatted_sym_degen_df.iloc[i]) == row
+            assert list(non_formatted_sym_degen_df.iloc[i]) == row[2:]
+            assert list(non_formatted_sym_degen_df.index.to_numpy()[i]) == row[:2]
 
     def _check_MgO_symmetries_degeneracies(self, MgO_defect_thermo: DefectThermodynamics):
         sym_degen_df = MgO_defect_thermo.get_symmetries_and_degeneracies()
         # print(sym_degen_df)
-        assert sym_degen_df.shape == (5, 8)
+        assert sym_degen_df.shape == (5, 6)
         assert list(sym_degen_df.columns) == [
-            "Defect",
-            "q",
             "Site_Symm",
             "Defect_Symm",
             "g_Orient",
@@ -890,6 +907,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "g_Total",
             "Mult",
         ]
+        assert list(sym_degen_df.index.names) == ["Defect", "q"]
         # hardcoded tests to ensure ordering is consistent (by defect type according to
         # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
         # as would appear on a TL diagram)
@@ -902,7 +920,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         for i, row in enumerate(mgo_sym_degen_lists):
             print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row
+            assert list(sym_degen_df.iloc[i]) == row[2:]
+            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
 
         non_formatted_sym_degen_df = MgO_defect_thermo.get_symmetries_and_degeneracies(
             skip_formatting=True
@@ -910,25 +929,29 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print(non_formatted_sym_degen_df)  # for debugging
         for i, row in enumerate(mgo_sym_degen_lists):
             row[1] = int(row[1])  # type: ignore
-            assert list(non_formatted_sym_degen_df.iloc[i]) == row
+            assert list(non_formatted_sym_degen_df.iloc[i]) == row[2:]
+            assert list(non_formatted_sym_degen_df.index.to_numpy()[i]) == row[:2]
 
     def _check_YTOS_symmetries_degeneracies(self, YTOS_defect_thermo: DefectThermodynamics):
         sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies()
         # hardcoded tests to ensure symmetry determination working as expected:
         assert any(
-            list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "C4v", 0.25, 1, 0.25, 4.0]
+            list(sym_degen_df.iloc[i]) == ["Cs", "C4v", 0.25, 1, 0.25, 4.0]
             for i in range(sym_degen_df.shape[0])
+        )
+        assert any(
+            list(sym_degen_df.index.to_numpy()[i]) == ["Int_F", "-1"] for i in range(sym_degen_df.shape[0])
         )
 
         sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
         assert any(
-            list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "C4v", 0.25, 1, 0.25, 4.0]
+            list(sym_degen_df.iloc[i]) == ["Cs", "C4v", 0.25, 1, 0.25, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
         sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.01)
         assert any(
-            list(sym_degen_df.iloc[i]) == ["Int_F", "-1", "Cs", "Cs", 1.0, 1, 1.0, 4.0]
+            list(sym_degen_df.iloc[i]) == ["Cs", "Cs", 1.0, 1, 1.0, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
@@ -936,19 +959,23 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies()
         # hardcoded tests to ensure symmetry determination working as expected:
         assert any(
-            list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "C1", 1.0, 2, 2.0, 4.0]
+            list(sym_degen_df.iloc[i]) == ["C1", "C1", 1.0, 2, 2.0, 4.0]
+            for i in range(sym_degen_df.shape[0])
+        )
+        assert any(
+            list(sym_degen_df.index.to_numpy()[i]) == ["inter_2_Sb", "0"]
             for i in range(sym_degen_df.shape[0])
         )
 
         sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
         assert any(
-            list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "C1", 1.0, 2, 2.0, 4.0]
+            list(sym_degen_df.iloc[i]) == ["C1", "C1", 1.0, 2, 2.0, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
         sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies(symprec=0.2)
         assert any(
-            list(sym_degen_df.iloc[i]) == ["inter_2_Sb", "0", "C1", "Ci", 0.5, 2, 1.0, 4.0]
+            list(sym_degen_df.iloc[i]) == ["C1", "Ci", 0.5, 2, 1.0, 4.0]
             for i in range(sym_degen_df.shape[0])
         )
 
@@ -961,27 +988,27 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             sorted_defect_entries = _sort_defect_entries(
                 {defect_entry.name: defect_entry for defect_entry in defect_thermo.defect_entries.values()}
             )
-            assert form_en_df["Defect"].tolist() == [
+            assert list(form_en_df.index.get_level_values("Defect").values) == [
                 defect_entry.name.rsplit("_", 1)[0] for defect_entry in sorted_defect_entries.values()
             ]
 
-        columns_to_sum = form_en_df.iloc[:, 2:8]
+        columns_to_sum = form_en_df.iloc[:, :-3]  # last 3 cols are form E, path, corr error, so omit
         # ignore strings if chempots is "N/A":
         numeric_columns = columns_to_sum.apply(pd.to_numeric, errors="coerce")
         print(f"Numeric columns: {numeric_columns}")  # for debugging
 
         # assert the sum of formation energy terms equals the total formation energy:
         for i, _row in enumerate(form_en_df.iterrows()):
-            assert np.isclose(numeric_columns.iloc[i].sum(), form_en_df.iloc[i]["ΔEᶠᵒʳᵐ"], atol=1e-3)
+            assert np.isclose(numeric_columns.iloc[i].sum(), form_en_df.iloc[i]["Eᶠᵒʳᵐ"], atol=1e-3)
 
         if fermi_level is not None:  # check q*E_F term
             print(
-                form_en_df.iloc[:, 1].apply(int) * fermi_level,
-                form_en_df.iloc[:, 4],
+                form_en_df.index.get_level_values("q").to_numpy().astype(int) * fermi_level,
+                form_en_df.iloc[:, 2],
             )
             assert np.allclose(
-                form_en_df.iloc[:, 1].apply(int) * fermi_level,
-                form_en_df.iloc[:, 4],
+                form_en_df.index.get_level_values("q").to_numpy().astype(int) * fermi_level,
+                form_en_df.iloc[:, 2],
                 atol=2e-3,
             )
 
@@ -992,25 +1019,26 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ``DefectEntry.formation_energy`` methods.
         """
         form_en_df_cols = [
-            "Defect",
-            "q",
             "ΔEʳᵃʷ",
             "qE_VBM",
             "qE_F",
             "Σμ_ref",
             "Σμ_formal",
             "E_corr",
-            "ΔEᶠᵒʳᵐ",
+            "Eᶠᵒʳᵐ",
             "Path",
+            "Δ[E_corr]",
         ]
+        form_en_df_indices = ["Defect", "q"]
 
         form_en_df, output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.get_formation_energies
         )
 
         self._check_chempot_w_and_fermi_message(w, output)
-        assert form_en_df.shape == (7, 10)
+        assert form_en_df.shape == (7, 9)
         assert list(form_en_df.columns) == form_en_df_cols
+        assert list(form_en_df.index.names) == form_en_df_indices
         # hardcoded tests to ensure ordering is consistent:
         cdte_form_en_lists = [
             [
@@ -1024,6 +1052,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.0,
                 4.166,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",
+                0.0,
             ],
             [
                 "v_Cd",
@@ -1036,6 +1065,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.225,
                 3.959,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-1/vasp_ncl",
+                0.008,
             ],
             [
                 "v_Cd",
@@ -1048,6 +1078,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.739,
                 3.608,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
+                0.011,
             ],
             [
                 "Te_Cd",
@@ -1060,6 +1091,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.238,
                 -0.272,
                 f"{self.CdTe_EXAMPLE_DIR}/Te_Cd_+1/vasp_ncl",
+                0.002,
             ],
             [
                 "Int_Te_3",
@@ -1072,6 +1104,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.904,
                 -1.409,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                0.012,
             ],
             [
                 "Int_Te_3",
@@ -1084,6 +1117,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.3,
                 -2.123,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
+                0.003,
             ],
             [
                 "Int_Te_3_Unperturbed",
@@ -1096,6 +1130,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.297,
                 -2.069,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl",
+                0.005,
             ],
         ]
         # test sum of formation energy terms equals total and other formation energy df properties:
@@ -1254,7 +1289,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         )
 
         for i, row in enumerate(cdte_form_en_lists):
-            assert list(form_en_df.iloc[i])[:-1] == row[:-1]  # compare everything except path
+            assert list(form_en_df.iloc[i])[:-2] == row[2:-2]  # compare everything except path, ΔE_corr
+            assert list(form_en_df.iloc[i])[-1] == row[-1]  # compare ΔE_corr
+            assert list(form_en_df.index.to_numpy()[i]) == row[:2]
             _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap value
 
         with pytest.raises(ValueError) as exc:
@@ -1271,7 +1308,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             _vbm = new_entry.calculation_metadata.pop("vbm")
             assert np.isclose(
                 new_entry.formation_energy(fermi_level=0.7493, vbm=self.CdTe_defect_thermo.vbm),
-                form_en_df.iloc[i][8],
+                form_en_df.iloc[i][6],
                 atol=1e-3,
             )
             with warnings.catch_warnings(record=True) as w:
@@ -1295,7 +1332,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_chempot_w_and_fermi_message(w, output)
         for i, row in enumerate(cdte_form_en_lists):
             row[1] = int(row[1])
-            assert list(non_formatted_form_en_df.iloc[i])[:-1] == row[:-1]  # and all other terms the same
+            assert list(non_formatted_form_en_df.iloc[i])[:-2] == row[2:-2]  # and all other terms the same
+            assert list(non_formatted_form_en_df.iloc[i])[-1] == row[-1]  # check ΔE_corr
+            assert list(non_formatted_form_en_df.index.to_numpy()[i]) == row[:2]
             _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap value
 
         # with chempots:
@@ -1313,8 +1352,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 self.CdTe_defect_thermo.get_formation_energies, self.CdTe_chempots, limit=limit
             )
             self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, te_rich_df)
-            assert df.shape == (7, 10)
+            assert df.shape == (7, 9)
             assert list(df.columns) == form_en_df_cols
+            assert list(df.index.names) == form_en_df_indices
 
         list_of_dfs, output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.get_formation_energies,
@@ -1361,6 +1401,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.0,
                 1.899,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",
+                0.0,
             ],
             [
                 "v_Cd",
@@ -1373,6 +1414,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.225,
                 1.692,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-1/vasp_ncl",
+                0.008,
             ],
             [
                 "v_Cd",
@@ -1385,6 +1427,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.739,
                 1.341,
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl",
+                0.011,
             ],
             [
                 "Te_Cd",
@@ -1397,6 +1440,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.238,
                 1.932,
                 f"{self.CdTe_EXAMPLE_DIR}/Te_Cd_+1/vasp_ncl",
+                0.002,
             ],
             [
                 "Int_Te_3",
@@ -1409,6 +1453,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.904,
                 3.062,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
+                0.012,
             ],
             [
                 "Int_Te_3",
@@ -1421,6 +1466,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.3,
                 2.347,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_1/vasp_ncl",
+                0.003,
             ],
             [
                 "Int_Te_3_Unperturbed",
@@ -1433,6 +1479,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 0.297,
                 2.402,
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl",
+                0.005,
             ],
         ]
 
@@ -1440,7 +1487,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         self._check_form_en_df(te_rich_df, fermi_level=0.7493, defect_thermo=self.CdTe_defect_thermo)
 
         for i, row in enumerate(cdte_te_rich_form_en_lists):
-            assert list(te_rich_df.iloc[i])[:-1] == row[:-1]  # compare everything except path
+            assert list(te_rich_df.iloc[i])[:-2] == row[2:-2]  # compare everything except path, ΔE_corr
+            assert list(te_rich_df.iloc[i])[-1] == row[-1]  # compare ΔE_corr
+            assert list(te_rich_df.index.to_numpy()[i]) == row[:2]
             _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap
             # value, chempots also now attached
 
@@ -1461,7 +1510,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, non_formatted_te_rich_df)
         for i, row in enumerate(cdte_te_rich_form_en_lists):
             row[1] = int(row[1])
-            assert list(non_formatted_te_rich_df.iloc[i])[:-1] == row[:-1]
+            assert list(non_formatted_te_rich_df.iloc[i])[:-2] == row[2:-2]
+            assert list(non_formatted_te_rich_df.iloc[i])[-1] == row[-1]  # check ΔE_corr
+            assert list(non_formatted_te_rich_df.index.to_numpy()[i]) == row[:2]
             _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)
 
         # hard test random case with random chempots, el_refs and fermi level
@@ -1473,7 +1524,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         assert "Fermi level was not set" not in output
         assert len(w) == 1  # only mis-matching chempot warning
-        assert manual_form_en_df.shape == (7, 10)
+        assert manual_form_en_df.shape == (7, 9)
         # test sum of formation energy terms equals total and other formation energy df properties:
         self._check_form_en_df(manual_form_en_df, fermi_level=3, defect_thermo=self.CdTe_defect_thermo)
 
@@ -1482,16 +1533,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         manual_thermo.chempots = {"Te": 3, "Cd": -1}
         manual_thermo.el_refs = {"Cd": -12, "Te": -1}
         for i, row in manual_form_en_df.iterrows():
-            assert list(row)[:4] == list(te_rich_df.iloc[i])[:4]
-            assert list(row)[4:7] != list(te_rich_df.iloc[i])[4:7]
-            assert list(row)[7] == list(te_rich_df.iloc[i])[7]
-            assert list(row)[8] != list(te_rich_df.iloc[i])[8]
-            assert list(row)[9] == list(te_rich_df.iloc[i])[9]
-            _check_formation_energy_methods(list(row), manual_thermo, 3)
+            assert list(row)[:2] == list(te_rich_df.loc[i])[:2]
+            assert list(row)[2:5] != list(te_rich_df.loc[i])[2:5]
+            assert list(row)[5] == list(te_rich_df.loc[i])[5]
+            assert list(row)[6] != list(te_rich_df.loc[i])[6]
+            assert list(row)[7] == list(te_rich_df.loc[i])[7]
+            assert list(row)[8] == list(te_rich_df.loc[i])[8]
+            _check_formation_energy_methods(list(i) + list(row), manual_thermo, 3)
 
-        assert list(manual_form_en_df.iloc[2])[:-1] == [
-            "v_Cd",
-            "-2",
+        assert list(manual_form_en_df.iloc[2])[:-2] == [  # "v_Cd", "-2",
             7.661,
             -3.293,
             -6,
@@ -1500,9 +1550,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             0.739,
             -13.893,
         ]
-        assert list(manual_form_en_df.iloc[4])[:-1] == [
-            "Int_Te_3",
-            "+2",
+        assert list(manual_form_en_df.index.to_numpy()[2]) == ["v_Cd", "-2"]
+        assert list(manual_form_en_df.iloc[4])[:-2] == [  # "Int_Te_3", "+2",
             -7.105,
             3.293,
             6,
@@ -1511,6 +1560,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             0.904,
             1.092,
         ]
+        assert list(manual_form_en_df.index.to_numpy()[4]) == ["Int_Te_3", "+2"]
 
     def _check_no_w_fermi_message_and_new_matches_ref_df(self, output, w, new_df, ref_df):
         assert "Fermi level was not set" in output
@@ -1912,12 +1962,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01)
                     == sym_degen_dict[name]["relaxed point symmetry"]
                 )
-                if "vac" not in name:  # for vacancies, the centre of mass may be different to the V site!
+                if not any(i in name for i in ["vac", "Int_Te_3"]):
+                    # for vacancies, the centre of mass may be different to the V site, and Int_Te_3 are
+                    # split-interstitials which again has CoM away from interstitial site
                     assert (
                         point_symmetry_from_site(
                             defect_entry.sc_defect_frac_coords,
                             defect_entry.defect_supercell,
-                            symprec=0.011,  # default symprec for point_symmetry_from_site is 0.01
+                            # default symprec for point_symmetry_from_site is 0.01
                         )
                         == sym_degen_dict[name]["relaxed point symmetry"]
                     )
@@ -2314,7 +2366,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                     ]["Total Concentration (cm^-3)"].to_numpy()[0]
                     for temp in self.anneal_temperatures
                 ]
-            )
+            )  # TODO: Need to uppdate here and in tutorial??
 
         plt.style.use(STYLE)
         f, ax = plt.subplots()

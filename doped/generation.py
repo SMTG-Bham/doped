@@ -2347,6 +2347,7 @@ def get_Voronoi_interstitial_sites(
     interstitial sites).
 
     The logic for picking interstitial sites is as follows:
+
     - Generate all candidate sites using (efficient) Voronoi analysis
     - Remove any sites which are within ``min_dist`` of any host atoms
     - Cluster the remaining sites using a tolerance of ``clustering_tol``
