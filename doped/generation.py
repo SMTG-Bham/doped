@@ -2402,11 +2402,9 @@ def get_Voronoi_interstitial_sites(
         list: List of interstitial sites as fractional coordinates
     """
     # so we want to pick the higher symmetry sites because it's cleaner, more intuitive etc
-    # but, this is probably more likely to be stuck in local minima, compared to the (nearby)
-    # lower symmetry interstitial sites... but this would at least be avoided by rattling I guess
-    # so we should pick the high symmetry sites, but make sure we have clear warnings/notes in docs
-    # that if SnB is being skipped (bad practice), at the very least you should rattle defect structures!
-    # (which we can quickly add as an option in doped.vasp?) -- TODO!!
+    # but, this is slightly more likely to be stuck in local minima, compared to the (nearby)
+    # lower symmetry interstitial sites... avoided by using ShakeNBreak, other structure-searching
+    # approaches, or rattling the output structures (default in ``doped.vasp``)
 
     interstitial_gen_kwargs = interstitial_gen_kwargs or {}
     supported_interstitial_gen_kwargs = {
