@@ -1264,8 +1264,7 @@ class DefectsSetTest(unittest.TestCase):
 
         # assert that the same folders in self.CdTe_data_dir are present in the current directory
         print("Checking vasp_gam files")
-        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests
-        # vasp_gam
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
         print("Checking vasp_std files")
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
 
@@ -1768,6 +1767,92 @@ class DefectsSetTest(unittest.TestCase):
 
         for key in ds:
             assert key in ["Ag_Sb_Cs_Te2.90_-2", "Ag_Sb_Cs_Te2.90_-1"]
+
+    def test_rattled_CdTe_files(self):
+        CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
+        defects_set = DefectsSet(
+            CdTe_se_defect_gen,
+            user_incar_settings=self.CdTe_custom_test_incar_settings,
+        )
+
+        defects_set.write_files(potcar_spec=True, poscar=True)  # rattle = True by default
+        # test no vasp_gam files written:
+        for folder in os.listdir("."):
+            assert not os.path.exists(f"{folder}/vasp_gam")
+
+        defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True)
+
+        bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        # check_generated_vasp_inputs also checks bulk folders
+        assert os.path.exists("CdTe_defects_generator.json.gz")
+
+        # assert that the same folders in self.CdTe_data_dir are present in the current directory
+        print("Checking vasp_gam files")
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False, check_poscar=False)
+        print("Checking vasp_std files")
+        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
+        print("Checking vasp_ncl files")
+        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
+
+        # test rattled POSCARs and bulk
+        # rattle = True by default for DefectsSet
+        def _check_rattled_and_bulk():
+            print("Checking rattled POSCARs and bulk")
+            # check bulk first:
+            reference_bulk = Structure.from_file(f"{self.CdTe_data_dir}/CdTe_bulk/vasp_ncl/POSCAR")
+            generated_bulk = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+            assert reference_bulk == generated_bulk
+            for defect_entry_name in ["v_Cd_0", "Se_i_C3v_-1", "Cd_Te_+2"]:
+                print(defect_entry_name)
+                reference_struct = Structure.from_file(
+                    f"{self.CdTe_data_dir}/{defect_entry_name}/vasp_gam/POSCAR"
+                )
+                generated_struct = Structure.from_file(f"{defect_entry_name}/vasp_std/POSCAR")
+                assert not StructureMatcher(stol=0.1).fit(
+                    reference_struct, generated_struct
+                )  # now rattled
+                print(StructureMatcher().get_rms_dist(reference_struct, generated_struct))  # for debugging
+                assert (
+                    StructureMatcher().get_rms_dist(reference_struct, generated_struct)[0] > 0.05
+                )  # rattled
+
+                for other_vasp_dir in ["vasp_gam", "vasp_nkred_std", "vasp_ncl"]:
+                    print(f"Checking {other_vasp_dir}")
+                    other_generated_struct = Structure.from_file(
+                        f"{defect_entry_name}/{other_vasp_dir}/POSCAR"
+                    )
+                    assert other_generated_struct == generated_struct
+
+                for other_dir in os.listdir():
+                    if other_dir.startswith(defect_entry_name.rsplit("_", 1)[0]):
+                        print(f"Checking {other_dir}/vasp_std")
+                        other_generated_struct = Structure.from_file(f"{other_dir}/vasp_std/POSCAR")
+                        assert other_generated_struct == generated_struct
+
+        _check_rattled_and_bulk()
+
+        # test DefectRelaxSet:
+        # rattle = True by default for DefectRelaxSet
+        for defect_species, defect_relax_set in defects_set.defect_sets.items():
+            defect_relax_set.write_all(defect_species, poscar=True, vasp_gam=True, bulk=True)
+
+        _check_rattled_and_bulk()
+
+        # test DefectDictSet objects:
+        for defect_species, defect_relax_set in defects_set.defect_sets.items():
+            # rattle = False by default for DefectDictSet
+            defect_relax_set.bulk_vasp_ncl.write_input("CdTe_bulk/vasp_ncl", poscar=True)
+
+            for defect_dict_set, subfolder in [
+                (defect_relax_set.vasp_gam, "vasp_gam"),
+                (defect_relax_set.vasp_nkred_std, "vasp_nkred_std"),
+                (defect_relax_set.vasp_std, "vasp_std"),
+                (defect_relax_set.vasp_ncl, "vasp_ncl"),
+            ]:
+                defect_dict_set.write_input(f"{defect_species}/{subfolder}", poscar=True, rattle=True)
+
+        _check_rattled_and_bulk()
 
 
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
