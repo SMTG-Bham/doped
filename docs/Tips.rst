@@ -24,7 +24,8 @@ charge state of the generated interstitial candidates, and then pruning some of 
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
 generation tutorial, and then run the ``ShakeNBreak`` ``vasp_gam`` relaxations for the ``Unperturbed`` and
 ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate the
-``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()``.
+``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()`` -- this
+will rattle the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
