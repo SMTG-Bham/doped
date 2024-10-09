@@ -35,6 +35,7 @@ centroid of charge difference between bulk/defect LOCPOTs (for FNV) or bulk/defe
 eFNV) were developed, they should be used here.
 """
 
+import contextlib
 import os
 import warnings
 from typing import Optional, Union
@@ -518,12 +519,16 @@ def get_kumagai_correction(
 
     core_potentials_dict = {}
     for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar]):
-        total_energy = [
-            defect_entry.sc_entry.energy if key == "defect" else defect_entry.bulk_entry.energy,
-            defect_entry.calculation_metadata["run_metadata"][f"{key}_vasprun_dict"]["output"][
-                "ionic_steps"
-            ][-1]["electronic_steps"][-1]["e_0_energy"],
-        ]
+        total_energy = []
+        with contextlib.suppress(Exception):
+            total_energy.append(
+                defect_entry.sc_entry.energy if key == "defect" else defect_entry.bulk_entry.energy
+            )
+            total_energy.append(
+                defect_entry.calculation_metadata["run_metadata"][f"{key}_vasprun_dict"]["output"][
+                    "ionic_steps"
+                ][-1]["electronic_steps"][-1]["e_0_energy"]
+            )
 
         if outcar is not None:
             core_potentials_dict[key] = _check_if_pathlike_and_get_locpot_or_core_pots(
