@@ -32,6 +32,7 @@ from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.efficiency import get_voronoi_nodes
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -266,9 +267,7 @@ def defect_from_structures(
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
             if not bulk_voronoi_node_dict:  # first time parsing
-                from shakenbreak.input import _get_voronoi_nodes
-
-                voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
+                voronoi_frac_coords = [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)]
                 bulk_voronoi_node_dict = {
                     "bulk_supercell": bulk_supercell,
                     "Voronoi nodes": voronoi_frac_coords,
