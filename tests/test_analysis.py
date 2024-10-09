@@ -1168,7 +1168,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         assert conc_df.to_numpy().tolist() == [[6.010973640124676e-142, 3.953921443531439e-165]]
-        assert conc_df.index[0] == "vac_O"
+        assert conc_df.index.to_numpy()[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
         return thermo.plot()
@@ -1216,13 +1216,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         vacancy_and_sub_rows = symm_df[
-            symm_df["Defect"].str.contains("vac", na=False)
-            | symm_df["Defect"].str.contains("sub", na=False)
+            np.array(["vac" in i for i in symm_df.index.get_level_values("Defect")])
+            | np.array(["sub" in i for i in symm_df.index.get_level_values("Defect")])
         ]
         assert list(vacancy_and_sub_rows["Site_Symm"].unique()) == ["Td"]
         assert list(vacancy_and_sub_rows["Defect_Symm"].unique()) == ["C1"]
 
-        interstitial_rows = symm_df[symm_df["Defect"].str.contains("inter", na=False)]
+        interstitial_rows = symm_df[["inter" in i for i in symm_df.index.get_level_values("Defect")]]
         assert list(interstitial_rows["Site_Symm"].unique()) == ["C3v", "Cs", "C1"]
         assert list(interstitial_rows["Defect_Symm"].unique()) == ["C1"]
 
