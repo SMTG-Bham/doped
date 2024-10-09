@@ -1102,7 +1102,7 @@ class DefectsGenerator(MSONable):
         generate_supercell: bool = True,
         charge_state_gen_kwargs: Optional[dict] = None,
         supercell_gen_kwargs: Optional[dict[str, Union[int, float, bool]]] = None,
-        interstitial_gen_kwargs: Optional[dict] = None,
+        interstitial_gen_kwargs: Optional[Union[dict, bool]] = None,
         target_frac_coords: Optional[list] = None,
         processes: Optional[int] = None,
     ):
@@ -1210,7 +1210,7 @@ class DefectsGenerator(MSONable):
                 (such as ``min_dist``, ``clustering_tol``, ``symmetry_preference``,
                 ``stol`` and ``tight_stol`` -- see its docstring), or
                 ``InterstitialGenerator`` if ``interstitial_coords`` is specified.
-                If set to False, interstitial generation will be skipped entirely.
+                If set to ``False``, interstitial generation will be skipped entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
@@ -1265,7 +1265,7 @@ class DefectsGenerator(MSONable):
             "force_diagonal": False,
         }
         self.supercell_gen_kwargs.update(supercell_gen_kwargs if supercell_gen_kwargs is not None else {})
-        self.interstitial_gen_kwargs: dict[str, Union[int, float, bool]] = (
+        self.interstitial_gen_kwargs: Union[dict[str, Union[int, float, bool]], bool] = (
             interstitial_gen_kwargs if interstitial_gen_kwargs is not None else {}
         )
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
@@ -1511,6 +1511,9 @@ class DefectsGenerator(MSONable):
             # Interstitials:
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
             if self.interstitial_gen_kwargs is not False:  # skip interstitials
+                self.interstitial_gen_kwargs = (
+                    self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
+                )
                 pbar.set_description("Generating interstitials")
                 if self.interstitial_coords:
                     # map interstitial coords to primitive structure, and get multiplicities

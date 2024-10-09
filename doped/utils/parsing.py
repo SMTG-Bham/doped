@@ -226,7 +226,7 @@ def _get_core_potentials_from_outcar_obj(
 def _check_outcar_energy(
     outcar: Union[Outcar, PathLike], total_energy: Optional[Union[list, float]] = None
 ):
-    if total_energy is not None:
+    if total_energy:
         outcar_energy = (
             outcar.final_energy if isinstance(outcar, Outcar) else _get_final_energy_from_outcar(outcar)
         )

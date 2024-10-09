@@ -61,14 +61,8 @@ def _check_potcar_dir_not_setup_warning_error(dds, message, unperturbed_poscar=T
     return all(x in str(message) for x in ["POTCAR directory not set up with pymatgen", ending_string])
 
 
-def _check_no_potcar_available_warning_error(symbol, message):
-    return all(
-        x in str(message)
-        for x in [
-            f"No POTCAR for {symbol} with functional",
-            "Please set the PMG_VASP_PSP_DIR",
-        ]
-    )
+def _check_no_potcar_available_warning_error(message):
+    return "Set PMG_VASP_PSP_DIR=<directory-path> in .pmgrc.yaml (needed to find POTCARs)" in str(message)
 
 
 def _check_nelect_nupdown_error(message):
@@ -149,7 +143,7 @@ class DefectDictSetTest(unittest.TestCase):
         else:
             with pytest.raises(ValueError) as e:
                 _test_pop = dds.potcar
-            assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.value)
+            assert _check_no_potcar_available_warning_error(e.value)
 
             if dds.charge_state != 0:
                 with pytest.raises(ValueError) as e:
@@ -191,10 +185,7 @@ class DefectDictSetTest(unittest.TestCase):
         print("Testing:", [str(warning.message) for warning in w])  # for debugging
         assert any(_check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w)
         assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-        assert any(
-            _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
-            for warning in w
-        )
+        assert any(_check_no_potcar_available_warning_error(warning.message) for warning in w)
 
     def _check_dds_incar(self, dds, struct):
         # these are the base INCAR settings:
