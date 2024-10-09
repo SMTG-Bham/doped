@@ -1609,6 +1609,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             assert (
                 line in self.ytos_defect_gen_info.splitlines()
                 or line.replace("O1.92", "Y1.92") in self.ytos_defect_gen_info.splitlines()
+                or line.replace("0.184", "0.185") in self.ytos_defect_gen_info.splitlines()
             )
 
         self._general_defect_gen_check(ytos_defect_gen)
@@ -2470,7 +2471,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.primitive_structure.lattice.matrix, self.lmno_primitive.lattice.matrix
         )
         supercell_matrix = np.array(
-            [[1, 1, 0], [1, 0, 1], [0, 1, 1]] if generate_supercell else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+            [[0, 1, 1], [1, 0, 1], [1, 1, 0]] if generate_supercell else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
         )
         assert any(np.isclose(lmno_defect_gen.min_image_distance, i, atol=0.01) for i in [11.71, 8.28])
         assert np.allclose(lmno_defect_gen.supercell_matrix, supercell_matrix)
@@ -2512,7 +2513,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.multiplicity == 24
         )  # prim = conv structure in LMNO
         sc_frac_coords = np.array(
-            [0.375325, 0.391795, 0.616475] if generate_supercell else [0.23288, 0.4918, 0.49173]
+            [0.375325, 0.616475, 0.391795] if generate_supercell else [0.23288, 0.4918, 0.49173]
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
@@ -2819,7 +2820,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # test attributes:
         assert self.structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
         supercell_matrix = np.array(
-            [[2, -2, 2], [4, 0, 0], [4, -4, 0]]
+            [[4, -4, 0], [4, 0, 0], [2, -2, 2]]
             if generate_supercell
             else [[0.0, 2.0, 0.0], [-2.0, 2.0, 0.0], [-1.0, 1.0, 1.0]]
         )

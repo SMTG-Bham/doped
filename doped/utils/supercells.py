@@ -755,6 +755,24 @@ def find_ideal_supercell(
 
         optimal_P = np.matmul(T, optimal_P)
 
+        # if negative cell determinant, swap lattice vectors to get a positive determinant (as this can
+        # cause issues with VASP, and results in POSCAR lattice matrix changes), picking that with the best
+        # score according to the sorting function:
+        if np.linalg.det(clean_supercell.lattice.matrix) < 0:
+            swap_combo_score_dict = {}
+            for swap_combo in permutations([0, 1, 2], 2):
+                swapped_P = np.copy(optimal_P)
+                swapped_P[swap_combo[0]], swapped_P[swap_combo[1]] = (
+                    swapped_P[swap_combo[1]],
+                    swapped_P[swap_combo[0]].copy(),
+                )
+                swap_combo_score_dict[swap_combo] = _P_matrix_sort_func(swapped_P, cell)
+            best_swap_combo = min(swap_combo_score_dict, key=lambda x: swap_combo_score_dict[x])
+            optimal_P[best_swap_combo[0]], optimal_P[best_swap_combo[1]] = (
+                optimal_P[best_swap_combo[1]],
+                optimal_P[best_swap_combo[0]].copy(),
+            )
+
     return (optimal_P, min_dist) if return_min_dist else optimal_P
 
 
