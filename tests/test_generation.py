@@ -370,138 +370,138 @@ Ag_i_C3v_Cu1.80               [+1,0]             [0.000,0.000,0.250]  6c
             """Vacancies                     Guessed Charges    Conv. Cell Coords    Wyckoff
 ----------------------------  -----------------  -------------------  ---------
 v_Cd_C1                       [+1,0,-1]          [0.333,0.333,0.333]  18c
-v_Cd_C3v_Cd2.71               [+1,0,-1]          [0.000,0.000,0.542]  3a
-v_Cd_C3v_Te2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.667]  3a
+v_Cd_C3v_Cd2.71               [+1,0,-1]          [0.000,0.000,0.458]  3a
+v_Cd_C3v_Te2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.333]  3a
 v_Cd_C3v_Te2.83Cd4.62Te5.42a  [+1,0,-1]          [0.000,0.000,0.000]  3a
-v_Cd_C3v_Te2.83Cd4.62Te5.42b  [+1,0,-1]          [0.000,0.000,0.333]  3a
-v_Cd_Cs_Cd2.71                [+1,0,-1]          [0.111,0.222,0.555]  9b
-v_Cd_Cs_Te2.83Cd4.25          [+1,0,-1]          [0.222,0.444,0.111]  9b
-v_Cd_Cs_Te2.83Cd4.62Cd5.36    [+1,0,-1]          [0.111,0.222,0.222]  9b
+v_Cd_C3v_Te2.83Cd4.62Te5.42b  [+1,0,-1]          [0.000,0.000,0.667]  3a
+v_Cd_Cs_Cd2.71                [+1,0,-1]          [0.222,0.111,0.445]  9b
+v_Cd_Cs_Te2.83Cd4.25          [+1,0,-1]          [0.111,0.555,0.222]  9b
+v_Cd_Cs_Te2.83Cd4.62Cd5.36    [+1,0,-1]          [0.556,0.111,0.111]  9b
 v_Cd_Cs_Te2.83Cd4.62Te5.42a   [+1,0,-1]          [0.222,0.111,0.111]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42b   [+1,0,-1]          [0.445,0.222,0.222]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42c   [+1,0,-1]          [0.556,0.111,0.111]  9b
-v_Te_C1                       [+1,0,-1]          [0.333,0.333,0.083]  18c
-v_Te_C3v_Cd2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.417]  3a
-v_Te_C3v_Cd2.83Te4.62Cd5.42a  [+1,0,-1]          [0.000,0.000,0.083]  3a
-v_Te_C3v_Cd2.83Te4.62Cd5.42b  [+1,0,-1]          [0.000,0.000,0.750]  3a
-v_Te_Cs_Cd2.71                [+1,0,-1]          [0.222,0.444,0.194]  9b
-v_Te_Cs_Cd2.83Cd4.25          [+1,0,-1]          [0.111,0.556,0.306]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.36    [+1,0,-1]          [0.556,0.111,0.194]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42a   [+1,0,-1]          [0.222,0.111,0.194]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42b   [+1,0,-1]          [0.111,0.222,0.305]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42c   [+1,0,-1]          [0.445,0.222,0.305]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42b   [+1,0,-1]          [0.111,0.222,0.222]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42c   [+1,0,-1]          [0.444,0.222,0.222]  9b
+v_Te_C1                       [+1,0,-1]          [0.333,0.333,0.250]  18c
+v_Te_C3v_Cd2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.583]  3a
+v_Te_C3v_Cd2.83Te4.62Cd5.42a  [+1,0,-1]          [0.000,0.000,0.250]  3a
+v_Te_C3v_Cd2.83Te4.62Cd5.42b  [+1,0,-1]          [0.000,0.000,0.917]  3a
+v_Te_Cs_Cd2.71                [+1,0,-1]          [0.111,0.222,0.472]  9b
+v_Te_Cs_Cd2.83Cd4.25          [+1,0,-1]          [0.222,0.111,0.361]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.36    [+1,0,-1]          [0.111,0.222,0.139]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42a   [+1,0,-1]          [0.222,0.111,0.028]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42b   [+1,0,-1]          [0.444,0.222,0.139]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42c   [+1,0,-1]          [0.556,0.111,0.028]  9b
 
 Substitutions                  Guessed Charges        Conv. Cell Coords    Wyckoff
 -----------------------------  ---------------------  -------------------  ---------
-Cd_Te_C1                       [+2,+1,0,-1]           [0.333,0.333,0.083]  18c
-Cd_Te_C3v_Cd2.83Cd4.25         [+2,+1,0,-1]           [0.000,0.000,0.417]  3a
-Cd_Te_C3v_Cd2.83Te4.62Cd5.42a  [+2,+1,0,-1]           [0.000,0.000,0.083]  3a
-Cd_Te_C3v_Cd2.83Te4.62Cd5.42b  [+2,+1,0,-1]           [0.000,0.000,0.750]  3a
-Cd_Te_Cs_Cd2.71                [+2,+1,0,-1]           [0.222,0.444,0.194]  9b
-Cd_Te_Cs_Cd2.83Cd4.25          [+2,+1,0,-1]           [0.111,0.556,0.306]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.36    [+2,+1,0,-1]           [0.556,0.111,0.194]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.42a   [+2,+1,0,-1]           [0.222,0.111,0.194]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.42b   [+2,+1,0,-1]           [0.111,0.222,0.305]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.42c   [+2,+1,0,-1]           [0.445,0.222,0.305]  9b
+Cd_Te_C1                       [+2,+1,0,-1]           [0.333,0.333,0.250]  18c
+Cd_Te_C3v_Cd2.83Cd4.25         [+2,+1,0,-1]           [0.000,0.000,0.583]  3a
+Cd_Te_C3v_Cd2.83Te4.62Cd5.42a  [+2,+1,0,-1]           [0.000,0.000,0.250]  3a
+Cd_Te_C3v_Cd2.83Te4.62Cd5.42b  [+2,+1,0,-1]           [0.000,0.000,0.917]  3a
+Cd_Te_Cs_Cd2.71                [+2,+1,0,-1]           [0.111,0.222,0.472]  9b
+Cd_Te_Cs_Cd2.83Cd4.25          [+2,+1,0,-1]           [0.222,0.111,0.361]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.36    [+2,+1,0,-1]           [0.111,0.222,0.139]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.42a   [+2,+1,0,-1]           [0.222,0.111,0.028]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.42b   [+2,+1,0,-1]           [0.444,0.222,0.139]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.42c   [+2,+1,0,-1]           [0.556,0.111,0.028]  9b
 Te_Cd_C1                       [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.333]  18c
-Te_Cd_C3v_Cd2.71               [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.542]  3a
-Te_Cd_C3v_Te2.83Cd4.25         [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.667]  3a
+Te_Cd_C3v_Cd2.71               [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.458]  3a
+Te_Cd_C3v_Te2.83Cd4.25         [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.333]  3a
 Te_Cd_C3v_Te2.83Cd4.62Te5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.000]  3a
-Te_Cd_C3v_Te2.83Cd4.62Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.333]  3a
-Te_Cd_Cs_Cd2.71                [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.555]  9b
-Te_Cd_Cs_Te2.83Cd4.25          [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.111]  9b
-Te_Cd_Cs_Te2.83Cd4.62Cd5.36    [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.222]  9b
+Te_Cd_C3v_Te2.83Cd4.62Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.667]  3a
+Te_Cd_Cs_Cd2.71                [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.445]  9b
+Te_Cd_Cs_Te2.83Cd4.25          [+4,+3,+2,+1,0,-1,-2]  [0.111,0.555,0.222]  9b
+Te_Cd_Cs_Te2.83Cd4.62Cd5.36    [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.111]  9b
 Te_Cd_Cs_Te2.83Cd4.62Te5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.111]  9b
-Te_Cd_Cs_Te2.83Cd4.62Te5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.222]  9b
-Te_Cd_Cs_Te2.83Cd4.62Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.111]  9b
+Te_Cd_Cs_Te2.83Cd4.62Te5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.222]  9b
+Te_Cd_Cs_Te2.83Cd4.62Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.222]  9b
 
 Interstitials                 Guessed Charges        Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------------  -------------------  ---------
-Cd_i_C1_Cd2.71Te2.71Cd4.00a   [+2,+1,0]              [0.055,0.444,0.153]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.00b   [+2,+1,0]              [0.111,0.389,0.264]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.167,0.167,0.042]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.167,0.167,0.375]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.333,0.333,0.208]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.167,0.167,0.708]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.056,0.278,0.153]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.278,0.056,0.264]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.389,0.111,0.153]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.444,0.055,0.264]  18c
-Cd_i_C1_Cd2.83                [+2,+1,0]              [0.333,0.333,0.250]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.00a   [+2,+1,0]              [0.111,0.389,0.180]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.00b   [+2,+1,0]              [0.056,0.444,0.069]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.167,0.167,0.292]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.333,0.333,0.125]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.167,0.167,0.625]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.167,0.167,0.958]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.056,0.278,0.069]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.278,0.055,0.180]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.389,0.111,0.069]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.445,0.056,0.180]  18c
+Cd_i_C1_Cd2.83                [+2,+1,0]              [0.333,0.333,0.083]  18c
 Cd_i_C1_Te2.83                [+2,+1,0]              [0.333,0.333,0.167]  18c
-Cd_i_C3v_Cd2.71Te2.71Cd4.25a  [+2,+1,0]              [0.000,0.000,0.208]  3a
-Cd_i_C3v_Cd2.71Te2.71Cd4.25b  [+2,+1,0]              [0.000,0.000,0.875]  3a
-Cd_i_C3v_Cd2.83Te3.27Cd5.42a  [+2,+1,0]              [0.000,0.000,0.250]  3a
-Cd_i_C3v_Cd2.83Te3.27Cd5.42b  [+2,+1,0]              [0.000,0.000,0.917]  3a
+Cd_i_C3v_Cd2.71Te2.71Cd4.25a  [+2,+1,0]              [0.000,0.000,0.125]  3a
+Cd_i_C3v_Cd2.71Te2.71Cd4.25b  [+2,+1,0]              [0.000,0.000,0.792]  3a
+Cd_i_C3v_Cd2.83Te3.27Cd5.42a  [+2,+1,0]              [0.000,0.000,0.083]  3a
+Cd_i_C3v_Cd2.83Te3.27Cd5.42b  [+2,+1,0]              [0.000,0.000,0.750]  3a
 Cd_i_C3v_Te2.83Cd3.27Te5.42a  [+2,+1,0]              [0.000,0.000,0.167]  3a
 Cd_i_C3v_Te2.83Cd3.27Te5.42b  [+2,+1,0]              [0.000,0.000,0.833]  3a
-Cd_i_Cs_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.500,0.500,0.042]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.500,0.500,0.375]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.500,0.500,0.708]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.056,0.111,0.153]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.111,0.222,0.097]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.111,0.056,0.264]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.222,0.111,0.319]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.111,0.222,0.430]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25i   [+2,+1,0]              [0.445,0.222,0.097]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25j   [+2,+1,0]              [0.222,0.444,0.319]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25k   [+2,+1,0]              [0.555,0.278,0.153]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25l   [+2,+1,0]              [0.556,0.111,0.319]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25m   [+2,+1,0]              [0.611,0.222,0.264]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd3.56    [+2,+1,0]              [0.111,0.222,0.472]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42a   [+2,+1,0]              [0.222,0.111,0.028]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42b   [+2,+1,0]              [0.111,0.222,0.139]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42c   [+2,+1,0]              [0.222,0.111,0.361]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42d   [+2,+1,0]              [0.445,0.222,0.139]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42e   [+2,+1,0]              [0.555,0.111,0.028]  9b
-Cd_i_Cs_Te2.83Cd3.27Cd3.56    [+2,+1,0]              [0.222,0.444,0.278]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.500,0.500,0.292]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.500,0.500,0.625]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.500,0.500,0.958]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.056,0.111,0.069]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.111,0.056,0.181]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.111,0.222,0.014]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.222,0.111,0.236]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.111,0.222,0.347]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25i   [+2,+1,0]              [0.444,0.222,0.014]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25j   [+2,+1,0]              [0.222,0.444,0.236]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25k   [+2,+1,0]              [0.556,0.111,0.236]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25l   [+2,+1,0]              [0.556,0.278,0.069]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25m   [+2,+1,0]              [0.611,0.222,0.181]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd3.56    [+2,+1,0]              [0.222,0.444,0.194]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42a   [+2,+1,0]              [0.222,0.111,0.195]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42b   [+2,+1,0]              [0.111,0.222,0.306]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42c   [+2,+1,0]              [0.444,0.222,0.306]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42d   [+2,+1,0]              [0.556,0.111,0.194]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42e   [+2,+1,0]              [0.111,0.555,0.305]  9b
+Cd_i_Cs_Te2.83Cd3.27Cd3.56    [+2,+1,0]              [0.111,0.222,0.389]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42a   [+2,+1,0]              [0.111,0.222,0.056]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42b   [+2,+1,0]              [0.222,0.111,0.278]  9b
-Cd_i_Cs_Te2.83Cd3.27Te5.42c   [+2,+1,0]              [0.111,0.222,0.389]  9b
-Cd_i_Cs_Te2.83Cd3.27Te5.42d   [+2,+1,0]              [0.445,0.222,0.056]  9b
+Cd_i_Cs_Te2.83Cd3.27Te5.42c   [+2,+1,0]              [0.444,0.222,0.056]  9b
+Cd_i_Cs_Te2.83Cd3.27Te5.42d   [+2,+1,0]              [0.222,0.444,0.278]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42e   [+2,+1,0]              [0.556,0.111,0.278]  9b
-Te_i_C1_Cd2.71Te2.71Cd4.00a   [+4,+3,+2,+1,0,-1,-2]  [0.055,0.444,0.153]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.00b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.389,0.264]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.042]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.375]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.208]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.708]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.278,0.153]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.278,0.056,0.264]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.389,0.111,0.153]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.055,0.264]  18c
-Te_i_C1_Cd2.83                [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.250]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.00a   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.389,0.180]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.00b   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.444,0.069]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.292]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.125]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.625]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.958]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.278,0.069]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.278,0.055,0.180]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.389,0.111,0.069]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.056,0.180]  18c
+Te_i_C1_Cd2.83                [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.083]  18c
 Te_i_C1_Te2.83                [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.167]  18c
-Te_i_C3v_Cd2.71Te2.71Cd4.25a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.208]  3a
-Te_i_C3v_Cd2.71Te2.71Cd4.25b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.875]  3a
-Te_i_C3v_Cd2.83Te3.27Cd5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.250]  3a
-Te_i_C3v_Cd2.83Te3.27Cd5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.917]  3a
+Te_i_C3v_Cd2.71Te2.71Cd4.25a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.125]  3a
+Te_i_C3v_Cd2.71Te2.71Cd4.25b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.792]  3a
+Te_i_C3v_Cd2.83Te3.27Cd5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.083]  3a
+Te_i_C3v_Cd2.83Te3.27Cd5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.750]  3a
 Te_i_C3v_Te2.83Cd3.27Te5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.167]  3a
 Te_i_C3v_Te2.83Cd3.27Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.833]  3a
-Te_i_Cs_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.042]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.375]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.708]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.111,0.153]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.097]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.056,0.264]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.319]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.430]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25i   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.097]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25j   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.319]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25k   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.278,0.153]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25l   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.319]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25m   [+4,+3,+2,+1,0,-1,-2]  [0.611,0.222,0.264]  9b
-Te_i_Cs_Cd2.83Te3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.472]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.028]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.139]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.361]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.139]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.028]  9b
-Te_i_Cs_Te2.83Cd3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.278]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.292]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.625]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.958]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.111,0.069]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.056,0.181]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.014]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.236]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.347]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25i   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.014]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25j   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.236]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25k   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.236]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25l   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.278,0.069]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25m   [+4,+3,+2,+1,0,-1,-2]  [0.611,0.222,0.181]  9b
+Te_i_Cs_Cd2.83Te3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.194]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.195]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.306]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.306]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.194]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.555,0.305]  9b
+Te_i_Cs_Te2.83Cd3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.389]  9b
 Te_i_Cs_Te2.83Cd3.27Te5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.056]  9b
 Te_i_Cs_Te2.83Cd3.27Te5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.278]  9b
-Te_i_Cs_Te2.83Cd3.27Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.389]  9b
-Te_i_Cs_Te2.83Cd3.27Te5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.056]  9b
+Te_i_Cs_Te2.83Cd3.27Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.056]  9b
+Te_i_Cs_Te2.83Cd3.27Te5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.278]  9b
 Te_i_Cs_Te2.83Cd3.27Te5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.278]  9b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -1556,14 +1556,15 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 4,
                 [
                     np.array([0.625, 0.625, 0.625]),
-                    np.array([0.125, 0.625, 0.625]),
-                    np.array([0.625, 0.125, 0.625]),
                     np.array([0.625, 0.625, 0.125]),
+                    np.array([0.625, 0.125, 0.625]),
+                    np.array([0.125, 0.625, 0.625]),
                 ],
             ),
             (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
             (np.array([0.5, 0.5, 0.5]), 1, [np.array([0.5, 0.5, 0.5])]),
         ]
+        print(CdTe_defect_gen.prim_interstitial_coords)  # for debugging
         _compare_prim_interstitial_coords(CdTe_defect_gen.prim_interstitial_coords, expected)
 
         # defect_gen_check changes defect_entries ordering, so save to json first:
@@ -1615,6 +1616,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self._general_defect_gen_check(ytos_defect_gen)
 
         assert ytos_defect_gen.interstitial_coords == ytos_interstitial_coords  # check attribute set
+        print(ytos_defect_gen.prim_interstitial_coords)  # for debugging
         _compare_prim_interstitial_coords(
             ytos_defect_gen.prim_interstitial_coords,
             [
@@ -1662,6 +1664,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert (
             CdTe_defect_gen.interstitial_coords == CdTe_supercell_interstitial_coords
         )  # check attribute set
+        print(CdTe_defect_gen.prim_interstitial_coords)  # for debugging
         _compare_prim_interstitial_coords(
             CdTe_defect_gen.prim_interstitial_coords,
             [
@@ -1836,27 +1839,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert self.CdTe_defect_gen_info in CdTe_defect_gen._defect_generator_info()
         assert CdTe_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         assert self.structure_matcher.fit(CdTe_defect_gen.primitive_structure, self.prim_cdte)
-        if prim_cdte_input:
-            assert np.allclose(
-                CdTe_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
-            )  # same lattice
-        else:  # otherwise slightly different definition
-            assert np.allclose(
-                CdTe_defect_gen.primitive_structure.lattice.matrix,
-                np.array(
-                    [
-                        self.prim_cdte.lattice.matrix[2],
-                        self.prim_cdte.lattice.matrix[1],
-                        self.prim_cdte.lattice.matrix[0],
-                    ]
-                ),
-            )
+        assert np.allclose(
+            CdTe_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
+        )  # same lattice
+
         if generate_supercell:
             supercell_matrix = np.array([[3, 0, 0], [0, 3, 0], [0, 0, 3]])
-        elif CdTe_defect_gen.supercell_gen_kwargs != default_supercell_gen_kwargs:
-            supercell_matrix = np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         else:
-            supercell_matrix = np.array([[2.0, 2.0, -2.0], [2.0, -2.0, 2.0], [-2.0, 2.0, 2.0]])
+            supercell_matrix = np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         assert np.allclose(CdTe_defect_gen.supercell_matrix, supercell_matrix)
 
         if not generate_supercell:
@@ -2942,11 +2932,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert not self.structure_matcher.fit(
             cd_i_defect_gen.primitive_structure, self.CdTe_bulk_supercell
         )
-        assert np.allclose(
-            cd_i_defect_gen.supercell_matrix,
-            np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]),
-            atol=1e-3,
-        )
+        assert np.allclose(cd_i_defect_gen.supercell_matrix, np.eye(3), atol=1e-3)
         assert np.isclose(cd_i_defect_gen.min_image_distance, 13.88, atol=0.01)
 
         # explicitly test defects
@@ -2962,7 +2948,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert cd_i_defect_gen.defects["vacancies"][1].multiplicity == 6
         assert np.allclose(
             cd_i_defect_gen.defects["vacancies"][1].site.frac_coords,
-            np.array([0.0, 0.33333, 0.66667]),
+            np.array([0.66667, 0.33333, 0.0]),
             atol=1e-3,
         )
         assert (
@@ -2979,11 +2965,11 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].wyckoff == "9b"
         assert cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.multiplicity == 3
-        assert np.allclose(
+        for frac_coords in [
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].sc_defect_frac_coords,
-            np.array([0.583333, 0.583333, 0.916667]),  # closest to [0.5, 0.5, 0.5]
-            rtol=1e-2,
-        )
+            cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.site.frac_coords,
+        ]:  # closest to [0.5, 0.5, 0.5]
+            assert np.allclose(frac_coords, np.array([0.25, 0.25, 0.583333]), rtol=1e-2)
         assert (
             cd_i_defect_gen.defect_entries[
                 "Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"
@@ -2992,12 +2978,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert np.allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].conv_cell_frac_coords,
-            np.array([0.5555, 0.111, 0.0277]),
-            rtol=1e-2,
-        )
-        assert np.allclose(
-            cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.site.frac_coords,
-            np.array([0.583333, 0.583333, 0.916667]),
+            np.array([0.111, 0.5555, 0.3055]),
             rtol=1e-2,
         )
 
@@ -3012,19 +2993,16 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].conv_cell_frac_coords,
-            np.array([0.2222, 0.4444, 0.1944]),
+            np.array([0.111, 0.2223, 0.4723]),
             atol=1e-3,
         )
-        assert np.allclose(
+        for frac_coords in [
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].sc_defect_frac_coords,
-            np.array([0.416667, 0.416667, 0.75]),  # closest to middle of supercell
-            atol=1e-4,
-        )
-        assert np.allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.site.frac_coords,
-            np.array([0.416667, 0.416667, 0.75]),
-            atol=1e-3,
-        )
+        ]:  # closest to [0.5, 0.5, 0.5]
+            assert np.allclose(
+                frac_coords, np.array([0.416667, 0.416667, 0.75]), atol=1e-3
+            ) or np.allclose(frac_coords, np.array([0.75, 0.416667, 0.416667]), atol=1e-3)
 
     def test_supercell_w_defect_cd_i_CdTe(self):
         if not self.heavy_tests:
@@ -3041,10 +3019,9 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         self._save_defect_gen_jsons(cd_i_defect_gen)
         self.cd_i_CdTe_supercell_defect_gen_check(cd_i_defect_gen)
-        rearranged_lattice = (CdTe_defect_gen.primitive_structure * 3).lattice.matrix
-        rearranged_lattice = rearranged_lattice[[2, 1, 0]]  # rearrange to match supercell lattice
         assert np.allclose(  # primitive cell of defect supercell here is same as previous bulk supercell
-            cd_i_defect_gen.primitive_structure.lattice.matrix, rearranged_lattice  # but re-arranged
+            cd_i_defect_gen.primitive_structure.lattice.matrix,
+            (CdTe_defect_gen.primitive_structure * 3).lattice.matrix,
         )
         self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
 
@@ -3306,7 +3283,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         assert np.allclose(
             agsbte2_defect_gen_a.supercell_matrix,
-            np.array([[0.0, 3.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+            np.array([[0.0, 3.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]),
         )
         self._general_defect_gen_check(agsbte2_defect_gen_a)
 
