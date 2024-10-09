@@ -6,6 +6,7 @@ import contextlib
 import os
 import warnings
 from functools import lru_cache
+from itertools import permutations
 from typing import Optional, Union
 
 import numpy as np
@@ -790,6 +791,7 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
             _frac_coords_sort_func(x.frac_coords),
         )
     )
+    new_structure = _get_best_pos_det_structure(new_structure)  # ensure positive determinant
 
     if return_T:
         transformation_matrix = np.dot(
@@ -804,6 +806,29 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         return (new_structure, np.rint(transformation_matrix))
 
     return new_structure
+
+
+def _get_best_pos_det_structure(structure: Structure):
+    """
+    If the input structure has a negative determinant (corresponding to a left-
+    hand coordinate system), then find the best possible re-definition of the
+    lattice vectors which gives a positive determinant, according to
+    ``_struct_sort_func``.
+
+    This is to avoid an apparent VASP bug with negative triple products of the
+    lattice vectors -- not sure if this is only in old versions?
+    """
+    if np.linalg.det(structure.lattice.matrix) < 0:
+        swap_combo_score_dict = {}
+        for swap_combo in permutations([0, 1, 2]):
+            candidate_structure = swap_axes(structure, swap_combo)
+            if np.linalg.det(candidate_structure.lattice.matrix) > 0:
+                swap_combo_score_dict[swap_combo] = _struct_sort_func(candidate_structure)
+
+        best_swap_combo = min(swap_combo_score_dict, key=lambda x: swap_combo_score_dict[x])
+        structure = swap_axes(structure, best_swap_combo)
+
+    return structure
 
 
 def get_primitive_structure(
@@ -861,12 +886,15 @@ def get_primitive_structure(
     )
 
     prim_structs = [
-        Structure.from_dict(_round_floats(candidate_prim_structs[i].as_dict())) for i in sorted_indices
+        _get_best_pos_det_structure(
+            Structure.from_dict(_round_floats(candidate_prim_structs[i].as_dict()))
+        )
+        for i in sorted_indices
     ]
     if clean:
         prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    return prim_structs if return_all else prim_structs[0]
+    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
 
 
 def get_spglib_conv_structure(sga):
@@ -1046,7 +1074,7 @@ def swap_axes(structure, axes):
     Swap axes of the given structure.
 
     The new order of the axes is given by the axes parameter. For example,
-    axes=(2, 1, 0) will swap the first and third axes.
+    ``axes=(2, 1, 0)`` will swap the first and third axes.
     """
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
 
