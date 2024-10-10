@@ -124,6 +124,7 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
     Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
     """
     if chempots is not None:
+        chempots = deepcopy(chempots)  # don't modify original dict
         for key, subdict in list(chempots.items()):
             chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
 
@@ -148,7 +149,7 @@ def _parse_chempots(
                 "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!"
             )
 
-    chempots = _update_old_chempots_dict(chempots)
+    chempots = _update_old_chempots_dict(chempots)  # this deepcopies, making sure we don't overwrite
 
     if chempots is None:
         if el_refs is not None:
@@ -760,9 +761,14 @@ class DefectThermodynamics(MSONable):
         Parse chemical potentials, either using input values (after formatting
         them in the doped format) or using the class attributes if set.
         """
-        chempots, el_refs = _parse_chempots(
-            chempots or self.chempots, el_refs or self.el_refs, update_el_refs=True
-        )
+        if isinstance(chempots, dict) and "elemental_refs" in chempots and el_refs is None:
+            # doped chempot dict input, use its elemental refs
+            chempots, el_refs = _parse_chempots(chempots, chempots.get("elemental_refs"))
+
+        else:  # use stored or provided el_refs
+            chempots, el_refs = _parse_chempots(
+                chempots or self.chempots, el_refs or self.el_refs, update_el_refs=True
+            )
         if self.check_compatibility:
             self._check_bulk_chempots_compatibility(chempots)
 
@@ -1237,9 +1243,16 @@ class DefectThermodynamics(MSONable):
         potentials can also be supplied later in each analysis function.
         (Default: None)
         """
-        self._chempots, self._el_refs = _parse_chempots(
-            input_chempots, self._el_refs, update_el_refs=False
-        )
+        if isinstance(input_chempots, dict) and "elemental_refs" in input_chempots:
+            # doped chempot dict input, use its el_refs
+            self._chempots, self._el_refs = _parse_chempots(
+                input_chempots, input_chempots.get("elemental_refs")
+            )
+
+        else:
+            self._chempots, self._el_refs = _parse_chempots(
+                input_chempots, self._el_refs, update_el_refs=False
+            )
         if self.check_compatibility:
             self._check_bulk_chempots_compatibility(self._chempots)
 
@@ -1493,56 +1506,67 @@ class DefectThermodynamics(MSONable):
 
         energy_concentration_list = []
 
-        with warnings.catch_warnings():  # avoid double warning, already warned about 0 chemical potentials
-            warnings.filterwarnings("ignore", "Chemical potentials not present")
-            for defect_entry in self.defect_entries.values():
-                formation_energy = defect_entry.formation_energy(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    fermi_level=fermi_level,
-                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                )
-                raw_concentration = defect_entry.equilibrium_concentration(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    fermi_level=fermi_level,
-                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                    temperature=temperature,
-                    per_site=per_site,
-                    formation_energy=formation_energy,  # reduce compute times
-                )
+        if chempots is None:  # only warn once
+            _no_chempots_warning()
+            all_comps = [
+                entry.sc_entry.composition if entry.sc_entry else entry.bulk_entry.composition
+                for entry in self.defect_entries.values()
+            ]
+            empty_el_dict = {el: 0 for el in {el.symbol for comp in all_comps for el in comp}}
+            chempots = {
+                "limits": {"No User Chemical Potentials": empty_el_dict},
+                "limits_wrt_el_refs": {"No User Chemical Potentials": empty_el_dict},
+                "elemental_refs": el_refs or empty_el_dict,
+            }
 
-                defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
-                charge = (
-                    defect_entry.charge_state
-                    if skip_formatting
-                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
+        for defect_entry in self.defect_entries.values():
+            formation_energy = defect_entry.formation_energy(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+            )
+            raw_concentration = defect_entry.equilibrium_concentration(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                temperature=temperature,
+                per_site=per_site,
+                formation_energy=formation_energy,  # reduce compute times
+            )
+
+            defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
+            charge = (
+                defect_entry.charge_state
+                if skip_formatting
+                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
+            )
+            if lean:
+                energy_concentration_list.append(
+                    {
+                        "Defect": defect_name,
+                        "Charge": charge,
+                        "Concentration (cm^-3)": raw_concentration,
+                    }
                 )
-                if lean:
-                    energy_concentration_list.append(
-                        {
-                            "Defect": defect_name,
-                            "Charge": charge,
-                            "Concentration (cm^-3)": raw_concentration,
-                        }
-                    )
-                else:
-                    energy_concentration_list.append(
-                        {
-                            "Defect": defect_name,
-                            "Raw Charge": defect_entry.charge_state,  # for sorting
-                            "Charge": charge,
-                            "Formation Energy (eV)": round(formation_energy, 3),
-                            "Raw Concentration": raw_concentration,
-                            (
-                                "Concentration (per site)" if per_site else "Concentration (cm^-3)"
-                            ): _format_concentration(
-                                raw_concentration, per_site=per_site, skip_formatting=skip_formatting
-                            ),
-                        }
-                    )
+            else:
+                energy_concentration_list.append(
+                    {
+                        "Defect": defect_name,
+                        "Raw Charge": defect_entry.charge_state,  # for sorting
+                        "Charge": charge,
+                        "Formation Energy (eV)": round(formation_energy, 3),
+                        "Raw Concentration": raw_concentration,
+                        (
+                            "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                        ): _format_concentration(
+                            raw_concentration, per_site=per_site, skip_formatting=skip_formatting
+                        ),
+                    }
+                )
 
         conc_df = pd.DataFrame(energy_concentration_list)
 

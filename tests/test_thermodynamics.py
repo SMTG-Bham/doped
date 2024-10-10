@@ -81,7 +81,7 @@ def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
     print(f"Running {func.__name__} with args: {args} and kwargs: {kwargs}:")
     print(output)
     if w:
-        print(f"Warnings:\n{[str(warning.message) for warning in w]}")
+        print(f"Warnings ({len(w)}):\n{[str(warning.message) for warning in w]}")
     print(f"Result: {result}\n")
 
     return result, output, w
@@ -172,7 +172,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 
         cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json.gz"))
         cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json.gz"))
-        cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "CompetingPhases/mgo_chempots.json"))
+        cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "CompetingPhases/MgO_chempots.json"))
 
         cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
         cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
