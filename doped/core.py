@@ -952,11 +952,7 @@ class DefectEntry(thermo.DefectEntry):
             _no_chempots_warning("Formation energies (and concentrations)")
 
         dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
-        with warnings.catch_warnings():
-            if chempots is None:  # don't warn twice
-                warnings.filterwarnings("ignore", "Chemical potentials not present")
-            chempot_correction = self._get_chempot_term(dft_chempots)
-
+        chempot_correction = 0 if dft_chempots is None else self._get_chempot_term(dft_chempots)
         formation_energy = self.get_ediff() + chempot_correction
 
         if vbm is not None:
