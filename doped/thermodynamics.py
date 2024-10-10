@@ -810,6 +810,14 @@ class DefectThermodynamics(MSONable):
                 )
                 for entry in self.defect_entries.values()
             ]
+        # note that in general, we have chosen to favour ``entry.calculation_metadata.get("vbm")`` over
+        # ``self.vbm`` for all calculations of formation energies / transition levels / concentrations.
+        # These values should be the same, and we have warnings if they differ by too much,
+        # but in general the ``DefectEntry`` value should be the most reliable, as this is tied to its
+        # raw supercell energy difference from the chosen bulk cell for that ``DefectEntry``.
+        # but we do use ``self.band_gap`` preferably as this only affects the plot ranges (rather than
+        # formation energies)
+
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
@@ -851,7 +859,11 @@ class DefectThermodynamics(MSONable):
                     [
                         -1.0 * entry.charge_state,
                         1,
-                        -1.0 * (entry.get_ediff() + entry.charge_state * self.vbm),  # type: ignore
+                        -1.0
+                        * (
+                            entry.get_ediff()
+                            + entry.charge_state * entry.calculation_metadata.get("vbm", self.vbm)
+                        ),  # type: ignore
                     ]
                     for entry in sorted_defect_entries
                 ]
@@ -1496,7 +1508,7 @@ class DefectThermodynamics(MSONable):
                     limit=limit,
                     el_refs=el_refs,
                     fermi_level=fermi_level,
-                    vbm=self.vbm,
+                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
                     temperature=temperature,
                     per_site=per_site,
                     formation_energy=formation_energy,  # reduce compute times
@@ -2862,7 +2874,9 @@ class DefectThermodynamics(MSONable):
                 )  # sort by charge
                 for i, j in product(sorted_defect_entries, repeat=2):
                     if i.charge_state - j.charge_state == 1:
-                        TL = j.get_ediff() - i.get_ediff() - self.vbm
+                        # take mean VBM, ofc should be the same, but allow for small differences
+                        mean_VBM = np.mean([x.calculation_metadata.get("vbm", self.vbm) for x in [i, j]])
+                        TL = j.get_ediff() - i.get_ediff() - mean_VBM
                         i_meta = not any(i == y for y in self.all_stable_entries)
                         j_meta = not any(j == y for y in self.all_stable_entries)
                         transition_level_map_list.append(
@@ -3150,10 +3164,7 @@ class DefectThermodynamics(MSONable):
                 ),
             ]
             row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
-            if "vbm" in defect_entry.calculation_metadata:
-                row += [defect_entry.charge_state * defect_entry.calculation_metadata["vbm"]]
-            else:
-                row += [defect_entry.charge_state * self.vbm]  # type: ignore[operator]
+            row += [defect_entry.charge_state * defect_entry.calculation_metadata.get("vbm", self.vbm)]
             row += [defect_entry.charge_state * fermi_level]
             row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
             row += [defect_entry._get_chempot_term(relative_chempots)]
