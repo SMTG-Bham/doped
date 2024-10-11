@@ -54,6 +54,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- S. R. Kavanagh et al. **_Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-91h02) 2024
 - M-L. Wang et al. **_Impact of sulfur doping on copper-substituted lead apatite_** [_Physical Review B_](https://doi.org/10.1103/PhysRevB.110.104109) 2024
 - S. Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_Advanced Energy Materials_](https://doi.org/10.1002/aenm.202402640) 2024
 - M. Elgaml et al. **_Controlling the Superconductivity of Nb<sub>2</sub>Pd<sub>x</sub>S<sub>5</sub> via Reversible Li Intercalation_** [_Inorganic Chemistry_](https://pubs.acs.org/doi/full/10.1021/acs.inorgchem.3c03524) 2024
