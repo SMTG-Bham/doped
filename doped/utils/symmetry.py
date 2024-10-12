@@ -223,7 +223,7 @@ def apply_symm_op_to_site(
 
 
 def apply_symm_op_to_struct(
-    struct: Structure, symm_op: SymmOp, fractional: bool = False, rotate_lattice: bool = True
+    symm_op: SymmOp, struct: Structure, fractional: bool = False, rotate_lattice: bool = True
 ) -> Structure:
     """
     Apply a symmetry operation to a structure and return the new structure.
@@ -240,8 +240,8 @@ def apply_symm_op_to_struct(
     set ``rotate_lattice=False``.
 
     Args:
-        struct: ``pymatgen`` ``Structure`` object.
         symm_op: ``pymatgen`` ``SymmOp`` object.
+        struct: ``pymatgen`` ``Structure`` object.
         fractional:
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
@@ -430,7 +430,7 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
-    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op, rotate_lattice=True)
+    output_prim_struct = apply_symm_op_to_struct(rotation_symm_op, prim_struct, rotate_lattice=True)
     clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
     return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
 

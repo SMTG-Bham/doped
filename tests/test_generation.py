@@ -3376,7 +3376,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
                         f"with SymmOp: {symm_op}\nWith translation: {translation}"
                     )
                     symm_opped_struct = apply_symm_op_to_struct(
-                        initial_structure, symm_op, fractional=True
+                        symm_op, initial_structure, fractional=True
                     )
                     print(f"Space group info after SymmOp: {symm_opped_struct.get_space_group_info()}")
                     if translation:
