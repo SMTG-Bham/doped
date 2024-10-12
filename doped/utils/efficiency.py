@@ -79,6 +79,28 @@ PeriodicSite.__instances__ = {}
 PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 
 
+# make PeriodicSites hashable:
+def _periodic_site__hash__(self):
+    """
+    Custom ``__hash__`` method for ``PeriodicSite`` instances.
+    """
+    return hash((self.species, tuple(self.coords), frozenset(self.properties.items())))
+
+
+PeriodicSite.__hash__ = _periodic_site__hash__
+
+
+# make Structure objects hashable, using lattice and sites:
+def _structure__hash__(self):
+    """
+    Custom ``__hash__`` method for ``Structure`` instances.
+    """
+    return hash((self.lattice, frozenset(self.sites)))
+
+
+Structure.__hash__ = _structure__hash__
+
+
 class DopedTopographyAnalyzer:
     """
     This is a modified version of
@@ -204,6 +226,12 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
         list[PeriodicSite]:
             List of `PeriodicSite` objects representing the Voronoi nodes.
     """
+    structure.__hash__ = _structure__hash__  # make sure Structure is hashable
+    return _hashable_get_voronoi_nodes(structure)
+
+
+@lru_cache(maxsize=int(1e2))
+def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     # map all sites to the unit cell; 0 ≤ xyz < 1.
     structure = Structure.from_sites(structure, to_unit_cell=True)
     # get Voronoi nodes in primitive structure and then map back to the supercell:
