@@ -11,13 +11,21 @@ from typing import Optional, Union
 import numpy as np
 from nonrad import ccd
 from pymatgen.analysis.structure_matcher import Structure, StructureMatcher
+from pymatgen.core.composition import Composition
+from pymatgen.core.sites import PeriodicSite
+from pymatgen.core.structure import IStructure
 from pymatgen.util.typing import PathLike
+
+from doped.utils.efficiency import Composition as doped_Composition
+from doped.utils.efficiency import IStructure as doped_IStructure
+from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 
 
 def orient_s2_like_s1(
     struct1: Structure,
     struct2: Structure,
     verbose: bool = False,
+    **sm_kwargs,
 ):
     """
     Re-orient ``struct2`` to a fully symmetry-equivalent orientation (i.e.
@@ -47,6 +55,9 @@ def orient_s2_like_s1(
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
             Default: False
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``
+            (e.g. ``ignored_species``, ``comparator`` etc).
 
     Returns:
         Structure:
@@ -59,17 +70,37 @@ def orient_s2_like_s1(
             f"Volumes of the two input structures differ: {struct1.volume} Å³ vs {struct2.volume} Å³. "
             f"In most cases (defect NEB, CC diagrams...) this is not desirable!"
         )
-    sm_tight = StructureMatcher(stol=0.2, primitive_cell=False)
-    sm_loose = StructureMatcher(stol=0.5, primitive_cell=False)
-    sm_looser = StructureMatcher(stol=1, primitive_cell=False)
-    sm_loosest = StructureMatcher(stol=5, primitive_cell=False)
 
-    struct2_like_struct1 = (  # allow high stols to account for highly-mismatching/distorted structures
-        sm_tight.get_s2_like_s1(struct1, struct2)  # _could_ just use stol=5 from the start, which gives
-        or sm_loose.get_s2_like_s1(struct1, struct2)  # same answer, but much slower (as it cycles through
-        or sm_looser.get_s2_like_s1(struct1, struct2)  # multiple possible matches)
-        or sm_loosest.get_s2_like_s1(struct1, struct2)
-    )
+    if sm_kwargs.get("primitive_cell", False):
+        raise ValueError(
+            "``primitive_cell=True`` is not supported for `get_transformation` (and hence "
+            "`get_s2_like_s1`."
+        )
+
+    # use doped efficiency tools to make structure-matching as fast as possible:
+    Composition.__instances__ = {}
+    Composition.__eq__ = doped_Composition.__eq__
+    PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+    PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
+    IStructure.__instances__ = {}
+    IStructure.__eq__ = doped_IStructure.__eq__
+
+    # here we cycle through a range of stols, because we just need to find the closest match so we could
+    # use a high ``stol`` from the start and it would give correct result, but higher ``stol``s take
+    # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
+    # and break once a match is found:
+    trial_stol_array = np.arange(0.01, 5, 0.01)
+    for i, stol in enumerate(trial_stol_array):
+        if "stol" in sm_kwargs and i == 0:  # first run, try using user-provided stol first:
+            sm_full_user_custom = StructureMatcher(primitive_cell=False, **sm_kwargs)
+            struct2_like_struct1 = sm_full_user_custom.get_s2_like_s1(struct1, struct2)
+            if struct2_like_struct1:
+                break
+
+        sm = StructureMatcher(primitive_cell=False, stol=stol, **sm_kwargs)
+        struct2_like_struct1 = sm.get_s2_like_s1(struct1, struct2)
+        if struct2_like_struct1:
+            break
 
     if not struct2_like_struct1:
         raise RuntimeError(
@@ -82,17 +113,27 @@ def orient_s2_like_s1(
     # ``get_s2_like_s1`` usually doesn't work as desired due to different (but equivalent) lattice vectors
     # (e.g. a=(010) instead of (100) etc.), so here we ensure the lattice definition is the same:
     struct2_really_like_struct1 = Structure(
-        struct1.lattice, struct1.species, struct2_like_struct1.frac_coords
+        struct1.lattice,
+        struct2_like_struct1.species,
+        struct2_like_struct1.frac_coords,
+        site_properties=struct2_like_struct1.site_properties,
     )
 
     # we see that this rearranges the structure so the atom indices should now match correctly. This should
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
-    delQ_s1_s2 = ccd.get_dQ(struct1, struct2)
-    delQ_s1_s2_like_s1_pmg = ccd.get_dQ(struct1, struct2_like_struct1)
-    delQ_s2_like_s1_s2 = ccd.get_dQ(struct2_really_like_struct1, struct2)
-    delQ_s1_s2_like_s1 = ccd.get_dQ(struct1, struct2_really_like_struct1)
+    def _get_dQ(struct_a, struct_b):
+        try:
+            return ccd.get_dQ(struct_a, struct_b)
+        except Exception:
+            return "N/A"
 
-    if delQ_s1_s2_like_s1 > min(delQ_s1_s2, delQ_s1_s2_like_s1_pmg) + 0.1:  # shouldn't happen!
+    delQ_s1_s2 = _get_dQ(struct1, struct2)
+    delQ_s1_s2_like_s1_pmg = _get_dQ(struct1, struct2_like_struct1)
+    delQ_s2_like_s1_s2 = _get_dQ(struct2_really_like_struct1, struct2)
+    delQ_s1_s2_like_s1 = _get_dQ(struct1, struct2_really_like_struct1)
+
+    if not sm_kwargs.get("X") and delQ_s1_s2_like_s1 > min(delQ_s1_s2, delQ_s1_s2_like_s1_pmg) + 0.1:
+        # shouldn't happen!  (and ignore cases where we're using it in defect stenciling; sm_kwargs has X)
         warnings.warn(
             f"StructureMatcher.get_s2_like_s1() appears to have failed. The mass-weighted displacement "
             f"(ΔQ in amu^(1/2)Å) for the input structures is:\n"
