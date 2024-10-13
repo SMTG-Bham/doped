@@ -791,6 +791,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         if not heavy:
             defect_gen_from_json_loadfn = loadfn(default_json_filename)
+            _compare_attributes(defect_gen_from_json, defect_gen_from_json_loadfn)
 
             # test saving to json again gives same object:
             defect_gen_from_json.to_json("test.json")
