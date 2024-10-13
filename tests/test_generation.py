@@ -7,14 +7,12 @@ Implicitly tests the `doped.utils.symmetry` module as well.
 import copy
 import filecmp
 import gzip
-import operator
 import os
 import random
 import shutil
 import sys
 import unittest
 import warnings
-from functools import reduce
 from io import StringIO
 from unittest.mock import patch
 
@@ -29,7 +27,7 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from doped.core import Defect, DefectEntry
+from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.supercells import get_min_image_distance
 from doped.utils.symmetry import (
@@ -757,47 +755,51 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         self.se_supercell = Structure.from_file(f"{self.data_dir}/Se_supercell_POSCAR")
 
-    def _save_defect_gen_jsons(self, defect_gen):
-        defect_gen.to_json("test.json")
-        dumpfn(defect_gen, "test_defect_gen.json")
+    def _save_defect_gen_jsons(self, defect_gen, heavy=False):
         defect_gen.to_json()  # test default
-
         formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )
         default_json_filename = f"{formula}_defects_generator.json.gz"
+        assert os.path.exists(default_json_filename)
 
-        # assert these saved files are the exact same:
-        assert filecmp.cmp("test.json", "test_defect_gen.json")
-        with (
-            gzip.open(default_json_filename, "rt") as f,
-            open(default_json_filename.rstrip(".gz"), "w") as f_out,
-        ):
-            f_out.write(f.read())
-        assert filecmp.cmp("test.json", default_json_filename.rstrip(".gz"))
-        if_present_rm("test.json")
-        if_present_rm(default_json_filename.rstrip(".gz"))
-        if_present_rm("test_defect_gen.json")
+        if not heavy:
+            defect_gen.to_json("test.json")
+            dumpfn(defect_gen, "test_defect_gen.json")
 
-    def _load_and_test_defect_gen_jsons(self, defect_gen):
+            # assert these saved files are the exact same:
+            assert filecmp.cmp("test.json", "test_defect_gen.json")
+            with (
+                gzip.open(default_json_filename, "rt") as f,
+                open(default_json_filename.rstrip(".gz"), "w") as f_out,
+            ):
+                f_out.write(f.read())
+            assert filecmp.cmp("test.json", default_json_filename.rstrip(".gz"))
+            if_present_rm("test.json")
+            if_present_rm(default_json_filename.rstrip(".gz"))
+            if_present_rm("test_defect_gen.json")
+
+    def _load_and_test_defect_gen_jsons(self, defect_gen, heavy=False):
         # test that the jsons are identical (except for ordering)
         formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )
         default_json_filename = f"{formula}_defects_generator.json.gz"
         defect_gen_from_json = DefectsGenerator.from_json(default_json_filename)
-        defect_gen_from_json_loadfn = loadfn(default_json_filename)
-
-        # test saving to json again gives same object:
-        defect_gen_from_json.to_json("test.json")
-        defect_gen_from_json_loadfn.to_json("test_loadfn.json")
-        assert filecmp.cmp("test.json", "test_loadfn.json")
-
         # test it's the same as the original:
-        # here we compare using json dumps because the ordering can change slightly when saving to json
         _compare_attributes(defect_gen, defect_gen_from_json)
-        if_present_rm("test.json")
-        if_present_rm("test_loadfn.json")
+
+        if not heavy:
+            defect_gen_from_json_loadfn = loadfn(default_json_filename)
+
+            # test saving to json again gives same object:
+            defect_gen_from_json.to_json("test.json")
+            defect_gen_from_json_loadfn.to_json("test_loadfn.json")
+            assert filecmp.cmp("test.json", "test_loadfn.json")
+
+            if_present_rm("test.json")
+            if_present_rm("test_loadfn.json")
+
         if_present_rm(default_json_filename)
 
     def _general_defect_gen_check(self, defect_gen, charge_states_removed=False):
@@ -901,8 +903,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         assert defect_entry.wyckoff
         assert defect_entry.defect
         assert defect_entry.defect.wyckoff == defect_entry.wyckoff
-        # Commenting out as confirmed works but slows down tests (tested anyway with the defect_gen
-        # outputs):
+        # Commenting out as confirmed works but slows down tests (tested elsewhere):
         # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
         # defect_entry.defect)
         assert np.array_equal(
@@ -2371,22 +2372,28 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def _reduce_to_one_defect_each(self, defect_gen):
         """
-        Reduce the defect_gen to just having one of each defect type, for
+        Reduce the ``defect_gen`` to just having one of each defect type, for
         testing purposes.
         """
-        if "interstitials" in defect_gen.defects:
-            defect_gen.defects["interstitials"] = [defect_gen.defects["interstitials"][0]]
-            defect_gen.defects["vacancies"] = [defect_gen.defects["vacancies"][0]]
-        else:  # take 2 vacancies instead
-            defect_gen.defects["vacancies"] = defect_gen.defects["vacancies"][:1]
+        defect_entries = {}
+        types_collected = []
+        for defect_entry in defect_gen.defect_entries.values():
+            if defect_entry.defect.defect_type not in types_collected:
+                defect_entries[defect_entry.name] = defect_entry
+                types_collected.append(defect_entry.defect.defect_type)
 
-        defect_gen.defects["substitutions"] = [defect_gen.defects["substitutions"][0]]
+        defect_gen.defect_entries = defect_entries
+        for key, type in [
+            ("interstitials", Interstitial),
+            ("vacancies", Vacancy),
+            ("substitutions", Substitution),
+        ]:
+            defect_gen.defects[key] = [
+                defect_entry.defect
+                for defect_entry in defect_gen.defect_entries.values()
+                if isinstance(defect_entry.defect, type)
+            ]
 
-        defect_gen.defect_entries = {
-            k: v
-            for k, v in defect_gen.defect_entries.items()
-            if any(i == v.defect for i in reduce(operator.iconcat, defect_gen.defects.values(), []))
-        }
         return defect_gen
 
     def test_ytos_supercell_input(self):
@@ -3016,14 +3023,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
 
         assert self.cd_i_CdTe_supercell_defect_gen_info in output
-
-        self._save_defect_gen_jsons(cd_i_defect_gen)
         self.cd_i_CdTe_supercell_defect_gen_check(cd_i_defect_gen)
         assert np.allclose(  # primitive cell of defect supercell here is same as previous bulk supercell
             cd_i_defect_gen.primitive_structure.lattice.matrix,
             (CdTe_defect_gen.primitive_structure * 3).lattice.matrix,
         )
-        self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
+
+        self._save_defect_gen_jsons(cd_i_defect_gen, heavy=True)
+        self._load_and_test_defect_gen_jsons(cd_i_defect_gen, heavy=True)
 
         # save reduced defect gen to json
         reduced_cd_i_defect_gen = self._reduce_to_one_defect_each(cd_i_defect_gen)
