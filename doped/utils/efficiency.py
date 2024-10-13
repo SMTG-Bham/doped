@@ -27,11 +27,34 @@ pmg_Comp_eq = Composition.__eq__
 
 
 @lru_cache(maxsize=int(1e8))
-def cached_Comp_eq_func(self_hash, other_hash):
+def doped_Comp_eq_func(self_hash, other_hash):
     """
-    Cached equality function for ``Composition`` instances.
+    Update equality function for ``Composition`` instances, which breaks early
+    for mismatches and also uses caching, making orders of magnitude faster
+    than ``pymatgen`` equality function.
     """
-    return pmg_Comp_eq(Composition.__instances__[self_hash], Composition.__instances__[other_hash])
+    self_comp = Composition.__instances__[self_hash]
+    other_comp = Composition.__instances__[other_hash]
+
+    return fast_Comp_eq(self_comp, other_comp)
+
+
+def fast_Comp_eq(self, other):
+    """
+    Fast equality function for ``Composition`` instances, breaking early for
+    mismatches.
+    """
+    if not isinstance(other, type(self) | dict):
+        return NotImplemented
+
+    if len(self) != len(other):
+        return False
+
+    for el, amt in self.items():  # noqa: SIM110
+        if abs(amt - other[el]) > Composition.amount_tolerance:
+            return False
+
+    return True
 
 
 def _Comp__eq__(self, other):
@@ -45,7 +68,7 @@ def _Comp__eq__(self, other):
     Composition.__instances__[self_hash] = self  # Ensure instances are stored for caching
     Composition.__instances__[other_hash] = other
 
-    return cached_Comp_eq_func(self_hash, other_hash)
+    return doped_Comp_eq_func(self_hash, other_hash)
 
 
 Composition.__instances__ = {}

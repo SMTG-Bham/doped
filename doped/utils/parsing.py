@@ -659,6 +659,8 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
     far_from_defect_disps = {site.specie.symbol: [] for site in bulk}
 
     wigner_seitz_radius = calc_max_sphere_radius(bulk.lattice.matrix)
+    # Note: code in this function could be made a bit quicker with vectorisation, rather than repeated
+    # site.distance_and_image_from_frac_coords calls, if it was ever a bottleneck
 
     bulk_sites_outside_or_at_wigner_radius = [
         site
@@ -675,7 +677,8 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
         bulk_species_coord_dict[species.name] = bulk_species_coords
 
     for site in defect:
-        if site.distance_and_image_from_frac_coords(defect_coords)[0] > wigner_seitz_radius:
+        dist_to_defect = site.distance_and_image_from_frac_coords(defect_coords)[0]
+        if dist_to_defect > wigner_seitz_radius:
             bulk_site_arg_idx = find_idx_of_nearest_coords(  # get closest site in bulk to defect site
                 bulk_species_coord_dict[site.specie.symbol],
                 site.frac_coords,
