@@ -15,7 +15,7 @@ from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition
 from pymatgen.core.sites import PeriodicSite
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import IStructure, Structure
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import Voronoi
 from scipy.spatial.distance import squareform
@@ -34,7 +34,7 @@ def cached_Comp_eq_func(self_hash, other_hash):
     return pmg_Comp_eq(Composition.__instances__[self_hash], Composition.__instances__[other_hash])
 
 
-def _comp__eq__(self, other):
+def _Comp__eq__(self, other):
     """
     Custom ``__eq__`` method for ``Composition`` instances, using a cached
     equality function to speed up comparisons.
@@ -49,7 +49,7 @@ def _comp__eq__(self, other):
 
 
 Composition.__instances__ = {}
-Composition.__eq__ = _comp__eq__
+Composition.__eq__ = _Comp__eq__
 
 
 # similar for PeriodicSite:
@@ -75,7 +75,6 @@ def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08
     return np.allclose(np.array(a), np.array(b), rtol=rtol, atol=atol)
 
 
-PeriodicSite.__instances__ = {}
 PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 
 
@@ -99,6 +98,60 @@ def _structure__hash__(self):
 
 
 Structure.__hash__ = _structure__hash__
+IStructure.__hash__ = _structure__hash__
+
+
+def doped_Struct__eq__(self, other: IStructure) -> bool:
+    """
+    Copied from ``pymatgen``, but updated to break early once a mis-matching
+    site is found, to speed up structure matching by ~2x.
+    """
+    needed_attrs = ("lattice", "sites", "properties")
+
+    # Return NotImplemented as in https://docs.python.org/3/library/functools.html#functools.total_ordering
+    if not all(hasattr(other, attr) for attr in needed_attrs):
+        return NotImplemented
+
+    if other is self:
+        return True
+    if len(self) != len(other):
+        return False
+    if self.lattice != other.lattice:
+        return False
+    if self.properties != other.properties:
+        return False
+    for site in self:  # noqa: SIM110
+        if site not in other:
+            return False  # break early!
+    return True
+
+
+@lru_cache(maxsize=int(1e4))
+def cached_Struct_eq_func(self_hash, other_hash):
+    """
+    Cached equality function for ``Composition`` instances.
+    """
+    return doped_Struct__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
+
+
+def _Struct__eq__(self, other):
+    """
+    Custom ``__eq__`` method for ``Structure``/``IStructure`` instances, using
+    both caching and an updated, faster equality function to speed up
+    comparisons.
+    """
+    self_hash = self.__hash__()
+    other_hash = other.__hash__()
+
+    IStructure.__instances__[self_hash] = self  # Ensure instances are stored for caching
+    IStructure.__instances__[other_hash] = other
+
+    return cached_Struct_eq_func(self_hash, other_hash)
+
+
+IStructure.__instances__ = {}
+IStructure.__eq__ = _Struct__eq__
+Structure.__eq__ = _Struct__eq__
 
 
 class DopedTopographyAnalyzer:
