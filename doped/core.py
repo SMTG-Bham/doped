@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import numpy as np
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.bond_valence import BVAnalyzer
-from pymatgen.analysis.defects import core, thermo
-from pymatgen.analysis.defects.utils import CorrectionResult
+from pymatgen.analysis.defects import core, thermo, utils
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.composition import Composition, Element
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import IStructure, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
@@ -297,7 +297,7 @@ class DefectEntry(thermo.DefectEntry):
         error_tolerance: float = 0.05,
         style_file: Optional[PathLike] = None,
         **kwargs,
-    ) -> CorrectionResult:
+    ) -> utils.CorrectionResult:
         """
         Compute the `isotropic` Freysoldt (FNV) correction for the
         defect_entry.
@@ -363,7 +363,7 @@ class DefectEntry(thermo.DefectEntry):
                 (e.g. energy_cutoff, mad_tol, q_model, step).
 
         Returns:
-            CorrectionResults (summary of the corrections applied and metadata), and
+            utils.CorrectionResults (summary of the corrections applied and metadata), and
             the matplotlib figure object (or axis object if axis specified) if ``plot``
             is True, and the estimated charge correction error if
             ``return_correction_error`` is True.
@@ -509,7 +509,7 @@ class DefectEntry(thermo.DefectEntry):
                 (e.g. charge, defect_region_radius, defect_coords).
 
         Returns:
-            CorrectionResults (summary of the corrections applied and metadata), and
+            utils.CorrectionResults (summary of the corrections applied and metadata), and
             the matplotlib figure object if ``plot`` is True, and the estimated charge
             correction error if ``return_correction_error`` is True.
         """
@@ -1244,7 +1244,7 @@ class DefectEntry(thermo.DefectEntry):
             f"Available methods:\n{methods}"
         )
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         """
         Determine whether two ``DefectEntry`` objects are equal, by comparing
         ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy`` and
@@ -2064,6 +2064,36 @@ class Defect(core.Defect):
             for attr in ["_defect_site", "_volume", "_element_changes"]:
                 if hasattr(self, attr):
                     delattr(self, attr)
+
+    def __eq__(self, other) -> bool:
+        """
+        Determine whether two ``Defect`` objects are equal.
+
+        Redefined from the parent method to be more robust (too
+        loose ``stol`` used in ``pymatgen-analysis-defects``) and
+        much more efficient.
+        """
+        if not isinstance(other, core.Defect):
+            raise TypeError("Can only compare ``Defect``s with ``Defect``s!")
+
+        if self.defect_type != other.defect_type:
+            return False
+
+        # use doped efficiency functions for speed:
+        from doped.utils.efficiency import Composition as doped_Composition
+        from doped.utils.efficiency import IStructure as doped_IStructure
+        from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
+
+        Composition.__instances__ = {}
+        Composition.__eq__ = doped_Composition.__eq__
+        PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+        PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
+        IStructure.__instances__ = {}
+        IStructure.__eq__ = doped_IStructure.__eq__
+
+        sm = StructureMatcher(stol=0.2, comparator=ElementComparator())
+
+        return sm.fit(self.defect_structure, other.defect_structure)
 
     @property
     def defect_site(self) -> PeriodicSite:
