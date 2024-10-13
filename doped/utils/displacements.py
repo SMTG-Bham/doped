@@ -974,7 +974,7 @@ def _get_bulk_struct_with_defect(defect_entry) -> tuple:
     adds relaxed site to bulk structure. If Substitution, replaces (unrelaxed)
     defect site in bulk structure.
 
-    Returns tuple of ``(bulk_sc_with_defect, defect_sc_with_defect)``.
+    Returns tuple of ``(bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)``.
     """
     defect_type = defect_entry.defect.defect_type.name
     bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
