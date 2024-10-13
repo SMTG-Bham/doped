@@ -26,7 +26,7 @@ from pymatgen.analysis.defects.generators import (
 )
 from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core import Structure
+from pymatgen.core import IStructure, Structure
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import PeriodicSite
@@ -53,6 +53,7 @@ from doped.utils.efficiency import (
     _doped_cluster_frac_coords,
     _generic_group_labels,
 )
+from doped.utils.efficiency import IStructure as doped_IStructure
 from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
@@ -196,7 +197,7 @@ def closest_site_info(
     supercell to ensure none of the detected sites are periodic images of
     the defect site.
 
-    Requires distances > 0.01 (i.e. so not the site itself), and if there are
+    Requires distances > 0.05 (i.e. so not the site itself), and if there are
     multiple elements with the same distance, sort by order of appearance of
     elements in the composition, then alphabetically and return the first one.
 
@@ -214,13 +215,14 @@ def closest_site_info(
             defect = doped_defect_from_pmg_defect(defect_entry_or_defect)  # convert to doped Defect
         else:
             defect = defect_entry_or_defect
+
+        req_sc_mat = np.eye(3) * np.ceil((5 * np.sqrt(n)) / min(defect.defect_structure.lattice.abc))
         (
             defect_supercell,
             defect_supercell_site,
             _equivalent_supercell_sites,
         ) = defect.get_supercell_structure(
-            sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-            dummy_species="X",  # keep track of the defect frac coords in the supercell
+            sc_mat=req_sc_mat,
             return_sites=True,
         )
     else:
@@ -232,14 +234,25 @@ def closest_site_info(
     if element_list is None:
         element_list = _get_element_list(defect)
 
-    site_distances = sorted(
+    distance_matrix = defect_supercell.lattice.get_all_distances(
+        defect_supercell.frac_coords,
+        defect_supercell_site.frac_coords,
+    )
+    if distance_matrix.shape[1] == 1:  # Check if it is (X, 1)
+        distance_matrix = distance_matrix.ravel()
+
+    # ensure the defect site itself is excluded, and ignore sites further than 5*sqrt(n) Å away
+    possible_close_site_indices = np.where((distance_matrix > 0.05) & (distance_matrix < 5 * np.sqrt(n)))[
+        0
+    ]
+
+    site_distances = sorted(  # Could make this faster using caching if it was becoming a bottleneck
         [
             (
-                site.distance(defect_supercell_site),
-                site.specie.symbol,
+                distance_matrix[i],
+                defect_supercell.sites[i].specie.symbol,
             )
-            for site in defect_supercell
-            if site.distance(defect_supercell_site) > 0.01
+            for i in possible_close_site_indices
         ],
         key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
     )
@@ -253,9 +266,11 @@ def closest_site_info(
         or site_distances[i][1] != site_distances[i - 1][1]
     ]
 
-    min_distance, closest_site = site_distances[n - 1]
+    if site_distances:
+        min_distance, closest_site = site_distances[n - 1]
+        return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
 
-    return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
+    return ""  # hypothetical case of very weird structure with no sites within 5*sqrt(n) Å...
 
 
 def get_defect_name_from_defect(
@@ -1281,10 +1296,13 @@ class DefectsGenerator(MSONable):
             )
 
         # use lru_cache for Composition and PeriodicSite comparisons (speeds up structure matching
-        # dramatically):
+        # dramatically), and for Structure as well as fast ``doped`` ``__eq__`` function
         Composition.__instances__ = {}
         Composition.__eq__ = doped_Composition.__eq__
         PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+        PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
+        IStructure.__instances__ = {}
+        IStructure.__eq__ = doped_IStructure.__eq__
 
         pbar = tqdm(
             total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
