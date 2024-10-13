@@ -140,8 +140,8 @@ def _Struct__eq__(self, other):
     both caching and an updated, faster equality function to speed up
     comparisons.
     """
-    self_hash = self.__hash__()
-    other_hash = other.__hash__()
+    self_hash = _structure__hash__(self)
+    other_hash = _structure__hash__(other)
 
     IStructure.__instances__[self_hash] = self  # Ensure instances are stored for caching
     IStructure.__instances__[other_hash] = other
