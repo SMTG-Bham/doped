@@ -533,7 +533,7 @@ def _get_species_from_composition_diff(composition_diff, el_change):
     return next(el for el, amt in composition_diff.items() if amt == el_change)
 
 
-def get_coords_and_idx_of_species(structure, species_name):
+def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
     """
     Get arrays of the coordinates and indices of the given species in the
     structure.
@@ -542,7 +542,7 @@ def get_coords_and_idx_of_species(structure, species_name):
     idx = []
     for i, site in enumerate(structure):
         if site.specie.symbol == species_name:
-            coords.append(site.frac_coords)
+            coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
 
     return np.array(coords), np.array(idx)

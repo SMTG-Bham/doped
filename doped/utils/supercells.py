@@ -150,7 +150,7 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
     )
 
 
-def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
+def _largest_cube_length_from_matrix(matrix: np.ndarray, max_ijk: int = 10) -> float:
     """
     Gets the side length of the largest possible cube that can fit in the cell
     defined by the input lattice matrix.
@@ -171,7 +171,11 @@ def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
             for the shortest cube length, using the projections along:
             [i*a, j*b, k*c].
             (Default = 10)
+
+    Returns:
+        float: Side length of the largest possible cube that can fit in the cell.
     """
+    # Note: Not sure if this function works perfectly with odd-shaped cells...
     a = matrix[0]
     b = matrix[1]
     c = matrix[2]
