@@ -85,6 +85,12 @@ Typically this can be fixed by updating to ``spglib>=2.5`` with `pip install --u
 For issues relating to the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
 
+Installation
+------------
+
+For any issues relating to installation, please see the `Installation`_ page.
+
+
 Errors with ``Python`` Scripts
 ------------------------------
 The recommended usage of ``doped`` is through interactive python sessions, such as with Jupyter notebooks,
@@ -136,3 +142,5 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
     through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
+
+.. _Installation: https://doped.readthedocs.io/en/latest/Installation.html
