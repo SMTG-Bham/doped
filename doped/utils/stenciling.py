@@ -8,7 +8,7 @@ The code in this sub-module is still in development! (TODO)
 import math
 from collections import Counter
 from functools import lru_cache
-from itertools import combinations
+from itertools import combinations, product
 from typing import Union
 
 import numpy as np
@@ -39,6 +39,7 @@ def get_defect_in_supercell(
     defect_entry: DefectEntry,
     target_supercell: Structure,
     target_frac_coords: Union[np.ndarray[float], list[float], bool] = True,
+    edge_tol: float = 2,
 ) -> Structure:
     """
     Re-generate a relaxed defect structure in a different supercell.
@@ -51,9 +52,8 @@ def get_defect_in_supercell(
     Briefly, this function works by:
 
     - Translating the defect site to the centre of the original supercell.
-    - Identifying a super-supercell where all lattice vectors are larger than
-      the largest lattice vector in the target supercell, to fully encompass
-      the target supercell.
+    - Identifying a super-supercell which fully encompasses the target supercell
+      (regardless of orientation).
     - Generate this super-supercell, using one copy of the original defect
       supercell (``DefectEntry.defect_supercell``), and the rest of the sites
       (outside of the original defect supercell box, with the defect translated
@@ -88,7 +88,16 @@ def get_defect_in_supercell(
             new supercell. If just set to ``True`` (default), will try to place
             the defect nearest to the centre of the superset cell (i.e.
             ``target_frac_coords = [0.5, 0.5, 0.5]``), as is default in ``doped``
-            defect generation.
+            defect generation. Note that defect placement is harder in this
+            case than in generation with ``DefectsGenerator``, as we are not
+            starting from primitive cells and we are working with relaxed
+            geometries.
+        edge_tol (float):
+            A tolerance (in Angstrom) for site displacements at the edge of the
+            ``target_supercell`` supercell, when determining the best match of
+            sites to stencil out in the new supercell.
+            Default is 2 Angstrom, or 0.05 Angstrom when ``target_supercell``
+            fully encompasses the original defect supercell.
 
     Returns:
         Structure: The relaxed defect structure in the new supercell.
@@ -136,7 +145,7 @@ def get_defect_in_supercell(
         # expanded bulk supercell:
         # only keep atoms in big supercell which are within the original supercell bounds:
         big_defect_supercell = _get_corresponding_sites_from_struct1_then_2(
-            big_supercell_with_X.sites,
+            big_supercell_with_X,
             orig_supercell_with_X,
             orig_bulk_supercell * supercell_matrix,
             orig_bulk_supercell,
@@ -144,6 +153,16 @@ def get_defect_in_supercell(
         big_supercell_defect_site = next(
             site for site in big_defect_supercell.sites if site.specie.symbol == "X"
         )
+        # translate structure to put defect at the centre:
+        big_defect_supercell = translate_structure(
+            big_defect_supercell,
+            np.array([0.5, 0.5, 0.5]) - big_supercell_defect_site.frac_coords,
+            frac_coords=True,
+        )
+        big_supercell_defect_site = next(
+            site for site in big_defect_supercell.sites if site.specie.symbol == "X"
+        )
+
         pbar.update(20)  # 20% of progress bar
         pbar.set_description("Getting sites in border region")
 
@@ -155,7 +174,10 @@ def get_defect_in_supercell(
         # translate big supercell to place defect site at the cartesian coordinates matching the centre of
         # the new supercell:
         big_defect_supercell = translate_structure(
-            big_defect_supercell, translation_from_big_defect_site_to_target_middle, frac_coords=False
+            big_defect_supercell,
+            translation_from_big_defect_site_to_target_middle,
+            frac_coords=False,
+            to_unit_cell=False,
         )
 
         # get all atoms in big supercell within the cartesian bounds of the target_supercell supercell:
@@ -167,7 +189,13 @@ def get_defect_in_supercell(
         # inter-atomic distance in the new supercell, when accounting for PBCs:
         # maybe for robustness, can make tol an adjustable parameter, and can scan over larger values
         # if initial scan fails? TODO
-        edge_tol = 2  # Angstrom
+
+        # Note: This could possibly be made faster by reducing `edge_tol` when the `orig_supercell` is
+        # fully encompassed by `target_supercell` (meaning there should be no defect-induced
+        # displacements at the stenciled cell edges here), by getting the minimum encompassing cube
+        # length (sphere diameter), and seeing if this is smaller than the largest sphere (diameter)
+        # which can be inscribed in the target supercell
+        # either way, this portion of the workflow is not a bottleneck (rather `get_orientation..` is)
         possible_new_supercell_sites = [
             site
             for site in big_defect_supercell.sites
@@ -192,79 +220,90 @@ def get_defect_in_supercell(
             for site in possible_new_supercell_sites
             if site not in def_new_supercell_sites
         ]
-        num_sites_up_for_grabs = len(target_supercell) - len(def_new_supercell_sites)
-
-        # scan over all possible combinations of num_sites_up_for_grabs sites in candidate_sites_in_target:
-        check_other_candidate_sites_first = len(candidate_sites_in_target) < len(
-            def_new_supercell_sites_to_check_in_target
-        )  # check smaller list first for efficiency
-
-        overlapping_site_indices = []  # using indices as faster for comparing than actual sites
-        _pbar_increment_per_iter = max(
-            0, 20 / len(candidate_sites_in_target) - 0.0001
-        )  # up to 20% of progress bar
-        for idx, candidate_site in list(enumerate(candidate_sites_in_target)):
-            pbar.update(_pbar_increment_per_iter)
-            if idx in overlapping_site_indices:
-                continue
-
-            if check_other_candidate_sites_first:
-                for other_idx, other_site in enumerate(candidate_sites_in_target):
-                    if (
-                        idx == other_idx
-                        or other_idx in overlapping_site_indices
-                        or candidate_site.specie.symbol != other_site.specie.symbol
-                    ):
-                        continue
-                    if candidate_site.distance(other_site) < bulk_min_bond_length * 0.5:
-                        # if distance is greater than 50% of bulk bond length,
-                        # append site with greater distance from defect to overlapping_sites
-                        overlapping_site_indices.append(
-                            min(
-                                [(idx, candidate_site), (other_idx, other_site)],
-                                key=lambda x: x[1].distance_from_point(big_supercell_defect_site.coords),
-                            )[0]
-                        )
-
-            for site in def_new_supercell_sites_to_check_in_target:
-                if candidate_site.distance(site) < bulk_min_bond_length * 0.5:
-                    overlapping_site_indices.append(idx)
-                    break
-            if idx in overlapping_site_indices:
-                continue
-
-            if not check_other_candidate_sites_first:
-                for other_idx, other_site in enumerate(candidate_sites_in_target):
-                    if (
-                        idx == other_idx
-                        or other_idx in overlapping_site_indices
-                        or candidate_site.specie.symbol != other_site.specie.symbol
-                    ):
-                        continue
-                    if candidate_site.distance(other_site) < bulk_min_bond_length * 0.5:
-                        # append site with greater distance from defect to overlapping_sites
-                        overlapping_site_indices.append(
-                            min(
-                                [(idx, candidate_site), (other_idx, other_site)],
-                                key=lambda x: x[1].distance_from_point(big_supercell_defect_site.coords),
-                            )[0]
-                        )
-
-        candidate_sites_in_target = [
-            site for i, site in enumerate(candidate_sites_in_target) if i not in overlapping_site_indices
-        ]
-        pbar.set_description("Calculating best match")  # now at 40% of progress bar
-
-        # target additional composition:
         target_composition = (
             target_supercell.composition  # this is bulk, need to account for defect:
             + orig_supercell.composition
             - orig_bulk_supercell.composition
         )
+        # target additional composition:
         def_new_supercell_sites_struct = Structure.from_sites(def_new_supercell_sites)
         def_new_supercell_sites_struct.remove_species("X")
         def_new_supercell_sites_comp = def_new_supercell_sites_struct.composition
         combo_composition = target_composition - def_new_supercell_sites_comp  # composition we need to add
+        # def_new_supercell_sites also has X in it
+        num_sites_up_for_grabs = int(sum(combo_composition.values()))
+
+        if candidate_sites_in_target:
+            # scan over all possible combinations of num_sites_up_for_grabs sites in
+            # candidate_sites_in_target:
+            check_other_candidate_sites_first = len(candidate_sites_in_target) < len(
+                def_new_supercell_sites_to_check_in_target
+            )  # check smaller list first for efficiency
+
+            overlapping_site_indices = []  # using indices as faster for comparing than actual sites
+            _pbar_increment_per_iter = max(
+                0, 20 / len(candidate_sites_in_target) - 0.0001
+            )  # up to 20% of progress bar
+            for idx, candidate_site in list(enumerate(candidate_sites_in_target)):
+                pbar.update(_pbar_increment_per_iter)
+                if idx in overlapping_site_indices:
+                    continue
+
+                if check_other_candidate_sites_first:
+                    for other_idx, other_site in enumerate(candidate_sites_in_target):
+                        if (
+                            idx == other_idx
+                            or other_idx in overlapping_site_indices
+                            or candidate_site.specie.symbol != other_site.specie.symbol
+                        ):
+                            continue
+                        if candidate_site.distance(other_site) < bulk_min_bond_length * 0.5:
+                            # if distance is greater than 50% of bulk bond length,
+                            # append site with greater distance from defect to overlapping_sites
+                            overlapping_site_indices.append(
+                                min(
+                                    [(idx, candidate_site), (other_idx, other_site)],
+                                    key=lambda x: x[1].distance_from_point(
+                                        big_supercell_defect_site.coords
+                                    ),
+                                )[0]
+                            )
+
+                for site in def_new_supercell_sites_to_check_in_target:
+                    if candidate_site.distance(site) < bulk_min_bond_length * 0.5:
+                        overlapping_site_indices.append(idx)
+                        break
+                if idx in overlapping_site_indices:
+                    continue
+
+                if not check_other_candidate_sites_first:
+                    for other_idx, other_site in enumerate(candidate_sites_in_target):
+                        if (
+                            idx == other_idx
+                            or other_idx in overlapping_site_indices
+                            or candidate_site.specie.symbol != other_site.specie.symbol
+                        ):
+                            continue
+                        if candidate_site.distance(other_site) < bulk_min_bond_length * 0.5:
+                            # append site with greater distance from defect to overlapping_sites
+                            overlapping_site_indices.append(
+                                min(
+                                    [(idx, candidate_site), (other_idx, other_site)],
+                                    key=lambda x: x[1].distance_from_point(
+                                        big_supercell_defect_site.coords
+                                    ),
+                                )[0]
+                            )
+
+            candidate_sites_in_target = [
+                site
+                for i, site in enumerate(candidate_sites_in_target)
+                if i not in overlapping_site_indices
+            ]
+        else:
+            pbar.update(20)  # 40% of progress bar
+
+        pbar.set_description("Calculating best match")  # now at 40% of progress bar
 
         # get composition of list of sites:
         num_possible_combos = math.comb(len(candidate_sites_in_target), num_sites_up_for_grabs)
@@ -276,31 +315,37 @@ def get_defect_in_supercell(
 
         species_symbols = [site.specie.symbol for site in candidate_sites_in_target]
         min_interatomic_distances_tuple_combo_dict = {}
+        idx_combos = list(combinations(range(len(candidate_sites_in_target)), num_sites_up_for_grabs))
 
-        for idx_combo in list(combinations(range(len(candidate_sites_in_target)), num_sites_up_for_grabs)):
-            comp = _cached_Comp_init(Hashabledict(Counter([species_symbols[i] for i in idx_combo])))
-            if _Comp__eq__(comp, combo_composition):
-                # could early break cases where the distances are too small? if a bottleneck, currently not
-                # and/or could loop over subsets of each possible combo first, culling any which break this
-                combo_sites_in_superset = [candidate_sites_in_target[i] for i in idx_combo]
-                fake_candidate_struct_sites = (
-                    def_new_supercell_sites_to_check_in_target + combo_sites_in_superset
-                )
-                frac_coords = [site.frac_coords for site in fake_candidate_struct_sites]
-                distance_matrix = target_supercell.lattice.get_all_distances(frac_coords, frac_coords)
-                sorted_distances = np.sort(distance_matrix.flatten())
-                min_interatomic_distances_tuple_combo_dict[
-                    tuple(sorted_distances[len(frac_coords) : len(frac_coords) + 10])
-                    # take the 10 smallest distances, in case defect site is smallest distance
-                ] = [candidate_sites_in_target[i] for i in idx_combo]
+        if idx_combos and idx_combos != [()]:
+            for idx_combo in idx_combos:
+                comp = _cached_Comp_init(Hashabledict(Counter([species_symbols[i] for i in idx_combo])))
+                if _Comp__eq__(comp, combo_composition):
+                    # could early break cases where the distances are too small? if a bottleneck,
+                    # currently not. And/or could loop over subsets of each possible combo first,
+                    # culling any which break this
+                    combo_sites_in_superset = [candidate_sites_in_target[i] for i in idx_combo]
+                    fake_candidate_struct_sites = (
+                        def_new_supercell_sites_to_check_in_target + combo_sites_in_superset
+                    )
+                    frac_coords = [site.frac_coords for site in fake_candidate_struct_sites]
+                    distance_matrix = target_supercell.lattice.get_all_distances(frac_coords, frac_coords)
+                    sorted_distances = np.sort(distance_matrix.flatten())
+                    min_interatomic_distances_tuple_combo_dict[
+                        tuple(sorted_distances[len(frac_coords) : len(frac_coords) + 10])
+                        # take the 10 smallest distances, in case defect site is smallest distance
+                    ] = [candidate_sites_in_target[i] for i in idx_combo]
 
-        # get the candidate structure with the largest minimum interatomic distance:
-        min_interatomic_distances_tuple_combo_list = sorted(
-            min_interatomic_distances_tuple_combo_dict.items(), key=lambda x: x[0], reverse=True
-        )
-        new_supercell_sites = def_new_supercell_sites + list(
-            min_interatomic_distances_tuple_combo_list[0][1]
-        )
+            # get the candidate structure with the largest minimum interatomic distance:
+            min_interatomic_distances_tuple_combo_list = sorted(
+                min_interatomic_distances_tuple_combo_dict.items(), key=lambda x: x[0], reverse=True
+            )
+            new_supercell_sites = def_new_supercell_sites + list(
+                min_interatomic_distances_tuple_combo_list[0][1]
+            )
+        else:
+            new_supercell_sites = def_new_supercell_sites
+
         pbar.update(15)  # 55% of progress bar
         pbar.set_description("Ensuring matching orientation w/target_supercell")
 
@@ -427,10 +472,20 @@ def _cached_Comp_init(comp_dict):
 
 def _get_corresponding_sites_from_struct1_then_2(struct1_pool, struct1, struct2_pool, struct2):
     """
-    Using ``framework_sites`` as the framework of lattice sites to.
+    Given two pairs of sites/structures, returns a new structure which has (1)
+    the closest site in ``struct1_pool`` to each site in ``struct1``, and (2)
+    each site in ``struct2_pool`` which is further away from any site in
+    ``struct2`` than the minimum bond length in ``struct2``, and away from any
+    site in the first set of sites by at least 80% of this minimum bond length.
+
+    The targeted use case is transforming a large periodically-repeated
+    super-supercell of a defect supercell (``struct1_pool``) into the
+    same super-supercell but with only one copy of the original defect
+    supercell (``struct1``), and the rest of the sites populated by the
+    bulk super-supercell (``struct2_pool``; with ``struct2`` being the
+    original bulk supercell).
     """
     single_defect_subcell_sites = []
-
     bulk_min_bond_length = np.sort(struct2.distance_matrix[struct2.distance_matrix > 0.5].flatten())[0]
 
     for sub_site in struct1.sites:  # get closest site in big supercell to site, using cartesian coords:
@@ -444,22 +499,26 @@ def _get_corresponding_sites_from_struct1_then_2(struct1_pool, struct1, struct2_
     assert len(set(single_defect_subcell_sites)) == len(single_defect_subcell_sites)
     assert len(single_defect_subcell_sites) == len(struct1.sites)  # and one site for each
 
+    bulk_outer_cell_sites = []
     for super_site in struct2_pool:
-        closest_site = min(
-            [site for site in struct2.sites if site.species == super_site.species],
-            key=lambda x: x.distance_from_point(super_site.coords),
+        matching_site_coords = np.array(
+            [site.coords for site in struct2.sites if site.species == super_site.species]
         )
-        if (
-            closest_site.distance_from_point(super_site.coords) > bulk_min_bond_length * 0.99
-            and min(super_site.distance_from_point(s.coords) for s in single_defect_subcell_sites)
-            > bulk_min_bond_length * 0.8
-        ):
-            single_defect_subcell_sites.append(super_site)
+        closest_site_dist = min(np.linalg.norm(matching_site_coords - super_site.coords, axis=-1))
+        if closest_site_dist > bulk_min_bond_length * 0.99:
+            # check min dist to sites in single_defect_subcell_sites:
+            matching_site_coords = np.array(
+                [site.coords for site in single_defect_subcell_sites if site.species == super_site.species]
+            )
+            min_dist = min(np.linalg.norm(matching_site_coords - super_site.coords, axis=-1))
+            if min_dist > bulk_min_bond_length * 0.8:
+                bulk_outer_cell_sites.append(super_site)
 
+    combined_sites = single_defect_subcell_sites + bulk_outer_cell_sites
     # should have total number of sites equal to len(struct1) + len(struct2_pool) - len(struct2)
-    assert len(single_defect_subcell_sites) == len(struct1.sites) + len(struct2_pool) - len(struct2)
+    assert len(combined_sites) == len(struct1.sites) + len(struct2_pool) - len(struct2)
 
-    return Structure.from_sites(single_defect_subcell_sites)
+    return Structure.from_sites(combined_sites)
 
 
 def _get_superset_matrix_and_supercells(defect_frac_coords, orig_supercell, target_supercell):
@@ -470,12 +529,14 @@ def _get_superset_matrix_and_supercells(defect_frac_coords, orig_supercell, targ
     vector in ``target_supercell``, and the corresponding supercells with 'X'
     at the defect site(s).
     """
-    largest_target_cell_vector = np.max(target_supercell.lattice.abc)
+    min_cell_length = _get_all_encompassing_cube_length(target_supercell.lattice)
 
     # get supercell matrix which makes all lattice vectors for orig_supercell larger
-    # than largest_superset_lattice_vector:
-    superset_matrix = np.ceil(largest_target_cell_vector / orig_supercell.lattice.abc)
-
+    # than min_cell_length:
+    superset_matrix = np.ceil(min_cell_length / orig_supercell.lattice.abc)
+    # could possibly also use non-diagonal supercells to make this more efficient in some cases,
+    # but a lot of work, shouldn't really contribute too much to slowdowns, and only relevant in some
+    # rare cases (?)
     big_supercell = orig_supercell * superset_matrix  # get big supercell
 
     # get defect coords in big supercell:
@@ -485,6 +546,24 @@ def _get_superset_matrix_and_supercells(defect_frac_coords, orig_supercell, targ
     big_supercell_with_X = orig_supercell_with_X * superset_matrix
 
     return superset_matrix, big_supercell, big_supercell_with_X, orig_supercell_with_X
+
+
+def _get_all_encompassing_cube_length(lattice):
+    """
+    Get the smallest possible cube that fully encompasses the cell, _regardless
+    of orientation_.
+
+    This is determined by getting the 8 vertices of the cell and computing the
+    max distance between any two vertices, giving the side length of an all-
+    encompassing cube. Equivalent to getting the diameter of an encompassing
+    sphere.
+    """
+    # get all vertices of the cell:
+    cart_vertices = np.array([lattice.get_cartesian_coords(perm) for perm in product([0, 1], repeat=3)])
+    # get 2D matrix of all distances between vertices:
+    distances = np.linalg.norm(cart_vertices[:, None] - cart_vertices, axis=-1)
+
+    return max(distances.flatten())
 
 
 def is_within_frac_bounds(lattice, cart_coords, tol=1e-5):
