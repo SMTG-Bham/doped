@@ -24,6 +24,7 @@ from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     find_idx_of_nearest_coords,
+    get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
 )
 from doped.utils.symmetry import (
@@ -639,22 +640,50 @@ def _get_corresponding_sites_from_struct1_then_2(struct1_pool, struct1, struct2_
     assert len(set(single_defect_subcell_sites)) == len(single_defect_subcell_sites)
     assert len(single_defect_subcell_sites) == len(struct1.sites)  # and one site for each
 
-    bulk_outer_cell_sites = []
+    possible_bulk_outer_cell_sites = []
     for super_site in struct2_pool:
         matching_site_coords = np.array(
             [site.coords for site in struct2.sites if site.species == super_site.species]
         )
         closest_site_dist = min(np.linalg.norm(matching_site_coords - super_site.coords, axis=-1))
         if closest_site_dist > bulk_min_bond_length * 0.99:
+            possible_bulk_outer_cell_sites.append(super_site)
+
+    if len(possible_bulk_outer_cell_sites) == len(struct2_pool) - len(struct2):
+        bulk_outer_cell_sites = possible_bulk_outer_cell_sites
+
+    else:  # should basically never happen
+        species_coord_dict = {}  # avoid recomputing coords for each site
+        for species in _fast_get_composition_from_sites(struct2_pool).elements:
+            species_coord_dict[species.name] = get_coords_and_idx_of_species(
+                single_defect_subcell_sites, species.name, frac_coords=False
+            )[0]
+
+        # this could be made faster by vectorising with `find_idx_of_nearest_coords` from
+        # doped.utils.parsing but it's not a bottleneck
+        possible_bulk_outer_cell_sites_min_dists = []
+        for super_site in possible_bulk_outer_cell_sites:
             # check min dist to sites in single_defect_subcell_sites:
-            matching_site_coords = np.array(
-                [site.coords for site in single_defect_subcell_sites if site.species == super_site.species]
+            possible_bulk_outer_cell_sites_min_dists.append(
+                min(
+                    np.linalg.norm(
+                        species_coord_dict[super_site.species.name] - super_site.coords, axis=-1
+                    )
+                )
             )
-            min_dist = min(np.linalg.norm(matching_site_coords - super_site.coords, axis=-1))
-            if min_dist > bulk_min_bond_length * 0.8:
-                bulk_outer_cell_sites.append(super_site)
+
+        # sort possible_bulk_outer_cell_sites by min dist to single_defect_subcell_sites:
+        possible_bulk_outer_cell_sites = [
+            site
+            for _, site in sorted(
+                zip(possible_bulk_outer_cell_sites_min_dists, possible_bulk_outer_cell_sites),
+                key=lambda x: x[0],
+            )
+        ]
+        bulk_outer_cell_sites = possible_bulk_outer_cell_sites[: len(struct2_pool) - len(struct2)]
 
     combined_sites = single_defect_subcell_sites + bulk_outer_cell_sites
+
     # should have total number of sites equal to len(struct1) + len(struct2_pool) - len(struct2)
     assert len(combined_sites) == len(struct1.sites) + len(struct2_pool) - len(struct2)
 
