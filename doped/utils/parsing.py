@@ -16,7 +16,7 @@ import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import Composition, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
@@ -340,21 +340,38 @@ def _get_output_files_and_check_if_multiple(output_file: PathLike = "vasprun.xml
     )  # so `get_X()` will raise an informative FileNotFoundError
 
 
-def get_defect_type_and_composition_diff(bulk, defect):
+def get_defect_type_and_composition_diff(
+    bulk: Union[Structure, Composition], defect: Union[Structure, Composition]
+) -> tuple[str, dict]:
     """
     Get the difference in composition between a bulk structure and a defect
     structure.
 
     Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
     extrinsic species and code efficiency/robustness improvements.
+
+    Args:
+        bulk (Union[Structure, Composition]):
+            The bulk structure or composition.
+        defect (Union[Structure, Composition]):
+            The defect structure or composition.
+
+    Returns:
+        Tuple[str, Dict[str, int]]:
+            The defect type (``interstitial``, ``vacancy`` or ``substitution``)
+            and the composition difference between the bulk and defect structures
+            as a dictionary.
     """
-    bulk_comp = bulk.composition.get_el_amt_dict()
-    defect_comp = defect.composition.get_el_amt_dict()
+    bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
+    defect_comp = defect.composition if isinstance(defect, Structure) else defect
+
+    bulk_comp_dict = bulk_comp.get_el_amt_dict()
+    defect_comp_dict = defect_comp.get_el_amt_dict()
 
     composition_diff = {
-        element: int(defect_amount - bulk_comp.get(element, 0))
-        for element, defect_amount in defect_comp.items()
-        if int(defect_amount - bulk_comp.get(element, 0)) != 0
+        element: int(defect_amount - bulk_comp_dict.get(element, 0))
+        for element, defect_amount in defect_comp_dict.items()
+        if int(defect_amount - bulk_comp_dict.get(element, 0)) != 0
     }
 
     if len(composition_diff) == 1 and next(iter(composition_diff.values())) == 1:
@@ -365,8 +382,8 @@ def get_defect_type_and_composition_diff(bulk, defect):
         defect_type = "substitution"
     else:
         raise RuntimeError(
-            f"Could not determine defect type from composition difference of bulk ({bulk_comp}) and "
-            f"defect ({defect_comp}) structures."
+            f"Could not determine defect type from composition difference of bulk ({bulk_comp_dict}) and "
+            f"defect ({defect_comp_dict})."
         )
 
     return defect_type, composition_diff
