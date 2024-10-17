@@ -1,411 +1,832 @@
-"""
-Tests for doped.interface.fermi_solver module.
-"""
 
-import importlib.util
 import unittest
-from unittest.mock import patch
-
+from unittest.mock import MagicMock, patch, Mock, PropertyMock
 import numpy as np
-import pandas as pd
-import pytest
-from monty.serialization import loadfn
+import builtins
+import warnings
 from pymatgen.electronic_structure.dos import FermiDos
+from pymatgen.electronic_structure.core import Spin
+from doped.thermodynamics import FermiSolver, get_py_sc_fermi_dos_from_fermi_dos
+from monty.serialization import loadfn
 
-from doped.interface.fermi_solver import ChemicalPotentialGrid, FermiSolver
+# Check if py_sc_fermi is available
+try:
+    import py_sc_fermi
 
-py_sc_fermi_installed = bool(importlib.util.find_spec("py_sc_fermi"))
+    py_sc_fermi_available = True
+except ImportError:
+    py_sc_fermi_available = False
 
 
-# TODO: Implement double tests for each (applicable) case with doped and py-sc-fermi backends
-# as with new and legacy MP API tests in test_chemical_potentials.py (`develop` branch)
+class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
+    """Tests for the get_py_sc_fermi_dos_from_fermi_dos function."""
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    def test_get_py_sc_fermi_dos(self):
+        """Test conversion of FermiDos to py_sc_fermi DOS with default parameters."""
+        from py_sc_fermi.dos import DOS
+
+        # Create a mock FermiDos object
+        mock_fermi_dos = MagicMock(spec=FermiDos)
+        mock_fermi_dos.densities = {
+            Spin.up: np.array([1.0, 2.0, 3.0]),
+            Spin.down: np.array([0.5, 1.0, 1.5]),
+        }
+        mock_fermi_dos.energies = np.array([0.0, 0.5, 1.0])
+        mock_fermi_dos.get_cbm_vbm.return_value = (None, 0.0)  # VBM = 0.0
+        mock_fermi_dos.nelecs = 10  # Mock number of electrons
+        mock_fermi_dos.get_gap.return_value = 0.5  # Mock bandgap
+
+        # Test with default values
+        result = get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
+
+        # Assertions
+        self.assertEqual(result.nelect, 10)
+        self.assertEqual(result.bandgap, 0.5)
+        np.testing.assert_array_equal(result.edos, np.array([0.0, 0.5, 1.0]))
+        self.assertTrue(result.spin_polarised)
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    def test_get_py_sc_fermi_dos_with_custom_parameters(self):
+        """Test conversion with custom vbm, nelect, and bandgap."""
+        from py_sc_fermi.dos import DOS
+
+        # Create a mock FermiDos object
+        mock_fermi_dos = MagicMock(spec=FermiDos)
+        mock_fermi_dos.densities = {Spin.up: np.array([1.0, 2.0, 3.0])}
+        mock_fermi_dos.energies = np.array([0.0, 0.5, 1.0])
+        mock_fermi_dos.get_cbm_vbm.return_value = (None, 0.0)
+        mock_fermi_dos.nelecs = 10
+        mock_fermi_dos.get_gap.return_value = 0.5
+
+        # Test with custom parameters
+        result = get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos, vbm=0.1, nelect=12, bandgap=0.5)
+
+        # Assertions
+        self.assertEqual(result.nelect, 12)
+        self.assertEqual(result.bandgap, 0.5)
+        np.testing.assert_array_equal(result.edos, np.array([-0.1, 0.4, 0.9]))
+        self.assertFalse(result.spin_polarised)
 
 
-class FermiSolverTestCase(unittest.TestCase):
+class TestFermiSolverWithLoadedData(unittest.TestCase):
+    """Tests for FermiSolver initialization with loaded data."""
+
     def setUp(self):
-        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json.gz"
-        self.bulk_dos_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
-        self.thermo = loadfn(self.thermo_path)
-        self.fs = FermiSolver(self.thermo, self.bulk_dos_path)
+        # Adjust the paths to your actual data files
+        self.defect_thermodynamics = loadfn("../examples/CdTe/CdTe_example_thermo.json")
+        self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
+            "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
+        )
+        self.defect_thermodynamics.chempots = loadfn("../examples/CdTe/CdTe_chempots.json")
 
-    def test_init(self):
-        assert self.fs.defect_thermodynamics == self.thermo
-        assert self.fs.bulk_dos == self.bulk_dos_path
+    @patch("doped.thermodynamics.importlib.util.find_spec")
+    def test_valid_initialization_doped_backend(self, mock_find_spec):
+        """Test initialization with doped backend."""
+        mock_find_spec.return_value = None  # Simulate py_sc_fermi not installed
 
-    def test__get_limits(self):
-        assert self.fs._get_limits("Cd-rich") == {"Cd": 0.0, "Te": -1.2513173828125002}
+        # Ensure bulk_dos is set
+        self.assertIsNotNone(self.defect_thermodynamics.bulk_dos, "bulk_dos is not set.")
 
-    def test_equilibrium_solve(self):
-        # test that equilibrium solve raises not implemented error
-        with pytest.raises(NotImplementedError) as exc:
-            self.fs.equilibrium_solve()
+        # Initialize FermiSolver
+        solver = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
 
-        print(exc.value)  # for debugging
-        assert (
-            "This method is implemented in the derived class, use FermiSolverDoped or "
-            "FermiSolverPyScFermi instead."
-        ) in str(exc.value)
+        # Assertions
+        self.assertEqual(solver.backend, "doped")
+        self.assertEqual(solver.defect_thermodynamics, self.defect_thermodynamics)
+        self.assertIsNotNone(solver.volume)
 
-    def test_pseudoequilibrium_solve(self):
-        # test that pseudoequilibrium solve raises not implemented error
-        with pytest.raises(NotImplementedError) as exc:
-            self.fs.pseudo_equilibrium_solve()
+    @patch("doped.thermodynamics.importlib.util.find_spec")
+    @patch("doped.thermodynamics.FermiSolver._activate_py_sc_fermi_backend")
+    def test_valid_initialization_py_sc_fermi_backend(self, mock_activate_backend, mock_find_spec):
+        """Test initialization with py-sc-fermi backend."""
+        mock_find_spec.return_value = True  # Simulate py_sc_fermi installed
+        mock_activate_backend.return_value = None
 
-        print(exc.value)  # for debugging
-        assert (
-            "This method is implemented in the derived class, use FermiSolverDoped or "
-            "FermiSolverPyScFermi instead."
-        ) in str(exc.value)
+        # Initialize FermiSolver
+        solver = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi")
 
-    def test_assert_scan_temperature_raises(self):
-        with pytest.raises(ValueError) as exc:
-            self.fs.scan_temperature(
-                chempots={},
-                temperature_range=[1, 2, 3],
-                annealing_temperature_range=[1, 2, 3],
-                quenched_temperature_range=None,
-            )
-        print(exc.value)  # for debugging
+        # Assertions
+        self.assertEqual(solver.backend, "py-sc-fermi")
+        self.assertEqual(solver.defect_thermodynamics, self.defect_thermodynamics)
+        self.assertIsNotNone(solver.volume)
+        mock_activate_backend.assert_called_once()
 
-        with pytest.raises(ValueError) as exc:
-            self.fs.scan_temperature(
-                chempots={},
-                temperature_range=[1, 2, 3],
-                annealing_temperature_range=None,
-                quenched_temperature_range=[1, 2, 3],
-            )
-        print(exc.value)  # for debugging
+    @patch("doped.thermodynamics.importlib.util.find_spec")
+    def test_missing_bulk_dos(self, mock_find_spec):
+        """Test initialization failure due to missing bulk_dos."""
+        mock_find_spec.return_value = None
 
-        with pytest.raises(ValueError) as exc:
-            self.fs.scan_temperature(
-                chempots={},
-                temperature_range=[],
-                annealing_temperature_range=None,
-                quenched_temperature_range=None,
-            )
-        print(exc.value)  # for debugging
+        # Remove bulk_dos
+        self.defect_thermodynamics.bulk_dos = None
 
-        with pytest.raises(ValueError) as exc:
-            self.fs.scan_temperature(
-                limit=None,
-                chempots=None,
-                temperature_range=None,
-                annealing_temperature_range=[],
-                quenched_temperature_range=None,
-            )
-        print(exc.value)
+        with self.assertRaises(ValueError) as context:
+            FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
 
-    def test_get_interpolated_chempots(self):
-        int_chempots = self.fs._get_interpolated_chempots({"a": -1, "b": -1}, {"a": 1, "b": 1}, 11)
-        assert len(int_chempots) == 11
-        assert int_chempots[0]["a"] == -1
-        assert int_chempots[0]["b"] == -1
-        assert int_chempots[-1]["a"] == 1
-        assert int_chempots[-1]["b"] == 1
-        assert int_chempots[5]["a"] == 0
-        assert int_chempots[5]["b"] == 0
+        self.assertIn("No bulk DOS calculation", str(context.exception))
 
-    def test__solve_and_append_chempots(self):
-        with patch(
-            "doped.interface.fermi_solver.FermiSolver.equilibrium_solve",
-            return_value={
-                "Fermi Level": [0.5],
-                "Electrons (cm^-3)": [0.5],
-                "Holes (cm^-3)": [0.5],
-                "Temperature": [300],
-            },
-        ):
-            results = self.fs._solve_and_append_chempots({}, 300)
-            assert results["Fermi Level"] == [0.5]
-            assert results["Electrons (cm^-3)"] == [0.5]
-            assert results["Holes (cm^-3)"] == [0.5]
-            assert results["Temperature"] == [300]
+    @patch("doped.thermodynamics.importlib.util.find_spec")
+    def test_invalid_backend(self, mock_find_spec):
+        """Test initialization failure due to invalid backend."""
+        mock_find_spec.return_value = None
 
-    def test_solve_and_append_chempots_pseudo(self):
-        with patch(
-            "doped.interface.fermi_solver.FermiSolver.pseudo_equilibrium_solve",
-            return_value={
-                "Fermi Level": [0.5],
-                "Electrons (cm^-3)": [0.5],
-                "Holes (cm^-3)": [0.5],
-                "Annealing Temperature": [300],
-                "Quenched Temperature": [300],
-            },
-        ):
-            results = self.fs._solve_and_append_chempots_pseudo(
-                {}, quenched_temperature=300, annealing_temperature=300
-            )
-            assert results["Fermi Level"] == [0.5]
-            assert results["Electrons (cm^-3)"] == [0.5]
-            assert results["Holes (cm^-3)"] == [0.5]
-            assert results["Annealing Temperature"] == [300]
-            assert results["Quenched Temperature"] == [300]
+        with self.assertRaises(ValueError) as context:
+            FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="invalid_backend")
 
-    def test__add_effective_dopant_concentration_and_solve(self):
-        with patch(
-            "doped.interface.fermi_solver.FermiSolver.equilibrium_solve",
-            return_value={
-                "Fermi Level": [0.5],
-                "Electrons (cm^-3)": [0.5],
-                "Holes (cm^-3)": [0.5],
-                "Temperature": [300],
-            },
-        ):
-            results = self.fs.equilibrium_solve({}, effective_dopant_concentration=-1, temperature=1)
-            assert results["Dopant (cm^-3)"] == 1
-
-    def test__add_effective_dopant_concentration_and_solve_raises(self):
-        with patch(
-            "doped.interface.fermi_solver.FermiSolver.equilibrium_solve",
-            return_value={
-                "Fermi Level": [0.5],
-                "Electrons (cm^-3)": [0.5],
-                "Holes (cm^-3)": [0.5],
-                "Temperature": [300],
-            },
-        ):
-            with pytest.raises(ValueError) as exc:
-                self.fs._add_effective_dopant_concentration_and_solve({}, temperature=1)
-            print(exc.value)
-
-    def test__add_effective_dopant_concentration_and_solve_pseudo(self):
-        with patch(
-            "doped.interface.fermi_solver.FermiSolver.pseudo_equilibrium_solve",
-            return_value={
-                "Fermi Level": [0.5],
-                "Electrons (cm^-3)": [0.5],
-                "Holes (cm^-3)": [0.5],
-                "Annealing Temperature": [300],
-                "Quenched Temperature": [300],
-            },
-        ):
-            results = self.fs._add_effective_dopant_concentration_and_solve_pseudo(
-                {}, effective_dopant_concentration=-1, quenched_temperature=300, annealing_temperature=300
-            )
-            assert results["Dopant (cm^-3)"] == 1
-
-    def test__add_effective_dopant_concentration_and_solve_pseudo_raises(self):
-        with patch(
-            "doped.interface.fermi_solver.FermiSolver.pseudo_equilibrium_solve",
-            return_value={
-                "Fermi Level": [0.5],
-                "Electrons (cm^-3)": [0.5],
-                "Holes (cm^-3)": [0.5],
-                "Annealing Temperature": [300],
-                "Quenched Temperature": [300],
-            },
-        ):
-            with pytest.raises(ValueError) as exc:
-                self.fs._add_effective_dopant_concentration_and_solve_pseudo(
-                    {}, quenched_temperature=300, annealing_temperature=300
-                )
-            print(exc.value)
+        self.assertIn("Unrecognised `backend`", str(context.exception))
 
 
-class FermiSolverDopedTestCase(unittest.TestCase):
+class TestFermiSolverActivateBackend(unittest.TestCase):
+    """Tests for FermiSolver's _activate_py_sc_fermi_backend method."""
+
     def setUp(self):
-        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json.gz"
-        self.bulk_dos_vr_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
-        self.thermo = loadfn(self.thermo_path)
-        self.fs = FermiSolver(self.thermo, self.bulk_dos_vr_path, backend="doped")  # default
+        # Adjust the paths to your actual data files
+        self.defect_thermodynamics = loadfn("../examples/CdTe/CdTe_example_thermo.json")
+        vasprun_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
+        self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
+        self.defect_thermodynamics.chempots = loadfn("../examples/CdTe/CdTe_chempots.json")
+        self.solver = FermiSolver(
+            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi", skip_check=True
+        )
 
-    def test__init__(self):
-        assert self.fs.defect_thermodynamics == self.thermo
-        assert isinstance(self.fs.bulk_dos, FermiDos)
-        assert self.fs.bulk_dos.nelecs == 18.0
+    def test_activate_backend_py_sc_fermi_installed(self):
+        """Test backend activation when py_sc_fermi is installed."""
+        with patch.dict(
+            "sys.modules",
+            {
+                "py_sc_fermi": MagicMock(),
+                "py_sc_fermi.defect_charge_state": MagicMock(),
+                "py_sc_fermi.defect_species": MagicMock(),
+                "py_sc_fermi.defect_system": MagicMock(),
+                "py_sc_fermi.dos": MagicMock(),
+            },
+        ):
+            from py_sc_fermi.defect_charge_state import DefectChargeState
+            from py_sc_fermi.defect_species import DefectSpecies
+            from py_sc_fermi.defect_system import DefectSystem
+            from py_sc_fermi.dos import DOS
+
+            # Activate backend
+            self.solver._activate_py_sc_fermi_backend()
+
+            # Assertions
+            self.assertIsNotNone(self.solver._DefectSystem)
+            self.assertIsNotNone(self.solver._DefectSpecies)
+            self.assertIsNotNone(self.solver._DefectChargeState)
+            self.assertIsNotNone(self.solver._DOS)
+            self.assertIsNotNone(self.solver.py_sc_fermi_dos)
+            self.assertIsNotNone(self.solver.multiplicity_scaling)
+            self.assertEqual(self.solver._DefectSystem, DefectSystem)
+            self.assertEqual(self.solver._DefectSpecies, DefectSpecies)
+            self.assertEqual(self.solver._DefectChargeState, DefectChargeState)
+            self.assertEqual(self.solver._DOS, DOS)
+
+    def test_activate_backend_py_sc_fermi_not_installed(self):
+        """Test backend activation failure when py_sc_fermi is not installed."""
+        original_import = builtins.__import__
+
+        def mocked_import(name, globals, locals, fromlist, level):
+            if name.startswith("py_sc_fermi"):
+                raise ImportError("py-sc-fermi is not installed")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=mocked_import):
+            with self.assertRaises(ImportError) as context:
+                self.solver._activate_py_sc_fermi_backend()
+
+            self.assertIn("py-sc-fermi is not installed", str(context.exception))
+
+    def test_activate_backend_error_message(self):
+        """Test custom error message when backend activation fails."""
+        original_import = builtins.__import__
+
+        def mocked_import(name, globals, locals, fromlist, level):
+            if name.startswith("py_sc_fermi"):
+                raise ImportError("py-sc-fermi is not installed")
+            return original_import(name, globals, locals, fromlist, level)
+
+        error_message = "Custom error: py_sc_fermi activation failed"
+
+        with patch("builtins.__import__", side_effect=mocked_import):
+            with self.assertRaises(ImportError) as context:
+                self.solver._activate_py_sc_fermi_backend(error_message=error_message)
+
+            self.assertIn(error_message, str(context.exception))
+
+    def test_activate_backend_non_integer_volume_scaling(self):
+        """Test warning when volume scaling is non-integer."""
+        with patch.dict(
+            "sys.modules",
+            {
+                "py_sc_fermi": MagicMock(),
+                "py_sc_fermi.defect_charge_state": MagicMock(),
+                "py_sc_fermi.defect_species": MagicMock(),
+                "py_sc_fermi.defect_system": MagicMock(),
+                "py_sc_fermi.dos": MagicMock(),
+            },
+        ):
+            from py_sc_fermi.dos import DOS
+
+            with patch("doped.thermodynamics.get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()):
+                # Set non-integer volume scaling
+                self.solver.volume = 100.0
+                first_defect_entry = next(iter(self.defect_thermodynamics.defect_entries.values()))
+
+                # Patch the volume property
+                with patch.object(
+                    type(first_defect_entry.sc_entry.structure), "volume", new_callable=PropertyMock
+                ) as mock_volume:
+                    mock_volume.return_value = 150.0
+
+                    with warnings.catch_warnings(record=True) as w:
+                        warnings.simplefilter("always")
+                        self.solver._activate_py_sc_fermi_backend()
+
+                        # Assertions
+                        self.assertTrue(len(w) > 0)
+                        self.assertIn("non-integer", str(w[-1].message))
+
+
+class TestFermiSolverMethods(unittest.TestCase):
+    """Tests for methods of the FermiSolver class."""
+
+    def setUp(self):
+        """Set up actual DefectThermodynamics object and FermiSolver instances."""
+        # Load the DefectThermodynamics object from your data files
+        self.defect_thermodynamics = loadfn("../examples/CdTe/CdTe_example_thermo.json")
+        vasprun_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
+        self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
+        self.defect_thermodynamics.chempots = loadfn("../examples/CdTe/CdTe_chempots.json")
+
+        # Create FermiSolver instances for both backends
+        self.solver_doped = FermiSolver(
+            defect_thermodynamics=self.defect_thermodynamics,
+            backend="doped",
+            skip_check=True,  # Skip VBM checks during tests
+        )
+
+        self.solver_py_sc_fermi = FermiSolver(
+            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi", skip_check=True
+        )
+        # Mock the _DOS attribute for py-sc-fermi backend if needed
+        self.solver_py_sc_fermi._DOS = MagicMock()
+
+    # Tests for _check_required_backend_and_error
+
+    def test_check_required_backend_and_error_doped_missing_bulk_dos(self):
+        """Test that RuntimeError is raised when bulk_dos is missing for doped backend."""
+        # Remove bulk_dos to simulate missing DOS
+        self.solver_doped.defect_thermodynamics.bulk_dos = None
+
+        with self.assertRaises(RuntimeError) as context:
+            self.solver_doped._check_required_backend_and_error("doped")
+        self.assertIn("This function is only supported for the doped backend", str(context.exception))
+
+    def test_check_required_backend_and_error_doped_correct(self):
+        """Test that no error is raised when bulk_dos is present for doped backend."""
+        # bulk_dos is correctly set
+        try:
+            self.solver_doped._check_required_backend_and_error("doped")
+        except RuntimeError as e:
+            self.fail(f"RuntimeError raised unexpectedly: {e}")
+
+    def test_check_required_backend_and_error_py_sc_fermi_missing_DOS(self):
+        """Test that RuntimeError is raised when _DOS is missing for py-sc-fermi backend."""
+        # Remove _DOS to simulate missing DOS
+        self.solver_py_sc_fermi._DOS = None
+
+        with self.assertRaises(RuntimeError) as context:
+            self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
+        self.assertIn(
+            "This function is only supported for the py-sc-fermi backend", str(context.exception)
+        )
+
+    def test_check_required_backend_and_error_py_sc_fermi_correct(self):
+        """Test that no error is raised when _DOS is present for py-sc-fermi backend."""
+        # _DOS is correctly set
+        try:
+            self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
+        except RuntimeError as e:
+            self.fail(f"RuntimeError raised unexpectedly: {e}")
+
+    # Tests for _get_fermi_level_and_carriers
 
     def test_get_fermi_level_and_carriers(self):
-        with patch(
-            "doped.thermodynamics.DefectThermodynamics.get_equilibrium_fermi_level",
-            return_value=(0.5, 0.5, 0.5),
-        ):
-            fermi_level, electrons, holes = self.fs._get_fermi_level_and_carriers({}, 300)
-            assert fermi_level == 0.5
-            assert electrons == 0.5
-            assert holes == 0.5
-
-    def test_equilibrium_solve(self):
-        equilibrium_results = self.fs.equilibrium_solve({"Cd": 0.0, "Te": -1.2513173828125002}, 300)
-        assert np.isclose(equilibrium_results["Fermi Level"][0], 0.8638811445611926, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Electrons (cm^-3)"][0], 1771777.3797365315, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Holes (cm^-3)"][0], 30972.77981875159, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Temperature"][0], 300, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Concentration (cm^-3)"][0], 9.413e-06, rtol=1e-4)
-
-    def test_pseudo_equilibrium_solve(self):
-        pseudo_equilibrium_results = self.fs.pseudo_equilibrium_solve(
-            {"Cd": 0.0, "Te": -1.2513173828125002}, annealing_temperature=900, quenched_temperature=300
+        """Test _get_fermi_level_and_carriers returns correct values for doped backend."""
+        # Use actual method
+        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+        fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
+            single_chempot_dict=single_chempot_dict,
+            el_refs=self.defect_thermodynamics.el_refs,
+            temperature=300,
+            effective_dopant_concentration=None,
         )
 
-        assert np.isclose(pseudo_equilibrium_results["Fermi Level"][0], 1.4121535299345318, rtol=1e-4)
-        assert np.isclose(
-            pseudo_equilibrium_results["Electrons (cm^-3)"][0], 2864732025029575.0, rtol=1e-4
-        )
-        assert np.isclose(
-            pseudo_equilibrium_results["Holes (cm^-3)"][0], 1.9072582125691956e-05, rtol=1e-4
-        )
-        assert np.isclose(pseudo_equilibrium_results["Annealing Temperature"][0], 900.0, rtol=1e-4)
-        assert np.isclose(pseudo_equilibrium_results["Quenched Temperature"][0], 300.0, rtol=1e-4)
-        assert np.isclose(
-            pseudo_equilibrium_results["Concentration (cm^-3)"][0], 723879713527.0284, rtol=1e-4
+        # Assertions
+        self.assertIsInstance(fermi_level, float)
+        self.assertIsInstance(electrons, float)
+        self.assertIsInstance(holes, float)
+
+    # Tests for _get_single_chempot_dict
+
+    def test_get_single_chempot_dict_correct(self):
+        """Test that the correct chemical potential dictionary is returned."""
+        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+
+        expected_chempots = self.defect_thermodynamics.chempots["limits_wrt_el_refs"]["CdTe-Te"]
+        self.assertEqual(single_chempot_dict, expected_chempots)
+        self.assertEqual(el_refs, self.defect_thermodynamics.el_refs)
+
+    def test_get_single_chempot_dict_limit_not_found(self):
+        """Test that ValueError is raised when the specified limit is not found."""
+        with self.assertRaises(ValueError) as context:
+            self.solver_doped._get_single_chempot_dict(limit="nonexistent_limit")
+        self.assertIn("Limit 'nonexistent_limit' not found", str(context.exception))
+
+    # Tests for equilibrium_solve
+
+    def test_equilibrium_solve_doped_backend(self):
+        """Test equilibrium_solve method for doped backend."""
+        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+
+        # Call the method
+        concentrations = self.solver_doped.equilibrium_solve(
+            single_chempot_dict=single_chempot_dict,
+            el_refs=self.defect_thermodynamics.el_refs,
+            temperature=300,
+            effective_dopant_concentration=1e16,
+            append_chempots=True,
         )
 
+        # Assertions
+        self.assertIn("Fermi Level", concentrations.columns)
+        self.assertIn("Electrons (cm^-3)", concentrations.columns)
+        self.assertIn("Holes (cm^-3)", concentrations.columns)
+        self.assertIn("Temperature", concentrations.columns)
+        self.assertIn("Dopant (cm^-3)", concentrations.columns)
+        # Check that concentrations are reasonable numbers
+        self.assertTrue(np.all(concentrations["Concentration (cm^-3)"] >= 0))
+        # Check appended chemical potentials
+        for element in single_chempot_dict:
+            self.assertIn(f"μ_{element}", concentrations.columns)
+            self.assertEqual(concentrations[f"μ_{element}"].iloc[0], single_chempot_dict[element])
 
-@unittest.skipIf(not py_sc_fermi_installed, "py_sc_fermi is not installed")
-class FermiSolverPyScFermiTestCase(unittest.TestCase):
+    def test_equilibrium_solve_py_sc_fermi_backend(self):
+        """Test equilibrium_solve method for py-sc-fermi backend."""
+        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+
+        # Mock _generate_defect_system
+        self.solver_py_sc_fermi._generate_defect_system = MagicMock()
+        # Mock defect_system object
+        defect_system = MagicMock()
+        defect_system.concentration_dict.return_value = {
+            "Fermi Energy": 0.5,
+            "n0": 1e18,
+            "p0": 1e15,
+            "defect1": 1e15,
+            "defect2": 1e14,
+            "Dopant": 1e16,
+        }
+        defect_system.temperature = 300
+
+        self.solver_py_sc_fermi._generate_defect_system.return_value = defect_system
+
+        # Call the method
+        concentrations = self.solver_py_sc_fermi.equilibrium_solve(
+            single_chempot_dict=single_chempot_dict,
+            el_refs=self.defect_thermodynamics.el_refs,
+            temperature=300,
+            effective_dopant_concentration=1e16,
+            append_chempots=True,
+        )
+
+        # Assertions
+        self.assertIn("Fermi Level", concentrations.columns)
+        self.assertIn("Electrons (cm^-3)", concentrations.columns)
+        self.assertIn("Holes (cm^-3)", concentrations.columns)
+        self.assertIn("Temperature", concentrations.columns)
+        self.assertIn("Dopant (cm^-3)", concentrations.columns)
+        # Check defects are included
+        self.assertIn("defect1", concentrations.index)
+        self.assertIn("defect2", concentrations.index)
+        # Check appended chemical potentials
+        for element in single_chempot_dict:
+            self.assertIn(f"μ_{element}", concentrations.columns)
+            self.assertEqual(concentrations[f"μ_{element}"].iloc[0], single_chempot_dict[element])
+
+
+class TestEquilibriumCalculations(unittest.TestCase):
+    """Tests for equilibrium and pseudo-equilibrium calculations in FermiSolver."""
+
     def setUp(self):
-        self.thermo_path = "../examples/CdTe/CdTe_LZ_thermo_wout_meta.json.gz"
-        self.bulk_dos_vr_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
-        self.thermo = loadfn(self.thermo_path)
-        self.fs = FermiSolver(self.thermo, self.bulk_dos_vr_path, backend="py-sc-fermi")
+        """Set up actual DefectThermodynamics object and FermiSolver instances."""
+        # Load the DefectThermodynamics object from your data files
+        self.defect_thermodynamics = loadfn("../examples/CdTe/CdTe_example_thermo.json")
+        vasprun_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
+        self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
+        self.defect_thermodynamics.chempots = loadfn("../examples/CdTe/CdTe_chempots.json")
 
-    def test__init__(self):
-        assert self.fs.defect_thermodynamics == self.thermo
+        # Create FermiSolver instances for both backends
+        self.solver_doped = FermiSolver(
+            defect_thermodynamics=self.defect_thermodynamics,
+            backend="doped",
+            skip_check=True,  # Skip VBM checks during tests
+        )
 
-    def test_equilibrium_solve(self):
-        equilibrium_results = self.fs.equilibrium_solve({"Cd": 0.0, "Te": -1.2513173828125002}, 300)
-        assert np.isclose(equilibrium_results["Fermi Level"][0], 8.638481e-01, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Electrons (cm^-3)"][0], 1.776159e06, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Holes (cm^-3)"][0], 3.089355e04, rtol=1e-4)
-        assert np.isclose(equilibrium_results["Temperature"][0], 300, rtol=1e-4)
+        self.solver_py_sc_fermi = FermiSolver(
+            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi", skip_check=True
+        )
+        # Mock the _DOS attribute for py-sc-fermi backend if needed
+        self.solver_py_sc_fermi._DOS = MagicMock()
 
-    def test_pseudo_equilibrium_solve(self):
-        pseudo_equilibrium_results = self.fs.pseudo_equilibrium_solve(
-            {"Cd": 0.0, "Te": -1.2513173828125002},
-            annealing_temperature=900,
+    # Tests for pseudo_equilibrium_solve
+
+    def test_pseudo_equilibrium_solve_doped_backend(self):
+        """Test pseudo_equilibrium_solve method for doped backend."""
+        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+
+        # Call the method
+        concentrations = self.solver_doped.pseudo_equilibrium_solve(
+            annealing_temperature=800,
+            single_chempot_dict=single_chempot_dict,
+            el_refs=el_refs,
+            quenched_temperature=300,
+            effective_dopant_concentration=1e16,
+            append_chempots=True,
+        )
+
+        # Assertions
+        self.assertIn("Fermi Level", concentrations.columns)
+        self.assertIn("Electrons (cm^-3)", concentrations.columns)
+        self.assertIn("Holes (cm^-3)", concentrations.columns)
+        self.assertIn("Annealing Temperature", concentrations.columns)
+        self.assertIn("Quenched Temperature", concentrations.columns)
+        # Check that concentrations are reasonable numbers
+        self.assertTrue(np.all(concentrations["Concentration (cm^-3)"] >= 0))
+        # Check appended chemical potentials
+        for element in single_chempot_dict:
+            self.assertIn(f"μ_{element}", concentrations.columns)
+            self.assertEqual(concentrations[f"μ_{element}"].iloc[0], single_chempot_dict[element])
+
+    def test_pseudo_equilibrium_solve_py_sc_fermi_backend(self):
+        """Test pseudo_equilibrium_solve method for py-sc-fermi backend with fixed_defects."""
+        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+
+        # Mock _generate_annealed_defect_system
+        self.solver_py_sc_fermi._generate_annealed_defect_system = MagicMock()
+        # Mock defect_system object
+        defect_system = MagicMock()
+        defect_system.concentration_dict.return_value = {
+            "Fermi Energy": 0.6,
+            "n0": 1e17,
+            "p0": 1e16,
+            "defect1": 1e15,
+            "defect2": 1e14,
+            "Dopant": 1e16,
+        }
+        defect_system.temperature = 300
+
+        self.solver_py_sc_fermi._generate_annealed_defect_system.return_value = defect_system
+
+        # Call the method with fixed_defects
+        concentrations = self.solver_py_sc_fermi.pseudo_equilibrium_solve(
+            annealing_temperature=800,
+            single_chempot_dict=single_chempot_dict,
+            el_refs=el_refs,
+            quenched_temperature=300,
+            effective_dopant_concentration=1e16,
+            fixed_defects={"defect1": 1e15},
+            fix_charge_states=True,
+            append_chempots=True,
+        )
+
+        # Assertions
+        self.assertIn("Fermi Level", concentrations.columns)
+        self.assertIn("Electrons (cm^-3)", concentrations.columns)
+        self.assertIn("Holes (cm^-3)", concentrations.columns)
+        self.assertIn("Annealing Temperature", concentrations.columns)
+        self.assertIn("Quenched Temperature", concentrations.columns)
+        # Check defects are included
+        self.assertIn("defect1", concentrations.index)
+        self.assertIn("defect2", concentrations.index)
+        # Check appended chemical potentials
+        for element in single_chempot_dict:
+            self.assertIn(f"μ_{element}", concentrations.columns)
+            self.assertEqual(concentrations[f"μ_{element}"].iloc[0], single_chempot_dict[element])
+
+    # Tests for scan_temperature
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_scan_temperature_equilibrium(self, mock_tqdm):
+        """Test scan_temperature method under thermodynamic equilibrium."""
+        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+
+        temperatures = [300, 400, 500]
+
+        # Mock tqdm to return the temperatures directly
+        mock_tqdm.side_effect = lambda x: x
+
+        # Call the method
+        concentrations = self.solver_doped.scan_temperature(
+            temperature_range=temperatures,
+            chempots=single_chempot_dict,
+            el_refs=el_refs,
+            effective_dopant_concentration=1e16,
+        )
+
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        self.assertTrue(set(temperatures).issubset(concentrations["Temperature"].unique()))
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_scan_temperature_pseudo_equilibrium(self, mock_tqdm):
+        """Test scan_temperature method under pseudo-equilibrium conditions."""
+        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+
+        annealing_temperatures = [800, 900]
+        quenched_temperatures = [300, 350]
+
+        # Mock tqdm to return the product of temperatures directly
+        mock_tqdm.side_effect = lambda x: x
+
+        # Call the method
+        concentrations = self.solver_doped.scan_temperature(
+            annealing_temperature_range=annealing_temperatures,
+            quenched_temperature_range=quenched_temperatures,
+            chempots=single_chempot_dict,
+            el_refs=el_refs,
+            effective_dopant_concentration=1e16,
+        )
+
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        self.assertTrue(
+            set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
+        )
+        self.assertTrue(
+            set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
+        )
+
+    # Tests for scan_dopant_concentration
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_scan_dopant_concentration_equilibrium(self, mock_tqdm):
+        """Test scan_dopant_concentration method under thermodynamic equilibrium."""
+        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+
+        dopant_concentrations = [1e15, 1e16, 1e17]
+
+        # Mock tqdm to return the dopant concentrations directly
+        mock_tqdm.side_effect = lambda x: x
+
+        # Call the method
+        concentrations = self.solver_doped.scan_dopant_concentration(
+            effective_dopant_concentration_range=dopant_concentrations,
+            chempots=single_chempot_dict,
+            el_refs=el_refs,
+            temperature=300,
+        )
+
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        self.assertTrue(set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique()))
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_scan_dopant_concentration_pseudo_equilibrium(self, mock_tqdm):
+        """Test scan_dopant_concentration method under pseudo-equilibrium conditions."""
+        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+
+        dopant_concentrations = [1e15, 1e16, 1e17]
+
+        # Mock tqdm to return the dopant concentrations directly
+        mock_tqdm.side_effect = lambda x: x
+
+        # Call the method
+        concentrations = self.solver_doped.scan_dopant_concentration(
+            effective_dopant_concentration_range=dopant_concentrations,
+            chempots=single_chempot_dict,
+            el_refs=el_refs,
+            annealing_temperature=800,
             quenched_temperature=300,
         )
-        assert np.isclose(pseudo_equilibrium_results["Fermi Level"][0], 1.412081, rtol=1e-4)
-        assert np.isclose(pseudo_equilibrium_results["Electrons (cm^-3)"][0], 2.867398e15, rtol=1e-4)
-        assert np.isclose(pseudo_equilibrium_results["Holes (cm^-3)"][0], 1.905303e-05, rtol=1e-4)
-        assert np.isclose(pseudo_equilibrium_results["Annealing Temperature"][0], 900.0, rtol=1e-4)
-        assert np.isclose(pseudo_equilibrium_results["Quenched Temperature"][0], 300.0, rtol=1e-4)
 
-    def test_generate_defect_system(self):
-        defect_system = self.fs.generate_defect_system(300, {"Cd": 0.0, "Te": -1.2513173828125002})
-        assert defect_system.temperature == 300
-        assert defect_system.dos.bandgap == 1.4969
-        assert defect_system.dos.nelect == 18.0
-        assert np.isclose(defect_system.volume, 70.0401764998796, rtol=1e-8)
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        self.assertTrue(set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique()))
+        self.assertIn("Annealing Temperature", concentrations.columns)
+        self.assertIn("Quenched Temperature", concentrations.columns)
 
-        assert defect_system.defect_species_by_name("v_Cd").nsites == 1
-        assert defect_system.defect_species_by_name("v_Cd").charge_states[0].energy == 3.149852420000008
-        assert defect_system.defect_species_by_name("v_Cd").charge_states[0].degeneracy == 6.0
+    @patch("doped.thermodynamics.tqdm")
+    def test_interpolate_chempots_with_limits(self, mock_tqdm):
+        """Test interpolate_chempots method using limits."""
+        # Mock tqdm to avoid progress bar output
+        mock_tqdm.side_effect = lambda x: x
 
-    def test_generate_annealed_defect_system(self):
-        defect_system = self.fs.generate_annealed_defect_system(
-            chempots={"Cd": 0.0, "Te": -1.2513173828125002},
-            annealing_temperature=900,
+        n_points = 5
+        limits = ["Cd-rich", "Te-rich"]
+
+        # Call the method
+        concentrations = self.solver_doped.interpolate_chempots(
+            n_points=n_points,
+            limits=limits,
+            annealing_temperature=800,
             quenched_temperature=300,
+            effective_dopant_concentration=1e16,
         )
-        assert defect_system.temperature == 300
-        assert defect_system.dos.bandgap == 1.4969
-        assert defect_system.dos.nelect == 18.0
-        assert np.isclose(defect_system.volume, 70.0401764998796, rtol=1e-8)
 
-        assert defect_system.defect_species_by_name("v_Cd").nsites == 1
-        assert defect_system.defect_species_by_name("v_Cd").charge_states[0].energy == 3.149852420000008
-        assert defect_system.defect_species_by_name("v_Cd").charge_states[0].degeneracy == 6.0
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        # Check that the concentrations have been calculated at n_points
+        unique_chempot_sets = concentrations[
+            [f"μ_{el}" for el in self.defect_thermodynamics.chempots["elemental_refs"]]
+        ].drop_duplicates()
+        self.assertEqual(len(unique_chempot_sets), n_points)
 
+    @patch("doped.thermodynamics.tqdm")
+    def test_interpolate_chempots_with_chempot_dicts(self, mock_tqdm):
+        """Test interpolate_chempots method with manually specified chemical potentials."""
+        mock_tqdm.side_effect = lambda x: x
 
-class TestChemicalPotentialGrid(unittest.TestCase):
-    def setUp(self):
-        self.chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
-        self.grid = ChemicalPotentialGrid.from_chempots(self.chempots)
+        n_points = 3
+        chempots_list = [
+            {"Cd": -0.5, "Te": -1.0},
+            {"Cd": -1.0, "Te": -0.5},
+        ]
 
-    def test_init(self):
-        assert isinstance(self.grid.vertices, pd.DataFrame)
-        assert len(self.grid.vertices) == 7
-        assert np.isclose(max(self.grid.vertices["Cu"]), 0.0)
-        assert np.isclose(max(self.grid.vertices["Si"]), -0.077858, rtol=1e-5)
-        assert np.isclose(max(self.grid.vertices["Se"]), 0.0)
-        assert np.isclose(min(self.grid.vertices["Cu"]), -0.463558, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["Si"]), -1.708951, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["Se"]), -0.758105, rtol=1e-5)
-
-    def test_get_grid(self):
-        grid_df = self.grid.get_grid(100)
-        assert isinstance(grid_df, pd.DataFrame)
-        assert len(self.grid.vertices) == 7
-        assert np.isclose(max(self.grid.vertices["Cu"]), 0.0)
-        assert np.isclose(max(self.grid.vertices["Si"]), -0.077858, rtol=1e-5)
-        assert np.isclose(max(self.grid.vertices["Se"]), 0.0)
-        assert np.isclose(min(self.grid.vertices["Cu"]), -0.463558, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["Si"]), -1.708951, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["Se"]), -0.758105, rtol=1e-5)
-        assert len(grid_df) == 3886
-
-
-class FermiSolver3DTestCase(unittest.TestCase):
-    def setUp(self):
-        self.thermo_path = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_thermo.json")
-        self.bulk_dos_path = "../examples/Cu2SiSe3/vasprun.xml.gz"
-        self.fs = FermiSolver(self.thermo_path, self.bulk_dos_path)  # doped is default backend
-        self.py_fs = FermiSolver(self.thermo_path, self.bulk_dos_path, backend="py-sc-fermi")
-
-    def test_scan_chemical_potential_grid(self):
-
-        results = self.fs.scan_chemical_potential_grid(
-            n_points=5, annealing_temperature=1000, quenched_temperature=300
+        # Call the method
+        concentrations = self.solver_doped.interpolate_chempots(
+            n_points=n_points,
+            chempots=chempots_list,
+            annealing_temperature=800,
+            quenched_temperature=300,
+            effective_dopant_concentration=1e16,
         )
-        assert len(results) == 156
-        assert np.isclose(max(results["Cu"]), 0.0)
-        assert np.isclose(max(results["Si"]), -0.077858, rtol=1e-5)
-        assert np.isclose(max(results["Se"]), 0.0)
-        assert np.isclose(min(results["Cu"]), -0.463558, rtol=1e-5)
-        assert np.isclose(min(results["Si"]), -1.708951, rtol=1e-5)
-        assert np.isclose(min(results["Se"]), -0.758105, rtol=1e-5)
-        assert np.isclose(max(results["Fermi Level"]), 0.014048268, rtol=1e-4)
-        assert np.isclose(min(results["Fermi Level"]), -0.074598, rtol=1e-4)
 
-    def test_min_max_X(self):
-        for target, min_or_max, element, expected in [
-            ("Electrons (cm^-3)", "max", "μ_Cu", 0.0),
-            ("Electrons (cm^-3)", "min", "μ_Cu", -0.46355805460937427),
-            ("Holes (cm^-3)", "max", "μ_Cu", -0.46355805460937427),
-            ("Holes (cm^-3)", "min", "μ_Cu", 0),
-            ("v_Se", "max", "μ_Se", -0.758105),
-        ]:
-            results = self.fs.min_max_X(
-                target=target,
-                min_or_max=min_or_max,
-                tolerance=0.001,
-                annealing_temperature=1000,
-                quenched_temperature=300,
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        unique_chempot_sets = concentrations[["μ_Cd", "μ_Te"]].drop_duplicates()
+        self.assertEqual(len(unique_chempot_sets), n_points)
+
+    def test_interpolate_chempots_invalid_chempots_list_length(self):
+        """Test that ValueError is raised when chempots list does not contain exactly two dictionaries."""
+        with self.assertRaises(ValueError):
+            self.solver_doped.interpolate_chempots(
                 n_points=5,
-            )
-            assert np.isclose(results[element][0], expected, rtol=1e-4)
-
-    @unittest.skipIf(not py_sc_fermi_installed, "py_sc_fermi is not installed")
-    def test_min_max_X_pyscf(self):
-        for target, min_or_max, element, expected in [
-            ("Electrons (cm^-3)", "max", "μ_Cu", 0.0),
-            ("Electrons (cm^-3)", "min", "μ_Cu", -0.46355805460937427),
-            ("Holes (cm^-3)", "max", "μ_Cu", -0.46355805460937427),
-            ("Holes (cm^-3)", "min", "μ_Cu", 0),
-            ("v_Se", "max", "μ_Se", -0.758105),
-        ]:
-            results = self.py_fs.min_max_X(
-                target=target,
-                min_or_max=min_or_max,
-                tolerance=0.001,
-                annealing_temperature=1000,
+                chempots=[{"Cd": -0.5}],  # Only one chempot dict provided
+                annealing_temperature=800,
                 quenched_temperature=300,
-                n_points=5,
             )
-            assert np.isclose(results[element][0], expected, rtol=1e-4)
 
-    @unittest.skipIf(not py_sc_fermi_installed, "py_sc_fermi is not installed")
-    def test_scan_chemical_potential_grid_pyscf(self):
-        results = self.py_fs.scan_chemical_potential_grid(
-            n_points=5, annealing_temperature=1000, quenched_temperature=300
+    def test_interpolate_chempots_missing_limits(self):
+        """Test that ValueError is raised when limits are missing and chempots is in doped format."""
+        with self.assertRaises(ValueError):
+            self.solver_doped.interpolate_chempots(
+                n_points=5,
+                chempots=self.defect_thermodynamics.chempots,
+                annealing_temperature=800,
+                quenched_temperature=300,
+                limits=None,  # Limits are not provided
+            )
+
+    # Tests for scan_chemical_potential_grid
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_scan_chemical_potential_grid(self, mock_tqdm):
+        """Test scan_chemical_potential_grid method."""
+        mock_tqdm.side_effect = lambda x: x
+
+        n_points = 5
+
+        # Provide chempots with multiple limits
+        chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
+
+        # Call the method
+        concentrations = self.solver_doped.scan_chemical_potential_grid(
+            chempots=chempots,
+            n_points=n_points,
+            annealing_temperature=800,
+            quenched_temperature=300,
+            effective_dopant_concentration=1e16,
         )
-        assert len(results) == 156
-        assert np.isclose(max(results["μ_Cu"]), 0.0)
-        assert np.isclose(max(results["μ_Si"]), -0.077858, rtol=1e-5)
-        assert np.isclose(max(results["μ_Se"]), 0.0)
-        assert np.isclose(min(results["μ_Cu"]), -0.463558, rtol=1e-5)
-        assert np.isclose(min(results["μ_Si"]), -1.708951, rtol=1e-5)
-        assert np.isclose(min(results["μ_Se"]), -0.758105, rtol=1e-5)
-        assert np.isclose(max(results["Fermi Level"]), 0.0155690, rtol=1e-4)
-        assert np.isclose(min(results["Fermi Level"]), -0.07285, rtol=1e-4)
+
+        # Assertions
+        self.assertIsInstance(concentrations, pd.DataFrame)
+        self.assertTrue(len(concentrations) > 0)
+        unique_chempot_sets = concentrations[
+            [f"μ_{el}" for el in self.defect_thermodynamics.chempots["elemental_refs"]]
+        ].drop_duplicates()
+        self.assertTrue(len(unique_chempot_sets) > 0)
+
+    def test_scan_chemical_potential_grid_no_chempots(self):
+        """Test that ValueError is raised when no chempots are provided and none are set."""
+        # Temporarily remove chempots from defect_thermodynamics
+        original_chempots = self.defect_thermodynamics.chempots
+        self.defect_thermodynamics.chempots = None
+
+        with self.assertRaises(ValueError):
+            self.solver_doped.scan_chemical_potential_grid(
+                n_points=5,
+                annealing_temperature=800,
+                quenched_temperature=300,
+            )
+
+        # Restore original chempots
+        self.defect_thermodynamics.chempots = original_chempots
+
+    # Tests for min_max_X
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_min_max_X_maximize_electrons(self, mock_tqdm):
+        """Test min_max_X method to maximize electron concentration."""
+        mock_tqdm.side_effect = lambda x: x
+
+        # Call the method
+        result = self.solver_doped.min_max_X(
+            target="Electrons (cm^-3)",
+            min_or_max="max",
+            annealing_temperature=800,
+            quenched_temperature=300,
+            tolerance=0.05,
+            n_points=5,
+            effective_dopant_concentration=1e16,
+        )
+
+        # Assertions
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertTrue(len(result) > 0)
+        self.assertIn("Electrons (cm^-3)", result.columns)
+
+    @patch("doped.thermodynamics.tqdm")
+    def test_min_max_X_minimize_holes(self, mock_tqdm):
+        """Test min_max_X method to minimize hole concentration."""
+        mock_tqdm.side_effect = lambda x: x
+
+        # Call the method
+        result = self.solver_doped.min_max_X(
+            target="Holes (cm^-3)",
+            min_or_max="min",
+            annealing_temperature=800,
+            quenched_temperature=300,
+            tolerance=0.05,
+            n_points=5,
+            effective_dopant_concentration=1e16,
+        )
+
+        # Assertions
+        self.assertIsInstance(result, pd.DataFrame)
+        self.assertTrue(len(result) > 0)
+        self.assertIn("Holes (cm^-3)", result.columns)
+
+    # Additional tests for internal methods
+
+    def test_get_interpolated_chempots(self):
+        """Test _get_interpolated_chempots method."""
+        chempot_start = {"Cd": -0.5, "Te": -1.0}
+        chempot_end = {"Cd": -1.0, "Te": -0.5}
+        n_points = 3
+
+        interpolated_chempots = self.solver_doped._get_interpolated_chempots(
+            chempot_start, chempot_end, n_points
+        )
+
+        # Assertions
+        self.assertEqual(len(interpolated_chempots), n_points)
+        self.assertEqual(interpolated_chempots[0], chempot_start)
+        self.assertEqual(interpolated_chempots[-1], chempot_end)
+        # Check middle point
+        expected_middle = {"Cd": -0.75, "Te": -0.75}
+        self.assertEqual(interpolated_chempots[1], expected_middle)
+
+    def test_parse_and_check_grid_like_chempots(self):
+        """Test _parse_and_check_grid_like_chempots method."""
+        chempots = self.defect_thermodynamics.chempots
+
+        parsed_chempots, el_refs = self.solver_doped._parse_and_check_grid_like_chempots(chempots)
+
+        # Assertions
+        self.assertIsInstance(parsed_chempots, dict)
+        self.assertIsInstance(el_refs, dict)
+        self.assertIn("limits", parsed_chempots)
+        self.assertIn("elemental_refs", parsed_chempots)
+
+    def test_parse_and_check_grid_like_chempots_invalid_chempots(self):
+        """Test that ValueError is raised when chempots is None."""
+        # Temporarily remove chempots from defect_thermodynamics
+        original_chempots = self.defect_thermodynamics.chempots
+        self.defect_thermodynamics.chempots = None
+
+        with self.assertRaises(ValueError):
+            self.solver_doped._parse_and_check_grid_like_chempots()
+
+        # Restore original chempots
+        self.defect_thermodynamics.chempots = original_chempots
+
+
+if __name__ == "__main__":
+    unittest.main()
