@@ -1060,5 +1060,33 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
 
 
+class TestChemicalPotentialGrid(unittest.TestCase):
+    def setUp(self):
+        self.chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
+        self.grid = chemical_potentials.ChemicalPotentialGrid(self.chempots)
+
+    def test_init(self):
+        assert isinstance(self.grid.vertices, pd.DataFrame)
+        assert len(self.grid.vertices) == 7
+        assert np.isclose(max(self.grid.vertices["μ_Cu"]), 0.0)
+        assert np.isclose(max(self.grid.vertices["μ_Si"]), -0.077858, rtol=1e-5)
+        assert np.isclose(max(self.grid.vertices["μ_Se"]), 0.0)
+        assert np.isclose(min(self.grid.vertices["μ_Cu"]), -0.463558, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Si"]), -1.708951, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Se"]), -0.758105, rtol=1e-5)
+
+    def test_get_grid(self):
+        grid_df = self.grid.get_grid(100)
+        assert isinstance(grid_df, pd.DataFrame)
+        assert len(self.grid.vertices) == 7
+        assert np.isclose(max(self.grid.vertices["μ_Cu"]), 0.0)
+        assert np.isclose(max(self.grid.vertices["μ_Si"]), -0.077858, rtol=1e-5)
+        assert np.isclose(max(self.grid.vertices["μ_Se"]), 0.0)
+        assert np.isclose(min(self.grid.vertices["μ_Cu"]), -0.463558, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Si"]), -1.708951, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Se"]), -0.758105, rtol=1e-5)
+        assert len(grid_df) == 3886
+
+
 # TODO: Use Cs2SnBr6 competing phase energies csv in JOSS data folder and LiPS4 data for test cases with
 #  chempot plotting etc
