@@ -700,6 +700,7 @@ def check_atom_mapping_far_from_defect(
     defect: Structure,
     defect_coords: np.ndarray[float],
     coords_are_cartesian: bool = False,
+    verbose_warning: bool = True,
 ) -> None:
     """
     Check the displacement of atoms far from the determined defect site, and
@@ -716,6 +717,9 @@ def check_atom_mapping_far_from_defect(
         coords_are_cartesian (bool):
             Whether the defect coordinates are in Cartesian or fractional
             coordinates. Default is False (fractional).
+        verbose_warning (bool):
+            Whether to include the individual atomic displacements in
+            the warning message, if thrown. Default is True.
 
     Returns:
         None
@@ -765,15 +769,16 @@ def check_atom_mapping_far_from_defect(
     if far_from_defect_large_disps := {
         specie: list for specie, list in far_from_defect_disps.items() if list and np.mean(list) > 0.5
     }:
-        warnings.warn(
+        message = (
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>0.5 Å) in the defect supercell. This likely indicates a mismatch "
             f"between the bulk and defect supercell definitions or an unconverged supercell size, "
             f"both of which could cause errors in parsing. The mean displacement of the following "
             f"species, at sites far from the determined defect position, is >0.5 Å: "
-            f"{list(far_from_defect_large_disps.keys())}, with displacements (Å): "
-            f"{far_from_defect_large_disps}"
+            f"{list(far_from_defect_large_disps.keys())}"
         )
+        message += f", with displacements (Å): {far_from_defect_large_disps}" if verbose_warning else ""
+        warnings.warn(message)
 
 
 def get_site_mapping_indices(

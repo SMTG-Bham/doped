@@ -26,6 +26,7 @@ from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
+from scipy.stats import zscore
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
@@ -74,9 +75,10 @@ def _custom_formatwarning(
     line: Optional[str] = None,
 ) -> str:
     """
-    Reformat warnings to just print the warning message.
+    Reformat warnings to just print the warning message, and add two newlines
+    for spacing.
     """
-    return f"{message}\n"
+    return f"{message}\n\n"
 
 
 warnings.formatwarning = _custom_formatwarning
@@ -244,9 +246,16 @@ def defect_from_structures(
         )
 
     except RuntimeError as exc:
+        check_atom_mapping_far_from_defect(
+            bulk_supercell,
+            defect_supercell,
+            guess_defect_position(defect_supercell),
+            coords_are_cartesian=True,
+        )
         raise RuntimeError(
-            f"Could not identify {def_type} defect site in defect structure. Try supplying the initial "
-            f"defect structure to DefectParser.from_paths()."
+            f"Could not identify {def_type} defect site in defect structure. Please check that your "
+            f"defect supercells are reasonable, and that they match the bulk supercell. If so, "
+            f"and this error is not resolved, please report this issue to the developers."
         ) from exc
 
     if def_type == "vacancy":
@@ -328,6 +337,62 @@ def defect_from_structures(
         unrelaxed_defect_structure,
         bulk_voronoi_node_dict,
     )
+
+
+def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
+    """
+    Given an input defect supercell, guess the position of the defect by
+    identifying outlier sites (in terms of minimum interatomic distances) and
+    return their mean position.
+
+    This is done by calculating the normalised z-scores (``scipy.stats.zscore``)
+    of the minimum interatomic distances for each site in the defect supercell
+    (separated by and normalised within each species), and taking sites with >50%
+    of the maximum z-score (i.e. deviation) as outliers, then returning the mean
+    of their cartesian coordinates (accounting for PBC).
+
+    These coordinates are unlikely to _directly_ match the defect position, but
+    should provide a good estimate in most cases.
+
+    Args:
+        defect_supercell (Structure):
+            Defect supercell structure.
+
+    Returns:
+        np.ndarray[float]: Guessed mean position of the defect.
+    """
+    element_idx_dict = {  # distance matrix broken down by species
+        element: [i for i, site in enumerate(defect_supercell) if site.specie.symbol == str(element)]
+        for element in defect_supercell.composition.elements
+    }
+    zscores = np.zeros(len(defect_supercell))
+
+    distance_matrix = defect_supercell.distance_matrix
+    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+
+    for site_indices in element_idx_dict.values():
+        element_dist_matrix = distance_matrix[:, site_indices]  # (N_of_that_element, N_sites) matrix
+        min_interatomic_distances_per_atom = np.min(element_dist_matrix, axis=0)  # min along columns
+        zscores[site_indices] = zscore(min_interatomic_distances_per_atom)
+
+    abs_zscores = np.abs(zscores)
+    max_z = np.max(abs_zscores)
+    outliers = np.where(abs_zscores > 0.5 * max_z)  # all sites above 50% of max z (normalised deviation)
+
+    # get centre of mass of outliers:
+    # for this, we need to account for PBC, so take the first outlier, then for the rest, take the image
+    # which is closest to the first outlier, then use the Cartesian coordinates of this group to get CoM:
+    first_outlier = defect_supercell.sites[outliers[0][0]]
+    clustered_outlier_coords = [first_outlier.coords]
+    for outlier_idx in outliers[0][1:]:
+        image = first_outlier.distance_and_image(defect_supercell.sites[outlier_idx])[1]
+        clustered_outlier_coords.append(
+            defect_supercell.lattice.get_cartesian_coords(
+                defect_supercell.sites[outlier_idx].frac_coords + image
+            )
+        )
+
+    return np.mean(clustered_outlier_coords, axis=0)
 
 
 def defect_name_from_structures(bulk_structure: Structure, defect_structure: Structure):
@@ -747,7 +812,7 @@ class DefectsParser:
                 for defect_folder in pbar:
                     # set tqdm progress bar description to defect folder being parsed:
                     pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-                    parsed_defect_entry, warnings_string = self._parse_defect_and_handle_warnings(
+                    parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
                         defect_folder
                     )
                     parsing_warning = self._parse_parsing_warnings(
@@ -778,11 +843,13 @@ class DefectsParser:
                     pbar.set_description(  # set this first as desc is only set after parsing in function
                         f"Parsing {charged_defect_folder}/{self.subfolder}".replace("/.", "")
                     )
-                    parsed_defect_entry, warnings_string = self._parse_defect_and_handle_warnings(
+                    parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
                         charged_defect_folder
                     )
                     parsing_warning = self._update_pbar_and_return_warnings_from_parsing(
-                        (parsed_defect_entry, warnings_string),
+                        parsed_defect_entry,
+                        warnings_string,
+                        charged_defect_folder,
                         pbar,
                     )
                     parsing_warnings.append(parsing_warning)
@@ -816,9 +883,12 @@ class DefectsParser:
                         results = pool.imap_unordered(
                             self._parse_defect_and_handle_warnings, folders_to_process
                         )
-                        for result in results:
+                        for result in results:  # result -> (defect_entry, warnings_string, folder)
                             parsing_warning = self._update_pbar_and_return_warnings_from_parsing(
-                                result, pbar
+                                defect_entry=result[0],
+                                warnings_string=result[1],
+                                defect_folder=result[2],
+                                pbar=pbar,
                             )
                             parsing_warnings.append(parsing_warning)
                             if result[0] is not None:
@@ -861,7 +931,7 @@ class DefectsParser:
             duplicate_warnings: dict[str, list[str]] = {
                 warning: []
                 for warning in set(flattened_warnings_list)
-                if flattened_warnings_list.count(warning) > 1
+                if flattened_warnings_list.count(warning) > 1 and "Parsing failed for " not in warning
             }
             new_parsing_warnings = []
             parsing_errors_dict: dict[str, list[str]] = {
@@ -909,7 +979,15 @@ class DefectsParser:
                     for warning in new_warnings_list
                     if "Warning(s) encountered" not in warning and "Parsing failed for " not in warning
                 ]:
-                    new_parsing_warnings.append("\n".join(new_warnings_list))
+                    new_parsing_warnings.append(
+                        "\n".join(
+                            [
+                                warning
+                                for warning in new_warnings_list
+                                if "Parsing failed for " not in warning
+                            ]
+                        )
+                    )
 
             for error, defect_list in parsing_errors_dict.items():
                 if defect_list:
@@ -935,18 +1013,11 @@ class DefectsParser:
 
             parsing_warnings = new_parsing_warnings
             if parsing_warnings:
-                warnings.warn("\n".join(parsing_warnings))
+                warnings.warn("\n\n".join(parsing_warnings))
 
             for warning, defect_name_list in duplicate_warnings.items():
-                defect_list = [
-                    defect_name
-                    for defect_name in defect_name_list
-                    if defect_name
-                    and all(
-                        defect_name not in defects_with_errors
-                        for defects_with_errors in parsing_errors_dict.values()
-                    )
-                ]  # remove None and don't warn if later encountered parsing error (already warned)
+                # remove None and don't warn if later encountered parsing error (already warned)
+                defect_list = [defect_name for defect_name in defect_name_list if defect_name]
                 if defect_list:
                     warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
 
@@ -1196,12 +1267,13 @@ class DefectsParser:
 
     def _parse_parsing_warnings(self, warnings_string, defect_folder, defect_path):
         if warnings_string:
-            if "Parsing failed for " in warnings_string:
-                return warnings_string
-            return (
-                f"Warning(s) encountered when parsing {defect_folder} at {defect_path}:\n\n"
-                f"{warnings_string}"
-            )
+            split_warnings = warnings_string.split("\n\n")
+            if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
+                location = f" at {defect_path}" if defect_path != "N/A" else ""  # let's ride the vibration
+                return (  # either only warnings (no exceptions), or warning(s) + exception
+                    f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
+                )
+            return warnings_string  # only exception, return as is
 
         return ""
 
@@ -1212,25 +1284,39 @@ class DefectsParser:
             .split("/")[-1 if self.subfolder == "." else -2]
         )
 
-    def _update_pbar_and_return_warnings_from_parsing(self, result, pbar):
-        pbar.update()
+    def _update_pbar_and_return_warnings_from_parsing(
+        self,
+        defect_entry: DefectEntry,
+        warnings_string: str = "",
+        defect_folder: Optional[str] = None,
+        pbar: tqdm = None,
+    ):
+        if pbar:
+            pbar.update()
 
-        if result[0] is not None:
-            defect_folder = self._get_defect_folder(result[0])
-            pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+        defect_path = "N/A"
+        if defect_entry is not None:
+            defect_folder = self._get_defect_folder(defect_entry)
+            defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
+            if pbar:
+                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
-            if result[1]:
-                return self._parse_parsing_warnings(
-                    result[1], defect_folder, result[0].calculation_metadata["defect_path"]
-                )
+        if warnings_string:
+            return self._parse_parsing_warnings(warnings_string, defect_folder, defect_path)
 
-        return result[1] or ""  # failed parsing warning if result[0] is None
+        return warnings_string  # failed parsing warning if defect_entry is None
 
-    def _parse_defect_and_handle_warnings(self, defect_folder):
+    def _parse_defect_and_handle_warnings(self, defect_folder: str) -> tuple:
         """
         Process defect and catch warnings along the way, so we can print which
         warnings came from which defect together at the end, in a summarised
         output.
+
+        Args:
+            defect_folder (str): The defect folder to parse.
+
+        Returns:
+            tuple: (parsed_defect_entry, warnings_string, defect_folder)
         """
         with warnings.catch_warnings(record=True) as captured_warnings:
             parsed_defect_entry = self._parse_single_defect(defect_folder)
@@ -1241,13 +1327,19 @@ class DefectsParser:
             "The KPOINTS",
             "The POTCAR",
         ]  # collectively warned later
+
+        def _check_ignored_message_in_warning(warning_message):
+            if hasattr(warning_message, "args"):
+                return any(warning_message.args[0].startswith(i) for i in ignore_messages)
+            return any(warning_message.startswith(i) for i in ignore_messages)
+
         warnings_string = "\n\n".join(
             str(warning.message)
             for warning in captured_warnings
-            if not any(warning.message.args[0].startswith(i) for i in ignore_messages)
+            if not _check_ignored_message_in_warning(warning.message)
         )
 
-        return parsed_defect_entry, warnings_string
+        return parsed_defect_entry, warnings_string, defect_folder
 
     def _parse_single_defect(self, defect_folder):
         try:

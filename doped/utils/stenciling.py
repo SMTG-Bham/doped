@@ -842,7 +842,6 @@ def _get_matching_sites_from_s1_then_s2(
     bulk_outer_cell_sites = possible_bulk_outer_cell_sites[
         : int(len(struct2_pool) * (1 - 1 / num_super_supercells))
     ]
-    _check_min_dist(Structure.from_sites(bulk_outer_cell_sites), orig_min_dist, warning=False)
 
     return Structure.from_sites(single_defect_subcell_sites + bulk_outer_cell_sites)
 
