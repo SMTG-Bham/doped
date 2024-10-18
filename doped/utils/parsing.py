@@ -16,7 +16,7 @@ import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import Composition, PeriodicSite, Structure
+from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
@@ -650,12 +650,26 @@ def _remove_and_insert_species_from_bulk(
     return unrelaxed_defect_structure, bulk_site_idx
 
 
-def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
+def get_wigner_seitz_radius(lattice: Union[Structure, Lattice]) -> float:
     """
-    Check the displacement of atoms far from the determined defect site, and
-    warn the user if they are large (often indicates a mismatch between the
-    bulk and defect supercell definitions).
+    Calculates the Wigner-Seitz radius of the structure, which corresponds to
+    the maximum radius of a sphere fitting inside the cell.
+
+    Uses the ``calc_max_sphere_radius`` function from
+    ``pydefect``, with a wrapper to avoid unnecessary logging
+    output and warning suppression from ``vise``.
+
+    Args:
+        lattice (Union[Structure,Lattice]):
+            The lattice of the structure (either a ``pymatgen``
+            ``Structure`` or ``Lattice`` object).
+
+    Returns:
+        float:
+            The Wigner-Seitz radius of the structure.
     """
+    lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
+
     orig_simplefilter = warnings.simplefilter
     warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
 
@@ -668,36 +682,73 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
         user_settings.logger.setLevel(logging.CRITICAL)
         from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
 
-    except ImportError:  # can't check as vise/pydefect not installed. Not critical so just return
-        return
+    except ImportError:  # vise/pydefect not installed
+        distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
+        for i in range(3):
+            a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
+            a_k = lattice_matrix[i]
+            distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
+        return max(distances) / 2.0
 
     warnings.simplefilter = orig_simplefilter  # reset to original
 
-    far_from_defect_disps = {site.specie.symbol: [] for site in bulk}
+    return calc_max_sphere_radius(lattice_matrix)
 
-    wigner_seitz_radius = calc_max_sphere_radius(bulk.lattice.matrix)
-    # Note: code in this function could be made a bit quicker with vectorisation, rather than repeated
-    # site.distance_and_image_from_frac_coords calls, if it was ever a bottleneck
 
-    bulk_sites_outside_or_at_wigner_radius = [
-        site
-        for site in bulk
-        if site.distance_and_image_from_frac_coords(defect_coords)[0]
-        > np.max((wigner_seitz_radius - 1, 1))
+def check_atom_mapping_far_from_defect(
+    bulk: Structure,
+    defect: Structure,
+    defect_coords: np.ndarray[float],
+    coords_are_cartesian: bool = False,
+) -> None:
+    """
+    Check the displacement of atoms far from the determined defect site, and
+    warn the user if they are large (often indicates a mismatch between the
+    bulk and defect supercell definitions).
+
+    Args:
+        bulk (Structure):
+            The bulk structure.
+        defect (Structure):
+            The defect structure.
+        defect_coords (np.ndarray[float]):
+            The coordinates of the defect site.
+        coords_are_cartesian (bool):
+            Whether the defect coordinates are in Cartesian or fractional
+            coordinates. Default is False (fractional).
+
+    Returns:
+        None
+    """
+    far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk}
+    wigner_seitz_radius = get_wigner_seitz_radius(bulk.lattice)
+    defect_frac_coords = (
+        defect_coords if not coords_are_cartesian else bulk.lattice.get_fractional_coords(defect_coords)
+    )
+    defect_coords = bulk.lattice.get_cartesian_coords(defect_frac_coords)
+
+    bulk_sites_outside_or_at_wigner_radius = [  # vectorised for fast computation
+        bulk[i]
+        for i in np.where(
+            bulk.lattice.get_all_distances(bulk.frac_coords, defect_frac_coords).ravel()
+            > np.max((wigner_seitz_radius - 1, 1))
+        )[0]
     ]
 
-    bulk_species_coord_dict = {}
-    for species in bulk.composition.elements:  # avoid recomputing coords for each site
+    bulk_species_outside_near_WS_coord_dict = {}
+    for species in bulk.composition.elements:
+        # divide and vectorise distance calc (in ``find_idx...``) for efficiency
         bulk_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
             bulk_sites_outside_or_at_wigner_radius, species.name
-        )
-        bulk_species_coord_dict[species.name] = bulk_species_coords
+        )  # frac_coords
+        bulk_species_outside_near_WS_coord_dict[species.name] = bulk_species_coords
 
-    for site in defect:
-        dist_to_defect = site.distance_and_image_from_frac_coords(defect_coords)[0]
+    dists_to_defect = defect.lattice.get_all_distances(defect.frac_coords, defect_frac_coords).ravel()
+
+    for site, dist_to_defect in zip(defect, dists_to_defect):
         if dist_to_defect > wigner_seitz_radius:
             bulk_site_arg_idx = find_idx_of_nearest_coords(  # get closest site in bulk to defect site
-                bulk_species_coord_dict[site.specie.symbol],
+                bulk_species_outside_near_WS_coord_dict[site.specie.symbol],
                 site.frac_coords,
                 bulk.lattice,
                 defect_type="substitution",
@@ -706,7 +757,7 @@ def check_atom_mapping_far_from_defect(bulk, defect, defect_coords):
             far_from_defect_disps[site.specie.symbol].append(
                 round(
                     site.distance_and_image_from_frac_coords(
-                        bulk_species_coord_dict[site.specie.symbol][bulk_site_arg_idx]
+                        bulk_species_outside_near_WS_coord_dict[site.specie.symbol][bulk_site_arg_idx]
                     )[0],
                     2,
                 )
