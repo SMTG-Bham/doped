@@ -725,7 +725,6 @@ def check_atom_mapping_far_from_defect(
     defect_frac_coords = (
         defect_coords if not coords_are_cartesian else bulk.lattice.get_fractional_coords(defect_coords)
     )
-    defect_coords = bulk.lattice.get_cartesian_coords(defect_frac_coords)
 
     bulk_sites_outside_or_at_wigner_radius = [  # vectorised for fast computation
         bulk[i]
