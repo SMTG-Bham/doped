@@ -132,7 +132,10 @@ def orient_s2_like_s1(
     delQ_s2_like_s1_s2 = _get_dQ(struct2_really_like_struct1, struct2)
     delQ_s1_s2_like_s1 = _get_dQ(struct1, struct2_really_like_struct1)
 
-    if not sm_kwargs.get("X") and delQ_s1_s2_like_s1 > min(delQ_s1_s2, delQ_s1_s2_like_s1_pmg) + 0.1:
+    if (
+        not sm_kwargs.get("allow_subset")
+        and delQ_s1_s2_like_s1 > min(delQ_s1_s2, delQ_s1_s2_like_s1_pmg) + 0.1
+    ):
         # shouldn't happen!  (and ignore cases where we're using it in defect stenciling; sm_kwargs has X)
         warnings.warn(
             f"StructureMatcher.get_s2_like_s1() appears to have failed. The mass-weighted displacement "

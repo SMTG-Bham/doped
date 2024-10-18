@@ -10,12 +10,12 @@ import warnings
 from collections import Counter
 from functools import lru_cache
 from itertools import combinations, product
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 from pymatgen.core.composition import Composition, Species, defaultdict
 from pymatgen.core.sites import PeriodicSite
-from pymatgen.core.structure import SiteCollection, Structure
+from pymatgen.core.structure import Structure
 from tqdm import tqdm
 
 from doped.core import DefectEntry
@@ -24,9 +24,9 @@ from doped.utils.efficiency import _Comp__eq__
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
-    find_idx_of_nearest_coords,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
+    get_wigner_seitz_radius,
 )
 from doped.utils.symmetry import (
     _round_floats,
@@ -116,13 +116,11 @@ def get_defect_in_supercell(
 
     try:
         orig_supercell = _get_defect_supercell(defect_entry)
-        orig_min_dist = np.min(orig_supercell.distance_matrix[np.nonzero(orig_supercell.distance_matrix)])
+        orig_min_dist = min_dist(orig_supercell)
         orig_bulk_supercell = _get_bulk_supercell(defect_entry)
         orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
         target_supercell = target_supercell.copy()
-        bulk_min_bond_length = np.sort(
-            orig_bulk_supercell.distance_matrix[orig_bulk_supercell.distance_matrix > 0.5].flatten()
-        )[0]
+        bulk_min_bond_length = min_dist(orig_bulk_supercell)
         if target_frac_coords is True:
             target_frac_coords = [0.5, 0.5, 0.5]
 
@@ -153,7 +151,9 @@ def get_defect_in_supercell(
             orig_supercell_with_X,
             big_supercell_with_X,
             orig_bulk_supercell * supercell_matrix,
+            orig_min_dist,
         )
+        _check_min_dist(big_defect_supercell, orig_min_dist, warning=False, ignored_species=["X"])
         big_supercell_defect_site = next(
             site for site in big_defect_supercell.sites if site.specie.symbol == "X"
         )
@@ -308,56 +308,33 @@ def get_defect_in_supercell(
         pbar.set_description("Ensuring matching orientation w/target_supercell")
 
         # now we just do get s2 like s1 to get the orientation right:
-        x_site = next(site for site in new_supercell if site.specie.symbol == "X")
-        if defect_type == "vacancy":
-            new_supercell.append(
-                next(iter(comp_diff.keys())), x_site.frac_coords, coords_are_cartesian=False
-            )
-        elif defect_type == "substitution":
-            # bulk species is key with value = -1 in comp_diff:
-            bulk_species = next(k for k, v in comp_diff.items() if v == -1)
-            idx = find_idx_of_nearest_coords(
-                new_supercell.frac_coords, x_site.frac_coords, new_supercell_w_defect_comp.lattice
-            )
-            new_supercell.replace(
-                idx, bulk_species, new_supercell[idx].frac_coords, coords_are_cartesian=False
-            )
-        else:  # interstitial
-            idx = find_idx_of_nearest_coords(
-                new_supercell.frac_coords, x_site.frac_coords, new_supercell_w_defect_comp.lattice
-            )
-            new_supercell.remove_sites([idx])
+        defect_site = next(site for site in new_supercell if site.specie.symbol == "X")
 
-        oriented_new_supercell = orient_s2_like_s1(
+        # Note: this function is typically the main bottleneck in this workflow. We have already
+        # optimised the underlying ``StructureMatcher`` workflow in many ways (caching,
+        # fast structure/site/composition comparisons, skipping comparison of defect neighbourhood to
+        # reduce requisite ``stol`` etc; being many orders of magnitude faster than the base
+        # ``pymatgen`` ``StructureMatcher``), however the ``_cart_dists()`` function call is
+        # still quite expensive, especially with large structures with significant noise in the atomic
+        # positions...
+        new_supercell_w_defect_neighbours_as_X = _convert_defect_neighbours_to_X(
+            new_supercell, defect_site.frac_coords, coords_are_cartesian=False
+        )
+        oriented_new_supercell_w_defect_neighbours_as_X = orient_s2_like_s1(
             target_supercell,
-            new_supercell,
+            new_supercell_w_defect_neighbours_as_X,
             verbose=False,
             ignored_species=["X"],  # ignore X site
+            allow_subset=True,  # allow defect supercell composition to differ from target
         )
-        x_site = next(
+        oriented_new_supercell = _convert_X_back_to_orig_species(
+            oriented_new_supercell_w_defect_neighbours_as_X
+        )
+        oriented_new_defect_site = next(  # get defect site and remove X from sites
             oriented_new_supercell.pop(i)
             for i, site in enumerate(oriented_new_supercell.sites)
             if site.specie.symbol == "X"
         )
-        # need to put back in correct defect:
-        if defect_type == "vacancy":
-            added_idx = find_idx_of_nearest_coords(
-                oriented_new_supercell.frac_coords, x_site.frac_coords, oriented_new_supercell.lattice
-            )
-            oriented_new_supercell.remove_sites([added_idx])
-
-        elif defect_type == "substitution":
-            # defect species is key with value = +1 in comp_diff:
-            defect_species = next(k for k, v in comp_diff.items() if v == +1)
-            idx = find_idx_of_nearest_coords(
-                oriented_new_supercell.frac_coords, x_site.frac_coords, oriented_new_supercell.lattice
-            )
-            oriented_new_supercell.replace(
-                idx, defect_species, oriented_new_supercell[idx].frac_coords, coords_are_cartesian=False
-            )
-        else:  # interstitial
-            defect_species = next(k for k, v in comp_diff.items() if v == +1)
-            oriented_new_supercell.append(defect_species, x_site.frac_coords, coords_are_cartesian=False)
 
         pbar.update(35)  # 90% of progress bar
 
@@ -370,7 +347,7 @@ def get_defect_in_supercell(
             symm_op_pos_dict = {}
             for i, symm_op in enumerate(symm_ops):  # should check if frac or cartesian is faster
                 symm_opped_site = apply_symm_op_to_site(
-                    symm_op, x_site, fractional=True, rotate_lattice=False
+                    symm_op, oriented_new_defect_site, fractional=True, rotate_lattice=False
                 )
                 symm_op_pos_dict[i] = symm_opped_site.frac_coords
 
@@ -402,7 +379,128 @@ def get_defect_in_supercell(
     return oriented_new_supercell
 
 
-def _check_min_dist(structure: Structure, orig_min_dist: float = 5.0, warning: bool = True):
+def _convert_defect_neighbours_to_X(
+    defect_supercell: Structure,
+    defect_position: np.ndarray[float],
+    coords_are_cartesian: bool = False,
+    ws_radius_fraction: float = 0.5,
+):
+    """
+    Convert all neighbouring sites of a defect site in a supercell, within half
+    the Wigner-Seitz radius, to have their species as "X" (storing their
+    original species in the site property dict as "orig_species").
+
+    Intended to then be used to make structure-matching far more
+    efficient, by ignoring the highly-perturbed defect neighbourhood
+    (which requires larger ``stol`` values which grealy slow down
+    structure-matching).
+
+    Args:
+        defect_supercell (Structure):
+            The defect supercell to edit.
+        defect_position (np.ndarray[float]):
+            The coordinates of the defect site, either fractional
+            or cartesian depending on ``coords_are_cartesian``.
+        coords_are_cartesian (bool):
+            Whether the defect position is in cartesian coordinates.
+            Default is ``False`` (fractional coordinates).
+        ws_radius_fraction (float):
+            The fraction of the Wigner-Seitz radius to use as the
+            cut-off distance for neighbouring sites to convert to
+            species "X". Default is 0.5 (50%).
+
+    Returns:
+        Structure:
+            The supercell structure with the defect site and all
+            neighbouring sites converted to species X.
+    """
+    converted_defect_supercell = defect_supercell.copy()
+    ws_radius = get_wigner_seitz_radius(defect_supercell)
+    defect_frac_coords = (
+        defect_position
+        if not coords_are_cartesian
+        else defect_supercell.lattice.get_fractional_coords(defect_position)
+    )
+    site_indices_to_convert = np.where(  # vectorised for fast computation
+        defect_supercell.lattice.get_all_distances(
+            defect_supercell.frac_coords, defect_frac_coords
+        ).ravel()
+        < np.max((ws_radius * ws_radius_fraction, 1))
+    )[0]
+
+    for i, orig_site in enumerate(defect_supercell):
+        if i in site_indices_to_convert:
+            converted_defect_supercell.replace(i, "X")
+        # we set properties for all sites, because ``Structure.from_sites()`` in ``pymatgen``'s
+        # ``StructureMatcher`` adds properties to all sites, which can then mess with site comparisons...
+        converted_defect_supercell[i].properties["orig_species"] = orig_site.specie.symbol
+
+    return converted_defect_supercell
+
+
+def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> Structure:
+    """
+    Convert all sites in a supercell with species "X" and "orig_species" in the
+    site property dict back to their original species.
+
+    Mainly intended just for internal ``doped`` usage, to convert back
+    sites which had been converted to "X" for efficient structure-matching
+    (see ``_convert_defect_neighbours_to_X``).
+
+    Args:
+        converted_defect_supercell (Structure):
+            The defect supercell to convert back.
+
+    Returns:
+        Structure:
+            The supercell structure with all sites with species "X"
+            and "orig_species" in the site property dict converted back
+            to their original species.
+    """
+    defect_supercell = converted_defect_supercell.copy()
+
+    for i, site in enumerate(defect_supercell):
+        if site.specie.symbol == "X" and site.properties.get("orig_species"):
+            defect_supercell.replace(i, site.properties.pop("orig_species", site.specie.symbol))
+
+    return defect_supercell
+
+
+def min_dist(structure: Structure, ignored_species: Optional[list[str]] = None) -> float:
+    """
+    Return the minimum interatomic distance in a structure.
+
+    Uses numpy vectorisation for fast computation.
+
+    Args:
+        structure (Structure):
+            The structure to check.
+        ignored_species (list[str]):
+            A list of species symbols to ignore when calculating
+            the minimum interatomic distance. Default is ``None``.
+
+    Returns:
+        float:
+            The minimum interatomic distance in the structure.
+    """
+    if ignored_species is not None:
+        structure = structure.copy()
+        structure.remove_species(ignored_species)
+
+    distances = structure.distance_matrix.flatten()
+    return (  # fast vectorised evaluation of minimum distance
+        0
+        if len(np.nonzero(distances)[0]) < (len(distances) - structure.num_sites)
+        else np.min(distances[np.nonzero(distances)])
+    )
+
+
+def _check_min_dist(
+    structure: Structure,
+    orig_min_dist: float = 5.0,
+    warning: bool = True,
+    ignored_species: Optional[list[str]] = None,
+):
     """
     Helper function to check if the minimum interatomic distance in the
     provided ``structure`` are reasonable.
@@ -420,16 +518,19 @@ def _check_min_dist(structure: Structure, orig_min_dist: float = 5.0, warning: b
         warning (bool):
             Whether to raise a warning or an error if the minimum interatomic
             distance is too small. Default is ``True`` (warning).
+        ignored_species (list[str]):
+            A list of species symbols to ignore when calculating
+            the minimum interatomic distance. Default is ``None``.
     """
     H_in_struct = any(site for site in structure.sites if site.specie.symbol == "H")
     reasonable_min_dist = 0.65 if H_in_struct else 1.0
-    min_dist = np.min(structure.distance_matrix[np.nonzero(structure.distance_matrix)])
-    if min_dist < min(orig_min_dist, reasonable_min_dist):
+    struct_min_dist = min_dist(structure, ignored_species)
+    if struct_min_dist < min(orig_min_dist, reasonable_min_dist):
         message = (
-            f"Generated structure has a minimum interatomic distance of {min_dist:.2f} Å, smaller than "
-            f"the original defect supercell ({orig_min_dist:.2f} Å), which may be unreasonable. Please "
-            f"check if this minimum distance and structure make sense, and if not please report this "
-            f"issue to the developers!"
+            f"Generated structure has a minimum interatomic distance of {struct_min_dist:.2f} Å, smaller "
+            f"than the original defect supercell ({orig_min_dist:.2f} Å), which may be unreasonable. "
+            f"Please check if this minimum distance and structure make sense, and if not please report "
+            f"this issue to the developers!"
         )
         if warning:
             warnings.warn(message)
@@ -648,8 +749,11 @@ def _cached_Comp_init(comp_dict):
 
 
 def _get_matching_sites_from_s1_then_s2(
-    template_struct: Structure, struct1_pool: SiteCollection, struct2_pool: SiteCollection
-):
+    template_struct: Structure,
+    struct1_pool: Structure,
+    struct2_pool: Structure,
+    orig_min_dist: float = 5.0,
+) -> Structure:
     """
     Generate a stenciled structure from a template sub-set structure and two
     pools of sites/structures.
@@ -667,6 +771,25 @@ def _get_matching_sites_from_s1_then_s2(
     supercell (``template_struct``), and the rest of the sites populated by the
     bulk super-supercell (``struct2_pool``; with ``struct2`` being the
     original bulk supercell).
+
+    Args:
+        template_struct (Structure):
+            The template structure to match.
+        struct1_pool (Structure):
+            The first pool of sites to match to the template structure.
+        struct2_pool (Structure):
+            The second pool of sites to match to the template structure.
+        orig_min_dist (float):
+            The minimum interatomic distance in the original (bulk)
+            structure. Used to sanity check the output; if the minimum
+            interatomic distance in the templated structure is smaller
+            than this, and smaller than a reasonable minimum distance
+            (0.65 Å if H in structure, else 1.0 Å), an error is raised.
+            Default is 5.0 Å.
+
+    Returns:
+        Structure:
+            The stenciled structure.
     """
     num_super_supercells = len(struct1_pool) // len(template_struct)  # both also have X
     single_defect_subcell_sites = []
@@ -685,16 +808,27 @@ def _get_matching_sites_from_s1_then_s2(
     species_coord_dict = {}  # avoid recomputing coords for each site
     for element in _fast_get_composition_from_sites(struct2_pool).elements:
         species_coord_dict[element.name] = get_coords_and_idx_of_species(
-            single_defect_subcell_sites, element.name, frac_coords=False
+            single_defect_subcell_sites, element.name, frac_coords=True  # frac_coords
         )[0]
 
     # this could be made faster by vectorising with ``find_idx_of_nearest_coords`` from
     # ``doped.utils.parsing`` but it's far from being the bottleneck in this workflow:
     struct2_pool_idx_min_dist_dict = {}
+    struct2_pool_dists_to_template_centre = struct2_pool.lattice.get_all_distances(
+        struct2_pool.frac_coords,
+        struct2_pool.lattice.get_fractional_coords(
+            template_struct.lattice.get_cartesian_coords([0.5, 0.5, 0.5])
+        ),
+    ).ravel()  # template centre is defect site in stenciling workflow
+    template_ws_radius = get_wigner_seitz_radius(template_struct)
     for i, super_site in enumerate(struct2_pool):
-        struct2_pool_idx_min_dist_dict[i] = min(
-            np.linalg.norm(species_coord_dict[super_site.specie.name] - super_site.coords, axis=-1)
-        )
+        if struct2_pool_dists_to_template_centre[i] > template_ws_radius * 0.75:
+            # check that it's outside WS radius, so not defect site itself
+            struct2_pool_idx_min_dist_dict[i] = np.min(  # vectorised for fast computation
+                struct2_pool.lattice.get_all_distances(
+                    species_coord_dict[super_site.specie.symbol], super_site.frac_coords
+                )
+            )
 
     # sort possible_bulk_outer_cell_sites by (largest) min dist to single_defect_subcell_sites:
     possible_bulk_outer_cell_sites = [
@@ -708,6 +842,7 @@ def _get_matching_sites_from_s1_then_s2(
     bulk_outer_cell_sites = possible_bulk_outer_cell_sites[
         : int(len(struct2_pool) * (1 - 1 / num_super_supercells))
     ]
+    _check_min_dist(Structure.from_sites(bulk_outer_cell_sites), orig_min_dist, warning=False)
 
     return Structure.from_sites(single_defect_subcell_sites + bulk_outer_cell_sites)
 
