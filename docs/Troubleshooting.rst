@@ -17,9 +17,12 @@ message about the origin of the problem, it is likely to be an issue with your v
   pip install pymatgen pymatgen-analysis-defects monty --upgrade
   pip install doped --upgrade
 
-If this does not solve your issue, please check the specific cases noted below. If your issue still isn't
-solved, then please contact the developers through the ``GitHub``
-`Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+If this does not solve your issue, please check the specific cases noted below.
+The next recommended step is to search through the ``doped``
+`GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ (use the GitHub search bar on the top
+right) to see if your issue/question has been asked before. If your problem is still not solved, then
+please contact the developers through the
+`GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
 
 Parsing Errors
 --------------
