@@ -57,6 +57,8 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - S. R. Kavanagh et al. **_Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-91h02) 2024
+- X. Wang et al. **_Sulfur Vacancies Limit the Open-circuit Voltage of Sb<sub>2</sub>S<sub>3</sub> Solar Cells_** [_arXiv_](https://doi.org/10.48550/arXiv.2410.10560) 2024
+- A. Zhang et al. **_Optimizing the n-type carrier concentration of an InVO<sub>4</sub> photocatalyst by codoing with donors and intrinsic defects_** [_Physical Review Applied_](https://doi.org/10.1103/PhysRevApplied.22.044047) 2024
 - M-L. Wang et al. **_Impact of sulfur doping on copper-substituted lead apatite_** [_Physical Review B_](https://doi.org/10.1103/PhysRevB.110.104109) 2024
 - S. Quadir et al. **_Low-Temperature Synthesis of Stable CaZn<sub>2</sub>P<sub>2</sub> Zintl Phosphide Thin Films as Candidate Top Absorbers_** [_Advanced Energy Materials_](https://doi.org/10.1002/aenm.202402640) 2024
 - M. Elgaml et al. **_Controlling the Superconductivity of Nb<sub>2</sub>Pd<sub>x</sub>S<sub>5</sub> via Reversible Li Intercalation_** [_Inorganic Chemistry_](https://pubs.acs.org/doi/full/10.1021/acs.inorgchem.3c03524) 2024
@@ -65,8 +67,8 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - A. G. Squires et al. **_Oxygen dimerization as a defect-driven process in bulk LiNiO2<sub>2</sub>_** [_ACS Energy Letters_](https://pubs.acs.org/doi/10.1021/acsenergylett.4c01307) 2024
 - Y. Fu & H. Lohan et al. **_Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based
 Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_arXiv_](https://doi.org/10.48550/arXiv.2401.02257) 2024
-- S. Hachmioune et al. **_Exploring the Thermoelectric Potential of MgB4: Electronic Band Structure, Transport Properties, and Defect Chemistry_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.4c00584) 2024
-- J. Hu et al. **_Enabling ionic transport in Li3AlP2 the roles of defects and disorder_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-3s0kh) 2024
+- S. Hachmioune et al. **_Exploring the Thermoelectric Potential of MgB<sub>4</sub>: Electronic Band Structure, Transport Properties, and Defect Chemistry_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.4c00584) 2024
+- J. Hu et al. **_Enabling ionic transport in Li<sub>3</sub>AlP<sub>2</sub> the roles of defects and disorder_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-3s0kh) 2024
 - X. Wang et al. **_Upper efficiency limit of Sb<sub>2</sub>Se<sub>3</sub> solar cells_** [_Joule_](https://doi.org/10.1016/j.joule.2024.05.004) 2024
 - I. Mosquera-Lois et al. **_Machine-learning structural reconstructions for accelerated point defect calculations_** [_npj Computational Materials_](https://doi.org/10.1038/s41524-024-01303-9) 2024
 - W. Dou et al. **_Band Degeneracy and Anisotropy Enhances Thermoelectric Performance from Sb<sub>2</sub>Si<sub>2</sub>Te<sub>6</sub> to Sc<sub>2</sub>Si<sub>2</sub>Te<sub>6</sub>_** [_Journal of the American Chemical Society_](https://doi.org/10.1021/jacs.4c01838) 2024
