@@ -106,7 +106,16 @@ def _periodic_site__hash__(self):
     """
     Custom ``__hash__`` method for ``PeriodicSite`` instances.
     """
-    return hash((self.species, tuple(self.coords), frozenset(self.properties.items())))
+    property_dict = (
+        {k: tuple(v) if isinstance(v, (list, np.ndarray)) else v for k, v in self.properties.items()}
+        if self.properties
+        else {}
+    )
+    try:
+        site_hash = hash((self.species, tuple(self.coords), frozenset(property_dict.items())))
+    except Exception:  # hash without the property dict
+        site_hash = hash((self.species, tuple(self.coords)))
+    return site_hash  # who robbed the hash from the gaff
 
 
 PeriodicSite.__hash__ = _periodic_site__hash__
