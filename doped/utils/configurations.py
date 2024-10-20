@@ -10,7 +10,7 @@ from typing import Optional, Union
 
 import numpy as np
 from nonrad import ccd
-from pymatgen.analysis.structure_matcher import Structure, StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, Structure, StructureMatcher
 from pymatgen.core.composition import Composition
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import IStructure
@@ -36,7 +36,6 @@ def orient_s2_like_s1(
     ``CarrierCapture.jl`` etc.).
 
     This corresponds to minimising the root-mean-square displacement from
-
     the shortest _linear_ path to transform from ``struct1`` to a
     symmetry-equivalent definition of ``struct2``)... (TODO)
     Uses the ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``,
@@ -151,6 +150,10 @@ def _scan_sm_stol_till_match(
     is found (especially with the ``doped`` efficiency tools which implement
     caching (and other improvements) to ensure no redundant work here).
 
+    Note that ``ElementComparator()`` is used by default here! (So sites
+    with different species but the same element (e.g. "S2-" & "S0+") will
+    be considered match-able).
+
     Args:
         struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
         struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
@@ -170,6 +173,9 @@ def _scan_sm_stol_till_match(
     IStructure.__eq__ = doped_IStructure.__eq__
 
     func_name = f"get_{result}"
+
+    if "comparator" not in sm_kwargs:
+        sm_kwargs["comparator"] = ElementComparator()
 
     # here we cycle through a range of stols, because we just need to find the closest match so we could
     # use a high ``stol`` from the start and it would give correct result, but higher ``stol``s take

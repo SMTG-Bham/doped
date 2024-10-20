@@ -455,20 +455,20 @@ def _get_neutral_defect_entry(
 
 
 def name_defect_entries(
-    defect_entries: list[DefectEntry],
+    defect_entries: list[Union[DefectEntry, Defect]],
     element_list: Optional[list[str]] = None,
     symm_ops: Optional[list] = None,
 ):
     """
-    Create a dictionary of {Name: DefectEntry} from a list of DefectEntry
-    objects, where the names are set according to the default doped algorithm;
-    which is to use the pymatgen defect name (e.g. v_Cd, Cd_Te etc.) for
-    vacancies/antisites/substitutions, unless there are multiple inequivalent
-    sites for the defect, in which case the point group of the defect site is
-    appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still not unique,
-    then element identity and distance to the nearest neighbour of the defect
-    site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83 etc.). Names do not
-    yet have charge states included.
+    Create a dictionary of ``{name: DefectEntry}`` from a list of
+    ``DefectEntry`` objects, where the names are set according to the default
+    doped algorithm; which is to use the pymatgen defect name (e.g. v_Cd, Cd_Te
+    etc.) for vacancies/antisites/substitutions, unless there are multiple
+    inequivalent sites for the defect, in which case the point group of the
+    defect site is appended (e.g. v_Cd_Td, Cd_Te_Td etc.), and if this is still
+    not unique, then element identity and distance to the nearest neighbour of
+    the defect site is appended (e.g. v_Cd_Td_Te2.83, Cd_Te_Td_Cd2.83 etc.).
+    Names do not yet have charge states included.
 
     For interstitials, the same naming scheme is used, but the point group is
     always appended to the pymatgen defect name.
@@ -477,7 +477,7 @@ def name_defect_entries(
     etc is appended to the name of different defects to distinguish.
 
     Args:
-        defect_entries (list): List of DefectEntry objects to name.
+        defect_entries (list): List of ``DefectEntry`` or ``Defect`` objects to name.
         element_list (list):
             Sorted list of elements in the host structure, so that
             closest_site_info returns deterministic results (in case two
@@ -488,7 +488,7 @@ def name_defect_entries(
             structure), to avoid re-calculating. Default is None (recalculates).
 
     Returns:
-        dict: Dictionary of {Name: DefectEntry} objects.
+        dict: Dictionary of ``{name: DefectEntry}`` objects.
     """
 
     def get_shorter_name(full_defect_name, split_number):
@@ -502,9 +502,10 @@ def name_defect_entries(
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
             previous_entry = defect_naming_dict.pop(matching_names[0])
-            previous_entry_full_name = get_defect_name_from_defect(
-                previous_entry.defect, element_list, symm_ops
+            prev_defect = (
+                previous_entry.defect if isinstance(previous_entry, DefectEntry) else previous_entry
             )
+            previous_entry_full_name = get_defect_name_from_defect(prev_defect, element_list, symm_ops)
             previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
             defect_naming_dict[previous_entry_name] = previous_entry
 
@@ -565,8 +566,9 @@ def name_defect_entries(
 
     defect_naming_dict: dict[str, DefectEntry] = {}
     for defect_entry in defect_entries:
-        full_defect_name = get_defect_name_from_defect(defect_entry.defect, element_list, symm_ops)
-        split_number = 1 if defect_entry.defect.defect_type == core.DefectType.Interstitial else 2
+        defect = defect_entry.defect if isinstance(defect_entry, DefectEntry) else defect_entry
+        full_defect_name = get_defect_name_from_defect(defect, element_list, symm_ops)
+        split_number = 1 if defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
         if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
