@@ -77,30 +77,7 @@ def orient_s2_like_s1(
             "`get_s2_like_s1`."
         )
 
-    # use doped efficiency tools to make structure-matching as fast as possible:
-    Composition.__instances__ = {}
-    Composition.__eq__ = doped_Composition.__eq__
-    PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
-    PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
-    IStructure.__instances__ = {}
-    IStructure.__eq__ = doped_IStructure.__eq__
-
-    # here we cycle through a range of stols, because we just need to find the closest match so we could
-    # use a high ``stol`` from the start and it would give correct result, but higher ``stol``s take
-    # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
-    # and break once a match is found:
-    trial_stol_array = np.arange(0.01, 5, 0.01)
-    for i, stol in enumerate(trial_stol_array):
-        if "stol" in sm_kwargs and i == 0:  # first run, try using user-provided stol first:
-            sm_full_user_custom = StructureMatcher(primitive_cell=False, **sm_kwargs)
-            struct2_like_struct1 = sm_full_user_custom.get_s2_like_s1(struct1, struct2)
-            if struct2_like_struct1:
-                break
-
-        sm = StructureMatcher(primitive_cell=False, stol=stol, **sm_kwargs)
-        struct2_like_struct1 = sm.get_s2_like_s1(struct1, struct2)
-        if struct2_like_struct1:
-            break
+    struct2_like_struct1 = _scan_sm_stol_till_match(struct1, struct2, **sm_kwargs)
 
     if not struct2_like_struct1:
         raise RuntimeError(
@@ -158,6 +135,60 @@ def orient_s2_like_s1(
 
 
 get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
+
+
+def _scan_sm_stol_till_match(
+    struct1: Structure, struct2: Structure, result: str = "s2_like_s1", **sm_kwargs
+):
+    """
+    Utility function to scan through a range of ``stol`` values for
+    ``StructureMatcher`` until a match is found between ``struct1`` and
+    ``struct2``.
+
+    The ``StructureMatcher.match()`` function speed is heavily dependent
+    on ``stol``, with smaller values being faster, so we can speed up
+    evaluation by starting with small values and increasing until a match
+    is found (especially with the ``doped`` efficiency tools which implement
+    caching (and other improvements) to ensure no redundant work here).
+
+    Args:
+        struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
+        struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
+        result (str):
+            The result to return. Options are:
+            - "s2_like_s1" (default): ``get_s2_like_s1(struct1, struct2)``.
+            - "rms_dist": ``get_rms_dist(struct1, struct2)``.
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``.
+    """
+    # use doped efficiency tools to make structure-matching as fast as possible:
+    Composition.__instances__ = {}
+    Composition.__eq__ = doped_Composition.__eq__
+    PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+    PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
+    IStructure.__instances__ = {}
+    IStructure.__eq__ = doped_IStructure.__eq__
+
+    func_name = f"get_{result}"
+
+    # here we cycle through a range of stols, because we just need to find the closest match so we could
+    # use a high ``stol`` from the start and it would give correct result, but higher ``stol``s take
+    # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
+    # and break once a match is found:
+    trial_stol_array = np.arange(0.01, 5, 0.01)
+    for i, stol in enumerate(trial_stol_array):
+        if "stol" in sm_kwargs and i == 0:  # first run, try using user-provided stol first:
+            sm_full_user_custom = StructureMatcher(primitive_cell=False, **sm_kwargs)
+            result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
+            if result:
+                return result
+
+        sm = StructureMatcher(primitive_cell=False, stol=stol, **sm_kwargs)
+        result = getattr(sm, func_name)(struct1, struct2)
+        if result:
+            return result
+
+    return None
 
 
 def get_path_structures(
