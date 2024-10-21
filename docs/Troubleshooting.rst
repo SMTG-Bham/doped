@@ -5,7 +5,6 @@ Troubleshooting & Support
 
 ``doped``/``pymatgen`` Errors
 -----------------------------
-
 For most error cases, ``doped`` has been designed to try and give informative error messages about why
 the functions are failing.
 In the majority of cases, if you encounter an error using ``doped`` which does not have a clear error
@@ -26,7 +25,6 @@ please contact the developers through the
 
 Parsing Errors
 --------------
-
 If errors occur during parsing of defect calculations, ``doped`` will try to informatively warn you about
 the origin of the parsing failure (e.g. ``Parsing failed for [...] with the same error: ...``).
 Depending on what the error is, this error message on its own may not be very helpful. In these cases, it's
@@ -40,6 +38,67 @@ error traceback.
     issues in parsing ``vasprun.xml(.gz)`` files. In most cases, these error messages are indicating a
     corrupted/incomplete ``vasprun.xml(.gz)`` file, for which the solution is to re-run the VASP
     calculation to obtain the appropriate output.
+
+Mis-matching Bulk and Defect Supercells
+----------------------------------------
+When parsing defect calculations with ``doped``, if you provide bulk and defect supercells which do not
+match, you will see the following warning:
+
+.. code::
+
+    Detected atoms far from the defect site (>X Å) with major displacements (>0.5 Å) in the defect
+    supercell. This likely indicates a mismatch between the bulk and defect supercell definitions or an
+    unconverged supercell size, both of which could cause errors in parsing. The mean displacement of the
+    following species, at sites far from the determined defect position, is >0.5 Å: ...
+
+This can sometimes happen due to the use of a bulk supercell which does not match the atomic positions of
+the defect supercell, but is symmetry-equivalent by a translation and/or rotation. This causes issues for
+determining the defect position in the supercell, and for calculating charge corrections which rely on
+differences in electrostatic potential between the bulk and defect supercells. ``doped`` will never output
+mis-matching bulk and defect supercells, but this can occur from accidental combination of outputs from
+old and newer versions, or separate manual calculations of bulk supercells etc.
+
+The easiest solution is to generate the bulk supercell which corresponds to the defect supercell
+definitions:
+
+.. code:: python
+
+    from pymatgen.core.structure import Structure
+    from doped.utils.configurations import orient_s2_like_s1
+
+    # Load the bulk and defect supercells
+    defect_supercell = Structure.from_file("...")
+    bulk_supercell = Structure.from_file("...")  # which mis-matches the defect supercell
+
+    # orient the bulk supercell to match the defect supercell:
+    # for this, we need to 'reverse' the defect formation in the defect supercell, to get
+    # a supercell with the bulk composition that can then be used as a rough template.
+    # in this example case we add a site because the defect supercell is an oxygen vacancy,
+    # but for interstitials you would remove a site (with Structure.remove(...)) and for
+    # substitutions you would replace a site (with Structure.replace(...)).
+    defect_supercell_w_bulk_comp = defect_supercell.copy()
+    defect_supercell_w_bulk_comp.append("O", [0.5, 0.5, 0.5])  # add element to remove vacancy
+    # defect frac coords are given in the POSCAR comment
+
+    oriented_bulk_supercell = orient_s2_like_s1(defect_supercell_w_bulk_comp, bulk_supercell)
+    oriented_bulk_supercell.to(fmt="POSCAR", filename="oriented_bulk_POSCAR")
+
+With this re-generated matching bulk supercell, we just need to run the single-point bulk calculation, and
+use this matching-supercell calculation for defect parsing.
+
+If for some reason you have different supercell definitions for different sets of defect calculations, you
+can use different bulk supercells (which match the corresponding set of defect supercells) and combine them
+using something like:
+
+.. code:: python
+
+    from doped.analysis import DefectsParser
+    from doped.thermodynamics import DefectThermodynamics
+
+    dp_1 = DefectsParser("Defects_Calcs_Supercell_1", bulk_path="Bulk_Supercell_1", dielectric=dielectric)
+    dp_2 = DefectsParser("Defects_Calcs_Supercell_2", bulk_path="Bulk_Supercell_2", dielectric=dielectric)
+
+    thermo = DefectThermodynamics([*dp_1.defect_entries.values(), *dp_2.defect_entries.values()], chempots...)
 
 
 ``numpy`` Errors
