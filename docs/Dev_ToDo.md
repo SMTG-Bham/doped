@@ -3,6 +3,10 @@
 - Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases.
 
+## Defect Complexes
+- Generation (see https://github.com/SMTG-Bham/doped/issues/91 and `Future_ToDo.md`)
+- Parsing
+
 ## Post-processing / analysis / plotting
 - Better automatic defect formation energy plot colour handling (auto-change colormap based on number of defects, set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in `pymatgen-analysis-defects` chempots plotting)
