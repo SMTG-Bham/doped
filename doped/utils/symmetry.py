@@ -30,12 +30,20 @@ from doped.utils.parsing import (
 )
 
 
-@lru_cache(maxsize=int(1e4))
+@lru_cache(maxsize=int(1e5))
 def cached_simplify(eq):
     """
-    Cached simplification function for sympy equations, for efficiency.
+    Cached simplification function for ``sympy`` equations, for efficiency.
     """
     return simplify(eq)
+
+
+@lru_cache(maxsize=int(1e5))
+def cached_solve(equation, variable):
+    """
+    Cached solve function for ``sympy`` equations, for efficiency.
+    """
+    return solve(equation, variable)
 
 
 def _set_spglib_warnings_env_var():
@@ -1206,7 +1214,7 @@ def get_wyckoff_label_and_equiv_coord_list(
     def evaluate_expression(sympy_expr, coord, variable_dict):
         equation = Eq(sympy_expr, coord)
         variable = next(iter(sympy_expr.free_symbols))
-        variable_dict[variable] = solve(equation, variable)[0]
+        variable_dict[variable] = cached_solve(equation, variable)[0]
 
         return cached_simplify(sympy_expr).subs(variable_dict)
 

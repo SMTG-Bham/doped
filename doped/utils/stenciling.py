@@ -8,19 +8,22 @@ The code in this sub-module is still in development! (TODO)
 import math
 import warnings
 from collections import Counter
-from functools import lru_cache
 from itertools import combinations, product
 from typing import Optional, Union
 
 import numpy as np
-from pymatgen.core.composition import Composition, Species, defaultdict
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Structure
 from tqdm import tqdm
 
 from doped.core import DefectEntry
 from doped.utils.configurations import orient_s2_like_s1
-from doped.utils.efficiency import _Comp__eq__
+from doped.utils.efficiency import (
+    Hashabledict,
+    _cached_Comp_init,
+    _Comp__eq__,
+    _fast_get_composition_from_sites,
+)
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
@@ -28,6 +31,7 @@ from doped.utils.parsing import (
     get_defect_type_and_composition_diff,
     get_wigner_seitz_radius,
 )
+from doped.utils.supercells import min_dist
 from doped.utils.symmetry import (
     _round_floats,
     apply_symm_op_to_site,
@@ -466,35 +470,6 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
     return defect_supercell
 
 
-def min_dist(structure: Structure, ignored_species: Optional[list[str]] = None) -> float:
-    """
-    Return the minimum interatomic distance in a structure.
-
-    Uses numpy vectorisation for fast computation.
-
-    Args:
-        structure (Structure):
-            The structure to check.
-        ignored_species (list[str]):
-            A list of species symbols to ignore when calculating
-            the minimum interatomic distance. Default is ``None``.
-
-    Returns:
-        float:
-            The minimum interatomic distance in the structure.
-    """
-    if ignored_species is not None:
-        structure = structure.copy()
-        structure.remove_species(ignored_species)
-
-    distances = structure.distance_matrix.flatten()
-    return (  # fast vectorised evaluation of minimum distance
-        0
-        if len(np.nonzero(distances)[0]) < (len(distances) - structure.num_sites)
-        else np.min(distances[np.nonzero(distances)])
-    )
-
-
 def _check_min_dist(
     structure: Structure,
     orig_min_dist: float = 5.0,
@@ -734,20 +709,6 @@ def _remove_overlapping_sites(
     return [site for i, site in enumerate(candidate_sites_in_target) if i not in overlapping_site_indices]
 
 
-class Hashabledict(dict):
-    def __hash__(self):
-        """
-        Make the dictionary hashable by converting it to a tuple of key-value
-        pairs.
-        """
-        return hash(tuple(sorted(self.items())))
-
-
-@lru_cache(maxsize=int(1e5))
-def _cached_Comp_init(comp_dict):
-    return Composition(comp_dict)
-
-
 def _get_matching_sites_from_s1_then_s2(
     template_struct: Structure,
     struct1_pool: Structure,
@@ -912,21 +873,3 @@ def is_within_frac_bounds(lattice, cart_coords, tol=1e-5):
 
     # Check if fractional coordinates are in the range [0, 1)
     return np.all((frac_coords + frac_tols >= 0) & (frac_coords - frac_tols < 1))
-
-
-def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
-    """
-    Helper function to quickly get the composition of a collection of sites,
-    faster than initializing a ``Structure`` object.
-
-    Used in initial drafts of defect stenciling code, but replaced by faster
-    methods.
-    """
-    elem_map: dict[Species, float] = defaultdict(float)
-    for site in sites:
-        if assume_full_occupancy:
-            elem_map[next(iter(site._species))] += 1
-        else:
-            for species, occu in site.species.items():
-                elem_map[species] += occu
-    return Composition(elem_map)

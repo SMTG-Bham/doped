@@ -13,7 +13,7 @@ from typing import Callable
 import numpy as np
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
 from pymatgen.analysis.structure_matcher import StructureMatcher
-from pymatgen.core.composition import Composition
+from pymatgen.core.composition import Composition, Species
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import IStructure, Structure
 from scipy.cluster.hierarchy import fcluster, linkage
@@ -73,6 +73,38 @@ def _Comp__eq__(self, other):
 
 Composition.__instances__ = {}
 Composition.__eq__ = _Comp__eq__
+
+
+class Hashabledict(dict):
+    def __hash__(self):
+        """
+        Make the dictionary hashable by converting it to a tuple of key-value
+        pairs.
+        """
+        return hash(tuple(sorted(self.items())))
+
+
+@lru_cache(maxsize=int(1e5))
+def _cached_Comp_init(comp_dict):
+    return Composition(comp_dict)
+
+
+def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
+    """
+    Helper function to quickly get the composition of a collection of sites,
+    faster than initializing a ``Structure`` object.
+
+    Used in initial drafts of defect stenciling code, but replaced by faster
+    methods.
+    """
+    elem_map: dict[Species, float] = defaultdict(float)
+    for site in sites:
+        if assume_full_occupancy:
+            elem_map[next(iter(site._species))] += 1
+        else:
+            for species, occu in site.species.items():
+                elem_map[species] += occu
+    return Composition(elem_map)
 
 
 # similar for PeriodicSite:

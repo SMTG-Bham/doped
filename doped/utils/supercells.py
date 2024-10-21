@@ -32,6 +32,35 @@ def get_min_image_distance(structure: Structure) -> float:
     return _get_min_image_distance_from_matrix(structure.lattice.matrix)  # type: ignore
 
 
+def min_dist(structure: Structure, ignored_species: Optional[list[str]] = None) -> float:
+    """
+    Return the minimum interatomic distance in a structure.
+
+    Uses numpy vectorisation for fast computation.
+
+    Args:
+        structure (Structure):
+            The structure to check.
+        ignored_species (list[str]):
+            A list of species symbols to ignore when calculating
+            the minimum interatomic distance. Default is ``None``.
+
+    Returns:
+        float:
+            The minimum interatomic distance in the structure.
+    """
+    if ignored_species is not None:
+        structure = structure.copy()
+        structure.remove_species(ignored_species)
+
+    distances = structure.distance_matrix.flatten()
+    return (  # fast vectorised evaluation of minimum distance
+        0
+        if len(np.nonzero(distances)[0]) < (len(distances) - structure.num_sites)
+        else np.min(distances[np.nonzero(distances)])
+    )
+
+
 def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
     """
     Returns the vector projection of vector b onto vector a.
