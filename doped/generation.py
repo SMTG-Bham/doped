@@ -25,13 +25,11 @@ from pymatgen.analysis.defects.generators import (
     VacancyGenerator,
 )
 from pymatgen.analysis.defects.utils import remove_collisions
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core import IStructure, Structure
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.core.structure import PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
 from tabulate import tabulate
@@ -48,11 +46,7 @@ from doped.core import (
 )
 from doped.utils import parsing, supercells, symmetry
 from doped.utils.efficiency import Composition as doped_Composition
-from doped.utils.efficiency import (
-    DopedTopographyAnalyzer,
-    _doped_cluster_frac_coords,
-    _generic_group_labels,
-)
+from doped.utils.efficiency import DopedTopographyAnalyzer, _doped_cluster_frac_coords
 from doped.utils.efficiency import IStructure as doped_IStructure
 from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 from doped.utils.parsing import reorder_s1_like_s2
@@ -217,14 +211,19 @@ def closest_site_info(
             defect = defect_entry_or_defect
 
         req_sc_mat = np.eye(3) * np.ceil((5 * np.sqrt(n)) / min(defect.defect_structure.lattice.abc))
-        (
-            defect_supercell,
-            defect_supercell_site,
-            _equivalent_supercell_sites,
-        ) = defect.get_supercell_structure(
-            sc_mat=req_sc_mat,
-            return_sites=True,
-        )
+        if np.all(req_sc_mat == np.eye(3)):  # just defect is fine
+            defect_supercell = defect.defect_structure
+            defect_supercell_site = defect.site
+
+        else:
+            (
+                defect_supercell,
+                defect_supercell_site,
+                _equivalent_supercell_sites,
+            ) = defect.get_supercell_structure(
+                sc_mat=req_sc_mat,
+                return_sites=True,
+            )
     else:
         raise TypeError(
             f"defect_entry_or_defect must be a DefectEntry or Defect object, not "
@@ -1427,6 +1426,7 @@ class DefectsGenerator(MSONable):
                 }
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
+                pbar.set_description("Guessing oxidation states")
                 if prim_struct_w_oxi := guess_and_set_oxi_states_with_timeout(self.primitive_structure):
                     self.primitive_structure = prim_struct_w_oxi
                     self._bulk_oxi_states = {
@@ -1686,6 +1686,7 @@ class DefectsGenerator(MSONable):
                 )  # multiply by 0.999 to avoid rounding errors, overshooting the 100% limit and getting
                 # warnings from tqdm
 
+            Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
                 if self._bulk_oxi_states is not False:
                     charge_state_guessing_output = guess_defect_charge_states(
@@ -1835,6 +1836,7 @@ class DefectsGenerator(MSONable):
         previous_defect_entry = next(
             entry for name, entry in self.defect_entries.items() if name.startswith(defect_entry_name)
         )
+        Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
         for charge in charge_states:
             defect_entry = copy.deepcopy(previous_defect_entry)
             defect_entry.charge_state = charge
@@ -2355,6 +2357,18 @@ def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
     }
 
 
+def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
+    """
+    Get the equivalent Cartesian distance of a given ``stol`` value for a given
+    ``Structure``.
+
+    ``stol`` is a site tolerance parameter used in ``pymatgen``
+    ``StructureMatcher`` functions, defined as the fraction of the average
+    free length per atom := ( V / Nsites ) ** (1/3).
+    """
+    return stol * (structure.volume / len(structure)) ** (1 / 3)
+
+
 def get_Voronoi_interstitial_sites(
     host_structure: Structure, interstitial_gen_kwargs: Optional[dict[str, Any]] = None
 ) -> list:
@@ -2378,8 +2392,8 @@ def get_Voronoi_interstitial_sites(
       and symmetry-preference of ``symmetry_preference``
       (see ``_doped_cluster_frac_coords``)
     - Determine the multiplicities and symmetry-equivalent coordinates of
-      the clustered sites using tight structure matching (with ``tight_stol``).
-    - Group the clustered sites by symmetry using (looser) structure matching
+      the clustered sites using ``doped`` symmetry functions.
+    - Group the clustered sites by symmetry using (looser) site matching
       as controlled by ``stol``.
     - From each group, pick the site with the highest symmetry and furthest
       distance from the host atoms, if its ``min_dist`` is no more than
@@ -2401,6 +2415,9 @@ def get_Voronoi_interstitial_sites(
     on the PES, and so as always it is **highly recommended** to use
     ``ShakeNBreak`` or another structure-searching technique to account for
     symmetry-breaking when performing defect relaxations!
+
+    You can see what Cartesian distance the chosen ``stol`` corresponds to
+    using the ``get_stol_equiv_dist`` function.
 
     Args:
         host_structure (Structure): Host structure.
@@ -2443,68 +2460,75 @@ def get_Voronoi_interstitial_sites(
             f"only the following keys are supported: {supported_interstitial_gen_kwargs}"
         )
     top = DopedTopographyAnalyzer(host_structure)
-
-    interstitial_merging_sm = StructureMatcher(
-        stol=interstitial_gen_kwargs.get("stol", 0.32),
-        comparator=ElementComparator(),
-    )  # matches pymatgen-analysis-defects default
-    tight_sm = StructureMatcher(stol=interstitial_gen_kwargs.get("tight_stol", 0.02))
-
     sites_list = [v.frac_coords for v in top.vnodes]
     sites_list = remove_collisions(
         sites_list, structure=host_structure, min_dist=interstitial_gen_kwargs.get("min_dist", 0.9)
     )
-    sites: np.array = _doped_cluster_frac_coords(
+    site_frac_coords_array: np.array = _doped_cluster_frac_coords(
         sites_list,
         host_structure,
         tol=interstitial_gen_kwargs.get("clustering_tol", 0.55),
         symmetry_preference=interstitial_gen_kwargs.get("symmetry_preference", 0.1),
     )
 
-    def _get_inserted_structs(frac_coords_list: Union[list, np.ndarray], structure: Structure):
-        inserted_structs = []
-        for fpos in frac_coords_list:
-            tmp_struct = structure.copy()
-            get_valid_magmom_struct(tmp_struct, inplace=True, spin_mode="none")
-            tmp_struct.insert(
-                0,
-                "X",
-                fpos,
-            )
-            tmp_struct.sort()
-            inserted_structs.append(tmp_struct)
-        return inserted_structs
+    label_equiv_fpos_dict: dict[int, list[np.ndarray[float]]] = {}
+    sga = symmetry.get_sga(host_structure)
+    symm_ops = sga.get_symmetry_operations()
+    tight_dist = get_stol_equiv_dist(
+        interstitial_gen_kwargs.get("tight_stol", 0.02), host_structure
+    )  # 0.06 Å for CdTe, Sb2Si2Te6
 
-    # Group the candidate sites by symmetry
-    insert_sites = {}
-    multiplicity: dict[int, int] = {}
-    equiv_fpos: dict[int, list[list[float]]] = {}
-    inserted_structs = _get_inserted_structs(sites, host_structure)
+    for i, frac_coords in enumerate(site_frac_coords_array.tolist()):
+        match_found = False
+        for equiv_fpos in list(label_equiv_fpos_dict.values()):
+            if np.min(host_structure.lattice.get_all_distances(equiv_fpos, frac_coords)) < 0.01:
+                match_found = True
+                break
 
-    # Label the groups by tight structure matching first:
-    tight_site_labels = _generic_group_labels(inserted_structs, comp=tight_sm.fit)
-    for fpos, lab in [*zip(sites.tolist(), tight_site_labels)]:
-        if lab in insert_sites:
-            multiplicity[lab] += 1
-            equiv_fpos[lab].append(fpos)
-            continue
-        insert_sites[lab] = fpos
-        multiplicity[lab] = 1
-        equiv_fpos[lab] = [fpos]
+        if not match_found:  # try equiv sites:
+            this_equiv_fpos = [
+                site.frac_coords
+                for site in symmetry._get_all_equiv_sites(frac_coords, host_structure, symm_ops=symm_ops)
+            ]
+            for label, equiv_fpos in list(label_equiv_fpos_dict.items()):
+                if np.min(host_structure.lattice.get_all_distances(equiv_fpos, frac_coords)) < tight_dist:
+                    label_equiv_fpos_dict[label].extend(this_equiv_fpos)
+                    match_found = True
+
+        if not match_found:
+            label_equiv_fpos_dict[i] = this_equiv_fpos
 
     tight_cand_site_mul_and_equiv_fpos_list = [
-        (insert_sites[key], multiplicity[key], equiv_fpos[key]) for key in insert_sites
+        (equiv_fpos[0], len(equiv_fpos), equiv_fpos) for equiv_fpos in label_equiv_fpos_dict.values()
     ]
-    reduced_inserted_structs = _get_inserted_structs(
-        [insert_sites[k] for k in insert_sites], host_structure
-    )
 
-    looser_site_matched_dict = defaultdict(list)
-    for tight_cand_site_mul_and_equiv_fpos, label in zip(
-        tight_cand_site_mul_and_equiv_fpos_list,
-        _generic_group_labels(reduced_inserted_structs, comp=interstitial_merging_sm.fit),
-    ):
-        looser_site_matched_dict[label].append(tight_cand_site_mul_and_equiv_fpos)
+    loose_dist = get_stol_equiv_dist(
+        interstitial_gen_kwargs.get("stol", 0.32),  # matches pymatgen-analysis-defects default
+        host_structure,  # ~1 Å for CdTe, Sb2Si2Te6
+    )
+    looser_site_matched_dict: dict[int, list] = defaultdict(list)
+    for i, tight_cand_site_mul_and_equiv_fpos in enumerate(tight_cand_site_mul_and_equiv_fpos_list):
+        # should only need to compare equiv_fpos[0] with all equiv sites of other groups
+        match_found = False
+        for label, sublist in list(looser_site_matched_dict.items()):
+            if (
+                np.min(
+                    host_structure.lattice.get_all_distances(
+                        # only match to first equiv_fpos in list of matched sites, so we don't get a
+                        # chaining effect (e.g. site 1 -> 1 Å from site 2 -> 1 Å from site 3 (but 2 Å
+                        # from site 1) etc.)
+                        sublist[0][2],
+                        tight_cand_site_mul_and_equiv_fpos[0],
+                    )
+                )
+                < loose_dist  # loose tol here
+            ):
+                match_found = True
+                looser_site_matched_dict[label].append(tight_cand_site_mul_and_equiv_fpos)
+                break
+
+        if not match_found:
+            looser_site_matched_dict[i].append(tight_cand_site_mul_and_equiv_fpos)
 
     cand_site_mul_and_equiv_fpos_list = []
     symmetry_preference = interstitial_gen_kwargs.get("symmetry_preference", 0.1)

@@ -76,7 +76,9 @@ def orient_s2_like_s1(
             "`get_s2_like_s1`."
         )
 
-    struct2_like_struct1 = _scan_sm_stol_till_match(struct1, struct2, **sm_kwargs)
+    struct2_like_struct1 = _scan_sm_stol_till_match(
+        struct1, struct2, func_name="get_s2_like_s1", **sm_kwargs
+    )
 
     if not struct2_like_struct1:
         raise RuntimeError(
@@ -137,17 +139,24 @@ get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
 
 
 def _scan_sm_stol_till_match(
-    struct1: Structure, struct2: Structure, result: str = "s2_like_s1", **sm_kwargs
+    struct1: Structure,
+    struct2: Structure,
+    func_name: str = "get_s2_like_s1",
+    min_stol: float = 0.01,
+    max_stol: float = 5.0,
+    stol_increment: float = 0.01,
+    **sm_kwargs,
 ):
     """
     Utility function to scan through a range of ``stol`` values for
     ``StructureMatcher`` until a match is found between ``struct1`` and
-    ``struct2``.
+    ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result.
 
-    The ``StructureMatcher.match()`` function speed is heavily dependent
-    on ``stol``, with smaller values being faster, so we can speed up
-    evaluation by starting with small values and increasing until a match
-    is found (especially with the ``doped`` efficiency tools which implement
+    The ``StructureMatcher.match()`` function (used in most
+    ``StructureMatcher`` methods) speed is heavily dependent on ``stol``,
+    with smaller values being faster, so we can speed up evaluation by
+    starting with small values and increasing until a match is found
+    (especially with the ``doped`` efficiency tools which implement
     caching (and other improvements) to ensure no redundant work here).
 
     Note that ``ElementComparator()`` is used by default here! (So sites
@@ -157,10 +166,20 @@ def _scan_sm_stol_till_match(
     Args:
         struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
         struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
-        result (str):
-            The result to return. Options are:
-            - "s2_like_s1" (default): ``get_s2_like_s1(struct1, struct2)``.
-            - "rms_dist": ``get_rms_dist(struct1, struct2)``.
+        func_name (str):
+            The name of the ``StructureMatcher`` method to return the result
+            of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
+            as:
+            - "get_s2_like_s1" (default)
+            - "get_rms_dist"
+            - "fit"
+            - "fit_anonymous"
+            etc.
+        max_stol (float): Maximum ``stol`` value to try. Default: 5.0.
+        min_stol (float): Minimum ``stol`` value to try. Default: 0.01.
+        stol_increment (float):
+            Increment to increase ``stol`` by each time (when a match is not
+            found). Default: 0.01.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
     """
@@ -172,8 +191,6 @@ def _scan_sm_stol_till_match(
     IStructure.__instances__ = {}
     IStructure.__eq__ = doped_IStructure.__eq__
 
-    func_name = f"get_{result}"
-
     if "comparator" not in sm_kwargs:
         sm_kwargs["comparator"] = ElementComparator()
 
@@ -181,7 +198,7 @@ def _scan_sm_stol_till_match(
     # use a high ``stol`` from the start and it would give correct result, but higher ``stol``s take
     # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
     # and break once a match is found:
-    trial_stol_array = np.arange(0.01, 5, 0.01)
+    trial_stol_array = np.arange(min_stol, max_stol, stol_increment)
     for i, stol in enumerate(trial_stol_array):
         if "stol" in sm_kwargs and i == 0:  # first run, try using user-provided stol first:
             sm_full_user_custom = StructureMatcher(primitive_cell=False, **sm_kwargs)
