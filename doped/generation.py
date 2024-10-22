@@ -1225,7 +1225,7 @@ class DefectsGenerator(MSONable):
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to ``get_Voronoi_interstitial_sites``
                 (such as ``min_dist``, ``clustering_tol``, ``symmetry_preference``,
-                ``stol`` and ``tight_stol`` -- see its docstring), or
+                ``stol``, ``tight_stol`` and ``symprec``  -- see its docstring), or
                 ``InterstitialGenerator`` if ``interstitial_coords`` is specified.
                 If set to ``False``, interstitial generation will be skipped entirely.
             target_frac_coords (list):
@@ -2435,6 +2435,9 @@ def get_Voronoi_interstitial_sites(
                 Structure matcher tolerance for looser site matching. Defaults to 0.32.
             - tight_stol (float):
                 Structure matcher tolerance for tighter site matching. Defaults to 0.02.
+            - symprec (float):
+                Symmetry precision for (symmetry-)equivalent site determination. Defaults
+                to 0.01.
 
     Returns:
         list: List of interstitial sites as fractional coordinates
@@ -2451,6 +2454,7 @@ def get_Voronoi_interstitial_sites(
         "symmetry_preference",
         "stol",
         "tight_stol",
+        "symprec",
     }
     if any(  # check interstitial_gen_kwargs and warn if any missing:
         i not in supported_interstitial_gen_kwargs for i in interstitial_gen_kwargs
@@ -2472,12 +2476,14 @@ def get_Voronoi_interstitial_sites(
     )
 
     label_equiv_fpos_dict: dict[int, list[np.ndarray[float]]] = {}
-    sga = symmetry.get_sga(host_structure)
+    sga = symmetry.get_sga(host_structure, symprec=interstitial_gen_kwargs.get("symprec", 0.01))
     symm_ops = sga.get_symmetry_operations()
     tight_dist = get_stol_equiv_dist(
         interstitial_gen_kwargs.get("tight_stol", 0.02), host_structure
     )  # 0.06 Å for CdTe, Sb2Si2Te6
 
+    # this now depends on symprec in `_get_all_equiv_sites` (doesn't matter in most cases,
+    # but e.g. changes results in Ag2Se where we have some slight differences in site coordinations)
     for i, frac_coords in enumerate(site_frac_coords_array.tolist()):
         match_found = False
         for equiv_fpos in list(label_equiv_fpos_dict.values()):
@@ -2488,7 +2494,12 @@ def get_Voronoi_interstitial_sites(
         if not match_found:  # try equiv sites:
             this_equiv_fpos = [
                 site.frac_coords
-                for site in symmetry._get_all_equiv_sites(frac_coords, host_structure, symm_ops=symm_ops)
+                for site in symmetry._get_all_equiv_sites(
+                    frac_coords,
+                    host_structure,
+                    symm_ops=symm_ops,
+                    symprec=interstitial_gen_kwargs.get("symprec", 0.01),
+                )
             ]
             for label, equiv_fpos in list(label_equiv_fpos_dict.items()):
                 if np.min(host_structure.lattice.get_all_distances(equiv_fpos, frac_coords)) < tight_dist:
