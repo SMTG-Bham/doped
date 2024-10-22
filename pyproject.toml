@@ -34,6 +34,7 @@ dependencies = [
     "matplotlib-label-lines", # for labelling lines in matplotlib plots
 ]
 
+# Reminder: Update docs pages when any new (sub)modules are added!
 [project.urls]
 Homepage = "https://doped.readthedocs.io/en/latest/"
 Documentation = "https://doped.readthedocs.io/en/latest/"
