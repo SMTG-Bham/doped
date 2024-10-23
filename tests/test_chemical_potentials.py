@@ -65,46 +65,61 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.cu2sise4.append("Se", [0.5, 0.5, 0.5])
         self.cu2sise4.append("Se", [0.5, 0.75, 0.5])
 
-    def tearDown(self) -> None:
-        if_present_rm("CompetingPhases")
-
-    @parameterized_subtest()
-    def test_init(self, api_key):
-        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
-
-        assert len(cp.entries) == 13
-        assert [entry.name for entry in cp.entries] == [
+        self.zro2_entry_list = [  # without full_phase_diagram
+            "ZrO2",
             "Zr",
             "O2",
             "Zr3O",
             "Zr3O",
             "Zr3O",
             "Zr2O",
-            "Zr",  # TODO: This should be higher at Zr??
             "ZrO2",
             "ZrO2",
-            "ZrO2",
+            "Zr",
             "ZrO2",
             "ZrO2",
             "ZrO2",
         ]
-        assert cp.entries[1].data["total_magnetization"] == 2
+
+    def tearDown(self) -> None:
+        if_present_rm("CompetingPhases")
+
+    def _check_ZrO2_cp_init(self, cp, num_stable_entries=4):
         for i, entry in enumerate(cp.entries):
             print(entry.name, entry.energy)
-            if i < 4:
-                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
-            else:
-                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) > 0
+            eah = entry.data.get(cp.property_key_dict["energy_above_hull"])
+            assert eah == 0 if i < num_stable_entries else eah > 0  # Zr4O is on hull
 
+            mag = entry.data["total_magnetization"]
+            is_molecule = entry.data["molecule"]
+
+            assert is_molecule if entry.name == "O2" else not is_molecule
+            assert np.isclose(
+                mag, 2 if entry.name == "O2" else 0, atol=1e-3
+            )  # only O2 is magnetic (triplet) here
             if entry.name == "O2":
-                assert entry.data["molecule"]
-            else:
-                assert not entry.data["molecule"]
+                assert np.isclose(entry.data["energy_per_atom"], -4.94795546875)
+                assert np.isclose(entry.data["energy"], -4.94795546875 * 2)
 
-        assert np.isclose(cp.entries[0].data["energy_per_atom"], -4.94795546875)
-        assert np.isclose(cp.entries[0].data["energy"], -9.8959109375)
-        assert np.isclose(cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
+    @parameterized_subtest()
+    def test_init(self, api_key):
+        cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
+
+        assert len(cp.entries) == 13
+        assert [entry.name for entry in cp.entries] == self.zro2_entry_list
+        self._check_ZrO2_cp_init(cp)
         assert "Zr4O" not in [e.name for e in cp.entries]  # not bordering or potentially with EaH
+
+    @parameterized_subtest()
+    def test_init_full_phase_diagram(self, api_key):
+        cp = chemical_potentials.CompetingPhases(
+            "ZrO2", e_above_hull=0.03, api_key=api_key, full_phase_diagram=True
+        )
+
+        assert len(cp.entries) == 14  # Zr4O now present
+        zro2_full_pd_entry_list = self.zro2_entry_list[:4] + ["Zr4O"] + self.zro2_entry_list[4:]
+        assert [entry.name for entry in cp.entries] == zro2_full_pd_entry_list
+        self._check_ZrO2_cp_init(cp, num_stable_entries=5)  # Zr4O is on hull
 
     @parameterized_subtest()
     def test_init_ZnSe(self, api_key):
@@ -113,11 +128,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
         as a competing phase despite being on the hull and bordering ZnSe,
         because the legacy MP API database wrongly had the data['e_above_hull']
         value as 0.147 eV/atom (when it should be 0 eV/atom).
-        https://legacy.materialsproject.org/materials/mp-1102515/ https://next-
-        gen.materialsproject.org/materials/mp-1102515?formula=ZnSe2.
 
-        Updated code which re-calculates the energy above hull avoids this
-        issue.
+        https://legacy.materialsproject.org/materials/mp-1102515/
+        https://next-gen.materialsproject.org/materials/mp-1102515?formula=ZnSe2
+
+        Updated code which re-calculates the energy above hull avoids this issue.
         """
         cp = chemical_potentials.CompetingPhases("ZnSe", api_key=api_key)
         assert any(e.name == "ZnSe2" for e in cp.entries)
@@ -127,45 +142,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not znse2_entry.data["molecule"]
         assert np.isclose(znse2_entry.energy_per_atom, -3.394683861)
         assert np.isclose(znse2_entry.energy, -3.394683861 * 12)
-
-    @parameterized_subtest()
-    def test_init_full_phase_diagram(self, api_key):
-        cp = chemical_potentials.CompetingPhases(
-            "ZrO2", e_above_hull=0.03, api_key=api_key, full_phase_diagram=True
-        )
-
-        assert len(cp.entries) == 14  # Zr4O now present
-        assert [entry.name for entry in cp.entries] == [
-            "Zr",
-            "O2",
-            "Zr3O",
-            "Zr4O",
-            "Zr3O",
-            "Zr3O",
-            "Zr2O",
-            "ZrO2",
-            "ZrO2",
-            "ZrO2",
-            "ZrO2",
-            "ZrO2",
-            "ZrO2",
-        ]
-        assert cp.entries[0].data["total_magnetization"] == 2
-        for i, entry in enumerate(cp.entries):
-            print(entry.name, entry.energy)
-            if i < 5:
-                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) == 0
-            else:
-                assert entry.data.get(cp.property_key_dict["energy_above_hull"]) > 0
-
-            if entry.name == "O2":
-                assert entry.data["molecule"]
-            else:
-                assert not entry.data["molecule"]
-
-        assert np.isclose(cp.entries[0].data["energy_per_atom"], -4.94795546875)
-        assert np.isclose(cp.entries[0].data["energy"], -9.8959109375)
-        assert np.isclose(cp.entries[1].data["total_magnetization"], 0, atol=1e-3)
 
     @parameterized_subtest()
     def test_init_YTOS(self, api_key):
@@ -316,9 +292,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
         # potcar spec doesn't need potcars set up for pmg and it still works
         cp.convergence_setup(potcar_spec=True)
-        assert len(cp.metals) == 6
-        assert cp.metals[0].data["band_gap"] == 0
-        assert not cp.nonmetals[0].data["molecule"]
+        assert len(cp.metallic_entries) == 6
+        assert cp.metallic_entries[0].data["band_gap"] == 0
+        assert not cp.nonmetallic_entries[0].data["molecule"]
         # this shouldn't exist - don't need to convergence test for molecules
         assert not os.path.exists("CompetingPhases/O2_Pmmm_EaH_0")
 
@@ -342,13 +318,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_vasp_std_setup(self, api_key):
         cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
         cp.vasp_std_setup(potcar_spec=True)
-        assert len(cp.nonmetals) == 6
-        assert len(cp.metals) == 6
-        assert len(cp.molecules) == 1
-        assert cp.molecules[0].name == "O2"
-        assert cp.molecules[0].data["total_magnetization"] == 2
-        assert cp.molecules[0].data["molecule"]
-        assert not cp.nonmetals[0].data["molecule"]
+        assert len(cp.nonmetallic_entries) == 6
+        assert len(cp.metallic_entries) == 6
+        assert len(cp.molecular_entries) == 1
+        assert cp.molecular_entries[0].name == "O2"
+        assert cp.molecular_entries[0].data["total_magnetization"] == 2
+        assert cp.molecular_entries[0].data["molecule"]
+        assert not cp.nonmetallic_entries[0].data["molecule"]
 
         ZrO2_EaH_0_std_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std/"
         assert os.path.exists(ZrO2_EaH_0_std_folder)
@@ -365,7 +341,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        O2_EaH_0_std_folder = "CompetingPhases/O2_Pmmm_EaH_0/vasp_std"
+        O2_EaH_0_std_folder = "CompetingPhases/O2_mmm_EaH_0/vasp_std"
         assert os.path.exists(O2_EaH_0_std_folder)
         with open(f"{O2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -663,7 +639,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa.from_vaspruns(path=self.zro2_path, subfolder="relax", csv_path=self.csv_path)
         assert len(cpa.elements) == 2
-        assert cpa.data[0]["Formula"] == "O2"
+        assert cpa.data[0]["Formula"] == "Zr"
+        assert cpa.data[1]["Formula"] == "O2"
 
         cpa_no = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         with pytest.raises(FileNotFoundError):
@@ -780,34 +757,6 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert "ZrO2 or ZrO2/relax" in str(w[0].message)
         print(e.value)
         assert "No vasprun files have been parsed," in str(e.value)
-
-    def test_cplap_input(self):
-        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        cpa.from_csv(self.csv_path)
-        cpa._cplap_input(dependent_variable="O")
-
-        assert os.path.exists("input.dat")
-
-        with open("input.dat", encoding="utf-8") as file:
-            contents = file.readlines()
-
-        # assert these lines are in the file:
-        for i in [
-            "2  # number of elements in bulk\n",
-            "1 Zr 2 O -10.975428440000002  # number of atoms, element, formation energy (bulk)\n",
-            "O  # dependent variable (element)\n",
-            "2  # number of bordering phases\n",
-            "1  # number of elements in phase:\n",
-            "2 O 0.0  # number of atoms, element, formation energy\n",
-            "2  # number of elements in phase:\n",
-            "3 Zr 1 O -5.986573519999993  # number of atoms, element, formation energy\n",
-        ]:
-            assert i in contents
-
-        assert (
-            "1 Zr 2 O -10.951109995000005\n" not in contents
-        )  # shouldn't be included as is a higher energy polymorph of the bulk phase
-        assert all("2 Zr 1 O" not in i for i in contents)  # non-bordering phase
 
     def test_latex_table(self):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)

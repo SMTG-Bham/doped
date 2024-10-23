@@ -384,8 +384,8 @@ def get_entries_in_chemsys(
     bulk_composition: Optional[Union[str, Composition]] = None,
     **kwargs,
 ):
-    """
-    Convenience function to get a list of ``ComputedStructureEntry``s for an
+    r"""
+    Convenience function to get a list of ``ComputedStructureEntry``\s for an
     input chemical system, using ``MPRester.get_entries_in_chemsys()``.
 
     Automatically uses the appropriate format and syntax required for the
@@ -480,8 +480,8 @@ def get_entries(
     bulk_composition: Optional[Union[str, Composition]] = None,
     **kwargs,
 ):
-    """
-    Convenience function to get a list of ``ComputedStructureEntry``s for an
+    r"""
+    Convenience function to get a list of ``ComputedStructureEntry``\s for an
     input single composition/formula, chemical system, MPID or full criteria,
     using ``MPRester.get_entries()``.
 
@@ -621,13 +621,13 @@ def get_MP_summary_docs(
     data_fields: Optional[list[str]] = None,
     **kwargs,
 ):
-    """
+    r"""
     Get the corresponding Materials Project (MP) ``SummaryDoc`` documents for
     computed entries in the input ``entries`` list or ``chemsys`` chemical
     system.
 
     If ``entries`` is provided (which should be a list of ``ComputedEntry``s
-    from the Materials Project), then only ``SummaryDoc``s in this chemical
+    from the Materials Project), then only ``SummaryDoc``\s in this chemical
     system which match one of these entries (based on the MPIDs given in
     ``ComputedEntry.entry_id``/``ComputedEntry.data["material_id"]`` and
     ``SummaryDoc.material_id``) are returned.
@@ -644,7 +644,7 @@ def get_MP_summary_docs(
     Args:
         entries (list[ComputedEntry]):
             Optional input; list of ``ComputedEntry`` objects for the input chemical
-            system. If provided, only ``SummaryDoc``s which match one of these entries
+            system. If provided, only ``SummaryDoc``\s which match one of these entries
             (based on the MPIDs given in ``ComputedEntry.entry_id``/
             ``ComputedEntry.data["material_id"]`` and ``SummaryDoc.material_id``) are
             returned. Moreover, all data fields listed in ``data_fields`` will be copied
@@ -729,14 +729,12 @@ def _entries_sort_func(
     use_e_per_atom: bool = False,
     bulk_composition: Optional[Union[str, Composition, dict, list]] = None,
 ):
-    """
-    Function to sort ``ComputedEntry``s by energy above hull, then by the
-    number of elements in the formula, then by the position of elements in the
+    r"""
+    Function to sort ``ComputedEntry``\s by energy above hull, then if
+    composition matches ``bulk_composition`` (if provided), then by the number
+    of elements in the formula, then by the position of elements in the
     periodic table (main group elements, then transition metals, sorted by
     row), then alphabetically.
-
-    If ``bulk_composition`` is provided, then entries matching the bulk
-    composition are sorted first, followed by all other entries.
 
     Usage: ``entries_list.sort(key=_entries_sort_func)``
 
@@ -759,8 +757,8 @@ def _entries_sort_func(
     """
     bulk_reduced_comp = Composition(bulk_composition).reduced_composition if bulk_composition else None
     return (
-        entry.composition.reduced_composition == bulk_reduced_comp,
         entry.energy_per_atom if use_e_per_atom else _get_e_above_hull(entry.data),
+        entry.composition.reduced_composition != bulk_reduced_comp,  # goes from False to True
         len(Composition(entry.name).as_dict()),
         sorted([_element_sort_func(i.symbol) for i in Composition(entry.name).elements]),
         entry.name,
@@ -1233,9 +1231,12 @@ class CompetingPhases:
 
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
         self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
+        print([entry.name for entry in self.entries])
+        print([_entries_sort_func(x, bulk_composition=self.composition) for x in self.entries])
+        print(self.composition)
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
-        if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
+        if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetization info
             self.MP_docs = get_MP_summary_docs(
                 entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
                 api_key=self.api_key,
@@ -1478,14 +1479,14 @@ class CompetingPhases:
         incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
 
     def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]):
-        """
+        r"""
         Given an input list of ``ComputedEntry`` objects, adds a
         ``ComputedStructureEntry`` for each diatomic elemental phase (O2, N2,
         H2, F2, Cl2) to ``entries`` using ``make_molecular_entry``, and
         generates an output list of
-        ``ComputedEntry``/``ComputedStructureEntry``s containing all entries in
-        ``entries``, with all diatomic elemental phases replaced by the single
-        molecule-in-a-box entry.
+        ``ComputedEntry``/``ComputedStructureEntry``\s containing all entries
+        in ``entries``, with all diatomic elemental phases replaced by the
+        single molecule-in-a-box entry.
 
         Also sets the ``ComputedEntry.data["molecule"]`` flag for each entry
         in ``entries`` (``True`` for diatomic gases, ``False`` for all others).
@@ -1822,7 +1823,7 @@ class ExtrinsicCompetingPhases(CompetingPhases):
         )
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
-        if not self.legacy_MP:  # need to pull ``SummaryDoc``s to get band_gap and magnetization info
+        if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetization info
             self.intrinsic_MP_docs = deepcopy(self.MP_docs)
             self.MP_docs = get_MP_summary_docs(
                 entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
@@ -2621,7 +2622,7 @@ class CompetingPhasesAnalyzer:
         """
         Generates an ``input.dat`` file for the ``CPLAP`` ``FORTRAN`` code
         (legacy code for computing and analysing chemical potential limits, no
-        longer recommended).
+        longer recommended, tested or supported).
 
         Args:
             dependent_variable (str):

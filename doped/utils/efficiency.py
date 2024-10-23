@@ -23,7 +23,17 @@ from scipy.spatial.distance import squareform
 from doped.utils import symmetry
 
 # Make composition comparisons faster (used in structure matching etc)
-pmg_Comp_eq = Composition.__eq__
+
+
+def _composition__hash__(self):
+    """
+    Custom ``__hash__`` method for ``Composition`` instances.
+
+    ``pymatgen`` composition has just hashes the chemical system
+    (without stoichiometry), which cannot then be used to
+    distinguish different compositions.
+    """
+    return hash(frozenset(self._data.items()))
 
 
 @lru_cache(maxsize=int(1e8))
@@ -51,7 +61,7 @@ def fast_Comp_eq(self, other):
         return False
 
     for el, amt in self.items():  # noqa: SIM110
-        if abs(amt - other[el]) > Composition.amount_tolerance:
+        if abs(amt - other[el]) > type(self).amount_tolerance:
             return False
 
     return True
@@ -62,8 +72,12 @@ def _Comp__eq__(self, other):
     Custom ``__eq__`` method for ``Composition`` instances, using a cached
     equality function to speed up comparisons.
     """
-    self_hash = self.__hash__()  # object hash with instances to avoid recursion issues (for class method)
-    other_hash = other.__hash__()
+    if not isinstance(other, type(self) | dict):
+        return NotImplemented
+
+    # use object hash with instances to avoid recursion issues (for class method)
+    self_hash = _composition__hash__(self)
+    other_hash = _composition__hash__(other)
 
     Composition.__instances__[self_hash] = self  # Ensure instances are stored for caching
     Composition.__instances__[other_hash] = other
@@ -73,6 +87,7 @@ def _Comp__eq__(self, other):
 
 Composition.__instances__ = {}
 Composition.__eq__ = _Comp__eq__
+Composition.__hash__ = _composition__hash__
 
 
 class Hashabledict(dict):
