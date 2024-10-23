@@ -2086,6 +2086,7 @@ class Defect(core.Defect):
 
         Composition.__instances__ = {}
         Composition.__eq__ = doped_Composition.__eq__
+        Composition.__hash__ = doped_Composition.__hash__
         PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
         PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
         IStructure.__instances__ = {}

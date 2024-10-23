@@ -1300,6 +1300,7 @@ class DefectsGenerator(MSONable):
         # dramatically), and for Structure as well as fast ``doped`` ``__eq__`` function
         Composition.__instances__ = {}
         Composition.__eq__ = doped_Composition.__eq__
+        Composition.__hash__ = doped_Composition.__hash__
         PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
         PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
         IStructure.__instances__ = {}
@@ -2365,6 +2366,13 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     ``stol`` is a site tolerance parameter used in ``pymatgen``
     ``StructureMatcher`` functions, defined as the fraction of the average
     free length per atom := ( V / Nsites ) ** (1/3).
+
+    Args:
+        stol (float): Site tolerance parameter.
+        structure (Structure): Structure to get equivalent distance for.
+
+    Returns:
+        float: Equivalent Cartesian distance for the given ``stol`` value.
     """
     return stol * (structure.volume / len(structure)) ** (1 / 3)
 
