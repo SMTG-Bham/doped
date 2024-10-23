@@ -183,7 +183,7 @@ default settings – in reality you likely need to customise some options!) woul
 
 If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounter this error:
 
-.. code:: python
+.. code-block::  none
 
     RuntimeError:
         An attempt has been made to start a new process before the
@@ -191,12 +191,12 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
         This probably means that you are not using fork to start your
         child processes and you have forgotten to use the proper idiom
         in the main module:
-            if __name__ == ‘__main__‘:
+            if __name__ == '__main__':
                 freeze_support()
                 ...
-        The “freeze_support()” line can be omitted if the program
+        The "freeze_support()" line can be omitted if the program
         is not going to be frozen to produce an executable.
-        To fix this issue, refer to the “Safe importing of main module”
+        To fix this issue, refer to the "Safe importing of main module"
         section in https://docs.python.org/3/library/multiprocessing.html
 
 .. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
