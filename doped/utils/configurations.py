@@ -195,7 +195,7 @@ def _scan_sm_stol_till_match(
         sm_kwargs["comparator"] = ElementComparator()
 
     # here we cycle through a range of stols, because we just need to find the closest match so we could
-    # use a high ``stol`` from the start and it would give correct result, but higher ``stol``s take
+    # use a high ``stol`` from the start and it would give correct result, but higher ``stol``\s take
     # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
     # and break once a match is found:
     trial_stol_array = np.arange(min_stol, max_stol, stol_increment)

@@ -162,7 +162,7 @@ def _structure__hash__(self):
 
 
 Structure.__hash__ = _structure__hash__
-Structure.__deepcopy__ = lambda x: x.copy()  # make deepcopying faster, shallow copy fine for structures
+Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shallow copy fine for structures
 IStructure.__hash__ = _structure__hash__
 
 

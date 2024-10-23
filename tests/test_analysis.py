@@ -212,9 +212,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             any(i in str(warn.message) for warn in recorded_warnings)
             for i in [
                 "Warning(s) encountered when parsing Te_Cd_+1 at ",
-                "The total energies of the provided `OUTCAR` (-218.565 eV), used to obtain the atomic "
-                "core potentials for the eFNV correction, and the `vasprun.xml` ([-218.51803182, "
-                "-218.51803182]), used for energies and structures, do not match. Please make sure the "
+                "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
+                "atomic core potentials for the eFNV correction, and the `vasprun.xml` ({-218.51803182}), "
+                "used for energies and structures, do not match. Please make sure the "
                 "correct file combination is being used!",
             ]
         )  # mismatched OUTCAR and vasprun energies warning
@@ -616,26 +616,21 @@ class DefectsParsingTestCase(unittest.TestCase):
             )  # low error tolerance to force warnings
         print([warn.message for warn in w])  # for debugging
 
-        assert all(
-            any(i in str(warn.message) for warn in w)
-            for i in [
-                "Estimated error in the Freysoldt (FNV) ",
-                "Estimated error in the Kumagai (eFNV) ",
-                "charge correction for certain defects is greater than the `error_tolerance` (= "
-                "1.00e-03 eV):",
-                "v_Cd_-2: 1.",
-                "e-02 eV",
-                "v_Cd_-1:",
-                "e-03 eV",
-                "Int_Te_3_1: 3.10e-03 eV",
-                "Te_Cd_+1: 2.02e-03 eV",
-                "Int_Te_3_Unperturbed_1: 4.91e-03 eV",
-                "Int_Te_3_2: 1.24e-02 eV",
-                "You may want to check the accuracy of the corrections by",
-                "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
-                "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
-            ]
-        )  # correction errors warnings
+        for i in [
+            "Estimated error in the Freysoldt (FNV) ",
+            "Estimated error in the Kumagai (eFNV) ",
+            "charge correction for certain defects is greater than the `error_tolerance` (= 1.00e-03 eV):",
+            "v_Cd_-2: 1.08e-02 eV",
+            "v_Cd_-1: 8.46e-03 eV",
+            "Int_Te_3_1: 3.10e-03 eV",
+            "Te_Cd_+1: 2.02e-03 eV",
+            "Int_Te_3_Unperturbed_1: 4.91e-03 eV",
+            "Int_Te_3_2: 1.24e-02 eV",
+            "You may want to check the accuracy of the corrections by",
+            "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
+            "(using `defect_entry.get_kumagai_correction()` with `plot=True`)",
+        ]:
+            assert any(i in str(warn.message) for warn in w)  # correction errors warnings
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
     def test_DefectsParser_YTOS_default_bulk(self):
@@ -1366,6 +1361,7 @@ class DopedParsingTestCase(unittest.TestCase):
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz",
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
             )
+        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")  # fake LOCPOT from v_Cd_-2
 
         if os.path.exists(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/hidden_otcr.gz"):
             shutil.move(
@@ -2990,15 +2986,17 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
 
         # Test loading of MgO using vasprun.xml
         defect_entry = DefectParser.from_paths(
-            f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_+1/vasp_std",
-            f"{self.MgO_EXAMPLE_DIR}/Defects/MgO_bulk/vasp_std",
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/Mg_O_+1/vasp_std",
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/MgO_bulk/vasp_std",
             skip_corrections=True,
             parse_projected_eigen=True,
         ).defect_entry
 
         print("Testing MgO eigenvalue analysis")
         bes, fig = defect_entry.get_eigenvalue_analysis()  # Test plotting KS
-        Mg_O_1_bes_path = f"{self.MgO_EXAMPLE_DIR}/Defects/Mg_O_1_band_edge_states.json"
+        Mg_O_1_bes_path = (
+            f"{self.MgO_EXAMPLE_DIR}/Defects/Pre_Calculated_Results/Mg_O_1_band_edge_states.json"
+        )
         # dumpfn(bes, Mg_O_1_bes_path)  # for saving test data
         _compare_band_edge_states_dicts(bes, Mg_O_1_bes_path, orb_diff_tol=0.01)
         assert bes.has_occupied_localized_state
