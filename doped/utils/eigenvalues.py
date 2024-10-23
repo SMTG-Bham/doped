@@ -1,8 +1,8 @@
-"""
+r"""
 Helper functions for setting up PHS analysis.
 
 Contains modified versions of functions from pydefect (https://github.com/kumagai-group/pydefect)
-and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``s).
+and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``\s).
 """
 
 # suppress pydefect INFO messages
@@ -122,7 +122,7 @@ def make_band_edge_orbital_infos(
     neighbor_indices: Optional[list[int]] = None,
     defect_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
 ):
-    """
+    r"""
     Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
 
     Modified from ``pydefect`` to use projected orbitals
@@ -137,13 +137,13 @@ def make_band_edge_orbital_infos(
             Default is 0.0.
         neighbor_indices (list[int]):
             Indices of neighboring atoms to the defect site, for localisation analysis.
-            Default is ``None``.
+            Default is ``None``\.
         defect_procar (EasyunfoldProcar, Procar):
             ``EasyunfoldProcar`` or ``Procar`` object, for the defect supercell,
-            if projected eigenvalue/orbitals data is not provided in ``defect_vr``.
+            if projected eigenvalue/orbitals data is not provided in ``defect_vr``\.
 
     Returns:
-        ``BandEdgeOrbitalInfos `` object
+        ``BandEdgeOrbitalInfos`` object.
     """
     eigval_range = defaults.eigval_range
     kpt_coords = [tuple(coord) for coord in defect_vr.actual_kpoints]

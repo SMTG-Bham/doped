@@ -265,18 +265,19 @@ def format_defect_name(
     include_site_info_in_name: bool,
     wout_charge: bool = False,
 ) -> Optional[str]:
-    """
+    r"""
     Format defect name for plot titles.
 
-    (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$ or $Cd_{i_{C3v}}^{0}$).
-    Note this assumes "V_..." means vacancy not Vanadium.
+    (i.e. from ``"Cd_i_C3v_0"`` to ``"$Cd_{i}^{0}$"`` or
+    ``"$Cd_{i_{C3v}}^{0}$"``). Note this assumes "V\_..."
+    means vacancy not Vanadium.
 
     Args:
         defect_species (:obj:`str`):
-            Name of defect including charge state (e.g. Cd_i_C3v_0)
+            Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``)
         include_site_info_in_name (:obj:`bool`):
-            Whether to include site info in name (e.g. $Cd_{i}^{0}$ or
-            $Cd_{i_{C3v}}^{0}$).
+            Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
+            or ``"$Cd_{i_{C3v}}^{0}$"``\).
         wout_charge (:obj:`bool`, optional):
             Whether the charge state is included in the defect_species name.
             Defaults to False.

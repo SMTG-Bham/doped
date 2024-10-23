@@ -2399,6 +2399,7 @@ def get_Voronoi_interstitial_sites(
       distance from the host atoms, if its ``min_dist`` is no more than
       ``symmetry_preference`` (0.1 Å by default) smaller than the site with
       the largest ``min_dist`` (to the host atoms).
+
     (Parameters mentioned here can be supplied via ``interstitial_gen_kwargs``
     as noted in the args section below.)
 

@@ -234,9 +234,9 @@ def _check_outcar_energy(
         if not any(np.isclose(outcar_energy, energy, atol=0.025) for energy in total_energy):
             # 0.025 eV tolerance
             warnings.warn(
-                f"The total energies of the provided `OUTCAR` ({outcar_energy:.3f} eV), "
+                f"The total energies of the provided (bulk) `OUTCAR` ({outcar_energy:.3f} eV), "
                 f"used to obtain the atomic core potentials for the eFNV correction, and the "
-                f"`vasprun.xml` ({total_energy}), used for energies and structures, do not match. "
+                f"`vasprun.xml` ({set(total_energy)}), used for energies and structures, do not match. "
                 f"Please make sure the correct file combination is being used!"
             )
 

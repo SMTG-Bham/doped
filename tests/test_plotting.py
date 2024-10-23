@@ -593,7 +593,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
 
         defect_thermo = DefectThermodynamics(defect_dict)
         assert len(defect_thermo.defect_entries) == num_entries
-        print([entry.name for entry in defect_thermo.defect_entries])
+        print([entry.name for entry in defect_thermo.defect_entries.values()])
 
         return defect_thermo.plot(self.CdTe_chempots, limit="Cd-rich")
 
@@ -691,7 +691,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         amalgamated_Se_extrinsic_interstitials_thermo = DefectThermodynamics(
             defect_entries=[
                 entry
-                for entry in self.Se_amalgamated_extrinsic_thermo.defect_entries
+                for entry in self.Se_amalgamated_extrinsic_thermo.defect_entries.values()
                 if isinstance(entry.defect, Interstitial)
             ],
             chempots=self.Se_amalgamated_extrinsic_thermo.chempots,

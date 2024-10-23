@@ -2074,7 +2074,7 @@ class Defect(core.Defect):
         much more efficient.
         """
         if not isinstance(other, core.Defect):
-            raise TypeError("Can only compare ``Defect``s with ``Defect``s!")
+            raise TypeError("Can only compare ``Defect``\s with ``Defect``\s!")
 
         if self.defect_type != other.defect_type:
             return False

@@ -5,7 +5,7 @@ Submodules
 ----------
 
 doped.utils.configurations module
---------------------------------
+---------------------------------
 
 .. automodule:: doped.utils.configurations
    :members:
@@ -21,7 +21,7 @@ doped.utils.displacements module
    :show-inheritance:
 
 doped.utils.efficiency module
---------------------------------
+-----------------------------
 
 .. automodule:: doped.utils.efficiency
    :members:
@@ -29,7 +29,7 @@ doped.utils.efficiency module
    :show-inheritance:
 
 doped.utils.eigenvalues module
---------------------------------
+------------------------------
 
 .. automodule:: doped.utils.eigenvalues
    :members:
