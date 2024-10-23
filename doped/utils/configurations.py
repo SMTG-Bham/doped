@@ -138,16 +138,97 @@ def orient_s2_like_s1(
 get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
 
 
+def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
+    """
+    Get the equivalent ``stol`` value for a given Cartesian distance (``dist``)
+    in a given ``Structure``.
+
+    ``stol`` is a site tolerance parameter used in ``pymatgen``
+    ``StructureMatcher`` functions, defined as the fraction of the average
+    free length per atom := ( V / Nsites ) ** (1/3).
+
+    Args:
+        dist (float): Cartesian distance in Å.
+        structure (Structure): Structure to calculate ``stol`` for.
+
+    Returns:
+        float: Equivalent ``stol`` value for the given distance.
+    """
+    return dist / (structure.volume / len(structure)) ** (1 / 3)
+
+
+def _get_element_min_max_bond_length_dict(structure: Structure):
+    """
+    Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
+    given ``Structure``, where ``min_bond_length`` and ``max_bond_length`` are
+    the minimum and maximum bond lengths for each element in the structure.
+
+    Args:
+        structure (Structure): Structure to calculate bond lengths for.
+
+    Returns:
+        dict: Dictionary of ``{element: (min_bond_length, max_bond_length)}``.
+    """
+    element_idx_dict = {  # distance matrix broken down by species
+        element: [i for i, site in enumerate(structure) if site.specie.symbol == str(element)]
+        for element in structure.composition.elements
+    }
+
+    distance_matrix = structure.distance_matrix
+    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+    element_min_max_bond_length_dict = {elt: np.array([0, 0]) for elt in element_idx_dict}
+
+    for elt, site_indices in element_idx_dict.items():
+        element_dist_matrix = distance_matrix[:, site_indices]  # (N_of_that_element, N_sites) matrix
+        if element_dist_matrix.size != 0:
+            min_interatomic_distances_per_atom = np.min(element_dist_matrix, axis=0)  # min along columns
+            element_min_max_bond_length_dict[elt] = np.array(
+                [np.min(min_interatomic_distances_per_atom), np.max(min_interatomic_distances_per_atom)]
+            )
+
+    return element_min_max_bond_length_dict
+
+
+def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) -> float:
+    """
+    Get the minimum possible ``stol`` value which will give a match between
+    ``struct1`` and ``struct2`` using ``StructureMatcher``, based on the ranges
+    of per-element minimum interatomic distances in the two structures.
+
+    Args:
+        struct1 (Structure): Initial structure.
+        struct2 (Structure): Final structure.
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``.
+
+    Returns:
+        float:
+            Minimum ``stol`` value for a match between ``struct1``
+            and ``struct2``.
+    """
+    s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1)
+    s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2)
+    min_min_dist_change = max(
+        {
+            elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
+            for elt in s1_min_max_bond_length_dict
+            if elt.symbol not in sm_kwargs.get("ignored_species", [])
+        }.values()
+    )
+
+    return get_dist_equiv_stol(min_min_dist_change, struct1)
+
+
 def _scan_sm_stol_till_match(
     struct1: Structure,
     struct2: Structure,
     func_name: str = "get_s2_like_s1",
-    min_stol: float = 0.01,
+    min_stol: Optional[float] = None,
     max_stol: float = 5.0,
-    stol_increment: float = 0.01,
+    stol_factor: float = 0.5,
     **sm_kwargs,
 ):
-    """
+    r"""
     Utility function to scan through a range of ``stol`` values for
     ``StructureMatcher`` until a match is found between ``struct1`` and
     ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result.
@@ -176,16 +257,22 @@ def _scan_sm_stol_till_match(
             - "fit_anonymous"
             etc.
         max_stol (float): Maximum ``stol`` value to try. Default: 5.0.
-        min_stol (float): Minimum ``stol`` value to try. Default: 0.01.
-        stol_increment (float):
-            Increment to increase ``stol`` by each time (when a match is not
-            found). Default: 0.01.
+        min_stol (float):
+            Minimum ``stol`` value to try. Default is to use ``doped``\s
+            ``get_min_stol_for_s1_s2()`` function to estimate the minimum
+            ``stol`` necessary, and start with 2x this value to achieve
+            fast structure-matching in most cases.
+        stol_factor (float):
+            Fractional increment to increase ``stol`` by each time (when a
+            match is not found). Default value of 0.5 increases ``stol`` by
+            50% each time.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
     """
     # use doped efficiency tools to make structure-matching as fast as possible:
     Composition.__instances__ = {}
     Composition.__eq__ = doped_Composition.__eq__
+    Composition.__hash__ = doped_Composition.__hash__
     PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
     PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
     IStructure.__instances__ = {}
@@ -194,14 +281,17 @@ def _scan_sm_stol_till_match(
     if "comparator" not in sm_kwargs:
         sm_kwargs["comparator"] = ElementComparator()
 
+    if min_stol is None:
+        min_stol = get_min_stol_for_s1_s2(struct1, struct2, **sm_kwargs) * 2
+
     # here we cycle through a range of stols, because we just need to find the closest match so we could
     # use a high ``stol`` from the start and it would give correct result, but higher ``stol``\s take
     # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
     # and break once a match is found:
-    trial_stol_array = np.arange(min_stol, max_stol, stol_increment)
-    for i, stol in enumerate(trial_stol_array):
-        if "stol" in sm_kwargs and i == 0:  # first run, try using user-provided stol first:
-            sm_full_user_custom = StructureMatcher(primitive_cell=False, **sm_kwargs)
+    stol = min_stol
+    while stol < max_stol:
+        if user_stol := sm_kwargs.pop("stol", False):  # first run, try using user-provided stol first:
+            sm_full_user_custom = StructureMatcher(primitive_cell=False, stol=user_stol, **sm_kwargs)
             result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
             if result:
                 return result
@@ -210,6 +300,8 @@ def _scan_sm_stol_till_match(
         result = getattr(sm, func_name)(struct1, struct2)
         if result:
             return result
+
+        stol *= 1 + stol_factor
 
     return None
 

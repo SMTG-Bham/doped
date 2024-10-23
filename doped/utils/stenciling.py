@@ -110,8 +110,18 @@ def get_defect_in_supercell(
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest way to debug these functions
     # TODO: Function needs to be cleaned up more, modularise into more functions, update docstrings etc
+    # TODO: This function does not guarantee that the generated defect supercell exactly matches the
+    #  bulk lattice definition of target_supercell, which may have come from a different primitive
+    #  structure definition (so fully symmetry-equivalent, but not exactly the same which can cause
+    #  issues with parsing). So, we need to apply the same steps to a bulk supercell in this workflow,
+    #  and also return it from this function (checking if it's RMS dist to target_supercell is 0
+    #  or if it's different -> in which case we print an info message for the user)
     # TODO: Tests!! (At least one of each defect, Se good test case, then at least one or two with
     #  >unary compositions and extrinsic substitution/interstitial)
+    # TODO: We should now be able to use these functions (without the final re-orientation step,
+    #  for speed) to determine the point symmetries of relaxed defects in non-symmetry-conserving
+    #  supercells, by stenciling into a small symmetry-conserving cell and getting the point symmetry
+    #  for that -- will do!
 
     pbar = tqdm(
         total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
