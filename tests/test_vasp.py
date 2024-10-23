@@ -492,8 +492,9 @@ class DefectDictSetTest(unittest.TestCase):
 
             with open(f"{output_path}/INCAR") as f:
                 incar_lines = f.readlines()
+            print(incar_lines)
             for comment_string in [
-                "# May want to change NCORE, KPAR, AEXX, ENCUT",
+                "# MAY WANT TO CHANGE NCORE, KPAR, AEXX, ENCUT",
                 "needed if using the kumagai-oba",
                 "symmetry breaking extremely likely",
             ]:
