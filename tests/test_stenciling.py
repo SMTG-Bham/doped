@@ -5,6 +5,7 @@ Tests for the ``doped.utils.stenciling`` module.
 import os
 import shutil
 import unittest
+import warnings
 
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import Composition, IStructure, PeriodicSite, Structure
@@ -86,6 +87,7 @@ class DefectStencilingTest(unittest.TestCase):
         # from new check runs, look mostly fine but previous ones were a bit better? (started with lower
         # energies between 5 meV to 120 meV (for V_Se_+1), should check this! TODO)
         # Think this might just be due to using previous CHGCAR/WAVECAR to start? Testing!
+        # TODO: Test that the bulk supercell returned for all Se_20A cases is the same
 
         Se_20A_test_supercells = [
             i for i in os.listdir(self.Se_example_dir) if "20Å_Stenciled" in i
@@ -100,10 +102,18 @@ class DefectStencilingTest(unittest.TestCase):
                 reference_struct = Structure.from_file(
                     f"{self.Se_example_dir}/{name}_20Å_Checked_Stenciled_POSCAR"
                 )
-                expanded_defect_supercell = get_defect_in_supercell(
-                    defect_entry,
-                    self.Se_20A_bulk_supercell,
+                with warnings.catch_warnings(record=True) as w:
+                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+                        defect_entry,
+                        self.Se_20A_bulk_supercell,
+                    )
+                print([str(warning.message) for warning in w])  # for debugging
+                assert all(
+                    "Note that the atomic position basis of the generated defect/bulk supercell differs"
+                    in str(warning.message)
+                    for warning in w
                 )
+
                 assert self.sm.fit(reference_struct, expanded_defect_supercell)
                 # below we also directly compare structures, but note that this may change with updates to
                 # the code (and still be fine, there may be multiple quasi-equivalent stenciling choices
@@ -135,6 +145,7 @@ class DefectStencilingTest(unittest.TestCase):
         # all good, except v_Se_-1 gets ~26 meV higher energy than unperturbed (16 meV higher than bond
         # distortion relaxation); just residual noise? What's going on with these?
 
+        # TODO: Should get bulk supercell mismatch warning for this supercell, but not for 222 supercell?
         Se_222_exp_test_supercells = [
             i for i in os.listdir(self.Se_example_dir) if "222_Exp_Stenciled" in i
         ]
