@@ -700,8 +700,8 @@ def check_atom_mapping_far_from_defect(
     defect: Structure,
     defect_coords: np.ndarray[float],
     coords_are_cartesian: bool = False,
-    verbose_warning: bool = True,
-) -> None:
+    warning: Union[bool, str] = "verbose",
+) -> bool:
     """
     Check the displacement of atoms far from the determined defect site, and
     warn the user if they are large (often indicates a mismatch between the
@@ -715,14 +715,16 @@ def check_atom_mapping_far_from_defect(
         defect_coords (np.ndarray[float]):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
-            Whether the defect coordinates are in Cartesian or fractional
-            coordinates. Default is False (fractional).
-        verbose_warning (bool):
-            Whether to include the individual atomic displacements in
-            the warning message, if thrown. Default is True.
+            Whether the defect coordinates are in Cartesian or
+            fractional coordinates. Default is ``False`` (fractional).
+        warning (bool, str):
+            Whether to throw a warning if a mismatch is detected. If
+            ``warning = "verbose"`` (default), the individual atomic
+            displacements are included in the warning message.
 
     Returns:
-        None
+        bool:
+            Returns ``False`` if a mismatch is detected, else ``True``.
     """
     far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk}
     wigner_seitz_radius = get_wigner_seitz_radius(bulk.lattice)
@@ -777,8 +779,14 @@ def check_atom_mapping_far_from_defect(
             f"following species, at sites far from the determined defect position, is >0.5 Å: "
             f"{list(far_from_defect_large_disps.keys())}"
         )
-        message += f", with displacements (Å): {far_from_defect_large_disps}" if verbose_warning else ""
-        warnings.warn(message)
+        if warning == "verbose":
+            message += f", with displacements (Å): {far_from_defect_large_disps}"
+        if warning:
+            warnings.warn(message)
+
+        return False
+
+    return True
 
 
 def get_site_mapping_indices(
