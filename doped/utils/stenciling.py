@@ -28,6 +28,7 @@ from doped.utils.efficiency import (
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
+    check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
     get_wigner_seitz_radius,
@@ -57,6 +58,10 @@ def get_defect_in_supercell(
     (from ``DefectEntry.defect_supercell``) and re-generates it in the
     ``target_supercell`` structure, and the closest possible position to
     ``target_frac_coords`` (if provided, else closest to centre = [0.5, 0.5, 0.5]).
+
+    ``target_supercell`` should be the same host crystal structure, just with
+    different supercell dimensions, having the same lattice parameters and bond
+    lengths.
 
     Note: This function does _not_ guarantee that the generated defect supercell
     _atomic position basis_ exactly matches that of ``target_supercell``, which may
@@ -240,48 +245,62 @@ def get_defect_in_supercell(
         new_defect_supercell_w_defect_neighbours_as_X = _convert_defect_neighbours_to_X(
             new_defect_supercell, defect_site.frac_coords, coords_are_cartesian=False
         )
-        oriented_new_defect_supercell_w_defect_neighbours_as_X = orient_s2_like_s1(
-            target_supercell,
-            new_defect_supercell_w_defect_neighbours_as_X,
-            verbose=False,
-            ignored_species=["X"],  # ignore X site
-            allow_subset=True,  # allow defect supercell composition to differ from target
-        )
-        oriented_new_defect_supercell = _convert_X_back_to_orig_species(
-            oriented_new_defect_supercell_w_defect_neighbours_as_X
-        )
-        oriented_new_defect_site = next(  # get defect site and remove X from sites
-            oriented_new_defect_supercell.pop(i)
-            for i, site in enumerate(oriented_new_defect_supercell.sites)
-            if site.specie.symbol == "X"
-        )
-        if return_bulk:
-            oriented_new_bulk_supercell = orient_s2_like_s1(  # should be quicker than defect re-orienting
-                oriented_new_defect_supercell,
-                new_bulk_supercell,
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="Not all sites have property orig_species")
+            oriented_new_defect_supercell_w_defect_neighbours_as_X = orient_s2_like_s1(
+                target_supercell,
+                new_defect_supercell_w_defect_neighbours_as_X,
                 verbose=False,
-                allow_subset=True,
+                ignored_species=["X"],  # ignore X site
+                allow_subset=True,  # allow defect supercell composition to differ from target
             )
-
-        pbar.update(35)  # 90% of progress bar
-
-        if target_frac_coords is not False:
-            pbar.set_description("Placing defect closest to target_frac_coords")
-
-            target_symm_op = _scan_symm_ops_to_place_site_closest_to_frac_coords(
-                target_supercell, oriented_new_defect_site, target_frac_coords
+            oriented_new_defect_supercell = _convert_X_back_to_orig_species(
+                oriented_new_defect_supercell_w_defect_neighbours_as_X
             )
-            oriented_new_defect_supercell = get_clean_structure(
-                apply_symm_op_to_struct(  # apply symm_op to structure
-                    target_symm_op, oriented_new_defect_supercell, fractional=True, rotate_lattice=False
-                )
-            )  # reordered inputs in updated doped
+            oriented_new_defect_site = next(  # get defect site and remove X from sites
+                oriented_new_defect_supercell.pop(i)
+                for i, site in enumerate(oriented_new_defect_supercell.sites)
+                if site.specie.symbol == "X"
+            )
             if return_bulk:
-                oriented_new_bulk_supercell = get_clean_structure(
-                    apply_symm_op_to_struct(
-                        target_symm_op, oriented_new_bulk_supercell, fractional=True, rotate_lattice=False
-                    )
+                oriented_new_bulk_supercell = orient_s2_like_s1(  # should be quicker than defect orienting
+                    oriented_new_defect_supercell,
+                    new_bulk_supercell,
+                    verbose=False,
+                    allow_subset=True,
                 )
+
+            pbar.update(35)  # 90% of progress bar
+
+            if target_frac_coords is not False:
+                pbar.set_description("Placing defect closest to target_frac_coords")
+
+                target_symm_op = _scan_symm_ops_to_place_site_closest_to_frac_coords(
+                    target_supercell, oriented_new_defect_site, target_frac_coords
+                )
+                oriented_new_defect_supercell = get_clean_structure(
+                    apply_symm_op_to_struct(  # apply symm_op to structure
+                        target_symm_op,
+                        oriented_new_defect_supercell,
+                        fractional=True,
+                        rotate_lattice=False,
+                    )
+                )  # reordered inputs in updated doped
+                if return_bulk:
+                    matching_bulks = check_atom_mapping_far_from_defect(
+                        target_supercell,
+                        oriented_new_bulk_supercell,
+                        oriented_new_defect_site.frac_coords,
+                        warning=False,
+                    )
+                    oriented_new_bulk_supercell = get_clean_structure(
+                        apply_symm_op_to_struct(
+                            target_symm_op,
+                            oriented_new_bulk_supercell,
+                            fractional=True,
+                            rotate_lattice=False,
+                        )
+                    )
 
         pbar.update(pbar.total - pbar.n)  # set to 100% of progress bar
 
@@ -292,13 +311,23 @@ def get_defect_in_supercell(
     finally:
         pbar.close()
 
+    if not matching_bulks:  # print warning after closing pbar; cleaner
+        warnings.warn(
+            "Note that the atomic position basis of the generated defect/bulk supercell "
+            "differs from that of the ``target_supercell``. This is likely fine, "
+            "and just due to differences in (symmetry-equivalent) primitive cell definitions "
+            "(e.g. {'Cd': [0,0,0], 'Te': [0.25,0.25,0.25]} vs "
+            "{'Cd(': [0,0,0], 'Te': [0.75,0.75,0.75]}``) -- see ``get_defect_in_supercell`` "
+            "docstring for more info. For accurate finite-size charge corrections when "
+            "parsing, a matching bulk and defect supercell should be used, and so the "
+            "matching bulk supercell for the generated defect supercell (also returned "
+            "by this function) should be used for its reference host cell calculation.",
+        )
+
     _check_min_dist(oriented_new_defect_supercell, orig_min_dist)  # check distances are reasonable
     if return_bulk:
         _check_min_dist(oriented_new_bulk_supercell, bulk_min_bond_length)
         return oriented_new_defect_supercell, oriented_new_bulk_supercell
-
-    # TODO: Check if bulk RMS dist to target_supercell is 0 or if it's different -> in which case we
-    #  print an info message for the user!
 
     return oriented_new_defect_supercell
 
