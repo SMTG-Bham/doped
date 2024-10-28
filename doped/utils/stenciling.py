@@ -45,17 +45,20 @@ from doped.utils.symmetry import (
 def get_defect_in_supercell(
     defect_entry: DefectEntry,
     target_supercell: Structure,
-    return_bulk: bool = True,
+    check_bulk: bool = True,
     target_frac_coords: Union[np.ndarray[float], list[float], bool] = True,
     edge_tol: float = 1,
-) -> Union[Structure, tuple[Structure, Structure]]:
+) -> tuple[Structure, Structure]:
     """
     Re-generate a relaxed defect structure in a different supercell.
 
     This function takes the relaxed defect structure of the input ``DefectEntry``
     (from ``DefectEntry.defect_supercell``) and re-generates it in the
     ``target_supercell`` structure, and the closest possible position to
-    ``target_frac_coords`` (if provided, else closest to centre = [0.5, 0.5, 0.5]).
+    ``target_frac_coords`` (if provided, else closest to centre = [0.5, 0.5, 0.5]),
+    also providing the corresponding bulk supercell (which should be the same for
+    each generated defect supercell given the same ``target_supercell`` and base
+    supercell for ``defect_entry``, see note below).
 
     ``target_supercell`` should be the same host crystal structure, just with
     different supercell dimensions, having the same lattice parameters and bond
@@ -75,12 +78,11 @@ def get_defect_in_supercell(
     bulk supercell is used anyway.
     This function will automatically check if the position basis in the generated
     supercell differs from that of ``target_supercell``, printing a warning if so
-    (unless ``return_bulk`` is ``False``) and returning the corresponding bulk
-    supercell (if ``return_bulk`` is ``True``) which should be used for parsing
-    defect calculations with the generated supercell. Of course, if generating
-    multiple defects in the same ``target_supercell``, only one such bulk supercell
-    calculation should be required (should correspond to the same bulk supercell
-    in each case).
+    (unless ``check_bulk`` is ``False``) and returning the corresponding bulk
+    supercell which should be used for parsing defect calculations with the
+    generated supercell. Of course, if generating multiple defects in the same
+    ``target_supercell``, only one such bulk supercell calculation should be required
+    (should correspond to the same bulk supercell in each case).
 
     Briefly, this function works by:
 
@@ -116,13 +118,11 @@ def get_defect_in_supercell(
         target_supercell (Structure):
             The supercell structure to re-generate the relaxed defect
             structure in.
-        return_bulk (bool):
-            Whether to also return the corresponding bulk/reference supercell
-            for the generated defect supercell. This will be fully
-            symmetry-equivalent to ``target_supercell``, but may have a different
-            atomic position basis as described above -- if so, a warning will
-            be printed (unless ``return_bulk`` is ``False``).
-            Default is ``True``.
+        check_bulk (bool):
+            Whether to check if the generated defect/bulk supercells have
+            different atomic position bases to ``target_supercell`` (as described
+            above) -- if so, a warning will be printed (unless ``check_bulk`` is
+            ``False``). Default is ``True``.
         target_frac_coords (Union[np.ndarray[float], list[float], bool]):
             The fractional coordinates to target for defect placement in the
             new supercell. If just set to ``True`` (default), will try to place
@@ -140,11 +140,10 @@ def get_defect_in_supercell(
             increased up to 4.5 Angstrom if the initial scan fails.
 
     Returns:
-        Union[Structure, tuple[Structure, Structure]]:
-            The re-generated defect supercell in the ``target_supercell`` lattice.
-            If ``return_bulk`` is ``True``, also returns the corresponding
-            bulk/reference supercell for the generated defect supercell (see
-            explanations above).
+        tuple[Structure, Structure]:
+            The re-generated defect supercell in the ``target_supercell`` lattice,
+            and the corresponding bulk/reference supercell for the generated defect
+            supercell (see explanations above).
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest way to debug these functions
     # TODO: Tests!! (At least one of each defect, Se good test case, then at least one or two with
@@ -158,6 +157,8 @@ def get_defect_in_supercell(
         total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
     )  # tqdm progress bar. 100% is completion
     pbar.set_description("Getting super-supercell (relaxed defect + bulk sites)")
+
+    bulk_mismatch_warning = False
 
     try:
         orig_supercell = _get_defect_supercell(defect_entry)
@@ -217,15 +218,14 @@ def get_defect_in_supercell(
             edge_tol=edge_tol,
             pbar=pbar,
         )
-        if return_bulk:
-            new_bulk_supercell = _stencil_target_cell_from_big_cell(
-                big_bulk_supercell,
-                target_supercell,
-                bulk_min_bond_length=bulk_min_bond_length,
-                orig_min_dist=orig_min_dist,
-                edge_tol=1e-3,
-                pbar=None,
-            )  # shouldn't need `edge_tol`, should be much faster than defect supercell stencil
+        new_bulk_supercell = _stencil_target_cell_from_big_cell(
+            big_bulk_supercell,
+            target_supercell,
+            bulk_min_bond_length=bulk_min_bond_length,
+            orig_min_dist=orig_min_dist,
+            edge_tol=1e-3,
+            pbar=None,
+        )  # shouldn't need `edge_tol`, should be much faster than defect supercell stencil
 
         pbar.update(15)  # 55% of progress bar
         pbar.set_description("Ensuring matching orientation w/target_supercell")
@@ -245,12 +245,20 @@ def get_defect_in_supercell(
         )
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Not all sites have property orig_species")
-            oriented_new_defect_supercell_w_defect_neighbours_as_X = orient_s2_like_s1(
+            # first orient the generated _bulk_ supercell to match the ``target_supercell``, to try ensure
+            # consistency in the generated supercells
+            oriented_new_bulk_supercell = orient_s2_like_s1(  # speed should be >= defect orienting
                 target_supercell,
+                new_bulk_supercell,
+                verbose=False,
+                allow_subset=True,
+            )
+            oriented_new_defect_supercell_w_defect_neighbours_as_X = orient_s2_like_s1(
+                oriented_new_bulk_supercell,
                 new_defect_supercell_w_defect_neighbours_as_X,
                 verbose=False,
                 ignored_species=["X"],  # ignore X site
-                allow_subset=True,  # allow defect supercell composition to differ from target
+                allow_subset=True,  # allow defect supercell composition to differ
             )
             oriented_new_defect_supercell = _convert_X_back_to_orig_species(
                 oriented_new_defect_supercell_w_defect_neighbours_as_X
@@ -260,13 +268,6 @@ def get_defect_in_supercell(
                 for i, site in enumerate(oriented_new_defect_supercell.sites)
                 if site.specie.symbol == "X"
             )
-            if return_bulk:
-                oriented_new_bulk_supercell = orient_s2_like_s1(  # should be quicker than defect orienting
-                    oriented_new_defect_supercell,
-                    new_bulk_supercell,
-                    verbose=False,
-                    allow_subset=True,
-                )
 
             pbar.update(35)  # 90% of progress bar
 
@@ -282,23 +283,26 @@ def get_defect_in_supercell(
                         oriented_new_defect_supercell,
                         fractional=True,
                         rotate_lattice=False,
-                    )
+                    ),
+                    dist_precision=0.003,
                 )  # reordered inputs in updated doped
-                if return_bulk:
-                    matching_bulks = check_atom_mapping_far_from_defect(
+                if check_bulk:
+                    bulk_mismatch_warning = not check_atom_mapping_far_from_defect(
                         target_supercell,
                         oriented_new_bulk_supercell,
                         oriented_new_defect_site.frac_coords,
                         warning=False,
                     )
-                    oriented_new_bulk_supercell = get_clean_structure(
-                        apply_symm_op_to_struct(
-                            target_symm_op,
-                            oriented_new_bulk_supercell,
-                            fractional=True,
-                            rotate_lattice=False,
-                        )
-                    )
+
+                oriented_new_bulk_supercell = get_clean_structure(
+                    apply_symm_op_to_struct(
+                        target_symm_op,
+                        oriented_new_bulk_supercell,
+                        fractional=True,
+                        rotate_lattice=False,
+                    ),
+                    dist_precision=0.003,
+                )
 
         pbar.update(pbar.total - pbar.n)  # set to 100% of progress bar
 
@@ -309,7 +313,7 @@ def get_defect_in_supercell(
     finally:
         pbar.close()
 
-    if not matching_bulks:  # print warning after closing pbar; cleaner
+    if bulk_mismatch_warning:  # print warning after closing pbar; cleaner
         warnings.warn(
             "Note that the atomic position basis of the generated defect/bulk supercell "
             "differs from that of the ``target_supercell``. This is likely fine, "
@@ -323,11 +327,8 @@ def get_defect_in_supercell(
         )
 
     _check_min_dist(oriented_new_defect_supercell, orig_min_dist)  # check distances are reasonable
-    if return_bulk:
-        _check_min_dist(oriented_new_bulk_supercell, bulk_min_bond_length)
-        return oriented_new_defect_supercell, oriented_new_bulk_supercell
-
-    return oriented_new_defect_supercell
+    _check_min_dist(oriented_new_bulk_supercell, bulk_min_bond_length)
+    return oriented_new_defect_supercell, oriented_new_bulk_supercell
 
 
 def _scan_symm_ops_to_place_site_closest_to_frac_coords(
