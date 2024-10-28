@@ -3,6 +3,7 @@ Utility code and functions for symmetry analysis of structures and defects.
 """
 
 import contextlib
+import math
 import os
 import warnings
 from functools import lru_cache
@@ -83,9 +84,10 @@ _check_spglib_version()
 _set_spglib_warnings_env_var()
 
 
-def _round_floats(obj, places=5):
+def _round_floats(obj, places: int = 5):
     """
-    Recursively round floats in a dictionary to ``places`` decimal places.
+    Recursively round floats in a dictionary to ``places`` decimal places,
+    using the ``_custom_round`` function.
     """
     if isinstance(obj, float):
         return _custom_round(obj, places) + 0.0
@@ -128,6 +130,76 @@ def _custom_round(number: float, decimals: int = 3):
 
 
 _vectorized_custom_round = np.vectorize(_custom_round)
+
+
+def _get_num_places_for_dist_precision(
+    structure: Union[Structure, Lattice], dist_precision: float = 0.001
+):
+    """
+    Given a structure or lattice, get the number of decimal places that we need
+    to keep / can round to for _fractional coordinates_ (``frac_coords``), to
+    maintain a distance precision of ``dist_precision`` in Å.
+
+    Intended for use with the ``_round_floats()`` function, to achieve cleanly
+    formatted structure outputs while ensuring no significant rounding errors are
+    introduced in site positions (e.g. for very large supercells, small differences
+    in fraction coordinates become significant).
+
+    Args:
+        structure:
+            The input structure or lattice.
+        dist_precision:
+            The desired distance precision in Å (default: 0.001).
+
+    Returns:
+        int:
+            The number of decimal places to keep for fractional
+            coordinates to maintain the desired distance precision.
+    """
+    lattice = structure if isinstance(structure, Lattice) else structure.lattice
+    frac_precision = dist_precision / max(lattice.abc)
+
+    # get corresponding number of decimal places for this precision:
+    return -1 * min(math.floor(math.log(frac_precision, 10)), 0)
+
+
+def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to_unit_cell=False):
+    """
+    Convenience method to round the lattice parameters and fractional
+    coordinates of a structure to a given distance precision, for cleanly
+    formatted structure outputs.
+
+    Does not apply this operation in-place!
+
+    Args:
+        structure:
+            The input structure.
+        dist_precision:
+            The desired distance precision in Å (default: 0.001).
+        to_unit_cell:
+            Whether to round the fractional coordinates to the unit cell
+            (default: False).
+
+    Returns:
+        Structure:
+            The structure with rounded lattice parameters and fractional
+            coordinates.
+    """
+    rounded_struct = Structure.from_dict(
+        _round_floats(
+            structure.as_dict(), places=_get_num_places_for_dist_precision(structure, dist_precision)
+        )
+    )
+    if not to_unit_cell:
+        return rounded_struct
+
+    rounded_struct = Structure.from_sites([site.to_unit_cell() for site in rounded_struct])
+    return Structure.from_dict(
+        _round_floats(
+            rounded_struct.as_dict(),
+            places=_get_num_places_for_dist_precision(rounded_struct, dist_precision),
+        )
+    )
 
 
 def _frac_coords_sort_func(coords):
@@ -439,8 +511,7 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
     output_prim_struct = apply_symm_op_to_struct(rotation_symm_op, prim_struct, rotate_lattice=True)
-    clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
-    return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
+    return _round_struct_coords(output_prim_struct), supercell_matrix
 
 
 def translate_structure(
@@ -659,9 +730,7 @@ def _struct_sort_func(struct):
     then 2 equal coordinates), then by the summed magnitude of all x
     coordinates, then y coordinates, then z coordinates.
     """
-    struct_for_sorting = Structure.from_sites(
-        Structure.from_dict(_round_floats(struct.as_dict(), 3)).sites, to_unit_cell=True
-    )
+    struct_for_sorting = _round_struct_coords(struct, to_unit_cell=True)
 
     lattice_metric = _lattice_matrix_sort_func(struct_for_sorting.lattice.matrix)
     # get summed magnitudes of x=y=z coords:
@@ -740,7 +809,7 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
     )
 
 
-def get_clean_structure(structure: Structure, return_T: bool = False):
+def get_clean_structure(structure: Structure, return_T: bool = False, dist_precision: float = 0.001):
     """
     Get a 'clean' version of the input `structure` by searching over equivalent
     Niggli reduced cells, and finding the most optimal according to
@@ -751,6 +820,9 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         structure (Structure): Structure object.
         return_T (bool): Whether to return the transformation matrix.
             (Default = False)
+        dist_precision:
+            The desired distance precision in Å for rounding of lattice
+            parameters and fractional coordinates. (Default: 0.001)
     """
     reduced_lattice = structure.lattice
     if np.all(reduced_lattice.matrix <= 0):
@@ -787,9 +859,7 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         labels=structure.labels,
         charge=structure._charge,
     )
-    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
-    new_structure = Structure.from_sites([site.to_unit_cell() for site in new_structure])
-    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
+    new_structure = _round_struct_coords(new_structure, dist_precision=dist_precision, to_unit_cell=True)
 
     # sort structure to match a desired, deterministic format:
     new_structure = new_structure.get_sorted_structure(
@@ -894,9 +964,7 @@ def get_primitive_structure(
     )
 
     prim_structs = [
-        _get_best_pos_det_structure(
-            Structure.from_dict(_round_floats(candidate_prim_structs[i].as_dict()))
-        )
+        _get_best_pos_det_structure(_round_struct_coords(candidate_prim_structs[i], to_unit_cell=True))
         for i in sorted_indices
     ]
     if clean:
@@ -929,7 +997,7 @@ def get_spglib_conv_structure(sga):
         possible_conv_structs_and_sgas, key=lambda x: _struct_sort_func(x[0])
     )
     return (
-        Structure.from_dict(_round_floats(possible_conv_structs_and_sgas[0][0].as_dict())),
+        _round_struct_coords(possible_conv_structs_and_sgas[0][0], to_unit_cell=True),
         possible_conv_structs_and_sgas[0][1],
     )
 
