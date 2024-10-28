@@ -1324,17 +1324,10 @@ class DefectsGenerator(MSONable):
                 )
 
             prim_struct = symmetry.get_primitive_structure(self.structure)
-            if prim_struct.num_sites < self.structure.num_sites:
-                primitive_structure = Structure.from_dict(symmetry._round_floats(prim_struct.as_dict()))
-
-            else:  # primitive cell is the same as input structure, use input structure to avoid rotations
-                # wrap to unit cell:
-                primitive_structure = Structure.from_sites(
-                    [site.to_unit_cell() for site in self.structure]
-                )
-                primitive_structure = Structure.from_dict(
-                    symmetry._round_floats(primitive_structure.as_dict())
-                )
+            primitive_structure = symmetry._round_struct_coords(
+                prim_struct if prim_struct.num_sites < self.structure.num_sites else self.structure,
+                to_unit_cell=True,  # wrap to unit cell
+            )  # if primitive cell is the same as input structure, use input structure to avoid rotations
 
             pbar.update(5)  # 5% of progress bar
 
@@ -1392,12 +1385,8 @@ class DefectsGenerator(MSONable):
             self.primitive_structure = Structure.from_sites(
                 [site.to_unit_cell() for site in self.primitive_structure]
             )
-            self.bulk_supercell = Structure.from_sites(
-                Structure.from_dict(
-                    symmetry._round_floats(
-                        (self.primitive_structure * self.supercell_matrix).get_sorted_structure().as_dict()
-                    )
-                ).sites,
+            self.bulk_supercell = symmetry._round_struct_coords(
+                (self.primitive_structure * self.supercell_matrix).get_sorted_structure(),
                 to_unit_cell=True,
             )
             if not generate_supercell:  # re-order bulk supercell to match that of input supercell

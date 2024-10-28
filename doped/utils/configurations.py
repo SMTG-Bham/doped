@@ -208,10 +208,11 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
     """
     s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1)
     s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2)
+    common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
     min_min_dist_change = max(
         {
             elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
-            for elt in s1_min_max_bond_length_dict
+            for elt in common_elts
             if elt.symbol not in sm_kwargs.get("ignored_species", [])
         }.values()
     )
@@ -302,6 +303,12 @@ def _scan_sm_stol_till_match(
             return result
 
         stol *= 1 + stol_factor
+        # Note: this function could possibly be sped up if ``StructureMatcher._match()`` was updated to
+        # return the guessed ``best_match`` value (even if larger than ``stol``), which will always be
+        # >= the best possible match it seems, and then using this to determine the next ``stol`` value
+        # to trial. Seems like it could give a ~50% speedup in some cases? Not clear though,
+        # as once you're getting a reasonable guessed value out, the trial ``stol`` should be pretty
+        # close to the necessary value anyway.
 
     return None
 
