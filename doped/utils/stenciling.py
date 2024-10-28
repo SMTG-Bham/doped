@@ -1,8 +1,6 @@
 """
 Utility functions to re-generate a relaxed defect structure in a different
 supercell.
-
-The code in this sub-module is still in development! (TODO)
 """
 
 import math
