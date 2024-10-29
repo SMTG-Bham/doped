@@ -245,31 +245,6 @@ def get_defect_in_supercell(
             warnings.filterwarnings("ignore", message="Not all sites have property orig_species")
             # first we orient the generated _bulk_ supercell to match the ``target_supercell``,
             # to try ensure consistency in the generated supercells
-
-            # # to help ensure consistency, we first scan over possible translations of the bulk supercell
-            # # (moving each site to the origin point, in turn) and pick the best possible definition
-            # # according to ``_struct_sort_func``. If the same bulk supercell is used for the input
-            # # defect entries, then this should result in the same bulk supercell output for each
-            # # (no rotations etc, only translations performed thus far):
-            #
-            # struct_trans_scores = []
-            # # in theory this scan over possible translations could be made faster by subselecting a
-            # # single unit cell portion of the supercell to scan over, but not the main bottleneck in
-            # # this code
-            # req_places = _get_num_places_for_dist_precision(new_bulk_supercell, 0.001)
-            # frac_coords = _round_floats(new_bulk_supercell.frac_coords, places=req_places)
-            # for i in range(len(new_bulk_supercell)):
-            #     trans_vector = -1 * frac_coords[i]
-            #     trans_frac_coords = np.mod(frac_coords + trans_vector, 1)
-            #     struct_trans_scores.append(_struct_sort_func(trans_frac_coords))
-            #
-            # min_idx = min(range(len(struct_trans_scores)), key=struct_trans_scores.__getitem__)
-            # frac_trans_vector = -1 * new_bulk_supercell.frac_coords[min_idx]
-            # new_bulk_supercell = _round_struct_coords(translate_structure(
-            #     new_bulk_supercell,
-            #     frac_trans_vector,
-            #     frac_coords=True,
-            # ), to_unit_cell=True, dist_precision=0.01)
             oriented_new_bulk_supercell = orient_s2_like_s1(  # speed should be >= defect orienting
                 target_supercell,
                 new_bulk_supercell,

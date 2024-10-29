@@ -54,10 +54,11 @@ def min_dist(structure: Structure, ignored_species: Optional[list[str]] = None) 
         structure.remove_species(ignored_species)
 
     distances = structure.distance_matrix.flatten()
+    nonzero_dist = np.nonzero(distances)
     return (  # fast vectorised evaluation of minimum distance
         0
-        if len(np.nonzero(distances)[0]) < (len(distances) - structure.num_sites)
-        else np.min(distances[np.nonzero(distances)])
+        if len(nonzero_dist[0]) < (len(distances) - structure.num_sites)
+        else np.min(distances[nonzero_dist])
     )
 
 
