@@ -176,7 +176,7 @@ def get_defect_in_supercell(
         # first translate both orig supercells to put defect in the middle, to aid initial stenciling:
         orig_def_to_centre = np.array([0.5, 0.5, 0.5]) - orig_defect_frac_coords
         orig_supercell = translate_structure(orig_supercell, orig_def_to_centre, frac_coords=True)
-        orig_bulk_supercell = translate_structure(
+        trans_orig_bulk_supercell = translate_structure(
             orig_bulk_supercell, orig_def_to_centre, frac_coords=True
         )
 
@@ -195,16 +195,14 @@ def get_defect_in_supercell(
         big_defect_supercell = _get_matching_sites_from_s1_then_s2(
             orig_supercell_with_X,
             big_supercell_with_X,
-            orig_bulk_supercell * superset_matrix,
+            trans_orig_bulk_supercell * superset_matrix,
             orig_min_dist,
         )
-        _check_min_dist(big_defect_supercell, orig_min_dist, warning=False, ignored_species=["X"])
 
         # translate structure to put defect at the centre of the big supercell (w/frac_coords)
         big_supercell_defect_site = next(s for s in big_defect_supercell.sites if s.specie.symbol == "X")
         def_to_centre = np.array([0.5, 0.5, 0.5]) - big_supercell_defect_site.frac_coords
         big_defect_supercell = translate_structure(big_defect_supercell, def_to_centre, frac_coords=True)
-        big_bulk_supercell = translate_structure(big_bulk_supercell, def_to_centre, frac_coords=True)
 
         pbar.update(20)  # 20% of progress bar
         pbar.set_description("Getting sites in border region")
@@ -222,7 +220,7 @@ def get_defect_in_supercell(
             big_bulk_supercell,
             target_supercell,
             bulk_min_bond_length=bulk_min_bond_length,
-            orig_min_dist=orig_min_dist,
+            orig_min_dist=bulk_min_bond_length,
             edge_tol=1e-3,
             pbar=None,
         )  # shouldn't need `edge_tol`, should be much faster than defect supercell stencil
@@ -245,14 +243,41 @@ def get_defect_in_supercell(
         )
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Not all sites have property orig_species")
-            # first orient the generated _bulk_ supercell to match the ``target_supercell``, to try ensure
-            # consistency in the generated supercells
+            # first we orient the generated _bulk_ supercell to match the ``target_supercell``,
+            # to try ensure consistency in the generated supercells
+
+            # # to help ensure consistency, we first scan over possible translations of the bulk supercell
+            # # (moving each site to the origin point, in turn) and pick the best possible definition
+            # # according to ``_struct_sort_func``. If the same bulk supercell is used for the input
+            # # defect entries, then this should result in the same bulk supercell output for each
+            # # (no rotations etc, only translations performed thus far):
+            #
+            # struct_trans_scores = []
+            # # in theory this scan over possible translations could be made faster by subselecting a
+            # # single unit cell portion of the supercell to scan over, but not the main bottleneck in
+            # # this code
+            # req_places = _get_num_places_for_dist_precision(new_bulk_supercell, 0.001)
+            # frac_coords = _round_floats(new_bulk_supercell.frac_coords, places=req_places)
+            # for i in range(len(new_bulk_supercell)):
+            #     trans_vector = -1 * frac_coords[i]
+            #     trans_frac_coords = np.mod(frac_coords + trans_vector, 1)
+            #     struct_trans_scores.append(_struct_sort_func(trans_frac_coords))
+            #
+            # min_idx = min(range(len(struct_trans_scores)), key=struct_trans_scores.__getitem__)
+            # frac_trans_vector = -1 * new_bulk_supercell.frac_coords[min_idx]
+            # new_bulk_supercell = _round_struct_coords(translate_structure(
+            #     new_bulk_supercell,
+            #     frac_trans_vector,
+            #     frac_coords=True,
+            # ), to_unit_cell=True, dist_precision=0.01)
             oriented_new_bulk_supercell = orient_s2_like_s1(  # speed should be >= defect orienting
                 target_supercell,
                 new_bulk_supercell,
                 verbose=False,
                 allow_subset=True,
             )
+            # return new_defect_supercell, _round_struct_coords(oriented_new_bulk_supercell,
+            #                                                   dist_precision=0.01, to_unit_cell=True)
             oriented_new_defect_supercell_w_defect_neighbours_as_X = orient_s2_like_s1(
                 oriented_new_bulk_supercell,
                 new_defect_supercell_w_defect_neighbours_as_X,
@@ -284,7 +309,6 @@ def get_defect_in_supercell(
                         fractional=True,
                         rotate_lattice=False,
                     ),
-                    dist_precision=0.003,
                 )  # reordered inputs in updated doped
                 if check_bulk:
                     bulk_mismatch_warning = not check_atom_mapping_far_from_defect(
@@ -301,7 +325,6 @@ def get_defect_in_supercell(
                         fractional=True,
                         rotate_lattice=False,
                     ),
-                    dist_precision=0.003,
                 )
 
         pbar.update(pbar.total - pbar.n)  # set to 100% of progress bar
@@ -946,21 +969,29 @@ def _get_matching_sites_from_s1_then_s2(
     num_super_supercells = len(struct1_pool) // len(template_struct)  # both also have X
     single_defect_subcell_sites = []
 
+    species_coord_dict = {}  # avoid recomputing coords for each site
+    species_idx_dict = {}
+    for element in _fast_get_composition_from_sites(struct1_pool).elements:
+        species_coord_dict[element.symbol], species_idx_dict[element.symbol] = (
+            get_coords_and_idx_of_species(struct1_pool, element.symbol, frac_coords=False)
+        )
+
     for (
         sub_site
     ) in template_struct.sites:  # get closest site in big supercell to site, using cartesian coords:
-        closest_site = min(
-            [site for site in struct1_pool if site.species == sub_site.species],
-            key=lambda x: x.distance_from_point(sub_site.coords),
+        closest_site_dict_idx = np.argmin(
+            np.linalg.norm(species_coord_dict[sub_site.specie.symbol] - sub_site.coords, axis=1),
         )
-        single_defect_subcell_sites.append(closest_site)
+        single_defect_subcell_sites.append(
+            struct1_pool[species_idx_dict[sub_site.specie.symbol][closest_site_dict_idx]]
+        )
 
     assert len(set(single_defect_subcell_sites)) == len(single_defect_subcell_sites)  # no repeats
 
     species_coord_dict = {}  # avoid recomputing coords for each site
     for element in _fast_get_composition_from_sites(struct2_pool).elements:
-        species_coord_dict[element.name] = get_coords_and_idx_of_species(
-            single_defect_subcell_sites, element.name, frac_coords=True  # frac_coords
+        species_coord_dict[element.symbol] = get_coords_and_idx_of_species(
+            single_defect_subcell_sites, element.symbol, frac_coords=True  # frac_coords
         )[0]
 
     # this could be made faster by vectorising with ``find_idx_of_nearest_coords`` from
