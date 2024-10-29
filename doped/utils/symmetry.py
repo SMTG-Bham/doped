@@ -185,21 +185,24 @@ def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to
             The structure with rounded lattice parameters and fractional
             coordinates.
     """
-    rounded_struct = Structure.from_dict(
-        _round_floats(
-            structure.as_dict(), places=_get_num_places_for_dist_precision(structure, dist_precision)
-        )
-    )
-    if not to_unit_cell:
-        return rounded_struct
+    rounded_struct = structure.copy()
+    req_places = _get_num_places_for_dist_precision(rounded_struct, dist_precision)
+    frac_coords = _round_floats(rounded_struct.frac_coords, places=req_places)
+    lattice = Lattice(_round_floats(rounded_struct.lattice.matrix, places=req_places))
 
-    rounded_struct = Structure.from_sites([site.to_unit_cell() for site in rounded_struct])
-    return Structure.from_dict(
-        _round_floats(
-            rounded_struct.as_dict(),
-            places=_get_num_places_for_dist_precision(rounded_struct, dist_precision),
+    for idx in range(len(rounded_struct)):
+        orig_site = structure[idx]
+        rounded_struct._sites[idx] = PeriodicSite(
+            orig_site.species,
+            frac_coords[idx],
+            lattice,
+            properties=orig_site.properties,
+            label=orig_site.label,
+            skip_checks=True,
+            to_unit_cell=to_unit_cell,
         )
-    )
+
+    return rounded_struct
 
 
 def _frac_coords_sort_func(coords):
@@ -723,39 +726,52 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
     return (wyckoff_label, unique_sites) if equiv_sites else wyckoff_label
 
 
-def _struct_sort_func(struct):
+def _struct_sort_func(struct: Union[Structure, np.ndarray]) -> tuple:
     """
     Sort by the sum of the lattice matrix sorting function, then fractional
     coordinates, then by the magnitudes of high-symmetry coordinates (x=y=z,
     then 2 equal coordinates), then by the summed magnitude of all x
     coordinates, then y coordinates, then z coordinates.
-    """
-    struct_for_sorting = _round_struct_coords(struct, to_unit_cell=True)
 
-    lattice_metric = _lattice_matrix_sort_func(struct_for_sorting.lattice.matrix)
+    Args:
+        struct:
+            ``pymatgen`` ``Structure`` object, or an array of fractional
+            coordinates of sites in the structure (in which case the lattice
+            matrix metric is skipped).
+
+    Returns:
+        tuple: Tuple of sorting criteria values.
+    """
+    if isinstance(struct, Structure):
+        struct_for_sorting = _round_struct_coords(struct, to_unit_cell=True)
+        lattice_metric = _lattice_matrix_sort_func(struct_for_sorting.lattice.matrix)
+        frac_coords = struct_for_sorting.frac_coords
+    else:
+        lattice_metric = (False,)
+        frac_coords = struct
+
     # get summed magnitudes of x=y=z coords:
-    matching_coords = struct_for_sorting.frac_coords[  # Find the coordinates where x = y = z:
-        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
-        & (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
+    matching_coords = frac_coords[  # Find the coordinates where x = y = z:
+        (frac_coords[:, 0] == frac_coords[:, 1]) & (frac_coords[:, 1] == frac_coords[:, 2])
     ]
     xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
 
     # get summed magnitudes of x=y / y=z / x=z coords:
-    matching_coords = struct_for_sorting.frac_coords[
-        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
-        | (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
-        | (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 2])
+    matching_coords = frac_coords[
+        (frac_coords[:, 0] == frac_coords[:, 1])
+        | (frac_coords[:, 1] == frac_coords[:, 2])
+        | (frac_coords[:, 0] == frac_coords[:, 2])
     ]
     xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
 
     return (
         *lattice_metric,
-        np.sum(struct_for_sorting.frac_coords),
+        np.sum(frac_coords),
         xyz_sum_magnitudes,
         xy_sum_magnitudes,
-        np.sum(struct_for_sorting.frac_coords[:, 0]),
-        np.sum(struct_for_sorting.frac_coords[:, 1]),
-        np.sum(struct_for_sorting.frac_coords[:, 2]),
+        np.sum(frac_coords[:, 0]),
+        np.sum(frac_coords[:, 1]),
+        np.sum(frac_coords[:, 2]),
     )
 
 
