@@ -1812,7 +1812,32 @@ class DefectsGenerator(MSONable):
 
         return info_string
 
-    def add_charge_states(self, defect_entry_name: str, charge_states: list):
+    def _process_name_and_charge_states_and_get_matching_entries(
+        self,
+        defect_entry_name: str,
+        charge_states: Union[list, int],
+        match_charge_states: bool = True,
+    ) -> tuple[list, list]:
+        if defect_entry_name[-1].isdigit():  # if defect entry name ends with number:
+            defect_entry_name = defect_entry_name.rsplit("_", 1)[0]  # name without charge
+
+        if isinstance(charge_states, (int, float)):
+            charge_states = [round(charge_states)]
+
+        matching_entry_names_wout_charge = [
+            name for name in self.defect_entries if name.startswith(defect_entry_name)
+        ]
+        if not match_charge_states:
+            return charge_states, matching_entry_names_wout_charge
+
+        return charge_states, [
+            name
+            for charge in charge_states
+            for name in matching_entry_names_wout_charge
+            if name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
+        ]
+
+    def add_charge_states(self, defect_entry_name: str, charge_states: Union[list, int]):
         r"""
         Add additional ``DefectEntry``\s with the specified charge states to
         ``self.defect_entries``.
@@ -1821,25 +1846,40 @@ class DefectsGenerator(MSONable):
             defect_entry_name (str):
                 Name of defect entry to add charge states to.
                 Doesn't need to include the charge state.
-            charge_states (list): List of charge states to add to defect entry (e.g. [-2, -3]).
+            charge_states (list):
+                List of charge states to add to defect entry
+                (e.g. [-2, -3]), or a single charge state (e.g. -2).
         """
-        previous_defect_entry = next(
-            entry for name, entry in self.defect_entries.items() if name.startswith(defect_entry_name)
-        )
-        Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
-        for charge in charge_states:
-            defect_entry = copy.deepcopy(previous_defect_entry)
-            defect_entry.charge_state = charge
-            defect_entry.name = (
-                f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
+        charge_states, matching_entry_names_wout_charge = (
+            self._process_name_and_charge_states_and_get_matching_entries(
+                defect_entry_name, charge_states, match_charge_states=False
             )
-            self.defect_entries[defect_entry.name] = defect_entry
+        )
+        # get unique defect entry names without charge state:
+        unique_matching_entry_names_wout_charge = {
+            i.rsplit("_", 1)[0] for i in matching_entry_names_wout_charge
+        }
+
+        Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
+        for defect_entry_name_wout_charge in unique_matching_entry_names_wout_charge:
+            previous_defect_entry = next(
+                entry
+                for name, entry in self.defect_entries.items()
+                if name.startswith(defect_entry_name_wout_charge)
+            )
+            for charge in charge_states:
+                defect_entry = copy.deepcopy(previous_defect_entry)
+                defect_entry.charge_state = charge
+                defect_entry.name = (
+                    f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
+                )
+                self.defect_entries[defect_entry.name] = defect_entry
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
         self.defect_entries = _sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
-    def remove_charge_states(self, defect_entry_name: str, charge_states: list):
+    def remove_charge_states(self, defect_entry_name: str, charge_states: Union[list, int]):
         r"""
         Remove ``DefectEntry``\s with the specified charge states from
         ``self.defect_entries``.
@@ -1848,21 +1888,17 @@ class DefectsGenerator(MSONable):
             defect_entry_name (str):
                 Name of defect entry to remove charge states from.
                 Doesn't need to include the charge state.
-            charge_states (list): List of charge states to add to defect entry (e.g. [-2, -3]).
+            charge_states (list):
+                List of charge states to add to defect entry
+                (e.g. [-2, -3]), or a single charge state (e.g. -2).
         """
-        # if defect entry name ends with number:
-        if defect_entry_name[-1].isdigit():
-            defect_entry_name = defect_entry_name.rsplit("_", 1)[0]  # name without charge
-
-        for charge in charge_states:
-            # remove defect entries with defect_entry_name in name:
-            for defect_entry_name_to_remove in [
-                name
-                for name in self.defect_entries
-                if name.startswith(defect_entry_name)
-                and name.endswith(f"_{'+' if charge > 0 else ''}{charge}")
-            ]:
-                del self.defect_entries[defect_entry_name_to_remove]
+        for (
+            _charge_states,
+            defect_entry_name_to_remove,
+        ) in self._process_name_and_charge_states_and_get_matching_entries(
+            defect_entry_name, charge_states
+        ):
+            del self.defect_entries[defect_entry_name_to_remove]
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)

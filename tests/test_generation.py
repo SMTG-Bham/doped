@@ -2181,8 +2181,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert "Cd_i_C3v_-6" in CdTe_defect_gen.defect_entries
         assert CdTe_defect_gen["Cd_i_C3v_-7"].charge_state == -7
-        info_line = "Cd_i_C3v         [+2,+1,0,-6,-7]        [0.625,0.625,0.625]  16e"
-        assert info_line in repr(CdTe_defect_gen)
+        info_lines = [
+            "Cd_i_C3v         [+2,+1,0,-6,-7]        [0.625,0.625,0.625]  16e",
+            "Cd_i_Td_Cd2.83   [+2,+1,0]              [0.750,0.750,0.750]  4d",
+            "Cd_i_Td_Te2.83   [+2,+1,0]              [0.500,0.500,0.500]  4b",
+        ]
+        for info_line in info_lines:
+            print(info_line)
+            assert info_line in repr(CdTe_defect_gen)
+
+        CdTe_defect_gen.add_charge_states("Cd_i", -6)
+        self._general_defect_gen_check(CdTe_defect_gen)
+        for info_line in [line.replace("[+2,+1,0]      ", "[+2,+1,0,-6]   ") for line in info_lines]:
+            print(info_line)
+            assert info_line in repr(CdTe_defect_gen)
 
     def test_removing_charge_states(self):
         CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
