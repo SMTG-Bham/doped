@@ -390,7 +390,11 @@ def get_defect_type_and_composition_diff(
 
 
 def get_defect_site_idxs_and_unrelaxed_structure(
-    bulk, defect, defect_type, composition_diff, unique_tolerance=1
+    bulk_supercell: Structure,
+    defect_supercell: Structure,
+    defect_type: str,
+    composition_diff: dict,
+    unique_site_dist_tolerance: float = 1.0,
 ):
     """
     Get the defect site and unrelaxed structure, where 'unrelaxed structure'
@@ -400,6 +404,23 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
     Initially contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
     refactored for extrinsic species and code efficiency/robustness improvements.
+
+    Args:
+        bulk_supercell (Structure):
+            The bulk supercell structure.
+        defect_supercell (Structure):
+            The defect supercell structure.
+        defect_type (str):
+            The defect type (``interstitial``, ``vacancy`` or ``substitution``).
+        composition_diff (dict):
+            The difference in composition between the bulk and defect structures,
+            as a dictionary (typically returned from
+            ``get_defect_type_and_composition_diff``).
+        unique_site_dist_tolerance (float):
+            A distance tolerance for determining unique site matching.
+            If the second closest site match is within
+            ``(original distance * unique_site_dist_tolerance)`` then
+            a runtime error will be thrown.
 
     Returns:
         bulk_site_idx:
@@ -414,13 +435,15 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             site for interstitials.
     """
 
-    def process_substitution(bulk, defect, composition_diff):
+    def process_substitution(bulk_supercell, defect_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
-        bulk_new_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(bulk, new_species)
+        bulk_new_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
+            bulk_supercell, new_species
+        )
         defect_new_species_coords, defect_new_species_idx = get_coords_and_idx_of_species(
-            defect, new_species
+            defect_supercell, new_species
         )
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
@@ -428,7 +451,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_arg_idx = find_idx_of_nearest_coords(
                 bulk_new_species_coords,
                 defect_new_species_coords,
-                bulk.lattice,
+                bulk_supercell.lattice,
                 defect_type="substitution",
                 searched_structure="defect",
             )
@@ -442,12 +465,14 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         # now find the closest old_species site in the bulk structure to the defect site
         # again, make sure to use periodic boundaries
-        bulk_old_species_coords, _bulk_old_species_idx = get_coords_and_idx_of_species(bulk, old_species)
+        bulk_old_species_coords, _bulk_old_species_idx = get_coords_and_idx_of_species(
+            bulk_supercell, old_species
+        )
 
         bulk_site_arg_idx = find_idx_of_nearest_coords(
             bulk_old_species_coords,
             defect_coords,
-            bulk.lattice,
+            bulk_supercell.lattice,
             defect_type="substitution",
             searched_structure="bulk",
         )
@@ -455,7 +480,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # currently, original_site_idx is indexed with respect to the old species only.
         # need to get the index in the full structure:
         unrelaxed_defect_structure, bulk_site_idx = _remove_and_insert_species_from_bulk(
-            bulk,
+            bulk_supercell,
             bulk_old_species_coords,
             bulk_site_arg_idx,
             new_species,
@@ -465,17 +490,19 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
         return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
 
-    def process_vacancy(bulk, defect, composition_diff):
+    def process_vacancy(bulk_supercell, defect_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
-        bulk_old_species_coords, _bulk_old_species_idx = get_coords_and_idx_of_species(bulk, old_species)
+        bulk_old_species_coords, _bulk_old_species_idx = get_coords_and_idx_of_species(
+            bulk_supercell, old_species
+        )
         defect_old_species_coords, _defect_old_species_idx = get_coords_and_idx_of_species(
-            defect, old_species
+            defect_supercell, old_species
         )
 
         bulk_site_arg_idx = find_idx_of_nearest_coords(
             bulk_old_species_coords,
             defect_old_species_coords,
-            bulk.lattice,
+            bulk_supercell.lattice,
             defect_type="vacancy",
             searched_structure="bulk",
         )
@@ -484,7 +511,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # need to get the index in the full structure:
         defect_site_idx = None
         unrelaxed_defect_structure, bulk_site_idx = _remove_and_insert_species_from_bulk(
-            bulk,
+            bulk_supercell,
             bulk_old_species_coords,
             bulk_site_arg_idx,
             new_species=None,
@@ -494,19 +521,21 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
         return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
 
-    def process_interstitial(bulk, defect, composition_diff):
+    def process_interstitial(bulk_supercell, defect_supercell, composition_diff):
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
-        bulk_new_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(bulk, new_species)
+        bulk_new_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
+            bulk_supercell, new_species
+        )
         defect_new_species_coords, defect_new_species_idx = get_coords_and_idx_of_species(
-            defect, new_species
+            defect_supercell, new_species
         )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
             defect_site_arg_idx = find_idx_of_nearest_coords(
                 bulk_new_species_coords,
                 defect_new_species_coords,
-                bulk.lattice,
+                bulk_supercell.lattice,
                 defect_type="interstitial",
                 searched_structure="defect",
             )
@@ -521,7 +550,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         # currently, original_site_idx is indexed with respect to the old species only.
         # need to get the index in the full structure:
         unrelaxed_defect_structure, bulk_site_idx = _remove_and_insert_species_from_bulk(
-            bulk,
+            bulk_supercell,
             coords=defect_site_coords,
             site_arg_idx=None,
             new_species=new_species,
@@ -540,7 +569,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     if defect_type not in handlers:
         raise ValueError(f"Invalid defect type: {defect_type}")
 
-    return handlers[defect_type](bulk, defect, composition_diff)
+    return handlers[defect_type](bulk_supercell, defect_supercell, composition_diff)
 
 
 def _get_species_from_composition_diff(composition_diff, el_change):
@@ -566,15 +595,35 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
 
 
 def find_idx_of_nearest_coords(
-    bulk_coords,
-    target_coords,
-    bulk_lattice,
-    defect_type="substitution",
-    searched_structure="bulk",
-    unique_tolerance=1,
+    bulk_coords: Union[list, np.ndarray],
+    target_coords: Union[list, np.ndarray],
+    bulk_lattice: Lattice,
+    defect_type: str = "substitution",
+    searched_structure: str = "bulk",
+    unique_site_dist_tolerance: float = 1.0,
 ):
     """
-    Find the nearest coords in bulk_coords to target_coords.
+    Find the nearest coords in ``bulk_coords`` to ``target_coords``, and return
+    the corresponding indices (from the ``bulk_coords`` array).
+
+    Args:
+        bulk_coords (Union[list, np.ndarray]):
+            Atomic coordinates from the bulk supercell, to find the nearest
+            coordinates to ``target_coords``.
+        target_coords (Union[list, np.ndarray]):
+            The target coordinates to find the nearest coordinates to in
+            ``bulk_coords``.
+        bulk_lattice (Lattice):
+            The lattice of the bulk supercell.
+        defect_type (str):
+            The type of defect (``substitution``, ``vacancy`` or ``interstitial``).
+        searched_structure (str):
+            The structure being searched (``bulk`` or ``defect``).
+        unique_site_dist_tolerance (float):
+            A distance tolerance for determining unique site matching.
+            If the second closest site match is within
+            ``(original distance * unique_site_dist_tolerance)`` then
+            a runtime error will be thrown.
     """
     distance_matrix = bulk_lattice.get_all_distances(
         bulk_coords,
@@ -597,15 +646,26 @@ def find_idx_of_nearest_coords(
 
         return next(
             iter(
-                set(np.arange(max(bulk_coords.shape[0], target_coords.shape[0]), dtype=int))
+                set(
+                    np.arange(
+                        max(np.array(bulk_coords).shape[0], np.array(target_coords).shape[0]), dtype=int
+                    )
+                )
                 - set(site_matches)
             )
         )
 
     if len(site_matches.shape) == 0:
-        # if there are any other matches with a distance within unique_tolerance of the located site
-        # then unique matching failed
-        if len(distance_matrix[distance_matrix < distance_matrix[site_matches] * unique_tolerance]) > 1:
+        # if there are any other matches with a distance of orig distance times unique_site_dist_tolerance
+        # of the located site, then unique matching considered to have failed
+        if (
+            len(
+                distance_matrix[
+                    distance_matrix < distance_matrix[site_matches] * unique_site_dist_tolerance
+                ]
+            )
+            > 1
+        ):
             _site_matching_failure_error(defect_type, searched_structure)
 
         return site_matches
@@ -613,29 +673,29 @@ def find_idx_of_nearest_coords(
 
 
 def _remove_and_insert_species_from_bulk(
-    bulk,
-    coords,
-    site_arg_idx,
-    new_species,
-    defect_site_idx,
-    defect_type="substitution",
-    searched_structure="bulk",
-    unique_tolerance=1,
+    bulk_supercell: Structure,
+    coords: Union[list, np.ndarray],
+    site_arg_idx: int,
+    new_species: str,
+    defect_site_idx: int,
+    defect_type: str = "substitution",
+    searched_structure: str = "bulk",
+    unique_site_dist_tolerance: float = 1.0,
 ):
     # currently, original_site_idx is indexed with respect to the old species only.
     # need to get the index in the full structure:
-    unrelaxed_defect_structure = bulk.copy()  # create unrelaxed defect structure
-    bulk_coords = np.array([s.frac_coords for s in bulk])
+    unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
+    bulk_coords = np.array([s.frac_coords for s in bulk_supercell])
     bulk_site_idx = None
 
     if site_arg_idx is not None:
         bulk_site_idx = find_idx_of_nearest_coords(
             bulk_coords,
             coords[site_arg_idx],
-            bulk.lattice,
+            bulk_supercell.lattice,
             defect_type=defect_type,
             searched_structure=searched_structure,
-            unique_tolerance=unique_tolerance,
+            unique_site_dist_tolerance=unique_site_dist_tolerance,
         )
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
         defect_coords = bulk_coords[bulk_site_idx]
