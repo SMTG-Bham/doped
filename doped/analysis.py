@@ -1997,12 +1997,13 @@ class DefectParser:
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
         if bulk_voronoi_node_dict and bulk_path and not prev_bulk_voronoi_node_dict:
-            # save to bulk folder for future expedited parsing:
-            if os.path.exists("voronoi_nodes.json.lock"):
-                with FileLock("voronoi_nodes.json.lock"):
+            with contextlib.suppress(Exception):  # ignore any file IO errors
+                # save to bulk folder for future expedited parsing:
+                if os.path.exists("voronoi_nodes.json.lock"):
+                    with FileLock("voronoi_nodes.json.lock"):
+                        dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
+                else:
                     dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
-            else:
-                dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
         check_and_set_defect_entry_name(
             defect_entry, possible_defect_name, bulk_symm_ops=bulk_supercell_symm_ops
