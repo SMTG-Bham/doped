@@ -9,7 +9,6 @@ import warnings
 from typing import Optional, Union
 
 import numpy as np
-from nonrad import ccd
 from pymatgen.analysis.structure_matcher import ElementComparator, Structure, StructureMatcher
 from pymatgen.core.composition import Composition
 from pymatgen.core.sites import PeriodicSite
@@ -101,7 +100,9 @@ def orient_s2_like_s1(
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
     def _get_dQ(struct_a, struct_b):
         try:
-            return ccd.get_dQ(struct_a, struct_b)
+            return np.sqrt(
+                sum((a.distance(b) ** 2) * a.specie.atomic_mass for a, b in zip(struct_a, struct_b))
+            )
         except Exception:
             return "N/A"
 
