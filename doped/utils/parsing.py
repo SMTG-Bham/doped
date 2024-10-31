@@ -591,7 +591,6 @@ def find_nearest_coords(
 
     distance_matrix = lattice.get_all_distances(candidate_frac_coords, target_frac_coords).ravel()
     match = distance_matrix.argmin()
-    # TODO: Want to use this in stenciling?
 
     return candidate_frac_coords[match], match if return_idx else candidate_frac_coords[match]
 
@@ -625,6 +624,7 @@ def find_missing_idx(
     site_matches = distance_matrix.argmin(axis=0 if len(frac_coords1) > len(frac_coords2) else -1)
 
     # TODO: Trial linear assignment, or matching the other way, if we fail
+    # TODO: Use linear assignment in stenciling? (for choosing candidate sites) Once tests setup?
     # TODO: Depending on speed, could just go to linear assignment from the start. Either way can
     #  try successive stol increases
     if len(np.unique(site_matches)) != len(site_matches):
