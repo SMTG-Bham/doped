@@ -394,7 +394,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
     defect_supercell: Structure,
     defect_type: str,
     composition_diff: dict,
-    unique_site_dist_tolerance: float = 1.0,
 ):
     """
     Get the defect site and unrelaxed structure, where 'unrelaxed structure'
@@ -417,11 +416,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             The difference in composition between the bulk and defect structures,
             as a dictionary (typically returned from
             ``get_defect_type_and_composition_diff``).
-        unique_site_dist_tolerance (float):
-            A distance tolerance for determining unique site matching.
-            If the second closest site match is within
-            ``(original distance * unique_site_dist_tolerance)`` then
-            a runtime error will be thrown.
 
     Returns:
         bulk_site_idx:
@@ -447,7 +441,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
 
         if bulk_new_species_coords.size > 0:  # intrinsic substitution
             # find coords of new species in defect structure, taking into account periodic boundaries
-            defect_site_arg_idx = find_idx_of_nearest_coords(
+            defect_site_arg_idx = find_missing_idx(
                 bulk_new_species_coords,
                 defect_new_species_coords,
                 bulk_supercell.lattice,
@@ -459,7 +453,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             defect_site_arg_idx = 0
 
         # Get the coords and site index of the defect that was used in the calculation
-        defect_coords = defect_new_species_coords[defect_site_arg_idx]  # frac coords of defect site
         defect_site_idx = defect_new_species_idx[defect_site_arg_idx]
 
         # now find the closest old_species site in the bulk structure to the defect site
@@ -467,9 +460,9 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
             bulk_supercell, old_species
         )
-        bulk_site_arg_idx = find_idx_of_nearest_coords(  # TODO: SHould name change this function
+        bulk_site_arg_idx = find_missing_idx(
             bulk_old_species_coords,
-            defect_coords,
+            get_coords_and_idx_of_species(defect_supercell, old_species)[0],  # defect_old_species
             bulk_supercell.lattice,
             defect_type="substitution",
             searched_structure="bulk",
@@ -490,7 +483,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
         defect_old_species_coords, _idx = get_coords_and_idx_of_species(defect_supercell, old_species)
 
-        bulk_site_arg_idx = find_idx_of_nearest_coords(
+        bulk_site_arg_idx = find_missing_idx(
             bulk_old_species_coords,
             defect_old_species_coords,
             bulk_supercell.lattice,
@@ -516,7 +509,7 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         )
 
         if bulk_new_species_coords.size > 0:  # intrinsic interstitial
-            defect_site_arg_idx = find_idx_of_nearest_coords(
+            defect_site_arg_idx = find_missing_idx(
                 bulk_new_species_coords,
                 defect_new_species_coords,
                 bulk_supercell.lattice,
@@ -574,83 +567,99 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
     return np.array(coords), np.array(idx)
 
 
-def find_idx_of_nearest_coords(
-    bulk_coords: Union[list, np.ndarray],
-    target_coords: Union[list, np.ndarray],
-    bulk_lattice: Lattice,
-    defect_type: str = "substitution",
-    searched_structure: str = "bulk",
-    unique_site_dist_tolerance: float = 1.0,
-):
+def _site_matching_failure_error(defect_type, searched_structure):
+    raise RuntimeError(
+        f"Could not uniquely determine site of {defect_type} in {searched_structure} "
+        f"structure. Remember the bulk and defect supercells should have the same "
+        f"definitions/basis sets for site-matching (parsing) to be possible."
+    )
+
+
+def find_nearest_coords(
+    candidate_frac_coords: Union[list, np.ndarray],
+    target_frac_coords: Union[list, np.ndarray],
+    lattice: Lattice,
+    return_idx: bool = False,
+) -> Union[tuple[Union[list, np.ndarray], int], Union[list, np.ndarray]]:
     """
-    Find the nearest coords in ``bulk_coords`` to ``target_coords``, and return
-    the corresponding indices (from the ``bulk_coords`` array).
+    Find the nearest coords in ``candidate_frac_coords`` to
+    ``target_frac_coords``.
+
+    If ``return_idx`` is ``True``, also returns the index of the nearest
+    coords in ``candidate_frac_coords`` to ``target_frac_coords``.
 
     Args:
-        bulk_coords (Union[list, np.ndarray]):
-            Atomic coordinates from the bulk supercell, to find the nearest
-            coordinates to ``target_coords``.
-        target_coords (Union[list, np.ndarray]):
+        candidate_frac_coords (Union[list, np.ndarray]):
+            Fractional coordinates (typically from a bulk supercell), to find
+            the nearest coordinates to ``target_frac_coords``.
+        target_frac_coords (Union[list, np.ndarray]):
             The target coordinates to find the nearest coordinates to in
-            ``bulk_coords``.
-        bulk_lattice (Lattice):
-            The lattice of the bulk supercell.
+            ``candidate_frac_coords``.
+        lattice (Lattice):
+            The lattice object to use with the fractional coordinates.
+        return_idx (bool):
+            Whether to also return the index of the nearest coordinates in
+            ``candidate_frac_coords`` to ``target_frac_coords``.
+    """
+    if len(np.array(target_frac_coords).shape) > 1:
+        raise ValueError("`target_frac_coords` should be a 1D array of fractional coordinates!")
+
+    distance_matrix = lattice.get_all_distances(candidate_frac_coords, target_frac_coords).ravel()
+    match = distance_matrix.argmin()
+    # TODO: Want to use this in stenciling?
+
+    return candidate_frac_coords[match], match if return_idx else candidate_frac_coords[match]
+
+
+def find_missing_idx(
+    frac_coords1: Union[list, np.ndarray],
+    frac_coords2: Union[list, np.ndarray],
+    lattice: Lattice,
+    defect_type: str = "substitution",
+    searched_structure: str = "bulk",
+):
+    """
+    Find the missing/outlier index between two sets of fractional coordinates
+    (differing in size by 1), by grouping the coordinates based on the minimum
+    distances between coordinates or, if that doesn't give a unique match, the
+    site combination that gives the minimum summed squared distances between
+    paired sites.
+
+    The index returned is the index of the missing/outlier coordinate in
+    the larger set of coordinates.
+
+    Args:
+        frac_coords1 (Union[list, np.ndarray]):
+            First set of fractional coordinates.
+        frac_coords2 (Union[list, np.ndarray]):
+            Second set of fractional coordinates.
+        lattice (Lattice):
+            The lattice object to use with the fractional coordinates.
         defect_type (str):
             The type of defect (``substitution``, ``vacancy`` or ``interstitial``).
             Just used for error messages.
         searched_structure (str):
             The structure being searched (``bulk`` or ``defect``).
             Just used for error messages.
-        unique_site_dist_tolerance (float):
-            A distance tolerance for determining unique site matching.
-            If the second closest site match is within
-            ``(original distance * unique_site_dist_tolerance)`` then
-            a runtime error will be thrown.
     """
-    distance_matrix = bulk_lattice.get_all_distances(
-        bulk_coords,
-        target_coords,
-    )
+    distance_matrix = lattice.get_all_distances(frac_coords1, frac_coords2)
     if distance_matrix.shape[1] == 1:  # Check if it is (X, 1)
         distance_matrix = distance_matrix.ravel()
-    site_matches = distance_matrix.argmin(axis=0 if defect_type == "vacancy" else -1)
 
-    def _site_matching_failure_error(defect_type, searched_structure):
-        raise RuntimeError(
-            f"Could not uniquely determine site of {defect_type} in {searched_structure} "
-            f"structure. Remember the bulk and defect supercells should have the same "
-            f"definitions/basis sets for site-matching (parsing) to be possible."
-        )
+    # down columns if frac_coords1 is larger (MxN matrix, M>N, axis=0 -> down columns), else across rows
+    site_matches = distance_matrix.argmin(axis=0 if len(frac_coords1) > len(frac_coords2) else -1)
 
     if len(site_matches.shape) == 1:
+        # TODO: Trial linear assignment, or matching the other way, if we fail
+        # TODO: Depending on speed, could just go to linear assignment from the start. Either way can
+        #  try successive stol increases
         if len(np.unique(site_matches)) != len(site_matches):
             _site_matching_failure_error(defect_type, searched_structure)
 
         return next(
-            iter(
-                set(
-                    np.arange(
-                        max(np.array(bulk_coords).shape[0], np.array(target_coords).shape[0]), dtype=int
-                    )
-                )
-                - set(site_matches)
-            )
+            iter(set(np.arange(max(len(frac_coords1), len(frac_coords2)), dtype=int)) - set(site_matches))
         )
 
-    if len(site_matches.shape) == 0:
-        # if there are any other matches with a distance of orig distance times unique_site_dist_tolerance
-        # of the located site, then unique matching considered to have failed
-        if (
-            len(
-                distance_matrix[
-                    distance_matrix < distance_matrix[site_matches] * unique_site_dist_tolerance
-                ]
-            )
-            > 1
-        ):
-            _site_matching_failure_error(defect_type, searched_structure)
-
-        return site_matches
     return None
 
 
@@ -664,6 +673,11 @@ def _create_unrelaxed_defect_structure(
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
     supercell with the unrelaxed defect site.
+
+    The unrelaxed defect site corresponds to the vacancy/substitution site
+    in the pristine (bulk) supercell for vacancies/substitutions, and the
+    `final` relaxed interstitial site for interstitials (as the assignment
+    of their initial site is ambiguous).
 
     Args:
         bulk_supercell (Structure):
@@ -693,7 +707,9 @@ def _create_unrelaxed_defect_structure(
 
     if new_species is not None:  # not a vacancy
         # Place defect in same location as output from calculation
-        defect_site_idx = defect_site_idx if defect_site_idx else len(unrelaxed_defect_structure)
+        defect_site_idx = (
+            defect_site_idx if defect_site_idx is not None else len(unrelaxed_defect_structure)
+        )  # use "is not None" to allow 0 index
         unrelaxed_defect_structure.insert(defect_site_idx, new_species, defect_coords)
 
     return unrelaxed_defect_structure
@@ -801,18 +817,14 @@ def check_atom_mapping_far_from_defect(
 
     for site, dist_to_defect in zip(defect, dists_to_defect):
         if dist_to_defect > wigner_seitz_radius:
-            bulk_site_arg_idx = find_idx_of_nearest_coords(  # get closest site in bulk to defect site
+            bulk_frac_coords = find_nearest_coords(  # get closest site in bulk to defect site
                 bulk_species_outside_near_WS_coord_dict[site.specie.symbol],
                 site.frac_coords,
                 bulk.lattice,
-                defect_type="substitution",
-                searched_structure="bulk",
             )
             far_from_defect_disps[site.specie.symbol].append(
                 round(
-                    site.distance_and_image_from_frac_coords(
-                        bulk_species_outside_near_WS_coord_dict[site.specie.symbol][bulk_site_arg_idx]
-                    )[0],
+                    site.distance_and_image_from_frac_coords(bulk_frac_coords)[0],
                     2,
                 )
             )
