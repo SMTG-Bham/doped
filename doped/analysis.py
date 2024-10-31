@@ -48,8 +48,7 @@ from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
     defect_charge_from_vasprun,
     get_core_potentials_from_outcar,
-    get_defect_site_idxs_and_unrelaxed_structure,
-    get_defect_type_and_composition_diff,
+    get_defect_type_site_idxs_and_unrelaxed_structure,
     get_locpot,
     get_orientational_degeneracy,
     get_procar,
@@ -227,23 +226,13 @@ def defect_from_structures(
             Dictionary of bulk supercell Voronoi node information, for
             further expedited site-matching.
     """
-    try:
-        def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
-    except RuntimeError as exc:
-        raise ValueError(
-            "Could not identify defect type from number of sites in structure: "
-            f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
-        ) from exc
-
-    # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
-    try:
+    try:  # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
         (
+            defect_type,
             bulk_site_idx,
             defect_site_idx,
             unrelaxed_defect_structure,
-        ) = get_defect_site_idxs_and_unrelaxed_structure(
-            bulk_supercell, defect_supercell, def_type, comp_diff
-        )
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_supercell, defect_supercell)
 
     except RuntimeError as exc:
         check_atom_mapping_far_from_defect(
@@ -253,14 +242,14 @@ def defect_from_structures(
             coords_are_cartesian=True,
         )
         raise RuntimeError(
-            f"Could not identify {def_type} defect site in defect structure. Please check that your "
+            f"Could not identify {defect_type} defect site in defect structure. Please check that your "
             f"defect supercells are reasonable, and that they match the bulk supercell. If so, "
             f"and this error is not resolved, please report this issue to the developers."
         ) from exc
 
-    if def_type == "vacancy":
+    if defect_type == "vacancy":
         defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
-    elif def_type == "substitution":
+    elif defect_type == "substitution":
         defect_site = defect_supercell[defect_site_idx]
         site_in_bulk = bulk_supercell[bulk_site_idx]  # this is with orig (substituted) element
         defect_site_in_bulk = PeriodicSite(
@@ -272,7 +261,7 @@ def defect_from_structures(
     check_atom_mapping_far_from_defect(bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords)
 
     if unrelaxed_defect_structure:
-        if def_type == "interstitial":
+        if defect_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
             if not bulk_voronoi_node_dict:  # first time parsing
@@ -311,14 +300,14 @@ def defect_from_structures(
     for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
         # substitutions differs from defect_site)
         "@module": "doped.core",
-        "@class": def_type.capitalize(),
+        "@class": defect_type.capitalize(),
         "structure": bulk_supercell,
         "site": defect_site_in_bulk,
         "oxi_state": oxi_state,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be very tricky for this...
-    if def_type == "interstitial":
+    if defect_type == "interstitial":
         for_monty_defect["multiplicity"] = 1  # multiplicity needed for interstitial initialisation with
         # pymatgen-analysis-defects, so set to 1 here. Set later for interstitials during parsing anyway
         # (see below)

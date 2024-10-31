@@ -31,8 +31,8 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
     Vasprun,
-    get_defect_site_idxs_and_unrelaxed_structure,
     get_defect_type_and_composition_diff,
+    get_defect_type_site_idxs_and_unrelaxed_structure,
     get_orientational_degeneracy,
     get_outcar,
     get_procar,
@@ -2039,13 +2039,13 @@ class DopedParsingTestCase(unittest.TestCase):
         assert def_type == "interstitial"
         assert comp_diff == {"F": 1}
         (
+            def_type,
             bulk_site_idx,
             defect_site_idx,
             unrelaxed_defect_structure,
-        ) = get_defect_site_idxs_and_unrelaxed_structure(
-            bulk_sc_structure, initial_defect_structure, def_type, comp_diff
-        )
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_sc_structure, initial_defect_structure)
         assert bulk_site_idx is None
+        assert def_type == "interstitial"
         assert defect_site_idx == len(unrelaxed_defect_structure) - 1
 
         # assert auto-determined interstitial site is correct
@@ -2072,12 +2072,12 @@ class DopedParsingTestCase(unittest.TestCase):
         assert def_type == "substitution"
         assert comp_diff == {"Cd": -1, "U": 1}
         (
+            def_type,
             bulk_site_idx,
             defect_site_idx,
             unrelaxed_defect_structure,
-        ) = get_defect_site_idxs_and_unrelaxed_structure(
-            bulk_sc_structure, initial_defect_structure, def_type, comp_diff
-        )
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_sc_structure, initial_defect_structure)
+        assert def_type == "substitution"
         assert bulk_site_idx == 0
         assert defect_site_idx == 63  # last site in structure
 
