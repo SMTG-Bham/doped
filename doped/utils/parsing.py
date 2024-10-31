@@ -389,19 +389,18 @@ def get_defect_type_and_composition_diff(
     return defect_type, composition_diff
 
 
-def get_defect_site_idxs_and_unrelaxed_structure(
+def get_defect_type_site_idxs_and_unrelaxed_structure(
     bulk_supercell: Structure,
     defect_supercell: Structure,
-    defect_type: str,
-    composition_diff: dict,
 ):
     """
-    Get the defect site and unrelaxed structure, where 'unrelaxed structure'
-    corresponds to the pristine defect supercell structure for vacancies /
-    substitutions, and the pristine bulk structure with the `final` relaxed
+    Get the defect type, site (indices in the bulk and defect supercells) and
+    unrelaxed structure, where 'unrelaxed structure' corresponds to the
+    pristine defect supercell structure for vacancies / substitutions (with no
+    relaxation), and the pristine bulk structure with the `final` relaxed
     interstitial site for interstitials.
 
-    Initially contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
+    Initial draft contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
     refactored for extrinsic species and several code efficiency/robustness
     improvements.
 
@@ -410,14 +409,11 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             The bulk supercell structure.
         defect_supercell (Structure):
             The defect supercell structure.
-        defect_type (str):
-            The defect type (``interstitial``, ``vacancy`` or ``substitution``).
-        composition_diff (dict):
-            The difference in composition between the bulk and defect structures,
-            as a dictionary (typically returned from
-            ``get_defect_type_and_composition_diff``).
 
     Returns:
+        defect_type:
+            The type of defect as a string (``interstitial``, ``vacancy``
+            or ``substitution``).
         bulk_site_idx:
             Index of the site in the bulk structure that corresponds
             to the defect site in the defect structure
@@ -445,8 +441,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 bulk_new_species_coords,
                 defect_new_species_coords,
                 bulk_supercell.lattice,
-                defect_type="substitution",
-                searched_structure="defect",
             )
 
         else:  # extrinsic substitution
@@ -464,8 +458,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             bulk_old_species_coords,
             get_coords_and_idx_of_species(defect_supercell, old_species)[0],  # defect_old_species
             bulk_supercell.lattice,
-            defect_type="substitution",
-            searched_structure="bulk",
         )
         bulk_site_idx = bulk_old_species_idx[bulk_site_arg_idx]
         unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
@@ -487,8 +479,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
             bulk_old_species_coords,
             defect_old_species_coords,
             bulk_supercell.lattice,
-            defect_type="vacancy",
-            searched_structure="bulk",
         )
         bulk_site_idx = bulk_old_species_idx[bulk_site_arg_idx]
         defect_site_idx = None
@@ -513,8 +503,6 @@ def get_defect_site_idxs_and_unrelaxed_structure(
                 bulk_new_species_coords,
                 defect_new_species_coords,
                 bulk_supercell.lattice,
-                defect_type="interstitial",
-                searched_structure="defect",
             )
 
         else:  # extrinsic interstitial
@@ -539,10 +527,15 @@ def get_defect_site_idxs_and_unrelaxed_structure(
         "interstitial": process_interstitial,
     }
 
-    if defect_type not in handlers:
-        raise ValueError(f"Invalid defect type: {defect_type}")
+    try:
+        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
+    except RuntimeError as exc:
+        raise ValueError(
+            "Could not identify defect type from number of sites in structure: "
+            f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
+        ) from exc
 
-    return handlers[defect_type](bulk_supercell, defect_supercell, composition_diff)
+    return (defect_type, *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff))
 
 
 def _get_species_from_composition_diff(composition_diff, el_change):
@@ -565,14 +558,6 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
             idx.append(i)
 
     return np.array(coords), np.array(idx)
-
-
-def _site_matching_failure_error(defect_type, searched_structure):
-    raise RuntimeError(
-        f"Could not uniquely determine site of {defect_type} in {searched_structure} "
-        f"structure. Remember the bulk and defect supercells should have the same "
-        f"definitions/basis sets for site-matching (parsing) to be possible."
-    )
 
 
 def find_nearest_coords(
@@ -615,8 +600,6 @@ def find_missing_idx(
     frac_coords1: Union[list, np.ndarray],
     frac_coords2: Union[list, np.ndarray],
     lattice: Lattice,
-    defect_type: str = "substitution",
-    searched_structure: str = "bulk",
 ):
     """
     Find the missing/outlier index between two sets of fractional coordinates
@@ -635,32 +618,26 @@ def find_missing_idx(
             Second set of fractional coordinates.
         lattice (Lattice):
             The lattice object to use with the fractional coordinates.
-        defect_type (str):
-            The type of defect (``substitution``, ``vacancy`` or ``interstitial``).
-            Just used for error messages.
-        searched_structure (str):
-            The structure being searched (``bulk`` or ``defect``).
-            Just used for error messages.
     """
     distance_matrix = lattice.get_all_distances(frac_coords1, frac_coords2)
-    if distance_matrix.shape[1] == 1:  # Check if it is (X, 1)
-        distance_matrix = distance_matrix.ravel()
 
     # down columns if frac_coords1 is larger (MxN matrix, M>N, axis=0 -> down columns), else across rows
     site_matches = distance_matrix.argmin(axis=0 if len(frac_coords1) > len(frac_coords2) else -1)
 
-    if len(site_matches.shape) == 1:
-        # TODO: Trial linear assignment, or matching the other way, if we fail
-        # TODO: Depending on speed, could just go to linear assignment from the start. Either way can
-        #  try successive stol increases
-        if len(np.unique(site_matches)) != len(site_matches):
-            _site_matching_failure_error(defect_type, searched_structure)
-
-        return next(
-            iter(set(np.arange(max(len(frac_coords1), len(frac_coords2)), dtype=int)) - set(site_matches))
+    # TODO: Trial linear assignment, or matching the other way, if we fail
+    # TODO: Depending on speed, could just go to linear assignment from the start. Either way can
+    #  try successive stol increases
+    if len(np.unique(site_matches)) != len(site_matches):
+        searched_structure = "bulk" if len(frac_coords1) > len(frac_coords2) else "defect"
+        raise RuntimeError(
+            f"Could not uniquely determine defect site in the {searched_structure} supercell. "
+            f"Remember the bulk and defect supercells should have the same definitions/basis sets for "
+            f"site-matching (parsing) to be possible."
         )
 
-    return None
+    return next(
+        iter(set(np.arange(max(len(frac_coords1), len(frac_coords2)), dtype=int)) - set(site_matches))
+    )
 
 
 def _create_unrelaxed_defect_structure(
