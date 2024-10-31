@@ -15,6 +15,7 @@ from typing import Optional, Union
 import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
+from pymatgen.analysis.structure_matcher import LinearAssignment, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
@@ -454,10 +455,11 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
         bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
             bulk_supercell, old_species
         )
-        bulk_site_arg_idx = find_missing_idx(
+        _bulk_coords, bulk_site_arg_idx = find_nearest_coords(
             bulk_old_species_coords,
-            get_coords_and_idx_of_species(defect_supercell, old_species)[0],  # defect_old_species
+            defect_new_species_coords[defect_site_arg_idx],  # defect coords
             bulk_supercell.lattice,
+            return_idx=True,
         )
         bulk_site_idx = bulk_old_species_idx[bulk_site_arg_idx]
         unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
@@ -618,26 +620,19 @@ def find_missing_idx(
         lattice (Lattice):
             The lattice object to use with the fractional coordinates.
     """
-    distance_matrix = lattice.get_all_distances(frac_coords1, frac_coords2)
-
-    # down columns if frac_coords1 is larger (MxN matrix, M>N, axis=0 -> down columns), else across rows
-    site_matches = distance_matrix.argmin(axis=0 if len(frac_coords1) > len(frac_coords2) else -1)
-
-    # TODO: Trial linear assignment, or matching the other way, if we fail
-    # TODO: Use linear assignment in stenciling? (for choosing candidate sites) Once tests setup?
-    # TODO: Depending on speed, could just go to linear assignment from the start. Either way can
-    #  try successive stol increases
-    if len(np.unique(site_matches)) != len(site_matches):
-        searched_structure = "bulk" if len(frac_coords1) > len(frac_coords2) else "defect"
-        raise RuntimeError(
-            f"Could not uniquely determine defect site in the {searched_structure} supercell. "
-            f"Remember the bulk and defect supercells should have the same definitions/basis sets for "
-            f"site-matching (parsing) to be possible."
-        )
-
-    return next(
-        iter(set(np.arange(max(len(frac_coords1), len(frac_coords2)), dtype=int)) - set(site_matches))
+    subset, superset = (  # supa-set
+        (frac_coords1, frac_coords2)
+        if len(frac_coords1) < len(frac_coords2)
+        else (frac_coords2, frac_coords1)
     )
+    # in theory this could be made even faster using ``lll_frac_tol`` as in ``_cart_dists()`` in
+    # ``pymatgen``, with smart choice of initial ``lll_frac_tol`` and scanning upwards if the match is
+    # below the threshold tolerance (as in ``_scan_sm_stol_till_match()``), but in practice this
+    # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
+    _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
+    site_matches = LinearAssignment(d_2).solution
+
+    return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
 
 
 def _create_unrelaxed_defect_structure(
@@ -795,10 +790,15 @@ def check_atom_mapping_far_from_defect(
     for site, dist_to_defect in zip(defect, dists_to_defect):
         if dist_to_defect > wigner_seitz_radius:
             bulk_frac_coords = find_nearest_coords(  # get closest site in bulk to defect site
-                bulk_species_outside_near_WS_coord_dict[site.specie.symbol],
-                site.frac_coords,
-                bulk.lattice,
-            )
+                bulk_species_outside_near_WS_coord_dict.get(
+                    site.specie.symbol,
+                    [
+                        defect_frac_coords,
+                    ],
+                ),
+                site.frac_coords,  # if species not in bulk, should be an extrinsic
+                bulk.lattice,  # substitution/interstitial, so use defect coords (also likely means some
+            )  # issue in defect site parsing...
             far_from_defect_disps[site.specie.symbol].append(
                 round(
                     site.distance_and_image_from_frac_coords(bulk_frac_coords)[0],

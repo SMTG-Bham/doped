@@ -70,6 +70,9 @@ class DefectStencilingTest(unittest.TestCase):
         self.Se_old_new_names_dict = {"vac_1_Se": "v_Se", "Int_Se_1": "Se_i_C2"}
         self.tight_sm = StructureMatcher(stol=0.02, comparator=ElementComparator(), primitive_cell=False)
         # TODO: Do one of the Se extrinsic substitutions/interstitials as a test too
+        # TODO: Once tests setup, should look at using `LinearAssignment` in
+        #  `_stencil_target_cell_from_big_cell`; more efficient, robust, and then easier to manage with
+        #  consistency with other parts of the code
 
     def test_Se_20_Å_supercell(self):
         """
