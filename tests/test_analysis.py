@@ -193,8 +193,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 i in str(warn.message)
                 for i in [
                     "There are mismatching INCAR tags for (some of)",
-                    "in the format: (INCAR tag, value in bulk calculation, value in defect",
-                    "Int_Te_3_Unperturbed_1: [('ADDGRID', True, False)]",
+                    "in the format: 'Defects: (INCAR tag, value in bulk calculation, value in defect",
+                    "['Int_Te_3_Unperturbed_1']:\n[('ADDGRID', True, False)]",
                     "In general, the same INCAR settings should be used",
                 ]
             )
@@ -968,9 +968,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                "vac_O_0: [('LASPH', False, True)]",
-                "vac_O_1: [('LASPH', False, True)]",
-                "vac_O_2: [('LASPH', False, True)]",
+                "['vac_O_1', 'vac_O_0', 'vac_O_2']:\n[('LASPH', False, True)]",
             ]
         )
 
@@ -1149,13 +1147,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                "vac_1_Zn_0: [('NKRED', 2, 1)]",
-                "vac_1_Zn_-2: [('NKRED', 2, 1)]",
-                "vac_2_S_2: [('NKRED', 2, 1)]",
-                "inter_29_Al_3: [('NKRED', 2, 1)]",
-                "sub_1_Al_on_Zn_-1: [('NKRED', 2, 1)]",
+                ":\n[('NKRED', 2, 1)]\nIn",
             ]
         )
+        assert str(w[0].message).count(":\n[('NKRED', 2, 1)]\nIn") == 1  # only once
 
         assert len(dp.defect_dict) == 17
         self._check_DefectsParser(dp)

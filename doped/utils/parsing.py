@@ -802,21 +802,28 @@ def check_atom_mapping_far_from_defect(
         )[0]
     ]
 
-    bulk_species_outside_near_ws_coord_dict = {}
-    defect_species_outside_ws_coord_dict = {}
     for species in bulk_supercell.composition.elements:  # divide and vectorise calc for efficiency
-        bulk_species_outside_near_ws_coord_dict[species.name] = get_coords_and_idx_of_species(
+        bulk_species_outside_near_ws_coords = get_coords_and_idx_of_species(
             bulk_sites_outside_or_at_ws_radius, species.name
         )[0]
-        defect_species_outside_ws_coord_dict[species.name] = get_coords_and_idx_of_species(
+        defect_species_outside_ws_coords = get_coords_and_idx_of_species(
             defect_sites_outside_wigner_radius, species.name
         )[0]
-        vecs, d_2 = pbc_shortest_vectors(
-            bulk_supercell.lattice,
-            defect_species_outside_ws_coord_dict[species.name],
-            bulk_species_outside_near_ws_coord_dict[species.name],
-            return_d2=True,
+        if (
+            min(
+                len(bulk_species_outside_near_ws_coords),
+                len(defect_species_outside_ws_coords),
+            )
+            == 0
+        ):
+            continue  # if no sites of this species outside the WS radius, skip
+
+        subset, superset = (  # supa-set
+            (defect_species_outside_ws_coords, bulk_species_outside_near_ws_coords)
+            if len(defect_species_outside_ws_coords) < len(bulk_species_outside_near_ws_coords)
+            else (bulk_species_outside_near_ws_coords, defect_species_outside_ws_coords)
         )
+        vecs, d_2 = pbc_shortest_vectors(bulk_supercell.lattice, subset, superset, return_d2=True)
         site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
         matching_vecs = vecs[np.arange(len(site_matches)), site_matches]
         displacements = np.linalg.norm(matching_vecs, axis=1)
