@@ -552,10 +552,12 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
     Get arrays of the coordinates and indices of the given species in the
     structure.
     """
+    from doped.utils.efficiency import _parse_site_species_str
+
     coords = []
     idx = []
     for i, site in enumerate(structure):
-        if site.specie.symbol == species_name:
+        if _parse_site_species_str(site) == species_name:
             coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
 
@@ -630,7 +632,7 @@ def find_missing_idx(
     # below the threshold tolerance (as in ``_scan_sm_stol_till_match()``), but in practice this
     # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
-    site_matches = LinearAssignment(d_2).solution
+    site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
 
     return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
 
@@ -733,10 +735,11 @@ def get_wigner_seitz_radius(lattice: Union[Structure, Lattice]) -> float:
 
 
 def check_atom_mapping_far_from_defect(
-    bulk: Structure,
-    defect: Structure,
+    bulk_supercell: Structure,
+    defect_supercell: Structure,
     defect_coords: np.ndarray[float],
     coords_are_cartesian: bool = False,
+    displacement_tol: float = 0.5,
     warning: Union[bool, str] = "verbose",
 ) -> bool:
     """
@@ -744,16 +747,25 @@ def check_atom_mapping_far_from_defect(
     warn the user if they are large (often indicates a mismatch between the
     bulk and defect supercell definitions).
 
+    The threshold for identifying 'large' displacements is if the mean
+    displacement of any species is greater than ``displacement_tol`` Ångströms
+    for sites of that species outside the Wigner-Seitz radius of the defect in
+    the defect supercell. The Wigner-Seitz radius corresponds to the radius of
+    the largest sphere which can fit in the cell.
+
     Args:
-        bulk (Structure):
+        bulk_supercell (Structure):
             The bulk structure.
-        defect (Structure):
+        defect_supercell (Structure):
             The defect structure.
         defect_coords (np.ndarray[float]):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
             Whether the defect coordinates are in Cartesian or
             fractional coordinates. Default is ``False`` (fractional).
+        displacement_tol (float):
+            The tolerance for the displacement of atoms far from the
+            defect site, in Ångströms. Default is 0.5 Å.
         warning (bool, str):
             Whether to throw a warning if a mismatch is detected. If
             ``warning = "verbose"`` (default), the individual atomic
@@ -763,59 +775,67 @@ def check_atom_mapping_far_from_defect(
         bool:
             Returns ``False`` if a mismatch is detected, else ``True``.
     """
-    far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk}
-    wigner_seitz_radius = get_wigner_seitz_radius(bulk.lattice)
+    far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
+    wigner_seitz_radius = get_wigner_seitz_radius(bulk_supercell.lattice)
     defect_frac_coords = (
-        defect_coords if not coords_are_cartesian else bulk.lattice.get_fractional_coords(defect_coords)
+        defect_coords
+        if not coords_are_cartesian
+        else bulk_supercell.lattice.get_fractional_coords(defect_coords)
     )
 
-    bulk_sites_outside_or_at_wigner_radius = [  # vectorised for fast computation
-        bulk[i]
+    bulk_sites_outside_or_at_ws_radius = [  # vectorised for fast computation
+        bulk_supercell[i]
         for i in np.where(
-            bulk.lattice.get_all_distances(bulk.frac_coords, defect_frac_coords).ravel()
+            bulk_supercell.lattice.get_all_distances(
+                bulk_supercell.frac_coords, defect_frac_coords
+            ).ravel()
             > np.max((wigner_seitz_radius - 1, 1))
         )[0]
     ]
+    defect_sites_outside_wigner_radius = [  # vectorised for fast computation
+        defect_supercell[i]
+        for i in np.where(
+            defect_supercell.lattice.get_all_distances(
+                defect_supercell.frac_coords, defect_frac_coords
+            ).ravel()
+            > wigner_seitz_radius
+        )[0]
+    ]
 
-    bulk_species_outside_near_WS_coord_dict = {}
-    for species in bulk.composition.elements:
-        # divide and vectorise distance calc (in ``find_idx...``) for efficiency
-        bulk_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
-            bulk_sites_outside_or_at_wigner_radius, species.name
-        )  # frac_coords
-        bulk_species_outside_near_WS_coord_dict[species.name] = bulk_species_coords
-
-    dists_to_defect = defect.lattice.get_all_distances(defect.frac_coords, defect_frac_coords).ravel()
-
-    for site, dist_to_defect in zip(defect, dists_to_defect):
-        if dist_to_defect > wigner_seitz_radius:
-            bulk_frac_coords = find_nearest_coords(  # get closest site in bulk to defect site
-                bulk_species_outside_near_WS_coord_dict.get(
-                    site.specie.symbol,
-                    [
-                        defect_frac_coords,
-                    ],
-                ),
-                site.frac_coords,  # if species not in bulk, should be an extrinsic
-                bulk.lattice,  # substitution/interstitial, so use defect coords (also likely means some
-            )  # issue in defect site parsing...
-            far_from_defect_disps[site.specie.symbol].append(
-                round(
-                    site.distance_and_image_from_frac_coords(bulk_frac_coords)[0],
-                    2,
-                )
-            )
+    bulk_species_outside_near_ws_coord_dict = {}
+    defect_species_outside_ws_coord_dict = {}
+    for species in bulk_supercell.composition.elements:  # divide and vectorise calc for efficiency
+        bulk_species_outside_near_ws_coord_dict[species.name] = get_coords_and_idx_of_species(
+            bulk_sites_outside_or_at_ws_radius, species.name
+        )[0]
+        defect_species_outside_ws_coord_dict[species.name] = get_coords_and_idx_of_species(
+            defect_sites_outside_wigner_radius, species.name
+        )[0]
+        vecs, d_2 = pbc_shortest_vectors(
+            bulk_supercell.lattice,
+            defect_species_outside_ws_coord_dict[species.name],
+            bulk_species_outside_near_ws_coord_dict[species.name],
+            return_d2=True,
+        )
+        site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
+        matching_vecs = vecs[np.arange(len(site_matches)), site_matches]
+        displacements = np.linalg.norm(matching_vecs, axis=1)
+        far_from_defect_disps[species.name].extend(
+            np.round(displacements[displacements > displacement_tol], 2)
+        )
 
     if far_from_defect_large_disps := {
-        specie: list for specie, list in far_from_defect_disps.items() if list and np.mean(list) > 0.5
+        specie: list
+        for specie, list in far_from_defect_disps.items()
+        if list and np.mean(list) > displacement_tol
     }:
         message = (
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
-            f"displacements (>0.5 Å) in the defect supercell. This likely indicates a mismatch between "
-            f"the bulk and defect supercell definitions (see troubleshooting docs) or an unconverged "
-            f"supercell size, both of which could cause errors in parsing. The mean displacement of the "
-            f"following species, at sites far from the determined defect position, is >0.5 Å: "
-            f"{list(far_from_defect_large_disps.keys())}"
+            f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
+            f"mismatch between the bulk and defect supercell definitions (see troubleshooting docs) or an "
+            f"unconverged supercell size, both of which could cause errors in parsing. The mean "
+            f"displacement of the following species, at sites far from the determined defect position, "
+            f"is >{displacement_tol} Å: {list(far_from_defect_large_disps.keys())}"
         )
         if warning == "verbose":
             message += f", with displacements (Å): {far_from_defect_large_disps}"

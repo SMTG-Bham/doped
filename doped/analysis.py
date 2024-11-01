@@ -171,7 +171,8 @@ def defect_from_structures(
     defect_supercell: Structure,
     return_all_info: bool = False,
     bulk_voronoi_node_dict: Optional[dict] = None,
-    oxi_state: Optional[Union[int, float, str]] = None,
+    skip_atom_mapping_check: bool = False,
+    **kwargs,
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
@@ -198,9 +199,22 @@ def defect_from_structures(
         bulk_voronoi_node_dict (dict):
             Dictionary of bulk supercell Voronoi node information, for
             expedited site-matching. If None, will be re-calculated.
-        oxi_state (int, float, str):
-            Oxidation state of the defect site. If not provided, will be
-            automatically determined from the defect structure.
+        skip_atom_mapping_check (bool):
+            If ``True``, skips the atom mapping check which ensures that the
+            bulk and defect supercell lattice definitions are matched
+            (important for accurate defect site determination and charge
+            corrections). Can be used to speed up parsing when you are sure
+            the cell definitions match (e.g. both supercells were generated
+            with ``doped``). Default is ``False``.
+        **kwargs:
+            Keyword arguments to pass to ``Defect`` initialization, such
+            as ``oxi_state`` or ``multiplicity``. These are mainly intended
+            for use cases when fast site matching and ``Defect`` creation
+            are desired (e.g. when analysing MD trajectories of defects),
+            where providing these parameters can greatly speed up parsing.
+            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip
+            their auto-determination and accelerate parsing, if these
+            properties are not required.
 
     Returns:
         defect (Defect):
@@ -258,7 +272,10 @@ def defect_from_structures(
     else:
         defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
 
-    check_atom_mapping_far_from_defect(bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords)
+    if not skip_atom_mapping_check:
+        check_atom_mapping_far_from_defect(
+            bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords
+        )
 
     if unrelaxed_defect_structure:
         if defect_type == "interstitial":
@@ -303,7 +320,7 @@ def defect_from_structures(
         "@class": defect_type.capitalize(),
         "structure": bulk_supercell,
         "site": defect_site_in_bulk,
-        "oxi_state": oxi_state,
+        **kwargs,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be very tricky for this...
