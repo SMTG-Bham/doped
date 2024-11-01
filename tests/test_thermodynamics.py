@@ -21,6 +21,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import FermiDos
 
+from doped.analysis import guess_defect_position
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
 from doped.utils.parsing import _get_defect_supercell_bulk_site_coords, get_vasprun
@@ -411,6 +412,20 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Note that the raw (DFT) energy of the bulk supercell calculation" in str(warning.message)
             for warning in w
         )
+
+        # test defect position guessing:
+        print("Checking defect position guessing")
+        guessed_def_pos_deviations = [
+            entry.defect_supercell_site.distance_and_image_from_frac_coords(
+                entry.bulk_supercell.lattice.get_fractional_coords(
+                    guess_defect_position(entry.defect_supercell)
+                )
+            )[0]
+            for entry in defect_thermo.defect_entries.values()
+        ]
+        print(np.mean(guessed_def_pos_deviations))
+        first_entry = next(iter(defect_thermo.defect_entries.values()))
+        assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.2
 
     def _check_CdTe_example_dist_tol(self, defect_thermo, num_grouped_defects):
         print(f"Testing CdTe updated dist_tol: {defect_thermo.dist_tol}")
