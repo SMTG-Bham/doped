@@ -557,7 +557,7 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
     coords = []
     idx = []
     for i, site in enumerate(structure):
-        if _parse_site_species_str(site) == species_name:
+        if _parse_site_species_str(site, wout_charge=True) == species_name:
             coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
 

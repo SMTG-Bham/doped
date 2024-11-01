@@ -18,6 +18,7 @@ from filelock import FileLock
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
+from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Structure
@@ -26,14 +27,13 @@ from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
-from scipy.stats import zscore
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
-from doped.utils.efficiency import get_voronoi_nodes
+from doped.utils.efficiency import _parse_site_species_str, get_voronoi_nodes
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -347,58 +347,82 @@ def defect_from_structures(
 
 def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
     """
-    Given an input defect supercell, guess the position of the defect by
-    identifying outlier sites (in terms of minimum interatomic distances) and
-    return their mean position.
+    Guess the position (in Cartesian coordinates) of a defect in an input
+    defect supercell, without a bulk/reference supercell.
 
-    This is done by calculating the normalised z-scores (``scipy.stats.zscore``)
-    of the minimum interatomic distances for each site in the defect supercell
-    (separated by and normalised within each species), and taking sites with >50%
-    of the maximum z-score (i.e. deviation) as outliers, then returning the mean
-    of their cartesian coordinates (accounting for PBC).
-
-    These coordinates are unlikely to _directly_ match the defect position, but
-    should provide a good estimate in most cases.
+    This is achieved by computing cosine dissimilarities between site SOAP
+    vectors (and the mean SOAP vectors for each species) and then determining
+    the centre of mass of sites, weighted by the squared cosine dissimilarities.
+    For accurate defect site determination, the ``defect_from_structure``
+    function (or underlying code) is preferred. These coordinates are unlikely
+    to _directly_ match the defect position (especially in the presence of random
+    noise), but should provide a pretty good estimate in most cases. If the
+    defect is an extrinsic interstitial/substitution, then this will identify
+    the exact defect site.
 
     Args:
         defect_supercell (Structure):
             Defect supercell structure.
 
     Returns:
-        np.ndarray[float]: Guessed mean position of the defect.
+        np.ndarray[float]: Guessed position of the defect in **Cartesian** coordinates.
     """
-    element_idx_dict = {  # distance matrix broken down by species
-        element: [i for i, site in enumerate(defect_supercell) if site.specie.symbol == str(element)]
-        for element in defect_supercell.composition.elements
+
+    # Note from profiling: This function is pretty fast (e.g. ~25 s for ~1000 frames of a ~100-atom
+    # supercell on SK's 2021 MacBook Pro), but the main bottleneck is SOAP vector creation,
+    # if we ever needed to accelerate
+    def cos_dissimilarity(vec1, vec2):
+        return 1 - cosine_similarity(vec1, vec2)
+
+    # if there is only one site of a particular element in the defect supercell, then we guess it as the
+    # defect site (extrinsic substitution/interstitial):
+    i_elt_dict = {
+        i: _parse_site_species_str(site, wout_charge=True) for i, site in enumerate(defect_supercell.sites)
     }
-    zscores = np.zeros(len(defect_supercell))
+    for elt in defect_supercell.composition.elements:
+        if list(i_elt_dict.values()).count(elt.symbol) == 1:
+            return defect_supercell.sites[list(i_elt_dict.values()).index(elt.symbol)].coords
 
-    distance_matrix = defect_supercell.distance_matrix
-    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
-
-    for site_indices in element_idx_dict.values():
-        element_dist_matrix = distance_matrix[:, site_indices]  # (N_of_that_element, N_sites) matrix
-        min_interatomic_distances_per_atom = np.min(element_dist_matrix, axis=0)  # min along columns
-        zscores[site_indices] = zscore(min_interatomic_distances_per_atom)
-
-    abs_zscores = np.abs(zscores)
-    max_z = np.max(abs_zscores)
-    outliers = np.where(abs_zscores > 0.5 * max_z)  # all sites above 50% of max z (normalised deviation)
-
-    # get centre of mass of outliers:
-    # for this, we need to account for PBC, so take the first outlier, then for the rest, take the image
-    # which is closest to the first outlier, then use the Cartesian coordinates of this group to get CoM:
-    first_outlier = defect_supercell.sites[outliers[0][0]]
-    clustered_outlier_coords = [first_outlier.coords]
-    for outlier_idx in outliers[0][1:]:
-        image = first_outlier.distance_and_image(defect_supercell.sites[outlier_idx])[1]
-        clustered_outlier_coords.append(
-            defect_supercell.lattice.get_cartesian_coords(
-                defect_supercell.sites[outlier_idx].frac_coords + image
-            )
+    soap_vecs = [site_vec.vec for site_vec in get_site_vecs(defect_supercell)]
+    elt_mean_soap_vec_dict = {
+        elt.symbol: np.mean(
+            [soap_vec for i, soap_vec in enumerate(soap_vecs) if i_elt_dict[i] == elt.symbol],
+            axis=0,
         )
+        for elt in defect_supercell.composition.elements
+    }
+    cos_dissimilarities = [
+        cos_dissimilarity(soap_vecs[i], elt_mean_soap_vec_dict[i_elt]) for i, i_elt in i_elt_dict.items()
+    ]
 
-    return np.mean(clustered_outlier_coords, axis=0)
+    rel_cos_dissimilarities = np.zeros(len(defect_supercell))
+    for elt in elt_mean_soap_vec_dict:
+        indices = [i for i, i_elt in i_elt_dict.items() if i_elt == elt]
+        avg_cos_dissimilarity = np.mean([cos_dissimilarities[i] for i in indices])
+        rel_cos_dissimilarities[indices] = np.array(cos_dissimilarities)[indices] / avg_cos_dissimilarity
+
+    largest_outlier = defect_supercell.sites[
+        np.where(rel_cos_dissimilarities == np.max(rel_cos_dissimilarities))[0][0]
+    ]
+    cos_diss_frac_coords_dict = {np.max(rel_cos_dissimilarities): largest_outlier.frac_coords}
+    for i, site in enumerate(defect_supercell.sites):
+        if not np.all(site.frac_coords == largest_outlier.frac_coords):
+            image = largest_outlier.distance_and_image(site)[1]
+            cos_diss_frac_coords_dict[rel_cos_dissimilarities[i]] = site.frac_coords + image
+
+    cos_diss_coords_dict = dict(
+        zip(
+            cos_diss_frac_coords_dict.keys(),
+            defect_supercell.lattice.get_cartesian_coords(
+                np.array(list(cos_diss_frac_coords_dict.values()))
+            ),
+        )
+    )
+    return np.average(  # weighted centre of mass
+        np.array(list(cos_diss_coords_dict.values())),
+        axis=0,
+        weights=np.array(list(cos_diss_coords_dict.keys())) ** 2,
+    )
 
 
 def defect_name_from_structures(bulk_structure: Structure, defect_structure: Structure):
