@@ -1230,19 +1230,32 @@ class DefectsParser:
         # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
 
         mismatching_INCAR_warnings = [
-            (name, defect_entry.calculation_metadata.get("mismatching_INCAR_tags"))
+            (name, set(defect_entry.calculation_metadata.get("mismatching_INCAR_tags")))
             for name, defect_entry in self.defect_dict.items()
             if defect_entry.calculation_metadata.get("mismatching_INCAR_tags", True) is not True
         ]
         if mismatching_INCAR_warnings:
+            # group by the mismatching tags, so we can print them together:
+            mismatching_tags_name_list_dict = {
+                tuple(sorted(mismatching_set)): [
+                    name
+                    for name, other_mismatching_set in mismatching_INCAR_warnings
+                    if other_mismatching_set == mismatching_set
+                ]
+                for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
+            }
             joined_info_string = "\n".join(
-                [f"{name}: {mismatching}" for name, mismatching in mismatching_INCAR_warnings]
+                [
+                    f"{defect_list}:\n{list(mismatching)}"
+                    for mismatching, defect_list in mismatching_tags_name_list_dict.items()
+                ]
             )
             warnings.warn(
                 f"There are mismatching INCAR tags for (some of) your bulk and defect calculations which "
                 f"are likely to cause errors in the parsed results (energies). Found the following "
                 f"differences:\n"
-                f"(in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):"
+                f"(in the format: 'Defects: (INCAR tag, value in bulk calculation, value in defect "
+                f"calculation))':"
                 f"\n{joined_info_string}\n"
                 f"In general, the same INCAR settings should be used in all final calculations for these "
                 f"tags which can affect energies!"
