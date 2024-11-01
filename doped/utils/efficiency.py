@@ -5,6 +5,7 @@ functions/workflows/calculations in ``doped``.
 
 import itertools
 import operator
+import re
 from collections import defaultdict
 from collections.abc import Sequence
 from functools import lru_cache
@@ -13,8 +14,8 @@ from typing import Callable
 import numpy as np
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
 from pymatgen.analysis.structure_matcher import StructureMatcher
-from pymatgen.core.composition import Composition, Species
-from pymatgen.core.sites import PeriodicSite
+from pymatgen.core.composition import Composition, Element, Species
+from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Structure
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import Voronoi
@@ -120,6 +121,22 @@ def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
             for species, occu in site.species.items():
                 elem_map[species] += occu
     return Composition(elem_map)
+
+
+@lru_cache(maxsize=int(1e5))
+def _parse_site_species_str(site: Site, wout_charge: bool = False):
+    if isinstance(site._species, Element):
+        return site._species.symbol
+    if isinstance(site._species, str):
+        species_string = site._species
+    elif isinstance(site._species, (Composition, dict)):
+        species_string = str(next(iter(site._species)))
+    else:
+        raise ValueError(f"Unexpected species type: {type(site._species)}")
+
+    if wout_charge:  # remove all digits, + or - from species string
+        return re.sub(r"\d+|[\+\-]", "", species_string)
+    return species_string
 
 
 # similar for PeriodicSite:
