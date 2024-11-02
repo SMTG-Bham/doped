@@ -1083,7 +1083,9 @@ class DefectsParser:
 
         if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
             duplicate_entry_names_folders_string = "\n".join(
-                ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
+                "["
+                + ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
+                + "]"
                 for entries_list in energy_entries_dict.values()
                 if len(entries_list) > 1
             )
