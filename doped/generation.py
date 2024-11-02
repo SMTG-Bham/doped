@@ -502,7 +502,9 @@ def name_defect_entries(
         if len(matching_names) == 1:
             previous_entry = defect_naming_dict.pop(matching_names[0])
             prev_defect = (
-                previous_entry.defect if isinstance(previous_entry, DefectEntry) else previous_entry
+                previous_entry.defect
+                if isinstance(previous_entry, (DefectEntry, thermo.DefectEntry))
+                else previous_entry
             )
             previous_entry_full_name = get_defect_name_from_defect(prev_defect, element_list, symm_ops)
             previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
@@ -565,7 +567,11 @@ def name_defect_entries(
 
     defect_naming_dict: dict[str, DefectEntry] = {}
     for defect_entry in defect_entries:
-        defect = defect_entry.defect if isinstance(defect_entry, DefectEntry) else defect_entry
+        defect = (
+            defect_entry.defect
+            if isinstance(defect_entry, (DefectEntry, thermo.DefectEntry))
+            else defect_entry
+        )
         full_defect_name = get_defect_name_from_defect(defect, element_list, symm_ops)
         split_number = 1 if defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
@@ -2081,7 +2087,7 @@ class DefectsGenerator(MSONable):
         it doesn't already exist.
         """
         # check the input, must be a DefectEntry object, with same supercell and primitive structure
-        if not isinstance(value, DefectEntry):
+        if not isinstance(value, (DefectEntry, thermo.DefectEntry)):
             raise TypeError(f"Value must be a DefectEntry object, not {type(value).__name__}")
 
         defect_struc_wout_oxi = value.defect.structure.copy()
@@ -2210,13 +2216,19 @@ def _get_element_list(defect: Union[Defect, DefectEntry, dict, list]) -> list[st
         )
         return element_list
 
-    if isinstance(defect, (Defect, DefectEntry)):
-        return _get_single_defect_element_list(defect if isinstance(defect, Defect) else defect.defect)
+    if isinstance(defect, (Defect, DefectEntry, core.Defect, thermo.DefectEntry)):
+        return _get_single_defect_element_list(
+            defect if isinstance(defect, (Defect, core.Defect)) else defect.defect
+        )
 
     # else is dict/list
     defect_list = defect if isinstance(defect, list) else list(defect.values())
     defect_list = [
-        entry_or_defect.defect if isinstance(entry_or_defect, DefectEntry) else entry_or_defect
+        (
+            entry_or_defect.defect
+            if isinstance(entry_or_defect, (DefectEntry, thermo.DefectEntry))
+            else entry_or_defect
+        )
         for entry_or_defect in defect_list
     ]
     host_element_list = [el.symbol for el in next(iter(defect_list)).structure.composition.elements]

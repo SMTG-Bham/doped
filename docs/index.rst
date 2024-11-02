@@ -92,7 +92,7 @@ Studies using ``doped``, so far
 
 - S\. R. Kavanagh et al. **Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-91h02>`__ 2024
 - X\. Wang et al. **Sulfur vacancies limit the open-circuit voltage of Sb₂S₃ solar cells** `arXiv <https://doi.org/10.48550/arXiv.2410.10560>`_ 2024
-- A\. Zhang et al. **Optimizing the n-type carrier concentration of an InVO4 photocatalyst by codoping with donors and intrinsic defects** `Physical Review Applied <https://doi.org/10.1103/PhysRevApplied.22.044047>`__ 2024
+- A\. Zhang et al. **Optimizing the n-type carrier concentration of an InVO₄ photocatalyst by codoping with donors and intrinsic defects** `Physical Review Applied <https://doi.org/10.1103/PhysRevApplied.22.044047>`__ 2024
 - M-L\. Wang et al. **Impact of sulfur doping on copper-substituted lead apatite** `Physical Review B <https://doi.org/10.1103/PhysRevB.110.104109>`__ 2024
 - S\. Quadir et al. **Low-Temperature Synthesis of Stable CaZn₂P₂ Zintl Phosphide Thin Films as Candidate Top Absorbers** `Advanced Energy Materials <https://doi.org/10.1002/aenm.202402640>`__ 2024
 - M\. Elgaml et al. **Controlling the Superconductivity of Nb₂Pd** :sub:`x` **S₅ via Reversible Li Intercalation** `Inorganic Chemistry <https://pubs.acs.org/doi/full/10.1021/acs.inorgchem.3c03524>`__ 2024
