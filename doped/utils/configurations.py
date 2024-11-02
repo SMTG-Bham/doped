@@ -205,7 +205,8 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
     Returns:
         float:
             Minimum ``stol`` value for a match between ``struct1``
-            and ``struct2``.
+            and ``struct2``. If a direct match is detected (corresponding
+            to min ``stol`` = 0, then ``1e-4`` is returned).
     """
     s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1)
     s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2)
@@ -218,7 +219,37 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
         }.values()
     )
 
-    return get_dist_equiv_stol(min_min_dist_change, struct1)
+    return max(get_dist_equiv_stol(min_min_dist_change, struct1), 1e-4)
+
+
+def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Structure):
+    """
+    Convenience method to get the root-mean-square displacement _and atomic
+    displacements_ between two structures, normalized by the free length per
+    atom ((Vol/Nsites)^(1/3)).
+
+    These values are not directly returned by ``StructureMatcher``
+    methods. This function replicates ``StructureMatcher.get_rms_dist()``,
+    but changes the returned value from ``match[0], max(match[1])`` to
+    ``match[0], match[1]`` to allow further analysis of displacements.
+    Mainly intended for use by ``ShakeNBreak``.
+
+    Args:
+        sm (StructureMatcher): ``pymatgen`` ``StructureMatcher`` object.
+        struct1 (Structure): Initial structure.
+        struct2 (Structure): Final structure.
+
+    Returns:
+        tuple:
+            - float: Normalised RMS displacements between the two structures.
+            - np.ndarray: Normalised displacements between the two structures.
+        or ``None`` if no match is found.
+    """
+    struct1, struct2 = sm._process_species([struct1, struct2])
+    struct1, struct2, fu, s1_supercell = sm._preprocess(struct1, struct2)
+    match = sm._match(struct1, struct2, fu, s1_supercell, use_rms=True, break_on_match=False)
+
+    return None if match is None else (match[0], match[1])
 
 
 def _scan_sm_stol_till_match(
@@ -279,6 +310,7 @@ def _scan_sm_stol_till_match(
     PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
     IStructure.__instances__ = {}
     IStructure.__eq__ = doped_IStructure.__eq__
+    StructureMatcher._get_atomic_disps = _sm_get_atomic_disps  # monkey-patch ``StructureMatcher`` for SnB
 
     if "comparator" not in sm_kwargs:
         sm_kwargs["comparator"] = ElementComparator()
