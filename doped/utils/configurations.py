@@ -258,12 +258,12 @@ def _scan_sm_stol_till_match(
             - "fit"
             - "fit_anonymous"
             etc.
-        max_stol (float): Maximum ``stol`` value to try. Default: 5.0.
         min_stol (float):
             Minimum ``stol`` value to try. Default is to use ``doped``\s
             ``get_min_stol_for_s1_s2()`` function to estimate the minimum
             ``stol`` necessary, and start with 2x this value to achieve
             fast structure-matching in most cases.
+        max_stol (float): Maximum ``stol`` value to try. Default: 5.0.
         stol_factor (float):
             Fractional increment to increase ``stol`` by each time (when a
             match is not found). Default value of 0.5 increases ``stol`` by

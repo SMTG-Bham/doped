@@ -38,7 +38,7 @@ def _composition__hash__(self):
 
 
 @lru_cache(maxsize=int(1e8))
-def doped_Comp_eq_func(self_hash, other_hash):
+def doped_Composition_eq_func(self_hash, other_hash):
     """
     Update equality function for ``Composition`` instances, which breaks early
     for mismatches and also uses caching, making orders of magnitude faster
@@ -47,17 +47,15 @@ def doped_Comp_eq_func(self_hash, other_hash):
     self_comp = Composition.__instances__[self_hash]
     other_comp = Composition.__instances__[other_hash]
 
-    return fast_Comp_eq(self_comp, other_comp)
+    return fast_Composition_eq(self_comp, other_comp)
 
 
-def fast_Comp_eq(self, other):
+def fast_Composition_eq(self, other):
     """
     Fast equality function for ``Composition`` instances, breaking early for
     mismatches.
     """
-    if not isinstance(other, type(self) | dict):
-        return NotImplemented
-
+    # skip matching object type check here, as already checked upstream in ``_Composition__eq__``
     if len(self) != len(other):
         return False
 
@@ -68,7 +66,7 @@ def fast_Comp_eq(self, other):
     return True
 
 
-def _Comp__eq__(self, other):
+def _Composition__eq__(self, other):
     """
     Custom ``__eq__`` method for ``Composition`` instances, using a cached
     equality function to speed up comparisons.
@@ -83,11 +81,11 @@ def _Comp__eq__(self, other):
     Composition.__instances__[self_hash] = self  # Ensure instances are stored for caching
     Composition.__instances__[other_hash] = other
 
-    return doped_Comp_eq_func(self_hash, other_hash)
+    return doped_Composition_eq_func(self_hash, other_hash)
 
 
 Composition.__instances__ = {}
-Composition.__eq__ = _Comp__eq__
+Composition.__eq__ = _Composition__eq__
 Composition.__hash__ = _composition__hash__
 
 
@@ -101,7 +99,7 @@ class Hashabledict(dict):
 
 
 @lru_cache(maxsize=int(1e5))
-def _cached_Comp_init(comp_dict):
+def _cached_Composition_init(comp_dict):
     return Composition(comp_dict)
 
 
@@ -145,6 +143,11 @@ def cache_ready_PeriodicSite__eq__(self, other):
     Custom ``__eq__`` method for ``PeriodicSite`` instances, using a cached
     equality function to speed up comparisons.
     """
+    needed_attrs = ("_species", "coords", "properties")
+
+    if not all(hasattr(other, attr) for attr in needed_attrs):
+        return NotImplemented
+
     return (
         self._species == other._species  # should always work fine (and is faster) if Site initialised
         # without ``skip_checks`` (default)
@@ -198,17 +201,12 @@ Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shall
 IStructure.__hash__ = _structure__hash__
 
 
-def doped_Struct__eq__(self, other: IStructure) -> bool:
+def doped_Structure__eq__(self, other: IStructure) -> bool:
     """
     Copied from ``pymatgen``, but updated to break early once a mis-matching
     site is found, to speed up structure matching by ~2x.
     """
-    needed_attrs = ("lattice", "sites", "properties")
-
-    # Return NotImplemented as in https://docs.python.org/3/library/functools.html#functools.total_ordering
-    if not all(hasattr(other, attr) for attr in needed_attrs):
-        return NotImplemented
-
+    # skip matching object type check here, as already checked upstream in ``_Structure__eq__``
     if other is self:
         return True
     if len(self) != len(other):
@@ -224,31 +222,36 @@ def doped_Struct__eq__(self, other: IStructure) -> bool:
 
 
 @lru_cache(maxsize=int(1e4))
-def cached_Struct_eq_func(self_hash, other_hash):
+def cached_Structure_eq_func(self_hash, other_hash):
     """
     Cached equality function for ``Composition`` instances.
     """
-    return doped_Struct__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
+    return doped_Structure__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
 
 
-def _Struct__eq__(self, other):
+def _Structure__eq__(self, other):
     """
     Custom ``__eq__`` method for ``Structure``/``IStructure`` instances, using
     both caching and an updated, faster equality function to speed up
     comparisons.
     """
+    needed_attrs = ("lattice", "sites", "properties")
+
+    if not all(hasattr(other, attr) for attr in needed_attrs):
+        return NotImplemented
+
     self_hash = _structure__hash__(self)
     other_hash = _structure__hash__(other)
 
     IStructure.__instances__[self_hash] = self  # Ensure instances are stored for caching
     IStructure.__instances__[other_hash] = other
 
-    return cached_Struct_eq_func(self_hash, other_hash)
+    return cached_Structure_eq_func(self_hash, other_hash)
 
 
 IStructure.__instances__ = {}
-IStructure.__eq__ = _Struct__eq__
-Structure.__eq__ = _Struct__eq__
+IStructure.__eq__ = _Structure__eq__
+Structure.__eq__ = _Structure__eq__
 
 
 class DopedTopographyAnalyzer:
