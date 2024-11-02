@@ -19,8 +19,8 @@ from doped.core import DefectEntry
 from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import (
     Hashabledict,
-    _cached_Comp_init,
-    _Comp__eq__,
+    _cached_Composition_init,
+    _Composition__eq__,
     _fast_get_composition_from_sites,
 )
 from doped.utils.parsing import (
@@ -489,8 +489,10 @@ def _stencil_target_cell_from_big_cell(
 
             if idx_combos and idx_combos != [()]:
                 for idx_combo in idx_combos:
-                    if _Comp__eq__(
-                        _cached_Comp_init(Hashabledict(Counter([species_symbols[i] for i in idx_combo]))),
+                    if _Composition__eq__(
+                        _cached_Composition_init(
+                            Hashabledict(Counter([species_symbols[i] for i in idx_combo]))
+                        ),
                         combo_composition,
                     ):
                         # could early break cases where the distances are too small? if a bottleneck,
