@@ -4,13 +4,14 @@ diagrams, for potential energy surfaces (PESs), Nudged Elastic Band (NEB), non-
 radiative recombination calculations etc.
 """
 
+import contextlib
 import os
 import warnings
 from typing import Optional, Union
 
 import numpy as np
 from pymatgen.analysis.structure_matcher import ElementComparator, Structure, StructureMatcher
-from pymatgen.core.composition import Composition
+from pymatgen.core.composition import Composition, Element, Species
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import IStructure
 from pymatgen.util.typing import PathLike
@@ -158,20 +159,35 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     return dist / (structure.volume / len(structure)) ** (1 / 3)
 
 
-def _get_element_min_max_bond_length_dict(structure: Structure):
-    """
+def _get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> dict:
+    r"""
     Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
     given ``Structure``, where ``min_bond_length`` and ``max_bond_length`` are
     the minimum and maximum bond lengths for each element in the structure.
 
     Args:
         structure (Structure): Structure to calculate bond lengths for.
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``.
+            Just used to check if ``comparator`` has been set here (if
+            ``ElementComparator`` used, then we use ``Element``\s rather
+            than ``Species`` as the keys).
 
     Returns:
         dict: Dictionary of ``{element: (min_bond_length, max_bond_length)}``.
     """
+
+    def _get_symbol(element: Union[Element, Species]):
+        if isinstance(sm_kwargs.get("comparator"), (ElementComparator, type(None))) and isinstance(
+            element, Species
+        ):
+            return element.element.symbol
+        return str(element)
+
     element_idx_dict = {  # distance matrix broken down by species
-        element: [i for i, site in enumerate(structure) if site.specie.symbol == str(element)]
+        _get_symbol(element): [
+            i for i, site in enumerate(structure) if _get_symbol(site.specie) == _get_symbol(element)
+        ]
         for element in structure.composition.elements
     }
 
@@ -201,6 +217,8 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
         struct2 (Structure): Final structure.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
+            Just used to check if ``ignored_species`` or ``comparator`` has
+            been set here.
 
     Returns:
         float:
@@ -208,16 +226,27 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
             and ``struct2``. If a direct match is detected (corresponding
             to min ``stol`` = 0, then ``1e-4`` is returned).
     """
-    s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1)
-    s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2)
+    s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1, **sm_kwargs)
+    s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2, **sm_kwargs)
     common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
-    min_min_dist_change = max(
-        {
-            elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
-            for elt in common_elts
-            if elt.symbol not in sm_kwargs.get("ignored_species", [])
-        }.values()
-    )
+    if not common_elts:  # try without oxidation states
+        struct1_wout_oxi = struct1.copy()
+        struct2_wout_oxi = struct2.copy()
+        struct1_wout_oxi.remove_oxidation_states()
+        struct2_wout_oxi.remove_oxidation_states()
+        s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1_wout_oxi, **sm_kwargs)
+        s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2_wout_oxi, **sm_kwargs)
+        common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
+
+    min_min_dist_change = 1e-4
+    with contextlib.suppress(Exception):
+        min_min_dist_change = max(
+            {
+                elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
+                for elt in common_elts
+                if elt not in sm_kwargs.get("ignored_species", [])
+            }.values()
+        )
 
     return max(get_dist_equiv_stol(min_min_dist_change, struct1), 1e-4)
 
@@ -275,7 +304,8 @@ def _scan_sm_stol_till_match(
 
     Note that ``ElementComparator()`` is used by default here! (So sites
     with different species but the same element (e.g. "S2-" & "S0+") will
-    be considered match-able).
+    be considered match-able). This can be controlled with
+    ``sm_kwargs['comparator']``.
 
     Args:
         struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
@@ -327,12 +357,12 @@ def _scan_sm_stol_till_match(
         if user_stol := sm_kwargs.pop("stol", False):  # first run, try using user-provided stol first:
             sm_full_user_custom = StructureMatcher(primitive_cell=False, stol=user_stol, **sm_kwargs)
             result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
-            if result:
+            if result is not None:
                 return result
 
         sm = StructureMatcher(primitive_cell=False, stol=stol, **sm_kwargs)
         result = getattr(sm, func_name)(struct1, struct2)
-        if result:
+        if result is not None:
             return result
 
         stol *= 1 + stol_factor

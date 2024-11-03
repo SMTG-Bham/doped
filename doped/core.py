@@ -14,7 +14,7 @@ import numpy as np
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.defects import core, thermo, utils
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, SpeciesComparator, StructureMatcher
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.structure import IStructure, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
@@ -1416,14 +1416,15 @@ def _guess_and_set_struct_oxi_states(structure):
         oxi_dec_structure.add_oxidation_state_by_element({str(structure.composition.elements[0]): 0})
         return oxi_dec_structure
 
-    bv_analyzer = BVAnalyzer()
-    with contextlib.suppress(ValueError):
-        # ValueError raised if oxi states can't be assigned
-        oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
-        if all(
-            np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species
-        ):
-            return oxi_dec_structure
+    for symm_tol in [0.1, 0]:  # default, then with no symmetry
+        with contextlib.suppress(ValueError):
+            bv_analyzer = BVAnalyzer(symm_tol=symm_tol)
+            # ValueError raised if oxi states can't be assigned
+            oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
+            if all(
+                np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species
+            ):
+                return oxi_dec_structure
 
     return False  # if oxi states could not be guessed
 
@@ -1755,7 +1756,12 @@ class Defect(core.Defect):
         self.oxi_state = self._guess_oxi_state()
 
     @classmethod
-    def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
+    def _from_pmg_defect(
+        cls,
+        defect: core.Defect,
+        bulk_oxi_states: Union[Structure, Composition, dict, bool] = False,
+        **doped_kwargs,
+    ) -> "Defect":
         """
         Create a ``doped`` ``Defect`` from a ``pymatgen`` ``Defect`` object.
 
@@ -1763,12 +1769,25 @@ class Defect(core.Defect):
             defect:
                 ``pymatgen`` ``Defect`` object.
             bulk_oxi_states:
-                Either a dict of bulk oxidation states to use, or a boolean. If True,
-                re-guesses the oxidation state of the defect (ignoring the ``pymatgen``
-                ``Defect``  ``oxi_state`` attribute), otherwise uses the already-set
-                ``oxi_state`` (default = 0). Used in doped defect generation to make
-                defect setup more robust and efficient (particularly for odd input
-                structures, such as defect supercells etc).
+                Controls oxi-state guessing (later used for charge state guessing).
+                By default, oxidation states are taken from ``doped_kwargs['oxi_state']``
+                if set, otherwise from ``bulk_oxi_states`` which can be either a
+                ``pymatgen`` ``Structure`` or ``Composition`` object, or a dict (of
+                ``{element: oxi_state}``), or otherwise guessed using the ``doped`` methods.
+                If ``bulk_oxi_states`` is ``False``, then just uses the already-set
+                ``Defect`` ``oxi_state`` attribute (default = 0), with no more guessing.
+                If ``True``, re-guesses the oxidation state of the defect (ignoring the
+                ``pymatgen`` ``Defect``  ``oxi_state`` attribute).
+
+                If the structure is mixed-valence, then ``bulk_oxi_states`` should be
+                either a structure input or ``True`` (to re-guess).
+
+                Default behaviour in ``doped`` generation is to provide ``bulk_oxi_states``
+                as an oxi-state decorated ``Structure``, to make defect setup more
+                robust and efficient (particularly for odd input structures, such as
+                defect supercells etc). Oxidation states are removed from structures in
+                the ``pymatgen`` defect generation functions, so this allows us to re-add
+                them after.
             **doped_kwargs:
                 Additional keyword arguments to define doped-specific attributes
                 (see class docstring).
@@ -1788,15 +1807,92 @@ class Defect(core.Defect):
             ):
                 doped_kwargs[doped_attr] = getattr(defect, doped_attr)
 
-        if isinstance(bulk_oxi_states, dict):
-            # set oxidation states, as these are removed in ``pymatgen`` defect generation
+        oxi_state = None
+        if doped_kwargs.get("oxi_state", False):
+            oxi_state = doped_kwargs.pop("oxi_state")
+
+        if oxi_state is None and isinstance(bulk_oxi_states, Structure):
+            # if input structure was oxi-state-decorated, use these oxi states for defect generation:
+            if not all(
+                hasattr(site.specie, "oxi_state") and isinstance(site.specie.oxi_state, (int, float))
+                for site in bulk_oxi_states.sites
+            ):
+                warnings.warn(
+                    "Input structure for ``bulk_oxi_states`` is not oxi-state decorated. "
+                    "Setting ``bulk_oxi_states`` to ``True`` (i.e. re-guess oxi-states)."
+                )
+                bulk_oxi_states = True
+
+            else:
+                single_valence_oxi_states = {
+                    el.symbol: el.oxi_state for el in bulk_oxi_states.composition.elements
+                }
+                if len(single_valence_oxi_states) == len(bulk_oxi_states.composition.elements):
+                    bulk_oxi_states = single_valence_oxi_states
+
+                else:  # otherwise it's mixed-valence! need to add oxi-states to structure
+                    # first, if structures without oxi-states exactly match, then just use
+                    # ``bulk_oxi_states`` structure:
+                    defect_struct_wout_oxi = defect.structure.copy()
+                    defect_struct_wout_oxi.remove_oxidation_states()
+                    input_struct_wout_oxi = bulk_oxi_states.copy()
+                    input_struct_wout_oxi.remove_oxidation_states()
+                    if defect_struct_wout_oxi == input_struct_wout_oxi:
+                        defect.structure = bulk_oxi_states
+
+                    else:
+                        from doped.utils.configurations import _scan_sm_stol_till_match
+
+                        mapping_to_defect = _scan_sm_stol_till_match(
+                            defect.structure,
+                            bulk_oxi_states,
+                            func_name="get_mapping",
+                            comparator=SpeciesComparator(),
+                        )
+                        if mapping_to_defect is None:
+                            raise ValueError(
+                                "Could not find a match between the defect and bulk oxi-state decorated "
+                                "structure (in `bulk_oxi_states`). Please ensure the defect and bulk "
+                                "structures are the same, or provide the bulk oxi-state decorated "
+                                "structure directly."
+                            )
+
+                        site_oxi_states = np.zeros(len(defect.structure.sites))
+                        for defect_struct_idx, oxi_dec_site in zip(
+                            mapping_to_defect, bulk_oxi_states.sites
+                        ):
+                            site_oxi_states[defect_struct_idx] = oxi_dec_site.specie.oxi_state
+                        defect.structure.add_oxidation_state_by_site(site_oxi_states)
+
+        if oxi_state is None and isinstance(bulk_oxi_states, Composition):
+            try:
+                bulk_oxi_states = {el.symbol: el.oxi_state for el in bulk_oxi_states.elements}
+            except Exception as exc:
+                warnings.warn(f"Could not extract oxidation states from Composition: {exc!r}")
+
+            if len(bulk_oxi_states) != len(defect.structure.composition.elements):
+                warnings.warn(
+                    f"A mixed-valence Composition object was supplied for bulk_oxi_states, "
+                    f"but only single-valence oxidation states can be extracted (use structure "
+                    f"input if mixed-valence is required). Using {bulk_oxi_states}."
+                )
+
+        if oxi_state is None and isinstance(bulk_oxi_states, dict):
+            req_elt_symbols = [elt.symbol for elt in defect.structure.composition.elements]
+            if not all(i in req_elt_symbols for i in bulk_oxi_states):
+                raise ValueError(
+                    f"Input bulk_oxi_states {bulk_oxi_states} do not match all the elements in the defect "
+                    f"structure {req_elt_symbols}."
+                )
             defect.structure.add_oxidation_state_by_element(bulk_oxi_states)
+
+        oxi_state = defect.oxi_state if oxi_state is None and not bulk_oxi_states else None
 
         return cls(
             structure=defect.structure,
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
-            oxi_state=None if bulk_oxi_states else defect.oxi_state,
+            oxi_state=oxi_state,  # if still None, then taken from structure or re-guessed
             equivalent_sites=(
                 [site.to_unit_cell() for site in defect.equivalent_sites]
                 if defect.equivalent_sites is not None
@@ -2158,7 +2254,9 @@ class Defect(core.Defect):
         return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
 
 
-def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
+def doped_defect_from_pmg_defect(
+    defect: core.Defect, bulk_oxi_states: Union[Structure, Composition, dict, bool] = False, **doped_kwargs
+):
     """
     Create the corresponding ``doped`` ``Defect`` (``Vacancy``,
     ``Interstitial``, ``Substitution``) from an input ``pymatgen`` ``Defect``
@@ -2168,12 +2266,25 @@ def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **d
         defect:
             ``pymatgen`` ``Defect`` object.
         bulk_oxi_states:
-            Either a dict of bulk oxidation states to use, or a boolean. If True,
-            re-guesses the oxidation state of the defect (ignoring the ``pymatgen``
-            ``Defect``  ``oxi_state`` attribute), otherwise uses the already-set
-            ``oxi_state`` (default = 0). Used in doped defect generation to make
-            defect setup more robust and efficient (particularly for odd input
-            structures, such as defect supercells etc).
+            Controls oxi-state guessing (later used for charge state guessing).
+            By default, oxidation states are taken from ``doped_kwargs['oxi_state']``
+            if set, otherwise from ``bulk_oxi_states`` which can be either a
+            ``pymatgen`` ``Structure`` or ``Composition`` object, or a dict (of
+            ``{element: oxi_state}``), or otherwise guessed using the ``doped`` methods.
+            If ``bulk_oxi_states`` is ``False``, then just uses the already-set
+            ``Defect`` ``oxi_state`` attribute (default = 0), with no more guessing.
+            If ``True``, re-guesses the oxidation state of the defect (ignoring the
+            ``pymatgen`` ``Defect``  ``oxi_state`` attribute).
+
+            If the structure is mixed-valence, then ``bulk_oxi_states`` should be
+            either a structure input or ``True`` (to re-guess).
+
+            Default behaviour in ``doped`` generation is to provide ``bulk_oxi_states``
+            as an oxi-state decorated ``Structure``, to make defect setup more
+            robust and efficient (particularly for odd input structures, such as
+            defect supercells etc). Oxidation states are removed from structures in
+            the ``pymatgen`` defect generation functions, so this allows us to re-add
+            them after.
         **doped_kwargs:
             Additional keyword arguments to define doped-specific attributes
             (see class docstring).

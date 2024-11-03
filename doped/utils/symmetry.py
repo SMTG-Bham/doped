@@ -728,10 +728,11 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
 
 def _struct_sort_func(struct: Union[Structure, np.ndarray]) -> tuple:
     """
-    Sort by the sum of the lattice matrix sorting function, then fractional
-    coordinates, then by the magnitudes of high-symmetry coordinates (x=y=z,
-    then 2 equal coordinates), then by the summed magnitude of all x
-    coordinates, then y coordinates, then z coordinates.
+    Sort by the lattice matrix sorting function, then by (minus) the number of
+    high-symmetry coordinates (x=y=z, then 2 equal coordinates), then by the
+    sum of all fractional coordinates, then by the magnitudes of high-symmetry
+    coordinates (x=y=z, then 2 equal coordinates), then by the summed magnitude
+    of all x coordinates, then y coordinates, then z coordinates.
 
     Args:
         struct:
@@ -751,27 +752,29 @@ def _struct_sort_func(struct: Union[Structure, np.ndarray]) -> tuple:
         frac_coords = struct
 
     # get summed magnitudes of x=y=z coords:
-    matching_coords = frac_coords[  # Find the coordinates where x = y = z:
+    xyz_matching_coords = frac_coords[  # Find the coordinates where x = y = z:
         (frac_coords[:, 0] == frac_coords[:, 1]) & (frac_coords[:, 1] == frac_coords[:, 2])
     ]
-    xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+    xyz_sum_magnitudes = np.sum(np.linalg.norm(xyz_matching_coords, axis=1))
 
     # get summed magnitudes of x=y / y=z / x=z coords:
-    matching_coords = frac_coords[
+    xy_matching_coords = frac_coords[
         (frac_coords[:, 0] == frac_coords[:, 1])
         | (frac_coords[:, 1] == frac_coords[:, 2])
         | (frac_coords[:, 0] == frac_coords[:, 2])
     ]
-    xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+    xy_sum_magnitudes = np.sum(np.linalg.norm(xy_matching_coords, axis=1))
 
     return (
         *lattice_metric,
-        np.sum(frac_coords),
-        xyz_sum_magnitudes,
-        xy_sum_magnitudes,
-        np.sum(frac_coords[:, 0]),
-        np.sum(frac_coords[:, 1]),
-        np.sum(frac_coords[:, 2]),
+        -len(xyz_matching_coords),
+        -len(xy_matching_coords),
+        round(np.sum(frac_coords), 2),
+        round(xyz_sum_magnitudes, 2),
+        round(xy_sum_magnitudes, 2),
+        round(np.sum(frac_coords[:, 0]), 2),
+        round(np.sum(frac_coords[:, 1]), 2),
+        round(np.sum(frac_coords[:, 2]), 2),
     )
 
 
@@ -819,43 +822,50 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
         num_negs,
         -num_equals,
         -num_abs_equals,
-        -c,
-        -b,
-        -a,
+        -round(c, 2),
+        -round(b, 2),
+        -round(a, 2),
     )
 
 
-def get_clean_structure(structure: Structure, return_T: bool = False, dist_precision: float = 0.001):
+def get_clean_structure(
+    structure: Structure, return_T: bool = False, dist_precision: float = 0.001, niggli_reduce: bool = True
+):
     """
     Get a 'clean' version of the input `structure` by searching over equivalent
-    Niggli reduced cells, and finding the most optimal according to
-    `_lattice_matrix_sort_func` (most symmetric, with mostly positive diagonals
-    and c >= b >= a).
+    cells, and finding the most optimal according to
+    ``_lattice_matrix_sort_func`` (most symmetric, with mostly positive
+    diagonals and c >= b >= a).
 
     Args:
         structure (Structure): Structure object.
         return_T (bool): Whether to return the transformation matrix.
             (Default = False)
-        dist_precision:
+        dist_precision (float):
             The desired distance precision in Å for rounding of lattice
             parameters and fractional coordinates. (Default: 0.001)
+        niggli_reduce (bool):
+            Whether to Niggli reduce the lattice before searching for the
+            optimal lattice matrix. If this is set to ``False``, we also
+            skip the search for the best positive determinant lattice matrix.
+            (Default: True)
     """
-    reduced_lattice = structure.lattice
-    if np.all(reduced_lattice.matrix <= 0):
-        reduced_lattice = Lattice(reduced_lattice.matrix * -1)
+    lattice = structure.lattice
+    if np.all(lattice.matrix <= 0):
+        lattice = Lattice(lattice.matrix * -1)
     possible_lattice_matrices = [
-        reduced_lattice.matrix,
+        lattice.matrix,
     ]
 
     for _ in range(4):
-        reduced_lattice = reduced_lattice.get_niggli_reduced_lattice()
+        lattice = lattice.get_niggli_reduced_lattice() if niggli_reduce else lattice
 
         # want to maximise the number of non-negative diagonals, and also have a positive determinant
         # can multiply two rows by -1 to get a positive determinant:
-        possible_lattice_matrices.append(reduced_lattice.matrix)
+        possible_lattice_matrices.append(lattice.matrix)
         for i in range(3):
             for j in range(i + 1, 3):
-                new_lattice_matrix = reduced_lattice.matrix.copy()
+                new_lattice_matrix = lattice.matrix.copy()
                 new_lattice_matrix[i] = new_lattice_matrix[i] * -1
                 new_lattice_matrix[j] = new_lattice_matrix[j] * -1
                 possible_lattice_matrices.append(new_lattice_matrix)
@@ -885,7 +895,8 @@ def get_clean_structure(structure: Structure, return_T: bool = False, dist_preci
             _frac_coords_sort_func(x.frac_coords),
         )
     )
-    new_structure = _get_best_pos_det_structure(new_structure)  # ensure positive determinant
+    if niggli_reduce:
+        new_structure = _get_best_pos_det_structure(new_structure)  # ensure positive determinant
 
     if return_T:
         transformation_matrix = np.dot(
@@ -992,8 +1003,8 @@ def get_primitive_structure(
 def get_spglib_conv_structure(sga):
     """
     Get a consistent/deterministic conventional structure from a
-    SpacegroupAnalyzer object. Also returns the corresponding
-    SpacegroupAnalyzer (for getting Wyckoff symbols corresponding to this
+    ``SpacegroupAnalyzer`` object. Also returns the corresponding
+    ``SpacegroupAnalyzer`` (for getting Wyckoff symbols corresponding to this
     conventional structure definition).
 
     For some materials (e.g. zinc blende), there are multiple equivalent
@@ -1074,21 +1085,14 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
             pbar.update(1 / 6 * 10)  # 45 up to 55% of progress bar in DefectsGenerator. This part can
             # take a little while for low-symmetry structures
 
-    if return_wyckoff_dict:
-        return (
-            Structure.from_sites(
-                [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
-            ),
-            lattice_vec_swap_array,
-            wyckoff_label_dict,
-        )
-
-    return (
-        Structure.from_sites(
-            [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
-        ),
-        lattice_vec_swap_array,
+    bcs_conv_structure = get_clean_structure(
+        swap_axes(conventional_structure, lattice_vec_swap_array), niggli_reduce=False
     )
+
+    if return_wyckoff_dict:
+        return bcs_conv_structure, lattice_vec_swap_array, wyckoff_label_dict
+
+    return bcs_conv_structure, lattice_vec_swap_array
 
 
 def get_conv_cell_site(defect_entry):
