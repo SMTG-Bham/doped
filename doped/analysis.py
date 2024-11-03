@@ -21,7 +21,7 @@ from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
@@ -816,14 +816,11 @@ class DefectsParser:
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
-        self._bulk_oxi_states: Union[dict, bool] = False
+        self._bulk_oxi_states: Union[Structure, Composition, dict, bool] = False
         if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
             self.bulk_vr.final_structure, break_early_if_expensive=True
         ):
-            self.bulk_vr.final_structure = bulk_struct_w_oxi
-            self._bulk_oxi_states = {
-                el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements  # type: ignore
-            }
+            self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once

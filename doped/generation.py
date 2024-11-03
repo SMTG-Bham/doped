@@ -1410,24 +1410,18 @@ class DefectsGenerator(MSONable):
                     f"to find an appropriate supercell - otherwise please report this to the developers!"
                 )
 
-            self._bulk_oxi_states: Union[bool, dict] = (
-                False  # to check if pymatgen can guess the bulk oxidation states
-            )
+            # get oxidation states:
+            self._bulk_oxi_states: Union[Structure, Composition, dict, bool] = False
             # if input structure was oxi-state-decorated, use these oxi states for defect generation:
             if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
                 isinstance(site.specie.oxi_state, (int, float)) for site in self.structure.sites
             ):
-                self._bulk_oxi_states = {
-                    el.symbol: el.oxi_state for el in self.structure.composition.elements
-                }
+                self._bulk_oxi_states = self.primitive_structure
 
             else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
                 pbar.set_description("Guessing oxidation states")
                 if prim_struct_w_oxi := guess_and_set_oxi_states_with_timeout(self.primitive_structure):
-                    self.primitive_structure = prim_struct_w_oxi
-                    self._bulk_oxi_states = {
-                        el.symbol: el.oxi_state for el in self.primitive_structure.composition.elements
-                    }
+                    self.primitive_structure = self._bulk_oxi_states = prim_struct_w_oxi
                 else:
                     warnings.warn(
                         "\nOxidation states could not be guessed for the input structure. This is "
@@ -1716,18 +1710,6 @@ class DefectsGenerator(MSONable):
                 self.defect_entries, element_list=self._element_list
             )
 
-            # remove oxidation states from structures (causes deprecation warnings and issues with
-            # comparison tests, also only added from oxi state guessing in defect generation so no extra
-            # info provided)
-            self.primitive_structure.remove_oxidation_states()
-
-            for defect_list in self.defects.values():
-                for defect_obj in defect_list:
-                    defect_obj.structure.remove_oxidation_states()
-
-            for defect_entry in self.defect_entries.values():
-                defect_entry.defect.structure.remove_oxidation_states()
-
             if not isinstance(pbar, MagicMock) and pbar.total - pbar.n > 0:
                 pbar.update(pbar.total - pbar.n)  # 100%
 
@@ -1898,12 +1880,10 @@ class DefectsGenerator(MSONable):
                 List of charge states to add to defect entry
                 (e.g. [-2, -3]), or a single charge state (e.g. -2).
         """
-        for (
-            _charge_states,
-            defect_entry_name_to_remove,
-        ) in self._process_name_and_charge_states_and_get_matching_entries(
-            defect_entry_name, charge_states
-        ):
+        charge_states, matching_entry_names = (
+            self._process_name_and_charge_states_and_get_matching_entries(defect_entry_name, charge_states)
+        )
+        for defect_entry_name_to_remove in matching_entry_names:
             del self.defect_entries[defect_entry_name_to_remove]
 
         # sort defects and defect entries for deterministic behaviour:
@@ -2090,14 +2070,17 @@ class DefectsGenerator(MSONable):
         if not isinstance(value, (DefectEntry, thermo.DefectEntry)):
             raise TypeError(f"Value must be a DefectEntry object, not {type(value).__name__}")
 
+        # compare structures without oxidation states:
         defect_struc_wout_oxi = value.defect.structure.copy()
         defect_struc_wout_oxi.remove_oxidation_states()
+        prim_struc_wout_oxi = self.primitive_structure.copy()
+        prim_struc_wout_oxi.remove_oxidation_states()
 
-        if defect_struc_wout_oxi != self.primitive_structure:
+        if defect_struc_wout_oxi != prim_struc_wout_oxi:
             raise ValueError(
                 f"Value must have the same primitive structure as the DefectsGenerator object, "
                 f"instead has: {value.defect.structure} while DefectsGenerator has: "
-                f"{self.primitive_structure}"
+                f"{prim_struc_wout_oxi}"
             )
 
         # check supercell
