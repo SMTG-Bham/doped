@@ -91,6 +91,7 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above
+- Quick run through tutorial notebooks to check code all updated and running.
 - Clean up repo, removing old unnecessary git blobs
 - Note in chempots tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
 - Add note to chempots tutorial that if your bulk phase is lower energy than its version on the MP (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.

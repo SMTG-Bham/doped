@@ -239,7 +239,11 @@ def get_sga(struct, symprec=0.01):
         if sga:
             return sga
 
-    raise SymmetryUndeterminedError("Could not determine symmetry of input structure!")  # well shiiii...
+    import spglib
+
+    raise SymmetryUndeterminedError(
+        f"Could not determine symmetry of input structure! Got spglib error: {spglib.get_error_message()}"
+    )  # well shiiii...
 
 
 def apply_symm_op_to_site(
