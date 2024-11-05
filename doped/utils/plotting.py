@@ -207,7 +207,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.imshow(
         [(0, 1), (0, 1)],
         cmap=plt.cm.Blues,
-        extent=(xlim[0], 0, ylim[0], ylim[1]),
+        extent=(xlim[0], 0, -50, 100),
         vmin=0,
         vmax=3,
         interpolation="bicubic",
@@ -219,7 +219,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.imshow(
         [(1, 0), (1, 0)],
         cmap=plt.cm.Oranges,
-        extent=(band_gap, xlim[1], ylim[0], ylim[1]),
+        extent=(band_gap, xlim[1], -50, 100),
         vmin=0,
         vmax=3,
         interpolation="bicubic",
