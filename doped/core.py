@@ -314,11 +314,14 @@ class DefectEntry(thermo.DefectEntry):
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions), in the
-                same xyz Cartesian basis as the supercell calculations. If None,
-                then the dielectric constant is taken from the ``defect_entry``
+                Total dielectric constance (ionic + static contributions), in the
+                same xyz Cartesian basis as the supercell calculations (likely but
+                not necessarily the same as the raw output of a VASP dielectric
+                calculation, if an oddly-defined primitive cell is used). If ``None``,
+                then the dielectric constant is taken from the ``DefectEntry``
                 ``calculation_metadata`` if available.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             defect_locpot:
                 Path to the output VASP ``LOCPOT`` file from the defect supercell
                 calculation, or the corresponding ``pymatgen`` ``Locpot``
@@ -460,11 +463,14 @@ class DefectEntry(thermo.DefectEntry):
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions), in the
-                same xyz Cartesian basis as the supercell calculations. If None,
-                then the dielectric constant is taken from the ``defect_entry``
+                Total dielectric constance (ionic + static contributions), in the
+                same xyz Cartesian basis as the supercell calculations (likely but
+                not necessarily the same as the raw output of a VASP dielectric
+                calculation, if an oddly-defined primitive cell is used). If ``None``,
+                then the dielectric constant is taken from the ``DefectEntry``
                 ``calculation_metadata`` if available.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far

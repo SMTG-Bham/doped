@@ -477,10 +477,14 @@ def defect_entry_from_paths(
         bulk_path (PathLike):
             Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Ionic + static contributions to the dielectric constant, in the same xyz
-            Cartesian basis as the supercell calculations. If not provided, charge
+            Total dielectric constance (ionic + static contributions), in the same xyz
+            Cartesian basis as the supercell calculations (likely but not necessarily
+            the same as the raw output of a VASP dielectric calculation, if an
+            oddly-defined primitive cell is used). If not provided, charge
             corrections cannot be computed and so ``skip_corrections`` will be set to
-            true.
+            ``True``.
+            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+            for information on calculating and converging the dielectric constant.
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
             from the defect calculation outputs.
@@ -588,10 +592,14 @@ class DefectsParser:
                 folders (likely the same ``output_path`` used with ``DefectsSet``
                 for file generation in ``doped.vasp``). Default = current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Ionic + static contributions to the dielectric constant, in the same
-                xyz Cartesian basis as the supercell calculations. If not provided,
-                charge corrections cannot be computed and so ``skip_corrections``
-                will be set to ``True``.
+                Total dielectric constance (ionic + static contributions), in the same
+                xyz Cartesian basis as the supercell calculations (likely but not
+                necessarily the same as the raw output of a VASP dielectric calculation,
+                if an oddly-defined primitive cell is used). If not provided, charge
+                corrections cannot be computed and so ``skip_corrections`` will be set
+                to ``True``.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             subfolder (PathLike):
                 Name of subfolder(s) within each defect calculation folder (in the
                 ``output_path`` directory) containing the VASP calculation files to
@@ -1711,9 +1719,14 @@ class DefectParser:
                 supercell calculation if already loaded (can be supplied to expedite
                 parsing). Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Ionic + static contributions to the dielectric constant. If not provided,
-                charge corrections cannot be computed and so ``skip_corrections`` will be
-                set to true.
+                Total dielectric constance (ionic + static contributions), in the same xyz
+                Cartesian basis as the supercell calculations (likely but not necessarily
+                the same as the raw output of a VASP dielectric calculation, if an
+                oddly-defined primitive cell is used). If not provided, charge
+                corrections cannot be computed and so ``skip_corrections`` will be set to
+                ``True``.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically determined
                 from defect calculation outputs, or if that fails, using the defect folder
