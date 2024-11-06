@@ -39,7 +39,6 @@
     with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
     and/or if it's known from other work for your chosen functional etc.)
   - Show our workflow for calculating interstitials (see docs Tips page, i.e. `vasp_gam` relaxations first (can point to defects tutorial for this)) -> Need to mention this in the defects tutorial, and point to discussion in Tips docs page.
-  - Add mini-example of calculating the dielectric constant (plus convergence testing with `vaspup2.0`) to docs/examples, and link this when `dielectric` used in parsing examples. Should also note that the dielectric should be in the same xyz Cartesian basis as the supercell calculations (likely but not necessarily the same as the raw output of a VASP dielectric calculation if an oddly-defined primitive cell is used)
   - `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`, possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
   - Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
   - Worth noting that for metals it may sometimes be preferable to use a larger cell with reduced kpoints, due to memory limitations.
@@ -51,8 +50,7 @@
   - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
     Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
     `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
-  - Add examples of extending analysis with `easyunfold` and `py-sc-fermi`, and get the lads to add
-    this to their docs as example use cases as well. Also include examples of extending to
+  - Add examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
   - Note about SOC for chemical potential calculations ([FERE paper](https://doi.org/10.1103/PhysRevB.
@@ -99,5 +97,5 @@
 - Quick-start tutorial suggested by Alex G
 - Test chempot grid plotting tool.
 - `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output)
-- Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise.
+- Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)(e.g. Wenzhen Si2Sb2Te6). Can see `get_chempots` in `pmg-analysis-defects` for inspo on this.
