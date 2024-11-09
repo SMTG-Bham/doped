@@ -843,7 +843,9 @@ def get_clean_structure(
 
     Args:
         structure (Structure): Structure object.
-        return_T (bool): Whether to return the transformation matrix.
+        return_T (bool):
+            Whether to return the transformation matrix from the original
+            structure lattice to the new structure lattice (T * Orig = New).
             (Default = False)
         dist_precision (float):
             The desired distance precision in Å for rounding of lattice
@@ -903,8 +905,9 @@ def get_clean_structure(
         new_structure = _get_best_pos_det_structure(new_structure)  # ensure positive determinant
 
     if return_T:
-        transformation_matrix = np.dot(
-            structure.lattice.matrix, np.linalg.inv(new_structure.lattice.matrix)
+        # T * Orig = New; T = New * Orig^-1; Orig = T^-1 * New
+        transformation_matrix = np.matmul(
+            new_structure.lattice.matrix, np.linalg.inv(structure.lattice.matrix)
         )
         if not np.allclose(transformation_matrix, np.rint(transformation_matrix), atol=1e-5):
             raise ValueError(

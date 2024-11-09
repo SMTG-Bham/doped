@@ -1379,8 +1379,8 @@ class DefectsGenerator(MSONable):
 
                 self.primitive_structure, self._T = symmetry.get_clean_structure(
                     self.primitive_structure, return_T=True
-                )  # T maps orig prim struct to new prim struct; T*orig = new -> orig = T^-1*new
-                # supercell matrix P was: P*orig = super -> P*T^-1*new = super -> P' = P*T^-1
+                )  # T maps orig prim struct to new prim struct; T * Orig = New -> Orig = T^-1 * New
+                # supercell matrix P was: P * Orig = Super -> P * T^-1 * New = Super -> P' = P * T^-1
 
                 self.supercell_matrix = np.matmul(self.supercell_matrix, np.linalg.inv(self._T))
 
