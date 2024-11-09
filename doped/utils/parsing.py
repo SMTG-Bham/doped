@@ -910,10 +910,11 @@ def get_site_mapping_indices(
             if coords in input_fcoords:
                 dists = dmat[input_fcoords.index(coords)]
                 current_dist = dists.min()
+                template_fcoord = template_fcoords[dists.argmin()]
+
                 if dists_only:
                     min_dist_with_index.append(current_dist)
                 else:
-                    template_fcoord = template_fcoords[dists.argmin()]
                     template_index = all_template_fcoords.index(template_fcoord)
                     min_dist_with_index.append(
                         [
@@ -922,6 +923,10 @@ def get_site_mapping_indices(
                             template_index,
                         ]
                     )
+
+                # drop template_fcoord from template_fcoords and dmat to avoid duplicates:
+                template_fcoords.pop(dists.argmin())
+                dmat = np.delete(dmat, dists.argmin(), axis=1)
 
                 if current_dist > threshold:
                     site_a = structure_a[index]
