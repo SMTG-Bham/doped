@@ -1391,24 +1391,6 @@ class DefectsGenerator(MSONable):
             self.primitive_structure = Structure.from_sites(
                 [site.to_unit_cell() for site in self.primitive_structure]
             )
-            self.bulk_supercell = symmetry._round_struct_coords(
-                (self.primitive_structure * self.supercell_matrix).get_sorted_structure(),
-                to_unit_cell=True,
-            )
-            if not generate_supercell:  # re-order bulk supercell to match that of input supercell
-                self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
-
-            self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
-
-            # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
-            if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
-                raise ValueError(
-                    f"Error in supercell generation! Auto-generated supercell is less than chosen minimum "
-                    f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
-                    f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
-                    f"If you used force_cubic or force_diagonal, you may need to relax these constraints "
-                    f"to find an appropriate supercell - otherwise please report this to the developers!"
-                )
 
             # get oxidation states:
             self._bulk_oxi_states: Union[Structure, Composition, dict, bool] = False
@@ -1432,6 +1414,25 @@ class DefectsGenerator(MSONable):
                         "structure.add_oxidation_state_by_element()) and re-initialize "
                         "DefectsGenerator()."
                     )
+
+            self.bulk_supercell = symmetry._round_struct_coords(
+                (self.primitive_structure * self.supercell_matrix).get_sorted_structure(),
+                to_unit_cell=True,
+            )
+            if not generate_supercell:  # re-order bulk supercell to match that of input supercell
+                self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
+
+            self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
+
+            # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
+            if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
+                raise ValueError(
+                    f"Error in supercell generation! Auto-generated supercell is less than chosen minimum "
+                    f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
+                    f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
+                    f"If you used force_cubic or force_diagonal, you may need to relax these constraints "
+                    f"to find an appropriate supercell - otherwise please report this to the developers!"
+                )
 
             pbar.update(10)  # 15% of progress bar
 
