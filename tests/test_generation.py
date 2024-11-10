@@ -29,7 +29,7 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
-from doped.utils.supercells import get_min_image_distance
+from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
     get_BCS_conventional_structure,
     summed_rms_dist,
@@ -766,6 +766,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         self.cspbcl3_supercell = Structure.from_file(f"{self.data_dir}/CsPbCl3_supercell_POSCAR")
         self.se_supercell = Structure.from_file(f"{self.data_dir}/Se_supercell_POSCAR")
         self.sn5o6 = Structure.from_file(f"{self.data_dir}/Sn5O6_POSCAR")
+        self.navcdo4_supercell = Structure.from_file(f"{self.data_dir}/NaVCdO4_supercell_POSCAR")
 
     def _save_defect_gen_jsons(self, defect_gen, heavy=False):
         defect_gen.to_json()  # test default
@@ -1793,7 +1794,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             CdTe_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords,
-            [-2.4527445, 4.0879075, 4.0879075],
+            [5.7230775, 2.4527475, 13.8989025],
             atol=1e-2,
         )
 
@@ -3576,3 +3577,19 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
             "guess_defect_charge_states() got an unexpected keyword argument 'unrecognised_kwarg'"
             in str(exc.value)
         )
+
+    def test_no_gen_supercell_reorientation_Cmcm(self):
+        """
+        Test inputting a Cmcm supercell with ``generate_supercell=False``.
+
+        Previously had a minor issue where this could give an output
+        bulk supercell with overlapping sites (due to a reordering of the
+        transformation matrices). Now fixed, and also safeguarded in
+        ``get_site_mapping_indices`` to prevent duplicate site matches.
+        """
+        defect_gen, output = self._generate_and_test_no_warnings(
+            self.navcdo4_supercell, interstitial_gen_kwargs=False, generate_supercell=False
+        )
+        self._general_defect_gen_check(defect_gen)
+        assert min_dist(defect_gen.bulk_supercell) > 1
+        assert np.isclose(min_dist(defect_gen.bulk_supercell), min_dist(self.navcdo4_supercell), atol=1e-3)
