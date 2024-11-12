@@ -158,6 +158,8 @@ class DefectEntry(thermo.DefectEntry):
         """
         Post-initialization method, using super() and self.defect.
         """
+        if self.sc_entry is None and not self.entry_id:
+            self.entry_id = "N/A"  # otherwise crashes unnecessarily with pymatgen defects
         super().__post_init__()
         if not self.name:
             # try get using doped functions:
