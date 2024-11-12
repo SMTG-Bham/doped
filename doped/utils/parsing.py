@@ -855,11 +855,16 @@ def check_atom_mapping_far_from_defect(
 
 
 def get_site_mapping_indices(
-    structure_a: Structure, structure_b: Structure, threshold: float = 2.0, dists_only: bool = False
+    struct1: Structure,
+    struct2: Structure,
+    species=None,
+    allow_duplicates: bool = False,
+    threshold: float = 2.0,
+    dists_only: bool = False,
 ):
     """
-    Get the site mapping indices between two structures, based on the
-    fractional coordinates of the sites.
+    Get the site mapping indices between two structures (from ``struct1`` to
+    ``struct2``), based on the fractional coordinates of the sites.
 
     The template structure may have a different species ordering to the
     ``input_structure``.
@@ -874,48 +879,71 @@ def get_site_mapping_indices(
     possible mismatch).
 
     Args:
-        structure_a (Structure):
+        struct1 (Structure):
             The input structure.
-        structure_b (Structure):
+        struct2 (Structure):
             The template structure.
+        species (str):
+            If provided, only sites of this species will be considered
+            when matching sites. Default is ``None`` (all species).
+        allow_duplicates (bool):
+            If ``True``, allow multiple sites in ``struct1`` to be matched
+            to the same site in ``struct2``. Default is ``False``.
         threshold (float):
             If the distance between a pair of matched sites is larger than this,
             then a warning will be thrown. Default is 2.0 Å.
         dists_only (bool):
             Whether to return only the distances between matched sites, rather
-            than a list of lists containing the distance, index in structure_a
-            and index in structure_b. Default is False.
+            than a list of lists containing the distance, index in struct1
+            and index in struct2. Default is False.
 
     Returns:
         list:
-            A list of lists containing the distance, index in structure_a and
-            index in structure_b for each matched site. If ``dists_only`` is
+            A list of lists containing the distance, index in struct1 and
+            index in struct2 for each matched site. If ``dists_only`` is
             ``True``, then only the distances between matched sites are returned.
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
-    all_input_fcoords = [list(site.frac_coords) for site in structure_a]
-    all_template_fcoords = [list(site.frac_coords) for site in structure_b]
+    all_input_fcoords = [list(site.frac_coords) for site in struct1]
+    all_template_fcoords = [list(site.frac_coords) for site in struct2]
 
-    for species in structure_a.composition.elements:
+    for s1_species in struct1.composition.elements:
+        if species is not None and s1_species.symbol != species:
+            continue
         input_fcoords = [
-            list(site.frac_coords) for site in structure_a if site.specie.symbol == species.symbol
+            list(site.frac_coords) for site in struct1 if site.specie.symbol == s1_species.symbol
         ]
         template_fcoords = [
-            list(site.frac_coords) for site in structure_b if site.specie.symbol == species.symbol
+            list(site.frac_coords) for site in struct2 if site.specie.symbol == s1_species.symbol
         ]
 
-        dmat = structure_a.lattice.get_all_distances(input_fcoords, template_fcoords)
+        dmat = struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
         for index, coords in enumerate(all_input_fcoords):
             if coords in input_fcoords:
                 dists = dmat[input_fcoords.index(coords)]
-                current_dist = dists.min()
-                template_fcoord = template_fcoords[dists.argmin()]
+                if not dists.size:
+                    min_dist_with_index.append(None if dists_only else [None, index, None])
+                    continue
+
+                dists_argmin = dists.argmin()
+                current_dist = dists[dists_argmin]
+                template_fcoord = template_fcoords[dists_argmin]
+                template_index = None  # only compute if needed
+
+                if current_dist > threshold:
+                    template_index = all_template_fcoords.index(template_fcoord)
+                    site_a = struct1[index]
+                    site_b = struct2[template_index]
+                    warnings.warn(
+                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
+                        f"sites: {site_a} -> {site_b}."
+                    )
 
                 if dists_only:
                     min_dist_with_index.append(current_dist)
                 else:
-                    template_index = all_template_fcoords.index(template_fcoord)
+                    template_index = template_index or all_template_fcoords.index(template_fcoord)
                     min_dist_with_index.append(
                         [
                             current_dist,
@@ -924,17 +952,16 @@ def get_site_mapping_indices(
                         ]
                     )
 
-                # drop template_fcoord from template_fcoords and dmat to avoid duplicates:
-                template_fcoords.pop(dists.argmin())
-                dmat = np.delete(dmat, dists.argmin(), axis=1)
+                if not allow_duplicates:
+                    # drop template_fcoord from template_fcoords and dmat to avoid duplicates:
+                    template_fcoord = template_fcoords.pop(dists.argmin())
+                    dmat = np.delete(dmat, dists.argmin(), axis=1)
 
-                if current_dist > threshold:
-                    site_a = structure_a[index]
-                    site_b = structure_b[template_index]
-                    warnings.warn(
-                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
-                        f"sites: {site_a} -> {site_b}."
-                    )
+    if not min_dist_with_index:
+        raise RuntimeError(
+            f"No matching sites for species {species} found between the two structures!\n"
+            f"Struct1 composition: {struct1.composition}, Struct2 composition: {struct2.composition}"
+        )
 
     return min_dist_with_index
 
