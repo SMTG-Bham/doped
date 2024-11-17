@@ -2173,8 +2173,8 @@ class Defect(core.Defect):
         loose ``stol`` used in ``pymatgen-analysis-defects``) and
         much more efficient.
         """
-        if not isinstance(other, core.Defect):
-            raise TypeError("Can only compare ``Defect``\s with ``Defect``\s!")
+        if not isinstance(other, (self, core.Defect)):
+            raise TypeError("Can only compare `Defect`s with `Defect`s!")
 
         if self.defect_type != other.defect_type:
             return False
