@@ -1421,7 +1421,9 @@ def _guess_and_set_struct_oxi_states(structure):
     """
     if len(structure.composition.elements) == 1:
         oxi_dec_structure = structure.copy()  # don't modify original structure
-        oxi_dec_structure.add_oxidation_state_by_element({str(structure.composition.elements[0]): 0})
+        oxi_dec_structure.add_oxidation_state_by_element(
+            {next(iter(structure.composition.elements)).symbol: 0}
+        )
         return oxi_dec_structure
 
     for symm_tol in [0.1, 0]:  # default, then with no symmetry
