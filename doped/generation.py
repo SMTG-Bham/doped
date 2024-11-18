@@ -1388,6 +1388,7 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure = primitive_structure
                 self.supercell_matrix = supercell_matrix
 
+            self.supercell_matrix = np.rint(self.supercell_matrix).astype(int)  # round to nearest integer
             self.primitive_structure = Structure.from_sites(
                 [site.to_unit_cell() for site in self.primitive_structure]
             )
