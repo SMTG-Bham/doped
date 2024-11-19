@@ -1130,10 +1130,10 @@ class DefectsGenerator(MSONable):
         processes: Optional[int] = None,
     ):
         """
-        Generates doped DefectEntry objects for defects in the input host
-        structure. By default, generates all intrinsic defects, but extrinsic
-        defects (impurities) can also be created using the ``extrinsic``
-        argument.
+        Generates ``doped`` ``DefectEntry`` objects for defects in the input
+        host structure. By default, generates all intrinsic defects, but
+        extrinsic defects (impurities) can also be created using the
+        ``extrinsic`` argument.
 
         Interstitial sites are generated using Voronoi tessellation by default (found
         to be the most reliable), which can be controlled using the
