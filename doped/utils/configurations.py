@@ -184,6 +184,9 @@ def _get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> 
             return element.element.symbol
         return str(element)
 
+    if len(structure) == 1:
+        structure = structure * 2  # need at least two sites to calculate bond lengths
+
     element_idx_dict = {  # distance matrix broken down by species
         _get_symbol(element): [
             i for i, site in enumerate(structure) if _get_symbol(site.specie) == _get_symbol(element)
