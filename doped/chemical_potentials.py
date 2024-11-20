@@ -1231,9 +1231,6 @@ class CompetingPhases:
 
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
         self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
-        print([entry.name for entry in self.entries])
-        print([_entries_sort_func(x, bulk_composition=self.composition) for x in self.entries])
-        print(self.composition)
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
         if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetization info
