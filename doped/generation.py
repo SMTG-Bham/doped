@@ -1423,7 +1423,9 @@ class DefectsGenerator(MSONable):
             if not generate_supercell:  # re-order bulk supercell to match that of input supercell
                 self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
 
-            self.min_image_distance = supercells.get_min_image_distance(self.bulk_supercell)
+            # get and round (to avoid tiny mismatches, due to rounding in search functions,
+            # flagging issues) min image distance of supercell:
+            self.min_image_distance = np.round(supercells.get_min_image_distance(self.bulk_supercell), 3)
 
             # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
             if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
