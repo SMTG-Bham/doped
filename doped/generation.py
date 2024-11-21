@@ -3,6 +3,7 @@ Code to generate Defect objects and supercell structures for ab-initio
 calculations.
 """
 
+import contextlib
 import copy
 import logging
 import operator
@@ -28,7 +29,7 @@ from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core import IStructure, Structure
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite
+from pymatgen.core.structure import PeriodicNeighbor, PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
@@ -199,10 +200,15 @@ def closest_site_info(
     be at least 0.02 Å further away than the n-1th site.
     """
     if isinstance(defect_entry_or_defect, (DefectEntry, thermo.DefectEntry)):
-        defect = defect_entry_or_defect.defect
-        # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
-        defect_supercell_site = parsing._get_defect_supercell_site(defect_entry_or_defect)
-        defect_supercell = parsing._get_defect_supercell(defect_entry_or_defect)
+        site = None
+        with contextlib.suppress(Exception):
+            defect = defect_entry_or_defect.defect
+            site = defect.site
+            structure = defect.structure
+        if site is None:
+            # use defect_supercell_site if attribute exists, otherwise use sc_defect_frac_coords:
+            site = parsing._get_defect_supercell_site(defect_entry_or_defect)
+            structure = parsing._get_bulk_supercell(defect_entry_or_defect)
 
     elif isinstance(defect_entry_or_defect, (Defect, core.Defect)):
         if isinstance(defect_entry_or_defect, core.Defect):
@@ -210,20 +216,9 @@ def closest_site_info(
         else:
             defect = defect_entry_or_defect
 
-        req_sc_mat = np.eye(3) * np.ceil((5 * np.sqrt(n)) / min(defect.defect_structure.lattice.abc))
-        if np.all(req_sc_mat == np.eye(3)):  # just defect is fine
-            defect_supercell = defect.defect_structure
-            defect_supercell_site = defect.site
+        site = defect.site
+        structure = defect.structure
 
-        else:
-            (
-                defect_supercell,
-                defect_supercell_site,
-                _equivalent_supercell_sites,
-            ) = defect.get_supercell_structure(
-                sc_mat=req_sc_mat,
-                return_sites=True,
-            )
     else:
         raise TypeError(
             f"defect_entry_or_defect must be a DefectEntry or Defect object, not "
@@ -233,43 +228,68 @@ def closest_site_info(
     if element_list is None:
         element_list = _get_element_list(defect)
 
-    distance_matrix = defect_supercell.lattice.get_all_distances(
-        defect_supercell.frac_coords,
-        defect_supercell_site.frac_coords,
-    )
-    if distance_matrix.shape[1] == 1:  # Check if it is (X, 1)
-        distance_matrix = distance_matrix.ravel()
+    def _get_site_distances_and_symbols(
+        site: PeriodicSite,
+        structure: Structure,
+        n: int,
+        element_list: list[str],
+        dist_tol_prefactor: float = 3.0,
+    ):
+        """
+        Get a list of sorted tuples of (distance, element) for the closest
+        sites to the input site in the input structure, and the last used
+        ``dist_tol_prefactor``.
 
-    # ensure the defect site itself is excluded, and ignore sites further than 5*sqrt(n) Å away
-    possible_close_site_indices = np.where((distance_matrix > 0.05) & (distance_matrix < 5 * np.sqrt(n)))[
-        0
-    ]
+        Dynamically increases ``dist_tol_prefactor`` until at least one other
+        site is found within the distance tolerance. Function defined and used
+        here to allow dynamic upscaling of the distance tolerance for weird
+        structures (e.g. mp-674158, mp-1208561).
+        """
+        neighbours: list[PeriodicNeighbor] = []
+        while not neighbours:  # for efficiency, ignore sites further than dist_tol*sqrt(n) Å away:
+            neighbours_w_site_itself = structure.get_sites_in_sphere(
+                site.coords, dist_tol_prefactor * np.sqrt(n)
+            )  # exclude defect site itself:
+            neighbours = sorted(neighbours_w_site_itself, key=lambda x: x.nn_distance)[1:]
+            dist_tol_prefactor += 0.5  # increase the distance tolerance if no other sites are found
+            if dist_tol_prefactor > 40:
+                warnings.warn(
+                    "No other sites found within 40*sqrt(n) Å of the defect site, indicating a very "
+                    "weird structure..."
+                )
+                break
+        if not neighbours:
+            return [], dist_tol_prefactor
 
-    site_distances = sorted(  # Could make this faster using caching if it was becoming a bottleneck
-        [
-            (
-                distance_matrix[i],
-                defect_supercell.sites[i].specie.symbol,
-            )
-            for i in possible_close_site_indices
-        ],
-        key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
-    )
+        site_distances = sorted(  # Could make this faster using caching if it was becoming a bottleneck
+            [
+                (
+                    neigh.nn_distance,
+                    neigh.specie.symbol,
+                )
+                for neigh in neighbours
+            ],
+            key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
+        )
+        return [  # prune site_distances to remove any with distances within 0.02 Å of the previous n:
+            site_distances[i]
+            for i in range(len(site_distances))
+            if i == 0
+            or abs(site_distances[i][0] - site_distances[i - 1][0]) > 0.02
+            or site_distances[i][1] != site_distances[i - 1][1]
+        ], dist_tol_prefactor
 
-    # prune site_distances to remove any tuples with distances within 0.02 Å of the previous entry:
-    site_distances = [
-        site_distances[i]
-        for i in range(len(site_distances))
-        if i == 0
-        or abs(site_distances[i][0] - site_distances[i - 1][0]) > 0.02
-        or site_distances[i][1] != site_distances[i - 1][1]
-    ]
+    site_distances, dist_tol_prefactor = _get_site_distances_and_symbols(site, structure, n, element_list)
+    while len(site_distances) < n:
+        if dist_tol_prefactor > 40:
+            return ""  # already warned
 
-    if site_distances:
-        min_distance, closest_site = site_distances[n - 1]
-        return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
+        site_distances, dist_tol_prefactor = _get_site_distances_and_symbols(
+            site, structure, n, element_list, dist_tol_prefactor + 2
+        )
 
-    return ""  # hypothetical case of very weird structure with no sites within 5*sqrt(n) Å...
+    min_distance, closest_site = site_distances[n - 1]
+    return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
 
 
 def get_defect_name_from_defect(
@@ -2497,12 +2517,21 @@ def get_Voronoi_interstitial_sites(
             f"only the following keys are supported: {supported_interstitial_gen_kwargs}"
         )
     top = DopedTopographyAnalyzer(host_structure)
+    if not top.vnodes:
+        warnings.warn("No interstitial sites found in host structure!")
+        return []
+
     sites_list = [v.frac_coords for v in top.vnodes]
-    sites_list = remove_collisions(
-        sites_list, structure=host_structure, min_dist=interstitial_gen_kwargs.get("min_dist", 0.9)
-    )
+    min_dist = interstitial_gen_kwargs.get("min_dist", 0.9)
+    sites_array = remove_collisions(sites_list, structure=host_structure, min_dist=min_dist)
+    if sites_array.size == 0:
+        warnings.warn(
+            f"No interstitial sites found after removing those within {min_dist} Å of host atoms!"
+        )
+        return []
+
     site_frac_coords_array: np.array = _doped_cluster_frac_coords(
-        sites_list,
+        sites_array,
         host_structure,
         tol=interstitial_gen_kwargs.get("clustering_tol", 0.55),
         symmetry_preference=interstitial_gen_kwargs.get("symmetry_preference", 0.1),

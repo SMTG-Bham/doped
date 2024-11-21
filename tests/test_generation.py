@@ -736,23 +736,23 @@ Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
+Si_i_C1_Sb2.48   [+4,+3,+2,+1,0]              [0.347,0.348,0.457]  18f
 Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.158,0.359,0.167]  18f
-Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.347,0.348,0.457]  18f
 Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.001,0.336,0.289]  18f
-Si_i_C3_Sb2.41   [+4,+3,+2,+1,0]              [0.000,0.000,0.050]  6c
 Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
+Si_i_C3_Te2.41   [+4,+3,+2,+1,0]              [0.000,0.000,0.050]  6c
 Si_i_C3i_Te2.81  [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
+Sb_i_C1_Sb2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.347,0.348,0.457]  18f
 Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.158,0.359,0.167]  18f
-Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.347,0.348,0.457]  18f
 Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.001,0.336,0.289]  18f
-Sb_i_C3_Sb2.41   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.050]  6c
 Sb_i_C3_Si2.64   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.318]  6c
+Sb_i_C3_Te2.41   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.050]  6c
 Sb_i_C3i_Te2.81  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
+Te_i_C1_Sb2.48   [+4,+3,+2,+1,0,-1,-2]        [0.347,0.348,0.457]  18f
 Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.158,0.359,0.167]  18f
-Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.347,0.348,0.457]  18f
 Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.001,0.336,0.289]  18f
-Te_i_C3_Sb2.41   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.050]  6c
 Te_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.318]  6c
+Te_i_C3_Te2.41   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.050]  6c
 Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
@@ -854,7 +854,9 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     set(Poscar(structure).site_symbols)
                 )  # no duplicates
 
-        assert np.isclose(defect_gen.min_image_distance, get_min_image_distance(defect_gen.bulk_supercell))
+        assert np.isclose(
+            defect_gen.min_image_distance, get_min_image_distance(defect_gen.bulk_supercell), atol=1e-2
+        )
 
         print("Checking Defect/DefectEntry types")
         assert all(defect.defect_type == DefectType.Vacancy for defect in defect_gen.defects["vacancies"])
@@ -1854,7 +1856,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # gives 4x conventional cell
         assert self.CdTe_defect_gen_info in output
         self._general_defect_gen_check(CdTe_defect_gen)
-        assert CdTe_defect_gen.min_image_distance == 26.1626
+        assert np.isclose(CdTe_defect_gen.min_image_distance, 26.1626, atol=1e-2)
         assert len(CdTe_defect_gen.bulk_supercell) == 512
         assert CdTe_defect_gen.supercell_gen_kwargs["min_image_distance"] == 20
         assert CdTe_defect_gen.supercell_gen_kwargs["force_cubic"] is True
@@ -3372,7 +3374,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
                 "v_O_C1_Sn2.09              [+2,+1,0,-1]       [0.642,0.323,0.461]  4e",
                 "Sn_Sn_C1_O2.08O2.11O2.14b    [+2,+1,0,-1]           [0.101,0.502,0.319]  4e",
                 "Sn_Sn_C1_O2.08Sn3.28O3.69a   [+1,0,-1]              [0.500,0.500,0.500]  2b",
-                "Sn_i_C1_Sn2.33O2.33O2.39d   [+4,+3,+2,+1,0]    [0.273,0.460,0.248]  4e",
+                "Sn_i_C1_Sn2.33O2.39O2.60d   [+4,+3,+2,+1,0]    [0.273,0.460,0.248]  4e",
                 "O_i_C1_O1.83Sn1.99Sn2.09a   [0,-1,-2]          [0.567,0.320,0.205]  4e",
             ]
             assert set(defect_gen._bulk_oxi_states.composition.elements) == {

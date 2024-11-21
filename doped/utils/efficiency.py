@@ -457,8 +457,12 @@ def _doped_cluster_frac_coords(
     Returns:
         np.typing.NDArray: Clustered fractional coordinates
     """
-    if len(fcoords) <= 1:
+    if len(fcoords) == 0:
         return None
+    if len(fcoords) == 1:
+        return symmetry._vectorized_custom_round(
+            np.mod(symmetry._vectorized_custom_round(fcoords, 5), 1), 4
+        )  # to unit cell
 
     lattice = structure.lattice
     sga = symmetry.get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
