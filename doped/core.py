@@ -1239,17 +1239,18 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.parsing import _get_bulk_supercell
 
         bulk_supercell = _get_bulk_supercell(self)
-        if bulk_supercell is not None:
-            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        else:
-            try:
-                defect_name = self.defect.name
+        try:
+            defect_name = self.defect.name
+            if bulk_supercell is not None:
+                formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            else:
                 formula = self.defect.structure.composition.get_reduced_formula_and_factor(
                     iupac_ordering=True
                 )[0]
-            except AttributeError:
-                defect_name = "unknown"
-                formula = "unknown"
+        except AttributeError:
+            defect_name = "unknown"
+            formula = "unknown"
+
         properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: {defect_name}. "

@@ -473,6 +473,28 @@ def _get_neutral_defect_entry(
     return neutral_defect_entry
 
 
+def _check_if_name_subset(long_name: str, poss_subset_name: str):
+    """
+    Check if the longer name is a superset of the shorter name, where
+    underscores are used as a name delimiter as in ``doped``.
+
+    Previously used ``startswith`` to compare, but caused issues
+    with e.g. ``v_Cl`` and ``v_C`` defects in the same material.
+    """
+    subset_num_underscores = poss_subset_name.count("_")
+    for i in range(subset_num_underscores + 1):
+        long_name_part = long_name.split("_")[i]
+        if "." in long_name_part and any(char.isdigit() for char in long_name_part):
+            # closest site info, use startswith for this as we no longer use delimiters
+            if not long_name_part.startswith(poss_subset_name.split("_")[i]):
+                return False
+
+        elif long_name_part != poss_subset_name.split("_")[i]:
+            return False
+
+    return True
+
+
 def name_defect_entries(
     defect_entries: list[Union[DefectEntry, Defect]],
     element_list: Optional[list[str]] = None,
@@ -499,7 +521,7 @@ def name_defect_entries(
         defect_entries (list): List of ``DefectEntry`` or ``Defect`` objects to name.
         element_list (list):
             Sorted list of elements in the host structure, so that
-            closest_site_info returns deterministic results (in case two
+            ``closest_site_info`` returns deterministic results (in case two
             different elements located at the same distance from defect site).
             Default is None.
         symm_ops (list):
@@ -516,7 +538,7 @@ def name_defect_entries(
         return full_defect_name.rsplit("_", split_number)[0]
 
     def get_matching_names(defect_naming_dict, defect_name):
-        return [name for name in defect_naming_dict if name.startswith(defect_name)]
+        return [name for name in defect_naming_dict if _check_if_name_subset(name, defect_name)]
 
     def handle_unique_match(defect_naming_dict, matching_names, split_number):
         if len(matching_names) == 1:
@@ -555,7 +577,7 @@ def name_defect_entries(
             except IndexError:
                 return handle_repeated_name(defect_naming_dict, full_defect_name)
 
-            if not any(name.startswith(full_defect_name) for name in defect_naming_dict):
+            if not any(_check_if_name_subset(name, full_defect_name) for name in defect_naming_dict):
                 return defect_naming_dict, full_defect_name
 
             if n == 3:  # if still not unique after 3rd nearest neighbour, just use alphabetical indexing
@@ -570,7 +592,9 @@ def name_defect_entries(
                 defect_naming_dict[f"{name}a"] = prev_defect_entry
                 defect_name = f"{full_defect_name}b"
                 break
-            if full_defect_name == name[:-1]:
+            if full_defect_name == name[:-1] and not Element("H").is_valid_symbol(name.split("_")[-1]):
+                # if name is a subset barring the last letter, and last underscore split is not an Element
+                # (i.e. ``v_Cl`` not being matched with ``v_C``)
                 last_letters = [name[-1] for name in defect_naming_dict if name[:-1] == full_defect_name]
                 last_letters.sort()
                 new_letter = chr(ord(last_letters[-1]) + 1)
@@ -595,14 +619,14 @@ def name_defect_entries(
         full_defect_name = get_defect_name_from_defect(defect, element_list, symm_ops)
         split_number = 1 if defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
-        if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
+        if not any(_check_if_name_subset(name, shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
             continue
 
         matching_shorter_names = get_matching_names(defect_naming_dict, shorter_defect_name)
         defect_naming_dict = handle_unique_match(defect_naming_dict, matching_shorter_names, split_number)
         shorter_defect_name = get_shorter_name(full_defect_name, split_number - 1)
-        if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
+        if not any(_check_if_name_subset(name, shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
             continue
 
@@ -611,7 +635,7 @@ def name_defect_entries(
             defect_naming_dict, matching_shorter_names, split_number - 1
         )
         shorter_defect_name = get_shorter_name(full_defect_name, split_number - 2)
-        if not any(name.startswith(shorter_defect_name) for name in defect_naming_dict):
+        if not any(_check_if_name_subset(name, shorter_defect_name) for name in defect_naming_dict):
             defect_naming_dict[shorter_defect_name] = defect_entry
             continue
 
@@ -1785,14 +1809,14 @@ class DefectsGenerator(MSONable):
                     charges = [
                         name.rsplit("_", 1)[1]
                         for name in self.defect_entries
-                        if name.startswith(f"{defect_name}_")
+                        if _check_if_name_subset(name, defect_name)
                     ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
                     # convert list of strings to one string with comma-separated charges
                     charges = "[" + ",".join(charges) + "]"
                     defect_entry = next(
                         entry
                         for name, entry in self.defect_entries.items()
-                        if name.startswith(defect_name)
+                        if _check_if_name_subset(name, defect_name)
                     )
                     frac_coords_string = (
                         "N/A"
@@ -1837,7 +1861,7 @@ class DefectsGenerator(MSONable):
             charge_states = [round(charge_states)]
 
         matching_entry_names_wout_charge = [
-            name for name in self.defect_entries if name.startswith(defect_entry_name)
+            name for name in self.defect_entries if _check_if_name_subset(name, defect_entry_name)
         ]
         if not match_charge_states:
             return charge_states, matching_entry_names_wout_charge
@@ -1877,7 +1901,7 @@ class DefectsGenerator(MSONable):
             previous_defect_entry = next(
                 entry
                 for name, entry in self.defect_entries.items()
-                if name.startswith(defect_entry_name_wout_charge)
+                if _check_if_name_subset(name, defect_entry_name_wout_charge)
             )
             for charge in charge_states:
                 defect_entry = copy.deepcopy(previous_defect_entry)
