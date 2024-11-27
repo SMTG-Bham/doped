@@ -129,7 +129,7 @@ def check_and_set_defect_entry_name(
     site in the bulk cell).
 
     Args:
-        defect_entry (DefectEntry): DefectEntry object.
+        defect_entry (DefectEntry): ``DefectEntry`` object.
         possible_defect_name (str):
             Possible defect name (usually the folder name) to check if
             recognised by ``doped``, otherwise defect name is re-determined.

@@ -1242,14 +1242,18 @@ class DefectEntry(thermo.DefectEntry):
         if bulk_supercell is not None:
             formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         else:
-            formula = self.defect.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
+            try:
+                defect_name = self.defect.name
+                formula = self.defect.structure.composition.get_reduced_formula_and_factor(
+                    iupac_ordering=True
+                )[0]
+            except AttributeError:
+                defect_name = "unknown"
+                formula = "unknown"
         properties, methods = _doped_obj_properties_methods(self)
         return (
-            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: "
-            f"{self.defect.name}. Available attributes:\n{properties}\n\n"
-            f"Available methods:\n{methods}"
+            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: {defect_name}. "
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
 
     def __eq__(self, other) -> bool:
