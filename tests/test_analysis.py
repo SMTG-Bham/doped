@@ -762,7 +762,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         # spot check:
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
 
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
@@ -776,7 +776,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # no warnings
         self._check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
-        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.02_-2"), -1.84684, atol=1e-3)
+        assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
 
         assert len(Sb2Se3_O_thermo.defect_entries) == 1  # only the one specified defect parsed
 
@@ -796,8 +796,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
         assert any(
-            "O_Se_Cs_Sb2.00_+1 (O_1), O_Se_Cs_Sb2.00_+1 (O_b_1)\nO_Se_Cs_Sb2.00_+2 (O_2), "
-            "O_Se_Cs_Sb2.00_+2 (O_a_1), O_Se_Cs_Sb2.00_+2 (O_a_2), O_Se_Cs_Sb2.00_+2 (O_b_2)"
+            "O_Se_Cs_Sb2.65_+1 (O_1), O_Se_Cs_Sb2.65_+1 (O_b_1)]\n[O_Se_Cs_Sb2.65_+2 (O_2), "
+            "O_Se_Cs_Sb2.65_+2 (O_a_1), O_Se_Cs_Sb2.65_+2 (O_a_2), O_Se_Cs_Sb2.65_+2 (O_b_2)"
             in str(warn.message)
             for warn in w
         )
@@ -918,7 +918,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warning in w
         )
         assert any(
-            "v_O_Cs_O2.54_0 (unrecognised_1), v_O_Cs_O2.54_0 (unrecognised_4), v_O_Cs_O2.54_0 ("
+            "v_O_Cs_V1.60_0 (unrecognised_1), v_O_Cs_V1.60_0 (unrecognised_4), v_O_Cs_V1.60_0 ("
             "unrecognised_5)" in str(warning.message)
             for warning in w
         )
@@ -2139,8 +2139,8 @@ class DopedParsingTestCase(unittest.TestCase):
             relaxed_defect_name = get_defect_name_from_entry(int_F_minus1_ent)
             print([warn.message for warn in w])  # for debugging
             assert not w  # this supercell is not periodicity breaking
-        assert relaxed_defect_name == "F_i_C4v_O2.67"
-        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.67"
+        assert relaxed_defect_name == "F_i_C4v_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.57"
 
         return eig_fig  # test eigenvalue plot for ISPIN = 1 case
 
@@ -3278,8 +3278,8 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert len(w) == 1
         assert (
             "Band-edge state identification failed with the current criteria: "
-            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV. Trying with the pydefect "
-            "defaults of 0.2 and 0.5 eV." in str(w[0].message)
+            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV. Trying with values of 0.35 "
+            "and 0.5 eV." in str(w[0].message)
         )
         assert not bes.has_unoccupied_localized_state  # no longer identified
 
