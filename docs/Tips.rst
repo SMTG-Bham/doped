@@ -365,7 +365,10 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 .. note::
 
     It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
-    the defect state to confirm the identification of a PHS.
+    the defect state to confirm the identification of a PHS. You may also want to adjust the default values
+    of the ``similar_orb_criterion`` and ``similar_energy_criterion`` keyword arguments for
+    ``get_eigenvalue_analysis`` (see docstrings/python API), as the defaults may not be appropriate in all
+    cases.
 
 .. note::
 
