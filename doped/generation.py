@@ -2046,7 +2046,7 @@ class DefectsGenerator(MSONable):
 
         Args:
             filename (PathLike):
-                Filename of json file to load DefectsGenerator
+                Filename of json file to load ``DefectsGenerator``
                 object from.
 
         Returns:
@@ -2056,35 +2056,28 @@ class DefectsGenerator(MSONable):
 
     def __getattr__(self, attr):
         """
-        Redirects an unknown attribute/method call to the defect_entries
+        Redirects an unknown attribute/method call to the ``defect_entries``
         dictionary attribute, if the attribute doesn't exist in
-        DefectsGenerator.
+        ``DefectsGenerator``.
         """
-        # Return the attribute if it exists in self.__dict__
-        if attr in self.__dict__:
-            return self.__dict__[attr]
-
-        # If trying to access defect_entries and it doesn't exist, raise an error
-        if attr == "defect_entries" or "defect_entries" not in self.__dict__:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
-
-        # Check if the attribute exists in defect_entries
-        if hasattr(self.defect_entries, attr):
+        try:
+            super().__getattribute__(attr)
+        except AttributeError as exc:
+            if attr == "defect_entries":
+                raise exc
             return getattr(self.defect_entries, attr)
-
-        # If all else fails, raise an AttributeError
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __getitem__(self, key):
         """
-        Makes DefectsGenerator object subscriptable, so that it can be indexed
-        like a dictionary, using the defect_entries dictionary attribute.
+        Makes ``DefectsGenerator`` object subscriptable, so that it can be
+        indexed like a dictionary, using the ``defect_entries`` dictionary
+        attribute.
         """
         return self.defect_entries[key]
 
     def __setitem__(self, key, value):
         """
-        Set the value of a specific key (defect name) in the defect_entries
+        Set the value of a specific key (defect name) in the ``defect_entries``
         dictionary.
 
         Also adds the corresponding defect to the self.defects dictionary, if
@@ -2148,7 +2141,8 @@ class DefectsGenerator(MSONable):
 
     def __delitem__(self, key):
         """
-        Deletes the specified defect entry from the defect_entries dictionary.
+        Deletes the specified defect entry from the ``defect_entries``
+        dictionary.
 
         Doesn't remove the defect from the defects dictionary attribute, as
         there may be other charge states of the same defect still present.
@@ -2157,26 +2151,26 @@ class DefectsGenerator(MSONable):
 
     def __contains__(self, key):
         """
-        Returns True if the defect_entries dictionary contains the specified
-        defect name.
+        Returns ``True`` if the ``defect_entries`` dictionary contains the
+        specified defect name.
         """
         return key in self.defect_entries
 
     def __len__(self):
         """
-        Returns the number of entries in the defect_entries dictionary.
+        Returns the number of entries in the ``defect_entries`` dictionary.
         """
         return len(self.defect_entries)
 
     def __iter__(self):
         """
-        Returns an iterator over the defect_entries dictionary.
+        Returns an iterator over the ``defect_entries`` dictionary.
         """
         return iter(self.defect_entries)
 
     def __str__(self):
         """
-        Returns a string representation of the DefectsGenerator object.
+        Returns a string representation of the ``DefectsGenerator`` object.
         """
         formula = self.primitive_structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[
             0

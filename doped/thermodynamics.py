@@ -402,7 +402,6 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
     return grouped_entries
 
 
-# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
@@ -3386,6 +3385,64 @@ class DefectThermodynamics(MSONable):
             f"defect entries (in self.defect_entries). Available attributes:\n"
             f"{properties}\n\nAvailable methods:\n{methods}"
         )
+
+    def __getattr__(self, attr):
+        """
+        Redirects an unknown attribute/method call to the ``defect_entries``
+        dictionary attribute, if the attribute doesn't exist in
+        ``DefectThermodynamics``.
+        """
+        try:
+            super().__getattribute__(attr)
+        except AttributeError as exc:
+            if attr == "_defect_entries":
+                raise exc
+            return getattr(self._defect_entries, attr)
+
+    def __getitem__(self, key):
+        """
+        Makes ``DefectThermodynamics`` object subscriptable, so that it can be
+        indexed like a dictionary, using the ``defect_entries`` dictionary
+        attribute.
+        """
+        return self.defect_entries[key]
+
+    def __setitem__(self, key, value):
+        """
+        Set the value of a specific key (defect name) in the ``defect_entries``
+        dictionary, using ``add_entries`` (to check compatibility).
+        """
+        self.add_entries(
+            [
+                value,
+            ]
+        )
+
+    def __delitem__(self, key):
+        """
+        Deletes the specified defect entry from the ``defect_entries``
+        dictionary.
+        """
+        del self.defect_entries[key]
+
+    def __contains__(self, key):
+        """
+        Returns ``True`` if the ``defect_entries`` dictionary contains the
+        specified defect name.
+        """
+        return key in self.defect_entries
+
+    def __len__(self):
+        """
+        Returns the number of entries in the ``defect_entries`` dictionary.
+        """
+        return len(self.defect_entries)
+
+    def __iter__(self):
+        """
+        Returns an iterator over the ``defect_entries`` dictionary.
+        """
+        return iter(self.defect_entries)
 
 
 def _group_defect_charge_state_concentrations(

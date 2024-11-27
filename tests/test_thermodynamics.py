@@ -427,6 +427,29 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         first_entry = next(iter(defect_thermo.defect_entries.values()))
         assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.2
 
+        print("Checking dict attributes passed to defect_entries successfully")
+        assert len(defect_thermo) == len(defect_thermo.defect_entries)  # __len__()
+        assert dict(defect_thermo.items()) == defect_thermo.defect_entries  # __iter__()
+        assert all(
+            defect_entry_name in defect_thermo
+            for defect_entry_name in defect_thermo.defect_entries  # __contains__()
+        )
+
+        random_name, random_defect_entry = random.choice(list(defect_thermo.defect_entries.items()))
+        print(f"Checking editing DefectsGenerator, using {random_defect_entry.name}")
+        assert (
+            defect_thermo[random_defect_entry.name]
+            == defect_thermo.defect_entries[random_defect_entry.name]
+        )  # __getitem__()
+        assert (
+            defect_thermo.get(random_defect_entry.name)
+            == defect_thermo.defect_entries[random_defect_entry.name]
+        )  # get()
+        random_defect_entry = defect_thermo.defect_entries[random_defect_entry.name]
+        del defect_thermo[random_defect_entry.name]  # __delitem__()
+        assert random_defect_entry.name not in defect_thermo
+        defect_thermo[random_defect_entry.name] = random_defect_entry  # __setitem__()
+
     def _check_CdTe_example_dist_tol(self, defect_thermo, num_grouped_defects):
         print(f"Testing CdTe updated dist_tol: {defect_thermo.dist_tol}")
         tl_df = defect_thermo.get_transition_levels()
@@ -1735,7 +1758,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(i)
             assert i in str(exc.value)
 
-    def test_add_entries(self):
+    @pytest.mark.parametrize("using_dict", [False, True])
+    def test_add_entries(self, using_dict=False):
+        """
+        If ``using_dict``, test this through the ``__setitem__`` method.
+        """
         partial_defect_thermo = DefectThermodynamics(list(self.CdTe_defect_dict.values())[:4])
         assert not partial_defect_thermo.get_formation_energies().equals(
             self.CdTe_defect_thermo.get_formation_energies()
@@ -1744,7 +1771,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self.CdTe_defect_thermo.get_symmetries_and_degeneracies()
         )
 
-        partial_defect_thermo.add_entries(list(self.CdTe_defect_dict.values())[4:])
+        if using_dict:
+            for name, entry in list(self.CdTe_defect_dict.items())[4:]:
+                partial_defect_thermo[name] = entry
+        else:
+            partial_defect_thermo.add_entries(list(self.CdTe_defect_dict.values())[4:])
         assert partial_defect_thermo.get_formation_energies().equals(
             self.CdTe_defect_thermo.get_formation_energies()
         )
