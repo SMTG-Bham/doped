@@ -12,7 +12,7 @@
   - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in `pymatgen-analysis-defects` chempots plotting)
   - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
   - Should have `ncols` as an optional parameter for the function, and auto-set this to 2 if the legend height exceeds that of the plot
-  - Don't show transition levels outside of the bandgap (or within a certain range of the band edge, possibly using `pydefect` delocalisation analysis?), as these are shallow and not calculable with the standard supercell approach.
+  - Don't show transition levels outside of the bandgap (or within a certain range of the band edge (good to have this as an option, as PHS analysis still isn't perfect... could do this criterion based on PHS analysis using P-ratio, which maybe is a bit better than default?), possibly using `pydefect` delocalisation analysis?), as these are shallow and not calculable with the standard supercell approach.
   - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
   - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!  
   - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?

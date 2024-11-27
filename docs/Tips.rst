@@ -364,11 +364,14 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 
 .. note::
 
+    The classification of electronic states as band edges or localized orbitals is based on the similarity
+    of orbital projections and eigenvalues between the defect and bulk cell calculations (see
+    docstrings/python API for ``get_eigenvalue_analysis``). You may want to adjust the default values of
+    the ``similar_orb/energy_criterion`` keyword arguments, as the defaults may not be appropriate in all
+    cases. In particular, the P-ratio values can give useful insight, revealing the level of
+    (de)localisation of the states.
     It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
-    the defect state to confirm the identification of a PHS. You may also want to adjust the default values
-    of the ``similar_orb_criterion`` and ``similar_energy_criterion`` keyword arguments for
-    ``get_eigenvalue_analysis`` (see docstrings/python API), as the defaults may not be appropriate in all
-    cases.
+    the defect state when possible, to confirm the identification of a PHS.
 
 .. note::
 
