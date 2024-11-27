@@ -65,7 +65,7 @@ def get_defect_in_supercell(
     lengths.
 
     Note: This function does _not_ guarantee that the generated defect supercell
-    _atomic position basis_ exactly matches that of ``target_supercell``, which may
+    atomic position basis exactly matches that of ``target_supercell``, which may
     have come from a different primitive structure definition (e.g. CdTe with
     ``{"Cd": [0,0,0], "Te": [0.25,0.25,0.25]}`` vs
     ``{"Cd": [0,0,0], "Te": [0.75,0.75,0.75]}``). The generated supercell _will_

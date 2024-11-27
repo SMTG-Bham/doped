@@ -49,7 +49,6 @@ from pymatgen.analysis.defects.utils import CorrectionResult
 from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
-from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.utils.parsing import (
@@ -237,7 +236,10 @@ def get_freysoldt_correction(
     if not plot and filename is None:
         return fnv_correction
 
-    _install_custom_font()
+    with contextlib.suppress(Exception):
+        from shakenbreak.plotting import _install_custom_font
+
+        _install_custom_font()  # in case not installed already
 
     axis_label_dict = {0: r"$a$-axis", 1: r"$b$-axis", 2: r"$c$-axis"}
     if axis is None:
@@ -603,7 +605,10 @@ def get_kumagai_correction(
     if not plot and filename is None:
         return kumagai_correction_result
 
-    _install_custom_font()
+    with contextlib.suppress(Exception):
+        from shakenbreak.plotting import _install_custom_font
+
+        _install_custom_font()  # in case not installed already
 
     spp = SitePotentialMplPlotter.from_efnv_corr(
         title=f"{format_defect_name(defect_entry.name, False)} - eFNV Site Potentials",
