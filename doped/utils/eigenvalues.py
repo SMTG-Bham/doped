@@ -6,6 +6,7 @@ and vise (https://github.com/kumagai-group/vise), to avoid requiring additional 
 """
 
 # suppress pydefect INFO messages
+import contextlib
 import logging
 import os
 import warnings
@@ -20,7 +21,6 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
-from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry
@@ -416,6 +416,10 @@ def get_eigenvalue_analysis(
     files (slightly slower but more accurate), or failing that from ``PROCAR(.gz)``
     files if present.
 
+    You may also want to adjust the default values of the ``similar_orb_criterion``
+    and ``similar_energy_criterion`` keyword arguments, as the defaults may not be
+    appropriate in all cases.
+
     This function uses code from ``pydefect``, so please cite the ``pydefect`` paper:
     "Insights into oxygen vacancies from high-throughput first-principles calculations"
     Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
@@ -494,9 +498,10 @@ def get_eigenvalue_analysis(
         similar_orb_criterion (float):
             Threshold criterion for determining if the orbitals of two eigenstates
             are similar (for identifying band-edge and defect states). If the
-            summed orbital difference is less than this value, then the orbitals
-            are considered similar. Default is to try with 0.1, then if this fails
-            increase to the ``pydefect`` default of 0.2.
+            summed orbital projection differences, normalised by the total orbital
+            projection coefficients,  are less than this value, then the orbitals
+            are considered similar. Default is to try with 0.2 (``pydefect`` default),
+            then if this fails increase to 0.35.
         similar_energy_criterion (float):
             Threshold criterion for considering two eigenstates similar in energy,
             used for identifying band-edge (and defect states). Bands within this
@@ -575,7 +580,7 @@ def get_eigenvalue_analysis(
     perfect = PerfectBandEdgeState(vbm_info, cbm_info)
 
     dynamic_criterion_warning = any([similar_orb_criterion, similar_energy_criterion])
-    defaults._similar_orb_criterion = similar_orb_criterion or 0.1
+    defaults._similar_orb_criterion = similar_orb_criterion or 0.2
     defaults._similar_energy_criterion = similar_energy_criterion or 0.25
     try:
         bes = make_band_edge_states(band_orb, perfect)
@@ -585,9 +590,9 @@ def get_eigenvalue_analysis(
                 f"Band-edge state identification failed with the current criteria: "
                 f"similar_orb_criterion={defaults._similar_orb_criterion}, "
                 f"similar_energy_criterion={defaults._similar_energy_criterion} eV. "
-                f"Trying with the pydefect defaults of 0.2 and 0.5 eV."
+                f"Trying with values of 0.35 and 0.5 eV."
             )
-        defaults._similar_orb_criterion = 0.2
+        defaults._similar_orb_criterion = 0.35
         defaults._similar_energy_criterion = 0.5
         bes = make_band_edge_states(band_orb, perfect)  # if 2nd round fails, let it raise pydefect error
 
@@ -597,7 +602,10 @@ def get_eigenvalue_analysis(
     vbm = vbm_info.orbital_info.energy + band_orb.eigval_shift
     cbm = cbm_info.orbital_info.energy + band_orb.eigval_shift
 
-    _install_custom_font()  # in case not installed already
+    with contextlib.suppress(Exception):
+        from shakenbreak.plotting import _install_custom_font
+
+        _install_custom_font()  # in case not installed already
     style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
