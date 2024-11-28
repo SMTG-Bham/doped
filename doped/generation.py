@@ -406,10 +406,16 @@ def _get_neutral_defect_entry(
         equivalent_supercell_sites,
     ) = defect.get_supercell_structure(
         sc_mat=supercell_matrix,
-        dummy_species="X",  # keep track of the defect frac coords in the supercell
+        dummy_species=_dummy_species.symbol,  # keep track of the defect frac coords in the supercell
         target_frac_coords=target_frac_coords,
         return_sites=True,
     )
+    dummy_sites = [site for site in dummy_defect_supercell if site.specie.symbol == _dummy_species.symbol]
+    if dummy_sites:  # set defect_supercell_site to exactly match coordinates,
+        # as can have very small differences in generation due to rounding
+        dummy_site = next(iter(dummy_sites))
+        defect_supercell_site._frac_coords = dummy_site.frac_coords
+
     neutral_defect_entry = get_defect_entry_from_defect(
         defect,
         dummy_defect_supercell,
