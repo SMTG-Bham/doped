@@ -1574,7 +1574,7 @@ class DefectsGenerator(MSONable):
             )
 
             # Antisites:
-            if self.kwargs.get("substitution_elements", True) == []:  # skip substitutions
+            if self.kwargs.get("substitution_elements", False) == []:  # skip substitutions
                 pbar.update(10)  # 30% of progress bar
             else:
                 pbar.set_description("Generating substitutions")
@@ -1615,7 +1615,7 @@ class DefectsGenerator(MSONable):
                     else:
                         self.defects["substitutions"] = sub_defects
 
-                if sub_elts := self.kwargs.get("substitution_elements"):
+                if sub_elts := self.kwargs.get("substitution_elements", False):
                     # filter out substitutions for elements not in ``substitution_elements``:
                     self.defects["substitutions"] = [
                         sub
