@@ -81,16 +81,31 @@ def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: Opti
     try:
         test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
     except (OSError, RuntimeError) as e:  # updated to RuntimeError in pymatgen 2024.5.1
-        # try other functional choices:
-        if potcar_functional.startswith("PBE"):
-            for pbe_potcar_string in ["PBE", "PBE_52", "PBE_54"]:
-                with contextlib.suppress(OSError, RuntimeError):
-                    potcar_functional = pbe_potcar_string
-                    test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
-                    break
+        if not potcar_functional.startswith("PBE"):
+            raise e
+
+        test_pbe_potcar_strings = ["PBE", "PBE_52", "PBE_54", "PBE_64", potcar_functional]
+        # user potcar functional tested last so error message matches this
+        for pbe_potcar_string in test_pbe_potcar_strings:  # try other functional choices
+            with contextlib.suppress(OSError, RuntimeError):
+                potcar_functional = pbe_potcar_string
+                test_potcar = _get_potcar(tuple(symbols), potcar_functional=potcar_functional)
+                break
 
         if test_potcar is None:
-            raise e
+            # issue might be with just one of the symbols, so loop through and find the first one that
+            # breaks for all, to ensure informative error message
+            for symbol in symbols:
+                for i, pbe_potcar_string in enumerate(test_pbe_potcar_strings):
+                    try:
+                        potcar_functional = pbe_potcar_string
+                        test_potcar = _get_potcar((symbol,), potcar_functional=potcar_functional)
+                        break
+                    except (OSError, RuntimeError) as single_pot_exc:
+                        if i + 1 == len(test_pbe_potcar_strings):  # failed with all
+                            raise single_pot_exc
+
+            raise e  # should already have been raised at this point
 
     return potcar_functional
 
