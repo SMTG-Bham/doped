@@ -152,10 +152,11 @@ def get_defect_entry_from_defect(
 
 def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
     """
-    Get the corresponding defect dictionary key from the pymatgen DefectType.
+    Get the corresponding defect dictionary key from the ``pymatgen``
+    ``DefectType``.
 
     Args:
-        defect_type (core.DefectType): pymatgen DefectType.
+        defect_type (core.DefectType): ``pymatgen`` ``DefectType``.
 
     Returns:
         str: Defect dictionary key.
@@ -168,6 +169,34 @@ def _defect_dict_key_from_pmg_type(defect_type: core.DefectType) -> str:
         return "interstitials"
     if defect_type == core.DefectType.Other:
         return "others"
+
+    raise ValueError(
+        f"Defect type {defect_type} not recognised. Must be one of {core.DefectType.Vacancy}, "
+        f"{core.DefectType.Substitution}, {core.DefectType.Interstitial}, {core.DefectType.Other}."
+    )
+
+
+def _defect_type_key_from_pmg_type(defect_type: core.DefectType) -> str:
+    """
+    Get the corresponding defect type name from the ``pymatgen``
+    ``DefectType``.
+
+    i.e. "vacancy", "substitution", "interstitial", "other"
+
+    Args:
+        defect_type (core.DefectType): ``pymatgen`` ``DefectType``.
+
+    Returns:
+        str: Defect type key.
+    """
+    if defect_type == core.DefectType.Vacancy:
+        return "vacancy"
+    if defect_type == core.DefectType.Substitution:
+        return "substitution"
+    if defect_type == core.DefectType.Interstitial:
+        return "interstitial"
+    if defect_type == core.DefectType.Other:
+        return "other"
 
     raise ValueError(
         f"Defect type {defect_type} not recognised. Must be one of {core.DefectType.Vacancy}, "
@@ -1178,6 +1207,7 @@ class DefectsGenerator(MSONable):
         interstitial_gen_kwargs: Optional[Union[dict, bool]] = None,
         target_frac_coords: Optional[list] = None,
         processes: Optional[int] = None,
+        **kwargs,
     ):
         """
         Generates ``doped`` ``DefectEntry`` objects for defects in the input
@@ -1291,6 +1321,16 @@ class DefectsGenerator(MSONable):
             processes (int):
                 Number of processes to use for multiprocessing. If not set, defaults to
                 one less than the number of CPUs available.
+            **kwargs:
+                Additional keyword arguments for defect generation. Options:
+                ``{defect}_elements`` where ``{defect}`` is ``vacancy``, ``substitution``,
+                or ``interstitial``, in which cases only those defects of the specified
+                elements will be generated (where ``{defect}_elements`` is a list of
+                element symbol strings). Setting ``{defect}_elements`` to an empty list
+                will skip defect generation for that defect type entirely.
+                ``{defect}_charge_states`` to specify the charge states to use for all
+                defects of that type (as a list of integers).
+                ``neutral_only`` to only generate neutral charge states.
 
         Attributes:
             defect_entries (dict): Dictionary of {defect_species: DefectEntry} for all
@@ -1315,6 +1355,7 @@ class DefectsGenerator(MSONable):
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
+        self.kwargs = kwargs
         if interstitial_coords is not None:
             # if a single list or array, convert to list of lists
             self.interstitial_coords = (
@@ -1494,7 +1535,7 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating vacancies")
             vac_generator_obj = VacancyGenerator()
             vac_generator = vac_generator_obj.generate(
-                self.primitive_structure, oxi_state=0
+                self.primitive_structure, oxi_state=0, rm_species=self.kwargs.get("vacancy_elements", None)
             )  # set oxi_state using doped functions; more robust and efficient
             self.defects["vacancies"] = [
                 Vacancy._from_pmg_defect(vac, bulk_oxi_states=self._bulk_oxi_states)
@@ -1502,17 +1543,6 @@ class DefectsGenerator(MSONable):
             ]
             pbar.update(5)  # 20% of progress bar
 
-            # Antisites:
-            pbar.set_description("Generating substitutions")
-            antisite_generator_obj = AntiSiteGenerator()
-            as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
-            self.defects["substitutions"] = [
-                Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
-                for anti in as_generator
-            ]
-            pbar.update(5)  # 25% of progress bar
-
-            # Substitutions:
             # determine which, if any, extrinsic elements are present:
             if isinstance(self.extrinsic, str):
                 extrinsic_elements = [self.extrinsic]
@@ -1543,39 +1573,68 @@ class DefectsGenerator(MSONable):
                 key=_element_sort_func,
             )
 
-            substitution_generator_obj = SubstitutionGenerator()
-            if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
-                substitutions = {
-                    el.symbol: extrinsic_elements for el in self.primitive_structure.composition.elements
-                }
-            elif isinstance(self.extrinsic, dict):  # substitute only specified host elements
-                substitutions = self.extrinsic
+            # Antisites:
+            if self.kwargs.get("substitution_elements", True) == []:  # skip substitutions
+                pbar.update(10)  # 30% of progress bar
             else:
-                warnings.warn(
-                    f"Invalid `extrinsic` defect input. Got type {type(self.extrinsic)}, but string or "
-                    f"list or dict required. No extrinsic defects will be generated."
-                )
-                substitutions = {}
-
-            if substitutions:
-                sub_generator = substitution_generator_obj.generate(
-                    self.primitive_structure, substitution=substitutions, oxi_state=0
-                )
-                sub_defects = [
-                    Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
-                    for sub in sub_generator
+                pbar.set_description("Generating substitutions")
+                antisite_generator_obj = AntiSiteGenerator()
+                as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
+                self.defects["substitutions"] = [
+                    Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
+                    for anti in as_generator
                 ]
-                if "substitutions" in self.defects:
-                    self.defects["substitutions"].extend(sub_defects)
+                pbar.update(5)  # 25% of progress bar
+
+                # Substitutions:
+                substitution_generator_obj = SubstitutionGenerator()
+                if isinstance(self.extrinsic, (str, list)):  # substitute all host elements:
+                    substitutions = {
+                        el.symbol: extrinsic_elements
+                        for el in self.primitive_structure.composition.elements
+                    }
+                elif isinstance(self.extrinsic, dict):  # substitute only specified host elements
+                    substitutions = self.extrinsic
                 else:
-                    self.defects["substitutions"] = sub_defects
-            if not self.defects["substitutions"]:  # no substitutions, single-element system, no extrinsic
-                del self.defects["substitutions"]  # remove empty list
-            pbar.update(5)  # 30% of progress bar
+                    warnings.warn(
+                        f"Invalid `extrinsic` defect input. Got type {type(self.extrinsic)}, but string "
+                        f"or list or dict required. No extrinsic defects will be generated."
+                    )
+                    substitutions = {}
+
+                if substitutions:
+                    sub_generator = substitution_generator_obj.generate(
+                        self.primitive_structure, substitution=substitutions, oxi_state=0
+                    )
+                    sub_defects = [
+                        Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
+                        for sub in sub_generator
+                    ]
+                    if "substitutions" in self.defects:
+                        self.defects["substitutions"].extend(sub_defects)
+                    else:
+                        self.defects["substitutions"] = sub_defects
+
+                if sub_elts := self.kwargs.get("substitution_elements"):
+                    # filter out substitutions for elements not in ``substitution_elements``:
+                    self.defects["substitutions"] = [
+                        sub
+                        for sub in self.defects["substitutions"]
+                        if any(sub.name.startswith(sub_elt) for sub_elt in sub_elts)
+                    ]
+
+                if not self.defects[
+                    "substitutions"
+                ]:  # no substitutions, single-element system, no extrinsic
+                    del self.defects["substitutions"]  # remove empty list
+                pbar.update(5)  # 30% of progress bar
 
             # Interstitials:
             self._element_list = host_element_list + extrinsic_elements  # all elements in system
-            if self.interstitial_gen_kwargs is not False:  # skip interstitials
+            if (
+                self.interstitial_gen_kwargs is not False
+                and self.kwargs.get("interstitial_elements", True) != []
+            ):  # skip interstitials
                 self.interstitial_gen_kwargs = (
                     self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
                 )
@@ -1609,7 +1668,7 @@ class DefectsGenerator(MSONable):
                 self.defects["interstitials"] = []
                 ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
                 cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos)
-                for el in self._element_list:
+                for el in self.kwargs.get("interstitial_elements", self._element_list):
                     inter_generator = ig.generate(
                         self.primitive_structure,
                         insertions={el: cand_sites},
@@ -1678,11 +1737,11 @@ class DefectsGenerator(MSONable):
                 _pbar_increment_per_defect = 0
 
             defect_entry_list = []
-            if len(self.primitive_structure) > 8:  # skip for small systems as communication overhead /
-                # process initialisation outweighs speedup
+            if len(self.primitive_structure) > 8 and processes != 1:
+                # skip for small systems as communication overhead / process initialisation outweighs
+                # speedup
                 with Pool(processes=processes or cpu_count() - 1) as pool:
-                    results = pool.imap_unordered(partial_func, defect_list)
-                    for result in results:
+                    for result in pool.imap_unordered(partial_func, defect_list):
                         defect_entry_list.append(result)
                         pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
 
@@ -1732,7 +1791,17 @@ class DefectsGenerator(MSONable):
 
             Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
             for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                if self._bulk_oxi_states is not False:
+                type_name = _defect_type_key_from_pmg_type(neutral_defect_entry.defect.defect_type)
+                if self.kwargs.get("neutral_only", False):
+                    charge_states = [
+                        0,
+                    ]  # only neutral
+                    neutral_defect_entry.charge_state_guessing_log = {}
+
+                elif charge_states := self.kwargs.get(f"{type_name}_charge_states", []):
+                    neutral_defect_entry.charge_state_guessing_log = {}
+
+                elif self._bulk_oxi_states is not False:
                     charge_state_guessing_output = guess_defect_charge_states(
                         neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
                     )
