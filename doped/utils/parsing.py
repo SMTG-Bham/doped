@@ -894,8 +894,8 @@ def get_site_mapping_indices(
             then a warning will be thrown. Default is 2.0 Å.
         dists_only (bool):
             Whether to return only the distances between matched sites, rather
-            than a list of lists containing the distance, index in struct1
-            and index in struct2. Default is False.
+            than a list of lists containing the distance, index in ``struct1``
+            and index in ``struct2``. Default is ``False``.
 
     Returns:
         list:

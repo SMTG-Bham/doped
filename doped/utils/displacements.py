@@ -40,6 +40,7 @@ def calc_site_displacements(
     relaxed_distances: bool = False,
     relative_to_defect: bool = False,
     vector_to_project_on: Optional[list] = None,
+    threshold: float = 2.0,
 ) -> pd.DataFrame:
     """
     Calculates the site displacements in the defect supercell, relative to the
@@ -65,7 +66,10 @@ def calc_site_displacements(
             the `Displacement wrt defect` key of the returned dictionary.
         vector_to_project_on (list):
             Direction to project the site displacements along
-            (e.g. [0, 0, 1]). Defaults to None.
+            (e.g. [0, 0, 1]). Defaults to ``None``.
+        threshold (float):
+            If the distance between a pair of matched sites is larger than this,
+            then a warning will be thrown. Default is 2.0 Å.
 
     Returns:
         ``pandas`` ``DataFrame`` with site displacements (compared to pristine supercell),
@@ -75,7 +79,7 @@ def calc_site_displacements(
     defect_site = defect_sc_with_site[defect_site_index]
 
     # Map sites in defect supercell to bulk supercell:
-    mappings = get_site_mapping_indices(defect_sc_with_site, bulk_sc)
+    mappings = get_site_mapping_indices(defect_sc_with_site, bulk_sc, threshold=threshold)
     mappings_dict = {i[1]: i[2] for i in mappings}  # {defect_sc_index: bulk_sc_index}
 
     disp_dict: dict[str, list] = {  # mapping defect site index (in defect sc) to displacement
@@ -138,10 +142,11 @@ def calc_site_displacements(
     # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
     element_list = _get_element_list(defect_entry)
     disp_df = pd.DataFrame(disp_dict)
-    # Sort by species, then distance to defect, then index:
+    # Sort by species, then distance to defect, then displacement magnitude (reversed), then index:
     disp_df = disp_df.sort_values(
-        by=["Species", "Distance to defect", "Index (defect supercell)"],
+        by=["Species", "Distance to defect", "Displacement", "Index (defect supercell)"],
         key=lambda col: col.map(element_list.index) if col.name == "Species" else col,
+        ascending=[True, True, False, True],
     )
     disp_df = _round_floats(disp_df, 4)  # round numerical values to 4 dp
     # reorder columns as species, distance, displacement, etc, then index last:
