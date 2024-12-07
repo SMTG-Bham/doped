@@ -226,10 +226,21 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
-def get_sga(struct, symprec=0.01):
+def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
     """
     Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting symprec if needs be.
+
+    Args:
+        struct (Structure): The input structure.
+        symprec (float): The symmetry precision to use (default: 0.01).
+        return_symprec (bool):
+            Whether to return the fianl ``symprec`` used (default: False).
+
+    Returns:
+        SpacegroupAnalyzer: The symmetry analyzer object.
+        If ``return_symprec`` is ``True``, returns a tuple of the symmetry
+        analyzer object and the final ``symprec`` used.
     """
     sga = None
     for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
@@ -237,6 +248,12 @@ def get_sga(struct, symprec=0.01):
         with contextlib.suppress(SymmetryUndeterminedError):
             sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
         if sga:
+            try:
+                _prim_struct = sga.get_primitive_standard_structure()
+            except ValueError:  # symmetry determination failed
+                continue
+            if return_symprec:
+                return sga, trial_symprec
             return sga
 
     import spglib
