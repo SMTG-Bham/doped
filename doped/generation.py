@@ -1412,15 +1412,21 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga = symmetry.get_sga(self.structure)
+            sga, symprec = symmetry.get_sga(self.structure, return_symprec=True)
             if sga.get_space_group_number() == 1:  # print sanity check message
                 print(
                     "Note that the detected symmetry of the input structure is P1 (i.e. only "
                     "translational symmetry). If this is not expected (i.e. host system is not "
                     "disordered/defective), then you should check your input structure!"
                 )
+            if symprec != 0.01:  # default
+                warnings.warn(
+                    f"\nSymmetry determination failed for the default symprec value of 0.01, "
+                    f"but succeeded with symprec = {symprec}, which will be used for symmetry "
+                    f"determination functions here."
+                )
 
-            prim_struct = symmetry.get_primitive_structure(self.structure)
+            prim_struct = symmetry.get_primitive_structure(self.structure, symprec=symprec)
             primitive_structure = symmetry._round_struct_coords(
                 prim_struct if prim_struct.num_sites < self.structure.num_sites else self.structure,
                 to_unit_cell=True,  # wrap to unit cell
