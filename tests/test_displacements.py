@@ -260,6 +260,20 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             separated_by_direction=False, use_plotly=False
         )
 
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot_relaxed_dists.png")
+    def test_plot_site_displacements_proj_relaxed_dists(self):
+        # Vacancy, displacement separated by direction:
+        return self.v_Cd_0_defect_entry.plot_site_displacements(
+            separated_by_direction=True, use_plotly=False, relaxed_distances=True
+        )
+
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot_relaxed_dists.png")
+    def test_plot_site_displacements_relaxed_dists(self):
+        # Vacancy, total displacement
+        return self.v_Cd_0_defect_entry.plot_site_displacements(
+            separated_by_direction=False, use_plotly=False, relaxed_distances=True
+        )
+
     @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png")
     def test_plot_site_displacements_ytos(self):
         # Interstitial, total displacement
