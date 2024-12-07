@@ -923,7 +923,7 @@ def get_site_mapping_indices(
             if coords in input_fcoords:
                 dists = dmat[input_fcoords.index(coords)]
                 if not dists.size:
-                    min_dist_with_index.append(None if dists_only else [None, index, None])
+                    min_dist_with_index.append((None, index) if dists_only else (None, index, None))
                     continue
 
                 dists_argmin = dists.argmin()
@@ -941,15 +941,20 @@ def get_site_mapping_indices(
                     )
 
                 if dists_only:
-                    min_dist_with_index.append(current_dist)
+                    min_dist_with_index.append(
+                        (
+                            current_dist,
+                            index,
+                        )
+                    )
                 else:
                     template_index = template_index or all_template_fcoords.index(template_fcoord)
                     min_dist_with_index.append(
-                        [
+                        (
                             current_dist,
                             index,
                             template_index,
-                        ]
+                        )
                     )
 
                 if not allow_duplicates:
@@ -962,6 +967,12 @@ def get_site_mapping_indices(
             f"No matching sites for species {species} found between the two structures!\n"
             f"Struct1 composition: {struct1.composition}, Struct2 composition: {struct2.composition}"
         )
+
+    if dists_only and min_dist_with_index:  # sort by index in struct1:
+        return [
+            x[0]
+            for x in sorted(min_dist_with_index, key=lambda x: x[1] if x[1] is not None else float("inf"))
+        ]
 
     return min_dist_with_index
 
