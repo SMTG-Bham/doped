@@ -1327,6 +1327,7 @@ class DefectEntry(thermo.DefectEntry):
     def plot_site_displacements(
         self,
         separated_by_direction: bool = False,
+        relaxed_distances: bool = False,
         relative_to_defect: bool = False,
         vector_to_project_on: Optional[list] = None,
         use_plotly: bool = False,
@@ -1344,6 +1345,11 @@ class DefectEntry(thermo.DefectEntry):
                 Whether to plot the site displacements separated by the
                 x, y and z directions (True) or all together (False).
                 Defaults to False.
+            relaxed_distances (bool):
+                Whether to use the atomic positions in the _relaxed_ defect supercell
+                for ``'Distance to defect'``, ``'Vector to site from defect'`` and
+                ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
+                (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
             relative_to_defect (bool): Whether to plot the signed displacements
                 along the line from the defect site to that atom. Negative values
                 indicate the atom moves towards the defect (compressive strain),
@@ -1364,6 +1370,7 @@ class DefectEntry(thermo.DefectEntry):
         return plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
+            relaxed_distances=relaxed_distances,
             relative_to_defect=relative_to_defect,
             vector_to_project_on=vector_to_project_on,
             use_plotly=use_plotly,

@@ -37,6 +37,7 @@ except ImportError:
 
 def calc_site_displacements(
     defect_entry: DefectEntry,
+    relaxed_distances: bool = False,
     relative_to_defect: bool = False,
     vector_to_project_on: Optional[list] = None,
 ) -> pd.DataFrame:
@@ -49,7 +50,12 @@ def calc_site_displacements(
 
     Args:
         defect_entry (DefectEntry):
-            DefectEntry object
+            ``DefectEntry`` object
+        relaxed_distances (bool):
+            Whether to use the atomic positions in the _relaxed_ defect supercell
+            for ``'Distance to defect'``, ``'Vector to site from defect'`` and
+            ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
+            (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
         relative_to_defect (bool):
             Whether to calculate the signed displacements along the line
             from the defect site to that atom. Negative values indicate
@@ -66,6 +72,7 @@ def calc_site_displacements(
         and other displacement-related information.
     """
     bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
+    defect_site = defect_sc_with_site[defect_site_index]
 
     # Map sites in defect supercell to bulk supercell:
     mappings = get_site_mapping_indices(defect_sc_with_site, bulk_sc)
@@ -93,7 +100,8 @@ def calc_site_displacements(
         disp = pbc_shortest_vectors(bulk_sc.lattice, bulk_site.frac_coords, site.frac_coords)[0, 0]
 
         # Distance to defect site (last site in defect sc)
-        distance = defect_sc_with_site.get_distance(i, defect_site_index)  # len(defect_sc_with_site) - 1)
+        atomic_site = site if relaxed_distances else bulk_site
+        distance = defect_site.distance_and_image(atomic_site)[0]
         disp_dict["Species"].append(site.specie.name)
         disp_dict["Distance to defect"].append(distance)
         disp_dict["Displacement"].append(np.linalg.norm(disp))
@@ -105,7 +113,7 @@ def calc_site_displacements(
             if relative_to_defect:
                 # Find vector from defect to site, accounting for periodic boundary conditions
                 vector_defect_to_site = pbc_shortest_vectors(
-                    bulk_sc.lattice, defect_sc_with_site[defect_site_index].frac_coords, site.frac_coords
+                    bulk_sc.lattice, defect_site.frac_coords, atomic_site.frac_coords
                 )[0, 0]
                 norm = np.linalg.norm(vector_defect_to_site)
                 disp_dict["Vector to site from defect"].append(vector_defect_to_site)
@@ -168,6 +176,7 @@ def calc_site_displacements(
 def plot_site_displacements(
     defect_entry: DefectEntry,
     separated_by_direction: bool = False,
+    relaxed_distances: bool = False,
     relative_to_defect: bool = False,
     vector_to_project_on: Optional[list] = None,
     use_plotly: bool = False,
@@ -180,10 +189,15 @@ def plot_site_displacements(
     plot, useful for analysis!
 
     Args:
-        defect_entry (DefectEntry): DefectEntry object
+        defect_entry (DefectEntry): ``DefectEntry`` object
         separated_by_direction (bool):
             Whether to plot site displacements separated by
-            direction (x, y, z). Default is False.
+            direction (x, y, z). Default is ``False``.
+        relaxed_distances (bool):
+            Whether to use the atomic positions in the _relaxed_ defect supercell
+            for ``'Distance to defect'``, ``'Vector to site from defect'`` and
+            ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
+            (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
         relative_to_defect (bool):
             Whether to plot the signed displacements
             along the line from the defect site to that atom. Negative values
@@ -286,6 +300,7 @@ def plot_site_displacements(
 
     disp_df = calc_site_displacements(
         defect_entry=defect_entry,
+        relaxed_distances=relaxed_distances,
         relative_to_defect=relative_to_defect,
         vector_to_project_on=vector_to_project_on,
     )
@@ -445,8 +460,9 @@ def plot_site_displacements(
 
 def calc_displacements_ellipsoid(
     defect_entry: DefectEntry,
-    quantile=0.8,
-    return_extras=False,
+    quantile: float = 0.8,
+    relaxed_distances: bool = False,
+    return_extras: bool = False,
 ) -> tuple:
     """
     Calculate displacements around a defect site and fit an ellipsoid to these
@@ -458,6 +474,11 @@ def calc_displacements_ellipsoid(
         quantile (float):
             The quantile threshold for selecting significant displacements
             (between 0 and 1). Default is 0.8.
+        relaxed_distances (bool):
+            Whether to use the atomic positions in the _relaxed_ defect supercell
+            for ``'Distance to defect'``, ``'Vector to site from defect'`` and
+            ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
+            (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
         return_extras (bool):
             Whether to also return the ``disp_df`` (output from
             ``calc_site_displacements(defect_entry, relative_to_defect=True)``)
@@ -537,7 +558,9 @@ def calc_displacements_ellipsoid(
 
         return center, radii, rotation
 
-    disp_df = calc_site_displacements(defect_entry, relative_to_defect=True)
+    disp_df = calc_site_displacements(
+        defect_entry, relaxed_distances=relaxed_distances, relative_to_defect=True
+    )
 
     # Calculate the threshold for displacement norm, ensuring it's at least 0.05
     threshold = max(disp_df["Displacement"].quantile(quantile), 0.05)
@@ -585,7 +608,7 @@ def plot_displacements_ellipsoid(
     defect_entry: DefectEntry,
     plot_ellipsoid: bool = True,
     plot_anisotropy: bool = False,
-    quantile=0.8,
+    quantile: float = 0.8,
     use_plotly: bool = False,
     show_supercell: bool = True,
     style_file: Optional[PathLike] = None,
@@ -965,7 +988,7 @@ def plot_displacements_ellipsoid(
     return next(iter(return_list)) if len(return_list) == 1 else tuple(return_list)
 
 
-def _get_bulk_struct_with_defect(defect_entry) -> tuple:
+def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
     """
     Returns structures for bulk and defect supercells with the same number of
     sites and species, to be used for site matching.
