@@ -1356,6 +1356,11 @@ class DefectsGenerator(MSONable):
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.kwargs = kwargs
+        if isinstance(self.kwargs, dict):
+            for kwarg, val in self.kwargs.items():
+                if isinstance(val, set):
+                    self.kwargs[kwarg] = list(val)  # convert sets to lists for JSON serialisation
+
         if interstitial_coords is not None:
             # if a single list or array, convert to list of lists
             self.interstitial_coords = (
