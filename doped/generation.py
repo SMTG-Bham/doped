@@ -1310,10 +1310,12 @@ class DefectsGenerator(MSONable):
                 or ``force_diagonal`` (default = False)).
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to ``get_Voronoi_interstitial_sites``
-                (such as ``min_dist``, ``clustering_tol``, ``symmetry_preference``,
-                ``stol``, ``tight_stol`` and ``symprec``  -- see its docstring), or
-                ``InterstitialGenerator`` if ``interstitial_coords`` is specified.
-                If set to ``False``, interstitial generation will be skipped entirely.
+                (such as ``min_dist`` (0.9 Å), ``clustering_tol`` (0.55 Å),
+                ``symmetry_preference`` (0.1 Å), ``stol`` (0.32), ``tight_stol`` (0.02)
+                and ``symprec`` (0.01)  -- see its docstring, parentheses indicate
+                default values), or ``InterstitialGenerator`` if ``interstitial_coords``
+                is specified. If set to ``False``, interstitial generation will be
+                skipped entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
