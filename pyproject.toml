@@ -24,6 +24,7 @@ dependencies = [
     "pymatgen>=2024.7.18",  # requirement for spglib>=2.5.0 for SpglibDataset attribute interface
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
+    "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
@@ -128,4 +129,4 @@ wrap-summaries = 79
 wrap-descriptions = 79
 
 [tool.codespell]
-ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise"  # lowercase!
+ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe"  # lowercase!

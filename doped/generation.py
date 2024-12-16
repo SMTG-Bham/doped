@@ -12,7 +12,7 @@ from collections import defaultdict
 from functools import partial, reduce
 from itertools import chain
 from multiprocessing import Pool, cpu_count
-from typing import Any, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -52,6 +52,9 @@ from doped.utils.efficiency import IStructure as doped_IStructure
 from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
+
+if TYPE_CHECKING:
+    from ase.atoms import Atoms
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -1198,7 +1201,7 @@ class DefectsGenerator(MSONable):
 
     def __init__(
         self,
-        structure: Structure,
+        structure: Union[Structure, "Atoms", PathLike],
         extrinsic: Optional[Union[str, list, dict]] = None,
         interstitial_coords: Optional[list] = None,
         generate_supercell: bool = True,
@@ -1267,7 +1270,8 @@ class DefectsGenerator(MSONable):
 
         Args:
             structure (Structure):
-                Structure of the host material (as a pymatgen Structure object).
+                Structure of the host material, either as a ``pymatgen`` ``Structure``,
+                ``ASE`` ``Atoms`` or path to a structure file (e.g. ``CONTCAR``).
                 If this is not the primitive unit cell, it will be reduced to the
                 primitive cell for defect generation, before supercell generation.
             extrinsic (Union[str, list, dict]):
@@ -1355,6 +1359,11 @@ class DefectsGenerator(MSONable):
         """
         self.defects: dict[str, list[Defect]] = {}  # {defect_type: [Defect, ...]}
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
+        if isinstance(structure, (str, PathLike)):
+            structure = Structure.from_file(structure)
+        elif not isinstance(structure, Structure):
+            structure = Structure.from_ase_atoms(structure)
+
         self.structure = structure
         self.extrinsic = extrinsic if extrinsic is not None else []
         self.kwargs = kwargs
