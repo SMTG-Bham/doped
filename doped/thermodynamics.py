@@ -6257,8 +6257,8 @@ class FermiSolver(MSONable):
         fixed_defects: Optional[dict[str, float]] = None,
     ) -> "DefectSystem":
         """
-        Generates a ``DefectSystem`` object from ``self.defect_thermodynamics``
-        and a set of chemical potentials.
+        Generates a ``py-sc-fermi`` ``DefectSystem`` object from
+        ``self.defect_thermodynamics`` and a set of chemical potentials.
 
         This method constructs a ``DefectSystem`` object, which encompasses all
         relevant defect species and their properties under the given conditions,
@@ -6300,8 +6300,8 @@ class FermiSolver(MSONable):
                 defects regardless of the chemical potentials, or anneal-quench procedure
                 (e.g. to simulate the effect of a fixed impurity concentration).
                 If a fixed-concentration of a specific charge state is desired,
-                the defect name should be formatted as ``"defect_name_charge"``.
-                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                the defect name should be formatted as ``"defect_name_charge"``;
+                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
                 Defaults to ``None``.
 
         Returns:
@@ -6313,53 +6313,102 @@ class FermiSolver(MSONable):
         self._check_required_backend_and_error("py-sc-fermi")
         assert self._DefectSpecies
         assert self._DefectSystem
-        entries = list(self.defect_thermodynamics.defect_entries.values())
-        entries = sorted(entries, key=lambda x: x.name)
-        labels = {_get_label_and_charge(entry.name)[0] for entry in entries}
-        defect_species: dict[str, Any] = {
-            label: {"charge_states": {}, "nsites": None, "name": label} for label in labels
-        }
         dft_chempots = _get_dft_chempots(single_chempot_dict, el_refs)
 
-        for entry in entries:
-            label, charge = _get_label_and_charge(entry.name)
-            defect_species[label]["nsites"] = entry.defect.multiplicity / self.multiplicity_scaling
-
-            formation_energy = self.defect_thermodynamics.get_formation_energy(
-                entry, chempots=dft_chempots, fermi_level=0
-            )
-            total_degeneracy = np.prod(list(entry.degeneracy_factors.values()))
-            defect_species[label]["charge_states"][charge] = {
-                "charge": charge,
-                "energy": formation_energy,
-                "degeneracy": total_degeneracy,
+        defect_species = []  # dicts of: {"charge_states": {...}, "nsites": X, "name": label}
+        for label, entry_list in self.defect_thermodynamics.all_entries.items():
+            defect_species_dict = {
+                "charge_states": {},
+                "nsites": entry_list[0].defect.multiplicity / self.multiplicity_scaling,
+                "name": label,
             }
+            for entry in entry_list:
+                formation_energy = self.defect_thermodynamics.get_formation_energy(
+                    entry, chempots=dft_chempots, fermi_level=0
+                )
+                total_degeneracy = np.prod(list(entry.degeneracy_factors.values()))
+                defect_species_dict["charge_states"][entry.charge_state] = {
+                    "charge": entry.charge_state,
+                    "energy": formation_energy,
+                    "degeneracy": total_degeneracy,
+                }
+            defect_species.append(defect_species_dict)
 
-        all_defect_species = [self._DefectSpecies.from_dict(v) for k, v in defect_species.items()]
+        all_defect_species = [self._DefectSpecies.from_dict(subdict) for subdict in defect_species]
         if effective_dopant_concentration is not None:
-            dopant = self._generate_dopant_for_py_sc_fermi(effective_dopant_concentration)
-            all_defect_species.append(dopant)
+            all_defect_species.append(
+                self._generate_dopant_for_py_sc_fermi(effective_dopant_concentration)
+            )
 
-        if fixed_defects is not None:
-            for k, v in fixed_defects.items():
-                if k.split("_")[-1].strip("+-").isdigit():
-                    q = int(k.split("_")[-1])
-                    defect_name = "_".join(k.split("_")[:-1])
-                    next(d for d in all_defect_species if d.name == defect_name).charge_states[
-                        q
-                    ].fix_concentration(v / 1e24 * self.volume)
-                else:
-                    next(d for d in all_defect_species if d.name == k).fix_concentration(
-                        v / 1e24 * self.volume
-                    )
-
-        return self._DefectSystem(
+        defect_system = self._DefectSystem(
             defect_species=all_defect_species,
             dos=self.py_sc_fermi_dos,
             volume=self.volume,
             temperature=temperature,
             convergence_tolerance=1e-20,
         )
+        self._fix_defect_concentrations(defect_system, fixed_defects)
+
+        return defect_system
+
+    def _fix_defect_concentrations(
+        self,
+        defect_system: "DefectSystem",
+        fixed_defects: Optional[dict[str, float]] = None,
+        fixed_concs: Optional[dict[str, float]] = None,
+    ) -> None:
+        """
+        Utility method to fix the concentrations of defects specified by
+        ``fix_defects`` in the ``py-sc-fermi`` ``defect_system``.
+
+        This method applies the concentration constraints to the
+        ``defect_system.defect_species`` in place.
+
+        Args:
+            defect_system (DefectSystem):
+                ``py-sc-fermi`` ``DefectSystem`` for which to fix the concentrations of
+                defects (in ``defect_system.defect_species``) according to the
+                ``fixed_defects`` input.
+            fixed_defects (dict[str, float]):
+                A dictionary of defect concentrations to fix at the quenched temperature,
+                in the format: ``{defect_name: concentration}``. Concentrations should be
+                given in cm^-3. The this can be used to fix the concentrations of specific
+                defects regardless of the chemical potentials, or anneal-quench procedure
+                (e.g. to simulate the effect of a fixed impurity concentration).
+                If a fixed-concentration of a specific charge state is desired,
+                the defect name should be formatted as ``"defect_name_charge"``;
+                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                Defaults to ``None``.
+            fixed_concs (dict):
+                Dictionary of total concentrations of defects, which if provided will be
+                compared to input concentration constraints (``fixed_defects``) and a warning
+                will be thrown if
+                ``fixed_concs[defect_name_without_charge] > fixed_defects[defect_name_with_charge]``.
+                Default is ``None``.
+        """
+        if fixed_defects is None:
+            return
+
+        for k, v in fixed_defects.items():
+            if k.split("_")[-1].strip("+-").isdigit():
+                defect_name_wout_charge, q_str = k.rsplit("_", 1)
+                q = int(q_str)
+                defect_system.defect_species_by_name(defect_name_wout_charge).charge_states[
+                    q
+                ].fix_concentration(v / 1e24 * self.volume)
+
+                if fixed_concs and v > fixed_concs[defect_name_wout_charge] * 1.001:  # small noise tol
+                    warnings.warn(
+                        f"Fixed concentration of {k} ({v}) is higher than the total concentration of "
+                        f"({fixed_concs[defect_name_wout_charge]}) at the annealing temperature. "
+                        f"Adjusting the total concentration of {defect_name_wout_charge} to {v}. Check "
+                        f"that this is the behaviour you expect."
+                    )
+                    defect_system.defect_species_by_name(defect_name_wout_charge).fix_concentration(
+                        v / 1e24 * self.volume
+                    )
+            else:
+                defect_system.defect_species_by_name(k).fix_concentration(v / 1e24 * self.volume)
 
     def _generate_annealed_defect_system(
         self,
@@ -6478,32 +6527,6 @@ class FermiSolver(MSONable):
                     fixed_concs[defect_species.name] / 1e24 * defect_system.volume
                 )
 
-        fixed_charge_state_names = []
-        fixed_species_names = []
-        if fixed_defects is not None:
-            for k, v in fixed_defects.items():
-                if k.split("_")[-1].strip("+-").isdigit():
-                    q = int(k.split("_")[-1])
-                    defect_name = "_".join(k.split("_")[:-1])
-                    next(d for d in defect_system.defect_species if d.name == defect_name).charge_states[
-                        q
-                    ].fix_concentration(v / 1e24 * self.volume)
-                    fixed_charge_state_names.append(k)
-                    if v > fixed_concs[defect_name]:
-                        warnings.warn(
-                            f"Fixed concentration of {k} ({v}) is higher than the total concentration of "
-                            f"({fixed_concs[defect_name]}) at the annealing temperature. Adjusting the "
-                            f"total concentration of {defect_name} to {v}. Check that this is the "
-                            f"behaviour you expect."
-                        )
-                        defect_system.defect_species_by_name(defect_name).fix_concentration(
-                            v / 1e24 * self.volume
-                        )
-                else:
-                    next(d for d in defect_system.defect_species if d.name == k).fix_concentration(
-                        v / 1e24 * self.volume
-                    )
-                fixed_species_names.append(k)
-
+        self._fix_defect_concentrations(defect_system, fixed_defects, fixed_concs)
         defect_system.temperature = quenched_temperature
         return defect_system
