@@ -1584,7 +1584,6 @@ class DefectThermodynamics(MSONable):
                 energy_concentration_list.append(
                     {
                         "Defect": defect_name,
-                        "Raw Charge": defect_entry.charge_state,  # for sorting
                         "Charge": charge,
                         "Formation Energy (eV)": round(formation_energy, 3),
                         "Raw Concentration": raw_concentration,
@@ -1608,7 +1607,7 @@ class DefectThermodynamics(MSONable):
             conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
                 lambda x: f"{x:.2%}"
             )
-            conc_df = conc_df.drop(columns=["Raw Charge", "Raw Concentration"])
+            conc_df = conc_df.drop(columns=["Raw Concentration"])
             return conc_df.reset_index(drop=True)
 
         # group by defect and sum concentrations:
@@ -3617,7 +3616,6 @@ def _group_defect_charge_state_concentrations(
             for i in [
                 "Charge",
                 "Formation Energy (eV)",
-                "Raw Charge",
                 "Raw Concentration",
                 "Charge State Population",
             ]
@@ -6384,7 +6382,8 @@ class FermiSolver(MSONable):
         initially calculated at an annealing temperature and then "frozen" as
         the system is cooled to a lower quenched temperature. It can optionally
         fix the concentrations of individual defect charge states or allow
-        charge states to vary while keeping total defect concentrations fixed.
+        charge states to vary while keeping total defect concentrations fixed
+        (default).
 
         Args:
             annealing_temperature (float):
@@ -6426,8 +6425,8 @@ class FermiSolver(MSONable):
                 defects regardless of the chemical potentials, or anneal-quench procedure
                 (e.g. to simulate the effect of a fixed impurity concentration).
                 If a fixed-concentration of a specific charge state is desired,
-                the defect name should be formatted as ``"defect_name_charge"``.
-                I.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                the defect name should be formatted as ``"defect_name_charge"``;
+                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
                 A list of defects to be excluded from high-temperature concentration
@@ -6435,8 +6434,10 @@ class FermiSolver(MSONable):
                 "frozen-in." Defaults to ``None``.
 
         Returns:
-            DefectSystem: A low-temperature defect system (`quenched_temperature`)
-            with defect concentrations fixed to high-temperature (`annealing_temperature`) values.
+            DefectSystem:
+                A low-temperature defect system (`quenched_temperature`)
+                with defect concentrations fixed to high-temperature
+                (`annealing_temperature`) values.
         """
         self._check_required_backend_and_error("py-sc-fermi")
         if free_defects is None:
@@ -6451,8 +6452,7 @@ class FermiSolver(MSONable):
         initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
 
         # Exclude the free_defects, carrier concentrations and Fermi level from fixing
-        all_free_defects = ["Fermi Energy", "n0", "p0"]
-        all_free_defects.extend(free_defects)
+        all_free_defects = ["Fermi Energy", "n0", "p0", *free_defects]
 
         # Get the fixed concentrations of non-exceptional defects
         decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
@@ -6491,11 +6491,10 @@ class FermiSolver(MSONable):
                     fixed_charge_state_names.append(k)
                     if v > fixed_concs[defect_name]:
                         warnings.warn(
-                            f"""Fixed concentration of {k} ({v}) is higher than
-                            the total concentration of ({fixed_concs[defect_name]})
-                            at the annealing temperature. Adjusting the total
-                            concentration of {defect_name} to {v}. Check that
-                            this is the behavior you expect."""
+                            f"Fixed concentration of {k} ({v}) is higher than the total concentration of "
+                            f"({fixed_concs[defect_name]}) at the annealing temperature. Adjusting the "
+                            f"total concentration of {defect_name} to {v}. Check that this is the "
+                            f"behaviour you expect."
                         )
                         defect_system.defect_species_by_name(defect_name).fix_concentration(
                             v / 1e24 * self.volume
@@ -6505,10 +6504,6 @@ class FermiSolver(MSONable):
                         v / 1e24 * self.volume
                     )
                 fixed_species_names.append(k)
-            target_system = deepcopy(defect_system)
-            target_system.temperature = quenched_temperature
-            return target_system
 
-        target_system = deepcopy(defect_system)
-        target_system.temperature = quenched_temperature
-        return target_system
+        defect_system.temperature = quenched_temperature
+        return defect_system
