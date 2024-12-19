@@ -16,7 +16,7 @@ v.2.4.6
   efficient with calculations of formation energies and concentrations. Gives ~10x speedup in Fermi
   solving and concentration calculations (e.g. from 2 hours to 12 minutes for 2D chempot vs temp CdTe grid
   in thermodynamics tutorial).
-- Avoid unnecessary ``DeprecationWarning``s from latest ``spglib`` release.
+- Avoid unnecessary ``DeprecationWarning``\s from latest ``spglib`` release.
 
 v.2.4.5
 ----------
@@ -70,8 +70,8 @@ v.2.3.3
     - Sanity check in ``DefectsGenerator`` if input symmetry is ``P1``.
     - Add ``NKRED`` to ``INCAR`` mismatch tests.
     - Re-parse config & spin degeneracies in concentration/symmetry functions if data not already present
-      (if user is porting ``DefectEntry``s from older ``doped`` versions or manually).
-    - Avoid unnecessary ``DeprecationWarning``s
+      (if user is porting ``DefectEntry``\s from older ``doped`` versions or manually).
+    - Avoid unnecessary ``DeprecationWarning``\s
 - Updated docs and linting
 
 v.2.3.2

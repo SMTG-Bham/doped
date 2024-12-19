@@ -1,11 +1,12 @@
-"""
+r"""
 Helper functions for setting up PHS analysis.
 
 Contains modified versions of functions from pydefect (https://github.com/kumagai-group/pydefect)
-and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``s).
+and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``\s).
 """
 
 # suppress pydefect INFO messages
+import contextlib
 import logging
 import os
 import warnings
@@ -20,7 +21,6 @@ from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
-from shakenbreak.plotting import _install_custom_font
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry
@@ -122,7 +122,7 @@ def make_band_edge_orbital_infos(
     neighbor_indices: Optional[list[int]] = None,
     defect_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
 ):
-    """
+    r"""
     Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
 
     Modified from ``pydefect`` to use projected orbitals
@@ -137,13 +137,13 @@ def make_band_edge_orbital_infos(
             Default is 0.0.
         neighbor_indices (list[int]):
             Indices of neighboring atoms to the defect site, for localisation analysis.
-            Default is ``None``.
+            Default is ``None``\.
         defect_procar (EasyunfoldProcar, Procar):
             ``EasyunfoldProcar`` or ``Procar`` object, for the defect supercell,
-            if projected eigenvalue/orbitals data is not provided in ``defect_vr``.
+            if projected eigenvalue/orbitals data is not provided in ``defect_vr``\.
 
     Returns:
-        ``BandEdgeOrbitalInfos `` object
+        ``BandEdgeOrbitalInfos`` object.
     """
     eigval_range = defaults.eigval_range
     kpt_coords = [tuple(coord) for coord in defect_vr.actual_kpoints]
@@ -402,6 +402,13 @@ def get_eigenvalue_analysis(
     Can be used to determine if a defect is adopting a perturbed host
     state (PHS / shallow state), see
     https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
+    Note that the classification of electronic states as band edges or localized
+    orbitals is based on the similarity of orbital projections and eigenvalues
+    between the defect and bulk cell calculations (see
+    ``similar_orb/energy_criterion`` argument descriptions below for more details).
+    You may want to adjust the default values of these keyword arguments, as the
+    defaults may not be appropriate in all cases. In particular, the P-ratio values
+    can give useful insight, revealing the level of (de)localisation of the states.
 
     Either a ``doped`` ``DefectEntry`` object can be provided, or the required
     VASP output files/objects for the bulk and defect supercell calculations
@@ -494,15 +501,19 @@ def get_eigenvalue_analysis(
         similar_orb_criterion (float):
             Threshold criterion for determining if the orbitals of two eigenstates
             are similar (for identifying band-edge and defect states). If the
-            summed orbital difference is less than this value, then the orbitals
-            are considered similar. Default is to try with 0.1, then if this fails
-            increase to the ``pydefect`` default of 0.2.
+            summed orbital projection differences, normalised by the total orbital
+            projection coefficients,  are less than this value, then the orbitals
+            are considered similar. Default is to try with 0.2 (``pydefect`` default),
+            then if this fails increase to 0.35.
         similar_energy_criterion (float):
             Threshold criterion for considering two eigenstates similar in energy,
             used for identifying band-edge (and defect states). Bands within this
             energy difference from the VBM/CBM of the bulk are considered potential
-            band-edge states. Default is to try with 0.25 eV, then if this fails
-            increase to the ``pydefect`` default of 0.5 eV.
+            band-edge states. Default is to try with the larger of either 0.25 eV
+            or 0.1 eV + the potential alignment from defect to bulk cells as
+            determined by the charge correction in ``defect_entry.corrections_metadata``
+            if present. If this fails, then it is increased to the ``pydefect`` default
+            of 0.5 eV.
 
     Returns:
         ``pydefect`` ``PerfectBandEdgeState`` class
@@ -575,8 +586,34 @@ def get_eigenvalue_analysis(
     perfect = PerfectBandEdgeState(vbm_info, cbm_info)
 
     dynamic_criterion_warning = any([similar_orb_criterion, similar_energy_criterion])
-    defaults._similar_orb_criterion = similar_orb_criterion or 0.1
-    defaults._similar_energy_criterion = similar_energy_criterion or 0.25
+    defaults._similar_orb_criterion = similar_orb_criterion or 0.2
+
+    # similar energy criterion should be based on the charge correction potential alignment, as this is
+    # what will potentially be shifting the band edge:
+    def _get_pot_diff_from_entry(defect_entry: DefectEntry):
+        pot_diff = 0
+        if defect_entry.corrections_metadata:
+            for _charge_corr_type, subdict in defect_entry.corrections_metadata.items():
+                if isinstance(subdict, dict) and "pydefect_ExtendedFnvCorrection" in subdict:
+                    efnv = subdict["pydefect_ExtendedFnvCorrection"]
+                    if isinstance(efnv, dict):
+                        pot_diff = np.mean(
+                            [
+                                s["potential"] - s["pc_potential"]
+                                for s in efnv["sites"]
+                                if s["distance"] > efnv["defect_region_radius"]
+                            ]
+                        )
+                    else:
+                        pot_diff = efnv.average_potential_diff
+
+                elif isinstance(subdict, dict) and "mean_alignments" in subdict:
+                    pot_diff = subdict["mean_alignments"]
+        return pot_diff
+
+    pot_diff = _get_pot_diff_from_entry(defect_entry)
+    defaults._similar_energy_criterion = similar_energy_criterion or max(0.25, abs(pot_diff) + 0.1)
+
     try:
         bes = make_band_edge_states(band_orb, perfect)
     except ValueError:  # increase to pydefect defaults:
@@ -585,9 +622,9 @@ def get_eigenvalue_analysis(
                 f"Band-edge state identification failed with the current criteria: "
                 f"similar_orb_criterion={defaults._similar_orb_criterion}, "
                 f"similar_energy_criterion={defaults._similar_energy_criterion} eV. "
-                f"Trying with the pydefect defaults of 0.2 and 0.5 eV."
+                f"Trying with values of 0.35 and 0.5 eV."
             )
-        defaults._similar_orb_criterion = 0.2
+        defaults._similar_orb_criterion = 0.35
         defaults._similar_energy_criterion = 0.5
         bes = make_band_edge_states(band_orb, perfect)  # if 2nd round fails, let it raise pydefect error
 
@@ -597,7 +634,10 @@ def get_eigenvalue_analysis(
     vbm = vbm_info.orbital_info.energy + band_orb.eigval_shift
     cbm = cbm_info.orbital_info.energy + band_orb.eigval_shift
 
-    _install_custom_font()  # in case not installed already
+    with contextlib.suppress(Exception):
+        from shakenbreak.plotting import _install_custom_font
+
+        _install_custom_font()  # in case not installed already
     style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 

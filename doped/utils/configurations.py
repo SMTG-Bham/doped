@@ -4,20 +4,28 @@ diagrams, for potential energy surfaces (PESs), Nudged Elastic Band (NEB), non-
 radiative recombination calculations etc.
 """
 
+import contextlib
 import os
 import warnings
 from typing import Optional, Union
 
 import numpy as np
-from nonrad import ccd
-from pymatgen.analysis.structure_matcher import Structure, StructureMatcher
+from pymatgen.analysis.structure_matcher import ElementComparator, Structure, StructureMatcher
+from pymatgen.core.composition import Composition, Element, Species
+from pymatgen.core.sites import PeriodicSite
+from pymatgen.core.structure import IStructure
 from pymatgen.util.typing import PathLike
+
+from doped.utils.efficiency import Composition as doped_Composition
+from doped.utils.efficiency import IStructure as doped_IStructure
+from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
 
 
 def orient_s2_like_s1(
     struct1: Structure,
     struct2: Structure,
     verbose: bool = False,
+    **sm_kwargs,
 ):
     """
     Re-orient ``struct2`` to a fully symmetry-equivalent orientation (i.e.
@@ -28,7 +36,6 @@ def orient_s2_like_s1(
     ``CarrierCapture.jl`` etc.).
 
     This corresponds to minimising the root-mean-square displacement from
-
     the shortest _linear_ path to transform from ``struct1`` to a
     symmetry-equivalent definition of ``struct2``)... (TODO)
     Uses the ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``,
@@ -47,6 +54,9 @@ def orient_s2_like_s1(
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
             Default: False
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``
+            (e.g. ``ignored_species``, ``comparator`` etc).
 
     Returns:
         Structure:
@@ -59,16 +69,15 @@ def orient_s2_like_s1(
             f"Volumes of the two input structures differ: {struct1.volume} Å³ vs {struct2.volume} Å³. "
             f"In most cases (defect NEB, CC diagrams...) this is not desirable!"
         )
-    sm_tight = StructureMatcher(stol=0.2, primitive_cell=False)
-    sm_loose = StructureMatcher(stol=0.5, primitive_cell=False)
-    sm_looser = StructureMatcher(stol=1, primitive_cell=False)
-    sm_loosest = StructureMatcher(stol=5, primitive_cell=False)
 
-    struct2_like_struct1 = (  # allow high stols to account for highly-mismatching/distorted structures
-        sm_tight.get_s2_like_s1(struct1, struct2)  # _could_ just use stol=5 from the start, which gives
-        or sm_loose.get_s2_like_s1(struct1, struct2)  # same answer, but much slower (as it cycles through
-        or sm_looser.get_s2_like_s1(struct1, struct2)  # multiple possible matches)
-        or sm_loosest.get_s2_like_s1(struct1, struct2)
+    if sm_kwargs.get("primitive_cell", False):
+        raise ValueError(
+            "``primitive_cell=True`` is not supported for `get_transformation` (and hence "
+            "`get_s2_like_s1`."
+        )
+
+    struct2_like_struct1 = _scan_sm_stol_till_match(
+        struct1, struct2, func_name="get_s2_like_s1", **sm_kwargs
     )
 
     if not struct2_like_struct1:
@@ -82,17 +91,32 @@ def orient_s2_like_s1(
     # ``get_s2_like_s1`` usually doesn't work as desired due to different (but equivalent) lattice vectors
     # (e.g. a=(010) instead of (100) etc.), so here we ensure the lattice definition is the same:
     struct2_really_like_struct1 = Structure(
-        struct1.lattice, struct1.species, struct2_like_struct1.frac_coords
+        struct1.lattice,
+        struct2_like_struct1.species,
+        struct2_like_struct1.frac_coords,
+        site_properties=struct2_like_struct1.site_properties,
     )
 
     # we see that this rearranges the structure so the atom indices should now match correctly. This should
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
-    delQ_s1_s2 = ccd.get_dQ(struct1, struct2)
-    delQ_s1_s2_like_s1_pmg = ccd.get_dQ(struct1, struct2_like_struct1)
-    delQ_s2_like_s1_s2 = ccd.get_dQ(struct2_really_like_struct1, struct2)
-    delQ_s1_s2_like_s1 = ccd.get_dQ(struct1, struct2_really_like_struct1)
+    def _get_dQ(struct_a, struct_b):
+        try:
+            return np.sqrt(
+                sum((a.distance(b) ** 2) * a.specie.atomic_mass for a, b in zip(struct_a, struct_b))
+            )
+        except Exception:
+            return "N/A"
 
-    if delQ_s1_s2_like_s1 > min(delQ_s1_s2, delQ_s1_s2_like_s1_pmg) + 0.1:  # shouldn't happen!
+    delQ_s1_s2 = _get_dQ(struct1, struct2)
+    delQ_s1_s2_like_s1_pmg = _get_dQ(struct1, struct2_like_struct1)
+    delQ_s2_like_s1_s2 = _get_dQ(struct2_really_like_struct1, struct2)
+    delQ_s1_s2_like_s1 = _get_dQ(struct1, struct2_really_like_struct1)
+
+    if (
+        not sm_kwargs.get("allow_subset")
+        and delQ_s1_s2_like_s1 > min(delQ_s1_s2, delQ_s1_s2_like_s1_pmg) + 0.1
+    ):
+        # shouldn't happen!  (and ignore cases where we're using it in defect stenciling; sm_kwargs has X)
         warnings.warn(
             f"StructureMatcher.get_s2_like_s1() appears to have failed. The mass-weighted displacement "
             f"(ΔQ in amu^(1/2)Å) for the input structures is:\n"
@@ -114,6 +138,245 @@ def orient_s2_like_s1(
 
 
 get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
+
+
+def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
+    """
+    Get the equivalent ``stol`` value for a given Cartesian distance (``dist``)
+    in a given ``Structure``.
+
+    ``stol`` is a site tolerance parameter used in ``pymatgen``
+    ``StructureMatcher`` functions, defined as the fraction of the average
+    free length per atom := ( V / Nsites ) ** (1/3).
+
+    Args:
+        dist (float): Cartesian distance in Å.
+        structure (Structure): Structure to calculate ``stol`` for.
+
+    Returns:
+        float: Equivalent ``stol`` value for the given distance.
+    """
+    return dist / (structure.volume / len(structure)) ** (1 / 3)
+
+
+def _get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> dict:
+    r"""
+    Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
+    given ``Structure``, where ``min_bond_length`` and ``max_bond_length`` are
+    the minimum and maximum bond lengths for each element in the structure.
+
+    Args:
+        structure (Structure): Structure to calculate bond lengths for.
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``.
+            Just used to check if ``comparator`` has been set here (if
+            ``ElementComparator`` used, then we use ``Element``\s rather
+            than ``Species`` as the keys).
+
+    Returns:
+        dict: Dictionary of ``{element: (min_bond_length, max_bond_length)}``.
+    """
+
+    def _get_symbol(element: Union[Element, Species]):
+        if isinstance(sm_kwargs.get("comparator"), (ElementComparator, type(None))) and isinstance(
+            element, Species
+        ):
+            return element.element.symbol
+        return str(element)
+
+    if len(structure) == 1:
+        structure = structure * 2  # need at least two sites to calculate bond lengths
+
+    element_idx_dict = {  # distance matrix broken down by species
+        _get_symbol(element): [
+            i for i, site in enumerate(structure) if _get_symbol(site.specie) == _get_symbol(element)
+        ]
+        for element in structure.composition.elements
+    }
+
+    distance_matrix = structure.distance_matrix
+    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+    element_min_max_bond_length_dict = {elt: np.array([0, 0]) for elt in element_idx_dict}
+
+    for elt, site_indices in element_idx_dict.items():
+        element_dist_matrix = distance_matrix[:, site_indices]  # (N_of_that_element, N_sites) matrix
+        if element_dist_matrix.size != 0:
+            min_interatomic_distances_per_atom = np.min(element_dist_matrix, axis=0)  # min along columns
+            element_min_max_bond_length_dict[elt] = np.array(
+                [np.min(min_interatomic_distances_per_atom), np.max(min_interatomic_distances_per_atom)]
+            )
+
+    return element_min_max_bond_length_dict
+
+
+def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) -> float:
+    """
+    Get the minimum possible ``stol`` value which will give a match between
+    ``struct1`` and ``struct2`` using ``StructureMatcher``, based on the ranges
+    of per-element minimum interatomic distances in the two structures.
+
+    Args:
+        struct1 (Structure): Initial structure.
+        struct2 (Structure): Final structure.
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``.
+            Just used to check if ``ignored_species`` or ``comparator`` has
+            been set here.
+
+    Returns:
+        float:
+            Minimum ``stol`` value for a match between ``struct1``
+            and ``struct2``. If a direct match is detected (corresponding
+            to min ``stol`` = 0, then ``1e-4`` is returned).
+    """
+    s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1, **sm_kwargs)
+    s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2, **sm_kwargs)
+    common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
+    if not common_elts:  # try without oxidation states
+        struct1_wout_oxi = struct1.copy()
+        struct2_wout_oxi = struct2.copy()
+        struct1_wout_oxi.remove_oxidation_states()
+        struct2_wout_oxi.remove_oxidation_states()
+        s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1_wout_oxi, **sm_kwargs)
+        s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2_wout_oxi, **sm_kwargs)
+        common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
+
+    min_min_dist_change = 1e-4
+    with contextlib.suppress(Exception):
+        min_min_dist_change = max(
+            {
+                elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
+                for elt in common_elts
+                if elt not in sm_kwargs.get("ignored_species", [])
+            }.values()
+        )
+
+    return max(get_dist_equiv_stol(min_min_dist_change, struct1), 1e-4)
+
+
+def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Structure):
+    """
+    Convenience method to get the root-mean-square displacement _and atomic
+    displacements_ between two structures, normalized by the free length per
+    atom ((Vol/Nsites)^(1/3)).
+
+    These values are not directly returned by ``StructureMatcher``
+    methods. This function replicates ``StructureMatcher.get_rms_dist()``,
+    but changes the returned value from ``match[0], max(match[1])`` to
+    ``match[0], match[1]`` to allow further analysis of displacements.
+    Mainly intended for use by ``ShakeNBreak``.
+
+    Args:
+        sm (StructureMatcher): ``pymatgen`` ``StructureMatcher`` object.
+        struct1 (Structure): Initial structure.
+        struct2 (Structure): Final structure.
+
+    Returns:
+        tuple:
+            - float: Normalised RMS displacements between the two structures.
+            - np.ndarray: Normalised displacements between the two structures.
+        or ``None`` if no match is found.
+    """
+    struct1, struct2 = sm._process_species([struct1, struct2])
+    struct1, struct2, fu, s1_supercell = sm._preprocess(struct1, struct2)
+    match = sm._match(struct1, struct2, fu, s1_supercell, use_rms=True, break_on_match=False)
+
+    return None if match is None else (match[0], match[1])
+
+
+def _scan_sm_stol_till_match(
+    struct1: Structure,
+    struct2: Structure,
+    func_name: str = "get_s2_like_s1",
+    min_stol: Optional[float] = None,
+    max_stol: float = 5.0,
+    stol_factor: float = 0.5,
+    **sm_kwargs,
+):
+    r"""
+    Utility function to scan through a range of ``stol`` values for
+    ``StructureMatcher`` until a match is found between ``struct1`` and
+    ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result.
+
+    The ``StructureMatcher.match()`` function (used in most
+    ``StructureMatcher`` methods) speed is heavily dependent on ``stol``,
+    with smaller values being faster, so we can speed up evaluation by
+    starting with small values and increasing until a match is found
+    (especially with the ``doped`` efficiency tools which implement
+    caching (and other improvements) to ensure no redundant work here).
+
+    Note that ``ElementComparator()`` is used by default here! (So sites
+    with different species but the same element (e.g. "S2-" & "S0+") will
+    be considered match-able). This can be controlled with
+    ``sm_kwargs['comparator']``.
+
+    Args:
+        struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
+        struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
+        func_name (str):
+            The name of the ``StructureMatcher`` method to return the result
+            of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
+            as:
+            - "get_s2_like_s1" (default)
+            - "get_rms_dist"
+            - "fit"
+            - "fit_anonymous"
+            etc.
+        min_stol (float):
+            Minimum ``stol`` value to try. Default is to use ``doped``\s
+            ``get_min_stol_for_s1_s2()`` function to estimate the minimum
+            ``stol`` necessary, and start with 2x this value to achieve
+            fast structure-matching in most cases.
+        max_stol (float): Maximum ``stol`` value to try. Default: 5.0.
+        stol_factor (float):
+            Fractional increment to increase ``stol`` by each time (when a
+            match is not found). Default value of 0.5 increases ``stol`` by
+            50% each time.
+        **sm_kwargs:
+            Additional keyword arguments to pass to ``StructureMatcher()``.
+    """
+    # use doped efficiency tools to make structure-matching as fast as possible:
+    Composition.__instances__ = {}
+    Composition.__eq__ = doped_Composition.__eq__
+    Composition.__hash__ = doped_Composition.__hash__
+    PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+    PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
+    IStructure.__instances__ = {}
+    IStructure.__eq__ = doped_IStructure.__eq__
+    StructureMatcher._get_atomic_disps = _sm_get_atomic_disps  # monkey-patch ``StructureMatcher`` for SnB
+
+    if "comparator" not in sm_kwargs:
+        sm_kwargs["comparator"] = ElementComparator()
+
+    if min_stol is None:
+        min_stol = get_min_stol_for_s1_s2(struct1, struct2, **sm_kwargs) * 2
+
+    # here we cycle through a range of stols, because we just need to find the closest match so we could
+    # use a high ``stol`` from the start and it would give correct result, but higher ``stol``\s take
+    # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
+    # and break once a match is found:
+    stol = min_stol
+    while stol < max_stol:
+        if user_stol := sm_kwargs.pop("stol", False):  # first run, try using user-provided stol first:
+            sm_full_user_custom = StructureMatcher(primitive_cell=False, stol=user_stol, **sm_kwargs)
+            result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
+            if result is not None:
+                return result
+
+        sm = StructureMatcher(primitive_cell=False, stol=stol, **sm_kwargs)
+        result = getattr(sm, func_name)(struct1, struct2)
+        if result is not None:
+            return result
+
+        stol *= 1 + stol_factor
+        # Note: this function could possibly be sped up if ``StructureMatcher._match()`` was updated to
+        # return the guessed ``best_match`` value (even if larger than ``stol``), which will always be
+        # >= the best possible match it seems, and then using this to determine the next ``stol`` value
+        # to trial. Seems like it could give a ~50% speedup in some cases? Not clear though,
+        # as once you're getting a reasonable guessed value out, the trial ``stol`` should be pretty
+        # close to the necessary value anyway.
+
+    return None
 
 
 def get_path_structures(

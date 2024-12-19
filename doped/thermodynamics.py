@@ -139,6 +139,7 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
     Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
     """
     if chempots is not None:
+        chempots = deepcopy(chempots)  # don't modify original dict
         for key, subdict in list(chempots.items()):
             chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
 
@@ -147,7 +148,7 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
 
 def _parse_chempots(
     chempots: Optional[dict] = None, el_refs: Optional[dict] = None, update_el_refs: bool = False
-) -> tuple[dict | None, dict | None]:
+) -> tuple[Optional[dict], Optional[dict]]:
     """
     Parse the chemical potentials input, formatting them in the ``doped``
     format for use in analysis functions.
@@ -156,7 +157,14 @@ def _parse_chempots(
 
     Returns parsed ``chempots`` and ``el_refs``
     """
-    chempots = _update_old_chempots_dict(chempots)
+    for i in [chempots, el_refs]:
+        if i is not None and not isinstance(i, dict):
+            raise ValueError(
+                f"Invalid chempots/el_refs format:\nchempots: {type(chempots)}\nel_refs: {type(el_refs)}\n"
+                "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!"
+            )
+
+    chempots = _update_old_chempots_dict(chempots)  # this deepcopies, making sure we don't overwrite
 
     if chempots is None:
         if el_refs is not None:
@@ -409,7 +417,6 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
     return grouped_entries
 
 
-# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
@@ -721,8 +728,8 @@ class DefectThermodynamics(MSONable):
             el_refs=d.get("el_refs"),
             vbm=d.get("vbm"),
             band_gap=d.get("band_gap"),
-            dist_tol=d.get("dist_tol"),
-            check_compatibility=d.get("check_compatibility"),
+            dist_tol=d.get("dist_tol", 1.5),
+            check_compatibility=d.get("check_compatibility", True),
             bulk_dos=FermiDos.from_dict(d.get("bulk_dos")) if d.get("bulk_dos") else None,
             skip_check=d.get("skip_check"),
         )
@@ -771,9 +778,14 @@ class DefectThermodynamics(MSONable):
         Parse chemical potentials, either using input values (after formatting
         them in the doped format) or using the class attributes if set.
         """
-        chempots, el_refs = _parse_chempots(
-            chempots or self.chempots, el_refs or self.el_refs, update_el_refs=True
-        )
+        if isinstance(chempots, dict) and "elemental_refs" in chempots and el_refs is None:
+            # doped chempot dict input, use its elemental refs
+            chempots, el_refs = _parse_chempots(chempots, chempots.get("elemental_refs"))
+
+        else:  # use stored or provided el_refs
+            chempots, el_refs = _parse_chempots(
+                chempots or self.chempots, el_refs or self.el_refs, update_el_refs=True
+            )
         if self.check_compatibility:
             self._check_bulk_chempots_compatibility(chempots)
 
@@ -821,6 +833,14 @@ class DefectThermodynamics(MSONable):
                 )
                 for entry in self.defect_entries.values()
             ]
+        # note that in general, we have chosen to favour ``entry.calculation_metadata.get("vbm")`` over
+        # ``self.vbm`` for all calculations of formation energies / transition levels / concentrations.
+        # These values should be the same, and we have warnings if they differ by too much,
+        # but in general the ``DefectEntry`` value should be the most reliable, as this is tied to its
+        # raw supercell energy difference from the chosen bulk cell for that ``DefectEntry``.
+        # but we do use ``self.band_gap`` preferably as this only affects the plot ranges (rather than
+        # formation energies)
+
         # set range to {min E_form - 30, max E_form +30} eV for y (formation energy), and
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
@@ -862,7 +882,11 @@ class DefectThermodynamics(MSONable):
                     [
                         -1.0 * entry.charge_state,
                         1,
-                        -1.0 * (entry.get_ediff() + entry.charge_state * self.vbm),  # type: ignore
+                        -1.0
+                        * (
+                            entry.get_ediff()
+                            + entry.charge_state * entry.calculation_metadata.get("vbm", self.vbm)
+                        ),  # type: ignore
                     ]
                     for entry in sorted_defect_entries
                 ]
@@ -1236,9 +1260,16 @@ class DefectThermodynamics(MSONable):
         potentials can also be supplied later in each analysis function.
         (Default: None)
         """
-        self._chempots, self._el_refs = _parse_chempots(
-            input_chempots, self._el_refs, update_el_refs=False
-        )
+        if isinstance(input_chempots, dict) and "elemental_refs" in input_chempots:
+            # doped chempot dict input, use its el_refs
+            self._chempots, self._el_refs = _parse_chempots(
+                input_chempots, input_chempots.get("elemental_refs")
+            )
+
+        else:
+            self._chempots, self._el_refs = _parse_chempots(
+                input_chempots, self._el_refs, update_el_refs=False
+            )
         if self.check_compatibility:
             self._check_bulk_chempots_compatibility(self._chempots)
 
@@ -1503,56 +1534,67 @@ class DefectThermodynamics(MSONable):
 
         energy_concentration_list = []
 
-        with warnings.catch_warnings():  # avoid double warning, already warned about 0 chemical potentials
-            warnings.filterwarnings("ignore", "Chemical potentials not present")
-            for defect_entry in self.defect_entries.values():
-                formation_energy = defect_entry.formation_energy(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    fermi_level=fermi_level,
-                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                )
-                raw_concentration = defect_entry.equilibrium_concentration(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    fermi_level=fermi_level,
-                    vbm=self.vbm,
-                    temperature=temperature,
-                    per_site=per_site,
-                    formation_energy=formation_energy,  # reduce compute times
-                )
+        if chempots is None:  # only warn once
+            _no_chempots_warning()
+            all_comps = [
+                entry.sc_entry.composition if entry.sc_entry else entry.bulk_entry.composition
+                for entry in self.defect_entries.values()
+            ]
+            empty_el_dict = {el: 0 for el in {el.symbol for comp in all_comps for el in comp}}
+            chempots = {
+                "limits": {"No User Chemical Potentials": empty_el_dict},
+                "limits_wrt_el_refs": {"No User Chemical Potentials": empty_el_dict},
+                "elemental_refs": el_refs or empty_el_dict,
+            }
 
-                defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
-                charge = (
-                    defect_entry.charge_state
-                    if skip_formatting
-                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
+        for defect_entry in self.defect_entries.values():
+            formation_energy = defect_entry.formation_energy(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+            )
+            raw_concentration = defect_entry.equilibrium_concentration(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                temperature=temperature,
+                per_site=per_site,
+                formation_energy=formation_energy,  # reduce compute times
+            )
+
+            defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
+            charge = (
+                defect_entry.charge_state
+                if skip_formatting
+                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
+            )
+            if lean:
+                energy_concentration_list.append(
+                    {
+                        "Defect": defect_name,
+                        "Charge": charge,
+                        "Concentration (cm^-3)": raw_concentration,
+                    }
                 )
-                if lean:
-                    energy_concentration_list.append(
-                        {
-                            "Defect": defect_name,
-                            "Charge": charge,
-                            "Concentration (cm^-3)": raw_concentration,
-                        }
-                    )
-                else:
-                    energy_concentration_list.append(
-                        {
-                            "Defect": defect_name,
-                            "Raw Charge": defect_entry.charge_state,  # for sorting
-                            "Charge": charge,
-                            "Formation Energy (eV)": round(formation_energy, 3),
-                            "Raw Concentration": raw_concentration,
-                            (
-                                "Concentration (per site)" if per_site else "Concentration (cm^-3)"
-                            ): _format_concentration(
-                                raw_concentration, per_site=per_site, skip_formatting=skip_formatting
-                            ),
-                        }
-                    )
+            else:
+                energy_concentration_list.append(
+                    {
+                        "Defect": defect_name,
+                        "Raw Charge": defect_entry.charge_state,  # for sorting
+                        "Charge": charge,
+                        "Formation Energy (eV)": round(formation_energy, 3),
+                        "Raw Concentration": raw_concentration,
+                        (
+                            "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                        ): _format_concentration(
+                            raw_concentration, per_site=per_site, skip_formatting=skip_formatting
+                        ),
+                    }
+                )
 
         conc_df = pd.DataFrame(energy_concentration_list)
 
@@ -2775,7 +2817,7 @@ class DefectThermodynamics(MSONable):
                 colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
                 If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
                 lines to plot), ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more
-                than 20 lines).
+                than 20 lines; citation: https://zenodo.org/records/8409685).
             linestyles (list):
                 Linestyles to use for the formation energy lines, either as a single
                 linestyle (``str``) or list of linestyles (``list[str]``) in the order of
@@ -2929,6 +2971,8 @@ class DefectThermodynamics(MSONable):
                         "Charges": "None",
                         "eV from VBM": np.inf,
                         "In Band Gap?": False,
+                        "-q_i": np.inf,  # for sorting
+                        "-q_j": np.inf,  # for sorting
                     }
                 )
                 if all:
@@ -2941,6 +2985,8 @@ class DefectThermodynamics(MSONable):
                         "Charges": _TL_naming_func(transition_level_charges),
                         "eV from VBM": round(TL, 3),
                         "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                        "-q_i": -transition_level_charges[0],  # for sorting
+                        "-q_j": -transition_level_charges[1],  # for sorting
                     }
                     for TL, transition_level_charges in transition_level_dict.items()
                 )
@@ -2953,7 +2999,9 @@ class DefectThermodynamics(MSONable):
                 )  # sort by charge
                 for i, j in product(sorted_defect_entries, repeat=2):
                     if i.charge_state - j.charge_state == 1:
-                        TL = j.get_ediff() - i.get_ediff() - self.vbm
+                        # take mean VBM, ofc should be the same, but allow for small differences
+                        mean_VBM = np.mean([x.calculation_metadata.get("vbm", self.vbm) for x in [i, j]])
+                        TL = j.get_ediff() - i.get_ediff() - mean_VBM
                         i_meta = not any(i == y for y in self.all_stable_entries)
                         j_meta = not any(j == y for y in self.all_stable_entries)
                         transition_level_map_list.append(
@@ -2965,6 +3013,8 @@ class DefectThermodynamics(MSONable):
                                 "eV from VBM": round(TL, 3),
                                 "In Band Gap?": (TL > 0) and (self.band_gap > TL),
                                 "N(Metastable)": [i_meta, j_meta].count(True),
+                                "-q_i": -i.charge_state,  # for sorting
+                                "-q_j": -j.charge_state,  # for sorting
                             }
                         )
 
@@ -2972,11 +3022,19 @@ class DefectThermodynamics(MSONable):
             warnings.warn("No transition levels found for chosen parameters!")
             return None
         tl_df = pd.DataFrame(transition_level_map_list)
+
+        if "N(Metastable)" not in tl_df.columns:  # add, because we use it for sorting in case all=True
+            tl_df["N(Metastable)"] = 0
+
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
         tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._map_sort_func)
-        tl_df = tl_df.sort_values(by=["Defect Appearance Order", "Defect", "eV from VBM"])
-        tl_df = tl_df.drop(columns="Defect Appearance Order")
-        return tl_df.reset_index(drop=True)
+        tl_df = tl_df.sort_values(
+            by=["Defect Appearance Order", "Defect", "-q_i", "-q_j", "N(Metastable)", "eV from VBM"]
+        )
+        tl_df = tl_df.drop(columns=["Defect Appearance Order", "-q_i", "-q_j"])
+        if not all:
+            tl_df = tl_df.drop(columns="N(Metastable)")
+        return tl_df.set_index(["Defect", "Charges"])
 
     def print_transition_levels(self, all: bool = False):
         """
@@ -3017,12 +3075,9 @@ class DefectThermodynamics(MSONable):
                 return
             for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
                 bold_print(f"Defect: {defect_name}")
-                for _, row in tl_df.iterrows():
-                    if row["Charges"] != "None":
-                        print(
-                            f"Transition level {row['Charges']} at {row['eV from VBM']:.3f} eV above the "
-                            f"VBM"
-                        )
+                for index, row in tl_df.iterrows():
+                    if index[1] != "None":  # charges
+                        print(f"Transition level {index[1]} at {row['eV from VBM']:.3f} eV above the VBM")
                 print("")  # add space
 
     def get_formation_energies(
@@ -3058,9 +3113,14 @@ class DefectThermodynamics(MSONable):
             Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
         - 'E_corr':
             Finite-size supercell charge correction.
-        - 'ΔEᶠᵒʳᵐ':
+        - 'Eᶠᵒʳᵐ':
             Defect formation energy, with the specified chemical potentials and Fermi level.
             Equals the sum of all other terms.
+        - 'Path':
+            Path to the defect calculation folder.
+        - 'Δ[E_corr]':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
 
         Args:
             chempots (dict):
@@ -3130,10 +3190,9 @@ class DefectThermodynamics(MSONable):
 
         if chempots is None:
             _no_chempots_warning()
-            chempots = {
-                "limits": {"No User Chemical Potentials": {}},  # empty dict so is iterable (for
-                # following code)
-                "limits_wrt_el_refs": {"No User Chemical Potentials": {}},  # empty dict so is iterable
+            chempots = {  # empty sub-dicts so they're iterable (for following code)
+                "limits": {"No User Chemical Potentials": {}},
+                "limits_wrt_el_refs": {"No User Chemical Potentials": {}},
             }
 
         limit = _parse_limit(chempots, limit)
@@ -3193,10 +3252,14 @@ class DefectThermodynamics(MSONable):
             Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
         - 'E_corr':
             Finite-size supercell charge correction.
-        - 'ΔEᶠᵒʳᵐ':
+        - 'Eᶠᵒʳᵐ':
             Defect formation energy, with the specified chemical potentials and Fermi level.
             Equals the sum of all other terms.
-
+        - 'Path':
+            Path to the defect calculation folder.
+        - 'Δ[E_corr]':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
 
         Args:
             relative_chempots (dict):
@@ -3223,8 +3286,7 @@ class DefectThermodynamics(MSONable):
         """
         table = []
 
-        defect_entries = deepcopy(self.defect_entries)
-        for name, defect_entry in defect_entries.items():
+        for name, defect_entry in self.defect_entries.items():
             row = [
                 name.rsplit("_", 1)[0],  # name without charge,
                 (
@@ -3234,10 +3296,7 @@ class DefectThermodynamics(MSONable):
                 ),
             ]
             row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
-            if "vbm" in defect_entry.calculation_metadata:
-                row += [defect_entry.charge_state * defect_entry.calculation_metadata["vbm"]]
-            else:
-                row += [defect_entry.charge_state * self.vbm]  # type: ignore[operator]
+            row += [defect_entry.charge_state * defect_entry.calculation_metadata.get("vbm", self.vbm)]
             row += [defect_entry.charge_state * fermi_level]
             row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
             row += [defect_entry._get_chempot_term(relative_chempots)]
@@ -3250,6 +3309,15 @@ class DefectThermodynamics(MSONable):
             )
             row += [formation_energy]
             row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
+            row += [
+                sum(
+                    [
+                        val
+                        for key, val in defect_entry.corrections_metadata.items()
+                        if "charge_correction_error" in key
+                    ]
+                )
+            ]
 
             table.append(row)
 
@@ -3264,13 +3332,15 @@ class DefectThermodynamics(MSONable):
                 "Σμ_ref",
                 "Σμ_formal",
                 "E_corr",
-                "ΔEᶠᵒʳᵐ",
+                "Eᶠᵒʳᵐ",
                 "Path",
+                "Δ[E_corr]",
             ],
         )
 
         # round all floats to 3dp:
-        return formation_energy_df.round(3)
+        formation_energy_df = formation_energy_df.round(3)
+        return formation_energy_df.set_index(["Defect", "q"])
 
     def get_symmetries_and_degeneracies(
         self,
@@ -3372,7 +3442,7 @@ class DefectThermodynamics(MSONable):
             defect_entry._parse_and_set_degeneracies(symprec=symprec)
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
-                    len(defect_entry.defect.structure.get_primitive_structure())
+                    len(defect_entry.defect.structure.to_primitive())  # spglib primitive
                     / len(defect_entry.defect.structure)
                 )
 
@@ -3409,7 +3479,7 @@ class DefectThermodynamics(MSONable):
         if not skip_formatting:
             symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
 
-        return symmetry_df.reset_index(drop=True)
+        return symmetry_df.set_index(["Defect", "q"])
 
     def __repr__(self):
         """
@@ -3424,6 +3494,64 @@ class DefectThermodynamics(MSONable):
             f"defect entries (in self.defect_entries). Available attributes:\n"
             f"{properties}\n\nAvailable methods:\n{methods}"
         )
+
+    def __getattr__(self, attr):
+        """
+        Redirects an unknown attribute/method call to the ``defect_entries``
+        dictionary attribute, if the attribute doesn't exist in
+        ``DefectThermodynamics``.
+        """
+        try:
+            super().__getattribute__(attr)
+        except AttributeError as exc:
+            if attr == "_defect_entries":
+                raise exc
+            return getattr(self._defect_entries, attr)
+
+    def __getitem__(self, key):
+        """
+        Makes ``DefectThermodynamics`` object subscriptable, so that it can be
+        indexed like a dictionary, using the ``defect_entries`` dictionary
+        attribute.
+        """
+        return self.defect_entries[key]
+
+    def __setitem__(self, key, value):
+        """
+        Set the value of a specific key (defect name) in the ``defect_entries``
+        dictionary, using ``add_entries`` (to check compatibility).
+        """
+        self.add_entries(
+            [
+                value,
+            ]
+        )
+
+    def __delitem__(self, key):
+        """
+        Deletes the specified defect entry from the ``defect_entries``
+        dictionary.
+        """
+        del self.defect_entries[key]
+
+    def __contains__(self, key):
+        """
+        Returns ``True`` if the ``defect_entries`` dictionary contains the
+        specified defect name.
+        """
+        return key in self.defect_entries
+
+    def __len__(self):
+        """
+        Returns the number of entries in the ``defect_entries`` dictionary.
+        """
+        return len(self.defect_entries)
+
+    def __iter__(self):
+        """
+        Returns an iterator over the ``defect_entries`` dictionary.
+        """
+        return iter(self.defect_entries)
 
 
 def _add_effective_dopant_concentration(

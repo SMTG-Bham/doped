@@ -24,7 +24,8 @@ charge state of the generated interstitial candidates, and then pruning some of 
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
 generation tutorial, and then run the ``ShakeNBreak`` ``vasp_gam`` relaxations for the ``Unperturbed`` and
 ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate the
-``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()``.
+``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()`` -- this
+will rattle the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
@@ -66,6 +67,35 @@ We can then compare the energies of these trial relaxations, and remove candidat
     many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
     hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
     ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
+
+
+Performance Bottlenecks
+-----------------------
+
+Generation
+^^^^^^^^^^
+For complex, low-symmetry systems, defect generation can take a little time (on the order of a couple
+minutes). The ``doped`` algorithms have been heavily-optimised to expedite this process, and will use
+multiprocessing by default to accelerate when multiple CPUs are available. The routines which are typically
+the most computationally expensive for generation are supercell generation, interstitial generation and
+Wyckoff/symmetry analysis (in order). As such, if you want to accelerate the generation process, you can
+expedite these steps by:
+
+- Providing your known desired supercell as input and setting ``generate_supercell=False``, to skip
+  supercell generation (or using tighter supercell generation constraints with ``supercell_gen_kwargs``).
+- Skipping interstitial generation with ``interstitial_gen_kwargs=False``, or using modified interstitial
+  generation constraints (with ``interstitial_gen_kwargs``), or providing a list of known interstitial
+  sites with ``interstitial_coords``.
+
+Parsing
+^^^^^^^
+For defect calculation parsing, this can be slowed down in the case of large supercells, due to the large
+sizes of the output ``vasprun.xml(.gz)`` files. Again, ``doped`` has been heavily-optimised to expedite this
+process, and will use multiprocessing by default to accelerate when multiple CPUs are available. The main
+bottleneck here is the loading and parsing of ``vasprun.xml(.gz)`` files. Parsing only has to be run once
+however, and we encourage the saving of parsed outputs to ``json.gz`` files as shown in the tutorials (and
+automatically performed by ``DefectsParser``). Future improvements in the efficiency of the ``pymatgen``
+``Vasprun`` parser for large files would be very beneficial here.
 
 
 Difficult Structural Relaxations
@@ -334,8 +364,14 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 
 .. note::
 
+    The classification of electronic states as band edges or localized orbitals is based on the similarity
+    of orbital projections and eigenvalues between the defect and bulk cell calculations (see
+    docstrings/python API for ``get_eigenvalue_analysis``). You may want to adjust the default values of
+    the ``similar_orb/energy_criterion`` keyword arguments, as the defaults may not be appropriate in all
+    cases. In particular, the P-ratio values can give useful insight, revealing the level of
+    (de)localisation of the states.
     It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
-    the defect state to confirm the identification of a PHS.
+    the defect state when possible, to confirm the identification of a PHS.
 
 .. note::
 
