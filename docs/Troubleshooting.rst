@@ -5,7 +5,6 @@ Troubleshooting & Support
 
 ``doped``/``pymatgen`` Errors
 -----------------------------
-
 For most error cases, ``doped`` has been designed to try and give informative error messages about why
 the functions are failing.
 In the majority of cases, if you encounter an error using ``doped`` which does not have a clear error
@@ -17,13 +16,15 @@ message about the origin of the problem, it is likely to be an issue with your v
   pip install pymatgen pymatgen-analysis-defects monty --upgrade
   pip install doped --upgrade
 
-If this does not solve your issue, please check the specific cases noted below. If your issue still isn't
-solved, then please contact the developers through the ``GitHub``
-`Issues <https://github.com/SMTG-Bham/doped/issues>`_ page, or by email.
+If this does not solve your issue, please check the specific cases noted below.
+The next recommended step is to search through the ``doped``
+`GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ (use the GitHub search bar on the top
+right) to see if your issue/question has been asked before. If your problem is still not solved, then
+please contact the developers through the
+`GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
 
 Parsing Errors
 --------------
-
 If errors occur during parsing of defect calculations, ``doped`` will try to informatively warn you about
 the origin of the parsing failure (e.g. ``Parsing failed for [...] with the same error: ...``).
 Depending on what the error is, this error message on its own may not be very helpful. In these cases, it's
@@ -37,6 +38,67 @@ error traceback.
     issues in parsing ``vasprun.xml(.gz)`` files. In most cases, these error messages are indicating a
     corrupted/incomplete ``vasprun.xml(.gz)`` file, for which the solution is to re-run the VASP
     calculation to obtain the appropriate output.
+
+Mis-matching Bulk and Defect Supercells
+----------------------------------------
+When parsing defect calculations with ``doped``, if you provide bulk and defect supercells which do not
+match, you will see the following warning:
+
+.. code::
+
+    Detected atoms far from the defect site (>X Å) with major displacements (>0.5 Å) in the defect
+    supercell. This likely indicates a mismatch between the bulk and defect supercell definitions or an
+    unconverged supercell size, both of which could cause errors in parsing. The mean displacement of the
+    following species, at sites far from the determined defect position, is >0.5 Å: ...
+
+This can sometimes happen due to the use of a bulk supercell which does not match the atomic positions of
+the defect supercell, but is symmetry-equivalent by a translation and/or rotation. This causes issues for
+determining the defect position in the supercell, and for calculating charge corrections which rely on
+differences in electrostatic potential between the bulk and defect supercells. ``doped`` will never output
+mis-matching bulk and defect supercells, but this can occur from accidental combination of outputs from
+old and newer versions, or separate manual calculations of bulk supercells etc.
+
+The easiest solution is to generate the bulk supercell which corresponds to the defect supercell
+definitions:
+
+.. code:: python
+
+    from pymatgen.core.structure import Structure
+    from doped.utils.configurations import orient_s2_like_s1
+
+    # Load the bulk and defect supercells
+    defect_supercell = Structure.from_file("...")
+    bulk_supercell = Structure.from_file("...")  # which mis-matches the defect supercell
+
+    # orient the bulk supercell to match the defect supercell:
+    # for this, we need to 'reverse' the defect formation in the defect supercell, to get
+    # a supercell with the bulk composition that can then be used as a rough template.
+    # in this example case we add a site because the defect supercell is an oxygen vacancy,
+    # but for interstitials you would remove a site (with Structure.remove(...)) and for
+    # substitutions you would replace a site (with Structure.replace(...)).
+    defect_supercell_w_bulk_comp = defect_supercell.copy()
+    defect_supercell_w_bulk_comp.append("O", [0.5, 0.5, 0.5])  # add element to remove vacancy
+    # defect frac coords are given in the POSCAR comment
+
+    oriented_bulk_supercell = orient_s2_like_s1(defect_supercell_w_bulk_comp, bulk_supercell)
+    oriented_bulk_supercell.to(fmt="POSCAR", filename="oriented_bulk_POSCAR")
+
+With this re-generated matching bulk supercell, we just need to run the single-point bulk calculation, and
+use this matching-supercell calculation for defect parsing.
+
+If for some reason you have different supercell definitions for different sets of defect calculations, you
+can use different bulk supercells (which match the corresponding set of defect supercells) and combine them
+using something like:
+
+.. code:: python
+
+    from doped.analysis import DefectsParser
+    from doped.thermodynamics import DefectThermodynamics
+
+    dp_1 = DefectsParser("Defects_Calcs_Supercell_1", bulk_path="Bulk_Supercell_1", dielectric=dielectric)
+    dp_2 = DefectsParser("Defects_Calcs_Supercell_2", bulk_path="Bulk_Supercell_2", dielectric=dielectric)
+
+    thermo = DefectThermodynamics([*dp_1.defect_entries.values(), *dp_2.defect_entries.values()], chempots...)
 
 
 ``numpy`` Errors
@@ -85,6 +147,12 @@ Typically this can be fixed by updating to ``spglib>=2.5`` with `pip install --u
 For issues relating to the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
 
+Installation
+------------
+
+For any issues relating to installation, please see the `Installation`_ page.
+
+
 Errors with ``Python`` Scripts
 ------------------------------
 The recommended usage of ``doped`` is through interactive python sessions, such as with Jupyter notebooks,
@@ -115,7 +183,7 @@ default settings – in reality you likely need to customise some options!) woul
 
 If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounter this error:
 
-.. code:: python
+.. code-block::  none
 
     RuntimeError:
         An attempt has been made to start a new process before the
@@ -123,12 +191,12 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
         This probably means that you are not using fork to start your
         child processes and you have forgotten to use the proper idiom
         in the main module:
-            if __name__ == ‘__main__‘:
+            if __name__ == '__main__':
                 freeze_support()
                 ...
-        The “freeze_support()” line can be omitted if the program
+        The "freeze_support()" line can be omitted if the program
         is not going to be frozen to produce an executable.
-        To fix this issue, refer to the “Safe importing of main module”
+        To fix this issue, refer to the "Safe importing of main module"
         section in https://docs.python.org/3/library/multiprocessing.html
 
 .. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
@@ -136,3 +204,5 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
     through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
+
+.. _Installation: https://doped.readthedocs.io/en/latest/Installation.html

@@ -18,9 +18,10 @@ from filelock import FileLock
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core
+from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.sites import PeriodicSite
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
@@ -32,6 +33,7 @@ from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
 from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.efficiency import _parse_site_species_str, get_voronoi_nodes
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -45,11 +47,10 @@ from doped.utils.parsing import (
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
     defect_charge_from_vasprun,
-    get_defect_site_idxs_and_unrelaxed_structure,
-    get_defect_type_and_composition_diff,
+    get_core_potentials_from_outcar,
+    get_defect_type_site_idxs_and_unrelaxed_structure,
     get_locpot,
     get_orientational_degeneracy,
-    get_outcar,
     get_procar,
     get_vasprun,
 )
@@ -73,9 +74,10 @@ def _custom_formatwarning(
     line: Optional[str] = None,
 ) -> str:
     """
-    Reformat warnings to just print the warning message.
+    Reformat warnings to just print the warning message, and add two newlines
+    for spacing.
     """
-    return f"{message}\n"
+    return f"{message}\n\n"
 
 
 warnings.formatwarning = _custom_formatwarning
@@ -127,7 +129,7 @@ def check_and_set_defect_entry_name(
     site in the bulk cell).
 
     Args:
-        defect_entry (DefectEntry): DefectEntry object.
+        defect_entry (DefectEntry): ``DefectEntry`` object.
         possible_defect_name (str):
             Possible defect name (usually the folder name) to check if
             recognised by ``doped``, otherwise defect name is re-determined.
@@ -169,7 +171,8 @@ def defect_from_structures(
     defect_supercell: Structure,
     return_all_info: bool = False,
     bulk_voronoi_node_dict: Optional[dict] = None,
-    oxi_state: Optional[Union[int, float, str]] = None,
+    skip_atom_mapping_check: bool = False,
+    **kwargs,
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
@@ -196,9 +199,22 @@ def defect_from_structures(
         bulk_voronoi_node_dict (dict):
             Dictionary of bulk supercell Voronoi node information, for
             expedited site-matching. If None, will be re-calculated.
-        oxi_state (int, float, str):
-            Oxidation state of the defect site. If not provided, will be
-            automatically determined from the defect structure.
+        skip_atom_mapping_check (bool):
+            If ``True``, skips the atom mapping check which ensures that the
+            bulk and defect supercell lattice definitions are matched
+            (important for accurate defect site determination and charge
+            corrections). Can be used to speed up parsing when you are sure
+            the cell definitions match (e.g. both supercells were generated
+            with ``doped``). Default is ``False``.
+        **kwargs:
+            Keyword arguments to pass to ``Defect`` initialization, such
+            as ``oxi_state`` or ``multiplicity``. These are mainly intended
+            for use cases when fast site matching and ``Defect`` creation
+            are desired (e.g. when analysing MD trajectories of defects),
+            where providing these parameters can greatly speed up parsing.
+            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip
+            their auto-determination and accelerate parsing, if these
+            properties are not required.
 
     Returns:
         defect (Defect):
@@ -224,33 +240,30 @@ def defect_from_structures(
             Dictionary of bulk supercell Voronoi node information, for
             further expedited site-matching.
     """
-    try:
-        def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
-    except RuntimeError as exc:
-        raise ValueError(
-            "Could not identify defect type from number of sites in structure: "
-            f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
-        ) from exc
-
-    # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
-    try:
+    try:  # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
         (
+            defect_type,
             bulk_site_idx,
             defect_site_idx,
             unrelaxed_defect_structure,
-        ) = get_defect_site_idxs_and_unrelaxed_structure(
-            bulk_supercell, defect_supercell, def_type, comp_diff
-        )
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_supercell, defect_supercell)
 
     except RuntimeError as exc:
+        check_atom_mapping_far_from_defect(
+            bulk_supercell,
+            defect_supercell,
+            guess_defect_position(defect_supercell),
+            coords_are_cartesian=True,
+        )
         raise RuntimeError(
-            f"Could not identify {def_type} defect site in defect structure. Try supplying the initial "
-            f"defect structure to DefectParser.from_paths()."
+            f"Could not identify {defect_type} defect site in defect structure. Please check that your "
+            f"defect supercells are reasonable, and that they match the bulk supercell. If so, "
+            f"and this error is not resolved, please report this issue to the developers."
         ) from exc
 
-    if def_type == "vacancy":
+    if defect_type == "vacancy":
         defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
-    elif def_type == "substitution":
+    elif defect_type == "substitution":
         defect_site = defect_supercell[defect_site_idx]
         site_in_bulk = bulk_supercell[bulk_site_idx]  # this is with orig (substituted) element
         defect_site_in_bulk = PeriodicSite(
@@ -259,16 +272,17 @@ def defect_from_structures(
     else:
         defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
 
-    check_atom_mapping_far_from_defect(bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords)
+    if not skip_atom_mapping_check:
+        check_atom_mapping_far_from_defect(
+            bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords
+        )
 
     if unrelaxed_defect_structure:
-        if def_type == "interstitial":
+        if defect_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
             if not bulk_voronoi_node_dict:  # first time parsing
-                from shakenbreak.input import _get_voronoi_nodes
-
-                voronoi_frac_coords = [site.frac_coords for site in _get_voronoi_nodes(bulk_supercell)]
+                voronoi_frac_coords = [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)]
                 bulk_voronoi_node_dict = {
                     "bulk_supercell": bulk_supercell,
                     "Voronoi nodes": voronoi_frac_coords,
@@ -303,14 +317,14 @@ def defect_from_structures(
     for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
         # substitutions differs from defect_site)
         "@module": "doped.core",
-        "@class": def_type.capitalize(),
+        "@class": defect_type.capitalize(),
         "structure": bulk_supercell,
         "site": defect_site_in_bulk,
-        "oxi_state": oxi_state,
+        **kwargs,
     }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
     # as done during generation. Future work could try mapping the relaxed defect site back to the
     # primitive cell, however interstitials will be very tricky for this...
-    if def_type == "interstitial":
+    if defect_type == "interstitial":
         for_monty_defect["multiplicity"] = 1  # multiplicity needed for interstitial initialisation with
         # pymatgen-analysis-defects, so set to 1 here. Set later for interstitials during parsing anyway
         # (see below)
@@ -328,6 +342,86 @@ def defect_from_structures(
         guessed_initial_defect_structure,
         unrelaxed_defect_structure,
         bulk_voronoi_node_dict,
+    )
+
+
+def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
+    """
+    Guess the position (in Cartesian coordinates) of a defect in an input
+    defect supercell, without a bulk/reference supercell.
+
+    This is achieved by computing cosine dissimilarities between site SOAP
+    vectors (and the mean SOAP vectors for each species) and then determining
+    the centre of mass of sites, weighted by the squared cosine dissimilarities.
+    For accurate defect site determination, the ``defect_from_structure``
+    function (or underlying code) is preferred. These coordinates are unlikely
+    to _directly_ match the defect position (especially in the presence of random
+    noise), but should provide a pretty good estimate in most cases. If the
+    defect is an extrinsic interstitial/substitution, then this will identify
+    the exact defect site.
+
+    Args:
+        defect_supercell (Structure):
+            Defect supercell structure.
+
+    Returns:
+        np.ndarray[float]: Guessed position of the defect in **Cartesian** coordinates.
+    """
+
+    # Note from profiling: This function is pretty fast (e.g. ~25 s for ~1000 frames of a ~100-atom
+    # supercell on SK's 2021 MacBook Pro), but the main bottleneck is SOAP vector creation,
+    # if we ever needed to accelerate
+    def cos_dissimilarity(vec1, vec2):
+        return 1 - cosine_similarity(vec1, vec2)
+
+    # if there is only one site of a particular element in the defect supercell, then we guess it as the
+    # defect site (extrinsic substitution/interstitial):
+    i_elt_dict = {
+        i: _parse_site_species_str(site, wout_charge=True) for i, site in enumerate(defect_supercell.sites)
+    }
+    for elt in defect_supercell.composition.elements:
+        if list(i_elt_dict.values()).count(elt.symbol) == 1:
+            return defect_supercell.sites[list(i_elt_dict.values()).index(elt.symbol)].coords
+
+    soap_vecs = [site_vec.vec for site_vec in get_site_vecs(defect_supercell)]
+    elt_mean_soap_vec_dict = {
+        elt.symbol: np.mean(
+            [soap_vec for i, soap_vec in enumerate(soap_vecs) if i_elt_dict[i] == elt.symbol],
+            axis=0,
+        )
+        for elt in defect_supercell.composition.elements
+    }
+    cos_dissimilarities = [
+        cos_dissimilarity(soap_vecs[i], elt_mean_soap_vec_dict[i_elt]) for i, i_elt in i_elt_dict.items()
+    ]
+
+    rel_cos_dissimilarities = np.zeros(len(defect_supercell))
+    for elt in elt_mean_soap_vec_dict:
+        indices = [i for i, i_elt in i_elt_dict.items() if i_elt == elt]
+        avg_cos_dissimilarity = np.mean([cos_dissimilarities[i] for i in indices])
+        rel_cos_dissimilarities[indices] = np.array(cos_dissimilarities)[indices] / avg_cos_dissimilarity
+
+    largest_outlier = defect_supercell.sites[
+        np.where(rel_cos_dissimilarities == np.max(rel_cos_dissimilarities))[0][0]
+    ]
+    cos_diss_frac_coords_dict = {np.max(rel_cos_dissimilarities): largest_outlier.frac_coords}
+    for i, site in enumerate(defect_supercell.sites):
+        if not np.all(site.frac_coords == largest_outlier.frac_coords):
+            image = largest_outlier.distance_and_image(site)[1]
+            cos_diss_frac_coords_dict[rel_cos_dissimilarities[i]] = site.frac_coords + image
+
+    cos_diss_coords_dict = dict(
+        zip(
+            cos_diss_frac_coords_dict.keys(),
+            defect_supercell.lattice.get_cartesian_coords(
+                np.array(list(cos_diss_frac_coords_dict.values()))
+            ),
+        )
+    )
+    return np.average(  # weighted centre of mass
+        np.array(list(cos_diss_coords_dict.values())),
+        axis=0,
+        weights=np.array(list(cos_diss_coords_dict.keys())) ** 2,
     )
 
 
@@ -383,10 +477,14 @@ def defect_entry_from_paths(
         bulk_path (PathLike):
             Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Ionic + static contributions to the dielectric constant, in the same xyz
-            Cartesian basis as the supercell calculations. If not provided, charge
+            Total dielectric constance (ionic + static contributions), in the same xyz
+            Cartesian basis as the supercell calculations (likely but not necessarily
+            the same as the raw output of a VASP dielectric calculation, if an
+            oddly-defined primitive cell is used). If not provided, charge
             corrections cannot be computed and so ``skip_corrections`` will be set to
-            true.
+            ``True``.
+            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+            for information on calculating and converging the dielectric constant.
         charge_state (int):
             Charge state of defect. If not provided, will be automatically determined
             from the defect calculation outputs.
@@ -494,10 +592,14 @@ class DefectsParser:
                 folders (likely the same ``output_path`` used with ``DefectsSet``
                 for file generation in ``doped.vasp``). Default = current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Ionic + static contributions to the dielectric constant, in the same
-                xyz Cartesian basis as the supercell calculations. If not provided,
-                charge corrections cannot be computed and so ``skip_corrections``
-                will be set to ``True``.
+                Total dielectric constance (ionic + static contributions), in the same
+                xyz Cartesian basis as the supercell calculations (likely but not
+                necessarily the same as the raw output of a VASP dielectric calculation,
+                if an oddly-defined primitive cell is used). If not provided, charge
+                corrections cannot be computed and so ``skip_corrections`` will be set
+                to ``True``.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             subfolder (PathLike):
                 Name of subfolder(s) within each defect calculation folder (in the
                 ``output_path`` directory) containing the VASP calculation files to
@@ -722,14 +824,11 @@ class DefectsParser:
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
-        self._bulk_oxi_states: Union[dict, bool] = False
+        self._bulk_oxi_states: Union[Structure, Composition, dict, bool] = False
         if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
             self.bulk_vr.final_structure, break_early_if_expensive=True
         ):
-            self.bulk_vr.final_structure = bulk_struct_w_oxi
-            self._bulk_oxi_states = {
-                el.symbol: el.oxi_state for el in self.bulk_vr.final_structure.composition.elements  # type: ignore
-            }
+            self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
 
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
@@ -748,7 +847,7 @@ class DefectsParser:
                 for defect_folder in pbar:
                     # set tqdm progress bar description to defect folder being parsed:
                     pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-                    parsed_defect_entry, warnings_string = self._parse_defect_and_handle_warnings(
+                    parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
                         defect_folder
                     )
                     parsing_warning = self._parse_parsing_warnings(
@@ -779,11 +878,13 @@ class DefectsParser:
                     pbar.set_description(  # set this first as desc is only set after parsing in function
                         f"Parsing {charged_defect_folder}/{self.subfolder}".replace("/.", "")
                     )
-                    parsed_defect_entry, warnings_string = self._parse_defect_and_handle_warnings(
+                    parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
                         charged_defect_folder
                     )
                     parsing_warning = self._update_pbar_and_return_warnings_from_parsing(
-                        (parsed_defect_entry, warnings_string),
+                        parsed_defect_entry,
+                        warnings_string,
+                        charged_defect_folder,
                         pbar,
                     )
                     parsing_warnings.append(parsing_warning)
@@ -800,7 +901,12 @@ class DefectsParser:
                                 )
                             elif k == "bulk_site_potentials":
                                 self.bulk_corrections_data[k] = _get_bulk_site_potentials(
-                                    self.bulk_path, quiet=True
+                                    self.bulk_path,
+                                    quiet=True,
+                                    total_energy=[
+                                        self.bulk_vr.final_energy,
+                                        self.bulk_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"],
+                                    ],
                                 )
 
                 folders_to_process = [
@@ -812,9 +918,12 @@ class DefectsParser:
                         results = pool.imap_unordered(
                             self._parse_defect_and_handle_warnings, folders_to_process
                         )
-                        for result in results:
+                        for result in results:  # result -> (defect_entry, warnings_string, folder)
                             parsing_warning = self._update_pbar_and_return_warnings_from_parsing(
-                                result, pbar
+                                defect_entry=result[0],
+                                warnings_string=result[1],
+                                defect_folder=result[2],
+                                pbar=pbar,
                             )
                             parsing_warnings.append(parsing_warning)
                             if result[0] is not None:
@@ -857,7 +966,7 @@ class DefectsParser:
             duplicate_warnings: dict[str, list[str]] = {
                 warning: []
                 for warning in set(flattened_warnings_list)
-                if flattened_warnings_list.count(warning) > 1
+                if flattened_warnings_list.count(warning) > 1 and "Parsing failed for " not in warning
             }
             new_parsing_warnings = []
             parsing_errors_dict: dict[str, list[str]] = {
@@ -905,7 +1014,15 @@ class DefectsParser:
                     for warning in new_warnings_list
                     if "Warning(s) encountered" not in warning and "Parsing failed for " not in warning
                 ]:
-                    new_parsing_warnings.append("\n".join(new_warnings_list))
+                    new_parsing_warnings.append(
+                        "\n".join(
+                            [
+                                warning
+                                for warning in new_warnings_list
+                                if "Parsing failed for " not in warning
+                            ]
+                        )
+                    )
 
             for error, defect_list in parsing_errors_dict.items():
                 if defect_list:
@@ -931,18 +1048,11 @@ class DefectsParser:
 
             parsing_warnings = new_parsing_warnings
             if parsing_warnings:
-                warnings.warn("\n".join(parsing_warnings))
+                warnings.warn("\n\n".join(parsing_warnings))
 
             for warning, defect_name_list in duplicate_warnings.items():
-                defect_list = [
-                    defect_name
-                    for defect_name in defect_name_list
-                    if defect_name
-                    and all(
-                        defect_name not in defects_with_errors
-                        for defects_with_errors in parsing_errors_dict.values()
-                    )
-                ]  # remove None and don't warn if later encountered parsing error (already warned)
+                # remove None and don't warn if later encountered parsing error (already warned)
+                defect_list = [defect_name for defect_name in defect_name_list if defect_name]
                 if defect_list:
                     warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
 
@@ -978,7 +1088,9 @@ class DefectsParser:
 
         if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
             duplicate_entry_names_folders_string = "\n".join(
-                ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
+                "["
+                + ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
+                + "]"
                 for entries_list in energy_entries_dict.values()
                 if len(entries_list) > 1
             )
@@ -1125,19 +1237,32 @@ class DefectsParser:
         # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
 
         mismatching_INCAR_warnings = [
-            (name, defect_entry.calculation_metadata.get("mismatching_INCAR_tags"))
+            (name, set(defect_entry.calculation_metadata.get("mismatching_INCAR_tags")))
             for name, defect_entry in self.defect_dict.items()
             if defect_entry.calculation_metadata.get("mismatching_INCAR_tags", True) is not True
         ]
         if mismatching_INCAR_warnings:
+            # group by the mismatching tags, so we can print them together:
+            mismatching_tags_name_list_dict = {
+                tuple(sorted(mismatching_set)): [
+                    name
+                    for name, other_mismatching_set in mismatching_INCAR_warnings
+                    if other_mismatching_set == mismatching_set
+                ]
+                for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
+            }
             joined_info_string = "\n".join(
-                [f"{name}: {mismatching}" for name, mismatching in mismatching_INCAR_warnings]
+                [
+                    f"{defect_list}:\n{list(mismatching)}"
+                    for mismatching, defect_list in mismatching_tags_name_list_dict.items()
+                ]
             )
             warnings.warn(
                 f"There are mismatching INCAR tags for (some of) your bulk and defect calculations which "
                 f"are likely to cause errors in the parsed results (energies). Found the following "
                 f"differences:\n"
-                f"(in the format: (INCAR tag, value in bulk calculation, value in defect calculation)):"
+                f"(in the format: 'Defects: (INCAR tag, value in bulk calculation, value in defect "
+                f"calculation))':"
                 f"\n{joined_info_string}\n"
                 f"In general, the same INCAR settings should be used in all final calculations for these "
                 f"tags which can affect energies!"
@@ -1192,12 +1317,13 @@ class DefectsParser:
 
     def _parse_parsing_warnings(self, warnings_string, defect_folder, defect_path):
         if warnings_string:
-            if "Parsing failed for " in warnings_string:
-                return warnings_string
-            return (
-                f"Warning(s) encountered when parsing {defect_folder} at {defect_path}:\n\n"
-                f"{warnings_string}"
-            )
+            split_warnings = warnings_string.split("\n\n")
+            if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
+                location = f" at {defect_path}" if defect_path != "N/A" else ""  # let's ride the vibration
+                return (  # either only warnings (no exceptions), or warning(s) + exception
+                    f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
+                )
+            return warnings_string  # only exception, return as is
 
         return ""
 
@@ -1208,25 +1334,39 @@ class DefectsParser:
             .split("/")[-1 if self.subfolder == "." else -2]
         )
 
-    def _update_pbar_and_return_warnings_from_parsing(self, result, pbar):
-        pbar.update()
+    def _update_pbar_and_return_warnings_from_parsing(
+        self,
+        defect_entry: DefectEntry,
+        warnings_string: str = "",
+        defect_folder: Optional[str] = None,
+        pbar: tqdm = None,
+    ):
+        if pbar:
+            pbar.update()
 
-        if result[0] is not None:
-            defect_folder = self._get_defect_folder(result[0])
-            pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+        defect_path = "N/A"
+        if defect_entry is not None:
+            defect_folder = self._get_defect_folder(defect_entry)
+            defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
+            if pbar:
+                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
 
-            if result[1]:
-                return self._parse_parsing_warnings(
-                    result[1], defect_folder, result[0].calculation_metadata["defect_path"]
-                )
+        if warnings_string:
+            return self._parse_parsing_warnings(warnings_string, defect_folder, defect_path)
 
-        return result[1] or ""  # failed parsing warning if result[0] is None
+        return warnings_string  # failed parsing warning if defect_entry is None
 
-    def _parse_defect_and_handle_warnings(self, defect_folder):
+    def _parse_defect_and_handle_warnings(self, defect_folder: str) -> tuple:
         """
         Process defect and catch warnings along the way, so we can print which
         warnings came from which defect together at the end, in a summarised
         output.
+
+        Args:
+            defect_folder (str): The defect folder to parse.
+
+        Returns:
+            tuple: (parsed_defect_entry, warnings_string, defect_folder)
         """
         with warnings.catch_warnings(record=True) as captured_warnings:
             parsed_defect_entry = self._parse_single_defect(defect_folder)
@@ -1237,13 +1377,19 @@ class DefectsParser:
             "The KPOINTS",
             "The POTCAR",
         ]  # collectively warned later
+
+        def _check_ignored_message_in_warning(warning_message):
+            if hasattr(warning_message, "args"):
+                return any(warning_message.args[0].startswith(i) for i in ignore_messages)
+            return any(warning_message.startswith(i) for i in ignore_messages)
+
         warnings_string = "\n\n".join(
             str(warning.message)
             for warning in captured_warnings
-            if not any(warning.message.args[0].startswith(i) for i in ignore_messages)
+            if not _check_ignored_message_in_warning(warning.message)
         )
 
-        return parsed_defect_entry, warnings_string
+        return parsed_defect_entry, warnings_string, defect_folder
 
     def _parse_single_defect(self, defect_folder):
         try:
@@ -1573,9 +1719,14 @@ class DefectParser:
                 supercell calculation if already loaded (can be supplied to expedite
                 parsing). Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Ionic + static contributions to the dielectric constant. If not provided,
-                charge corrections cannot be computed and so ``skip_corrections`` will be
-                set to true.
+                Total dielectric constance (ionic + static contributions), in the same xyz
+                Cartesian basis as the supercell calculations (likely but not necessarily
+                the same as the raw output of a VASP dielectric calculation, if an
+                oddly-defined primitive cell is used). If not provided, charge
+                corrections cannot be computed and so ``skip_corrections`` will be set to
+                ``True``.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically determined
                 from defect calculation outputs, or if that fails, using the defect folder
@@ -1901,12 +2052,13 @@ class DefectParser:
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
         if bulk_voronoi_node_dict and bulk_path and not prev_bulk_voronoi_node_dict:
-            # save to bulk folder for future expedited parsing:
-            if os.path.exists("voronoi_nodes.json.lock"):
-                with FileLock("voronoi_nodes.json.lock"):
+            with contextlib.suppress(Exception):  # ignore any file IO errors
+                # save to bulk folder for future expedited parsing:
+                if os.path.exists("voronoi_nodes.json.lock"):
+                    with FileLock("voronoi_nodes.json.lock"):
+                        dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
+                else:
                     dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
-            else:
-                dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
         check_and_set_defect_entry_name(
             defect_entry, possible_defect_name, bulk_symm_ops=bulk_supercell_symm_ops
@@ -2180,16 +2332,24 @@ class DefectParser:
         Returns:
             ``bulk_site_potentials`` for reuse in parsing other defect entries
         """
-        from doped.corrections import _raise_incomplete_outcar_error  # avoid circular import
-
         if not self.defect_entry.charge_state:
             # don't need to load outcars if charge is zero
             return None
 
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
         if bulk_site_potentials is None:
+            total_energies = [
+                self.defect_entry.bulk_entry.energy if self.defect_entry.bulk_entry else None,
+                (
+                    self.bulk_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"]
+                    if self.bulk_vr
+                    else None
+                ),
+            ]
+
             bulk_site_potentials = _get_bulk_site_potentials(
-                self.defect_entry.calculation_metadata["bulk_path"]
+                self.defect_entry.calculation_metadata["bulk_path"],
+                total_energy=[energy for energy in total_energies if energy is not None],
             )
 
         defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
@@ -2202,12 +2362,19 @@ class DefectParser:
                 defect_outcar_path,
                 dir_type="defect",
             )
-        defect_outcar = get_outcar(defect_outcar_path)
-
-        if defect_outcar.electrostatic_potential is None:
-            _raise_incomplete_outcar_error(defect_outcar_path, dir_type="defect")
-
-        defect_site_potentials = -1 * np.array(defect_outcar.electrostatic_potential)
+        total_energies = [
+            self.defect_entry.sc_entry.energy,
+            (
+                self.defect_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"]
+                if self.defect_vr
+                else None
+            ),
+        ]
+        defect_site_potentials = get_core_potentials_from_outcar(
+            defect_outcar_path,
+            dir_type="defect",
+            total_energy=[energy for energy in total_energies if energy is not None],
+        )
 
         self.defect_entry.calculation_metadata.update(
             {

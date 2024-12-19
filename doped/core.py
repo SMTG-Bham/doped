@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING, Any, Optional, Union
 import numpy as np
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.bond_valence import BVAnalyzer
-from pymatgen.analysis.defects import core, thermo
-from pymatgen.analysis.defects.utils import CorrectionResult
+from pymatgen.analysis.defects import core, thermo, utils
+from pymatgen.analysis.structure_matcher import ElementComparator, SpeciesComparator, StructureMatcher
 from pymatgen.core.composition import Composition, Element
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import IStructure, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
@@ -158,6 +158,8 @@ class DefectEntry(thermo.DefectEntry):
         """
         Post-initialization method, using super() and self.defect.
         """
+        if self.sc_entry is None and not self.entry_id:
+            self.entry_id = "N/A"  # otherwise crashes unnecessarily with pymatgen defects
         super().__post_init__()
         if not self.name:
             # try get using doped functions:
@@ -297,7 +299,7 @@ class DefectEntry(thermo.DefectEntry):
         error_tolerance: float = 0.05,
         style_file: Optional[PathLike] = None,
         **kwargs,
-    ) -> CorrectionResult:
+    ) -> utils.CorrectionResult:
         """
         Compute the `isotropic` Freysoldt (FNV) correction for the
         defect_entry.
@@ -314,11 +316,14 @@ class DefectEntry(thermo.DefectEntry):
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions), in the
-                same xyz Cartesian basis as the supercell calculations. If None,
-                then the dielectric constant is taken from the ``defect_entry``
+                Total dielectric constance (ionic + static contributions), in the
+                same xyz Cartesian basis as the supercell calculations (likely but
+                not necessarily the same as the raw output of a VASP dielectric
+                calculation, if an oddly-defined primitive cell is used). If ``None``,
+                then the dielectric constant is taken from the ``DefectEntry``
                 ``calculation_metadata`` if available.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             defect_locpot:
                 Path to the output VASP ``LOCPOT`` file from the defect supercell
                 calculation, or the corresponding ``pymatgen`` ``Locpot``
@@ -363,7 +368,7 @@ class DefectEntry(thermo.DefectEntry):
                 (e.g. energy_cutoff, mad_tol, q_model, step).
 
         Returns:
-            CorrectionResults (summary of the corrections applied and metadata), and
+            utils.CorrectionResults (summary of the corrections applied and metadata), and
             the matplotlib figure object (or axis object if axis specified) if ``plot``
             is True, and the estimated charge correction error if
             ``return_correction_error`` is True.
@@ -460,11 +465,14 @@ class DefectEntry(thermo.DefectEntry):
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constant of the host compound (including both
-                ionic and (high-frequency) electronic contributions), in the
-                same xyz Cartesian basis as the supercell calculations. If None,
-                then the dielectric constant is taken from the ``defect_entry``
+                Total dielectric constance (ionic + static contributions), in the
+                same xyz Cartesian basis as the supercell calculations (likely but
+                not necessarily the same as the raw output of a VASP dielectric
+                calculation, if an oddly-defined primitive cell is used). If ``None``,
+                then the dielectric constant is taken from the ``DefectEntry``
                 ``calculation_metadata`` if available.
+                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+                for information on calculating and converging the dielectric constant.
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far
@@ -509,7 +517,7 @@ class DefectEntry(thermo.DefectEntry):
                 (e.g. charge, defect_region_radius, defect_coords).
 
         Returns:
-            CorrectionResults (summary of the corrections applied and metadata), and
+            utils.CorrectionResults (summary of the corrections applied and metadata), and
             the matplotlib figure object if ``plot`` is True, and the estimated charge
             correction error if ``return_correction_error`` is True.
         """
@@ -952,7 +960,7 @@ class DefectEntry(thermo.DefectEntry):
             _no_chempots_warning("Formation energies (and concentrations)")
 
         dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
-        chempot_correction = self._get_chempot_term(dft_chempots)
+        chempot_correction = 0 if dft_chempots is None else self._get_chempot_term(dft_chempots)
         formation_energy = self.get_ediff() + chempot_correction
 
         if vbm is not None:
@@ -1231,20 +1239,25 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.parsing import _get_bulk_supercell
 
         bulk_supercell = _get_bulk_supercell(self)
-        if bulk_supercell is not None:
-            formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
-        else:
-            formula = self.defect.structure.composition.get_reduced_formula_and_factor(
-                iupac_ordering=True
-            )[0]
+        try:
+            defect_name = self.defect.name
+            if bulk_supercell is not None:
+                formula = bulk_supercell.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
+            else:
+                formula = self.defect.structure.composition.get_reduced_formula_and_factor(
+                    iupac_ordering=True
+                )[0]
+        except AttributeError:
+            defect_name = "unknown"
+            formula = "unknown"
+
         properties, methods = _doped_obj_properties_methods(self)
         return (
-            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: "
-            f"{self.defect.name}. Available attributes:\n{properties}\n\n"
-            f"Available methods:\n{methods}"
+            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: {defect_name}. "
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         """
         Determine whether two ``DefectEntry`` objects are equal, by comparing
         ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy`` and
@@ -1313,21 +1326,30 @@ class DefectEntry(thermo.DefectEntry):
 
     def plot_site_displacements(
         self,
-        separated_by_direction: Optional[bool] = False,
-        relative_to_defect: Optional[bool] = False,
+        separated_by_direction: bool = False,
+        relaxed_distances: bool = False,
+        relative_to_defect: bool = False,
         vector_to_project_on: Optional[list] = None,
-        use_plotly: Optional[bool] = False,
-        mpl_style_file: Optional[PathLike] = "",
+        use_plotly: bool = False,
+        style_file: Optional[PathLike] = "",
     ):
         """
         Plot the site displacements as a function of distance from the defect
         site.
+
+        Set ``use_plotly = True`` to get an interactive ``plotly`` plot, useful
+        for analysis!
 
         Args:
             separated_by_direction (bool):
                 Whether to plot the site displacements separated by the
                 x, y and z directions (True) or all together (False).
                 Defaults to False.
+            relaxed_distances (bool):
+                Whether to use the atomic positions in the _relaxed_ defect supercell
+                for ``'Distance to defect'``, ``'Vector to site from defect'`` and
+                ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
+                (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
             relative_to_defect (bool): Whether to plot the signed displacements
                 along the line from the defect site to that atom. Negative values
                 indicate the atom moves towards the defect (compressive strain),
@@ -1337,8 +1359,9 @@ class DefectEntry(thermo.DefectEntry):
                 (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements are calculated
                 in the cartesian basis x, y, z).
             use_plotly (bool):
-                Whether to use plotly (True) or matplotlib (False).
-            mpl_style_file (PathLike):
+                Whether to use ``plotly`` (``True``) or ``matplotlib`` (``False``).
+                Defaults to ``False``. Set to ``True`` to get an interactive plot.
+            style_file (PathLike):
                 Path to a matplotlib style file to use for the plot. If None,
                 uses the default doped style file.
         """
@@ -1347,10 +1370,11 @@ class DefectEntry(thermo.DefectEntry):
         return plot_site_displacements(
             defect_entry=self,
             separated_by_direction=separated_by_direction,
+            relaxed_distances=relaxed_distances,
             relative_to_defect=relative_to_defect,
             vector_to_project_on=vector_to_project_on,
             use_plotly=use_plotly,
-            style_file=mpl_style_file,
+            style_file=style_file,
         )
 
 
@@ -1411,17 +1435,20 @@ def _guess_and_set_struct_oxi_states(structure):
     """
     if len(structure.composition.elements) == 1:
         oxi_dec_structure = structure.copy()  # don't modify original structure
-        oxi_dec_structure.add_oxidation_state_by_element({str(structure.composition.elements[0]): 0})
+        oxi_dec_structure.add_oxidation_state_by_element(
+            {next(iter(structure.composition.elements)).symbol: 0}
+        )
         return oxi_dec_structure
 
-    bv_analyzer = BVAnalyzer()
-    with contextlib.suppress(ValueError):
-        # ValueError raised if oxi states can't be assigned
-        oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
-        if all(
-            np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species
-        ):
-            return oxi_dec_structure
+    for symm_tol in [0.1, 0]:  # default, then with no symmetry
+        with contextlib.suppress(ValueError):
+            bv_analyzer = BVAnalyzer(symm_tol=symm_tol)
+            # ValueError raised if oxi states can't be assigned
+            oxi_dec_structure = bv_analyzer.get_oxi_state_decorated_structure(structure)
+            if all(
+                np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in oxi_dec_structure.species
+            ):
+                return oxi_dec_structure
 
     return False  # if oxi states could not be guessed
 
@@ -1753,7 +1780,12 @@ class Defect(core.Defect):
         self.oxi_state = self._guess_oxi_state()
 
     @classmethod
-    def _from_pmg_defect(cls, defect: core.Defect, bulk_oxi_states=False, **doped_kwargs) -> "Defect":
+    def _from_pmg_defect(
+        cls,
+        defect: core.Defect,
+        bulk_oxi_states: Union[Structure, Composition, dict, bool] = False,
+        **doped_kwargs,
+    ) -> "Defect":
         """
         Create a ``doped`` ``Defect`` from a ``pymatgen`` ``Defect`` object.
 
@@ -1761,12 +1793,25 @@ class Defect(core.Defect):
             defect:
                 ``pymatgen`` ``Defect`` object.
             bulk_oxi_states:
-                Either a dict of bulk oxidation states to use, or a boolean. If True,
-                re-guesses the oxidation state of the defect (ignoring the ``pymatgen``
-                ``Defect``  ``oxi_state`` attribute), otherwise uses the already-set
-                ``oxi_state`` (default = 0). Used in doped defect generation to make
-                defect setup more robust and efficient (particularly for odd input
-                structures, such as defect supercells etc).
+                Controls oxi-state guessing (later used for charge state guessing).
+                By default, oxidation states are taken from ``doped_kwargs['oxi_state']``
+                if set, otherwise from ``bulk_oxi_states`` which can be either a
+                ``pymatgen`` ``Structure`` or ``Composition`` object, or a dict (of
+                ``{element: oxi_state}``), or otherwise guessed using the ``doped`` methods.
+                If ``bulk_oxi_states`` is ``False``, then just uses the already-set
+                ``Defect`` ``oxi_state`` attribute (default = 0), with no more guessing.
+                If ``True``, re-guesses the oxidation state of the defect (ignoring the
+                ``pymatgen`` ``Defect``  ``oxi_state`` attribute).
+
+                If the structure is mixed-valence, then ``bulk_oxi_states`` should be
+                either a structure input or ``True`` (to re-guess).
+
+                Default behaviour in ``doped`` generation is to provide ``bulk_oxi_states``
+                as an oxi-state decorated ``Structure``, to make defect setup more
+                robust and efficient (particularly for odd input structures, such as
+                defect supercells etc). Oxidation states are removed from structures in
+                the ``pymatgen`` defect generation functions, so this allows us to re-add
+                them after.
             **doped_kwargs:
                 Additional keyword arguments to define doped-specific attributes
                 (see class docstring).
@@ -1786,15 +1831,92 @@ class Defect(core.Defect):
             ):
                 doped_kwargs[doped_attr] = getattr(defect, doped_attr)
 
-        if isinstance(bulk_oxi_states, dict):
-            # set oxidation states, as these are removed in ``pymatgen`` defect generation
+        oxi_state = None
+        if doped_kwargs.get("oxi_state", False):
+            oxi_state = doped_kwargs.pop("oxi_state")
+
+        if oxi_state is None and isinstance(bulk_oxi_states, Structure):
+            # if input structure was oxi-state-decorated, use these oxi states for defect generation:
+            if not all(
+                hasattr(site.specie, "oxi_state") and isinstance(site.specie.oxi_state, (int, float))
+                for site in bulk_oxi_states.sites
+            ):
+                warnings.warn(
+                    "Input structure for ``bulk_oxi_states`` is not oxi-state decorated. "
+                    "Setting ``bulk_oxi_states`` to ``True`` (i.e. re-guess oxi-states)."
+                )
+                bulk_oxi_states = True
+
+            else:
+                single_valence_oxi_states = {
+                    el.symbol: el.oxi_state for el in bulk_oxi_states.composition.elements
+                }
+                if len(single_valence_oxi_states) == len(bulk_oxi_states.composition.elements):
+                    bulk_oxi_states = single_valence_oxi_states
+
+                else:  # otherwise it's mixed-valence! need to add oxi-states to structure
+                    # first, if structures without oxi-states exactly match, then just use
+                    # ``bulk_oxi_states`` structure:
+                    defect_struct_wout_oxi = defect.structure.copy()
+                    defect_struct_wout_oxi.remove_oxidation_states()
+                    input_struct_wout_oxi = bulk_oxi_states.copy()
+                    input_struct_wout_oxi.remove_oxidation_states()
+                    if defect_struct_wout_oxi == input_struct_wout_oxi:
+                        defect.structure = bulk_oxi_states
+
+                    else:
+                        from doped.utils.configurations import _scan_sm_stol_till_match
+
+                        mapping_to_defect = _scan_sm_stol_till_match(
+                            defect.structure,
+                            bulk_oxi_states,
+                            func_name="get_mapping",
+                            comparator=SpeciesComparator(),
+                        )
+                        if mapping_to_defect is None:
+                            raise ValueError(
+                                "Could not find a match between the defect and bulk oxi-state decorated "
+                                "structure (in `bulk_oxi_states`). Please ensure the defect and bulk "
+                                "structures are the same, or provide the bulk oxi-state decorated "
+                                "structure directly."
+                            )
+
+                        site_oxi_states = np.zeros(len(defect.structure.sites))
+                        for defect_struct_idx, oxi_dec_site in zip(
+                            mapping_to_defect, bulk_oxi_states.sites
+                        ):
+                            site_oxi_states[defect_struct_idx] = oxi_dec_site.specie.oxi_state
+                        defect.structure.add_oxidation_state_by_site(site_oxi_states)
+
+        if oxi_state is None and isinstance(bulk_oxi_states, Composition):
+            try:
+                bulk_oxi_states = {el.symbol: el.oxi_state for el in bulk_oxi_states.elements}
+            except Exception as exc:
+                warnings.warn(f"Could not extract oxidation states from Composition: {exc!r}")
+
+            if len(bulk_oxi_states) != len(defect.structure.composition.elements):
+                warnings.warn(
+                    f"A mixed-valence Composition object was supplied for bulk_oxi_states, "
+                    f"but only single-valence oxidation states can be extracted (use structure "
+                    f"input if mixed-valence is required). Using {bulk_oxi_states}."
+                )
+
+        if oxi_state is None and isinstance(bulk_oxi_states, dict):
+            req_elt_symbols = [elt.symbol for elt in defect.structure.composition.elements]
+            if not all(i in req_elt_symbols for i in bulk_oxi_states):
+                raise ValueError(
+                    f"Input bulk_oxi_states {bulk_oxi_states} do not match all the elements in the defect "
+                    f"structure {req_elt_symbols}."
+                )
             defect.structure.add_oxidation_state_by_element(bulk_oxi_states)
+
+        oxi_state = defect.oxi_state if oxi_state is None and not bulk_oxi_states else None
 
         return cls(
             structure=defect.structure,
             site=defect.site.to_unit_cell(),  # ensure mapped to unit cell
             multiplicity=defect.multiplicity,
-            oxi_state=None if bulk_oxi_states else defect.oxi_state,
+            oxi_state=oxi_state,  # if still None, then taken from structure or re-guessed
             equivalent_sites=(
                 [site.to_unit_cell() for site in defect.equivalent_sites]
                 if defect.equivalent_sites is not None
@@ -1878,8 +2000,6 @@ class Defect(core.Defect):
             The defect supercell structure. If ``return_sites`` is True, also returns
             the defect supercell site and list of equivalent supercell sites.
         """
-        from doped.utils.symmetry import _round_floats
-
         if sc_mat is None:
             if min_length is not None:
                 min_image_distance = min_length
@@ -1956,12 +2076,10 @@ class Defect(core.Defect):
         if dummy_species is not None:
             sc_defect_struct.insert(len(self.structure * sc_mat), dummy_species, sc_site.frac_coords)
 
+        from doped.utils.symmetry import _round_struct_coords
+
         sorted_sc_defect_struct = sc_defect_struct.get_sorted_structure()  # ensure proper sorting
-        sorted_sc_defect_struct = Structure.from_dict(_round_floats(sorted_sc_defect_struct.as_dict()))
-        sorted_sc_defect_struct = Structure.from_sites(  # ensure to_unit_cell()
-            [site.to_unit_cell() for site in sorted_sc_defect_struct]
-        )
-        sorted_sc_defect_struct = Structure.from_dict(_round_floats(sorted_sc_defect_struct.as_dict()))
+        sorted_sc_defect_struct = _round_struct_coords(sorted_sc_defect_struct, to_unit_cell=True)
 
         return (
             (
@@ -1980,7 +2098,9 @@ class Defect(core.Defect):
         Needs to be redefined because attributes not explicitly specified in
         subclasses, which is required for monty functions.
         """
-        return {"@module": type(self).__module__, "@class": type(self).__name__, **self.__dict__}
+        dict_wout_elt_changes = self.__dict__
+        dict_wout_elt_changes.pop("_element_changes", None)  # not JSON serializable and unnecessary
+        return {"@module": type(self).__module__, "@class": type(self).__name__, **dict_wout_elt_changes}
 
     def to_json(self, filename: Optional[PathLike] = None):
         """
@@ -2061,6 +2181,37 @@ class Defect(core.Defect):
                 if hasattr(self, attr):
                     delattr(self, attr)
 
+    def __eq__(self, other) -> bool:
+        """
+        Determine whether two ``Defect`` objects are equal.
+
+        Redefined from the parent method to be more robust (too
+        loose ``stol`` used in ``pymatgen-analysis-defects``) and
+        much more efficient.
+        """
+        if not isinstance(other, (type(self), core.Defect)):
+            raise TypeError("Can only compare `Defect`s with `Defect`s!")
+
+        if self.defect_type != other.defect_type:
+            return False
+
+        # use doped efficiency functions for speed:
+        from doped.utils.efficiency import Composition as doped_Composition
+        from doped.utils.efficiency import IStructure as doped_IStructure
+        from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
+
+        Composition.__instances__ = {}
+        Composition.__eq__ = doped_Composition.__eq__
+        Composition.__hash__ = doped_Composition.__hash__
+        PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
+        PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
+        IStructure.__instances__ = {}
+        IStructure.__eq__ = doped_IStructure.__eq__
+
+        sm = StructureMatcher(stol=0.2, comparator=ElementComparator())
+
+        return sm.fit(self.defect_structure, other.defect_structure)
+
     @property
     def defect_site(self) -> PeriodicSite:
         """
@@ -2127,7 +2278,9 @@ class Defect(core.Defect):
         return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
 
 
-def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **doped_kwargs):
+def doped_defect_from_pmg_defect(
+    defect: core.Defect, bulk_oxi_states: Union[Structure, Composition, dict, bool] = False, **doped_kwargs
+):
     """
     Create the corresponding ``doped`` ``Defect`` (``Vacancy``,
     ``Interstitial``, ``Substitution``) from an input ``pymatgen`` ``Defect``
@@ -2137,12 +2290,25 @@ def doped_defect_from_pmg_defect(defect: core.Defect, bulk_oxi_states=False, **d
         defect:
             ``pymatgen`` ``Defect`` object.
         bulk_oxi_states:
-            Either a dict of bulk oxidation states to use, or a boolean. If True,
-            re-guesses the oxidation state of the defect (ignoring the ``pymatgen``
-            ``Defect``  ``oxi_state`` attribute), otherwise uses the already-set
-            ``oxi_state`` (default = 0). Used in doped defect generation to make
-            defect setup more robust and efficient (particularly for odd input
-            structures, such as defect supercells etc).
+            Controls oxi-state guessing (later used for charge state guessing).
+            By default, oxidation states are taken from ``doped_kwargs['oxi_state']``
+            if set, otherwise from ``bulk_oxi_states`` which can be either a
+            ``pymatgen`` ``Structure`` or ``Composition`` object, or a dict (of
+            ``{element: oxi_state}``), or otherwise guessed using the ``doped`` methods.
+            If ``bulk_oxi_states`` is ``False``, then just uses the already-set
+            ``Defect`` ``oxi_state`` attribute (default = 0), with no more guessing.
+            If ``True``, re-guesses the oxidation state of the defect (ignoring the
+            ``pymatgen`` ``Defect``  ``oxi_state`` attribute).
+
+            If the structure is mixed-valence, then ``bulk_oxi_states`` should be
+            either a structure input or ``True`` (to re-guess).
+
+            Default behaviour in ``doped`` generation is to provide ``bulk_oxi_states``
+            as an oxi-state decorated ``Structure``, to make defect setup more
+            robust and efficient (particularly for odd input structures, such as
+            defect supercells etc). Oxidation states are removed from structures in
+            the ``pymatgen`` defect generation functions, so this allows us to re-add
+            them after.
         **doped_kwargs:
             Additional keyword arguments to define doped-specific attributes
             (see class docstring).

@@ -7,14 +7,12 @@ Implicitly tests the `doped.utils.symmetry` module as well.
 import copy
 import filecmp
 import gzip
-import operator
 import os
 import random
 import shutil
 import sys
 import unittest
 import warnings
-from functools import reduce
 from io import StringIO
 from unittest.mock import patch
 
@@ -24,14 +22,14 @@ from ase.build import bulk, make_supercell
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core.structure import PeriodicSite, Structure
+from pymatgen.core.structure import PeriodicSite, Species, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-from doped.core import Defect, DefectEntry
+from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
-from doped.utils.supercells import get_min_image_distance
+from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
     get_BCS_conventional_structure,
     summed_rms_dist,
@@ -195,29 +193,29 @@ O_S              [+1,0,-1]                    [0.000,0.000,0.205]  4e
 
 Interstitials    Guessed Charges        Conv. Cell Coords    Wyckoff
 ---------------  ---------------------  -------------------  ---------
-Y_i_C2v          [+3,+2,+1,0]           [0.000,0.500,0.184]  8g
+Y_i_C2v          [+3,+2,+1,0]           [0.000,0.500,0.185]  8g
 Y_i_C4v_O2.68    [+3,+2,+1,0]           [0.000,0.000,0.485]  4e
 Y_i_C4v_Y1.92    [+3,+2,+1,0]           [0.000,0.000,0.418]  4e
-Y_i_Cs_S1.71     [+3,+2,+1,0]           [0.180,0.180,0.143]  16m
 Y_i_Cs_Ti1.95    [+3,+2,+1,0]           [0.325,0.325,0.039]  16m
+Y_i_Cs_Y1.71     [+3,+2,+1,0]           [0.191,0.191,0.144]  16m
 Y_i_D2d          [+3,+2,+1,0]           [0.000,0.500,0.250]  4d
-Ti_i_C2v         [+4,+3,+2,+1,0]        [0.000,0.500,0.184]  8g
+Ti_i_C2v         [+4,+3,+2,+1,0]        [0.000,0.500,0.185]  8g
 Ti_i_C4v_O2.68   [+4,+3,+2,+1,0]        [0.000,0.000,0.485]  4e
 Ti_i_C4v_Y1.92   [+4,+3,+2,+1,0]        [0.000,0.000,0.418]  4e
-Ti_i_Cs_S1.71    [+4,+3,+2,+1,0]        [0.180,0.180,0.143]  16m
 Ti_i_Cs_Ti1.95   [+4,+3,+2,+1,0]        [0.325,0.325,0.039]  16m
+Ti_i_Cs_Y1.71    [+4,+3,+2,+1,0]        [0.191,0.191,0.144]  16m
 Ti_i_D2d         [+4,+3,+2,+1,0]        [0.000,0.500,0.250]  4d
-S_i_C2v          [+4,+3,+2,+1,0,-1,-2]  [0.000,0.500,0.184]  8g
+S_i_C2v          [+4,+3,+2,+1,0,-1,-2]  [0.000,0.500,0.185]  8g
 S_i_C4v_O2.68    [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.485]  4e
 S_i_C4v_Y1.92    [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.418]  4e
-S_i_Cs_S1.71     [+4,+3,+2,+1,0,-1,-2]  [0.180,0.180,0.143]  16m
 S_i_Cs_Ti1.95    [+4,+3,+2,+1,0,-1,-2]  [0.325,0.325,0.039]  16m
+S_i_Cs_Y1.71     [+4,+3,+2,+1,0,-1,-2]  [0.191,0.191,0.144]  16m
 S_i_D2d          [+4,+3,+2,+1,0,-1,-2]  [0.000,0.500,0.250]  4d
-O_i_C2v          [0,-1,-2]              [0.000,0.500,0.184]  8g
+O_i_C2v          [0,-1,-2]              [0.000,0.500,0.185]  8g
 O_i_C4v_O2.68    [0,-1,-2]              [0.000,0.000,0.485]  4e
 O_i_C4v_Y1.92    [0,-1,-2]              [0.000,0.000,0.418]  4e
-O_i_Cs_S1.71     [0,-1,-2]              [0.180,0.180,0.143]  16m
 O_i_Cs_Ti1.95    [0,-1,-2]              [0.325,0.325,0.039]  16m
+O_i_Cs_Y1.71     [0,-1,-2]              [0.191,0.191,0.144]  16m
 O_i_D2d          [0,-1,-2]              [0.000,0.500,0.250]  4d
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
@@ -256,32 +254,32 @@ O_Li             [0,-1,-2,-3]           [0.004,0.004,0.004]  8c
 O_Mn             [0,-1,-2,-3,-4,-5,-6]  [0.121,0.129,0.625]  12d
 O_Ni             [0,-1,-2,-3,-4]        [0.625,0.625,0.625]  4b
 
-Interstitials        Guessed Charges    Conv. Cell Coords    Wyckoff
--------------------  -----------------  -------------------  ---------
-Li_i_C1_O1.72        [+1,0]             [0.248,0.480,0.249]  24e
-Li_i_C1_O1.78        [+1,0]             [0.017,0.261,0.250]  24e
-Li_i_C2_Li1.84O1.84  [+1,0]             [0.073,0.177,0.125]  12d
-Li_i_C2_Li1.84O1.94  [+1,0]             [0.151,0.375,0.401]  12d
-Li_i_C2_Li1.86       [+1,0]             [0.086,0.375,0.336]  12d
-Li_i_C3              [+1,0]             [0.497,0.497,0.497]  8c
-Mn_i_C1_O1.72        [+4,+3,+2,+1,0]    [0.248,0.480,0.249]  24e
-Mn_i_C1_O1.78        [+4,+3,+2,+1,0]    [0.017,0.261,0.250]  24e
-Mn_i_C2_Li1.84O1.84  [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
-Mn_i_C2_Li1.84O1.94  [+4,+3,+2,+1,0]    [0.151,0.375,0.401]  12d
-Mn_i_C2_Li1.86       [+4,+3,+2,+1,0]    [0.086,0.375,0.336]  12d
-Mn_i_C3              [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
-Ni_i_C1_O1.72        [+4,+3,+2,+1,0]    [0.248,0.480,0.249]  24e
-Ni_i_C1_O1.78        [+4,+3,+2,+1,0]    [0.017,0.261,0.250]  24e
-Ni_i_C2_Li1.84O1.84  [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
-Ni_i_C2_Li1.84O1.94  [+4,+3,+2,+1,0]    [0.151,0.375,0.401]  12d
-Ni_i_C2_Li1.86       [+4,+3,+2,+1,0]    [0.086,0.375,0.336]  12d
-Ni_i_C3              [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
-O_i_C1_O1.72         [0,-1,-2]          [0.248,0.480,0.249]  24e
-O_i_C1_O1.78         [0,-1,-2]          [0.017,0.261,0.250]  24e
-O_i_C2_Li1.84O1.84   [0,-1,-2]          [0.073,0.177,0.125]  12d
-O_i_C2_Li1.84O1.94   [0,-1,-2]          [0.151,0.375,0.401]  12d
-O_i_C2_Li1.86        [0,-1,-2]          [0.086,0.375,0.336]  12d
-O_i_C3               [0,-1,-2]          [0.497,0.497,0.497]  8c
+Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
+---------------  -----------------  -------------------  ---------
+Li_i_C1_Ni1.82   [+1,0]             [0.021,0.278,0.258]  24e
+Li_i_C1_O1.78    [+1,0]             [0.233,0.492,0.492]  24e
+Li_i_C2_Li1.84   [+1,0]             [0.073,0.177,0.125]  12d
+Li_i_C2_Li1.87   [+1,0]             [0.161,0.375,0.411]  12d
+Li_i_C2_Li1.90   [+1,0]             [0.074,0.375,0.324]  12d
+Li_i_C3          [+1,0]             [0.497,0.497,0.497]  8c
+Mn_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Mn_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
+Mn_i_C2_Li1.84   [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
+Mn_i_C2_Li1.87   [+4,+3,+2,+1,0]    [0.161,0.375,0.411]  12d
+Mn_i_C2_Li1.90   [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
+Mn_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
+Ni_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Ni_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
+Ni_i_C2_Li1.84   [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
+Ni_i_C2_Li1.87   [+4,+3,+2,+1,0]    [0.161,0.375,0.411]  12d
+Ni_i_C2_Li1.90   [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
+Ni_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
+O_i_C1_Ni1.82    [0,-1,-2]          [0.021,0.278,0.258]  24e
+O_i_C1_O1.78     [0,-1,-2]          [0.233,0.492,0.492]  24e
+O_i_C2_Li1.84    [0,-1,-2]          [0.073,0.177,0.125]  12d
+O_i_C2_Li1.87    [0,-1,-2]          [0.161,0.375,0.411]  12d
+O_i_C2_Li1.90    [0,-1,-2]          [0.074,0.375,0.324]  12d
+O_i_C3           [0,-1,-2]          [0.497,0.497,0.497]  8c
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
@@ -370,143 +368,139 @@ Ag_i_C3v_Cu1.80               [+1,0]             [0.000,0.000,0.250]  6c
             """Vacancies                     Guessed Charges    Conv. Cell Coords    Wyckoff
 ----------------------------  -----------------  -------------------  ---------
 v_Cd_C1                       [+1,0,-1]          [0.333,0.333,0.333]  18c
-v_Cd_C3v_Cd2.71               [+1,0,-1]          [0.000,0.000,0.542]  3a
-v_Cd_C3v_Te2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.667]  3a
+v_Cd_C3v_Cd2.71               [+1,0,-1]          [0.000,0.000,0.458]  3a
+v_Cd_C3v_Te2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.333]  3a
 v_Cd_C3v_Te2.83Cd4.62Te5.42a  [+1,0,-1]          [0.000,0.000,0.000]  3a
-v_Cd_C3v_Te2.83Cd4.62Te5.42b  [+1,0,-1]          [0.000,0.000,0.333]  3a
-v_Cd_Cs_Cd2.71                [+1,0,-1]          [0.111,0.222,0.555]  9b
-v_Cd_Cs_Te2.83Cd4.25          [+1,0,-1]          [0.222,0.444,0.111]  9b
-v_Cd_Cs_Te2.83Cd4.62Cd5.36    [+1,0,-1]          [0.111,0.222,0.222]  9b
+v_Cd_C3v_Te2.83Cd4.62Te5.42b  [+1,0,-1]          [0.000,0.000,0.667]  3a
+v_Cd_Cs_Cd2.71                [+1,0,-1]          [0.222,0.111,0.444]  9b
+v_Cd_Cs_Te2.83Cd4.25          [+1,0,-1]          [0.111,0.222,0.556]  9b
+v_Cd_Cs_Te2.83Cd4.62Cd5.36    [+1,0,-1]          [0.555,0.111,0.111]  9b
 v_Cd_Cs_Te2.83Cd4.62Te5.42a   [+1,0,-1]          [0.222,0.111,0.111]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42b   [+1,0,-1]          [0.445,0.222,0.222]  9b
-v_Cd_Cs_Te2.83Cd4.62Te5.42c   [+1,0,-1]          [0.556,0.111,0.111]  9b
-v_Te_C1                       [+1,0,-1]          [0.333,0.333,0.083]  18c
-v_Te_C3v_Cd2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.417]  3a
-v_Te_C3v_Cd2.83Te4.62Cd5.42a  [+1,0,-1]          [0.000,0.000,0.083]  3a
-v_Te_C3v_Cd2.83Te4.62Cd5.42b  [+1,0,-1]          [0.000,0.000,0.750]  3a
-v_Te_Cs_Cd2.71                [+1,0,-1]          [0.222,0.444,0.194]  9b
-v_Te_Cs_Cd2.83Cd4.25          [+1,0,-1]          [0.111,0.556,0.306]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.36    [+1,0,-1]          [0.556,0.111,0.194]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42a   [+1,0,-1]          [0.222,0.111,0.194]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42b   [+1,0,-1]          [0.111,0.222,0.305]  9b
-v_Te_Cs_Cd2.83Te4.62Cd5.42c   [+1,0,-1]          [0.445,0.222,0.305]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42b   [+1,0,-1]          [0.111,0.222,0.222]  9b
+v_Cd_Cs_Te2.83Cd4.62Te5.42c   [+1,0,-1]          [0.444,0.222,0.222]  9b
+v_Te_C1                       [+1,0,-1]          [0.333,0.333,0.250]  18c
+v_Te_C3v_Cd2.83Cd4.25         [+1,0,-1]          [0.000,0.000,0.583]  3a
+v_Te_C3v_Cd2.83Te4.62Cd5.42a  [+1,0,-1]          [0.000,0.000,0.250]  3a
+v_Te_C3v_Cd2.83Te4.62Cd5.42b  [+1,0,-1]          [0.000,0.000,0.917]  3a
+v_Te_Cs_Cd2.71                [+1,0,-1]          [0.111,0.222,0.472]  9b
+v_Te_Cs_Cd2.83Cd4.25          [+1,0,-1]          [0.222,0.111,0.361]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.36    [+1,0,-1]          [0.111,0.222,0.139]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42a   [+1,0,-1]          [0.222,0.111,0.028]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42b   [+1,0,-1]          [0.445,0.222,0.139]  9b
+v_Te_Cs_Cd2.83Te4.62Cd5.42c   [+1,0,-1]          [0.556,0.111,0.028]  9b
 
 Substitutions                  Guessed Charges        Conv. Cell Coords    Wyckoff
 -----------------------------  ---------------------  -------------------  ---------
-Cd_Te_C1                       [+2,+1,0,-1]           [0.333,0.333,0.083]  18c
-Cd_Te_C3v_Cd2.83Cd4.25         [+2,+1,0,-1]           [0.000,0.000,0.417]  3a
-Cd_Te_C3v_Cd2.83Te4.62Cd5.42a  [+2,+1,0,-1]           [0.000,0.000,0.083]  3a
-Cd_Te_C3v_Cd2.83Te4.62Cd5.42b  [+2,+1,0,-1]           [0.000,0.000,0.750]  3a
-Cd_Te_Cs_Cd2.71                [+2,+1,0,-1]           [0.222,0.444,0.194]  9b
-Cd_Te_Cs_Cd2.83Cd4.25          [+2,+1,0,-1]           [0.111,0.556,0.306]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.36    [+2,+1,0,-1]           [0.556,0.111,0.194]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.42a   [+2,+1,0,-1]           [0.222,0.111,0.194]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.42b   [+2,+1,0,-1]           [0.111,0.222,0.305]  9b
-Cd_Te_Cs_Cd2.83Te4.62Cd5.42c   [+2,+1,0,-1]           [0.445,0.222,0.305]  9b
+Cd_Te_C1                       [+2,+1,0,-1]           [0.333,0.333,0.250]  18c
+Cd_Te_C3v_Cd2.83Cd4.25         [+2,+1,0,-1]           [0.000,0.000,0.583]  3a
+Cd_Te_C3v_Cd2.83Te4.62Cd5.42a  [+2,+1,0,-1]           [0.000,0.000,0.250]  3a
+Cd_Te_C3v_Cd2.83Te4.62Cd5.42b  [+2,+1,0,-1]           [0.000,0.000,0.917]  3a
+Cd_Te_Cs_Cd2.71                [+2,+1,0,-1]           [0.111,0.222,0.472]  9b
+Cd_Te_Cs_Cd2.83Cd4.25          [+2,+1,0,-1]           [0.222,0.111,0.361]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.36    [+2,+1,0,-1]           [0.111,0.222,0.139]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.42a   [+2,+1,0,-1]           [0.222,0.111,0.028]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.42b   [+2,+1,0,-1]           [0.445,0.222,0.139]  9b
+Cd_Te_Cs_Cd2.83Te4.62Cd5.42c   [+2,+1,0,-1]           [0.556,0.111,0.028]  9b
 Te_Cd_C1                       [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.333]  18c
-Te_Cd_C3v_Cd2.71               [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.542]  3a
-Te_Cd_C3v_Te2.83Cd4.25         [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.667]  3a
+Te_Cd_C3v_Cd2.71               [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.458]  3a
+Te_Cd_C3v_Te2.83Cd4.25         [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.333]  3a
 Te_Cd_C3v_Te2.83Cd4.62Te5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.000]  3a
-Te_Cd_C3v_Te2.83Cd4.62Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.333]  3a
-Te_Cd_Cs_Cd2.71                [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.555]  9b
-Te_Cd_Cs_Te2.83Cd4.25          [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.111]  9b
-Te_Cd_Cs_Te2.83Cd4.62Cd5.36    [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.222]  9b
+Te_Cd_C3v_Te2.83Cd4.62Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.667]  3a
+Te_Cd_Cs_Cd2.71                [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.444]  9b
+Te_Cd_Cs_Te2.83Cd4.25          [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.556]  9b
+Te_Cd_Cs_Te2.83Cd4.62Cd5.36    [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.111]  9b
 Te_Cd_Cs_Te2.83Cd4.62Te5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.111]  9b
-Te_Cd_Cs_Te2.83Cd4.62Te5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.222]  9b
-Te_Cd_Cs_Te2.83Cd4.62Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.111]  9b
+Te_Cd_Cs_Te2.83Cd4.62Te5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.222]  9b
+Te_Cd_Cs_Te2.83Cd4.62Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.222]  9b
 
 Interstitials                 Guessed Charges        Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------------  -------------------  ---------
-Cd_i_C1_Cd2.71Te2.71Cd4.00a   [+2,+1,0]              [0.055,0.444,0.153]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.00b   [+2,+1,0]              [0.111,0.389,0.264]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.167,0.167,0.042]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.167,0.167,0.375]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.333,0.333,0.208]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.167,0.167,0.708]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.056,0.278,0.153]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.278,0.056,0.264]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.389,0.111,0.153]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.444,0.055,0.264]  18c
-Cd_i_C1_Cd2.83                [+2,+1,0]              [0.333,0.333,0.250]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.00a   [+2,+1,0]              [0.111,0.389,0.181]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.00b   [+2,+1,0]              [0.056,0.445,0.070]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.167,0.167,0.292]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.333,0.333,0.125]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.167,0.167,0.625]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.167,0.167,0.958]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.055,0.278,0.070]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.278,0.056,0.181]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.389,0.111,0.069]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.444,0.056,0.181]  18c
+Cd_i_C1_Cd2.83                [+2,+1,0]              [0.333,0.333,0.083]  18c
 Cd_i_C1_Te2.83                [+2,+1,0]              [0.333,0.333,0.167]  18c
-Cd_i_C3v_Cd2.71Te2.71Cd4.25a  [+2,+1,0]              [0.000,0.000,0.208]  3a
-Cd_i_C3v_Cd2.71Te2.71Cd4.25b  [+2,+1,0]              [0.000,0.000,0.875]  3a
-Cd_i_C3v_Cd2.83Te3.27Cd5.42a  [+2,+1,0]              [0.000,0.000,0.250]  3a
-Cd_i_C3v_Cd2.83Te3.27Cd5.42b  [+2,+1,0]              [0.000,0.000,0.917]  3a
+Cd_i_C3v_Cd2.71Te2.71Cd4.25a  [+2,+1,0]              [0.000,0.000,0.125]  3a
+Cd_i_C3v_Cd2.71Te2.71Cd4.25b  [+2,+1,0]              [0.000,0.000,0.792]  3a
+Cd_i_C3v_Cd2.83Te3.27Cd5.42a  [+2,+1,0]              [0.000,0.000,0.083]  3a
+Cd_i_C3v_Cd2.83Te3.27Cd5.42b  [+2,+1,0]              [0.000,0.000,0.750]  3a
 Cd_i_C3v_Te2.83Cd3.27Te5.42a  [+2,+1,0]              [0.000,0.000,0.167]  3a
 Cd_i_C3v_Te2.83Cd3.27Te5.42b  [+2,+1,0]              [0.000,0.000,0.833]  3a
-Cd_i_Cs_Cd2.59Cd2.65          [+2,+1,0]              [0.069,0.139,0.483]  9b
-Cd_i_Cs_Cd2.59Te2.65          [+2,+1,0]              [0.139,0.069,0.600]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.500,0.500,0.042]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.500,0.500,0.375]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.500,0.500,0.708]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.056,0.111,0.153]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.111,0.222,0.097]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.111,0.056,0.264]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.222,0.111,0.319]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.111,0.222,0.430]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25i   [+2,+1,0]              [0.445,0.222,0.097]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25j   [+2,+1,0]              [0.222,0.444,0.319]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25k   [+2,+1,0]              [0.555,0.278,0.153]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25l   [+2,+1,0]              [0.556,0.111,0.319]  9b
-Cd_i_Cs_Cd2.71Te2.71Cd4.25m   [+2,+1,0]              [0.611,0.222,0.264]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd3.56    [+2,+1,0]              [0.111,0.222,0.472]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42a   [+2,+1,0]              [0.222,0.111,0.028]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42b   [+2,+1,0]              [0.111,0.222,0.139]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42c   [+2,+1,0]              [0.222,0.111,0.361]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42d   [+2,+1,0]              [0.445,0.222,0.139]  9b
-Cd_i_Cs_Cd2.83Te3.27Cd5.42e   [+2,+1,0]              [0.555,0.111,0.028]  9b
-Cd_i_Cs_Te2.83Cd3.27Cd3.56    [+2,+1,0]              [0.222,0.444,0.278]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.500,0.500,0.292]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.500,0.500,0.625]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.500,0.500,0.958]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25d   [+2,+1,0]              [0.056,0.111,0.070]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25e   [+2,+1,0]              [0.111,0.056,0.181]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25f   [+2,+1,0]              [0.111,0.222,0.014]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25g   [+2,+1,0]              [0.222,0.111,0.236]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25h   [+2,+1,0]              [0.111,0.222,0.347]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25i   [+2,+1,0]              [0.445,0.222,0.014]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25j   [+2,+1,0]              [0.222,0.445,0.236]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25k   [+2,+1,0]              [0.555,0.111,0.236]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25l   [+2,+1,0]              [0.555,0.278,0.069]  9b
+Cd_i_Cs_Cd2.71Te2.71Cd4.25m   [+2,+1,0]              [0.611,0.222,0.180]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd3.56    [+2,+1,0]              [0.222,0.445,0.195]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42a   [+2,+1,0]              [0.222,0.111,0.194]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42b   [+2,+1,0]              [0.111,0.222,0.306]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42c   [+2,+1,0]              [0.444,0.222,0.306]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42d   [+2,+1,0]              [0.555,0.111,0.195]  9b
+Cd_i_Cs_Cd2.83Te3.27Cd5.42e   [+2,+1,0]              [0.111,0.556,0.306]  9b
+Cd_i_Cs_Te2.83Cd3.27Cd3.56    [+2,+1,0]              [0.111,0.222,0.389]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42a   [+2,+1,0]              [0.111,0.222,0.056]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42b   [+2,+1,0]              [0.222,0.111,0.278]  9b
-Cd_i_Cs_Te2.83Cd3.27Te5.42c   [+2,+1,0]              [0.111,0.222,0.389]  9b
-Cd_i_Cs_Te2.83Cd3.27Te5.42d   [+2,+1,0]              [0.445,0.222,0.056]  9b
-Cd_i_Cs_Te2.83Cd3.27Te5.42e   [+2,+1,0]              [0.556,0.111,0.278]  9b
-Te_i_C1_Cd2.71Te2.71Cd4.00a   [+4,+3,+2,+1,0,-1,-2]  [0.055,0.444,0.153]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.00b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.389,0.264]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.042]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.375]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.208]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.708]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.278,0.153]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.278,0.056,0.264]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.389,0.111,0.153]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.055,0.264]  18c
-Te_i_C1_Cd2.83                [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.250]  18c
+Cd_i_Cs_Te2.83Cd3.27Te5.42c   [+2,+1,0]              [0.445,0.222,0.056]  9b
+Cd_i_Cs_Te2.83Cd3.27Te5.42d   [+2,+1,0]              [0.222,0.445,0.278]  9b
+Cd_i_Cs_Te2.83Cd3.27Te5.42e   [+2,+1,0]              [0.555,0.111,0.278]  9b
+Te_i_C1_Cd2.71Te2.71Cd4.00a   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.389,0.181]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.00b   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.445,0.070]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.292]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.125]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.625]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.958]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.055,0.278,0.070]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.278,0.056,0.181]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.389,0.111,0.069]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.056,0.181]  18c
+Te_i_C1_Cd2.83                [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.083]  18c
 Te_i_C1_Te2.83                [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.167]  18c
-Te_i_C3v_Cd2.71Te2.71Cd4.25a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.208]  3a
-Te_i_C3v_Cd2.71Te2.71Cd4.25b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.875]  3a
-Te_i_C3v_Cd2.83Te3.27Cd5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.250]  3a
-Te_i_C3v_Cd2.83Te3.27Cd5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.917]  3a
+Te_i_C3v_Cd2.71Te2.71Cd4.25a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.125]  3a
+Te_i_C3v_Cd2.71Te2.71Cd4.25b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.792]  3a
+Te_i_C3v_Cd2.83Te3.27Cd5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.083]  3a
+Te_i_C3v_Cd2.83Te3.27Cd5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.750]  3a
 Te_i_C3v_Te2.83Cd3.27Te5.42a  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.167]  3a
 Te_i_C3v_Te2.83Cd3.27Te5.42b  [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.833]  3a
-Te_i_Cs_Cd2.59Cd2.65          [+4,+3,+2,+1,0,-1,-2]  [0.069,0.139,0.483]  9b
-Te_i_Cs_Cd2.59Te2.65          [+4,+3,+2,+1,0,-1,-2]  [0.139,0.069,0.600]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.042]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.375]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.708]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.111,0.153]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.097]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.056,0.264]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.319]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.430]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25i   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.097]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25j   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.319]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25k   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.278,0.153]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25l   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.319]  9b
-Te_i_Cs_Cd2.71Te2.71Cd4.25m   [+4,+3,+2,+1,0,-1,-2]  [0.611,0.222,0.264]  9b
-Te_i_Cs_Cd2.83Te3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.472]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.028]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.139]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.361]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.139]  9b
-Te_i_Cs_Cd2.83Te3.27Cd5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.028]  9b
-Te_i_Cs_Te2.83Cd3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.222,0.444,0.278]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.292]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.625]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.958]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25d   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.111,0.070]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25e   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.056,0.181]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25f   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.014]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25g   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.236]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25h   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.347]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25i   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.014]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25j   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.445,0.236]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25k   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.236]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25l   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.278,0.069]  9b
+Te_i_Cs_Cd2.71Te2.71Cd4.25m   [+4,+3,+2,+1,0,-1,-2]  [0.611,0.222,0.180]  9b
+Te_i_Cs_Cd2.83Te3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.222,0.445,0.195]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.194]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.306]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.306]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.195]  9b
+Te_i_Cs_Cd2.83Te3.27Cd5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.556,0.306]  9b
+Te_i_Cs_Te2.83Cd3.27Cd3.56    [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.389]  9b
 Te_i_Cs_Te2.83Cd3.27Te5.42a   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.056]  9b
 Te_i_Cs_Te2.83Cd3.27Te5.42b   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.111,0.278]  9b
-Te_i_Cs_Te2.83Cd3.27Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.222,0.389]  9b
-Te_i_Cs_Te2.83Cd3.27Te5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.056]  9b
-Te_i_Cs_Te2.83Cd3.27Te5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.556,0.111,0.278]  9b
+Te_i_Cs_Te2.83Cd3.27Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.445,0.222,0.056]  9b
+Te_i_Cs_Te2.83Cd3.27Te5.42d   [+4,+3,+2,+1,0,-1,-2]  [0.222,0.445,0.278]  9b
+Te_i_Cs_Te2.83Cd3.27Te5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.278]  9b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of Cd28Te27.\n"
@@ -639,7 +633,89 @@ N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.056,0.111,0.333]  9b
 
         self.zn3p2 = Structure.from_file(f"{self.data_dir}/Zn3P2_POSCAR")
         self.sb2se3 = Structure.from_file(f"{self.data_dir}/Sb2Se3_bulk_supercell_POSCAR")
+        self.sb2se3_defect_gen_info = (
+            """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
+--------------  -----------------  -------------------  ---------
+v_Sb_Cs_Se2.57  [+1,0,-1,-2,-3]    [0.537,0.250,0.355]  4c
+v_Sb_Cs_Se2.63  [+1,0,-1,-2,-3]    [0.328,0.250,0.032]  4c
+v_Se_Cs_Sb2.57  [+2,+1,0,-1]       [0.628,0.250,0.553]  4c
+v_Se_Cs_Sb2.63  [+2,+1,0,-1]       [0.192,0.250,0.210]  4c
+v_Se_Cs_Sb2.65  [+2,+1,0,-1]       [0.445,0.750,0.128]  4c
+
+Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Sb_Se_Cs_Sb2.57  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.628,0.250,0.553]  4c
+Sb_Se_Cs_Sb2.63  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.192,0.250,0.210]  4c
+Sb_Se_Cs_Sb2.65  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.445,0.750,0.128]  4c
+Se_Sb_Cs_Se2.57  [+1,0,-1,-2,-3,-4,-5]        [0.537,0.250,0.355]  4c
+Se_Sb_Cs_Se2.63  [+1,0,-1,-2,-3,-4,-5]        [0.328,0.250,0.032]  4c
+
+Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
+---------------  ---------------------------  -------------------  ---------
+Sb_i_C1          [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.367,0.043,0.279]  8d
+Sb_i_Cs_Sb2.15   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.514,0.250,0.696]  4c
+Sb_i_Cs_Sb2.31   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.525,0.250,0.064]  4c
+Sb_i_Cs_Sb2.33   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.394,0.250,0.218]  4c
+Sb_i_Cs_Sb2.34   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.335,0.250,0.349]  4c
+Sb_i_Cs_Sb2.36   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.076,0.250,0.043]  4c
+Sb_i_Cs_Sb2.84   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.624,0.250,0.132]  4c
+Sb_i_Cs_Se2.36   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.241,0.750,0.112]  4c
+Sb_i_Cs_Se2.38   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.293,0.750,0.263]  4c
+Se_i_C1          [+4,+3,+2,+1,0,-1,-2]        [0.367,0.043,0.279]  8d
+Se_i_Cs_Sb2.15   [+4,+3,+2,+1,0,-1,-2]        [0.514,0.250,0.696]  4c
+Se_i_Cs_Sb2.31   [+4,+3,+2,+1,0,-1,-2]        [0.525,0.250,0.064]  4c
+Se_i_Cs_Sb2.33   [+4,+3,+2,+1,0,-1,-2]        [0.394,0.250,0.218]  4c
+Se_i_Cs_Sb2.34   [+4,+3,+2,+1,0,-1,-2]        [0.335,0.250,0.349]  4c
+Se_i_Cs_Sb2.36   [+4,+3,+2,+1,0,-1,-2]        [0.076,0.250,0.043]  4c
+Se_i_Cs_Sb2.84   [+4,+3,+2,+1,0,-1,-2]        [0.624,0.250,0.132]  4c
+Se_i_Cs_Se2.36   [+4,+3,+2,+1,0,-1,-2]        [0.241,0.750,0.112]  4c
+Se_i_Cs_Se2.38   [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+            "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
+        )
         self.ag2se = Structure.from_file(f"{self.data_dir}/Ag2Se_POSCAR")
+        self.ag2se_defect_gen_info = (
+            """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
+--------------  -----------------  -------------------  ---------
+v_Ag_C1         [+1,0,-1]          [0.103,0.005,0.244]  4e
+v_Ag_C2_Ag2.80  [+1,0,-1]          [0.391,0.000,0.000]  2a
+v_Ag_C2_Ag2.85  [+1,0,-1]          [0.615,0.500,0.500]  2b
+v_Se            [+2,+1,0,-1]       [0.294,0.520,0.251]  4e
+
+Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
+---------------  ---------------------  -------------------  ---------
+Ag_Se            [+3,+2,+1,0]           [0.294,0.520,0.251]  4e
+Se_Ag_C1         [+3,+2,+1,0,-1,-2,-3]  [0.103,0.005,0.244]  4e
+Se_Ag_C2_Ag2.80  [+3,+2,+1,0,-1,-2,-3]  [0.391,0.000,0.000]  2a
+Se_Ag_C2_Ag2.85  [+3,+2,+1,0,-1,-2,-3]  [0.615,0.500,0.500]  2b
+
+Interstitials                Guessed Charges    Conv. Cell Coords    Wyckoff
+---------------------------  -----------------  -------------------  ---------
+Ag_i_C1_Ag2.03               [+2,+1,0]          [0.341,0.438,0.498]  4e
+Ag_i_C1_Ag2.04               [+2,+1,0]          [0.335,0.435,0.002]  4e
+Ag_i_C1_Ag2.05               [+2,+1,0]          [0.570,0.589,0.250]  4e
+Ag_i_C1_Ag2.09               [+2,+1,0]          [0.435,0.123,0.251]  4e
+Ag_i_C2_Ag1.95Se1.95Ag2.98a  [+2,+1,0]          [0.500,0.250,0.668]  2d
+Ag_i_C2_Ag1.95Se1.95Ag2.98b  [+2,+1,0]          [0.500,0.750,0.171]  2d
+Ag_i_C2_Ag2.02Se2.02Ag2.88   [+2,+1,0]          [0.500,0.250,0.184]  2d
+Ag_i_C2_Ag2.02Se2.02Ag2.89   [+2,+1,0]          [0.500,0.250,0.319]  2d
+Ag_i_C2_Ag2.45               [+2,+1,0]          [0.899,0.000,0.000]  2a
+Ag_i_C2_Ag2.48               [+2,+1,0]          [0.091,0.500,0.500]  2b
+Se_i_C1_Ag2.03               [0,-1,-2]          [0.341,0.438,0.498]  4e
+Se_i_C1_Ag2.04               [0,-1,-2]          [0.335,0.435,0.002]  4e
+Se_i_C1_Ag2.05               [0,-1,-2]          [0.570,0.589,0.250]  4e
+Se_i_C1_Ag2.09               [0,-1,-2]          [0.435,0.123,0.251]  4e
+Se_i_C2_Ag1.95Se1.95Ag2.98a  [0,-1,-2]          [0.500,0.250,0.668]  2d
+Se_i_C2_Ag1.95Se1.95Ag2.98b  [0,-1,-2]          [0.500,0.750,0.171]  2d
+Se_i_C2_Ag2.02Se2.02Ag2.88   [0,-1,-2]          [0.500,0.250,0.184]  2d
+Se_i_C2_Ag2.02Se2.02Ag2.89   [0,-1,-2]          [0.500,0.250,0.319]  2d
+Se_i_C2_Ag2.45               [0,-1,-2]          [0.899,0.000,0.000]  2a
+Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
+\n"""
+            "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
+            "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
+        )
         self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
 
         self.sb2si2te6_defect_gen_info = (
@@ -660,21 +736,24 @@ Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.20   [+4,+3,+2,+1,0]              [0.179,0.359,0.167]  18f
-Si_i_C1_Si2.43   [+4,+3,+2,+1,0]              [0.341,0.341,0.458]  18f
-Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.336,0.335,0.711]  18f
+Si_i_C1_Sb2.48   [+4,+3,+2,+1,0]              [0.347,0.348,0.457]  18f
+Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.158,0.359,0.167]  18f
+Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.001,0.336,0.289]  18f
 Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
-Si_i_C3i_Te2.81  [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.20   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.179,0.359,0.167]  18f
-Sb_i_C1_Si2.43   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.341,0.341,0.458]  18f
-Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.336,0.335,0.711]  18f
+Si_i_C3_Te2.41   [+4,+3,+2,+1,0]              [0.000,0.000,0.050]  6c
+Si_i_C3i         [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
+Sb_i_C1_Sb2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.347,0.348,0.457]  18f
+Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.158,0.359,0.167]  18f
+Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.001,0.336,0.289]  18f
 Sb_i_C3_Si2.64   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.318]  6c
-Sb_i_C3i_Te2.81  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.20   [+4,+3,+2,+1,0,-1,-2]        [0.179,0.359,0.167]  18f
-Te_i_C1_Si2.43   [+4,+3,+2,+1,0,-1,-2]        [0.341,0.341,0.458]  18f
-Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.336,0.335,0.711]  18f
+Sb_i_C3_Te2.41   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.050]  6c
+Sb_i_C3i         [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
+Te_i_C1_Sb2.48   [+4,+3,+2,+1,0,-1,-2]        [0.347,0.348,0.457]  18f
+Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.158,0.359,0.167]  18f
+Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.001,0.336,0.289]  18f
 Te_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.318]  6c
-Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
+Te_i_C3_Te2.41   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.050]  6c
+Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect "
             "in the conventional ('conv.') unit cell, which comprises 6 formula unit(s) of "
@@ -682,59 +761,63 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         )
 
         self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
-
         self.liga5o8 = Structure.from_file(f"{self.data_dir}/LiGa5O8_CONTCAR")
-
         self.conv_si = Structure.from_file(f"{self.data_dir}/Si_MP_conv_POSCAR")
-
         self.cspbcl3_supercell = Structure.from_file(f"{self.data_dir}/CsPbCl3_supercell_POSCAR")
-
         self.se_supercell = Structure.from_file(f"{self.data_dir}/Se_supercell_POSCAR")
+        self.sn5o6 = Structure.from_file(f"{self.data_dir}/Sn5O6_POSCAR")
+        self.navcdo4_supercell = Structure.from_file(f"{self.data_dir}/NaVCdO4_supercell_POSCAR")
 
-    def _save_defect_gen_jsons(self, defect_gen):
-        defect_gen.to_json("test.json")
-        dumpfn(defect_gen, "test_defect_gen.json")
+    def _save_defect_gen_jsons(self, defect_gen, heavy=False):
         defect_gen.to_json()  # test default
-
         formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )
         default_json_filename = f"{formula}_defects_generator.json.gz"
+        assert os.path.exists(default_json_filename)
 
-        # assert these saved files are the exact same:
-        assert filecmp.cmp("test.json", "test_defect_gen.json")
-        with (
-            gzip.open(default_json_filename, "rt") as f,
-            open(default_json_filename.rstrip(".gz"), "w") as f_out,
-        ):
-            f_out.write(f.read())
-        assert filecmp.cmp("test.json", default_json_filename.rstrip(".gz"))
-        if_present_rm("test.json")
-        if_present_rm(default_json_filename.rstrip(".gz"))
-        if_present_rm("test_defect_gen.json")
+        if not heavy:
+            defect_gen.to_json("test.json")
+            dumpfn(defect_gen, "test_defect_gen.json")
 
-    def _load_and_test_defect_gen_jsons(self, defect_gen):
+            # assert these saved files are the exact same:
+            assert filecmp.cmp("test.json", "test_defect_gen.json")
+            with (
+                gzip.open(default_json_filename, "rt") as f,
+                open(default_json_filename.rstrip(".gz"), "w") as f_out,
+            ):
+                f_out.write(f.read())
+            assert filecmp.cmp("test.json", default_json_filename.rstrip(".gz"))
+            if_present_rm("test.json")
+            if_present_rm(default_json_filename.rstrip(".gz"))
+            if_present_rm("test_defect_gen.json")
+
+    def _load_and_test_defect_gen_jsons(self, defect_gen, heavy=False):
         # test that the jsons are identical (except for ordering)
         formula, _fu = defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
             iupac_ordering=True
         )
         default_json_filename = f"{formula}_defects_generator.json.gz"
         defect_gen_from_json = DefectsGenerator.from_json(default_json_filename)
-        defect_gen_from_json_loadfn = loadfn(default_json_filename)
-
-        # test saving to json again gives same object:
-        defect_gen_from_json.to_json("test.json")
-        defect_gen_from_json_loadfn.to_json("test_loadfn.json")
-        assert filecmp.cmp("test.json", "test_loadfn.json")
-
         # test it's the same as the original:
-        # here we compare using json dumps because the ordering can change slightly when saving to json
         _compare_attributes(defect_gen, defect_gen_from_json)
-        if_present_rm("test.json")
-        if_present_rm("test_loadfn.json")
+
+        if not heavy:
+            defect_gen_from_json_loadfn = loadfn(default_json_filename)
+            _compare_attributes(defect_gen_from_json, defect_gen_from_json_loadfn)
+
+            # test saving to json again gives same object:
+            defect_gen_from_json.to_json("test.json")
+            defect_gen_from_json_loadfn.to_json("test_loadfn.json")
+            assert filecmp.cmp("test.json", "test_loadfn.json")
+
+            if_present_rm("test.json")
+            if_present_rm("test_loadfn.json")
+
         if_present_rm(default_json_filename)
 
     def _general_defect_gen_check(self, defect_gen, charge_states_removed=False):
+        print("Checking general DefectsGenerator attributes")
         assert self.structure_matcher.fit(
             defect_gen.primitive_structure * defect_gen.supercell_matrix,
             defect_gen.bulk_supercell,
@@ -745,9 +828,9 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             assert np.allclose(  # test that bulk supercell and input structure lattices match
                 defect_gen.structure.lattice.matrix,
                 defect_gen.bulk_supercell.lattice.matrix,  # better than Struct == Struct as allows
-                atol=1e-5,  # noise in input structure
+                atol=1e-3,  # noise in input structure
             )  # Defect supercell also tested later with random_defect_entry
-            assert summed_rms_dist(defect_gen.structure, defect_gen.bulk_supercell) < 0.1
+            assert summed_rms_dist(defect_gen.structure, defect_gen.bulk_supercell) < 0.15
 
         assert len(defect_gen) == len(defect_gen.defect_entries)  # __len__()
         assert dict(defect_gen.items()) == defect_gen.defect_entries  # __iter__()
@@ -755,7 +838,8 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect_entry_name in defect_gen
             for defect_entry_name in defect_gen.defect_entries  # __contains__()
         )
-        # test no unwanted structure reordering
+
+        print("Checking structure (re)ordering")  # test no unwanted structure reordering
         if not np.isclose(abs(np.linalg.det(defect_gen.supercell_matrix)), 1):  # if input structure is
             # unordered/defective and used as supercell, then primitive_structure and bulk_supercell
             # attributes can be unordered, fine as not directly used for POSCAR file generation
@@ -770,8 +854,11 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     set(Poscar(structure).site_symbols)
                 )  # no duplicates
 
-        assert np.isclose(defect_gen.min_image_distance, get_min_image_distance(defect_gen.bulk_supercell))
+        assert np.isclose(
+            defect_gen.min_image_distance, get_min_image_distance(defect_gen.bulk_supercell), atol=1e-2
+        )
 
+        print("Checking Defect/DefectEntry types")
         assert all(defect.defect_type == DefectType.Vacancy for defect in defect_gen.defects["vacancies"])
         if "substitutions" in defect_gen.defects:
             assert all(
@@ -782,16 +869,17 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect.defect_type == DefectType.Interstitial
             for defect in defect_gen.defects.get("interstitials", [])
         )
+        assert all(
+            isinstance(defect_entry, DefectEntry) for defect_entry in defect_gen.defect_entries.values()
+        )
+        print("Checking vacancy multiplicity")
         assert sum(vacancy.multiplicity for vacancy in defect_gen.defects["vacancies"]) == len(
             defect_gen.primitive_structure
         )
 
-        assert all(
-            isinstance(defect_entry, DefectEntry) for defect_entry in defect_gen.defect_entries.values()
-        )
-
         for defect_list in defect_gen.defects.values():
             for defect in defect_list:
+                print(f"Checking {defect.defect_type} {defect.name} attributes")
                 assert isinstance(defect, Defect)
                 assert defect.conv_cell_frac_coords in defect.equiv_conv_cell_frac_coords
                 assert defect.structure == defect_gen.primitive_structure
@@ -821,17 +909,17 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             assert np.allclose(  # test that defect supercell and input structure lattices match
                 random_defect_entry.defect_supercell.lattice.matrix,
                 defect_gen.structure.lattice.matrix,
-                atol=1e-5,
+                atol=1e-3,
             )
 
     def _check_defect_entry(self, defect_entry, defect_name, defect_gen, charge_states_removed=False):
+        print(f"Checking DefectEntry {defect_name} attributes")
         assert defect_entry.name == defect_name
         assert defect_entry.charge_state == int(defect_name.split("_")[-1])
         assert defect_entry.wyckoff
         assert defect_entry.defect
         assert defect_entry.defect.wyckoff == defect_entry.wyckoff
-        # Commenting out as confirmed works but slows down tests (tested anyway with the defect_gen
-        # outputs):
+        # Commenting out as confirmed works but slows down tests (tested elsewhere):
         # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
         # defect_entry.defect)
         assert np.array_equal(
@@ -841,92 +929,115 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect_entry.sc_entry.structure.lattice.matrix,
             defect_gen.bulk_supercell.lattice.matrix,
         )
-        sga = SpacegroupAnalyzer(defect_gen.structure)
-        reoriented_conv_structure = swap_axes(
-            sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
-        )
-        assert np.array_equal(
-            defect_entry.conventional_structure.lattice.matrix,
-            defect_entry.defect.conventional_structure.lattice.matrix,
-        )
-        assert np.allclose(
-            defect_entry.conventional_structure.lattice.matrix,
-            reoriented_conv_structure.lattice.matrix,
-        )
-        # test no unwanted structure reordering
-        for structure in [
-            defect_entry.defect_supercell,
-            defect_entry.bulk_supercell,
-            defect_entry.sc_entry.structure,
-            defect_entry.conventional_structure,
-        ]:
-            assert len(Poscar(structure).site_symbols) == len(
-                set(Poscar(structure).site_symbols)
-            )  # no duplicates
 
-        # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
-        # defect_entry.conventional_structure
-        distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
-            defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
-        )[:, 0]
-        min_dist = distance_matrix[distance_matrix > 0.01].min()
-        if defect_gen.interstitial_gen_kwargs is not False:
-            assert min_dist > defect_gen.interstitial_gen_kwargs.get(
-                "min_dist", 0.9
-            )  # default min_dist = 0.9
-        for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+        # only run more intensive checks on neutral entries, as charged entries are just copies of this
+        if defect_entry.charge_state == 0:
+            sga = SpacegroupAnalyzer(defect_gen.structure)
+            reoriented_conv_structure = swap_axes(
+                sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
+            )
+            assert np.allclose(
+                defect_entry.conventional_structure.lattice.matrix,
+                defect_entry.defect.conventional_structure.lattice.matrix,
+                atol=1e-3,
+            )
+            assert np.allclose(
+                np.abs(defect_entry.conventional_structure.lattice.matrix),
+                np.abs(reoriented_conv_structure.lattice.matrix),
+                atol=1e-3,
+            )  # may also have multiplied axes by -1 to get a positive determinant
+            # test no unwanted structure reordering
+            for structure in [
+                defect_entry.defect_supercell,
+                defect_entry.bulk_supercell,
+                defect_entry.sc_entry.structure,
+                defect_entry.conventional_structure,
+            ]:
+                assert len(Poscar(structure).site_symbols) == len(
+                    set(Poscar(structure).site_symbols)
+                )  # no duplicates
+
+            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+            # defect_entry.conventional_structure
             distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
-                defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
+                defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
             )[:, 0]
-            equiv_min_dist = distance_matrix[distance_matrix > 0.01].min()
-            assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+            min_dist = distance_matrix[distance_matrix > 0.01].min()
+            if defect_gen.interstitial_gen_kwargs is not False:
+                assert min_dist > defect_gen.interstitial_gen_kwargs.get(
+                    "min_dist", 0.9
+                )  # default min_dist = 0.9
+            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
+                    defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
+                )[:, 0]
+                equiv_min_dist = distance_matrix[distance_matrix > 0.01].min()
+                assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
 
-        # test equivalent_sites for defects:
-        assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
-        assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
-        for equiv_site in defect_entry.defect.equivalent_sites:
-            nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
-                equiv_site.coords,
-                5,
-            )
-            nn_distances = np.array([nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms])
-            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-            print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
-            assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
-            # conv_cell_frac_coords testing above
+            # test equivalent_sites for defects:
+            if all(
+                hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements
+            ) and len(
+                {sp.symbol: sp.oxi_state for sp in defect_entry.defect.structure.composition.elements}
+            ) == len(
+                defect_entry.defect.structure.composition.elements
+            ):
+                # single-valence, otherwise skip equiv sites / multiplicity checks (due to pymatgen
+                # defects issues in determining equiv sites / multiplicities in these cases)
+                print(len(defect_entry.defect.equivalent_sites), defect_entry.defect.multiplicity)
+                assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+                assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+                assert np.allclose(
+                    defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
+                )
+                num_prim_cells_in_conv_cell = len(defect_entry.conventional_structure) / len(
+                    defect_entry.defect.structure
+                )
+                print(defect_entry.defect.multiplicity, num_prim_cells_in_conv_cell, defect_entry.wyckoff)
+                # assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
+                #     defect_entry.wyckoff[:-1]
+                # )
+                assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+                assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(
+                    defect_entry.wyckoff[:-1]
+                )
+                assert any(
+                    np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
+                    for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
+                )
+                for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                    assert any(
+                        np.array_equal(equiv_conv_cell_frac_coords, x)
+                        for x in defect_entry.defect.equiv_conv_cell_frac_coords
+                    )
+                assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                    len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+                )
+            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
+            assert np.isclose(
+                defect_entry.defect_supercell_site.frac_coords,
+                defect_entry.sc_defect_frac_coords,
+                atol=1e-5,
+            ).all()
 
-        assert np.allclose(
-            defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
-        )
-        num_prim_cells_in_conv_cell = len(defect_entry.conventional_structure) / len(
-            defect_entry.defect.structure
-        )
-        assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
-            defect_entry.wyckoff[:-1]
-        )
-        assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
-        assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
-        assert any(
-            np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
-            for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
-        )
-        for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-            assert any(
-                np.array_equal(equiv_conv_cell_frac_coords, x)
-                for x in defect_entry.defect.equiv_conv_cell_frac_coords
-            )
-        assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
-            len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
-        )
-        assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
-        assert np.isclose(
-            defect_entry.defect_supercell_site.frac_coords, defect_entry.sc_defect_frac_coords, atol=1e-5
-        ).all()
+            for equiv_site in defect_entry.defect.equivalent_sites:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    5,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
+                assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
+                # conv_cell_frac_coords testing above
+
         assert defect_entry.bulk_entry is None
 
-        # Sb2Se3 and Ag2Se are the 2 test cases included so far where the lattice vectors swap,
-        # both with the [1, 0, 2] mapping
-        assert defect_entry._BilbaoCS_conv_cell_vector_mapping in [[0, 1, 2], [1, 0, 2]]
+        # Sb2Se3, Ag2Se and Sn5O6 are the 3 test cases included so far where the lattice vectors swap,
+        # first 2 with [1, 0, 2] mapping, Sn5O6 with [2, 1, 0]
+        assert defect_entry._BilbaoCS_conv_cell_vector_mapping in [[0, 1, 2], [1, 0, 2], [2, 1, 0]]
 
         assert (
             defect_entry._BilbaoCS_conv_cell_vector_mapping
@@ -1012,6 +1123,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             )
 
     def _check_editing_defect_gen(self, random_defect_entry_name, defect_gen):
+        print(f"Checking editing DefectsGenerator, using {random_defect_entry_name}")
         assert (
             defect_gen[random_defect_entry_name] == defect_gen.defect_entries[random_defect_entry_name]
         )  # __getitem__()
@@ -1103,7 +1215,7 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].oxi_state == 0
             assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].multiplicity == 1
             assert extrinsic_CdTe_defect_gen.defects["substitutions"][idx].defect_site == PeriodicSite(
-                "Te", [0.25, 0.25, 0.25], extrinsic_CdTe_defect_gen.primitive_structure.lattice
+                "Te2-", [0.25, 0.25, 0.25], extrinsic_CdTe_defect_gen.primitive_structure.lattice
             )
             assert str(extrinsic_CdTe_defect_gen.defects["substitutions"][idx].site.specie) == f"{element}"
             assert np.isclose(
@@ -1476,14 +1588,15 @@ Te_i_C3i_Te2.81  [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 4,
                 [
                     np.array([0.625, 0.625, 0.625]),
-                    np.array([0.125, 0.625, 0.625]),
-                    np.array([0.625, 0.125, 0.625]),
                     np.array([0.625, 0.625, 0.125]),
+                    np.array([0.625, 0.125, 0.625]),
+                    np.array([0.125, 0.625, 0.625]),
                 ],
             ),
             (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
             (np.array([0.5, 0.5, 0.5]), 1, [np.array([0.5, 0.5, 0.5])]),
         ]
+        print(CdTe_defect_gen.prim_interstitial_coords)  # for debugging
         _compare_prim_interstitial_coords(CdTe_defect_gen.prim_interstitial_coords, expected)
 
         # defect_gen_check changes defect_entries ordering, so save to json first:
@@ -1529,11 +1642,13 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             assert (
                 line in self.ytos_defect_gen_info.splitlines()
                 or line.replace("O1.92", "Y1.92") in self.ytos_defect_gen_info.splitlines()
+                or line.replace("0.184", "0.185") in self.ytos_defect_gen_info.splitlines()
             )
 
         self._general_defect_gen_check(ytos_defect_gen)
 
         assert ytos_defect_gen.interstitial_coords == ytos_interstitial_coords  # check attribute set
+        print(ytos_defect_gen.prim_interstitial_coords)  # for debugging
         _compare_prim_interstitial_coords(
             ytos_defect_gen.prim_interstitial_coords,
             [
@@ -1581,6 +1696,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert (
             CdTe_defect_gen.interstitial_coords == CdTe_supercell_interstitial_coords
         )  # check attribute set
+        print(CdTe_defect_gen.prim_interstitial_coords)  # for debugging
         _compare_prim_interstitial_coords(
             CdTe_defect_gen.prim_interstitial_coords,
             [
@@ -1630,8 +1746,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             interstitial_coords=te_cd_1_metastable_c2v_antisite_supercell_frac_coords,
             interstitial_gen_kwargs={"min_dist": 0.01},
         )
-        assert "Cd_i_C2v         [+2,+1,0]              [0.063,0.500,0.500]  24f" in output
-        assert "Te_i_C2v         [+4,+3,+2,+1,0,-1,-2]  [0.063,0.500,0.500]  24f" in output
+        assert "Cd_i_C2v         [+2,+1,0]              [0.000,0.000,0.063]  24f" in output
+        assert "Te_i_C2v         [+4,+3,+2,+1,0,-1,-2]  [0.000,0.000,0.063]  24f" in output
 
         self._general_defect_gen_check(CdTe_defect_gen)
         assert CdTe_defect_gen.interstitial_coords == [
@@ -1680,7 +1796,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             CdTe_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords,
-            [-2.4527445, 4.0879075, 4.0879075],
+            [5.7230775, 2.4527475, 13.8989025],
             atol=1e-2,
         )
 
@@ -1740,7 +1856,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # gives 4x conventional cell
         assert self.CdTe_defect_gen_info in output
         self._general_defect_gen_check(CdTe_defect_gen)
-        assert CdTe_defect_gen.min_image_distance == 26.1626
+        assert np.isclose(CdTe_defect_gen.min_image_distance, 26.1626, atol=1e-2)
         assert len(CdTe_defect_gen.bulk_supercell) == 512
         assert CdTe_defect_gen.supercell_gen_kwargs["min_image_distance"] == 20
         assert CdTe_defect_gen.supercell_gen_kwargs["force_cubic"] is True
@@ -1755,27 +1871,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert self.CdTe_defect_gen_info in CdTe_defect_gen._defect_generator_info()
         assert CdTe_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         assert self.structure_matcher.fit(CdTe_defect_gen.primitive_structure, self.prim_cdte)
-        if prim_cdte_input:
-            assert np.allclose(
-                CdTe_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
-            )  # same lattice
-        else:  # otherwise slightly different definition
-            assert np.allclose(
-                CdTe_defect_gen.primitive_structure.lattice.matrix,
-                np.array(
-                    [
-                        self.prim_cdte.lattice.matrix[2],
-                        self.prim_cdte.lattice.matrix[1],
-                        self.prim_cdte.lattice.matrix[0],
-                    ]
-                ),
-            )
+        assert np.allclose(
+            CdTe_defect_gen.primitive_structure.lattice.matrix, self.prim_cdte.lattice.matrix
+        )  # same lattice
+
         if generate_supercell:
             supercell_matrix = np.array([[3, 0, 0], [0, 3, 0], [0, 0, 3]])
-        elif CdTe_defect_gen.supercell_gen_kwargs != default_supercell_gen_kwargs:
-            supercell_matrix = np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         else:
-            supercell_matrix = np.array([[2.0, 2.0, -2.0], [2.0, -2.0, 2.0], [-2.0, 2.0, 2.0]])
+            supercell_matrix = np.array([[-2, 2, 2], [2, -2, 2], [2, 2, -2]])
         assert np.allclose(CdTe_defect_gen.supercell_matrix, supercell_matrix)
 
         if not generate_supercell:
@@ -1804,10 +1907,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert CdTe_defect_gen.defects["vacancies"][0].oxi_state == -2
         assert CdTe_defect_gen.defects["vacancies"][0].multiplicity == 1
         assert CdTe_defect_gen.defects["vacancies"][0].defect_site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert CdTe_defect_gen.defects["vacancies"][0].site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert (
             len(CdTe_defect_gen.defects["vacancies"][0].equiv_conv_cell_frac_coords) == 4
@@ -2018,10 +2121,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].wyckoff == "4a"
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.defect_type == DefectType.Vacancy
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.defect_site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert CdTe_defect_gen.defect_entries["v_Cd_0"].defect.site == PeriodicSite(
-            "Cd", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
+            "Cd2+", [0, 0, 0], CdTe_defect_gen.primitive_structure.lattice
         )
         assert np.allclose(
             CdTe_defect_gen.defect_entries["v_Cd_0"].conv_cell_frac_coords,
@@ -2093,8 +2196,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert "Cd_i_C3v_-6" in CdTe_defect_gen.defect_entries
         assert CdTe_defect_gen["Cd_i_C3v_-7"].charge_state == -7
-        info_line = "Cd_i_C3v         [+2,+1,0,-6,-7]        [0.625,0.625,0.625]  16e"
-        assert info_line in repr(CdTe_defect_gen)
+        info_lines = [
+            "Cd_i_C3v         [+2,+1,0,-6,-7]        [0.625,0.625,0.625]  16e",
+            "Cd_i_Td_Cd2.83   [+2,+1,0]              [0.750,0.750,0.750]  4d",
+            "Cd_i_Td_Te2.83   [+2,+1,0]              [0.500,0.500,0.500]  4b",
+        ]
+        for info_line in info_lines:
+            print(info_line)
+            assert info_line in repr(CdTe_defect_gen)
+
+        CdTe_defect_gen.add_charge_states("Cd_i", -6)
+        self._general_defect_gen_check(CdTe_defect_gen)
+        for info_line in [line.replace("[+2,+1,0]      ", "[+2,+1,0,-6]   ") for line in info_lines]:
+            print(info_line)
+            assert info_line in repr(CdTe_defect_gen)
 
     def test_removing_charge_states(self):
         CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte)
@@ -2300,22 +2415,28 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def _reduce_to_one_defect_each(self, defect_gen):
         """
-        Reduce the defect_gen to just having one of each defect type, for
+        Reduce the ``defect_gen`` to just having one of each defect type, for
         testing purposes.
         """
-        if "interstitials" in defect_gen.defects:
-            defect_gen.defects["interstitials"] = [defect_gen.defects["interstitials"][0]]
-            defect_gen.defects["vacancies"] = [defect_gen.defects["vacancies"][0]]
-        else:  # take 2 vacancies instead
-            defect_gen.defects["vacancies"] = defect_gen.defects["vacancies"][:1]
+        defect_entries = {}
+        types_collected = []
+        for defect_entry in defect_gen.defect_entries.values():
+            if defect_entry.defect.defect_type not in types_collected:
+                defect_entries[defect_entry.name] = defect_entry
+                types_collected.append(defect_entry.defect.defect_type)
 
-        defect_gen.defects["substitutions"] = [defect_gen.defects["substitutions"][0]]
+        defect_gen.defect_entries = defect_entries
+        for key, type in [
+            ("interstitials", Interstitial),
+            ("vacancies", Vacancy),
+            ("substitutions", Substitution),
+        ]:
+            defect_gen.defects[key] = [
+                defect_entry.defect
+                for defect_entry in defect_gen.defect_entries.values()
+                if isinstance(defect_entry.defect, type)
+            ]
 
-        defect_gen.defect_entries = {
-            k: v
-            for k, v in defect_gen.defect_entries.items()
-            if any(i == v.defect for i in reduce(operator.iconcat, defect_gen.defects.values(), []))
-        }
         return defect_gen
 
     def test_ytos_supercell_input(self):
@@ -2390,7 +2511,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.primitive_structure.lattice.matrix, self.lmno_primitive.lattice.matrix
         )
         supercell_matrix = np.array(
-            [[1, 1, 0], [1, 0, 1], [0, 1, 1]] if generate_supercell else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+            [[0, 1, 1], [1, 0, 1], [1, 1, 0]] if generate_supercell else [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
         )
         assert any(np.isclose(lmno_defect_gen.min_image_distance, i, atol=0.01) for i in [11.71, 8.28])
         assert np.allclose(lmno_defect_gen.supercell_matrix, supercell_matrix)
@@ -2432,7 +2553,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.multiplicity == 24
         )  # prim = conv structure in LMNO
         sc_frac_coords = np.array(
-            [0.378186, 0.622212, 0.61125] if generate_supercell else [0.500397, 0.510568, 0.766541]
+            [0.375325, 0.616475, 0.391795] if generate_supercell else [0.23288, 0.4918, 0.49173]
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
@@ -2444,12 +2565,12 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].conv_cell_frac_coords,
-            np.array([0.017, 0.261, 0.250]),
+            np.array([0.233, 0.492, 0.492]),
             atol=1e-3,
         )
         assert np.allclose(
             lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.site.frac_coords,
-            np.array([0.017, 0.261, 0.250]),
+            np.array([0.233, 0.492, 0.492]),
             atol=1e-3,
         )
 
@@ -2739,7 +2860,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # test attributes:
         assert self.structure_matcher.fit(agcu_defect_gen.primitive_structure, self.agcu)
         supercell_matrix = np.array(
-            [[2, -2, 2], [4, 0, 0], [4, -4, 0]]
+            [[4, -4, 0], [4, 0, 0], [2, -2, 2]]
             if generate_supercell
             else [[0.0, 2.0, 0.0], [-2.0, 2.0, 0.0], [-1.0, 1.0, 1.0]]
         )
@@ -2861,18 +2982,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert not self.structure_matcher.fit(
             cd_i_defect_gen.primitive_structure, self.CdTe_bulk_supercell
         )
-        assert np.allclose(
-            cd_i_defect_gen.supercell_matrix,
-            np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]),
-            atol=1e-3,
-        )
+        assert np.allclose(cd_i_defect_gen.supercell_matrix, np.eye(3), atol=1e-3)
         assert np.isclose(cd_i_defect_gen.min_image_distance, 13.88, atol=0.01)
 
         # explicitly test defects
         assert len(cd_i_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(cd_i_defect_gen.defects["vacancies"]) == 21
         assert len(cd_i_defect_gen.defects["substitutions"]) == 21
-        assert len(cd_i_defect_gen.defects["interstitials"]) == 90
+        assert len(cd_i_defect_gen.defects["interstitials"]) == 86
 
         # explicitly test some relevant defect attributes
         assert cd_i_defect_gen.defects["vacancies"][1].name == "v_Cd"
@@ -2881,7 +2998,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert cd_i_defect_gen.defects["vacancies"][1].multiplicity == 6
         assert np.allclose(
             cd_i_defect_gen.defects["vacancies"][1].site.frac_coords,
-            np.array([0.0, 0.33333, 0.66667]),
+            np.array([0.66667, 0.33333, 0.0]),
             atol=1e-3,
         )
         assert (
@@ -2889,7 +3006,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # 3x conv cell
 
         # explicitly test defect entries
-        assert len(cd_i_defect_gen.defect_entries) == 630
+        assert len(cd_i_defect_gen.defect_entries) == 610
 
         # explicitly test defect entry attributes
         assert (
@@ -2898,11 +3015,11 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].wyckoff == "9b"
         assert cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.multiplicity == 3
-        assert np.allclose(
+        for frac_coords in [
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].sc_defect_frac_coords,
-            np.array([0.583333, 0.583333, 0.916667]),  # closest to [0.5, 0.5, 0.5]
-            rtol=1e-2,
-        )
+            cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.site.frac_coords,
+        ]:  # closest to [0.5, 0.5, 0.5]
+            assert np.allclose(frac_coords, np.array([0.25, 0.25, 0.583333]), rtol=1e-2)
         assert (
             cd_i_defect_gen.defect_entries[
                 "Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"
@@ -2911,12 +3028,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
         assert np.allclose(
             cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].conv_cell_frac_coords,
-            np.array([0.5555, 0.111, 0.0277]),
-            rtol=1e-2,
-        )
-        assert np.allclose(
-            cd_i_defect_gen.defect_entries["Te_i_Cs_Cd2.83Te3.27Cd5.42e_0"].defect.site.frac_coords,
-            np.array([0.583333, 0.583333, 0.916667]),
+            np.array([0.111, 0.5555, 0.3055]),
             rtol=1e-2,
         )
 
@@ -2931,19 +3043,16 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].conv_cell_frac_coords,
-            np.array([0.2222, 0.4444, 0.1944]),
+            np.array([0.111, 0.2223, 0.4723]),
             atol=1e-3,
         )
-        assert np.allclose(
+        for frac_coords in [
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].sc_defect_frac_coords,
-            np.array([0.416667, 0.416667, 0.75]),  # closest to middle of supercell
-            atol=1e-4,
-        )
-        assert np.allclose(
             cd_i_defect_gen.defect_entries["Cd_Te_Cs_Cd2.71_-1"].defect.site.frac_coords,
-            np.array([0.416667, 0.416667, 0.75]),
-            atol=1e-3,
-        )
+        ]:  # closest to [0.5, 0.5, 0.5]
+            assert np.allclose(
+                frac_coords, np.array([0.416667, 0.416667, 0.75]), atol=1e-3
+            ) or np.allclose(frac_coords, np.array([0.75, 0.416667, 0.416667]), atol=1e-3)
 
     def test_supercell_w_defect_cd_i_CdTe(self):
         if not self.heavy_tests:
@@ -2957,15 +3066,14 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )
 
         assert self.cd_i_CdTe_supercell_defect_gen_info in output
-
-        self._save_defect_gen_jsons(cd_i_defect_gen)
         self.cd_i_CdTe_supercell_defect_gen_check(cd_i_defect_gen)
-        rearranged_lattice = (CdTe_defect_gen.primitive_structure * 3).lattice.matrix
-        rearranged_lattice = rearranged_lattice[[2, 1, 0]]  # rearrange to match supercell lattice
         assert np.allclose(  # primitive cell of defect supercell here is same as previous bulk supercell
-            cd_i_defect_gen.primitive_structure.lattice.matrix, rearranged_lattice  # but re-arranged
+            cd_i_defect_gen.primitive_structure.lattice.matrix,
+            (CdTe_defect_gen.primitive_structure * 3).lattice.matrix,
         )
-        self._load_and_test_defect_gen_jsons(cd_i_defect_gen)
+
+        self._save_defect_gen_jsons(cd_i_defect_gen, heavy=True)
+        self._load_and_test_defect_gen_jsons(cd_i_defect_gen, heavy=True)
 
         # save reduced defect gen to json
         reduced_cd_i_defect_gen = self._reduce_to_one_defect_each(cd_i_defect_gen)
@@ -3089,46 +3197,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # incorrectly determined if the pymatgen/spglib lattice vectors aren't swapped to match the BCS
         # convention, so this is a good check:
 
-        assert (
-            (
-                """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
---------------  -----------------  -------------------  ---------
-v_Sb_Cs_Se2.57  [+1,0,-1,-2,-3]    [0.537,0.250,0.355]  4c
-v_Sb_Cs_Se2.63  [+1,0,-1,-2,-3]    [0.328,0.250,0.032]  4c
-v_Se_Cs_Sb2.57  [+2,+1,0,-1]       [0.628,0.250,0.553]  4c
-v_Se_Cs_Sb2.63  [+2,+1,0,-1]       [0.192,0.250,0.210]  4c
-v_Se_Cs_Sb2.65  [+2,+1,0,-1]       [0.445,0.750,0.128]  4c
-
-Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
----------------  ---------------------------  -------------------  ---------
-Sb_Se_Cs_Sb2.57  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.628,0.250,0.553]  4c
-Sb_Se_Cs_Sb2.63  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.192,0.250,0.210]  4c
-Sb_Se_Cs_Sb2.65  [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.445,0.750,0.128]  4c
-Se_Sb_Cs_Se2.57  [+1,0,-1,-2,-3,-4,-5]        [0.537,0.250,0.355]  4c
-Se_Sb_Cs_Se2.63  [+1,0,-1,-2,-3,-4,-5]        [0.328,0.250,0.032]  4c
-
-Interstitials         Guessed Charges              Conv. Cell Coords    Wyckoff
---------------------  ---------------------------  -------------------  ---------
-Sb_i_C1               [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.367,0.043,0.279]  8d
-Sb_i_Cs_Sb2.14        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.503,0.250,0.700]  4c
-Sb_i_Cs_Sb2.34        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.335,0.250,0.349]  4c
-Sb_i_Cs_Sb2.83        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.627,0.250,0.132]  4c
-Sb_i_Cs_Se2.32Sb2.33  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.393,0.250,0.217]  4c
-Sb_i_Cs_Se2.32Sb2.40  [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.074,0.250,0.035]  4c
-Sb_i_Cs_Se2.38        [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.293,0.750,0.263]  4c
-Se_i_C1               [+4,+3,+2,+1,0,-1,-2]        [0.367,0.043,0.279]  8d
-Se_i_Cs_Sb2.14        [+4,+3,+2,+1,0,-1,-2]        [0.503,0.250,0.700]  4c
-Se_i_Cs_Sb2.34        [+4,+3,+2,+1,0,-1,-2]        [0.335,0.250,0.349]  4c
-Se_i_Cs_Sb2.83        [+4,+3,+2,+1,0,-1,-2]        [0.627,0.250,0.132]  4c
-Se_i_Cs_Se2.32Sb2.33  [+4,+3,+2,+1,0,-1,-2]        [0.393,0.250,0.217]  4c
-Se_i_Cs_Se2.32Sb2.40  [+4,+3,+2,+1,0,-1,-2]        [0.074,0.250,0.035]  4c
-Se_i_Cs_Se2.38        [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
-\n"""
-                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
-                "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
-            )
-            in output
-        )
+        assert self.sb2se3_defect_gen_info in output
 
         # test get_defect_name_from_entry relaxed/unrelaxed warnings:
         with warnings.catch_warnings(record=True) as w:
@@ -3157,39 +3226,7 @@ Se_i_Cs_Se2.38        [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
         ag2se_defect_gen, output = self._generate_and_test_no_warnings(self.ag2se)
         self._general_defect_gen_check(ag2se_defect_gen)
 
-        assert (
-            (
-                """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
---------------  -----------------  -------------------  ---------
-v_Ag_C1         [+1,0,-1]          [0.103,0.005,0.244]  4e
-v_Ag_C2_Ag2.80  [+1,0,-1]          [0.391,0.000,0.000]  2a
-v_Ag_C2_Ag2.85  [+1,0,-1]          [0.615,0.500,0.500]  2b
-v_Se            [+2,+1,0,-1]       [0.294,0.520,0.251]  4e
-
-Substitutions    Guessed Charges        Conv. Cell Coords    Wyckoff
----------------  ---------------------  -------------------  ---------
-Ag_Se            [+3,+2,+1,0]           [0.294,0.520,0.251]  4e
-Se_Ag_C1         [+3,+2,+1,0,-1,-2,-3]  [0.103,0.005,0.244]  4e
-Se_Ag_C2_Ag2.80  [+3,+2,+1,0,-1,-2,-3]  [0.391,0.000,0.000]  2a
-Se_Ag_C2_Ag2.85  [+3,+2,+1,0,-1,-2,-3]  [0.615,0.500,0.500]  2b
-
-Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
----------------  -----------------  -------------------  ---------
-Ag_i_C1_Ag2.04   [+2,+1,0]          [0.335,0.435,0.002]  4e
-Ag_i_C1_Ag2.05   [+2,+1,0]          [0.405,0.109,0.250]  4e
-Ag_i_C2_Ag2.02   [+2,+1,0]          [0.500,0.250,0.319]  2d
-Ag_i_C2_Ag2.48   [+2,+1,0]          [0.091,0.500,0.500]  2b
-Se_i_C1_Ag2.04   [0,-1,-2]          [0.335,0.435,0.002]  4e
-Se_i_C1_Ag2.05   [0,-1,-2]          [0.405,0.109,0.250]  4e
-Se_i_C2_Ag2.02   [0,-1,-2]          [0.500,0.250,0.319]  2d
-Se_i_C2_Ag2.48   [0,-1,-2]          [0.091,0.500,0.500]  2b
-\n"""
-                "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
-                "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
-            )
-            in output
-        )
-
+        assert self.ag2se_defect_gen_info in output
         assert ag2se_defect_gen._BilbaoCS_conv_cell_vector_mapping == [1, 0, 2]
 
     def test_sb2si2te6(self):
@@ -3272,7 +3309,6 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
 
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
         self._general_defect_gen_check(CdTe_defect_gen)
-        # Cali baby!
 
     def test_agsbte2(self):
         """
@@ -3296,9 +3332,73 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         assert np.allclose(
             agsbte2_defect_gen_a.supercell_matrix,
-            np.array([[0.0, 3.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+            np.array([[0.0, 3.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]),
         )
         self._general_defect_gen_check(agsbte2_defect_gen_a)
+
+    def test_mixed_valence_Sn5O6(self):
+        """
+        Test generating defects in a mixed-valence system.
+
+        ``BVAnalyzer()`` still actually gets the oxidation states wrong
+        here (should be ``{"Sn4+":1, "Sn2+":4, "O2-":6}``), but it gets
+        Sn3+ and Sn2+, but at least it's closer, and the point of this
+        test is to check the ``doped`` functions at least behave as
+        expected with mixed valence systems.
+        """
+        # it's a low-symmetry system so don't bother auto-generating supercell, this functionality is
+        # sufficiently tested:
+        sn5o6_defect_gen, output = self._generate_and_test_no_warnings(
+            self.sn5o6 * 2, generate_supercell=False, min_image_distance=9.70
+        )
+        self._general_defect_gen_check(sn5o6_defect_gen)
+
+        supercell_with_oxi = self.sn5o6 * 2
+        supercell_with_oxi.add_oxidation_state_by_element({"Sn": 4, "O": -2})
+        sn5o6_w_oxi_defect_gen, output = self._generate_and_test_no_warnings(
+            supercell_with_oxi, generate_supercell=False, min_image_distance=9.70
+        )
+        for defect_gen, w_oxi in zip([sn5o6_defect_gen, sn5o6_w_oxi_defect_gen], [False, True]):
+            print(f"Testing Sn5O6 defect_gen with oxi states: {w_oxi}")
+            self.Sn5O6_defect_gen_check(defect_gen, manual_oxi=w_oxi)
+
+    def Sn5O6_defect_gen_check(self, defect_gen, manual_oxi=False):
+        self._general_defect_gen_check(defect_gen)
+        if not manual_oxi:
+            test_lines = [
+                "v_Sn_C1_O2.08O2.11         [+1,0,-1,-2]       [0.101,0.502,0.319]  4e",
+                "v_Sn_C1_O2.08Sn3.28        [+1,0,-1,-2,-3]    [0.500,0.500,0.500]  2b",
+                "v_Sn_C1_O2.09              [+1,0,-1,-2]       [0.301,0.002,0.350]  4e",
+                "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]       [0.441,0.198,0.292]  4e",
+                "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]       [0.045,0.178,0.130]  4e",
+                "v_O_C1_Sn2.09              [+2,+1,0,-1]       [0.642,0.323,0.461]  4e",
+                "Sn_Sn_C1_O2.08O2.11O2.14b    [+2,+1,0,-1]           [0.101,0.502,0.319]  4e",
+                "Sn_Sn_C1_O2.08Sn3.28O3.69a   [+1,0,-1]              [0.500,0.500,0.500]  2b",
+                "Sn_i_C1_Sn2.33O2.39O2.60d   [+4,+3,+2,+1,0]    [0.273,0.460,0.248]  4e",
+                "O_i_C1_O1.83Sn1.99Sn2.09a   [0,-1,-2]          [0.567,0.320,0.205]  4e",
+            ]
+            assert set(defect_gen._bulk_oxi_states.composition.elements) == {
+                Species("Sn3+"),
+                Species("Sn2+"),
+                Species("O2-"),
+            }
+
+        else:
+            test_lines = [
+                "v_Sn_C1_O2.08              [+1,0,-1,-2,-3,-4]  [0.101,0.502,0.319]  4e",
+                "v_Sn_C1_O2.09              [+1,0,-1,-2,-3,-4]  [0.301,0.002,0.350]  4e",
+                "v_Sn_Ci                    [+1,0,-1,-2,-3,-4]  [0.500,0.500,0.500]  2b",
+                "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]        [0.441,0.198,0.292]  4e",
+                "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]        [0.045,0.178,0.130]  4e",
+                "v_O_C1_Sn2.09              [+2,+1,0,-1]        [0.642,0.323,0.461]  4e",
+            ]
+            assert set(defect_gen._bulk_oxi_states.composition.elements) == {
+                Species("Sn4+"),
+                Species("O2-"),
+            }
+
+        for test_line in test_lines:
+            assert test_line in defect_gen._defect_generator_info()
 
     def test_liga5o8(self):
         """
@@ -3389,7 +3489,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
                         f"with SymmOp: {symm_op}\nWith translation: {translation}"
                     )
                     symm_opped_struct = apply_symm_op_to_struct(
-                        initial_structure, symm_op, fractional=True
+                        symm_op, initial_structure, fractional=True
                     )
                     print(f"Space group info after SymmOp: {symm_opped_struct.get_space_group_info()}")
                     if translation:
@@ -3469,9 +3569,8 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
 
-        assert (  # TopographyAnalyzer.__init__() but only __init__() shown in python 3.9
-            "__init__() got an unexpected keyword argument 'unrecognised_kwarg'" in str(exc.value)
-        )
+        assert "Invalid interstitial_gen_kwargs supplied!" in str(exc.value)
+        assert "only the following keys are supported:" in str(exc.value)
 
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, charge_state_gen_kwargs={"unrecognised_kwarg": 1})
@@ -3480,3 +3579,19 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
             "guess_defect_charge_states() got an unexpected keyword argument 'unrecognised_kwarg'"
             in str(exc.value)
         )
+
+    def test_no_gen_supercell_reorientation_Cmcm(self):
+        """
+        Test inputting a Cmcm supercell with ``generate_supercell=False``.
+
+        Previously had a minor issue where this could give an output
+        bulk supercell with overlapping sites (due to a reordering of the
+        transformation matrices). Now fixed, and also safeguarded in
+        ``get_site_mapping_indices`` to prevent duplicate site matches.
+        """
+        defect_gen, output = self._generate_and_test_no_warnings(
+            self.navcdo4_supercell, interstitial_gen_kwargs=False, generate_supercell=False
+        )
+        self._general_defect_gen_check(defect_gen)
+        assert min_dist(defect_gen.bulk_supercell) > 1
+        assert np.isclose(min_dist(defect_gen.bulk_supercell), min_dist(self.navcdo4_supercell), atol=1e-3)

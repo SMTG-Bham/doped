@@ -61,6 +61,8 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
 
     If ``_alpha_X`` in the colormap name, sets the alpha value to X (0-1).
 
+    ``cmcrameri`` colour maps citation: https://zenodo.org/records/8409685
+
     Args:
         colormap (str, matplotlib.colors.Colormap):
             Colormap to use, either as a string (which can be a colormap name
@@ -205,7 +207,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.imshow(
         [(0, 1), (0, 1)],
         cmap=plt.cm.Blues,
-        extent=(xlim[0], 0, ylim[0], ylim[1]),
+        extent=(xlim[0], 0, -50, 100),
         vmin=0,
         vmax=3,
         interpolation="bicubic",
@@ -217,7 +219,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.imshow(
         [(1, 0), (1, 0)],
         cmap=plt.cm.Oranges,
-        extent=(band_gap, xlim[1], ylim[0], ylim[1]),
+        extent=(band_gap, xlim[1], -50, 100),
         vmin=0,
         vmax=3,
         interpolation="bicubic",
@@ -263,18 +265,19 @@ def format_defect_name(
     include_site_info_in_name: bool,
     wout_charge: bool = False,
 ) -> Optional[str]:
-    """
+    r"""
     Format defect name for plot titles.
 
-    (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$ or $Cd_{i_{C3v}}^{0}$).
-    Note this assumes "V_..." means vacancy not Vanadium.
+    (i.e. from ``"Cd_i_C3v_0"`` to ``"$Cd_{i}^{0}$"`` or
+    ``"$Cd_{i_{C3v}}^{0}$"``). Note this assumes "V\_..."
+    means vacancy not Vanadium.
 
     Args:
         defect_species (:obj:`str`):
-            Name of defect including charge state (e.g. Cd_i_C3v_0)
+            Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``)
         include_site_info_in_name (:obj:`bool`):
-            Whether to include site info in name (e.g. $Cd_{i}^{0}$ or
-            $Cd_{i_{C3v}}^{0}$).
+            Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
+            or ``"$Cd_{i_{C3v}}^{0}$"``\).
         wout_charge (:obj:`bool`, optional):
             Whether the charge state is included in the defect_species name.
             Defaults to False.

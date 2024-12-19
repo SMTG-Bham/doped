@@ -48,11 +48,11 @@ def _potcars_available() -> bool:
         return False
 
 
-def _check_potcar_dir_not_setup_warning_error(dds, message, unperturbed_poscar=True):
-    if unperturbed_poscar and dds.charge_state != 0:
+def _check_potcar_dir_not_setup_warning_error(dds, message, poscar=True):
+    if poscar and dds.charge_state != 0:
         ending_string = "so only '(unperturbed) `POSCAR` and `KPOINTS` files will be generated."
 
-    elif not unperturbed_poscar and dds.charge_state != 0:  # only KPOINTS can be written so no good
+    elif not poscar and dds.charge_state != 0:  # only KPOINTS can be written so no good
         ending_string = "so no input files will be generated."
 
     else:
@@ -61,14 +61,8 @@ def _check_potcar_dir_not_setup_warning_error(dds, message, unperturbed_poscar=T
     return all(x in str(message) for x in ["POTCAR directory not set up with pymatgen", ending_string])
 
 
-def _check_no_potcar_available_warning_error(symbol, message):
-    return all(
-        x in str(message)
-        for x in [
-            f"No POTCAR for {symbol} with functional",
-            "Please set the PMG_VASP_PSP_DIR",
-        ]
-    )
+def _check_no_potcar_available_warning_error(message):
+    return "Set PMG_VASP_PSP_DIR=<directory-path> in .pmgrc.yaml (needed to find POTCARs)" in str(message)
 
 
 def _check_nelect_nupdown_error(message):
@@ -149,7 +143,7 @@ class DefectDictSetTest(unittest.TestCase):
         else:
             with pytest.raises(ValueError) as e:
                 _test_pop = dds.potcar
-            assert _check_no_potcar_available_warning_error(dds.potcar_symbols[0], e.value)
+            assert _check_no_potcar_available_warning_error(e.value)
 
             if dds.charge_state != 0:
                 with pytest.raises(ValueError) as e:
@@ -191,10 +185,7 @@ class DefectDictSetTest(unittest.TestCase):
         print("Testing:", [str(warning.message) for warning in w])  # for debugging
         assert any(_check_potcar_dir_not_setup_warning_error(dds, warning.message) for warning in w)
         assert any(_check_nupdown_neutral_cell_warning(warning.message) for warning in w)
-        assert any(
-            _check_no_potcar_available_warning_error(dds.potcar_symbols[0], warning.message)
-            for warning in w
-        )
+        assert any(_check_no_potcar_available_warning_error(warning.message) for warning in w)
 
     def _check_dds_incar(self, dds, struct):
         # these are the base INCAR settings:
@@ -264,7 +255,7 @@ class DefectDictSetTest(unittest.TestCase):
         self._check_potcar_nupdown_dds_warnings(w, dds)
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            dds.write_input("test_pop", unperturbed_poscar=False)
+            dds.write_input("test_pop", poscar=False)
 
         self._check_potcar_nupdown_dds_warnings(w, dds)
 
@@ -306,7 +297,7 @@ class DefectDictSetTest(unittest.TestCase):
         # reciprocal_density = 100/Å⁻³ for prim CdTe:
         self.kpts_nelect_nupdown_check(dds, 7, 18, 0)
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
         self._write_and_check_dds_files(dds, potcar_spec=True)
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_0"]
@@ -315,25 +306,25 @@ class DefectDictSetTest(unittest.TestCase):
         self.kpts_nelect_nupdown_check(dds, 2, 480, 0)
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, potcar_spec=True)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
     def test_charged_defect_incar(self):
         dds = self._generate_and_check_dds(self.prim_cdte.copy(), charge_state=1)  # fine w/bulk prim
         self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # 100/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_0"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
         self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
         defect_entry = self.CdTe_defect_gen["Te_Cd_-2"]
         dds = self._generate_and_check_dds(defect_entry.defect_supercell.copy(), charge_state=-2)
         self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
@@ -346,7 +337,7 @@ class DefectDictSetTest(unittest.TestCase):
         )
         self.kpts_nelect_nupdown_check(dds, 7, 17, 1)  # reciprocal_density = 100/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
         if _potcars_available():
             assert self.neutral_def_incar_min.items() <= dds.incar.items()
@@ -363,7 +354,7 @@ class DefectDictSetTest(unittest.TestCase):
         )
         self.kpts_nelect_nupdown_check(gga_dds, 7, 8, 0)  # reciprocal_density = 100/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
         if _potcars_available():
             assert gga_dds.incar["LHFCALC"] is False
@@ -399,7 +390,7 @@ class DefectDictSetTest(unittest.TestCase):
 
         self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
     def test_initialisation_for_all_structs(self):
         """
@@ -417,13 +408,13 @@ class DefectDictSetTest(unittest.TestCase):
         ]:
             dds = self._generate_and_check_dds(struct)  # fine for a bulk primitive input as well
             self._write_and_check_dds_files(dds)
-            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, poscar=False)
             self._write_and_check_dds_files(dds, potcar_spec=True)  # can test potcar_spec w/neutral
 
             # charged_dds:
             self._generate_and_check_dds(struct, charge_state=np.random.randint(-5, 5))
             self._write_and_check_dds_files(dds)
-            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, poscar=False)
 
             DefectDictSet(
                 struct,
@@ -434,7 +425,7 @@ class DefectDictSetTest(unittest.TestCase):
                 poscar_comment="Test pop",
             )
             self._write_and_check_dds_files(dds)
-            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, poscar=False)
             self._write_and_check_dds_files(dds, potcar_spec=True)  # can test potcar_spec w/neutral
 
     def test_file_writing_with_without_POTCARs(self):
@@ -447,7 +438,7 @@ class DefectDictSetTest(unittest.TestCase):
             dds = self._generate_and_check_dds(self.ytos_bulk_supercell.copy())  # fine for bulk prim
             self._write_and_check_dds_files(dds)
             self._write_and_check_dds_files(dds, potcar_spec=True)  # can only test potcar_spec w/neutral
-            self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+            self._write_and_check_dds_files(dds, poscar=False)
         self.kpts_nelect_nupdown_check(dds, [(2, 2, 1)], 1584, 0)
         # reciprocal_density = 100/Å⁻³ for YTOS
 
@@ -463,21 +454,17 @@ class DefectDictSetTest(unittest.TestCase):
         self.kpts_nelect_nupdown_check(dds, [(2, 2, 1)], 1583, 1)
         # reciprocal_density = 100/Å⁻³ for YTOS
         self._write_and_check_dds_files(dds, output_path="YTOS_test_dir")
-        self._write_and_check_dds_files(dds, unperturbed_poscar=False)
+        self._write_and_check_dds_files(dds, poscar=False)
 
     def _write_and_check_dds_files(self, dds, **kwargs):
         output_path = kwargs.pop("output_path", "test_pop")
         delete_dir = kwargs.pop("delete_dir", True)  # delete directory after testing?
 
-        if (
-            not kwargs.get("unperturbed_poscar", True)
-            and dds.charge_state != 0
-            and not _potcars_available()
-        ):
-            # error with charged defect and unperturbed_poscar=False
+        if not kwargs.get("poscar", True) and dds.charge_state != 0 and not _potcars_available():
+            # error with charged defect and poscar=False
             with pytest.raises(ValueError) as e:
                 dds.write_input(output_path, **kwargs)
-            assert _check_potcar_dir_not_setup_warning_error(dds, e.value, unperturbed_poscar=False)
+            assert _check_potcar_dir_not_setup_warning_error(dds, e.value, poscar=False)
             return
 
         dds.write_input(output_path, **kwargs)
@@ -505,8 +492,9 @@ class DefectDictSetTest(unittest.TestCase):
 
             with open(f"{output_path}/INCAR") as f:
                 incar_lines = f.readlines()
+            print(incar_lines)
             for comment_string in [
-                "# May want to change NCORE, KPAR, AEXX, ENCUT",
+                "# MAY WANT TO CHANGE NCORE, KPAR, AEXX, ENCUT",
                 "needed if using the kumagai-oba",
                 "symmetry breaking extremely likely",
             ]:
@@ -556,7 +544,7 @@ class DefectDictSetTest(unittest.TestCase):
                 # user shift can be tuple or list and causes failure, and we use DopedKpoints not Kpoints
                 assert written_kpoints.as_dict()[k] == dds.kpoints.as_dict()[k]
 
-        if kwargs.get("unperturbed_poscar", True):
+        if kwargs.get("poscar", True):
             written_poscar = Poscar.from_file(f"{output_path}/POSCAR")
             # `get_defect_name_from_entry(relaxed=True)` causes `Defect` initialisation which adds oxi
             # states to `structure` (`defect_entry.bulk_supercell` in this case), which is used in our
@@ -683,7 +671,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 self.dds_test._write_and_check_dds_files(
                     defect_dict_set, output_path=f"{defect_relax_set.defect_entry.name}"
                 )
-                self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+                self.dds_test._write_and_check_dds_files(defect_dict_set, poscar=False)
                 if defect_relax_set.charge_state == 0:
                     self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
 
@@ -697,7 +685,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                     defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
                 )
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
-                self.dds_test._write_and_check_dds_files(defect_dict_set, unperturbed_poscar=False)
+                self.dds_test._write_and_check_dds_files(defect_dict_set, poscar=False)
                 self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
 
                 _check_drs_dds_attribute_transfer(defect_relax_set, defect_dict_set)
@@ -810,7 +798,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             if_present_rm("test_dir")
 
             drs = DefectRelaxSet(defect_entry)
-            drs.write_all("test_dir", vasp_gam=True, unperturbed_poscar=True)
+            drs.write_all("test_dir", vasp_gam=True, poscar=True)
 
             assert os.path.exists("test_dir")
             assert os.path.exists("test_dir/vasp_gam")
@@ -827,7 +815,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
     def test_poscar_comments(self):
         drs = DefectRelaxSet(self.CdTe_defect_gen["Cd_i_C3v_0"])
-        drs.write_all("test_dir", unperturbed_poscar=True)
+        drs.write_all("test_dir", poscar=True)
         poscar = Poscar.from_file("test_dir/vasp_std/POSCAR")
         assert poscar.comment == "Cd_i_C3v ~[0.5417,0.5417,0.5417] 0"
 
@@ -846,12 +834,12 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert poscar.comment == "Cd27 Te27 - Bulk"
 
             drs = DefectRelaxSet(self.CdTe_defect_gen["Cd_i_C3v_0"], poscar_comment="Test pop")
-            drs.write_all("test_dir", unperturbed_poscar=True)
+            drs.write_all("test_dir", poscar=True)
             poscar = Poscar.from_file("test_dir/vasp_std/POSCAR")
             assert poscar.comment == "Test pop"
 
             drs = DefectRelaxSet(self.CdTe_defect_gen["v_Cd_-2"])
-            drs.write_all("test_dir", unperturbed_poscar=True)
+            drs.write_all("test_dir", poscar=True)
             poscar = Poscar.from_file("test_dir/vasp_std/POSCAR")
             assert poscar.comment == "v_Cd ~[0.3333,0.3333,0.3333] -2"
 
@@ -1239,7 +1227,7 @@ class DefectsSetTest(unittest.TestCase):
         self._general_defects_set_check(defects_set)
 
         if _potcars_available():
-            defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+            defects_set.write_files(potcar_spec=True)  # poscar=False by default
 
             # test no (unperturbed) POSCAR files written:
             for folder in os.listdir("."):
@@ -1253,14 +1241,14 @@ class DefectsSetTest(unittest.TestCase):
                 defects_set.write_files(
                     potcar_spec=True
                 )  # INCAR ValueError for charged defects if POTCARs not
-                # available and unperturbed_poscar=False
-            defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
+                # available and poscar=False
+            defects_set.write_files(potcar_spec=True, poscar=True)
 
         # test no vasp_gam files written:
         for folder in os.listdir("."):
             assert not os.path.exists(f"{folder}/vasp_gam")
 
-        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, vasp_gam=True)
+        defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True, rattle=False)
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
         assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
@@ -1277,8 +1265,7 @@ class DefectsSetTest(unittest.TestCase):
 
         # assert that the same folders in self.CdTe_data_dir are present in the current directory
         print("Checking vasp_gam files")
-        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests
-        # vasp_gam
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False)  # tests vasp_gam
         print("Checking vasp_std files")
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
 
@@ -1305,7 +1292,7 @@ class DefectsSetTest(unittest.TestCase):
             self.CdTe_defect_gen,
             user_incar_settings=self.CdTe_custom_test_incar_settings,
         )
-        defects_set.write_files(potcar_spec=True, unperturbed_poscar=True, bulk="all", vasp_gam=True)
+        defects_set.write_files(potcar_spec=True, poscar=True, bulk="all", vasp_gam=True, rattle=False)
         self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=True)  # tests vasp_gam
         self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=True, bulk=True)  # vasp_std
         self.check_generated_vasp_inputs(vasp_type="vasp_nkred_std", check_poscar=False, bulk=True)
@@ -1338,8 +1325,8 @@ class DefectsSetTest(unittest.TestCase):
         else:
             with pytest.raises(ValueError):
                 defects_set.write_files(potcar_spec=True, vasp_gam=True)  # INCAR ValueError for charged
-                # defects if POTCARs not available and unperturbed_poscar=False
-            defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+                # defects if POTCARs not available and poscar=False
+            defects_set.write_files(potcar_spec=True, vasp_gam=True, poscar=True)
 
         for folder in os.listdir("."):
             if os.path.isdir(f"{folder}/vasp_gam"):
@@ -1359,7 +1346,7 @@ class DefectsSetTest(unittest.TestCase):
             single_defect_entry,
             user_incar_settings=self.CdTe_custom_test_incar_settings,
         )
-        defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+        defects_set.write_files(potcar_spec=True, vasp_gam=True, poscar=True, rattle=False)
 
         # assert that the same folders in self.CdTe_data_dir are present in the current directory
         self.check_generated_vasp_inputs(  # tests vasp_gam
@@ -1410,7 +1397,7 @@ class DefectsSetTest(unittest.TestCase):
                 single_defect_entry,
                 user_incar_settings=self.CdTe_custom_test_incar_settings,
             )
-            defects_set.write_files(potcar_spec=True, vasp_gam=True, unperturbed_poscar=True)
+            defects_set.write_files(potcar_spec=True, vasp_gam=True, poscar=True, rattle=False)
             locale.setlocale(locale.LC_ALL, "")  # resets locale
 
             # assert that the same folders in self.CdTe_data_dir are present in the current directory
@@ -1452,12 +1439,12 @@ class DefectsSetTest(unittest.TestCase):
         )
 
         if _potcars_available():
-            defects_set.write_files(potcar_spec=True)  # unperturbed_poscar=False by default
+            defects_set.write_files(potcar_spec=True)  # poscar=False by default
         else:
             with pytest.raises(ValueError):
                 defects_set.write_files(potcar_spec=True)  # INCAR ValueError for charged defects if
-                # POTCARs not available and unperturbed_poscar=False
-            defects_set.write_files(potcar_spec=True, unperturbed_poscar=True)
+                # POTCARs not available and poscar=False
+            defects_set.write_files(potcar_spec=True, poscar=True, rattle=False)
 
         for defect_entry in defect_entry_list:
             for vasp_type in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:  # no vasp_gam by default
@@ -1486,7 +1473,7 @@ class DefectsSetTest(unittest.TestCase):
                 with pytest.raises(ValueError):
                     defects_set.write_files()  # INCAR ValueError for charged defects if POTCARs not
                     # available
-                defects_set.write_files(unperturbed_poscar=True)
+                defects_set.write_files(poscar=True)
 
             del defects_set  # delete python objects to ensure memory released
             del defect_gen  # delete python objects to ensure memory released
@@ -1547,7 +1534,7 @@ class DefectsSetTest(unittest.TestCase):
                 with open(f"{folder_name}/INCAR", encoding="utf-8") as f:
                     assert "HFSCREEN = 0.208\n" in f.readlines()
 
-            if kwargs.get("unperturbed_poscar", True):
+            if kwargs.get("poscar", True):
                 struct = Structure.from_file(f"{folder_name}/POSCAR")
                 assert self.structure_matcher.fit(struct, structure)
             else:
@@ -1569,10 +1556,8 @@ class DefectsSetTest(unittest.TestCase):
         if _potcars_available():
             assert dds.nelect == neutral_nelect - 2
         _write_and_test_agsbte2_dds(dds, defect_supercell, "AgSbTe2_test")
-        if _potcars_available():  # with unperturbed_poscar=False, only works for charged defects w/POTCARs
-            _write_and_test_agsbte2_dds(
-                dds, defect_supercell, "AgSbTe2_test_no_POSCAR", unperturbed_poscar=False
-            )
+        if _potcars_available():  # with poscar=False, only works for charged defects w/POTCARs
+            _write_and_test_agsbte2_dds(dds, defect_supercell, "AgSbTe2_test_no_POSCAR", poscar=False)
 
         # test DefectRelaxSet behaviour:
         defect_entry = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"]
@@ -1586,10 +1571,10 @@ class DefectsSetTest(unittest.TestCase):
             drs.write_std()
             assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_std")
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, unperturbed_poscar=False
+                "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, poscar=False
             )
 
-        drs.write_std(unperturbed_poscar=True)
+        drs.write_std(poscar=True)
         _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell)
 
         def _check_reloaded_defect_entry(filename, ref_defect_entry):
@@ -1611,10 +1596,10 @@ class DefectsSetTest(unittest.TestCase):
             _check_agsbte2_vasp_folder(
                 "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std",
                 defect_entry.defect_supercell,
-                unperturbed_poscar=False,
+                poscar=False,
             )
 
-        drs.write_nkred_std(unperturbed_poscar=True)
+        drs.write_nkred_std(poscar=True)
         _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std", defect_entry.defect_supercell)
         _check_reloaded_defect_entry(
             "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
@@ -1625,8 +1610,8 @@ class DefectsSetTest(unittest.TestCase):
         drs.write_gam()
         assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_gam")
         _check_agsbte2_vasp_folder(
-            "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, unperturbed_poscar=True
-        )  # unperturbed_poscar True by default when write_gam called directly
+            "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
+        )  # poscar True by default when write_gam called directly
         _check_reloaded_defect_entry(
             "Ag_Sb_Cs_Te2.90_-2/vasp_gam/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
         )
@@ -1635,7 +1620,7 @@ class DefectsSetTest(unittest.TestCase):
             drs.write_ncl()
             assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_ncl")
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, unperturbed_poscar=False
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
             )
             _check_reloaded_defect_entry(
                 "Ag_Sb_Cs_Te2.90_-2/vasp_ncl/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
@@ -1649,7 +1634,7 @@ class DefectsSetTest(unittest.TestCase):
             for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
                 assert os.path.exists(f"Ag_Sb_Cs_Te2.90_-2/{i}")
                 _check_agsbte2_vasp_folder(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=False
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
                 )
                 _check_reloaded_defect_entry(
                     f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
@@ -1658,13 +1643,13 @@ class DefectsSetTest(unittest.TestCase):
         if _potcars_available():
             drs.write_all(vasp_gam=True)
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, unperturbed_poscar=True
+                "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
             )
 
-        drs.write_all(unperturbed_poscar=True)
+        drs.write_all(poscar=True)
         for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
             _check_agsbte2_vasp_folder(
-                f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
+                f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
             )
             _check_reloaded_defect_entry(
                 f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
@@ -1676,14 +1661,12 @@ class DefectsSetTest(unittest.TestCase):
             assert "AgSbTe2_bulk" in os.listdir()
             for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
                 _check_agsbte2_vasp_folder(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
                 )
                 _check_reloaded_defect_entry(
                     f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
                 )
-            _check_agsbte2_vasp_folder(
-                "AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
             assert all(i not in os.listdir("AgSbTe2_bulk") for i in ["vasp_gam", "vasp_std"])
 
             if_present_rm("Ag_Sb_Cs_Te2.90_-2")
@@ -1691,57 +1674,45 @@ class DefectsSetTest(unittest.TestCase):
             assert not os.path.exists("AgSbTe2_bulk/vasp_gam")  # not written by default
             for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
                 _check_agsbte2_vasp_folder(
-                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=False
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
                 )
                 _check_reloaded_defect_entry(
                     f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
                 )
-                _check_agsbte2_vasp_folder(
-                    f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
-                )
+                _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
             drs.write_all(bulk="all", vasp_gam=True)
-            _check_agsbte2_vasp_folder(
-                "AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
 
         drs.write_gam(bulk=True)
         _check_agsbte2_vasp_folder(
-            "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, unperturbed_poscar=True
+            "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
         )
-        _check_agsbte2_vasp_folder(
-            "AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, unperturbed_poscar=True
-        )
+        _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
 
         if _potcars_available():
             drs.write_std(bulk=True)
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, unperturbed_poscar=False
+                "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, poscar=False
             )
-            _check_agsbte2_vasp_folder(
-                "AgSbTe2_bulk/vasp_std", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_std", defect_entry.bulk_supercell, poscar=True)
             drs.write_nkred_std(bulk=True)
             _check_agsbte2_vasp_folder(
                 "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std",
                 defect_entry.defect_supercell,
-                unperturbed_poscar=False,
+                poscar=False,
             )
             _check_agsbte2_vasp_folder(
-                "AgSbTe2_bulk/vasp_nkred_std", defect_entry.bulk_supercell, unperturbed_poscar=True
+                "AgSbTe2_bulk/vasp_nkred_std", defect_entry.bulk_supercell, poscar=True
             )
             drs.write_ncl(bulk=True)
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, unperturbed_poscar=False
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
             )
-            _check_agsbte2_vasp_folder(
-                "AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
 
-        drs.write_all("test_pop", unperturbed_poscar=True)
+        drs.write_all("test_pop", poscar=True)
         for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-            _check_agsbte2_vasp_folder(
-                f"test_pop/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder(f"test_pop/{i}", defect_entry.defect_supercell, poscar=True)
             _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry)
 
         if_present_rm("Ag_Sb_Cs_Te2.90_-2")
@@ -1752,33 +1723,27 @@ class DefectsSetTest(unittest.TestCase):
         if _potcars_available():
             ds.write_files()
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_0/vasp_ncl", defect_entry.defect_supercell, unperturbed_poscar=False
+                "Ag_Sb_Cs_Te2.90_0/vasp_ncl", defect_entry.defect_supercell, poscar=False
             )
             _check_agsbte2_vasp_folder(
-                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, unperturbed_poscar=False
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
             )
-            _check_agsbte2_vasp_folder(
-                "AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
             assert not os.path.exists("AgSbTe2_bulk/vasp_std")  # only top one
 
-        ds.write_files(vasp_gam=True, unperturbed_poscar=True, processes=2, bulk="all")
+        ds.write_files(vasp_gam=True, poscar=True, processes=2, bulk="all")
         for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
             _check_agsbte2_vasp_folder(
-                f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
+                f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
             )
             _check_agsbte2_vasp_folder(
-                f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, unperturbed_poscar=True
+                f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, poscar=True
             )
             _check_reloaded_defect_entry(
                 f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
             )
-            _check_agsbte2_vasp_folder(
-                f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
-            _check_agsbte2_vasp_folder(
-                f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, unperturbed_poscar=True
-            )
+            _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
+            _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
 
         # test convenience methods for ``DefectsSet``, where dict methods are passed to
         # ``self.defect_sets``:
@@ -1788,7 +1753,9 @@ class DefectsSetTest(unittest.TestCase):
         assert "Ag_Sb_Cs_Te2.90_-2" in list(ds.keys())  # __getattr__ method
         assert "Ag_Sb_Cs_Te2.90_-2" in ds  # __contains__ method
         assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
-        assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
+        assert isinstance(ds["Ag_Sb_Cs_Te2.90_-2"], DefectRelaxSet)  # __getitem__
+        if _potcars_available():
+            assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
 
         new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
         ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
@@ -1801,6 +1768,92 @@ class DefectsSetTest(unittest.TestCase):
 
         for key in ds:
             assert key in ["Ag_Sb_Cs_Te2.90_-2", "Ag_Sb_Cs_Te2.90_-1"]
+
+    def test_rattled_CdTe_files(self):
+        CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
+        defects_set = DefectsSet(
+            CdTe_se_defect_gen,
+            user_incar_settings=self.CdTe_custom_test_incar_settings,
+        )
+
+        defects_set.write_files(potcar_spec=True, poscar=True)  # rattle = True by default
+        # test no vasp_gam files written:
+        for folder in os.listdir("."):
+            assert not os.path.exists(f"{folder}/vasp_gam")
+
+        defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True)
+
+        bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        # check_generated_vasp_inputs also checks bulk folders
+        assert os.path.exists("CdTe_defects_generator.json.gz")
+
+        # assert that the same folders in self.CdTe_data_dir are present in the current directory
+        print("Checking vasp_gam files")
+        self.check_generated_vasp_inputs(check_potcar_spec=True, bulk=False, check_poscar=False)
+        print("Checking vasp_std files")
+        self.check_generated_vasp_inputs(vasp_type="vasp_std", check_poscar=False, bulk=False)  # vasp_std
+        print("Checking vasp_ncl files")
+        self.check_generated_vasp_inputs(vasp_type="vasp_ncl", check_poscar=False, bulk=True)  # vasp_ncl
+
+        # test rattled POSCARs and bulk
+        # rattle = True by default for DefectsSet
+        def _check_rattled_and_bulk():
+            print("Checking rattled POSCARs and bulk")
+            # check bulk first:
+            reference_bulk = Structure.from_file(f"{self.CdTe_data_dir}/CdTe_bulk/vasp_ncl/POSCAR")
+            generated_bulk = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
+            assert reference_bulk == generated_bulk
+            for defect_entry_name in ["v_Cd_0", "Se_i_C3v_-1", "Cd_Te_+2"]:
+                print(defect_entry_name)
+                reference_struct = Structure.from_file(
+                    f"{self.CdTe_data_dir}/{defect_entry_name}/vasp_gam/POSCAR"
+                )
+                generated_struct = Structure.from_file(f"{defect_entry_name}/vasp_std/POSCAR")
+                assert not StructureMatcher(stol=0.1).fit(
+                    reference_struct, generated_struct
+                )  # now rattled
+                print(StructureMatcher().get_rms_dist(reference_struct, generated_struct))  # for debugging
+                assert (
+                    StructureMatcher().get_rms_dist(reference_struct, generated_struct)[0] > 0.05
+                )  # rattled
+
+                for other_vasp_dir in ["vasp_gam", "vasp_nkred_std", "vasp_ncl"]:
+                    print(f"Checking {other_vasp_dir}")
+                    other_generated_struct = Structure.from_file(
+                        f"{defect_entry_name}/{other_vasp_dir}/POSCAR"
+                    )
+                    assert other_generated_struct == generated_struct
+
+                for other_dir in os.listdir():
+                    if other_dir.startswith(defect_entry_name.rsplit("_", 1)[0]):
+                        print(f"Checking {other_dir}/vasp_std")
+                        other_generated_struct = Structure.from_file(f"{other_dir}/vasp_std/POSCAR")
+                        assert other_generated_struct == generated_struct
+
+        _check_rattled_and_bulk()
+
+        # test DefectRelaxSet:
+        # rattle = True by default for DefectRelaxSet
+        for defect_species, defect_relax_set in defects_set.defect_sets.items():
+            defect_relax_set.write_all(defect_species, poscar=True, vasp_gam=True, bulk=True)
+
+        _check_rattled_and_bulk()
+
+        # test DefectDictSet objects:
+        for defect_species, defect_relax_set in defects_set.defect_sets.items():
+            # rattle = False by default for DefectDictSet
+            defect_relax_set.bulk_vasp_ncl.write_input("CdTe_bulk/vasp_ncl", poscar=True)
+
+            for defect_dict_set, subfolder in [
+                (defect_relax_set.vasp_gam, "vasp_gam"),
+                (defect_relax_set.vasp_nkred_std, "vasp_nkred_std"),
+                (defect_relax_set.vasp_std, "vasp_std"),
+                (defect_relax_set.vasp_ncl, "vasp_ncl"),
+            ]:
+                defect_dict_set.write_input(f"{defect_species}/{subfolder}", poscar=True, rattle=True)
+
+        _check_rattled_and_bulk()
 
 
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)

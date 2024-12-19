@@ -3,17 +3,21 @@ Utility code and functions for symmetry analysis of structures and defects.
 """
 
 import contextlib
+import math
 import os
 import warnings
+from functools import lru_cache
+from itertools import permutations
 from typing import Optional, Union
 
 import numpy as np
+import pandas as pd
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from sympy import Eq, simplify, solve, symbols
 
@@ -25,6 +29,22 @@ from doped.utils.parsing import (
     _get_unrelaxed_defect_structure,
     get_site_mapping_indices,
 )
+
+
+@lru_cache(maxsize=int(1e5))
+def cached_simplify(eq):
+    """
+    Cached simplification function for ``sympy`` equations, for efficiency.
+    """
+    return simplify(eq)
+
+
+@lru_cache(maxsize=int(1e5))
+def cached_solve(equation, variable):
+    """
+    Cached solve function for ``sympy`` equations, for efficiency.
+    """
+    return solve(equation, variable)
 
 
 def _set_spglib_warnings_env_var():
@@ -64,9 +84,10 @@ _check_spglib_version()
 _set_spglib_warnings_env_var()
 
 
-def _round_floats(obj, places=5):
+def _round_floats(obj, places: int = 5):
     """
-    Recursively round floats in a dictionary to ``places`` decimal places.
+    Recursively round floats in a dictionary to ``places`` decimal places,
+    using the ``_custom_round`` function.
     """
     if isinstance(obj, float):
         return _custom_round(obj, places) + 0.0
@@ -74,6 +95,11 @@ def _round_floats(obj, places=5):
         return {k: _round_floats(v, places) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_round_floats(x, places) for x in obj]
+    if isinstance(obj, np.ndarray):
+        return _vectorized_custom_round(obj, places) + 0.0
+    if isinstance(obj, pd.DataFrame):  # if dataframe, convert to dict and round floats
+        return pd.DataFrame(_round_floats(obj.to_dict(), places))
+
     return obj
 
 
@@ -106,6 +132,79 @@ def _custom_round(number: float, decimals: int = 3):
 _vectorized_custom_round = np.vectorize(_custom_round)
 
 
+def _get_num_places_for_dist_precision(
+    structure: Union[Structure, Lattice], dist_precision: float = 0.001
+):
+    """
+    Given a structure or lattice, get the number of decimal places that we need
+    to keep / can round to for _fractional coordinates_ (``frac_coords``), to
+    maintain a distance precision of ``dist_precision`` in Å.
+
+    Intended for use with the ``_round_floats()`` function, to achieve cleanly
+    formatted structure outputs while ensuring no significant rounding errors are
+    introduced in site positions (e.g. for very large supercells, small differences
+    in fraction coordinates become significant).
+
+    Args:
+        structure:
+            The input structure or lattice.
+        dist_precision:
+            The desired distance precision in Å (default: 0.001).
+
+    Returns:
+        int:
+            The number of decimal places to keep for fractional
+            coordinates to maintain the desired distance precision.
+    """
+    lattice = structure if isinstance(structure, Lattice) else structure.lattice
+    frac_precision = dist_precision / max(lattice.abc)
+
+    # get corresponding number of decimal places for this precision:
+    return -1 * min(math.floor(math.log(frac_precision, 10)), 0)
+
+
+def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to_unit_cell=False):
+    """
+    Convenience method to round the lattice parameters and fractional
+    coordinates of a structure to a given distance precision, for cleanly
+    formatted structure outputs.
+
+    Does not apply this operation in-place!
+
+    Args:
+        structure:
+            The input structure.
+        dist_precision:
+            The desired distance precision in Å (default: 0.001).
+        to_unit_cell:
+            Whether to round the fractional coordinates to the unit cell
+            (default: False).
+
+    Returns:
+        Structure:
+            The structure with rounded lattice parameters and fractional
+            coordinates.
+    """
+    rounded_struct = structure.copy()
+    req_places = _get_num_places_for_dist_precision(rounded_struct, dist_precision)
+    frac_coords = _round_floats(rounded_struct.frac_coords, places=req_places)
+    lattice = Lattice(_round_floats(rounded_struct.lattice.matrix, places=req_places))
+
+    for idx in range(len(rounded_struct)):
+        orig_site = structure[idx]
+        rounded_struct._sites[idx] = PeriodicSite(
+            orig_site.species,
+            frac_coords[idx],
+            lattice,
+            properties=orig_site.properties,
+            label=orig_site.label,
+            skip_checks=True,
+            to_unit_cell=to_unit_cell,
+        )
+
+    return rounded_struct
+
+
 def _frac_coords_sort_func(coords):
     """
     Sorting function to apply on an iterable of fractional coordinates, where
@@ -127,22 +226,41 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
-def get_sga(struct, symprec=0.01):
+def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
     """
     Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting symprec if needs be.
-    """
-    sga = SpacegroupAnalyzer(struct, symprec)  # default symprec of 0.01
-    if sga.get_symmetry_dataset() is not None:
-        return sga
 
-    for trial_symprec in [0.1, 0.001, 1, 0.0001]:  # go one up first, then down, then criss-cross (cha cha)
-        sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)  # go one up first
-        if sga.get_symmetry_dataset() is not None:
+    Args:
+        struct (Structure): The input structure.
+        symprec (float): The symmetry precision to use (default: 0.01).
+        return_symprec (bool):
+            Whether to return the fianl ``symprec`` used (default: False).
+
+    Returns:
+        SpacegroupAnalyzer: The symmetry analyzer object.
+        If ``return_symprec`` is ``True``, returns a tuple of the symmetry
+        analyzer object and the final ``symprec`` used.
+    """
+    sga = None
+    for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
+        # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
+        with contextlib.suppress(SymmetryUndeterminedError):
+            sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
+        if sga:
+            try:
+                _prim_struct = sga.get_primitive_standard_structure()
+            except ValueError:  # symmetry determination failed
+                continue
+            if return_symprec:
+                return sga, trial_symprec
             return sga
 
-    raise ValueError("Could not get SpacegroupAnalyzer symmetry dataset of input structure!")  # well
-    # shiiii...
+    import spglib
+
+    raise SymmetryUndeterminedError(
+        f"Could not determine symmetry of input structure! Got spglib error: {spglib.get_error_message()}"
+    )  # well shiiii...
 
 
 def apply_symm_op_to_site(
@@ -209,7 +327,7 @@ def apply_symm_op_to_site(
 
 
 def apply_symm_op_to_struct(
-    struct: Structure, symm_op: SymmOp, fractional: bool = False, rotate_lattice: bool = True
+    symm_op: SymmOp, struct: Structure, fractional: bool = False, rotate_lattice: bool = True
 ) -> Structure:
     """
     Apply a symmetry operation to a structure and return the new structure.
@@ -226,8 +344,8 @@ def apply_symm_op_to_struct(
     set ``rotate_lattice=False``.
 
     Args:
-        struct: ``pymatgen`` ``Structure`` object.
         symm_op: ``pymatgen`` ``SymmOp`` object.
+        struct: ``pymatgen`` ``Structure`` object.
         fractional:
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
@@ -416,9 +534,8 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
-    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op, rotate_lattice=True)
-    clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
-    return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
+    output_prim_struct = apply_symm_op_to_struct(rotation_symm_op, prim_struct, rotate_lattice=True)
+    return _round_struct_coords(output_prim_struct), supercell_matrix
 
 
 def translate_structure(
@@ -630,41 +747,55 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
     return (wyckoff_label, unique_sites) if equiv_sites else wyckoff_label
 
 
-def _struct_sort_func(struct):
+def _struct_sort_func(struct: Union[Structure, np.ndarray]) -> tuple:
     """
-    Sort by the sum of the lattice matrix sorting function, then fractional
-    coordinates, then by the magnitudes of high-symmetry coordinates (x=y=z,
-    then 2 equal coordinates), then by the summed magnitude of all x
-    coordinates, then y coordinates, then z coordinates.
-    """
-    struct_for_sorting = Structure.from_sites(
-        Structure.from_dict(_round_floats(struct.as_dict(), 3)).sites, to_unit_cell=True
-    )
+    Sort by the lattice matrix sorting function, then by (minus) the number of
+    high-symmetry coordinates (x=y=z, then 2 equal coordinates), then by the
+    sum of all fractional coordinates, then by the magnitudes of high-symmetry
+    coordinates (x=y=z, then 2 equal coordinates), then by the summed magnitude
+    of all x coordinates, then y coordinates, then z coordinates.
 
-    lattice_metric = _lattice_matrix_sort_func(struct_for_sorting.lattice.matrix)
+    Args:
+        struct:
+            ``pymatgen`` ``Structure`` object, or an array of fractional
+            coordinates of sites in the structure (in which case the lattice
+            matrix metric is skipped).
+
+    Returns:
+        tuple: Tuple of sorting criteria values.
+    """
+    if isinstance(struct, Structure):
+        struct_for_sorting = _round_struct_coords(struct, to_unit_cell=True)
+        lattice_metric = _lattice_matrix_sort_func(struct_for_sorting.lattice.matrix)
+        frac_coords = struct_for_sorting.frac_coords
+    else:
+        lattice_metric = (False,)
+        frac_coords = struct
+
     # get summed magnitudes of x=y=z coords:
-    matching_coords = struct_for_sorting.frac_coords[  # Find the coordinates where x = y = z:
-        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
-        & (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
+    xyz_matching_coords = frac_coords[  # Find the coordinates where x = y = z:
+        (frac_coords[:, 0] == frac_coords[:, 1]) & (frac_coords[:, 1] == frac_coords[:, 2])
     ]
-    xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+    xyz_sum_magnitudes = np.sum(np.linalg.norm(xyz_matching_coords, axis=1))
 
     # get summed magnitudes of x=y / y=z / x=z coords:
-    matching_coords = struct_for_sorting.frac_coords[
-        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
-        | (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
-        | (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 2])
+    xy_matching_coords = frac_coords[
+        (frac_coords[:, 0] == frac_coords[:, 1])
+        | (frac_coords[:, 1] == frac_coords[:, 2])
+        | (frac_coords[:, 0] == frac_coords[:, 2])
     ]
-    xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+    xy_sum_magnitudes = np.sum(np.linalg.norm(xy_matching_coords, axis=1))
 
     return (
         *lattice_metric,
-        np.sum(struct_for_sorting.frac_coords),
-        xyz_sum_magnitudes,
-        xy_sum_magnitudes,
-        np.sum(struct_for_sorting.frac_coords[:, 0]),
-        np.sum(struct_for_sorting.frac_coords[:, 1]),
-        np.sum(struct_for_sorting.frac_coords[:, 2]),
+        -len(xyz_matching_coords),
+        -len(xy_matching_coords),
+        round(np.sum(frac_coords), 2),
+        round(xyz_sum_magnitudes, 2),
+        round(xy_sum_magnitudes, 2),
+        round(np.sum(frac_coords[:, 0]), 2),
+        round(np.sum(frac_coords[:, 1]), 2),
+        round(np.sum(frac_coords[:, 2]), 2),
     )
 
 
@@ -712,40 +843,52 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
         num_negs,
         -num_equals,
         -num_abs_equals,
-        -c,
-        -b,
-        -a,
+        -round(c, 2),
+        -round(b, 2),
+        -round(a, 2),
     )
 
 
-def get_clean_structure(structure: Structure, return_T: bool = False):
+def get_clean_structure(
+    structure: Structure, return_T: bool = False, dist_precision: float = 0.001, niggli_reduce: bool = True
+):
     """
     Get a 'clean' version of the input `structure` by searching over equivalent
-    Niggli reduced cells, and finding the most optimal according to
-    `_lattice_matrix_sort_func` (most symmetric, with mostly positive diagonals
-    and c >= b >= a).
+    cells, and finding the most optimal according to
+    ``_lattice_matrix_sort_func`` (most symmetric, with mostly positive
+    diagonals and c >= b >= a).
 
     Args:
         structure (Structure): Structure object.
-        return_T (bool): Whether to return the transformation matrix.
+        return_T (bool):
+            Whether to return the transformation matrix from the original
+            structure lattice to the new structure lattice (T * Orig = New).
             (Default = False)
+        dist_precision (float):
+            The desired distance precision in Å for rounding of lattice
+            parameters and fractional coordinates. (Default: 0.001)
+        niggli_reduce (bool):
+            Whether to Niggli reduce the lattice before searching for the
+            optimal lattice matrix. If this is set to ``False``, we also
+            skip the search for the best positive determinant lattice matrix.
+            (Default: True)
     """
-    reduced_lattice = structure.lattice
-    if np.all(reduced_lattice.matrix <= 0):
-        reduced_lattice = Lattice(reduced_lattice.matrix * -1)
+    lattice = structure.lattice
+    if np.all(lattice.matrix <= 0):
+        lattice = Lattice(lattice.matrix * -1)
     possible_lattice_matrices = [
-        reduced_lattice.matrix,
+        lattice.matrix,
     ]
 
     for _ in range(4):
-        reduced_lattice = reduced_lattice.get_niggli_reduced_lattice()
+        lattice = lattice.get_niggli_reduced_lattice() if niggli_reduce else lattice
 
         # want to maximise the number of non-negative diagonals, and also have a positive determinant
         # can multiply two rows by -1 to get a positive determinant:
-        possible_lattice_matrices.append(reduced_lattice.matrix)
+        possible_lattice_matrices.append(lattice.matrix)
         for i in range(3):
             for j in range(i + 1, 3):
-                new_lattice_matrix = reduced_lattice.matrix.copy()
+                new_lattice_matrix = lattice.matrix.copy()
                 new_lattice_matrix[i] = new_lattice_matrix[i] * -1
                 new_lattice_matrix[j] = new_lattice_matrix[j] * -1
                 possible_lattice_matrices.append(new_lattice_matrix)
@@ -765,9 +908,7 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         labels=structure.labels,
         charge=structure._charge,
     )
-    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
-    new_structure = Structure.from_sites([site.to_unit_cell() for site in new_structure])
-    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
+    new_structure = _round_struct_coords(new_structure, dist_precision=dist_precision, to_unit_cell=True)
 
     # sort structure to match a desired, deterministic format:
     new_structure = new_structure.get_sorted_structure(
@@ -777,10 +918,13 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
             _frac_coords_sort_func(x.frac_coords),
         )
     )
+    if niggli_reduce:
+        new_structure = _get_best_pos_det_structure(new_structure)  # ensure positive determinant
 
     if return_T:
-        transformation_matrix = np.dot(
-            structure.lattice.matrix, np.linalg.inv(new_structure.lattice.matrix)
+        # T * Orig = New; T = New * Orig^-1; Orig = T^-1 * New
+        transformation_matrix = np.matmul(
+            new_structure.lattice.matrix, np.linalg.inv(structure.lattice.matrix)
         )
         if not np.allclose(transformation_matrix, np.rint(transformation_matrix), atol=1e-5):
             raise ValueError(
@@ -791,6 +935,29 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         return (new_structure, np.rint(transformation_matrix))
 
     return new_structure
+
+
+def _get_best_pos_det_structure(structure: Structure):
+    """
+    If the input structure has a negative determinant (corresponding to a left-
+    hand coordinate system), then find the best possible re-definition of the
+    lattice vectors which gives a positive determinant, according to
+    ``_struct_sort_func``.
+
+    This is to avoid an apparent VASP bug with negative triple products of the
+    lattice vectors -- not sure if this is only in old versions?
+    """
+    if np.linalg.det(structure.lattice.matrix) < 0:
+        swap_combo_score_dict = {}
+        for swap_combo in permutations([0, 1, 2]):
+            candidate_structure = swap_axes(structure, swap_combo)
+            if np.linalg.det(candidate_structure.lattice.matrix) > 0:
+                swap_combo_score_dict[swap_combo] = _struct_sort_func(candidate_structure)
+
+        best_swap_combo = min(swap_combo_score_dict, key=lambda x: swap_combo_score_dict[x])
+        structure = swap_axes(structure, best_swap_combo)
+
+    return structure
 
 
 def get_primitive_structure(
@@ -848,19 +1015,20 @@ def get_primitive_structure(
     )
 
     prim_structs = [
-        Structure.from_dict(_round_floats(candidate_prim_structs[i].as_dict())) for i in sorted_indices
+        _get_best_pos_det_structure(_round_struct_coords(candidate_prim_structs[i], to_unit_cell=True))
+        for i in sorted_indices
     ]
     if clean:
         prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    return prim_structs if return_all else prim_structs[0]
+    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
 
 
 def get_spglib_conv_structure(sga):
     """
     Get a consistent/deterministic conventional structure from a
-    SpacegroupAnalyzer object. Also returns the corresponding
-    SpacegroupAnalyzer (for getting Wyckoff symbols corresponding to this
+    ``SpacegroupAnalyzer`` object. Also returns the corresponding
+    ``SpacegroupAnalyzer`` (for getting Wyckoff symbols corresponding to this
     conventional structure definition).
 
     For some materials (e.g. zinc blende), there are multiple equivalent
@@ -880,7 +1048,7 @@ def get_spglib_conv_structure(sga):
         possible_conv_structs_and_sgas, key=lambda x: _struct_sort_func(x[0])
     )
     return (
-        Structure.from_dict(_round_floats(possible_conv_structs_and_sgas[0][0].as_dict())),
+        _round_struct_coords(possible_conv_structs_and_sgas[0][0], to_unit_cell=True),
         possible_conv_structs_and_sgas[0][1],
     )
 
@@ -941,21 +1109,14 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
             pbar.update(1 / 6 * 10)  # 45 up to 55% of progress bar in DefectsGenerator. This part can
             # take a little while for low-symmetry structures
 
-    if return_wyckoff_dict:
-        return (
-            Structure.from_sites(
-                [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
-            ),
-            lattice_vec_swap_array,
-            wyckoff_label_dict,
-        )
-
-    return (
-        Structure.from_sites(
-            [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
-        ),
-        lattice_vec_swap_array,
+    bcs_conv_structure = get_clean_structure(
+        swap_axes(conventional_structure, lattice_vec_swap_array), niggli_reduce=False
     )
+
+    if return_wyckoff_dict:
+        return bcs_conv_structure, lattice_vec_swap_array, wyckoff_label_dict
+
+    return bcs_conv_structure, lattice_vec_swap_array
 
 
 def get_conv_cell_site(defect_entry):
@@ -1033,7 +1194,7 @@ def swap_axes(structure, axes):
     Swap axes of the given structure.
 
     The new order of the axes is given by the axes parameter. For example,
-    axes=(2, 1, 0) will swap the first and third axes.
+    ``axes=(2, 1, 0)`` will swap the first and third axes.
     """
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
 
@@ -1067,7 +1228,7 @@ def get_wyckoff_dict_from_sgn(sgn):
     def _coord_string_to_array(coord_string):
         # Split string into substrings, parse each as a sympy expression,
         # then convert to list of sympy expressions
-        return [simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
+        return [cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
 
     for element in wyckoff["letters"]:
         label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
@@ -1138,7 +1299,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                 return [
                     np.array(
                         [
-                            np.mod(float(simplify(sympy_expr).subs(variable_dict)), 1)
+                            np.mod(float(cached_simplify(sympy_expr).subs(variable_dict)), 1)
                             for sympy_expr in sympy_array
                         ]
                     )
@@ -1165,14 +1326,14 @@ def get_wyckoff_label_and_equiv_coord_list(
     def evaluate_expression(sympy_expr, coord, variable_dict):
         equation = Eq(sympy_expr, coord)
         variable = next(iter(sympy_expr.free_symbols))
-        variable_dict[variable] = solve(equation, variable)[0]
+        variable_dict[variable] = cached_solve(equation, variable)[0]
 
-        return simplify(sympy_expr).subs(variable_dict)
+        return cached_simplify(sympy_expr).subs(variable_dict)
 
     def add_new_variable_dict(
         sympy_expr_prepend, sympy_expr, coord, current_variable_dict, variable_dicts
     ):
-        new_sympy_expr = simplify(sympy_expr_prepend + str(sympy_expr))
+        new_sympy_expr = cached_simplify(sympy_expr_prepend + str(sympy_expr))
         new_dict = current_variable_dict.copy()
         evaluate_expression(new_sympy_expr, coord, new_dict)  # solve for new variable
         if new_dict not in variable_dicts:
@@ -1193,7 +1354,7 @@ def get_wyckoff_label_and_equiv_coord_list(
 
             for coord, sympy_expr in zip(coord_array, sympy_array):
                 # Evaluate the expression with the current variable_dict
-                expr_value = simplify(sympy_expr).subs(temp_dict)
+                expr_value = cached_simplify(sympy_expr).subs(temp_dict)
 
                 # If the expression cannot be evaluated to a float
                 # it means that there is a new variable in the expression
@@ -1204,9 +1365,9 @@ def get_wyckoff_label_and_equiv_coord_list(
                     # Assign the expression the value of the corresponding coordinate, and solve
                     # for the new variable
                     # first, special cases with two possible solutions due to PBC:
-                    if sympy_expr == simplify("-2*x"):
+                    if sympy_expr == cached_simplify("-2*x"):
                         add_new_variable_dict("1+", sympy_expr, coord, temp_dict, variable_dicts)
-                    elif sympy_expr == simplify("2*x"):
+                    elif sympy_expr == cached_simplify("2*x"):
                         add_new_variable_dict("-1+", sympy_expr, coord, temp_dict, variable_dicts)
 
                     expr_value = evaluate_expression(
@@ -1698,7 +1859,7 @@ def _check_relaxed_defect_symmetry_determination(
     return False  # return False if symmetry couldn't be checked
 
 
-def point_symmetry(
+def point_symmetry_from_structure(
     structure: Structure,
     bulk_structure: Optional[Structure] = None,
     symm_ops: Optional[list] = None,
@@ -1746,9 +1907,9 @@ def point_symmetry(
             is breaking the crystal periodicity (and thus preventing accurate
             determination of the relaxed defect point symmetry) and warn you if so.
         symm_ops (list):
-            List of symmetry operations of either the defect_entry.bulk_supercell
-            structure (if ``relaxed=False``) or defect_entry.defect_supercell (if
-            ``relaxed=True``), to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of either the ``bulk_structure`` structure
+            (if ``relaxed=False``) or ``structure`` (if ``relaxed=True``), to avoid
+            re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
             0.1 for relaxed (to account for residual structural noise, matching that
@@ -1837,6 +1998,50 @@ def point_symmetry(
         "Target site symmetry could not be determined using just the input structure. Please also supply "
         "the unrelaxed bulk structure (`bulk_structure`)."
     )
+
+
+def point_symmetry_from_site(
+    site: Union[PeriodicSite, np.ndarray, list],
+    structure: Structure,
+    coords_are_cartesian: bool = False,
+    symm_ops: Optional[list] = None,
+    symprec: float = 0.01,
+):
+    r"""
+    Get the point symmetry of a site in a structure.
+
+    Args:
+        site (Union[PeriodicSite, np.ndarray, list]):
+            Site for which to determine the point symmetry. Can be a
+            ``PeriodicSite`` object, or a list or numpy array of the
+            coordinates of the site (fractional coordinates by default,
+            or cartesian if ``coords_are_cartesian = True``).
+        structure (Structure):
+            ``Structure`` object for which to determine the point symmetry
+            of the site.
+        coords_are_cartesian (bool):
+            If True, the site coordinates are assumed to be in cartesian
+            coordinates. Default is False.
+        symm_ops (list):
+            List of symmetry operations of the ``structure`` to avoid
+            re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for ``spglib``. Default is 0.01. You may want
+            to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.).
+
+    Returns:
+        str: Site point symmetry.
+    """
+    if isinstance(site, (np.ndarray, list)):
+        site = PeriodicSite(
+            species="X", coords=site, lattice=structure.lattice, coords_are_cartesian=coords_are_cartesian
+        )
+
+    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+        site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec
+    )
+    return schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)

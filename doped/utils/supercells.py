@@ -32,6 +32,36 @@ def get_min_image_distance(structure: Structure) -> float:
     return _get_min_image_distance_from_matrix(structure.lattice.matrix)  # type: ignore
 
 
+def min_dist(structure: Structure, ignored_species: Optional[list[str]] = None) -> float:
+    """
+    Return the minimum interatomic distance in a structure.
+
+    Uses numpy vectorisation for fast computation.
+
+    Args:
+        structure (Structure):
+            The structure to check.
+        ignored_species (list[str]):
+            A list of species symbols to ignore when calculating
+            the minimum interatomic distance. Default is ``None``.
+
+    Returns:
+        float:
+            The minimum interatomic distance in the structure.
+    """
+    if ignored_species is not None:
+        structure = structure.copy()
+        structure.remove_species(ignored_species)
+
+    distances = structure.distance_matrix.flatten()
+    nonzero_dist = np.nonzero(distances)
+    return (  # fast vectorised evaluation of minimum distance
+        0
+        if len(nonzero_dist[0]) < (len(distances) - structure.num_sites)
+        else np.min(distances[nonzero_dist])
+    )
+
+
 def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
     """
     Returns the vector projection of vector b onto vector a.
@@ -150,7 +180,7 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
     )
 
 
-def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
+def _largest_cube_length_from_matrix(matrix: np.ndarray, max_ijk: int = 10) -> float:
     """
     Gets the side length of the largest possible cube that can fit in the cell
     defined by the input lattice matrix.
@@ -171,7 +201,11 @@ def _get_largest_cube_from_matrix(matrix: np.ndarray, max_ijk: int = 10):
             for the shortest cube length, using the projections along:
             [i*a, j*b, k*c].
             (Default = 10)
+
+    Returns:
+        float: Side length of the largest possible cube that can fit in the cell.
     """
+    # Note: Not sure if this function works perfectly with odd-shaped cells...
     a = matrix[0]
     b = matrix[1]
     c = matrix[2]
@@ -459,14 +493,13 @@ def _get_candidate_P_arrays(
         print(f"{label} closest integer transformation matrix (P_0, starting_P):")
         print(starting_P)
 
-    indices = np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit
-    dP_array = indices.reshape(-1, 3, 3)
-    P_array = starting_P[None, :, :] + dP_array
+    P_array = starting_P[None, :, :] + (np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit).reshape(
+        -1, 3, 3
+    )  # combined transformation functions to reduce memory demand, only having one big P array
 
     # Compute determinants and filter to only those with the correct size:
     dets = np.abs(_fast_3x3_determinant_vectorized(P_array))
-    rounded_dets = np.around(dets, 0).astype(int)
-    valid_P = P_array[rounded_dets == target_size]
+    valid_P = P_array[np.around(dets, 0).astype(int) == target_size]
 
     # any P in valid_P that are all negative, flip the sign of the matrix:
     valid_P[np.all(valid_P <= 0, axis=(1, 2))] *= -1
@@ -755,6 +788,24 @@ def find_ideal_supercell(
         # optimal_P was: P*cell = orig -> T*P*cell = clean -> P' = T*P
 
         optimal_P = np.matmul(T, optimal_P)
+
+        # if negative cell determinant, swap lattice vectors to get a positive determinant (as this can
+        # cause issues with VASP, and results in POSCAR lattice matrix changes), picking that with the best
+        # score according to the sorting function:
+        if np.linalg.det(clean_supercell.lattice.matrix) < 0:
+            swap_combo_score_dict = {}
+            for swap_combo in permutations([0, 1, 2], 2):
+                swapped_P = np.copy(optimal_P)
+                swapped_P[swap_combo[0]], swapped_P[swap_combo[1]] = (
+                    swapped_P[swap_combo[1]],
+                    swapped_P[swap_combo[0]].copy(),
+                )
+                swap_combo_score_dict[swap_combo] = _P_matrix_sort_func(swapped_P, cell)
+            best_swap_combo = min(swap_combo_score_dict, key=lambda x: swap_combo_score_dict[x])
+            optimal_P[best_swap_combo[0]], optimal_P[best_swap_combo[1]] = (
+                optimal_P[best_swap_combo[1]],
+                optimal_P[best_swap_combo[0]].copy(),
+            )
 
     return (optimal_P, min_dist) if return_min_dist else optimal_P
 
