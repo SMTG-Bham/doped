@@ -1596,6 +1596,8 @@ class DefectThermodynamics(MSONable):
                 )
 
         conc_df = pd.DataFrame(energy_concentration_list)
+        # Note that in concentration / FermiSolver functions, we avoid altering the output ordering and
+        # try to just use the DefectThermodynamics entry ordering (which is already controlled) as is
 
         if per_charge:
             if lean:
@@ -3600,15 +3602,14 @@ def _group_defect_charge_state_concentrations(
     conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False
 ):
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)
+    conc_column = next(k for k in conc_df.columns if k.startswith("Concentration"))
     raw_concentrations = (
         summed_df["Raw Concentration"]
         if "Raw Concentration" in summed_df.columns
-        else summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))]
+        else summed_df[conc_column]
     )
-    summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))] = (
-        raw_concentrations.apply(
-            lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
-        )
+    summed_df[conc_column] = raw_concentrations.apply(
+        lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
     )
     return summed_df.drop(
         columns=[
@@ -4341,23 +4342,15 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the calculated defect and carrier concentrations,
-                along with the self-consistent Fermi level. The DataFrame also includes
-                the provided chemical potentials as additional columns if ``append_chempots``
-                is ``True``.
-
-        # TODO: Check this output format matches for both backends!
-            pd.DataFrame:
-                A DataFrame containing the defect and carrier concentrations, as well
-                as the self-consistent Fermi level and additional properties such as
-                electron and hole concentrations. The columns include:
+                along with the self-consistent Fermi level. The columns include:
+                    - "Defect": The defect type.
+                    - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
+                    - "Temperature": The temperature at which the calculation was performed.
                     - "Fermi Level": The self-consistent Fermi level in eV.
                     - "Electrons (cm^-3)": The electron concentration.
                     - "Holes (cm^-3)": The hole concentration.
-                    - "Temperature": The temperature at which the calculation was performed.
-                    - "Dopant (cm^-3)": The dopant concentration, if applicable.
-                    - "Defect": The defect type.
-                    - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
-                Additional columns may include concentrations for specific defects and carriers.
+                    - "μ_X": Chemical potentials in eV, if ``append_chempots`` is ``True``.
+                    - "Dopant (cm^-3)": The effective arbitrary dopant concentration, if set.
         """
         py_sc_fermi_required = fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
@@ -4384,12 +4377,14 @@ class FermiSolver(MSONable):
             concentrations = _add_effective_dopant_concentration(
                 concentrations, effective_dopant_concentration
             )
+            # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
+                "Temperature": temperature,
                 "Fermi Level": fermi_level,
                 "Electrons (cm^-3)": electrons,
                 "Holes (cm^-3)": holes,
-                "Temperature": temperature,
             }
+
             for column, value in new_columns.items():
                 concentrations[column] = value
             excluded_columns = ["Defect", "Charge", "Charge State Population"]
@@ -4412,14 +4407,15 @@ class FermiSolver(MSONable):
             for k, v in conc_dict.items():
                 if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
                     row = {
+                        "Defect": k,
+                        "Concentration (cm^-3)": v,
                         "Temperature": defect_system.temperature,
                         "Fermi Level": conc_dict["Fermi Energy"],
-                        "Holes (cm^-3)": conc_dict["p0"],
                         "Electrons (cm^-3)": conc_dict["n0"],
+                        "Holes (cm^-3)": conc_dict["p0"],
                     }
                     if "Dopant" in conc_dict:
                         row["Dopant (cm^-3)"] = conc_dict["Dopant"]
-                    row.update({"Defect": k, "Concentration (cm^-3)": v})
                     data.append(row)
 
             concentrations = pd.DataFrame(data)
@@ -4567,31 +4563,24 @@ class FermiSolver(MSONable):
                 concentration, if provided) to the output ``DataFrame``.
                 Default is ``True``.
 
-        Returns: # TODO: Check output format for both backends! (And update docstring above?)
+        Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the defect and carrier concentrations
                 under pseudo-equilibrium conditions, along with the self-consistent
                 Fermi level.
                 The columns include:
-                    - "Fermi Level": The self-consistent Fermi level.
-                    - "Electrons (cm^-3)": The electron concentration.
-                    - "Holes (cm^-3)": The hole concentration.
-                    - "Annealing Temperature": The annealing temperature.
-                    - "Quenched Temperature": The quenched temperature.
                     - "Defect": The defect type.
                     - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
-                    # TODO: Possible reformat? Dopant should be a row? And only included if used to
-                    avoid confusion?
+                    - "Annealing Temperature": The annealing temperature.
+                    - "Quenched Temperature": The quenched temperature.
+                    - "Fermi Level": The self-consistent Fermi level in eV.
+                    - "Electrons (cm^-3)": The electron concentration.
+                    - "Holes (cm^-3)": The hole concentration.
+                    - "μ_X": Chemical potentials in eV, if ``append_chempots`` is ``True``.
                     - "Dopant (cm^-3)": The effective arbitrary dopant concentration, if set.
-                    - "Chemical Potentials"... TODO
 
                 Additional columns may include concentrations for specific defects
                 and other relevant data.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the calculated defect and carrier concentrations
-            using the pseudo-equilibrium approach, along with the provided chemical potentials
-            as additional columns.
         """
         py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
@@ -4622,12 +4611,13 @@ class FermiSolver(MSONable):
                 ],
             )
 
+            # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
+                "Annealing Temperature": annealing_temperature,
+                "Quenched Temperature": quenched_temperature,
                 "Fermi Level": fermi_level,
                 "Electrons (cm^-3)": electrons,
                 "Holes (cm^-3)": holes,
-                "Annealing Temperature": annealing_temperature,
-                "Quenched Temperature": quenched_temperature,
             }
 
             for column, value in new_columns.items():
@@ -4658,20 +4648,21 @@ class FermiSolver(MSONable):
             with np.errstate(all="ignore"):
                 conc_dict = defect_system.concentration_dict()
 
-            data = []
+            data = []  # order is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             for k, v in conc_dict.items():
                 if k not in ["Fermi Energy", "n0", "p0"]:
                     row = {
+                        "Defect": k,
+                        "Concentration (cm^-3)": v,
                         "Annealing Temperature": annealing_temperature,
                         "Quenched Temperature": quenched_temperature,
                         "Fermi Level": conc_dict["Fermi Energy"],
-                        "Holes (cm^-3)": conc_dict["p0"],
                         "Electrons (cm^-3)": conc_dict["n0"],
+                        "Holes (cm^-3)": conc_dict["p0"],
                     }
                     row.update({"Defect": k, "Concentration (cm^-3)": v})
                     if "Dopant" in conc_dict:
                         row["Dopant (cm^-3)"] = conc_dict["Dopant"]
-                    row.update({"Defect": k, "Concentration (cm^-3)": v})
                     data.append(row)
 
             concentrations = pd.DataFrame(data)
