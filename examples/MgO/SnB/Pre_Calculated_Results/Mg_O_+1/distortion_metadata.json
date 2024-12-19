@@ -1,0 +1,75 @@
+{
+    "distortion_parameters": {
+        "distortion_increment": 0.1,
+        "bond_distortions": [
+            -0.6,
+            -0.5,
+            -0.4,
+            -0.3,
+            -0.2,
+            -0.1,
+            0.0,
+            0.1,
+            0.2,
+            0.3,
+            0.4,
+            0.5,
+            0.6
+        ],
+        "local_rattle": false,
+        "mc_rattle_parameters": {
+            "stdev": 0.2099973
+        }
+    },
+    "defects": {
+        "Mg_O": {
+            "unique_site": [
+                0.5,
+                0.5,
+                0.5
+            ],
+            "charges": {
+                "1": {
+                    "num_nearest_neighbours": 3,
+                    "distorted_atoms": [
+                        [
+                            110,
+                            "O"
+                        ],
+                        [
+                            141,
+                            "O"
+                        ],
+                        [
+                            143,
+                            "O"
+                        ]
+                    ],
+                    "distortion_parameters": {
+                        "distortion_increment": 0.1,
+                        "bond_distortions": [
+                            -0.6,
+                            -0.5,
+                            -0.4,
+                            -0.3,
+                            -0.2,
+                            -0.1,
+                            0.0,
+                            0.1,
+                            0.2,
+                            0.3,
+                            0.4,
+                            0.5,
+                            0.6
+                        ],
+                        "local_rattle": false,
+                        "mc_rattle_parameters": {
+                            "stdev": 0.2099973
+                        }
+                    }
+                }
+            },
+            "defect_site_index": 2
+        }
+    }
+}
