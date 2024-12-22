@@ -17,14 +17,14 @@ from monty.serialization import loadfn
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.electronic_structure.dos import FermiDos
 
-from doped.thermodynamics import FermiSolver, get_py_sc_fermi_dos_from_fermi_dos
+from doped.thermodynamics import FermiSolver, _get_py_sc_fermi_dos_from_fermi_dos
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
 
 
 class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
     """
-    Tests for the get_py_sc_fermi_dos_from_fermi_dos function.
+    Tests for the _get_py_sc_fermi_dos_from_fermi_dos function.
     """
 
     @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
@@ -44,7 +44,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         mock_fermi_dos.get_gap.return_value = 0.5  # Mock bandgap
 
         # Test with default values
-        result = get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
+        result = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
 
         # Assertions
         assert result.nelect == 10
@@ -66,7 +66,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         mock_fermi_dos.get_gap.return_value = 0.5
 
         # Test with custom parameters
-        result = get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos, vbm=0.1, nelect=12, bandgap=0.5)
+        result = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos, vbm=0.1, nelect=12, bandgap=0.5)
 
         # Assertions
         assert result.nelect == 12
@@ -244,7 +244,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ):
             from py_sc_fermi.dos import DOS
 
-            with patch("doped.thermodynamics.get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()):
+            with patch("doped.thermodynamics._get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()):
                 # Set non-integer volume scaling
                 self.solver_py_sc_fermi.volume = 100.0
                 first_defect_entry = next(iter(self.defect_thermodynamics.defect_entries.values()))
