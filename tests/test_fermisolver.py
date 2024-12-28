@@ -562,8 +562,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
         assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
 
-    # Tests for scan_dopant_concentration
+    def test_scan_temperature_error_catch(self):
+        with pytest.raises(ValueError) as exc:
+            self.solver_doped.scan_temperature(
+                annealing_temperature_range=[300, 350],
+                temperature_range=[300, 400],
+                chempots="Te-rich",
+            )
+        assert "Both ``annealing_temperature_range`` and ``temperature_range`` were set" in str(exc.value)
 
+    # Tests for scan_dopant_concentration:
     @patch("doped.thermodynamics.tqdm")
     def test_scan_dopant_concentration_equilibrium(self, mock_tqdm):
         """
