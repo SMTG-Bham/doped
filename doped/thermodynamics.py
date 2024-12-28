@@ -4708,19 +4708,22 @@ class FermiSolver(MSONable):
         specified, then the Fermi level and defect/carrier concentrations are
         calculated assuming thermodynamic equilibrium at each temperature.
 
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
         Args:
             annealing_temperature_range (Optional[Union[float, list[float]]]):
                 Temperature range in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing/synthesis
                 of the material (at which we assume equilibrium defect
-                concentrations) within the frozen defect approach. Default is ``None``
-                (uses ``temperature_range`` under thermodynamic equilibrium).
+                concentrations) within the frozen defect approach. Default is
+                ``None`` (uses ``temperature_range`` under thermodynamic equilibrium).
             quenched_temperature_range (Union[float, list[float]]):
-                Temperature in Kelvin at which to calculate the self-consistent
-                (constrained equilibrium) Fermi level and carrier concentrations,
-                given the fixed total concentrations, which should correspond to
-                operating temperature of the material (typically room temperature).
+                Temperature, or range of temperatures, in Kelvin at which to
+                calculate the self-consistent (constrained equilibrium) Fermi
+                level and carrier concentrations, given the fixed total concentrations,
+                which should correspond to operating temperature of the material
+                (typically room temperature).
                 Default is just 300 K.
             temperature_range (Union[float, list[float]]):
                 Temperature range to solve over, under thermodynamic equilibrium
@@ -4808,6 +4811,14 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations.
         """
+        if annealing_temperature_range is not None and temperature_range != 300:  # both set by user
+            raise ValueError(
+                "Both ``annealing_temperature_range`` and ``temperature_range`` were set, both they are "
+                "mutually-exclusive options, with ``annealing_temperature_range`` employing the 'frozen "
+                "defect approximation' (typically desired) and ``temperature_range`` assuming total "
+                "equilibrium (see docstrings / tutorials)!"
+            )
+
         # Ensure temperature ranges are lists:
         if isinstance(temperature_range, float):
             temperature_range = [temperature_range]
