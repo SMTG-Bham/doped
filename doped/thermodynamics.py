@@ -3714,23 +3714,23 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
         # correct DOS integral) and better handle exponential overflows (by editing `f0` in `pymatgen`)
         idx_mid_gap = int(fermi_dos.idx_vbm + (fermi_dos.idx_cbm - fermi_dos.idx_vbm) / 2)
         e_conc: float = np.sum(
-            fermi_dos.tdos[idx_mid_gap:]
+            fermi_dos.tdos[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :]
             * f0(
-                fermi_dos.energies[idx_mid_gap:],
+                fermi_dos.energies[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :],
                 fermi_level,  # type: ignore
                 temperature,
             )
-            * fermi_dos.de[idx_mid_gap:],
+            * fermi_dos.de[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :],
             axis=0,
         ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
         h_conc: float = np.sum(
-            fermi_dos.tdos[: idx_mid_gap + 1]
+            fermi_dos.tdos[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1]
             * f0(
-                -fermi_dos.energies[: idx_mid_gap + 1],
+                -fermi_dos.energies[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1],
                 -fermi_level,  # type: ignore
                 temperature,
             )
-            * fermi_dos.de[: idx_mid_gap + 1],
+            * fermi_dos.de[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1],
             axis=0,
         ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
 
@@ -3923,11 +3923,11 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
             attribute is used.
         nelect (int):
             The total number of electrons in the system. If not provided, the
-            number of electrons will be taken from the FermiDos object (which
+            number of electrons will be taken from the ``FermiDos`` object (which
             usually takes this value from the ``vasprun.xml(.gz)`` when parsing).
         bandgap (float):
             Band gap of the system in eV. If not provided, the band gap will be
-            taken from the FermiDos object. When this function is used internally
+            taken from the ``FermiDos`` object. When this function is used internally
             in ``doped``, the ``DefectThermodynamics.band_gap`` attribute is used.
 
     Returns:
