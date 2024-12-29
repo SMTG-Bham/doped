@@ -4702,6 +4702,42 @@ class FermiSolver(MSONable):
 
         return concentrations
 
+    def _check_temperature_settings(
+        self,
+        annealing_temperature: Optional[Union[float, list[float]]] = None,
+        temperature: Union[float, list[float]] = 300,
+        quenched_temperature: Union[float, list[float]] = 300,
+        range=False,
+    ):
+        """
+        Helper function to check the user input temperature settings, and warn
+        or raise errors as appropriate.
+        """
+        # TODO: Test these!
+        message = (
+            "Both ``annealing_temperature`` and ``temperature`` were set, but they are "
+            "mutually-exclusive options, with ``annealing_temperature`` employing the 'frozen defect "
+            "approximation' (typically desired) and ``temperature`` assuming total equilibrium "
+            "(see docstrings/tutorials)!"
+        )
+        if range:
+            message = message.replace("`` ", "_range`` ")
+        if annealing_temperature is not None and temperature != 300:  # both set by user
+            raise ValueError(message)
+        if annealing_temperature is None and quenched_temperature != 300:  # quenched set but no annealing
+            raise ValueError(
+                "Quenched temperature was set but no annealing temperature was given! Required for the "
+                "'frozen defect approximation', see docstrings/tutorials."
+            )
+        if temperature != 300 and quenched_temperature != 300:
+            # both set by user and annealing temperature is None, quenched ignored
+            message = message.replace("annealing_", "quenched_")
+            message += (
+                " Quenched temperature setting will be ignored and total equilibrium assumed "
+                "(see docstrings/tutorials)."
+            )
+            warnings.warn(message)
+
     def scan_temperature(
         self,
         annealing_temperature_range: Optional[Union[float, list[float]]] = None,
@@ -4833,14 +4869,9 @@ class FermiSolver(MSONable):
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations.
         """
-        if annealing_temperature_range is not None and temperature_range != 300:  # both set by user
-            raise ValueError(
-                "Both ``annealing_temperature_range`` and ``temperature_range`` were set, both they are "
-                "mutually-exclusive options, with ``annealing_temperature_range`` employing the 'frozen "
-                "defect approximation' (typically desired) and ``temperature_range`` assuming total "
-                "equilibrium (see docstrings / tutorials)!"
-            )
-
+        self._check_temperature_settings(
+            annealing_temperature_range, temperature_range, quenched_temperature_range, range=True
+        )
         # Ensure temperature ranges are lists:
         if isinstance(temperature_range, float):
             temperature_range = [temperature_range]
@@ -5017,6 +5048,7 @@ class FermiSolver(MSONable):
                 effective dopant concentration. Each row represents the concentrations
                 for a different dopant concentration.
         """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         if isinstance(effective_dopant_concentration_range, float):
             effective_dopant_concentration_range = [effective_dopant_concentration_range]
 
@@ -5186,6 +5218,8 @@ class FermiSolver(MSONable):
                 each interpolated set of chemical potentials. Each row represents the
                 concentrations for a different interpolated point.
         """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+
         if isinstance(chempots, list):  # should be two single chempot dictionaries
             if len(chempots) != 2:
                 raise ValueError(
@@ -5409,6 +5443,8 @@ class FermiSolver(MSONable):
                 set of chemical potentials. Each row corresponds to a different set
                 of chemical potentials.
         """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+
         if isinstance(chempots, dict):  # should be a dictionary in the ``doped`` format or ``None``:
             chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
             chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
