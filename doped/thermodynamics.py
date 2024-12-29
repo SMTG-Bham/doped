@@ -1416,11 +1416,11 @@ class DefectThermodynamics(MSONable):
 
     def get_equilibrium_concentrations(
         self,
+        temperature: float = 300,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
         fermi_level: Optional[float] = None,
-        temperature: float = 300,
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
@@ -1449,6 +1449,9 @@ class DefectThermodynamics(MSONable):
         attributes.
 
         Args:
+            temperature (float):
+                Temperature in Kelvin at which to calculate the equilibrium concentrations.
+                Default is 300 K.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations). If ``None`` (default),
@@ -1502,9 +1505,6 @@ class DefectThermodynamics(MSONable):
                 to the VBM (using ``self.vbm``, which is the VBM of the `bulk supercell`
                 calculation by default). If None (default), set to the mid-gap Fermi
                 level (E_g/2).
-            temperature (float):
-                Temperature in Kelvin at which to calculate the equilibrium concentrations.
-                Default is 300 K.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual defect charge
                 states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
@@ -1659,10 +1659,10 @@ class DefectThermodynamics(MSONable):
     def get_equilibrium_fermi_level(
         self,
         bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
+        temperature: float = 300,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
-        temperature: float = 300,
         return_concs: bool = False,
         skip_check: bool = False,
         effective_dopant_concentration: Optional[float] = None,
@@ -1715,6 +1715,9 @@ class DefectThermodynamics(MSONable):
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
+            temperature (float):
+                Temperature in Kelvin at which to calculate the equilibrium Fermi level.
+                Default is 300 K.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level).
@@ -1763,9 +1766,6 @@ class DefectThermodynamics(MSONable):
                 (with the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            temperature (float):
-                Temperature in Kelvin at which to calculate the equilibrium Fermi level.
-                Default is 300 K.
             return_concs (bool):
                 Whether to return the corresponding electron and hole concentrations
                 (in cm^-3) as well as the Fermi level. (default: False)
@@ -1836,11 +1836,11 @@ class DefectThermodynamics(MSONable):
     def get_quenched_fermi_level_and_concentrations(
         self,
         bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
+        annealing_temperature: float = 1000,
+        quenched_temperature: float = 300,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
-        annealing_temperature: float = 1000,
-        quenched_temperature: float = 300,
         delta_gap: float = 0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -1917,6 +1917,18 @@ class DefectThermodynamics(MSONable):
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
+            annealing_temperature (float):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to the
+                highest temperature during annealing/synthesis of the material (at
+                which we assume equilibrium defect concentrations) within the frozen
+                defect approach. Default is 1000 K.
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations and Fermi level).
@@ -1965,18 +1977,6 @@ class DefectThermodynamics(MSONable):
                 (with the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            annealing_temperature (float):
-                Temperature in Kelvin at which to calculate the high temperature
-                (fixed) total defect concentrations, which should correspond to the
-                highest temperature during annealing/synthesis of the material (at
-                which we assume equilibrium defect concentrations) within the frozen
-                defect approach. Default is 1000 K.
-            quenched_temperature (float):
-                Temperature in Kelvin at which to calculate the self-consistent
-                (constrained equilibrium) Fermi level and carrier concentrations,
-                given the fixed total concentrations, which should correspond to
-                operating temperature of the material (typically room temperature).
-                Default is 300 K.
             delta_gap (float):
                 Change in band gap (in eV) of the host material at the annealing
                 temperature (e.g. due to thermal renormalisation), relative to the
@@ -4435,9 +4435,9 @@ class FermiSolver(MSONable):
 
     def pseudo_equilibrium_solve(
         self,
-        annealing_temperature: float,
         single_chempot_dict: dict[str, float],
         el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
@@ -4503,12 +4503,6 @@ class FermiSolver(MSONable):
         during ``doped`` defect calculation parsing.
 
         Args:
-            annealing_temperature (float):
-                Temperature in Kelvin at which to calculate the high temperature
-                (fixed) total defect concentrations, which should correspond to the
-                highest temperature during annealing/synthesis of the material (at
-                which we assume equilibrium defect concentrations) within the frozen
-                defect approach.
             single_chempot_dict (dict[str, float]):
                 Dictionary of chemical potentials to use for calculating the
                 pseudo-equilibrium Fermi level position and defect/carrier
@@ -4527,6 +4521,13 @@ class FermiSolver(MSONable):
                 provided to ``self.defect_thermodynamics`` in the format generated by
                 ``doped``).
                 (Default: None)
+            annealing_temperature (float):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to the
+                highest temperature during annealing/synthesis of the material (at
+                which we assume equilibrium defect concentrations) within the frozen
+                defect approach.
+                Defaults to 1000 K.
             quenched_temperature (float):
                 Temperature in Kelvin at which to calculate the self-consistent
                 (constrained equilibrium) Fermi level and carrier concentrations,
@@ -4864,12 +4865,12 @@ class FermiSolver(MSONable):
     def scan_dopant_concentration(
         self,
         effective_dopant_concentration_range: Union[float, list[float]],
-        chempots: Optional[dict[str, float]] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict[str, float]] = None,
         annealing_temperature: Optional[float] = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
+        chempots: Optional[dict[str, float]] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict[str, float]] = None,
         fix_charge_states: bool = False,
         fixed_defects: Optional[dict[str, float]] = None,
         free_defects: Optional[list[str]] = None,
@@ -4892,7 +4893,32 @@ class FermiSolver(MSONable):
             effective_dopant_concentration_range (Union[float, list[float]]):
                 The range of effective dopant concentrations to solver over.
                 This can be a single value or a list of values representing
-                different concentrations.
+                different concentrations. These are taken as fixed
+                concentrations (in cm^-3) of an arbitrary dopant or impurity
+                in the material, included in the charge neutrality condition
+                to analyze the Fermi level and doping response under
+                hypothetical doping conditions.
+                Positive values correspond to donor doping, while negative
+                values correspond to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi level, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
                 formation energies (and thus concentrations). If ``None`` (default),
@@ -4943,24 +4969,6 @@ class FermiSolver(MSONable):
                 or ``DefectThermodynamics.el_refs = ...`` (with the same input options)
                 to set the default elemental reference energies for all calculations.
                 (Default: None)
-            annealing_temperature (Optional[float]):
-                Temperature in Kelvin at which to calculate the high temperature
-                (fixed) total defect concentrations, which should correspond to
-                the highest temperature during annealing/synthesis of the material
-                (at which we assume equilibrium defect concentrations) within the
-                frozen defect approach. Default is ``None`` (uses ``temperature``
-                under thermodynamic equilibrium).
-            quenched_temperature (float):
-                Temperature in Kelvin at which to calculate the self-consistent
-                (constrained equilibrium) Fermi level and carrier concentrations,
-                given the fixed total concentrations, which should correspond to
-                operating temperature of the material (typically room temperature).
-                Default is 300 K.
-            temperature (float):
-                The temperature at which to solve for defect concentrations
-                and Fermi level, under thermodynamic equilibrium (if
-                ``annealing_temperature`` is not specified).
-                Defaults to 300 K.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
