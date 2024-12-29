@@ -5890,12 +5890,9 @@ class FermiSolver(MSONable):
         """
         # Assuming 1D space, focus on one label and get the Rich/Poor limits:
         el_refs = chempots["elemental_refs"]
-        chempots_label = list(el_refs.keys())  # Assuming 1D space, focus on one label.
-        chempots_labels = [f"μ_{label}" for label in chempots_label]
-
-        # Initial line scan: Rich to Poor limit
-        rich = self._get_single_chempot_dict(f"{chempots_label[0]}-rich")
-        poor = self._get_single_chempot_dict(f"{chempots_label[0]}-poor")
+        unformatted_chempots_labels = list(el_refs.keys())
+        rich = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-rich")
+        poor = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-poor")
         starting_line = self._get_interpolated_chempots(rich[0], poor[0], n_points)
 
         previous_value = None
@@ -5942,17 +5939,24 @@ class FermiSolver(MSONable):
                 and abs((current_value - previous_value) / previous_value) < tolerance
             ):
                 break
-            previous_value = current_value
-            target_chempot = target_chempot.drop_duplicates(ignore_index=True)
 
+            previous_value = current_value  # otherwise update
+
+            # get midpoints of starting_line and target_chempot, and use these:
+            midpoint_chempots = [
+                {k: (starting_line_chempot_dict[k] + v) / 2 for k, v in target_chempot.iloc[0].items()}
+                for starting_line_chempot_dict in [starting_line[0], starting_line[-1]]
+            ]
+            # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
+            # function, then we could just take the closest vertices around ``target_chempot`` and use
+            # these, but we know that chempots & temperature & other constraints -> defect concentrations
+            # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
+            # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
+            # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
             starting_line = self._get_interpolated_chempots(
-                chempot_start={
-                    k: v - 0.1 for k, v in target_chempot.iloc[0].items() if k in chempots_labels
-                },
-                chempot_end={
-                    k: v + 0.1 for k, v in target_chempot.iloc[0].items() if k in chempots_labels
-                },
-                n_points=100,
+                chempot_start=midpoint_chempots[0],
+                chempot_end=midpoint_chempots[1],
+                n_points=n_points,
             )
 
         return target_df  # TODO: Check and update tests, previously wrongly within the while block
@@ -5980,8 +5984,7 @@ class FermiSolver(MSONable):
         """
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         starting_grid = ChemicalPotentialGrid(chempots)
-        current_vertices = starting_grid.vertices
-        chempots_labels = list(current_vertices.columns)
+
         previous_value = None
         while True:
             if annealing_temperature is not None:
@@ -6027,15 +6030,23 @@ class FermiSolver(MSONable):
                 and abs((current_value - previous_value) / previous_value) < tolerance
             ):
                 break
-            previous_value = current_value
-            target_chempot = target_chempot.drop_duplicates(ignore_index=True)
+
+            previous_value = current_value  # otherwise update
 
             new_vertices = [  # get midpoint between current vertices and target_chempot
-                (current_vertices + row[1]) / 2 for row in target_chempot.iterrows()
+                (starting_grid.vertices + row[1]) / 2 for row in target_chempot.iterrows()
             ]
+            # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
+            # function, then we could just take the closest vertices around ``target_chempot`` and use
+            # these, but we know that chempots & temperature & other constraints -> defect concentrations
+            # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
+            # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
+            # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
+
             # Generate a new grid around the target_chempot that
             # does not go outside the bounds of the starting grid
-            new_vertices_df = pd.DataFrame(new_vertices[0], columns=chempots_labels)
+            new_vertices_df = pd.DataFrame(new_vertices[0], columns=list(new_vertices[0].columns))
+            # TODO: Is the columns parameter necessary here? Check! (print and check)
             starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
 
         return target_df
