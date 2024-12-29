@@ -3,6 +3,8 @@ Tests for FermiSolver class in doped.thermodynamics module.
 """
 
 import builtins
+import itertools
+import os
 import unittest
 import warnings
 
@@ -17,14 +19,21 @@ from monty.serialization import loadfn
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.electronic_structure.dos import FermiDos
 
-from doped.thermodynamics import FermiSolver, _get_py_sc_fermi_dos_from_fermi_dos
+from doped.thermodynamics import (
+    FermiSolver,
+    _get_py_sc_fermi_dos_from_fermi_dos,
+    get_e_h_concs,
+    get_fermi_dos,
+)
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
+module_path = os.path.dirname(os.path.abspath(__file__))
+EXAMPLE_DIR = os.path.join(module_path, "../examples")
 
 
 class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
     """
-    Tests for the _get_py_sc_fermi_dos_from_fermi_dos function.
+    Tests for the ``_get_py_sc_fermi_dos_from_fermi_dos`` function.
     """
 
     @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
@@ -35,22 +44,59 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         # Create a mock FermiDos object
         mock_fermi_dos = MagicMock(spec=FermiDos)
         mock_fermi_dos.densities = {
-            Spin.up: np.array([1.0, 2.0, 3.0]),
-            Spin.down: np.array([0.5, 1.0, 1.5]),
+            Spin.up: np.array([1.0, 2.0, 3.0, 4.0]),
+            Spin.down: np.array([0.5, 1.0, 1.5, 2.0]),
         }
-        mock_fermi_dos.energies = np.array([0.0, 0.5, 1.0])
-        mock_fermi_dos.get_cbm_vbm.return_value = (None, 0.0)  # VBM = 0.0
-        mock_fermi_dos.nelecs = 10  # Mock number of electrons
-        mock_fermi_dos.get_gap.return_value = 0.5  # Mock bandgap
+        mock_fermi_dos.energies = np.array([0.0, 0.5, 1.0, 1.5])
+        mock_fermi_dos.get_cbm_vbm.return_value = (1.0, 0.5)  # VBM = 0.5
+        mock_fermi_dos.nelecs = 7.5  # Mock number of electrons
+        mock_fermi_dos.get_gap.return_value = 0.4999  # Mock bandgap
+        mock_fermi_dos.volume = 1
+        mock_fermi_dos.idx_vbm = 1
+        mock_fermi_dos.idx_cbm = 2
+        mock_fermi_dos.de = (
+            np.hstack((mock_fermi_dos.energies[1:], mock_fermi_dos.energies[-1])) - mock_fermi_dos.energies
+        )
+        e_vbm = mock_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+        tdos = sum(mock_fermi_dos.densities.values())
+        mock_fermi_dos.tdos = (
+            tdos
+            * mock_fermi_dos.nelecs
+            / (tdos * mock_fermi_dos.de)[mock_fermi_dos.energies <= e_vbm].sum()
+        )
+        mock_fermi_dos.A_to_cm = 1e-8
+        gap = mock_fermi_dos.get_gap(tol=1e-4, abs_tol=True)
 
         # Test with default values
-        result = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
+        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
+        print(pyscfermi_dos._n0_index())
 
         # Assertions
-        assert result.nelect == 10
-        assert result.bandgap == 0.5
-        np.testing.assert_array_equal(result.edos, np.array([0.0, 0.5, 1.0]))
-        assert result.spin_polarised
+        assert pyscfermi_dos.nelect == mock_fermi_dos.nelecs
+        assert pyscfermi_dos.bandgap == gap
+        assert pyscfermi_dos.spin_polarised
+        np.testing.assert_array_equal(pyscfermi_dos.edos, mock_fermi_dos.energies - e_vbm)
+
+        # test carrier concentrations (indirectly tests DOS densities, this is the relevant property
+        # from the DOS objects):
+        pyscfermi_scale = 1e24 / mock_fermi_dos.volume
+        for e_fermi, temperature in itertools.product(
+            np.linspace(-0.25, gap + 0.25, 10), np.linspace(300, 1000.0, 10)
+        ):
+            pyscfermi_h_e = pyscfermi_dos.carrier_concentrations(e_fermi, temperature)  # rel to VBM
+            doped_e_h = get_e_h_concs(mock_fermi_dos, e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
+            assert np.allclose(
+                (pyscfermi_h_e[1] * pyscfermi_scale, pyscfermi_h_e[0] * pyscfermi_scale),
+                doped_e_h,
+                rtol=0.25,
+                atol=1e4,
+            ), f"e_fermi={e_fermi}, temperature={temperature}"
+            # tests: absolute(a - b) <= (atol + rtol * absolute(b)), so rtol of 15% but with a base atol
+            # of 1e4 to allow larger relative mismatches for very small densities (more sensitive to
+            # differences in integration schemes) -- main difference seems to be hard chopping of
+            # integrals in py-sc-fermi at the expected VBM/CBM indices (but ``doped`` is agnostic to
+            # these to improve robustness), makes more difference at low temperatures so only T >= 300K
+            # tested here
 
     @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
     def test_get_py_sc_fermi_dos_with_custom_parameters(self):
@@ -66,15 +112,58 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         mock_fermi_dos.get_gap.return_value = 0.5
 
         # Test with custom parameters
-        result = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos, vbm=0.1, nelect=12, bandgap=0.5)
+        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
+            mock_fermi_dos, vbm=0.1, nelect=12, bandgap=0.5
+        )
 
         # Assertions
-        assert result.nelect == 12
-        assert result.bandgap == 0.5
-        np.testing.assert_array_equal(result.edos, np.array([-0.1, 0.4, 0.9]))
-        assert not result.spin_polarised
+        assert pyscfermi_dos.nelect == 12
+        assert pyscfermi_dos.bandgap == 0.5
+        np.testing.assert_array_equal(pyscfermi_dos.edos, np.array([-0.1, 0.4, 0.9]))
+        assert not pyscfermi_dos.spin_polarised
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    def test_get_py_sc_fermi_dos_from_CdTe_dos(self):
+        """
+        Test conversion of FermiDos to py_sc_fermi DOS with default parameters.
+        """
+        fermi_dos = get_fermi_dos(
+            os.path.join(EXAMPLE_DIR, "CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
+        )
+        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(fermi_dos)
+        assert pyscfermi_dos.nelect == fermi_dos.nelecs
+        assert pyscfermi_dos.nelect == 18
+        assert np.isclose(pyscfermi_dos.bandgap, fermi_dos.get_gap(tol=1e-4, abs_tol=True))
+        assert np.isclose(pyscfermi_dos.bandgap, 1.526, atol=1e-3)
+        assert not pyscfermi_dos.spin_polarised  # SOC DOS
+
+        e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+        gap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+        np.testing.assert_array_equal(pyscfermi_dos.edos, fermi_dos.energies - e_vbm)
+
+        # test carrier concentrations (indirectly tests DOS densities, this is the relevant property
+        # from the DOS objects):
+        pyscfermi_scale = 1e24 / fermi_dos.volume
+        for e_fermi, temperature in itertools.product(
+            np.linspace(-0.5, gap + 0.5, 10), np.linspace(300, 2000.0, 10)
+        ):
+            pyscfermi_h_e = pyscfermi_dos.carrier_concentrations(e_fermi, temperature)  # rel to VBM
+            doped_e_h = get_e_h_concs(fermi_dos, e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
+            assert np.allclose(
+                (pyscfermi_h_e[1] * pyscfermi_scale, pyscfermi_h_e[0] * pyscfermi_scale),
+                doped_e_h,
+                rtol=0.15,
+                atol=1e4,
+            ), f"e_fermi={e_fermi}, temperature={temperature}"
+            # tests: absolute(a - b) <= (atol + rtol * absolute(b)), so rtol of 15% but with a base atol
+            # of 1e4 to allow larger relative mismatches for very small densities (more sensitive to
+            # differences in integration schemes) -- main difference seems to be hard chopping of
+            # integrals in py-sc-fermi at the expected VBM/CBM indices (but ``doped`` is agnostic to
+            # these to improve robustness), makes more difference at low temperatures so only T >= 300K
+            # tested here
 
 
+# TODO: Use pytest fixtures to reduce code redundancy here?
 class TestFermiSolverWithLoadedData(unittest.TestCase):
     """
     Tests for FermiSolver initialization with loaded data.
