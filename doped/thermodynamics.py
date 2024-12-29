@@ -3961,6 +3961,61 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
     return DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
 
 
+def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max: str) -> tuple:
+    """
+    Convenience function to get the minimum or maximum value(s) of a ``target``
+    column or row in a ``results_df`` DataFrame, and the corresponding chemical
+    potentials.
+
+    Mainly intended for internal ``doped`` usage in the ``FermiSolver``
+    ``min_max_X`` method.
+
+    Args:
+        results_df (pd.DataFrame):
+            ``DataFrame`` of defect concentrations, as output by the
+            ``FermiSolver`` ``scan_chempots`` / ``scan_chemical_potential_grid``
+            methods (which corresponds to the ``(pseudo_)equilibrium_solve``
+            ``DataFrame`` outputs, appended together for multiple chemical
+            potentials).
+        target (str):
+            The target defect name or column label for minimising/maximising.
+        min_or_max (str):
+            Whether to find the minimum or maximum value(s) of the target.
+            Should be either "min" or "max".
+
+    Returns:
+        tuple:
+            A tuple containing the results ``DataFrame`` at the chemical potentials
+            which minimise/maximise the target property (``target_df``), the
+            minimised/maximised value of the target property, and the corresponding
+            chemical potentials -- in the given chemical potential range.
+    """
+
+    def min_or_max_func(x):
+        return x.min() if "min" in min_or_max else x.max()
+
+    chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
+    if target in results_df.columns:
+        current_value = min_or_max_func(results_df[target])
+        target_df = results_df[results_df[target] == current_value]
+        target_chempot = target_df[chempots_labels]
+
+    else:
+        # Filter the DataFrame for the specific defect
+        filtered_df = results_df[results_df.index == target]
+        # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
+        current_value = min_or_max_func(filtered_df["Concentration (cm^-3)"])
+        target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == current_value][
+            chempots_labels
+        ]
+        target_df = results_df[
+            results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
+        ]  # TODO: Check if rearranging as in `if` block above gives same output
+
+    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
+    return target_df, current_value, target_chempot
+
+
 class FermiSolver(MSONable):
     def __init__(
         self,
@@ -5705,6 +5760,8 @@ class FermiSolver(MSONable):
                 analysis functions, including...
                 # TODO (and note in main body of docstring, and update docstrings below)
                 # TODO: Allow this to match a substring of the column name.
+                # TODO: Test the target as defect name, with or without charge? for both pseudo and
+                # TODO: ...normal equilibrium
             min_or_max (str):
                 Specify whether to "minimise" ("min") or "maximise" ("max"; default)
                 the target variable.
@@ -5788,40 +5845,27 @@ class FermiSolver(MSONable):
                 If neither ``chempots`` nor ``self.chempots`` is provided, or if
                 ``min_or_max`` is not ``"minimise"/"min"`` or ``"maximise"/"max"``.
         """
-        # Determine the dimensionality of the chemical potential space
+        # Determine the dimensionality of the chemical potential space, and call appropriate method
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        n_chempots = len(el_refs)
+        kwargs = {
+            "target": target,
+            "min_or_max": min_or_max,
+            "chempots": chempots,
+            "annealing_temperature": annealing_temperature,
+            "quenched_temperature": quenched_temperature,
+            "temperature": temperature,
+            "tolerance": tolerance,
+            "n_points": n_points,
+            "effective_dopant_concentration": effective_dopant_concentration,
+            "fix_charge_states": fix_charge_states,
+            "fixed_defects": fixed_defects,
+            "free_defects": free_defects,
+        }
 
-        # Call the appropriate method based on dimensionality
-        if n_chempots == 2:
-            return self._min_max_X_line(
-                target,
-                min_or_max,
-                chempots,
-                annealing_temperature,
-                quenched_temperature,
-                temperature,
-                tolerance,
-                n_points,
-                effective_dopant_concentration,
-                fix_charge_states,
-                fixed_defects,
-                free_defects,
-            )
-        return self._min_max_X_grid(
-            target,
-            min_or_max,
-            chempots,
-            annealing_temperature,
-            quenched_temperature,
-            temperature,
-            tolerance,
-            n_points,
-            effective_dopant_concentration,
-            fix_charge_states,
-            fixed_defects,
-            free_defects,
-        )
+        if len(el_refs) == 2:
+            return self._min_max_X_line(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
+
+        return self._min_max_X_grid(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
 
     def _min_max_X_line(
         self,
@@ -5832,7 +5876,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
-        n_points: int = 100,
+        n_points: int = 10,
         effective_dopant_concentration: Optional[float] = None,
         fix_charge_states: bool = False,
         fixed_defects: Optional[dict[str, float]] = None,
@@ -5844,6 +5888,7 @@ class FermiSolver(MSONable):
 
         See the main ``min_max_X`` docstring for more details.
         """
+        # Assuming 1D space, focus on one label and get the Rich/Poor limits:
         el_refs = chempots["elemental_refs"]
         chempots_label = list(el_refs.keys())  # Assuming 1D space, focus on one label.
         chempots_labels = [f"μ_{label}" for label in chempots_label]
@@ -5854,9 +5899,7 @@ class FermiSolver(MSONable):
         starting_line = self._get_interpolated_chempots(rich[0], poor[0], n_points)
 
         previous_value = None
-
-        while True:
-            # Calculate results based on the given temperature conditions
+        while True:  # Calculate results based on the given temperature conditions
             if annealing_temperature is not None:
                 results_df = pd.concat(
                     [
@@ -5891,50 +5934,10 @@ class FermiSolver(MSONable):
                     ]
                 )
 
-            if target in results_df.columns:
-                if "min" in min_or_max:
-                    target_chempot = results_df[results_df[target] == results_df[target].min()][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[results_df[target] == results_df[target].min()]
-                elif "max" in min_or_max:
-                    target_chempot = results_df[results_df[target] == results_df[target].max()][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[results_df[target] == results_df[target].max()]
-                current_value = (
-                    results_df[target].min() if "min" in min_or_max else results_df[target].max()
-                )
-
-            else:
-                # Filter the DataFrame for the specific defect
-                filtered_df = results_df[results_df.index == target]
-                # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
-                if "min" in min_or_max:
-                    min_value = filtered_df["Concentration (cm^-3)"].min()
-                    target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == min_value][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[
-                        results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
-                    ]
-
-                elif "max" in min_or_max:
-                    max_value = filtered_df["Concentration (cm^-3)"].max()
-                    target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == max_value][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[
-                        results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
-                    ]
-                current_value = (
-                    filtered_df["Concentration (cm^-3)"].min()
-                    if "min" in min_or_max
-                    else filtered_df["Concentration (cm^-3)"].max()
-                )
-
-            # Check if the change in the target value is less than the tolerance
-            if (
+            target_df, current_value, target_chempot = _get_min_max_target_values(
+                results_df, target, min_or_max
+            )
+            if (  # Check if the change in the target value is less than the tolerance
                 previous_value is not None
                 and abs((current_value - previous_value) / previous_value) < tolerance
             ):
@@ -5952,7 +5955,7 @@ class FermiSolver(MSONable):
                 n_points=100,
             )
 
-            return target_dataframe
+        return target_df  # TODO: Check and update tests, previously wrongly within the while block
 
     def _min_max_X_grid(
         self,
@@ -5980,7 +5983,6 @@ class FermiSolver(MSONable):
         current_vertices = starting_grid.vertices
         chempots_labels = list(current_vertices.columns)
         previous_value = None
-
         while True:
             if annealing_temperature is not None:
                 results_df = pd.concat(
@@ -6017,50 +6019,10 @@ class FermiSolver(MSONable):
                 )
 
             # Find chemical potentials value where target is lowest or highest
-            if target in results_df.columns:
-                if "min" in min_or_max:
-                    target_chempot = results_df[results_df[target] == results_df[target].min()][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[results_df[target] == results_df[target].min()]
-                elif "max" in min_or_max:
-                    target_chempot = results_df[results_df[target] == results_df[target].max()][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[results_df[target] == results_df[target].max()]
-                current_value = (
-                    results_df[target].min() if "min" in min_or_max else results_df[target].max()
-                )
-
-            else:
-                # Filter the DataFrame for the specific defect
-                filtered_df = results_df[results_df.index == target]
-                # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
-                if "min" in min_or_max:
-                    min_value = filtered_df["Concentration (cm^-3)"].min()
-                    target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == min_value][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[
-                        results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
-                    ]
-
-                elif "max" in min_or_max:
-                    max_value = filtered_df["Concentration (cm^-3)"].max()
-                    target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == max_value][
-                        chempots_labels
-                    ]
-                    target_dataframe = results_df[
-                        results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
-                    ]
-                current_value = (
-                    filtered_df["Concentration (cm^-3)"].min()
-                    if "min" in min_or_max
-                    else filtered_df["Concentration (cm^-3)"].max()
-                )
-
-            # Check if the change in the target value is less than the tolerance
-            if (
+            target_df, current_value, target_chempot = _get_min_max_target_values(
+                results_df, target, min_or_max
+            )
+            if (  # Check if the change in the target value is less than the tolerance
                 previous_value is not None
                 and abs((current_value - previous_value) / previous_value) < tolerance
             ):
@@ -6076,7 +6038,7 @@ class FermiSolver(MSONable):
             new_vertices_df = pd.DataFrame(new_vertices[0], columns=chempots_labels)
             starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
 
-        return target_dataframe
+        return target_df
 
     def _generate_dopant_for_py_sc_fermi(self, effective_dopant_concentration: float) -> "DefectSpecies":
         """
