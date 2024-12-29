@@ -5269,6 +5269,7 @@ class FermiSolver(MSONable):
                     el_refs=el_refs,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
                 )
                 for single_chempot_dict in tqdm(interpolated_chempots)
             ]
@@ -5617,6 +5618,7 @@ class FermiSolver(MSONable):
                     el_refs=el_refs,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
                 )
                 for _idx, chempot_series in tqdm(grid.iterrows())
             ]
@@ -5883,6 +5885,7 @@ class FermiSolver(MSONable):
                             el_refs=el_refs,
                             temperature=temperature,
                             effective_dopant_concentration=effective_dopant_concentration,
+                            fixed_defects=fixed_defects,
                         )
                         for chempot_series in tqdm(starting_line)
                     ]
@@ -6007,6 +6010,7 @@ class FermiSolver(MSONable):
                             el_refs=el_refs,
                             temperature=temperature,
                             effective_dopant_concentration=effective_dopant_concentration,
+                            fixed_defects=fixed_defects,
                         )
                         for _idx, chempot_series in tqdm(starting_grid.get_grid(n_points).iterrows())
                     ]
@@ -6364,8 +6368,7 @@ class FermiSolver(MSONable):
                 (`annealing_temperature`) values.
         """
         self._check_required_backend_and_error("py-sc-fermi")
-        if free_defects is None:
-            free_defects = []
+        free_defects = free_defects or []
 
         defect_system = self._generate_defect_system(
             single_chempot_dict=single_chempot_dict,  # chempots handled in _generate_defect_system()
