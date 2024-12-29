@@ -138,7 +138,7 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
 
     Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
     """
-    if chempots is not None:
+    if chempots is not None and any("facets" in key or "elt_refs" in key for key in chempots):
         chempots = deepcopy(chempots)  # don't modify original dict
         for key, subdict in list(chempots.items()):
             chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
@@ -1536,8 +1536,8 @@ class DefectThermodynamics(MSONable):
 
         energy_concentration_list = []
 
-        if chempots is None:  # only warn once
-            _no_chempots_warning()
+        _check_chempots_and_limit_settings(chempots, limit)  # only warn once
+        if chempots is None:
             all_comps = [
                 entry.sc_entry.composition if entry.sc_entry else entry.bulk_entry.composition
                 for entry in self.defect_entries.values()
@@ -1550,23 +1550,25 @@ class DefectThermodynamics(MSONable):
             }
 
         for defect_entry in self.defect_entries.values():
-            formation_energy = defect_entry.formation_energy(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
-            raw_concentration = defect_entry.equilibrium_concentration(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                temperature=temperature,
-                per_site=per_site,
-                formation_energy=formation_energy,  # reduce compute times
-            )
+            with warnings.catch_warnings():  # already warned if necessary
+                warnings.filterwarnings("ignore", "No chemical potential")
+                formation_energy = defect_entry.formation_energy(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    fermi_level=fermi_level,
+                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                )
+                raw_concentration = defect_entry.equilibrium_concentration(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    fermi_level=fermi_level,
+                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                    temperature=temperature,
+                    per_site=per_site,
+                    formation_energy=formation_energy,  # reduce compute times
+                )
 
             defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
             charge = (
@@ -1603,7 +1605,7 @@ class DefectThermodynamics(MSONable):
 
         if per_charge:
             if lean:
-                return conc_df
+                return conc_df  # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
 
             conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
                 "Raw Concentration"
@@ -1612,11 +1614,11 @@ class DefectThermodynamics(MSONable):
                 lambda x: f"{x:.2%}"
             )
             conc_df = conc_df.drop(columns=["Raw Concentration"])
-            return conc_df.reset_index(drop=True)
+            return conc_df.set_index(["Defect", "Charge"])
 
         # group by defect and sum concentrations:
         return _group_defect_charge_state_concentrations(
-            conc_df, per_site=per_site, skip_formatting=skip_formatting
+            conc_df, per_site=per_site, skip_formatting=skip_formatting, lean=lean
         )
 
     def _parse_fermi_dos(
@@ -1790,7 +1792,7 @@ class DefectThermodynamics(MSONable):
             corresponding electron and hole concentrations (in cm^-3) if ``return_concs=True``.
         """
         if bulk_dos is not None:
-            self.bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
+            self._bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
 
         if self.bulk_dos is None:  # none provided, and none previously set
             raise ValueError(
@@ -1802,37 +1804,35 @@ class DefectThermodynamics(MSONable):
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
-        if chempots is None:  # handle once here, as otherwise brentq function results in this being
-            # called many times
-            _no_chempots_warning()
+        # handle chempot warning(s) once here, as otherwise brentq calls this function many times:
+        _check_chempots_and_limit_settings(chempots, limit)
 
         def _get_total_q(fermi_level):
-            conc_df = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                temperature=temperature,
-                fermi_level=fermi_level,
-                lean=True,
-            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "No chemical potential")
+                conc_df = self.get_equilibrium_concentrations(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    temperature=temperature,
+                    fermi_level=fermi_level,
+                    lean=True,
+                )
             # add effective dopant concentration if supplied:
             conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
+            # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
             qd_tot += get_doping(
                 fermi_dos=self.bulk_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
             )
             return qd_tot
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
-            # as given once above
-
-            eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
-            if return_concs:
-                e_conc, h_conc = get_e_h_concs(
-                    self.bulk_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
-                )
-                return eq_fermi_level, e_conc, h_conc
+        eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
+        if return_concs:
+            e_conc, h_conc = get_e_h_concs(
+                self.bulk_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
+            )
+            return eq_fermi_level, e_conc, h_conc
 
         return eq_fermi_level
 
@@ -2029,7 +2029,7 @@ class DefectThermodynamics(MSONable):
             raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
 
         if bulk_dos is not None:
-            self.bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
+            self._bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
 
         if self.bulk_dos is None:  # none provided, and none previously set
             raise ValueError(
@@ -2042,9 +2042,8 @@ class DefectThermodynamics(MSONable):
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
-        if chempots is None:  # handle once here, as otherwise brentq function results in this being
-            # called many times
-            _no_chempots_warning()
+        # handle chempot warning(s) once here, as otherwise brentq calls this function many times:
+        _check_chempots_and_limit_settings(chempots, limit)
 
         annealing_dos = (
             self.bulk_dos
@@ -2057,9 +2056,8 @@ class DefectThermodynamics(MSONable):
             )
         )
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
-            # as given once above
+        with warnings.catch_warnings():  # already warned once if necessary
+            warnings.filterwarnings("ignore", "No chemical potential")
 
             annealing_fermi_level = self.get_equilibrium_fermi_level(
                 annealing_dos,
@@ -2107,7 +2105,8 @@ class DefectThermodynamics(MSONable):
                     lean=lean,
                 )
                 conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
-                conc_df["Total Concentration (cm^-3)"] = conc_df["Defect"].map(total_concentrations)
+                defects = conc_df["Defect"] if lean else conc_df.index.get_level_values("Defect")
+                conc_df["Total Concentration (cm^-3)"] = defects.map(total_concentrations)
                 conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
                     conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
                     / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
@@ -2115,8 +2114,11 @@ class DefectThermodynamics(MSONable):
 
                 if not per_charge:
                     conc_df = _group_defect_charge_state_concentrations(
-                        conc_df, per_site, skip_formatting=True
+                        conc_df, per_site, skip_formatting=True, lean=lean
                     )
+                    # drop Total Concentration column if ``per_charge=False``, as it's a duplicate of
+                    # the Concentration column in this case
+                    conc_df = conc_df.drop(columns=["Total Concentration (cm^-3)"])
 
                 if per_site:
                     cm3_conc_df = self.get_equilibrium_concentrations(
@@ -2160,6 +2162,7 @@ class DefectThermodynamics(MSONable):
 
             def _get_constrained_total_q(fermi_level):
                 conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
+                # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
                 qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
                 qd_tot += get_doping(  # use orig fermi dos for quenched temperature
                     fermi_dos=orig_fermi_dos,
@@ -3194,7 +3197,7 @@ class DefectThermodynamics(MSONable):
         )  # returns self.chempots/self.el_refs if chempots is None
 
         if chempots is None:
-            _no_chempots_warning()
+            _no_chempots_warning()  # warn only once
             chempots = {  # empty sub-dicts so they're iterable (for following code)
                 "limits": {"No User Chemical Potentials": {}},
                 "limits_wrt_el_refs": {"No User Chemical Potentials": {}},
@@ -3559,6 +3562,25 @@ class DefectThermodynamics(MSONable):
         return iter(self.defect_entries)
 
 
+def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: Optional[str] = None):
+    """
+    Convenience function to check the input values of ``chempots`` and
+    ``limit`` for ``doped`` thermodynamic analysis functions, and warn users
+    (once) if no chemical potentials or limits are specified.
+    """
+    if chempots is None:
+        _no_chempots_warning()
+    else:
+        limit = _parse_limit(chempots, limit)
+        if limit is None:
+            limit = next(iter(chempots["limits"].keys()))
+            if len(chempots["limits"]) > 1:  # more than 1 limit, so warn
+                warnings.warn(
+                    f"No chemical potential limit specified! Using {limit} for computing the formation "
+                    f"energy"
+                )
+
+
 def _add_effective_dopant_concentration(
     conc_df: pd.DataFrame, effective_dopant_concentration: Optional[float] = None
 ):
@@ -3606,9 +3628,8 @@ def _add_effective_dopant_concentration(
 
 
 def _group_defect_charge_state_concentrations(
-    conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False
+    conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False, lean: bool = False
 ):
-    original_order = {k: i for i, k in enumerate(conc_df["Defect"].unique())}  # preserve order
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)  # auto-reordered by groupby sum
     conc_column = next(k for k in conc_df.columns if k.startswith("Concentration"))
     raw_concentrations = (
@@ -3619,10 +3640,16 @@ def _group_defect_charge_state_concentrations(
     summed_df[conc_column] = raw_concentrations.apply(
         lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
     )
-    # Group and sort by original order
-    summed_df["order"] = summed_df.index.map(original_order)
-    summed_df = summed_df.sort_values(by="order").drop(columns="order")
-    return summed_df.drop(
+    if not lean:  # Group and sort by original order
+        defect_list = (
+            conc_df["Defect"].unique()
+            if "Defect" in conc_df.columns
+            else conc_df.index.get_level_values("Defect").unique()
+        )
+        original_order = {k: i for i, k in enumerate(defect_list)}  # preserve order
+        summed_df["order"] = summed_df.index.map(original_order)
+        summed_df = summed_df.sort_values(by="order").drop(columns="order")
+    return summed_df.drop(  # Defect set as index now, from groupby()
         columns=[
             i
             for i in [
@@ -3706,8 +3733,7 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     Returns:
         tuple[float, float]: The electron and hole concentrations in cm^-3.
     """
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings from f0, can remove in
+    with np.errstate(over="ignore"):  # ignore overflow warnings from f0, can remove in
         # future versions following SK's fix in https://github.com/materialsproject/pymatgen/pull/3879
         # code for obtaining the electron and hole concentrations here is taken from
         # FermiDos.get_doping(), and updated by SK to be independent of estimated VBM/CBM positions (using
