@@ -773,14 +773,16 @@ class DefectThermodynamics(MSONable):
         """
         return loadfn(filename)
 
-    def _get_chempots(self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None):
+    def _get_chempots(
+        self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+    ) -> tuple[Optional[dict], Optional[dict]]:
         """
         Parse chemical potentials, either using input values (after formatting
-        them in the doped format) or using the class attributes if set.
+        them in the ``doped`` format) or using the class attributes if set.
         """
         if isinstance(chempots, dict) and "elemental_refs" in chempots and el_refs is None:
             # doped chempot dict input, use its elemental refs
-            chempots, el_refs = _parse_chempots(chempots, chempots.get("elemental_refs"))
+            chempots, el_refs = _parse_chempots(chempots, chempots["elemental_refs"])
 
         else:  # use stored or provided el_refs
             chempots, el_refs = _parse_chempots(
@@ -4255,6 +4257,24 @@ class FermiSolver(MSONable):
         )  # use already-set bulk dos
         return fermi_level, electrons, holes
 
+    def _get_and_check_thermo_chempots(
+        self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+    ) -> tuple[dict, dict]:
+        """
+        Convenience method to get the ``chempots`` and ``el_refs`` from
+        ``self.defect_thermodynamics.chempots`` and check that ``chempots`` is
+        not ``None``.
+        """
+        chempots, el_refs = self.defect_thermodynamics._get_chempots(
+            chempots, el_refs
+        )  # returns self.defect_thermodynamics.chempots if chempots is None
+        if chempots is None:
+            raise ValueError(  # this function is only called if no user chempots were supplied
+                "No chemical potentials supplied or present in self.defect_thermodynamics.chempots!"
+            )
+        assert isinstance(el_refs, dict)  # both returned as dictionaries now
+        return chempots, el_refs
+
     def _get_single_chempot_dict(
         self, limit: Optional[str] = None, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
     ) -> tuple[dict[str, float], Any]:
@@ -4264,13 +4284,7 @@ class FermiSolver(MSONable):
 
         Returns a `single` chemical potential dictionary for the specified limit.
         """
-        chempots, el_refs = self.defect_thermodynamics._get_chempots(
-            chempots, el_refs
-        )  # returns self.defect_thermodynamics.chempots if chempots is None
-        if chempots is None:
-            raise ValueError(
-                "No chemical potentials supplied or present in self.defect_thermodynamics.chempots!"
-            )
+        chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
         limit = _parse_limit(chempots, limit)
 
         if (
@@ -5181,13 +5195,7 @@ class FermiSolver(MSONable):
             single_chempot_dict_1, single_chempot_dict_2 = chempots
 
         else:  # should be a dictionary in the ``doped`` format or ``None``:
-            chempots, el_refs = self.defect_thermodynamics._get_chempots(
-                chempots, el_refs
-            )  # returns self.defect_thermodynamics.chempots if chempots is None
-            if chempots is None:
-                raise ValueError(
-                    "No chemical potentials supplied or present in self.defect_thermodynamics.chempots!"
-                )
+            chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
 
             if limits is None or len(limits) != 2:
                 raise ValueError(
@@ -5196,7 +5204,6 @@ class FermiSolver(MSONable):
                     f"The provided `limits` is: {limits}."
                 )
 
-            assert isinstance(chempots, dict)  # typing
             single_chempot_dict_1, el_refs = self._get_single_chempot_dict(limits[0], chempots, el_refs)
             single_chempot_dict_2, el_refs = self._get_single_chempot_dict(limits[1], chempots, el_refs)
 
@@ -5403,14 +5410,7 @@ class FermiSolver(MSONable):
                 of chemical potentials.
         """
         if isinstance(chempots, dict):  # should be a dictionary in the ``doped`` format or ``None``:
-            chempots, el_refs = self.defect_thermodynamics._get_chempots(
-                chempots, el_refs
-            )  # returns self.defect_thermodynamics.chempots if chempots is None
-            if chempots is None:
-                raise ValueError(
-                    "No chemical potentials supplied or present in self.defect_thermodynamics.chempots!"
-                )
-            assert isinstance(chempots, dict)  # typing
+            chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
             chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
 
             if limits is None:
@@ -5613,13 +5613,7 @@ class FermiSolver(MSONable):
                 The chemical potentials in the correct format, along with the
                 elemental reference energies.
         """
-        # returns self.defect_thermodynamics.chempots if chempots is None:
-        chempots, el_refs = self.defect_thermodynamics._get_chempots(chempots)
-
-        if chempots is None:
-            raise ValueError(
-                "No chemical potentials supplied or present in `self.defect_thermodynamics.chempots`!"
-            )
+        chempots, el_refs = self._get_and_check_thermo_chempots(chempots)
         if len(chempots["limits"]) == 1:
             raise ValueError(
                 "Only one chemical potential limit is present in "
