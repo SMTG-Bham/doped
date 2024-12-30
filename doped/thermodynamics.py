@@ -4042,6 +4042,12 @@ def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max
     return target_df, current_value, target_chempot
 
 
+def _ensure_list(
+    var: Optional[Union[float, int, list[float]]] = None
+) -> Optional[list[Union[float, int]]]:
+    return [var] if isinstance(var, (int, float)) else var
+
+
 class FermiSolver(MSONable):
     def __init__(
         self,
@@ -4954,16 +4960,13 @@ class FermiSolver(MSONable):
             annealing_temperature_range, temperature_range, quenched_temperature_range, range=True
         )
         # Ensure temperature ranges are lists:
-        if isinstance(temperature_range, float):
-            temperature_range = [temperature_range]
-        if annealing_temperature_range is not None and isinstance(annealing_temperature_range, float):
-            annealing_temperature_range = [annealing_temperature_range]
-        if isinstance(quenched_temperature_range, float):
-            quenched_temperature_range = [quenched_temperature_range]
+        temperature_list = _ensure_list(temperature_range)
+        annealing_temperature_list = _ensure_list(annealing_temperature_range)  # returns None if None
+        quenched_temperature_list = _ensure_list(quenched_temperature_range)
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
-        if annealing_temperature_range is not None:
+        if annealing_temperature_list is not None and quenched_temperature_list is not None:
             return pd.concat(
                 [
                     self.pseudo_equilibrium_solve(
@@ -4977,7 +4980,7 @@ class FermiSolver(MSONable):
                         fixed_defects=fixed_defects,
                     )
                     for quench_temp, anneal_temp in tqdm(
-                        product(quenched_temperature_range, annealing_temperature_range)
+                        product(quenched_temperature_list, annealing_temperature_list)
                     )
                 ]
             )
@@ -4991,7 +4994,7 @@ class FermiSolver(MSONable):
                     effective_dopant_concentration=effective_dopant_concentration,
                     fixed_defects=fixed_defects,
                 )
-                for temperature in tqdm(temperature_range)
+                for temperature in tqdm(temperature_list)
             ]
         )
 
@@ -5130,8 +5133,7 @@ class FermiSolver(MSONable):
                 for a different dopant concentration.
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
-        if isinstance(effective_dopant_concentration_range, float):
-            effective_dopant_concentration_range = [effective_dopant_concentration_range]
+        effective_dopant_concentration_list = _ensure_list(effective_dopant_concentration_range)
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
@@ -5148,7 +5150,7 @@ class FermiSolver(MSONable):
                         free_defects=free_defects,
                         fixed_defects=fixed_defects,
                     )
-                    for effective_dopant_concentration in tqdm(effective_dopant_concentration_range)
+                    for effective_dopant_concentration in tqdm(effective_dopant_concentration_list)
                 ]
             )
 
@@ -5161,7 +5163,7 @@ class FermiSolver(MSONable):
                     effective_dopant_concentration=effective_dopant_concentration,
                     fixed_defects=fixed_defects,
                 )
-                for effective_dopant_concentration in tqdm(effective_dopant_concentration_range)
+                for effective_dopant_concentration in tqdm(effective_dopant_concentration_list)
             ]
         )
 
@@ -5552,7 +5554,7 @@ class FermiSolver(MSONable):
                         free_defects=free_defects,
                         fixed_defects=fixed_defects,
                     )
-                    for single_chempot_dict in chempots
+                    for single_chempot_dict in tqdm(chempots)
                 ]
             )
 
@@ -5564,7 +5566,7 @@ class FermiSolver(MSONable):
                     effective_dopant_concentration=effective_dopant_concentration,
                     fixed_defects=fixed_defects,
                 )
-                for single_chempot_dict in chempots
+                for single_chempot_dict in tqdm(chempots)
             ]
         )
 
