@@ -8,10 +8,11 @@ import contextlib
 import importlib.util
 import os
 import warnings
+from collections.abc import Iterable
 from copy import deepcopy
 from functools import reduce
 from itertools import chain, product
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -3603,6 +3604,8 @@ def _add_effective_dopant_concentration(
     if effective_dopant_concentration is None:
         return conc_df
 
+    # if ``lean`` was ``True``, then Defect/Charge not set as indices:
+    lean = all(i in conc_df.columns for i in ["Defect", "Charge"])
     eff_dopant_df = pd.DataFrame(
         {
             "Defect": "Effective Dopant",
@@ -3613,18 +3616,24 @@ def _add_effective_dopant_concentration(
         },
         index=[0],
     )
+    if not lean:
+        eff_dopant_df = eff_dopant_df.set_index(["Defect", "Charge"])
+
     for col in conc_df.columns:
         if col not in eff_dopant_df.columns:
             eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
 
-    if "Charge" not in conc_df.columns:
-        eff_dopant_df = eff_dopant_df.drop(
-            columns=["Charge", "Formation Energy (eV)", "Charge State Population"]
-        )
-        eff_dopant_df = eff_dopant_df.set_index("Defect")  # Defect is index with summed conc df
+    if "Charge" not in (conc_df.columns if lean else conc_df.index.names):
+        columns_to_drop = ["Formation Energy (eV)", "Charge State Population"]
+        if lean:
+            columns_to_drop.append("Charge")
+        else:
+            eff_dopant_df = eff_dopant_df.droplevel("Charge")
+
+        eff_dopant_df = eff_dopant_df.drop(columns=columns_to_drop)
         return pd.concat([conc_df, eff_dopant_df])
 
-    return pd.concat([conc_df, eff_dopant_df], ignore_index=True)
+    return pd.concat([conc_df, eff_dopant_df], ignore_index=lean)
 
 
 def _group_defect_charge_state_concentrations(
@@ -4714,15 +4723,10 @@ class FermiSolver(MSONable):
                 annealing_temperature=annealing_temperature,
                 quenched_temperature=quenched_temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                per_charge=False,
+                skip_formatting=True,  # keep concentration values as floats
             )  # use already-set bulk dos
-            concentrations = concentrations.drop(
-                columns=[
-                    "Charge",
-                    "Charge State Population",
-                    "Concentration (cm^-3)",
-                    "Formation Energy (eV)",
-                ],
-            )
+            # TODO: Add per-charge, per-site options?
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
@@ -4735,16 +4739,6 @@ class FermiSolver(MSONable):
 
             for column, value in new_columns.items():
                 concentrations[column] = value
-
-            trimmed_concentrations_sub_duplicates = concentrations.drop_duplicates()
-            excluded_columns = ["Defect"]
-            for column in concentrations.columns.difference(excluded_columns):
-                concentrations[column] = concentrations[column].astype(float)
-
-            concentrations = trimmed_concentrations_sub_duplicates.rename(
-                columns={"Total Concentration (cm^-3)": "Concentration (cm^-3)"},
-            )
-            concentrations = concentrations.set_index("Defect", drop=True)
 
         else:  # py-sc-fermi
             defect_system = self._generate_annealed_defect_system(
@@ -4824,6 +4818,45 @@ class FermiSolver(MSONable):
                 "(see docstrings/tutorials)."
             )
             warnings.warn(message)
+
+    def _solve(
+        self,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        append_chempots: bool = True,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        PseudoSolveFunc: TypeAlias = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
+        EquilibriumSolveFunc: TypeAlias = Callable[..., pd.DataFrame]
+        solve_func: PseudoSolveFunc | EquilibriumSolveFunc = (
+            self.pseudo_equilibrium_solve if annealing_temperature is not None else self.equilibrium_solve
+        )
+        kwargs = {
+            "single_chempot_dict": single_chempot_dict,
+            "el_refs": el_refs,
+            "effective_dopant_concentration": effective_dopant_concentration,
+            "fixed_defects": fixed_defects,
+            "append_chempots": append_chempots,
+        }
+        if annealing_temperature is not None:  # pseudo_equilibrium_solve
+            kwargs.update(
+                {
+                    "annealing_temperature": annealing_temperature,
+                    "quenched_temperature": quenched_temperature,
+                    "free_defects": free_defects,  # type: ignore
+                    "fix_charge_states": fix_charge_states,
+                }
+            )
+        else:  # equilibrium_solve
+            kwargs.update({"temperature": temperature})
+
+        return solve_func(**kwargs)
 
     def scan_temperature(
         self,
@@ -4966,35 +4999,26 @@ class FermiSolver(MSONable):
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
-        if annealing_temperature_list is not None and quenched_temperature_list is not None:
-            return pd.concat(
-                [
-                    self.pseudo_equilibrium_solve(
-                        single_chempot_dict=single_chempot_dict,
-                        el_refs=el_refs,
-                        quenched_temperature=quench_temp,
-                        annealing_temperature=anneal_temp,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        free_defects=free_defects,
-                        fixed_defects=fixed_defects,
-                        fix_charge_states=fix_charge_states,
-                    )
-                    for quench_temp, anneal_temp in tqdm(
-                        product(quenched_temperature_list, annealing_temperature_list)
-                    )
-                ]
+        temp_args = product(  # type: ignore
+            *(
+                [i] if not isinstance(i, Iterable) else i
+                for i in [annealing_temperature_list, quenched_temperature_list, temperature_list]
             )
-
+        )
         return pd.concat(
             [
-                self.equilibrium_solve(
+                self._solve(
                     single_chempot_dict=single_chempot_dict,
                     el_refs=el_refs,
+                    annealing_temperature=annealing_temperature,
+                    quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
                     fixed_defects=fixed_defects,
+                    free_defects=free_defects,
+                    fix_charge_states=fix_charge_states,
                 )
-                for temperature in tqdm(temperature_list)
+                for annealing_temperature, quenched_temperature, temperature in tqdm(temp_args)
             ]
         )
 
@@ -5137,31 +5161,18 @@ class FermiSolver(MSONable):
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
-        if annealing_temperature is not None:
-            return pd.concat(
-                [
-                    self.pseudo_equilibrium_solve(
-                        single_chempot_dict=single_chempot_dict,
-                        el_refs=el_refs,
-                        quenched_temperature=quenched_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        free_defects=free_defects,
-                        fixed_defects=fixed_defects,
-                        fix_charge_states=fix_charge_states,
-                    )
-                    for effective_dopant_concentration in tqdm(effective_dopant_concentration_list)
-                ]
-            )
-
         return pd.concat(
             [
-                self.equilibrium_solve(
+                self._solve(
                     single_chempot_dict=single_chempot_dict,
                     el_refs=el_refs,
+                    annealing_temperature=annealing_temperature,
+                    quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
                     fixed_defects=fixed_defects,
+                    free_defects=free_defects,
+                    fix_charge_states=fix_charge_states,
                 )
                 for effective_dopant_concentration in tqdm(effective_dopant_concentration_list)
             ]
@@ -5328,34 +5339,16 @@ class FermiSolver(MSONable):
             single_chempot_dict_1, single_chempot_dict_2, n_points
         )
 
-        if annealing_temperature is not None:
-            return pd.concat(
-                [
-                    self.pseudo_equilibrium_solve(
-                        single_chempot_dict=single_chempot_dict,
-                        el_refs=el_refs,
-                        quenched_temperature=quenched_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        free_defects=free_defects,
-                        fixed_defects=fixed_defects,
-                        fix_charge_states=fix_charge_states,
-                    )
-                    for single_chempot_dict in tqdm(interpolated_chempots)
-                ]
-            )
-
-        return pd.concat(
-            [
-                self.equilibrium_solve(
-                    single_chempot_dict=single_chempot_dict,
-                    el_refs=el_refs,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fixed_defects=fixed_defects,
-                )
-                for single_chempot_dict in tqdm(interpolated_chempots)
-            ]
+        return self.scan_chempots(
+            interpolated_chempots,
+            el_refs=el_refs,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
         )
 
     def _get_interpolated_chempots(
@@ -5365,7 +5358,7 @@ class FermiSolver(MSONable):
         n_points: int,
     ) -> list:
         """
-        Generate a set of interpolated chemical potentials between two points.
+        Generate a list of interpolated chemical potentials between two points.
 
         Here, these should be dictionaries of chemical potentials for `single`
         limits, in the format: ``{element symbol: chemical potential}``.
@@ -5542,29 +5535,18 @@ class FermiSolver(MSONable):
 
             chempots = [self._get_single_chempot_dict(limit, chempots, el_refs)[0] for limit in limits]
 
-        if annealing_temperature is not None:
-            return pd.concat(
-                [
-                    self.pseudo_equilibrium_solve(
-                        single_chempot_dict=single_chempot_dict,
-                        quenched_temperature=quenched_temperature,
-                        annealing_temperature=annealing_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        free_defects=free_defects,
-                        fixed_defects=fixed_defects,
-                        fix_charge_states=fix_charge_states,
-                    )
-                    for single_chempot_dict in tqdm(chempots)
-                ]
-            )
-
         return pd.concat(
             [
-                self.equilibrium_solve(
+                self._solve(
                     single_chempot_dict=single_chempot_dict,
+                    el_refs=el_refs,
+                    annealing_temperature=annealing_temperature,
+                    quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
                     fixed_defects=fixed_defects,
+                    free_defects=free_defects,
+                    fix_charge_states=fix_charge_states,
                 )
                 for single_chempot_dict in tqdm(chempots)
             ]
@@ -5672,39 +5654,20 @@ class FermiSolver(MSONable):
         """
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         grid = ChemicalPotentialGrid(chempots).get_grid(n_points)
-
-        if annealing_temperature is not None:
-            return pd.concat(
-                [
-                    self.pseudo_equilibrium_solve(
-                        single_chempot_dict={
-                            k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
-                        },
-                        el_refs=el_refs,
-                        annealing_temperature=annealing_temperature,
-                        quenched_temperature=quenched_temperature,
-                        effective_dopant_concentration=effective_dopant_concentration,
-                        free_defects=free_defects,
-                        fixed_defects=fixed_defects,
-                        fix_charge_states=fix_charge_states,
-                    )
-                    for _idx, chempot_series in tqdm(grid.iterrows())
-                ]
-            )
-
-        return pd.concat(
-            [
-                self.equilibrium_solve(
-                    single_chempot_dict={
-                        k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
-                    },
-                    el_refs=el_refs,
-                    temperature=temperature,
-                    effective_dopant_concentration=effective_dopant_concentration,
-                    fixed_defects=fixed_defects,
-                )
-                for _idx, chempot_series in tqdm(grid.iterrows())
-            ]
+        chempot_dict_list = [
+            {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
+            for _idx, chempot_series in grid.iterrows()
+        ]
+        self.scan_chempots(
+            chempots=chempot_dict_list,
+            el_refs=el_refs,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
         )
 
     def _parse_and_check_grid_like_chempots(self, chempots: Optional[dict] = None) -> tuple[dict, dict]:
@@ -5925,39 +5888,21 @@ class FermiSolver(MSONable):
 
         previous_value = None
         while True:  # Calculate results based on the given temperature conditions
-            if annealing_temperature is not None:
-                results_df = pd.concat(
-                    [
-                        self.pseudo_equilibrium_solve(
-                            single_chempot_dict={
-                                k.replace("μ_", ""): v for k, v in chempot_series.items()
-                            },
-                            el_refs=el_refs,
-                            annealing_temperature=annealing_temperature,
-                            quenched_temperature=quenched_temperature,
-                            effective_dopant_concentration=effective_dopant_concentration,
-                            free_defects=free_defects,
-                            fixed_defects=fixed_defects,
-                            fix_charge_states=fix_charge_states,
-                        )
-                        for chempot_series in tqdm(starting_line)
-                    ]
-                )
-            else:
-                results_df = pd.concat(
-                    [
-                        self.equilibrium_solve(
-                            single_chempot_dict={
-                                k.replace("μ_", ""): v for k, v in chempot_series.items()
-                            },
-                            el_refs=el_refs,
-                            temperature=temperature,
-                            effective_dopant_concentration=effective_dopant_concentration,
-                            fixed_defects=fixed_defects,
-                        )
-                        for chempot_series in tqdm(starting_line)
-                    ]
-                )
+            chempots_dict_list = [
+                {k.replace("μ_", ""): v for k, v in chempot_series.items()}
+                for chempot_series in starting_line
+            ]
+            results_df = self.scan_chempots(
+                chempots=chempots_dict_list,
+                el_refs=el_refs,
+                annealing_temperature=annealing_temperature,
+                quenched_temperature=quenched_temperature,
+                temperature=temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
+                free_defects=free_defects,
+                fix_charge_states=fix_charge_states,
+            )
 
             target_df, current_value, target_chempot = _get_min_max_target_values(
                 results_df, target, min_or_max
@@ -6015,39 +5960,21 @@ class FermiSolver(MSONable):
 
         previous_value = None
         while True:
-            if annealing_temperature is not None:
-                results_df = pd.concat(
-                    [
-                        self.pseudo_equilibrium_solve(
-                            single_chempot_dict={
-                                k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
-                            },
-                            el_refs=el_refs,
-                            annealing_temperature=annealing_temperature,
-                            quenched_temperature=quenched_temperature,
-                            effective_dopant_concentration=effective_dopant_concentration,
-                            free_defects=free_defects,
-                            fixed_defects=fixed_defects,
-                            fix_charge_states=fix_charge_states,
-                        )
-                        for _idx, chempot_series in tqdm(starting_grid.get_grid(n_points).iterrows())
-                    ]
-                )
-            else:
-                results_df = pd.concat(
-                    [
-                        self.equilibrium_solve(
-                            single_chempot_dict={
-                                k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()
-                            },
-                            el_refs=el_refs,
-                            temperature=temperature,
-                            effective_dopant_concentration=effective_dopant_concentration,
-                            fixed_defects=fixed_defects,
-                        )
-                        for _idx, chempot_series in tqdm(starting_grid.get_grid(n_points).iterrows())
-                    ]
-                )
+            chempots_dict_list = [
+                {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
+                for _idx, chempot_series in starting_grid.get_grid(n_points).iterrows()
+            ]
+            results_df = self.scan_chempots(
+                chempots=chempots_dict_list,
+                el_refs=el_refs,
+                annealing_temperature=annealing_temperature,
+                quenched_temperature=quenched_temperature,
+                temperature=temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
+                free_defects=free_defects,
+                fix_charge_states=fix_charge_states,
+            )
 
             # Find chemical potentials value where target is lowest or highest
             target_df, current_value, target_chempot = _get_min_max_target_values(
