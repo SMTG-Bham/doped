@@ -14,12 +14,11 @@ from multiprocessing import Pool, cpu_count
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
-from filelock import FileLock
 from monty.json import MontyDecoder
-from monty.serialization import dumpfn, loadfn
+from monty.serialization import dumpfn
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
@@ -198,7 +197,10 @@ def defect_from_structures(
             site-matching, listed above. (Default = False)
         bulk_voronoi_node_dict (dict):
             Dictionary of bulk supercell Voronoi node information, for
-            expedited site-matching. If None, will be re-calculated.
+            expedited site-matching. If ``None`` (default), will be
+            re-calculated. Mostly deprecated as Voronoi tessellation in
+            ``doped`` has been massively accelerated, now typically taking
+            negligible time.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
             bulk and defect supercell lattice definitions are matched
@@ -281,7 +283,7 @@ def defect_from_structures(
         if defect_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
-            if not bulk_voronoi_node_dict:  # first time parsing
+            if not bulk_voronoi_node_dict:
                 voronoi_frac_coords = [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)]
                 bulk_voronoi_node_dict = {
                     "bulk_supercell": bulk_supercell,
@@ -859,9 +861,6 @@ class DefectsParser:
                         parsed_defect_entries.append(parsed_defect_entry)
 
         else:  # otherwise multiprocessing:
-            with FileLock("voronoi_nodes.json.lock"):  # avoid reading/writing simultaneously
-                pass  # create and release lock, to be used in multiprocessing parsing
-
             # guess a charged defect in defect_folders, to try initially check if dielectric and
             # corrections correctly set, before multiprocessing with the same settings for all folders:
             charged_defect_folder = None
@@ -935,9 +934,6 @@ class DefectsParser:
 
             finally:
                 pbar.close()
-
-            if os.path.exists("voronoi_nodes.json.lock"):  # remove lock file
-                os.remove("voronoi_nodes.json.lock")
 
         if parsing_warnings := [
             warning for warning in parsing_warnings if warning  # remove empty strings
@@ -1894,32 +1890,6 @@ class DefectParser:
             )
 
         # identify defect site, structural information, and create defect object:
-        # try load previous bulk_voronoi_node_dict if present:
-        def _read_bulk_voronoi_node_dict(bulk_path):
-            if os.path.exists(os.path.join(bulk_path, "voronoi_nodes.json")):
-                return loadfn(os.path.join(bulk_path, "voronoi_nodes.json"))
-            return {}
-
-        if os.path.exists("voronoi_nodes.json.lock"):
-            with FileLock("voronoi_nodes.json.lock"):
-                prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
-        else:
-            prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
-
-        if prev_bulk_voronoi_node_dict and not StructureMatcher(
-            stol=0.05,
-            primitive_cell=False,
-            scale=False,
-            attempt_supercell=False,
-            allow_subset=False,
-            comparator=ElementComparator(),
-        ).fit(prev_bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
-            warnings.warn(
-                "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
-                "supercell. Recalculating Voronoi nodes."
-            )
-            prev_bulk_voronoi_node_dict = {}
-
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
         try:
@@ -1932,12 +1902,11 @@ class DefectParser:
                 bulk_site_index,
                 guessed_initial_defect_structure,
                 unrelaxed_defect_structure,
-                bulk_voronoi_node_dict,
+                _bulk_voronoi_node_dict,
             ) = defect_from_structures(
                 bulk_supercell,
                 defect_structure.copy(),
                 return_all_info=True,
-                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -1954,12 +1923,11 @@ class DefectParser:
                 bulk_site_index,
                 guessed_initial_defect_structure,
                 unrelaxed_defect_structure,
-                bulk_voronoi_node_dict,
+                _bulk_voronoi_node_dict,
             ) = defect_from_structures(
                 bulk_supercell,
                 defect_structure_for_ID,
                 return_all_info=True,
-                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -2050,15 +2018,6 @@ class DefectParser:
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
-
-        if bulk_voronoi_node_dict and bulk_path and not prev_bulk_voronoi_node_dict:
-            with contextlib.suppress(Exception):  # ignore any file IO errors
-                # save to bulk folder for future expedited parsing:
-                if os.path.exists("voronoi_nodes.json.lock"):
-                    with FileLock("voronoi_nodes.json.lock"):
-                        dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
-                else:
-                    dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
         check_and_set_defect_entry_name(
             defect_entry, possible_defect_name, bulk_symm_ops=bulk_supercell_symm_ops

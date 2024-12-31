@@ -95,7 +95,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
 
     def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
@@ -104,7 +103,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CaO_DATA_DIR, "CaO_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json.gz"))
 
@@ -1304,8 +1302,6 @@ class DopedParsingTestCase(unittest.TestCase):
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
     def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
-
         if os.path.exists(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz"):
             shutil.move(
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz",
@@ -1928,7 +1924,6 @@ class DopedParsingTestCase(unittest.TestCase):
         Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV)
         correction.
         """
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
         with patch("builtins.print") as mock_print:
             te_i_2_ent = defect_entry_from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
@@ -1954,7 +1949,6 @@ class DopedParsingTestCase(unittest.TestCase):
             )
 
         mock_print.assert_not_called()
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
 
     def test_substitution_parsing_and_kumagai(self):
         """
@@ -2079,8 +2073,6 @@ class DopedParsingTestCase(unittest.TestCase):
             0.0,
             atol=1e-2,
         )  # approx match, not exact because relaxed bulk supercell
-
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
 
         # test error_tolerance setting:
         with warnings.catch_warnings(record=True) as w:
@@ -2278,48 +2270,6 @@ class DopedParsingTestCase(unittest.TestCase):
 
         return correction_test_dict
 
-    def test_voronoi_structure_mismatch_and_reparse(self):
-        """
-        Test that a mismatch in bulk_supercell structure from previously parsed
-        Voronoi nodes json file with current defect bulk supercell is detected
-        and re-parsed.
-        """
-        with patch("builtins.print"):
-            for i in os.listdir(self.CdTe_EXAMPLE_DIR):
-                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    # parse with no explicitly-set-charge:
-                    defect_entry_from_paths(
-                        defect_path=defect_path,
-                        bulk_path=self.CdTe_BULK_DATA_DIR,
-                        dielectric=self.CdTe_dielectric,
-                        parse_projected_eigen=False,
-                    )
-        shutil.copyfile(
-            os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"),
-            f"{self.YTOS_EXAMPLE_DIR}/Bulk/voronoi_nodes.json",
-        )  # mismatching voronoi nodes
-
-        with warnings.catch_warnings(record=True) as w:
-            defect_path = f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/"
-            # parse with no explicitly-set-charge:
-            defect_entry_from_paths(
-                defect_path=defect_path,
-                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-                dielectric=self.ytos_dielectric,
-                charge_state=-1,  # test manually specifying charge state
-                parse_projected_eigen=False,
-            )
-
-        warning_message = (
-            "Previous bulk voronoi_nodes.json detected, but does not match current bulk supercell. "
-            "Recalculating Voronoi nodes."
-        )
-        user_warnings = [warning for warning in w if warning.category == UserWarning]
-        assert len(user_warnings) == 1
-        assert warning_message in str(user_warnings[0].message)
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
-
     def test_tricky_relaxed_interstitial_corrections_kumagai(self):
         """
         Test the eFNV correction performance with tricky-to-locate relaxed
@@ -2454,8 +2404,6 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
 
     def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
         if_present_rm("./vasprun.xml")
 
         for dir in ["bulk", "v_Cu_0", "Si_i_-1"]:
@@ -2466,10 +2414,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 )
 
         if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "bulk/vasp_std/voronoi_nodes.json"))
-
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
 
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
@@ -2529,7 +2474,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         bulk_site_index,
                         guessed_initial_defect_structure,
                         unrelaxed_defect_structure,
-                        bulk_voronoi_node_dict,
+                        _bulk_voronoi_node_dict,
                     ) = defect_from_structures(
                         defect_entry.bulk_supercell,
                         rattled_defect_supercell,
@@ -2605,7 +2550,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         bulk_site_index,
                         guessed_initial_defect_structure,
                         unrelaxed_defect_structure,
-                        bulk_voronoi_node_dict,
+                        _bulk_voronoi_node_dict,
                     ) = defect_from_structures(
                         rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         defect_entry.defect_supercell,
