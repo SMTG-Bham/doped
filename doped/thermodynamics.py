@@ -421,16 +421,32 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
-    Similar to a pymatgen PhaseDiagram object, allowing the analysis of
+    Similar to a ``pymatgen`` ``PhaseDiagram`` object, allowing the analysis of
     formation energies as functions of Fermi level and chemical potentials
     (i.e. defect formation energy / transition level diagrams), charge
-    transition levels, defect/carrier concentrations etc.
+    transition levels, defect/carrier concentrations as functions of
+    temperature, chemical potential etc.
 
-    This class is able to get:
-        a) stability of charge states for a given defect,
-        b) list of all formation energies,
-        c) transition levels in the gap,
-        d) used as input to doped plotting/analysis functions
+    This class can be used to return:
+        a) defect formation energy diagrams (plots),
+        b) stability of charge states for a given defect,
+        c) tables of all formation energies / symmetries & degeneracies,
+        d) tables of equilibrium and constrained defect/carrier concentrations,
+        e) charge transition levels, including metastable states,
+        f) doping analysis,
+        g) ...
+
+    Note that ``DefectThermodynamics`` objects can be used to initialise the
+    ``FermiSolver`` class in this module, which implements a number of
+    convenience methods for thermodynamic analyses; such as scanning over
+    temperatures, chemical potentials, effective dopant concentrations etc,
+    minimising or maximising a target property (e.g. defect/carrier
+    concentration), and also allowing greater control over constraints and
+    approximations in defect concentration calculations; such as specifying
+    (known) fixed concentrations of a defect/dopant, specifying defects to
+    exclude from high-temperature concentration fixing in the frozen defect
+    approximation (e.g. highly-mobile defects), and/or fixing defect charge
+    states upon quenching.
     """
 
     def __init__(
@@ -1432,7 +1448,7 @@ class DefectThermodynamics(MSONable):
         r"""
         Compute the `equilibrium` concentrations (in cm^-3) for all
         ``DefectEntry``\s in the ``DefectThermodynamics`` object, at a given
-        chemical potential limit, fermi_level and temperature, assuming the
+        chemical potential limit, Fermi level and temperature, assuming the
         dilute limit approximation.
 
         Note that these are the `equilibrium` defect concentrations!
@@ -1444,12 +1460,21 @@ class DefectThermodynamics(MSONable):
         frozen defect approach and is typically the most valid approximation
         (see its docstring for more information).
 
-        The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation (see discussion in https://doi.org/10.1039/D2FD00043A
-        and https://doi.org/10.1039/D3CS00432E), affecting the final concentration by
-        up to ~2 orders of magnitude. This factor is taken from the product of the
-        ``defect_entry.defect.multiplicity`` and ``defect_entry.degeneracy_factors``
-        attributes.
+        The degeneracy/multiplicity factor "g" is an important parameter in the
+        defect concentration equation (see discussion in
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to ~2 orders of magnitude. This
+        factor is taken from the product of the ``defect_entry.defect.multiplicity``
+        and ``defect_entry.degeneracy_factors`` attributes.
+
+        Note that the ``FermiSolver`` class implements a number of convenience
+        methods for thermodynamic analyses; such as scanning over temperatures,
+        chemical potentials, effective dopant concentrations etc, minimising or
+        maximising a target property (e.g. defect/carrier concentration), and
+        also allowing greater control over constraints and approximations in
+        defect concentration calculations (i.e. fixed/variable defect(s) and
+        charge states), which may be useful. See the ``FermiSolver`` tutorial:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
 
         Args:
             temperature (float):
@@ -1686,21 +1711,30 @@ class DefectThermodynamics(MSONable):
         Note that this assumes `equilibrium` defect concentrations!
         ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()``
         can instead be used to calculate the Fermi level and defect
-        concentrations for a material grown/annealed at higher temperatures and
-        then cooled (quenched) to room/operating temperature (where defect
+        concentrations for a material grown/annealed at higher temperatures
+        and then cooled (quenched) to room/operating temperature (where defect
         concentrations are assumed to remain fixed) - this is known as the
         frozen defect approach and is typically the most valid approximation
         (see its docstring for more information).
 
-        Note that the bulk DOS calculation should be well-converged with respect to
-        k-points for accurate Fermi level predictions!
+        Note that the bulk DOS calculation should be well-converged with
+        respect to `k`-points for accurate Fermi level predictions!
 
-        The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation and thus Fermi level calculation (see discussion in
+        The degeneracy/multiplicity factor "g" is an important parameter in the
+        defect concentration equation (see discussion in
         https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
-        affecting the final concentration by up to ~2 orders of magnitude. This factor
-        is taken from the product of the ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes.
+        affecting the final concentration by up to ~2 orders of magnitude. This
+        factor is taken from the product of the ``defect_entry.defect.multiplicity``
+        and ``defect_entry.degeneracy_factors`` attributes.
+
+        Note that the ``FermiSolver`` class implements a number of convenience
+        methods for thermodynamic analyses; such as scanning over temperatures,
+        chemical potentials, effective dopant concentrations etc, minimising or
+        maximising a target property (e.g. defect/carrier concentration), and
+        also allowing greater control over constraints and approximations in
+        defect concentration calculations (i.e. fixed/variable defect(s) and
+        charge states), which may be useful. See the ``FermiSolver`` tutorial:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
 
         Args:
             bulk_dos (FermiDos or Vasprun or PathLike):
@@ -1863,45 +1897,51 @@ class DefectThermodynamics(MSONable):
         frozen defect and dilute limit approximations under the constraint of
         charge neutrality.
 
-        According to the 'frozen defect' approximation, we typically expect defect
-        concentrations to reach equilibrium during annealing/crystal growth
-        (at elevated temperatures), but `not` upon quenching (i.e. at
-        room/operating temperature) where we expect kinetic inhibition of defect
-        annhiliation and hence non-equilibrium defect concentrations / Fermi level.
-        Typically this is approximated by computing the equilibrium Fermi level and
-        defect concentrations at the annealing temperature, and then assuming the
-        total concentration of each defect is fixed to this value, but that the
-        relative populations of defect charge states (and the Fermi level) can
-        re-equilibrate at the lower (room) temperature. See discussion in
-        https://doi.org/10.1039/D3CS00432E (brief),
-        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
+        This function works by calculating the self-consistent Fermi level
+        and total concentration of each defect at the annealing temperature,
+        then fixing the total concentrations to these values and
+        re-calculating the self-consistent (constrained equilibrium) Fermi
+        level and relative charge state concentrations under this constraint
+        at the quenched/operating temperature.
+
+        According to the 'frozen defect' approximation, we typically expect
+        defect concentrations to reach equilibrium during annealing/crystal
+        growth (at elevated temperatures), but `not` upon quenching (i.e. at
+        room/operating temperature) where we expect kinetic inhibition of
+        defect annhiliation and hence non-equilibrium defect concentrations /
+        Fermi level. Typically this is approximated by computing the
+        equilibrium Fermi level and defect concentrations at the annealing
+        temperature, and then assuming the total concentration of each defect
+        is fixed to this value, but that the relative populations of defect
+        charge states (and the Fermi level) can re-equilibrate at the lower
+        (room) temperature. See discussion in https://doi.org/10.1039/D3CS00432E
+        (brief), https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
         ``doped``/``py-sc-fermi`` tutorials for more information.
-        In certain cases (such as Li-ion battery materials or extremely slow charge
-        capture/emission), these approximations may have to be adjusted such that some
-        defects/charge states are considered fixed and some are allowed to
-        re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
-        these specific cases is demonstrated in:
+        In certain cases (such as Li-ion battery materials or extremely slow
+        charge capture/emission), these approximations may have to be adjusted
+        such that some defects/charge states are considered fixed and some are
+        allowed to re-equilibrate (e.g. highly mobile Li vacancies/interstitials).
+        The ``FermiSolver`` class can be used in these cases for more
+        fine-grained control over constraints and approximations in defect
+        concentration calculations, as demonstrated in the tutorial:
         https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
 
-        This function works by calculating the self-consistent Fermi level and total
-        concentration of each defect at the annealing temperature, then fixing the
-        total concentrations to these values and re-calculating the self-consistent
-        (constrained equilibrium) Fermi level and relative charge state concentrations
-        under this constraint at the quenched/operating temperature.
+        Note that the bulk DOS calculation should be well-converged with respect
+        to `k`-points for accurate Fermi level predictions!
 
-        Note that the bulk DOS calculation should be well-converged with respect to
-        k-points for accurate Fermi level predictions!
-
-        The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation and thus Fermi level calculation (see discussion in
+        The degeneracy/multiplicity factor "g" is an important parameter in the
+        defect concentration equation (see discussion in
         https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
-        affecting the final concentration by up to 2 orders of magnitude. This factor
-        is taken from the product of the ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes.
+        affecting the final concentration by up to ~2 orders of magnitude. This
+        factor is taken from the product of the ``defect_entry.defect.multiplicity``
+        and ``defect_entry.degeneracy_factors`` attributes.
 
-        If you use this code in your work, please also cite:
-        Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
-        https://doi.org/10.21105/joss.04962
+        Note that, in addition to finer-grained control over constraints and
+        approximations as mentioned above, the ``FermiSolver`` class implements
+        a number of convenience methods for thermodynamic analyses; such as
+        scanning over temperatures, chemical potentials, effective dopant
+        concentrations etc, minimising or maximising a target property
+        (e.g. defect/carrier concentration), which may be useful -- see tutorial.
 
         Args:
             bulk_dos (FermiDos or Vasprun or PathLike):
@@ -3932,10 +3972,6 @@ def _get_label_and_charge(name: str) -> tuple[str, int]:
     return label, charge
 
 
-# TODO: Update DefectThermodynamics docstrings after `py-sc-fermi` interface written, to point toward it
-#  for more advanced analysis
-
-
 def _get_py_sc_fermi_dos_from_fermi_dos(
     fermi_dos: FermiDos,
     vbm: Optional[float] = None,
@@ -4071,6 +4107,17 @@ class FermiSolver(MSONable):
         Class to calculate the Fermi level, defect and carrier concentrations
         under various conditions, using the input ``DefectThermodynamics``
         object.
+
+        This class implements a number of convenience methods for thermodynamic
+        analyses; such as scanning over temperatures, chemical potentials,
+        effective dopant concentrations etc, minimising or maximising a target
+        property (e.g. defect/carrier concentration), and also allowing greater
+        control over constraints and approximations in defect concentration
+        calculations; such as specifying (known) fixed concentrations of a
+        defect/dopant, specifying defects to exclude from high-temperature
+        concentration fixing in the frozen defect approximation
+        (e.g. highly-mobile defects), and/or fixing defect charge states upon
+        quenching.
 
         This constructor initializes a ``FermiSolver`` object, setting up the
         necessary attributes, which includes loading the bulk density of states
