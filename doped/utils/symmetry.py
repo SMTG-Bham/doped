@@ -1961,7 +1961,7 @@ def point_symmetry_from_structure(
             bulk_site_index,
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
-            bulk_voronoi_node_dict,
+            _bulk_voronoi_node_dict,
         ) = defect_from_structures(
             bulk_structure,
             structure,

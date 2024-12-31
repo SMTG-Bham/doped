@@ -537,7 +537,7 @@ def get_eigenvalue_analysis(
             bulk_site_index,
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
-            bulk_voronoi_node_dict,
+            _bulk_voronoi_node_dict,
         ) = defect_from_structures(
             bulk_vr.final_structure,
             defect_vr.final_structure,
