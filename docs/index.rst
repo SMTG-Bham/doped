@@ -90,8 +90,9 @@ the
 Studies using ``doped``, so far
 ===============================
 
+- S\. R. Kavanagh **Identifying Split Vacancies with Foundation Models and Electrostatics** `arXiv <https://doi.org/10.48550/arXiv.2412.19330>`__ 2024
 - S\. R. Kavanagh et al. **Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-91h02>`__ 2024
-- X\. Wang et al. **Sulfur vacancies limit the open-circuit voltage of Sb₂S₃ solar cells** `arXiv <https://doi.org/10.48550/arXiv.2410.10560>`_ 2024
+- X\. Wang et al. **Sulfur vacancies limit the open-circuit voltage of Sb₂S₃ solar cells** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.4c02722>`__ 2024
 - A\. Zhang et al. **Optimizing the n-type carrier concentration of an InVO₄ photocatalyst by codoping with donors and intrinsic defects** `Physical Review Applied <https://doi.org/10.1103/PhysRevApplied.22.044047>`__ 2024
 - M-L\. Wang et al. **Impact of sulfur doping on copper-substituted lead apatite** `Physical Review B <https://doi.org/10.1103/PhysRevB.110.104109>`__ 2024
 - S\. Quadir et al. **Low-Temperature Synthesis of Stable CaZn₂P₂ Zintl Phosphide Thin Films as Candidate Top Absorbers** `Advanced Energy Materials <https://doi.org/10.1002/aenm.202402640>`__ 2024
@@ -106,6 +107,7 @@ Studies using ``doped``, so far
 - K\. Li et al. **Computational Prediction of an Antimony-based n-type Transparent Conducting Oxide: F-doped Sb₂O₅** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.3c03257>`__ 2024
 - S\. Hachmioune et al. **Exploring the Thermoelectric Potential of MgB₄: Electronic Band Structure, Transport Properties, and Defect Chemistry** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.4c00584>`__ 2024
 - J\. Hu et al. **Enabling ionic transport in Li₃AlP₂ the roles of defects and disorder** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2024-3s0kh>`__ 2024
+- Y\. Zeng et al. **Role of carbon in α-Al2O3:C crystals investigated with first-principles calculations and experiment** `Ceramics International <https://doi.org/10.1016/j.ceramint.2024.12.512>`__ 2024
 - X\. Wang et al. **Four-electron negative-U vacancy defects in antimony selenide** `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`__ 2023
 - Y\. Kumagai et al. **Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation** `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
 - S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos **Mixed-Cation Vacancy-Ordered Perovskites (Cs₂Ti** :sub:`1–x` **Sn** :sub:`x` **X₆; X = I or Br): Low-Temperature Miscibility, Additivity, and Tunable Stability** `Journal of Physical Chemistry C <https://doi.org/10.1021/acs.jpcc.3c05204>`__ 2023
