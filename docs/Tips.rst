@@ -567,7 +567,7 @@ is not done automatically.
 ^^^^^^^^^^^^^^^^^^^^^
 Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as the result, such as the
 ``get_symmetries_and_degeneracies()``, ``get_formation_energies()``, ``get_equilibrium_concentrations()``,
-``get_quenched_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
+``get_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
 ``get_transition_levels()`` methods for ``DefectThermodynamics`` objects, and the ``formation_energy_df``
 attribute and ``calculate_chempots()`` method for ``CompetingPhasesAnalyzer``. As mentioned in the
 tutorials, these ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the

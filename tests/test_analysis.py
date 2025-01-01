@@ -1061,8 +1061,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             print(i, val)
             assert per_site_conc_df.iloc[i, 3] == val
 
-        # test get_quenched_fermi_level_and_concentrations
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        # test get_fermi_level_and_concentrations
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_charge=False,
@@ -1076,7 +1076,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert conc_df.index[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             skip_formatting=True,
@@ -1095,7 +1095,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             print(i, row)
             assert list(conc_df.iloc[i]) == row
 
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_site=True,
@@ -1114,7 +1114,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             print(i, row)
             assert list(conc_df.iloc[i]) == row
 
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_site=True,

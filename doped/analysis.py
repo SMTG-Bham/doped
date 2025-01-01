@@ -1517,7 +1517,7 @@ class DefectsParser:
                 Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
                 Can also be provided later when using ``get_equilibrium_fermi_level()``,
-                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``get_fermi_level_and_concentrations`` etc, or set using
                 ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
 
                 Usually this is a static calculation with the `primitive` cell of the bulk
