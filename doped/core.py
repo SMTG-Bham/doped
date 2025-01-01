@@ -5,7 +5,7 @@ Core functions and classes for defects in doped.
 import collections
 import contextlib
 import warnings
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from functools import reduce
 from multiprocessing import Process, SimpleQueue, current_process
 from typing import TYPE_CHECKING, Any, Optional, Union
@@ -187,6 +187,9 @@ class DefectEntry(thermo.DefectEntry):
                 Filename to save json file as. If None, the filename will
                 be set as ``{DefectEntry.name}.json.gz``.
         """
+        # ignore warning about oxidation states not summing to Structure charge:
+        warnings.filterwarnings("ignore", message=".*unset_charge.*")
+
         if filename is None:
             filename = f"{self.name}.json.gz"
 
@@ -207,21 +210,6 @@ class DefectEntry(thermo.DefectEntry):
             ``DefectEntry`` object
         """
         return loadfn(filename)
-
-    def as_dict(self) -> dict:
-        """
-        Returns a dictionary representation of the ``DefectEntry`` object.
-        """
-        # ignore warning about oxidation states not summing to Structure charge:
-        warnings.filterwarnings("ignore", message=".*unset_charge.*")
-        self_dict = asdict(self)
-        if self.calculation_metadata and self.calculation_metadata.get("eigenvalue_data"):
-            for key in list(self.calculation_metadata["eigenvalue_data"].keys()):
-                self_dict["calculation_metadata"]["eigenvalue_data"][key] = self.calculation_metadata[
-                    "eigenvalue_data"
-                ][key].as_dict()
-
-        return self_dict
 
     @classmethod
     def from_dict(cls, d: dict):
