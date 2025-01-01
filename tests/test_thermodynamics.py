@@ -655,28 +655,58 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert "so dopability limits cannot be calculated." in str(exc.value)
 
         else:
-            with warnings.catch_warnings(record=True) as w:
-                assert isinstance(defect_thermo.get_doping_windows(), pd.DataFrame)
-                assert isinstance(defect_thermo.get_dopability_limits(), pd.DataFrame)
-            print([str(warning.message) for warning in w])  # for debugging
-            assert not w
-            if "V2O5" in defect_thermo.bulk_formula:
-                for df in [defect_thermo.get_doping_windows(), defect_thermo.get_dopability_limits()]:
-                    assert set(df.columns).issubset(
-                        {
-                            "Compensating Defect",
-                            "Dopability Limit (eV from VBM/CBM)",
-                            "limit",
-                            "Doping Window (eV at VBM/CBM)",
-                        }
-                    )
-                    assert set(df.index) == {"n-type", "p-type"}
-                    assert df.shape == (2, 3)
-                    assert set(df.loc["n-type"]).issubset({"N/A", -np.inf, np.inf})
-                    assert set(df.loc["p-type"]).issubset({"N/A", -np.inf, np.inf})
+            doping_windows, windows_output, windows_w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_doping_windows
+            )
+            dopability_limits, limits_output, limits_w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_dopability_limits
+            )
+            for i in [windows_output, limits_output, windows_w, limits_w]:
+                assert not i
+            for doping_df in [doping_windows, dopability_limits]:
+                _check_doping_windows_dopability_limits_df(doping_df)
+                if "V2O5" in defect_thermo.bulk_formula:
+                    assert set(doping_df.loc["n-type"]).issubset({"N/A", -np.inf, np.inf})
+                    assert set(doping_df.loc["p-type"]).issubset({"N/A", -np.inf, np.inf})
 
-            print(defect_thermo.get_doping_windows())
-            print(defect_thermo.get_dopability_limits())
+            # some quick hard tests:
+            # CdTe explicitly tested later in ``self.test_CdTe_dop...()`` in
+            # ``DefectThermodynamicsCdTePlotsTestCase`` as we have different CdTe thermos here
+            if "Sb2O5" in defect_thermo.bulk_formula:
+                assert set(doping_windows.loc["n-type"]).issubset(
+                    {"Sb-rich (Sb2O5-SbO2)", "inter_11_O_-1", 4.538}
+                )
+                assert set(doping_windows.loc["p-type"]).issubset(
+                    {"O-rich (Sb2O5-O2)", "inter_2_Sb_5", -6.212}
+                )
+                Sb_rich_doping_windows = defect_thermo.get_doping_windows(limit="Sb-rich")
+                assert set(Sb_rich_doping_windows.loc["n-type"]).issubset(
+                    {"Sb-rich (Sb2O5-SbO2)", "inter_11_O_-1", 4.538}
+                )
+                assert set(Sb_rich_doping_windows.loc["p-type"]).issubset(
+                    {"Sb-rich (Sb2O5-SbO2)", "inter_2_Sb_5", -8.107}
+                )
+
+                assert set(dopability_limits.loc["n-type"]).issubset(
+                    {"Sb-rich (Sb2O5-SbO2)", "vac_1_Sb_-5", 4.241}
+                )
+                assert set(dopability_limits.loc["p-type"]).issubset(
+                    {"O-rich (Sb2O5-O2)", "inter_2_Sb_5", 1.242}
+                )
+                Sb_rich_dopability_limits = defect_thermo.get_dopability_limits(limit="Sb-rich")
+                assert set(Sb_rich_dopability_limits.loc["n-type"]).issubset(
+                    {"Sb-rich (Sb2O5-SbO2)", "vac_1_Sb_-5", 4.241}
+                )
+                assert set(Sb_rich_dopability_limits.loc["p-type"]).issubset(
+                    {"Sb-rich (Sb2O5-SbO2)", "inter_2_Sb_5", 1.621}
+                )
+
+            if "MgO" in defect_thermo.bulk_formula:
+                # only (donor) Mg_O antisites, so only finite p-type doping window/limit
+                assert set(doping_windows.loc["n-type"]).issubset({"N/A", -np.inf, np.inf})
+                assert set(doping_windows.loc["p-type"]).issubset({"O-rich (MgO-O2)", "Mg_O_+4", 11.839})
+                assert set(dopability_limits.loc["n-type"]).issubset({"N/A", -np.inf, np.inf})
+                assert set(dopability_limits.loc["p-type"]).issubset({"O-rich (MgO-O2)", "Mg_O_+4", -2.96})
 
         # test setting dist_tol:
         if (
@@ -2537,6 +2567,20 @@ def belas_linear_fit(T):  #
     return 1.6395 - 0.000438 * T
 
 
+def _check_doping_windows_dopability_limits_df(doping_df):
+    assert isinstance(doping_df, pd.DataFrame)
+    assert set(doping_df.columns).issubset(
+        {
+            "Compensating Defect",
+            "Dopability Limit (eV from VBM/CBM)",
+            "limit",
+            "Doping Window (eV at VBM/CBM)",
+        }
+    )
+    assert set(doping_df.index) == {"n-type", "p-type"}
+    assert doping_df.shape == (2, 3)
+
+
 class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -2712,6 +2756,29 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
             assert np.isclose(np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3)
 
+    def test_CdTe_doping_windows(self):
+        doping_windows, output, w = _run_func_and_capture_stdout_warnings(
+            self.defect_thermo.get_doping_windows
+        )
+        assert not w
+        assert not output
+        _check_doping_windows_dopability_limits_df(doping_windows)
+        assert set(doping_windows.loc["n-type"]).issubset({"Cd-rich (Cd-CdTe)", "v_Cd_-2", 0.853})
+        assert set(doping_windows.loc["p-type"]).issubset({"Te-rich (CdTe-Te)", "Cd_i_Td_Te2.83_2", 0.489})
+
+    def test_CdTe_dopability_limits(self):
+        dopability_limits, output, w = _run_func_and_capture_stdout_warnings(
+            self.defect_thermo.get_dopability_limits
+        )
+        assert not w
+        assert not output
+        _check_doping_windows_dopability_limits_df(dopability_limits)
+        assert set(dopability_limits.loc["n-type"]).issubset({"Cd-rich (Cd-CdTe)", "v_Cd_-2", 1.925})
+        assert set(dopability_limits.loc["p-type"]).issubset(
+            # positive charge strings not formatted in this older thermo
+            {"Te-rich (CdTe-Te)", "Cd_i_Td_Te2.83_2", -0.244}
+        )
+
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations.png")
     def test_calculated_concentrations(self):
         annealing_n = np.array(
@@ -2842,5 +2909,4 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         return f
 
 
-# TODO: Test all DefectThermodynamics methods (doping windows/limits, etc)
 # TODO: Test check_compatibility
