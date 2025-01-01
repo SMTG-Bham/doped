@@ -15,7 +15,7 @@ import pandas as pd
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import Lattice, PeriodicSite, Structure
+from pymatgen.core.structure import IStructure, Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
@@ -242,6 +242,19 @@ def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = Fal
         If ``return_symprec`` is ``True``, returns a tuple of the symmetry
         analyzer object and the final ``symprec`` used.
     """
+    from doped.utils.efficiency import IStructure as doped_IStructure
+
+    IStructure.__hash__ = doped_IStructure.__hash__
+
+    return _cache_ready_get_sga(struct, symprec=symprec, return_symprec=return_symprec)
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
+    """
+    ``get_sga`` code, with hashable input arguments for caching (using
+    ``Structure`` hash function from ``doped.utils.efficiency``).
+    """
     sga = None
     for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
         # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
@@ -251,7 +264,8 @@ def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = Fal
             try:
                 _prim_struct = sga.get_primitive_standard_structure()
             except ValueError:  # symmetry determination failed
-                continue
+                raise  # TODO: is there an alternative we can test??
+                # continue
             if return_symprec:
                 return sga, trial_symprec
             return sga
@@ -1838,7 +1852,10 @@ def _check_relaxed_defect_symmetry_determination(
         )
 
         bulk_supercell = _get_bulk_supercell(defect_entry)
-        bulk_symm_ops = get_sga(bulk_supercell).get_symmetry_operations()
+        if symprec not in [0.1, None]:  # only pre-calculate bulk_symm_ops if not default symprec
+            bulk_symm_ops = get_sga(bulk_supercell).get_symmetry_operations()
+        else:
+            bulk_symm_ops = None
         symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
             defect_supercell_bulk_site_coords,
             bulk_supercell,
