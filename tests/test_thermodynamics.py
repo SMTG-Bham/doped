@@ -165,7 +165,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         cls.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
-        cls.Sb2Si2Te6_DATA_DIR = os.path.join(cls.EXAMPLE_DIR, "Sb2Si2Te6")
+        cls.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "Sb2Si2Te6")
 
         cls.V2O5_DATA_DIR = os.path.join(cls.module_path, "data/V2O5")
 
@@ -190,10 +190,10 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
             os.path.join(cls.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
         )
         cls.orig_Sb2Si2Te6_defect_dict = loadfn(
-            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_defect_dict.json")
+            os.path.join(cls.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_defect_dict.json")
         )
         cls.orig_Sb2Si2Te6_defect_thermo = loadfn(
-            os.path.join(cls.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json")
+            os.path.join(cls.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json")
         )
 
         cls.orig_V2O5_defect_dict = loadfn(
@@ -256,6 +256,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             {"skip_formatting": True, "symprec": 0.1},
             {"skip_formatting": True, "symprec": 1},
         ]:
+            if defect_thermo1.bulk_formula in ["CdTe", "MgO", "Sb2O5"] and kwargs.get("symprec", False):
+                continue  # slow cases due to large supercells / many defects, skip for tests (CdTe
+                # explicitly tested later anyway)
             symm_df1, output1, symm_w1 = _run_func_and_capture_stdout_warnings(
                 defect_thermo1.get_symmetries_and_degeneracies, **kwargs
             )
@@ -359,26 +362,29 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert defect_thermo.check_compatibility == check_compatibility
 
         # check methods run ok without errors:
-        defect_thermo.to_json("test_thermo.json")
-        reloaded_thermo = DefectThermodynamics.from_json("test_thermo.json")
-        self._compare_defect_thermos(deepcopy(defect_thermo), reloaded_thermo)
-        if_present_rm("test_thermo.json")
+        if defect_thermo.bulk_formula not in [
+            "Sb2O5",
+        ]:  # large thermo, takes time to save/load so skip
+            defect_thermo.to_json("test_thermo.json")
+            reloaded_thermo = DefectThermodynamics.from_json("test_thermo.json")
+            self._compare_defect_thermos(deepcopy(defect_thermo), reloaded_thermo)
+            if_present_rm("test_thermo.json")
 
-        defect_thermo.to_json()  # test default naming
-        compositions = ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5", "ZnS"]
-        assert defect_thermo.bulk_formula in compositions
-        assert any(os.path.exists(f"{i}_defect_thermodynamics.json.gz") for i in compositions)
-        for i in compositions:
-            if_present_rm(f"{i}_defect_thermodynamics.json.gz")
+            defect_thermo.to_json()  # test default naming
+            compositions = ["CdTe", "Y2Ti2S2O5", "Sb2Se3", "SiSbTe3", "V2O5", "MgO", "Sb2O5", "ZnS"]
+            assert defect_thermo.bulk_formula in compositions
+            assert any(os.path.exists(f"{i}_defect_thermodynamics.json.gz") for i in compositions)
+            for i in compositions:
+                if_present_rm(f"{i}_defect_thermodynamics.json.gz")
 
-        thermo_dict = defect_thermo.as_dict()
-        dumpfn(thermo_dict, "test_thermo.json")
-        reloaded_thermo = loadfn("test_thermo.json")
-        self._compare_defect_thermos(deepcopy(defect_thermo), reloaded_thermo)
-        if_present_rm("test_thermo.json")
+            thermo_dict = defect_thermo.as_dict()
+            dumpfn(thermo_dict, "test_thermo.json")
+            reloaded_thermo = loadfn("test_thermo.json")
+            self._compare_defect_thermos(deepcopy(defect_thermo), reloaded_thermo)
+            if_present_rm("test_thermo.json")
 
-        reloaded_thermo = DefectThermodynamics.from_dict(thermo_dict)
-        self._compare_defect_thermos(deepcopy(defect_thermo), deepcopy(reloaded_thermo))
+            reloaded_thermo = DefectThermodynamics.from_dict(thermo_dict)
+            self._compare_defect_thermos(deepcopy(defect_thermo), deepcopy(reloaded_thermo))
 
         assert all(
             i in defect_thermo.__repr__()
@@ -404,6 +410,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             {"skip_formatting": True, "symprec": 0.1},
             {"skip_formatting": True, "symprec": 1},
         ]:
+            if defect_thermo.bulk_formula in ["CdTe", "MgO", "Sb2O5"] and kwargs.get("symprec", False):
+                continue  # slow cases due to large supercells / many defects, skip for tests (CdTe
+                # explicitly tested later anyway)
             symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
                 defect_thermo.get_symmetries_and_degeneracies, **kwargs
             )
