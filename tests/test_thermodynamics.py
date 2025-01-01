@@ -2547,9 +2547,33 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def test_incompatible_chempots_warning(self):
         """
         Test that we get the expected warnings when we provide incompatible
-        chemical potentials for our DefectThermodynamics object.
+        chemical potentials for our ``DefectThermodynamics`` object.
         """
         slightly_off_chempots = {"Cd": -1.0, "Te": -6}
+        new_thermo = deepcopy(self.CdTe_defect_thermo)
+        new_thermo.check_compatibility = False
+        for func_name in [
+            "get_equilibrium_concentrations",
+            "get_dopability_limits",
+            "get_doping_windows",
+            "get_formation_energies",
+            "plot",
+        ]:
+            _result, _tl_output, w = _run_func_and_capture_stdout_warnings(
+                getattr(self.CdTe_defect_thermo, func_name), chempots=slightly_off_chempots
+            )
+            assert any(str(warning.message) == self.cdte_chempot_warning_message for warning in w)
+            _result, _tl_output, w = _run_func_and_capture_stdout_warnings(
+                getattr(new_thermo, func_name), chempots=slightly_off_chempots
+            )
+            assert all(str(warning.message) != self.cdte_chempot_warning_message for warning in w)
+
+        with warnings.catch_warnings(record=True) as w:
+            self.CdTe_defect_thermo.chempots = slightly_off_chempots
+        print([str(warning.message) for warning in w])  # for debugging
+        assert len(w) == 1  # only chempot incompatibility warning
+        assert str(w[0].message) == self.cdte_chempot_warning_message
+
         for func in [
             self.CdTe_defect_thermo.get_equilibrium_concentrations,
             self.CdTe_defect_thermo.get_dopability_limits,
@@ -2562,11 +2586,63 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
             assert any(str(warning.message) == self.cdte_chempot_warning_message for warning in w)
 
-        with warnings.catch_warnings(record=True) as w:
-            self.CdTe_defect_thermo.chempots = slightly_off_chempots
-        print([str(warning.message) for warning in w])  # for debugging
-        assert len(w) == 1  # only chempot incompatibility warning
-        assert str(w[0].message) == self.cdte_chempot_warning_message
+    def test_check_compatibility(self):
+        """
+        Test the behaviour of ``check_compatibility`` on/off (i.e.
+        ``DefectThermodynamics_check_bulk_compatibility``).
+        """
+        entry_to_alter = next(iter(self.CdTe_defect_thermo.defect_entries.values()))
+        entry_to_alter.bulk_entry._energy = 0.1
+
+        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+            DefectThermodynamics,
+            defect_entries=[entry_to_alter, *list(self.CdTe_defect_thermo.defect_entries.values())[1:]],
+            check_compatibility=False,
+        )
+        assert not w
+
+        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+            DefectThermodynamics,
+            defect_entries=[entry_to_alter, *list(self.CdTe_defect_thermo.defect_entries.values())[1:]],
+        )
+
+        def _check_compatibility_warnings(w):
+            assert any(
+                "Note that not all defects in `defect_entries` have the same reference bulk energy"
+                in str(warning.message)
+                for warning in w
+            )
+            assert any(
+                "You can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
+                "False`." in str(warning.message)
+                for warning in w
+            )
+            assert any(
+                "[('v_Cd_0', 0.1), ('v_Cd_-1', -215.61198601)," in str(warning.message) for warning in w
+            )
+
+        _check_compatibility_warnings(w)
+
+        # remove the altered entry (for consistent warning message in _check_compatibility_warnings):
+        self.CdTe_defect_thermo.defect_entries.pop("v_Cd_0")
+        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.add_entries,
+            [
+                entry_to_alter,
+            ],
+            check_compatibility=False,
+        )
+        assert not w
+
+        # remove the altered entry (for consistent warning message in _check_compatibility_warnings):
+        self.CdTe_defect_thermo.defect_entries.pop("v_Cd_0")
+        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.add_entries,
+            [
+                entry_to_alter,
+            ],
+        )
+        _check_compatibility_warnings(w)
 
 
 def belas_linear_fit(T):  #
@@ -2916,6 +2992,3 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ax.legend(fontsize=8)
 
         return f
-
-
-# TODO: Test check_compatibility
