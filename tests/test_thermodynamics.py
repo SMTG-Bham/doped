@@ -1,5 +1,7 @@
 """
-Tests for doped.thermodynamics module.
+Tests for the ``doped.thermodynamics`` module.
+
+Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file.
 """
 
 import os
@@ -332,8 +334,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         el_refs=None,
         check_compatibility=True,
     ):
+        defect_thermo = deepcopy(defect_thermo)  # don't edit! (e.g. saved symmetry info)
         if defect_dict is not None:
-            self._compare_defect_thermo_and_dict(defect_thermo, defect_dict)
+            self._compare_defect_thermo_and_dict(deepcopy(defect_thermo), defect_dict)
 
         print(defect_thermo)
         assert set(defect_thermo.defect_entries.keys()) == {
@@ -358,7 +361,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         # check methods run ok without errors:
         defect_thermo.to_json("test_thermo.json")
         reloaded_thermo = DefectThermodynamics.from_json("test_thermo.json")
-        self._compare_defect_thermos(defect_thermo, reloaded_thermo)
+        self._compare_defect_thermos(deepcopy(defect_thermo), reloaded_thermo)
         if_present_rm("test_thermo.json")
 
         defect_thermo.to_json()  # test default naming
@@ -371,11 +374,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         thermo_dict = defect_thermo.as_dict()
         dumpfn(thermo_dict, "test_thermo.json")
         reloaded_thermo = loadfn("test_thermo.json")
-        self._compare_defect_thermos(defect_thermo, reloaded_thermo)
+        self._compare_defect_thermos(deepcopy(defect_thermo), reloaded_thermo)
         if_present_rm("test_thermo.json")
 
         reloaded_thermo = DefectThermodynamics.from_dict(thermo_dict)
-        self._compare_defect_thermos(defect_thermo, reloaded_thermo)
+        self._compare_defect_thermos(deepcopy(defect_thermo), deepcopy(reloaded_thermo))
 
         assert all(
             i in defect_thermo.__repr__()
@@ -393,35 +396,211 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert isinstance(defect_thermo.all_stable_entries, list)
         assert isinstance(defect_thermo.all_unstable_entries, list)
 
-        df, output, symm_w = _run_func_and_capture_stdout_warnings(
-            defect_thermo.get_symmetries_and_degeneracies
-        )
-        assert not output
-        assert isinstance(df, pd.DataFrame)
-        df, conc_output, conc_w = _run_func_and_capture_stdout_warnings(
-            defect_thermo.get_equilibrium_concentrations
-        )
-        assert isinstance(df, pd.DataFrame)
-        if chempots is not None:
-            assert any(
-                "No chemical potential limit specified! Using" in str(warn.message) for warn in conc_w
+        # test runs fine with different options for ``get_symmetries_and_degeneracies``:
+        prev_df = None
+        for kwargs in [
+            {},  # straight up defaults
+            {"skip_formatting": True},
+            {"skip_formatting": True, "symprec": 0.1},
+            {"skip_formatting": True, "symprec": 1},
+        ]:
+            symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_symmetries_and_degeneracies, **kwargs
             )
+            assert not output, "No output expected for get_symmetries_and_degeneracies"
+            assert isinstance(symm_df, pd.DataFrame), "Expected a DataFrame"
+            if kwargs.get("skip_formatting", False):
+                print("Checking `q` format")
+                assert all(isinstance(i, int) for i in symm_df.index.get_level_values("q").unique())
 
-        df_or_list, form_e_output, form_e_w = _run_func_and_capture_stdout_warnings(
-            defect_thermo.get_formation_energies
-        )
-        assert isinstance(df_or_list, (pd.DataFrame, list))
-        for output in [form_e_output, conc_output]:
-            assert "Fermi level was not set, so using mid-gap Fermi level" in output
-        for w in [conc_w, form_e_w]:
+            print("Checking column and index names")
+            assert set(symm_df.columns) == {
+                "Site_Symm",
+                "Defect_Symm",
+                "g_Orient",
+                "g_Spin",
+                "g_Total",
+                "Mult",
+            }
+            assert set(symm_df.index.names) == {"Defect", "q"}
+
+            if prev_df is not None:
+                print("Comparing to previous symm_df")
+                # format q (charge) index as int for comparison to account for skip_formatting usage:
+                prev_df.index = prev_df.index.set_levels(prev_df.index.levels[1].astype(int), level=1)
+                if kwargs.get("symprec") != 1 and (
+                    defect_thermo.bulk_formula != "CdTe" or not kwargs.get("symprec")
+                ):
+                    assert symm_df.equals(prev_df)
+
+            prev_df = symm_df
+
+        # test runs fine with different options for ``get_formation_energies``:
+        prev_df = None
+        for kwargs in [
+            {},  # straight up defaults
+            {"fermi_level": 0.5},
+            {"skip_formatting": True},
+            {"skip_formatting": True, "fermi_level": 0.5},
+        ]:
+            df_or_list, form_e_output, form_e_w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_formation_energies, **kwargs
+            )
+            assert isinstance(df_or_list, (pd.DataFrame, list)), "Expected a DataFrame or list"
+            if not kwargs.get("fermi_level"):
+                print("Checking output for fermi_level not set")
+                assert "Fermi level was not set, so using mid-gap Fermi level" in form_e_output
+
             chempots_warning = any(
                 "No chemical potentials supplied, so using 0 for all chemical potentials"
                 in str(warn.message)
-                for warn in w
+                for warn in form_e_w
             )
+            print("Checking chempots_warning")
             assert chempots_warning == (chempots is None)
 
+            form_e_df = df_or_list if isinstance(df_or_list, pd.DataFrame) else pd.concat(df_or_list)
+            print("Checking column and index names")
+            assert set(form_e_df.columns) == {
+                "ΔEʳᵃʷ",
+                "qE_VBM",
+                "qE_F",
+                "Σμ_ref",
+                "Σμ_formal",
+                "E_corr",
+                "Eᶠᵒʳᵐ",
+                "Path",
+                "Δ[E_corr]",
+            }
+            assert set(form_e_df.index.names) == {"Defect", "q"}
+
+            if kwargs.get("skip_formatting", False):
+                print("Checking `q` format")
+                assert all(isinstance(i, int) for i in form_e_df.index.get_level_values("q").unique())
+
+            if prev_df is not None:
+                # format q (charge) index as int for comparison to account for skip_formatting usage:
+                for df_to_compare in [form_e_df, prev_df]:
+                    df_to_compare.index = df_to_compare.index.set_levels(
+                        df_to_compare.index.levels[1].astype(int), level=1
+                    )
+                for col in form_e_df.columns:
+                    if col not in [
+                        "qE_F",
+                        "Eᶠᵒʳᵐ",
+                    ]:  # only ones which change with fermi level
+                        print(f"Comparing {col} to previous form_e_df")
+                        assert form_e_df[col].equals(prev_df[col])
+
+                print("Comparing qE_F and Eᶠᵒʳᵐ to previous form_e_df")
+                assert form_e_df["qE_F"].equals(prev_df["qE_F"]) == (
+                    not kwargs.get("fermi_level", False)
+                    or all(i.charge_state == 0 for i in defect_thermo.defect_entries.values())
+                )
+                assert form_e_df["Eᶠᵒʳᵐ"].equals(prev_df["Eᶠᵒʳᵐ"]) == (
+                    not kwargs.get("fermi_level", False)
+                    or all(i.charge_state == 0 for i in defect_thermo.defect_entries.values())
+                )
+
+            if not kwargs.get("fermi_level"):
+                prev_df = form_e_df
+
+        # test runs fine with different options for ``get_equilibrium_concentrations``:
+        prev_df = None
+        for kwargs in [
+            {},  # straight up defaults
+            {"temperature": 550},
+            {"temperature": 150, "fermi_level": 0.5},
+            {"skip_formatting": True},
+            {"lean": True},
+            {"per_charge": False},
+            {"per_charge": False, "per_site": True},
+            {"skip_formatting": True, "per_charge": False, "per_site": True},
+            {"lean": True, "skip_formatting": True, "per_charge": False, "per_site": True},
+        ]:
+            df, conc_output, conc_w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_equilibrium_concentrations, **kwargs
+            )
+            assert isinstance(df, pd.DataFrame)
+            assert "Raw Concentrations" not in df.columns
+            if chempots is not None:
+                print("Checking output for chempots set")
+                assert any(
+                    "No chemical potential limit specified! Using" in str(warn.message) for warn in conc_w
+                )
+                warn_message = next(
+                    warn.message
+                    for warn in conc_w
+                    if "No chemical potential limit specified!" in str(warn.message)
+                )
+                default_limit = str(warn_message).split("Using ")[1].split(" for computing")[0]
+                new_df, new_conc_output, new_conc_w = _run_func_and_capture_stdout_warnings(
+                    defect_thermo.get_equilibrium_concentrations, limit=default_limit, **kwargs
+                )
+                assert not new_conc_w
+                assert new_df.equals(df)
+
+            if not kwargs.get("fermi_level"):
+                print("Checking output for fermi_level not set")
+                assert "Fermi level was not set, so using mid-gap Fermi level" in conc_output
+
+            chempots_warning = any(
+                "No chemical potentials supplied, so using 0 for all chemical potentials"
+                in str(warn.message)
+                for warn in conc_w
+            )
+            print("Checking chempots_warning")
+            assert chempots_warning == (chempots is None)
+
+            # assert formation energies unchanged vs prev_df:
+            if (
+                prev_df is not None
+                and prev_df.index.names == df.index.names
+                and not any(kwargs.get(i) for i in ["lean", "fermi_level"])
+                and all(kwargs.get(i, True) for i in ["per_charge"])
+            ):
+                print("Comparing to previous conc_df")
+                for df_to_compare in [df, prev_df]:
+                    df_to_compare.index = df_to_compare.index.set_levels(
+                        df_to_compare.index.levels[1].astype(int), level=1
+                    )
+                assert df["Formation Energy (eV)"].equals(prev_df["Formation Energy (eV)"])
+
+            if not any(kwargs.get(i) for i in ["lean", "fermi_level"]) and all(
+                kwargs.get(i, True) for i in ["per_charge"]
+            ):
+                prev_df = df
+
+            if kwargs.get("lean", False):
+                print("Checking lean columns and index names")
+                if kwargs.get("per_charge", True):
+                    assert set(df.columns) == {"Defect", "Charge", "Concentration (cm^-3)"}
+                    assert set(df.index.names) == {None}
+                else:
+                    assert set(df.columns) == {"Concentration (cm^-3)"}
+                    assert set(df.index.names) == {"Defect"}
+
+            if kwargs.get("skip_formatting", False):
+                print("Checking `Charge` and `Concentration...` formats")
+                if kwargs.get("per_charge", True):
+                    assert all(isinstance(i, int) for i in df.index.get_level_values("Charge").unique())
+                assert all(
+                    isinstance(i, float) for col in df.columns if "Concentration" in col for i in df[col]
+                )
+
+            print("Checking column and index names for different kwargs")
+            if kwargs.get("per_charge", True) and not kwargs.get("lean"):
+                assert set(df.index.names) == {"Defect", "Charge"}
+                assert "Charge State Population" in df.columns
+            elif not kwargs.get("lean"):
+                assert set(df.index.names) == {"Defect"}
+                assert "Charge State Population" not in df.columns
+                if kwargs.get("per_site", False):
+                    assert "Concentration (per site)" in df.columns
+                    assert "Concentration (cm^-3)" not in df.columns
+
         for w in [symm_w, conc_w]:  # the dub
+            print("Checking expected warnings")
             if defect_thermo.bulk_formula in ["SiSbTe3", "ZnS"]:  # periodicity-breaking -> warning:
                 assert any(
                     "The defect supercell has been detected to possibly have" in str(warn.message)
@@ -543,7 +722,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
 
         random_name, random_defect_entry = random.choice(list(defect_thermo.defect_entries.items()))
-        print(f"Checking editing DefectsGenerator, using {random_defect_entry.name}")
+        print(f"Checking editing DefectThermodynamics entries dict, using {random_defect_entry.name}")
         assert (
             defect_thermo[random_defect_entry.name]
             == defect_thermo.defect_entries[random_defect_entry.name]
@@ -1897,9 +2076,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "CdTe_defect_dict_old_names",
         ]:
             cdte_defect_dict = loadfn(os.path.join(self.module_path, f"data/{i}.json.gz"))
-            cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
+            cdte_defect_thermo = DefectThermodynamics(deepcopy(cdte_defect_dict))  # don't overwrite symm
             self._check_defect_thermo(cdte_defect_thermo, cdte_defect_dict)
 
+        # test "CdTe_defect_dict_old_names", regenerate thermo as calling symmetry methods above with
+        # different symprec changes the saved symmetries:
+        cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
         print(sym_degen_df)
         assert sym_degen_df.shape == (50, 6)
@@ -2135,7 +2317,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         cdte_defect_thermo.chempots = self.CdTe_chempots
         self._check_defect_thermo(
-            cdte_defect_thermo,
+            deepcopy(cdte_defect_thermo),
             cdte_defect_dict,
             chempots=self.CdTe_chempots,
             el_refs=self.CdTe_chempots["elemental_refs"],
@@ -2544,13 +2726,10 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         def _array_from_conc_df(name):
             return np.array(
                 [
-                    self.annealing_dict[temp]["conc_df"][
-                        (self.annealing_dict[temp]["conc_df"]["Defect"] == name)
-                        & (self.annealing_dict[temp]["conc_df"]["Charge"] == 0)
-                    ]["Total Concentration (cm^-3)"].to_numpy()[0]
+                    self.annealing_dict[temp]["conc_df"].loc[(name, 0), "Total Concentration (cm^-3)"]
                     for temp in self.anneal_temperatures
                 ]
-            )  # TODO: Need to uppdate here and in tutorial??
+            )
 
         plt.style.use(STYLE)
         f, ax = plt.subplots()
