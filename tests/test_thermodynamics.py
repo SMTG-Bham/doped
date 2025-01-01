@@ -21,7 +21,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import FermiDos
 
-from doped.analysis import guess_defect_position
+from doped.analysis import DefectsParser, guess_defect_position
 from doped.generation import _sort_defect_entries
 from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
 from doped.utils.parsing import _get_defect_supercell_bulk_site_coords, get_vasprun
@@ -86,6 +86,35 @@ def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
     print(f"Result: {result}\n")
 
     return result, output, w
+
+
+def _compare_attributes(obj1, obj2, exclude=None):
+    """
+    Check that two objects are equal by comparing their public
+    attributes/properties.
+
+    Templated from the version in ``test_generation.py`` and updated
+    for ``DefectThermodynamics`` (i.e. handling ``bulk_dos`` attribute).
+    """
+    if exclude is None:
+        exclude = set()  # Create an empty set if no exclusions
+
+    for attr in dir(obj1):
+        if attr.startswith("_") or attr in exclude or callable(getattr(obj1, attr)):
+            continue  # Skip private, excluded, and callable attributes
+
+        print(attr)
+        val1 = getattr(obj1, attr)
+        val2 = getattr(obj2, attr)
+
+        if isinstance(val1, np.ndarray):
+            assert np.allclose(val1, val2)
+        elif attr == "bulk_dos" and val1 is not None:
+            assert val1.as_dict() == val2.as_dict()
+        elif isinstance(val1, (list, tuple)) and all(isinstance(i, np.ndarray) for i in val1):
+            assert all(np.array_equal(i, j) for i, j in zip(val1, val2)), "List of arrays do not match"
+        else:
+            assert val1 == val2
 
 
 class DefectThermodynamicsSetupMixin(unittest.TestCase):
@@ -187,10 +216,6 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         # )  # not used twice yet
 
-        # cls.CdTe_fermi_dos = get_fermi_dos(
-        #     os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
-        # )  # not used twice yet
-
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
@@ -219,6 +244,84 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             round(np.prod(entry.sc_defect_frac_coords), 3)
             for entry in defect_thermo2.defect_entries.values()
         }
+
+        _compare_attributes(defect_thermo1, defect_thermo2)
+
+        print("Comparing default DataFrame function outputs")
+        for kwargs in [
+            {},  # straight up defaults
+            {"skip_formatting": True},
+            {"skip_formatting": True, "symprec": 0.1},
+            {"skip_formatting": True, "symprec": 1},
+        ]:
+            symm_df1, output1, symm_w1 = _run_func_and_capture_stdout_warnings(
+                defect_thermo1.get_symmetries_and_degeneracies, **kwargs
+            )
+            symm_df2, output2, symm_w2 = _run_func_and_capture_stdout_warnings(
+                defect_thermo2.get_symmetries_and_degeneracies, **kwargs
+            )
+            assert symm_df1.equals(symm_df2)
+            assert output1 == output2
+            assert {str(warning.message for warning in symm_w1)} == {
+                str(warning.message for warning in symm_w2)
+            }
+
+        for kwargs in [
+            {},  # straight up defaults
+            {"fermi_level": 0.5},
+            {"skip_formatting": True},
+            {"skip_formatting": True, "fermi_level": 0.5},
+        ]:
+            df_or_list1, form_e_output1, form_e_w1 = _run_func_and_capture_stdout_warnings(
+                defect_thermo1.get_formation_energies, **kwargs
+            )
+            df_or_list2, form_e_output2, form_e_w2 = _run_func_and_capture_stdout_warnings(
+                defect_thermo2.get_formation_energies, **kwargs
+            )
+            if isinstance(df_or_list1, pd.DataFrame):
+                assert df_or_list1.equals(df_or_list2)
+            else:
+                assert all(i.equals(j) for i, j in zip(df_or_list1, df_or_list2))
+            assert form_e_output1 == form_e_output2
+            assert {str(warning.message for warning in form_e_w1)} == {
+                str(warning.message for warning in form_e_w2)
+            }
+
+        for kwargs in [
+            {},  # straight up defaults
+            {"temperature": 550},
+            {"temperature": 150, "fermi_level": 0.5},
+            {"skip_formatting": True},
+            {"lean": True},
+            {"per_charge": False},
+            {"per_charge": False, "per_site": True},
+            {"skip_formatting": True, "per_charge": False, "per_site": True},
+            {"lean": True, "skip_formatting": True, "per_charge": False, "per_site": True},
+        ]:
+            df1, conc_output1, conc_w1 = _run_func_and_capture_stdout_warnings(
+                defect_thermo1.get_equilibrium_concentrations, **kwargs
+            )
+            df2, conc_output2, conc_w2 = _run_func_and_capture_stdout_warnings(
+                defect_thermo2.get_equilibrium_concentrations, **kwargs
+            )
+            assert df1.equals(df2)
+            assert conc_output1 == conc_output2
+            assert {str(warning.message for warning in conc_w1)} == {
+                str(warning.message for warning in conc_w2)
+            }
+
+        random_defect_entry_names = random.sample(
+            list(defect_thermo1.defect_entries.keys()), min(7, len(defect_thermo1.defect_entries))
+        )
+        print(
+            f"Comparing get_formation_energy() outputs for some random defect entries: "
+            f"{random_defect_entry_names}"
+        )
+        for name in random_defect_entry_names:
+            assert defect_thermo1.get_formation_energy(name) == defect_thermo2.get_formation_energy(name)
+            assert defect_thermo1.get_formation_energy(
+                name, fermi_level=0.25
+            ) == defect_thermo2.get_formation_energy(name, fermi_level=0.25)
 
     def _check_defect_thermo(
         self,
@@ -2057,6 +2160,37 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             else:
                 assert list(sym_degen_df.iloc[i]) == row[2:]
 
+    def test_defect_thermo_direct_from_parsing(self):
+        """
+        Test ``DefectThermodynamics`` directly from ``DefectsParser`` parsing
+        (i.e. before any saving/loading to/from ``json``).
+        """
+        dp = DefectsParser(self.CdTe_EXAMPLE_DIR, dielectric=9.13)
+        thermo_from_dp = dp.get_defect_thermodynamics()
+        self._check_defect_thermo(thermo_from_dp, dp.defect_dict)  # checks and compares attributes
+
+        thermo_from_dp.to_json("test_thermo_from_dp.json")
+        reloaded_thermo_from_dp = loadfn("test_thermo_from_dp.json")
+        for thermo, dp_type in [(thermo_from_dp, "orig"), (reloaded_thermo_from_dp, "reloaded")]:
+            # previously this ``dataclass`` subclass object was not being serialized correctly (being
+            # reloaded just as a dict) due to ``asdict()`` usage:
+            entry = next(
+                i
+                for i in thermo.defect_entries.values()
+                if "kumagai_charge_correction" in i.corrections_metadata
+            )
+            assert str(
+                type(
+                    entry.corrections_metadata["kumagai_charge_correction"][
+                        "pydefect_ExtendedFnvCorrection"
+                    ]
+                )
+            ) == (
+                "<class 'pydefect.corrections.efnv_correction.ExtendedFnvCorrection'>"
+            ), f"Checking {dp_type}"
+
+        if_present_rm("test_thermo_from_dp.json")
+
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(
             os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_thermo_wout_meta.json.gz")
@@ -2531,6 +2665,3 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
 # TODO: Test all DefectThermodynamics methods (doping windows/limits, etc)
 # TODO: Test check_compatibility
-# TODO: Test how attributes change when reloaded from JSON (e.g.
-#  entry.corrections_metadata["kumagai_charge_correction"]["pydefect_ExtendedFnvCorrection"] currently
-#  changes irreversibly to dict due to being a dataclass)
