@@ -1063,7 +1063,7 @@ class DefectEntry(thermo.DefectEntry):
         temperature, assuming the dilute limit approximation.
 
         Note that these are the `equilibrium` defect concentrations!
-        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()`` can
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()`` can
         instead be used to calculate the Fermi level and defect concentrations
         for a material grown/annealed at higher temperatures and then cooled
         (quenched) to room/operating temperature (where defect concentrations

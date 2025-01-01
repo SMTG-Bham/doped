@@ -649,7 +649,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert "No bulk DOS calculation (`bulk_dos`) provided" in str(exc.value)
 
         with pytest.raises(ValueError) as exc:
-            defect_thermo.get_quenched_fermi_level_and_concentrations()
+            defect_thermo.get_fermi_level_and_concentrations()
         assert "No bulk DOS calculation (`bulk_dos`) provided" in str(exc.value)
 
         if defect_thermo.chempots is None:
@@ -2695,7 +2695,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 e_conc,
                 h_conc,
                 conc_df,
-            ) = cls.defect_thermo.get_quenched_fermi_level_and_concentrations(
+            ) = cls.defect_thermo.get_fermi_level_and_concentrations(
                 # quenching to 300K (default)
                 cls.fermi_dos,
                 limit="Te-rich",
@@ -2828,7 +2828,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                     e_conc,
                     h_conc,
                     conc_df,
-                ) = self.defect_thermo.get_quenched_fermi_level_and_concentrations(
+                ) = self.defect_thermo.get_fermi_level_and_concentrations(
                     # quenching to 300K (default)
                     bulk_dos=bulk_dos,
                     limit="Te-rich",

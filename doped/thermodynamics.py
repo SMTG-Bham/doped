@@ -546,7 +546,7 @@ class DefectThermodynamics(MSONable):
                 Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
                 Can also be provided later when using ``get_equilibrium_fermi_level()``,
-                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``get_fermi_level_and_concentrations`` etc, or set using
                 ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
 
                 Usually this is a static calculation with the `primitive` cell of the bulk
@@ -1340,7 +1340,7 @@ class DefectThermodynamics(MSONable):
         ``pymatgen`` ``Vasprun`` object or path to the  ``vasprun.xml(.gz)``
         output of a bulk DOS calculation in VASP.
         Can also be provided later when using ``get_equilibrium_fermi_level()``,
-        ``get_quenched_fermi_level_and_concentrations`` etc.
+        ``get_fermi_level_and_concentrations`` etc.
 
         Usually this is a static calculation with the `primitive` cell of the bulk
         material, with relatively dense `k`-point sampling (especially for materials
@@ -2733,7 +2733,7 @@ class DefectThermodynamics(MSONable):
         dilute limit approximation.
 
         Note that these are the `equilibrium` defect concentrations!
-        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()``
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()``
         can instead be used to calculate the Fermi level and defect
         concentrations for a material grown/annealed at higher temperatures
         and then cooled (quenched) to room/operating temperature (where defect
@@ -2990,7 +2990,7 @@ class DefectThermodynamics(MSONable):
         default, unless ``bulk_band_gap_vr`` is set during defect parsing.
 
         Note that this assumes `equilibrium` defect concentrations!
-        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()``
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()``
         can instead be used to calculate the Fermi level and defect
         concentrations for a material grown/annealed at higher temperatures
         and then cooled (quenched) to room/operating temperature (where defect
@@ -3152,7 +3152,7 @@ class DefectThermodynamics(MSONable):
 
         return eq_fermi_level
 
-    def get_quenched_fermi_level_and_concentrations(
+    def get_fermi_level_and_concentrations(
         self,
         bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
         annealing_temperature: float = 1000,
@@ -3601,6 +3601,11 @@ class DefectThermodynamics(MSONable):
         Returns an iterator over the ``defect_entries`` dictionary.
         """
         return iter(self.defect_entries)
+
+
+DefectThermodynamics.get_quenched_fermi_level_and_concentrations = (
+    DefectThermodynamics.get_fermi_level_and_concentrations
+)  # for backwards compatibility
 
 
 def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: Optional[str] = None):
@@ -4616,7 +4621,7 @@ class FermiSolver(MSONable):
 
         Typically not intended for direct usage, as the same functionality
         is provided by
-        ``DefectThermodynamics.get_quenched_fermi_level_and_concentrations()``.
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()``.
         Rather this is used internally to provide a unified interface for both
         backends, within the ``scan_...`` functions.
 
@@ -4764,7 +4769,7 @@ class FermiSolver(MSONable):
                 electrons,
                 holes,
                 concentrations,
-            ) = self.defect_thermodynamics.get_quenched_fermi_level_and_concentrations(  # type: ignore
+            ) = self.defect_thermodynamics.get_fermi_level_and_concentrations(  # type: ignore
                 chempots=single_chempot_dict,
                 el_refs=el_refs,
                 annealing_temperature=annealing_temperature,
