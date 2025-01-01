@@ -48,7 +48,7 @@ from doped.utils.parsing import (
     get_vasprun,
 )
 from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
-from doped.utils.symmetry import _get_all_equiv_sites, get_sga
+from doped.utils.symmetry import _get_all_equiv_sites, get_primitive_structure, get_sga
 
 if TYPE_CHECKING:
     # from pymatgen.util.typing import PathLike
@@ -2660,7 +2660,7 @@ class DefectThermodynamics(MSONable):
             defect_entry._parse_and_set_degeneracies(symprec=symprec)
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
-                    len(defect_entry.defect.structure.to_primitive())  # spglib primitive
+                    len(get_primitive_structure(defect_entry.defect.structure))  # spglib primitive
                     / len(defect_entry.defect.structure)
                 )
 
