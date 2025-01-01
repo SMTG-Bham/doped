@@ -400,7 +400,7 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
 
 
-def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):
+def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
@@ -408,7 +408,7 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
         sga = get_sga(struct, symprec=symprec)
         symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
 
-    dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
+    dummy_site = PeriodicSite(species, frac_coords, struct.lattice)
     x_sites = []
     for symm_op in symm_ops:
         x_site = apply_symm_op_to_site(
@@ -428,9 +428,9 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
 
 
 def _get_symm_dataset_of_struc_with_all_equiv_sites(
-    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
 ):
-    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops, dist_tol=dist_tol)
+    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops, dist_tol=dist_tol, species=species)
     struct_with_all_X = _get_struct_with_all_X(struct, unique_sites)
     sga_with_all_X = get_sga(struct_with_all_X, symprec=symprec)
     return sga_with_all_X.get_symmetry_dataset(), unique_sites
@@ -1533,7 +1533,11 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
         str: Defect point symmetry.
     """
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
+        defect.site.frac_coords,
+        defect.structure,
+        symm_ops=symm_ops,
+        symprec=symprec,
+        species=defect.site.species_string if defect.defect_type == DefectType.Interstitial else "X",
     )
     spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
     if spglib_point_group_symbol is not None:
@@ -1707,6 +1711,11 @@ def point_symmetry_from_defect_entry(
                     symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
                     symprec=symprec,
                     dist_tol=symprec,
+                    species=(
+                        defect_entry.defect.site.species_string
+                        if defect_entry.defect.defect_type == DefectType.Interstitial
+                        else "X"
+                    ),
                 )
 
                 # Note:
@@ -1836,6 +1845,11 @@ def _check_relaxed_defect_symmetry_determination(
             symm_ops=bulk_symm_ops,
             symprec=symprec,
             dist_tol=symprec,
+            species=(
+                defect_entry.defect.site.species_string
+                if defect_entry.defect.defect_type == DefectType.Interstitial
+                else "X"
+            ),
         )
         bulk_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
@@ -2038,9 +2052,15 @@ def point_symmetry_from_site(
             species="X", coords=site, lattice=structure.lattice, coords_are_cartesian=coords_are_cartesian
         )
 
-    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec
-    )
+    try:
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species=site.species_string
+        )
+    except SymmetryUndeterminedError:
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species="X"
+        )
+
     return schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
 
