@@ -17,11 +17,13 @@ from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatc
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import IStructure, Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmetryUndeterminedError
+from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from sympy import Eq, simplify, solve, symbols
 
 from doped.core import DefectEntry
+from doped.utils.efficiency import IStructure as doped_IStructure
+from doped.utils.efficiency import SpacegroupAnalyzer
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
@@ -242,8 +244,6 @@ def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = Fal
         If ``return_symprec`` is ``True``, returns a tuple of the symmetry
         analyzer object and the final ``symprec`` used.
     """
-    from doped.utils.efficiency import IStructure as doped_IStructure
-
     IStructure.__hash__ = doped_IStructure.__hash__
 
     return _cache_ready_get_sga(struct, symprec=symprec, return_symprec=return_symprec)
@@ -262,10 +262,9 @@ def _cache_ready_get_sga(struct: Structure, symprec: float = 0.01, return_sympre
             sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
         if sga:
             try:
-                _prim_struct = sga.get_primitive_standard_structure()
+                _detected_symmetry = sga._get_symmetry()
             except ValueError:  # symmetry determination failed
-                raise  # TODO: is there an alternative we can test??
-                # continue
+                continue
             if return_symprec:
                 return sga, trial_symprec
             return sga
@@ -1012,7 +1011,34 @@ def get_primitive_structure(
             Additional keyword arguments to pass to the ``get_sga`` function
             (e.g. ``symprec`` etc).
     """
-    candidate_prim_structs = _get_candidate_prim_structs(structure, **kwargs)
+    # make inputs hashable, then call ``_cache_ready_get_primitive_structure``:
+    IStructure.__hash__ = doped_IStructure.__hash__
+    cache_ready_ignored_species = tuple(ignored_species) if ignored_species is not None else None
+    cache_ready_kwargs = tuple(kwargs.items()) if kwargs else None
+
+    return _cache_ready_get_primitive_structure(
+        structure,
+        ignored_species=cache_ready_ignored_species,
+        clean=clean,
+        return_all=return_all,
+        kwargs=cache_ready_kwargs,
+    )
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_primitive_structure(
+    structure: Structure,
+    ignored_species: Optional[tuple] = None,
+    clean: bool = True,
+    return_all: bool = False,
+    kwargs: Optional[tuple] = None,
+):
+    """
+    ``get_primitive_structure`` code, with hashable input arguments for caching
+    (using ``Structure`` hash function from ``doped.utils.efficiency``).
+    """
+    kwargs_dict = dict(kwargs) if kwargs is not None else {}
+    candidate_prim_structs = _get_candidate_prim_structs(structure, **kwargs_dict)
 
     if ignored_species is not None:
         pruned_possible_prim_structs = [
