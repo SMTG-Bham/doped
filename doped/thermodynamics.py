@@ -2873,7 +2873,7 @@ class DefectThermodynamics(MSONable):
                     fermi_level=fermi_level,
                     vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
                     temperature=temperature,
-                    per_site=per_site,
+                    per_site=False,  # only concentration in cm^-3 here
                     formation_energy=formation_energy,  # reduce compute times
                 )
 
@@ -2897,11 +2897,22 @@ class DefectThermodynamics(MSONable):
                         "Defect": defect_name,
                         "Charge": charge,
                         "Formation Energy (eV)": round(formation_energy, 3),
-                        "Raw Concentration": raw_concentration,
+                        "Raw Concentration": (
+                            raw_concentration / defect_entry.bulk_site_concentration
+                            if (per_site and not per_charge)
+                            else raw_concentration  # if per_site but per_charge, keep as cm^-3 to avoid
+                            # rounding differences in charge state population
+                        ),
                         (
                             "Concentration (per site)" if per_site else "Concentration (cm^-3)"
                         ): _format_concentration(
-                            raw_concentration, per_site=per_site, skip_formatting=skip_formatting
+                            (
+                                raw_concentration / defect_entry.bulk_site_concentration
+                                if per_site
+                                else raw_concentration
+                            ),
+                            per_site=per_site,
+                            skip_formatting=skip_formatting,
                         ),
                     }
                 )
@@ -2915,7 +2926,7 @@ class DefectThermodynamics(MSONable):
                 return conc_df  # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
 
             conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
-                "Raw Concentration"
+                "Raw Concentration"  # here Raw Concentration is in cm^-3
             ].transform("sum")
             conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
                 lambda x: f"{x:.2%}"
@@ -3546,8 +3557,8 @@ class DefectThermodynamics(MSONable):
             per_site_factors = (
                 per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
             )
-            conc_df["Concentration (per site)"] = conc_df["Concentration (cm^-3)"] * per_site_factors
-            conc_df = conc_df.drop(columns=["Concentration (cm^-3)"])
+            conc_df["Concentration (cm^-3)"] *= per_site_factors  # convert to per site & keep column order
+            conc_df = conc_df.rename(columns={"Concentration (cm^-3)": "Concentration (per site)"})
 
             if not skip_formatting:
                 conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
@@ -3695,7 +3706,7 @@ def _add_effective_dopant_concentration(
     eff_dopant_df = pd.DataFrame(
         {
             "Defect": "Dopant",
-            "Charge": np.sign(effective_dopant_concentration),
+            "Charge": int(np.sign(effective_dopant_concentration)),
             "Formation Energy (eV)": "N/A",
             "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
             "Charge State Population": "100.0%",
@@ -3711,6 +3722,7 @@ def _add_effective_dopant_concentration(
 
     columns_to_drop = [col for col in eff_dopant_df.columns if col not in conc_df.columns]
     eff_dopant_df = eff_dopant_df.drop(columns=columns_to_drop)
+    eff_dopant_df = eff_dopant_df[conc_df.columns]  # ensure it matches the original order
     return pd.concat([conc_df, eff_dopant_df], ignore_index=lean)
 
 
