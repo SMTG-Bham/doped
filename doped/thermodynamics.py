@@ -3653,7 +3653,7 @@ def _add_effective_dopant_concentration(
     lean = all(i in conc_df.columns for i in ["Defect", "Charge"])
     eff_dopant_df = pd.DataFrame(
         {
-            "Defect": "Effective Dopant",
+            "Defect": "Dopant",
             "Charge": np.sign(effective_dopant_concentration),
             "Formation Energy (eV)": "N/A",
             "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
@@ -4093,8 +4093,10 @@ def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max
 
 
 def _ensure_list(
-    var: Optional[Union[float, int, list[float]]] = None
-) -> Optional[list[Union[float, int]]]:
+    var: Optional[Union[float, int, range, list, np.ndarray]] = None
+) -> Optional[Union[list[Union[float, int]], np.ndarray[Union[float, int]]]]:
+    if isinstance(var, range):
+        return list(var)
     return [var] if isinstance(var, (int, float)) else var
 
 
@@ -5070,7 +5072,7 @@ class FermiSolver(MSONable):
                     free_defects=free_defects,
                     fix_charge_states=fix_charge_states,
                 )
-                for annealing_temperature, quenched_temperature, temperature in tqdm(temp_args)
+                for annealing_temperature, quenched_temperature, temperature in tqdm(list(temp_args))
             ]
         )
 
@@ -5710,7 +5712,7 @@ class FermiSolver(MSONable):
             {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
             for _idx, chempot_series in grid.iterrows()
         ]
-        self.scan_chempots(
+        return self.scan_chempots(
             chempots=chempot_dict_list,
             el_refs=el_refs,
             annealing_temperature=annealing_temperature,
@@ -5969,7 +5971,10 @@ class FermiSolver(MSONable):
 
             # get midpoints of starting_line and target_chempot, and use these:
             midpoint_chempots = [
-                {k: (starting_line_chempot_dict[k] + v) / 2 for k, v in target_chempot.iloc[0].items()}
+                {
+                    k.replace("μ_", ""): (starting_line_chempot_dict[k.replace("μ_", "")] + v) / 2
+                    for k, v in target_chempot.iloc[0].items()
+                }
                 for starting_line_chempot_dict in [starting_line[0], starting_line[-1]]
             ]
             # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
@@ -5984,7 +5989,9 @@ class FermiSolver(MSONable):
                 n_points=n_points,
             )
 
-        return target_df  # TODO: Check and update tests, previously wrongly within the while block
+        return target_df
+        # TODO: Check and update tests, previously wrongly within the while block (but tests passed
+        #  because only needed one round for CdTe test case, find better test)
 
     def _min_max_X_grid(
         self,
@@ -6365,12 +6372,16 @@ class FermiSolver(MSONable):
         decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
         additional_data = {}
         for k, v in decomposed_conc_dict.items():
-            if k not in all_free_defects:
+            if not any(k.startswith(i) for i in all_free_defects):
                 for k1, v1 in v.items():
                     additional_data[k + "_" + str(k1)] = v1
         initial_conc_dict.update(additional_data)
 
-        fixed_concs = {k: v for k, v in initial_conc_dict.items() if k not in all_free_defects}
+        fixed_concs = {
+            k: v
+            for k, v in initial_conc_dict.items()
+            if not any(k.startswith(i) for i in all_free_defects)
+        }
 
         # Apply the fixed concentrations
         for defect_species in defect_system.defect_species:

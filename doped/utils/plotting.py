@@ -262,7 +262,7 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
 
 def format_defect_name(
     defect_species: str,
-    include_site_info_in_name: bool,
+    include_site_info_in_name: bool = False,
     wout_charge: bool = False,
 ) -> Optional[str]:
     r"""
@@ -277,10 +277,10 @@ def format_defect_name(
             Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``)
         include_site_info_in_name (:obj:`bool`):
             Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
-            or ``"$Cd_{i_{C3v}}^{0}$"``\).
+            or ``"$Cd_{i_{C3v}}^{0}$"``\). Defaults to ``False``.
         wout_charge (:obj:`bool`, optional):
-            Whether the charge state is included in the defect_species name.
-            Defaults to False.
+            Whether to exclude the charge state from the formatted
+            ``defect_species`` name. Defaults to ``False``.
 
     Returns:
         :obj:`str`:

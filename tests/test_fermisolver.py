@@ -965,7 +965,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     @patch("doped.thermodynamics.tqdm")
     def test_scan_chemical_potential_grid(self, mock_tqdm):
         """
-        Test scan_chemical_potential_grid method.
+        Test ``scan_chemical_potential_grid`` method.
         """
         mock_tqdm.side_effect = lambda x: x
 
@@ -993,9 +993,11 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
 
     def test_scan_chemical_potential_grid_no_chempots(self):
         """
-        Test that ValueError is raised when no chempots are provided and none
-        are set.
+        Test that ``ValueError`` is raised when no chempots are provided and
+        none are set.
         """
+        # TODO: Check if changing to deepcopy and remove is significantly slower, if not do this instead
+        # (less code)
         # Temporarily remove chempots from defect_thermodynamics
         original_chempots = self.defect_thermodynamics.chempots
         self.defect_thermodynamics.chempots = None
@@ -1009,6 +1011,99 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
 
         # Restore original chempots
         self.defect_thermodynamics.chempots = original_chempots
+
+    def test_scan_chemical_potential_grid_wrong_chempots(self):
+        """
+        Test the error message when chemical potentials in the wrong format
+        (i.e. just one user-provided chemical potential limit) are provided.
+        """
+        # Temporarily remove chempots from defect_thermodynamics
+        original_chempots = self.defect_thermodynamics.chempots
+        self.defect_thermodynamics.chempots = None
+
+        with pytest.raises(ValueError) as exc:
+            self.solver_doped.scan_chemical_potential_grid(
+                n_points=5,
+                chempots={"Cu": -0.5, "Si": -1.0, "Se": 2},
+                annealing_temperature=800,
+                quenched_temperature=300,
+            )
+        print(str(exc.value))
+        assert (
+            "Only one chemical potential limit is present in "
+            "`chempots`/`self.defect_thermodynamics.chempots`, which makes no sense for a chemical "
+            "potential grid scan"
+        ) in str(exc.value)
+
+        # Restore original chempots
+        self.defect_thermodynamics.chempots = original_chempots
+
+
+# TODO: Add explicit type check for `min_max_X` functions, like:
+# from typing import Callable
+#
+# # Define a callable signature
+# MinMaxCall = Callable[
+#     [
+#         float,  # target
+#         str,  # min_or_max
+#         dict,  # chempots
+#         float,  # annealing_temperature
+#         float,  # quenched_temperature
+#         float,  # temperature
+#         float,  # tolerance
+#         int,  # n_points
+#         float,  # effective_dopant_concentration
+#         dict,  # fix_charge_states
+#         dict,  # fixed_defects
+#         dict,  # free_defects
+#     ],
+#     float,  # return type
+# ]
+#
+#
+# # Example functions adhering to the same signature
+# def _min_max_X_line(
+#         target: float,
+#         min_or_max: str,
+#         chempots: dict,
+#         annealing_temperature: float,
+#         quenched_temperature: float,
+#         temperature: float,
+#         tolerance: float,
+#         n_points: int,
+#         effective_dopant_concentration: float,
+#         fix_charge_states: dict,
+#         fixed_defects: dict,
+#         free_defects: dict,
+# ) -> float:
+#     # Implementation here
+#     return 0.0
+#
+#
+# def _min_max_X_grid(
+#         target: float,
+#         min_or_max: str,
+#         chempots: dict,
+#         annealing_temperature: float,
+#         quenched_temperature: float,
+#         temperature: float,
+#         tolerance: float,
+#         n_points: int,
+#         effective_dopant_concentration: float,
+#         fix_charge_states: dict,
+#         fixed_defects: dict,
+#         free_defects: dict,
+# ) -> float:
+#     # Implementation here
+#     return 0.0
+#
+#
+# # Assign functions to the Callable type to enforce signature matching
+# func_line: MinMaxCall = _min_max_X_line
+# func_grid: MinMaxCall = _min_max_X_grid
+#
+# # Now you can use mypy to ensure both functions' signatures match the `MinMaxCall` type.
 
 
 if __name__ == "__main__":
