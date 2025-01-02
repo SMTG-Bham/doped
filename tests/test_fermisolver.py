@@ -7,6 +7,7 @@ import itertools
 import os
 import unittest
 import warnings
+from copy import deepcopy
 
 # Check if py_sc_fermi is available
 from importlib.util import find_spec
@@ -886,17 +887,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     def test_parse_and_check_grid_like_chempots_invalid_chempots(self):
         """
-        Test that ValueError is raised when chempots is None.
+        Test that ``ValueError`` is raised when ``chempots`` is ``None``.
         """
         # Temporarily remove chempots from defect_thermodynamics
-        original_chempots = self.defect_thermodynamics.chempots
-        self.defect_thermodynamics.chempots = None
+        solver = deepcopy(self.solver_doped)
+        solver.defect_thermodynamics.chempots = None
 
         with pytest.raises(ValueError):
-            self.solver_doped._parse_and_check_grid_like_chempots()
-
-        # Restore original chempots
-        self.defect_thermodynamics.chempots = original_chempots
+            solver._parse_and_check_grid_like_chempots()
 
 
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
@@ -991,52 +989,34 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         ].drop_duplicates()
         assert len(unique_chempot_sets) > 0
 
-    def test_scan_chemical_potential_grid_no_chempots(self):
-        """
-        Test that ``ValueError`` is raised when no chempots are provided and
-        none are set.
-        """
-        # TODO: Check if changing to deepcopy and remove is significantly slower, if not do this instead
-        # (less code)
-        # Temporarily remove chempots from defect_thermodynamics
-        original_chempots = self.defect_thermodynamics.chempots
-        self.defect_thermodynamics.chempots = None
-
-        with pytest.raises(ValueError):
-            self.solver_doped.scan_chemical_potential_grid(
-                n_points=5,
-                annealing_temperature=800,
-                quenched_temperature=300,
-            )
-
-        # Restore original chempots
-        self.defect_thermodynamics.chempots = original_chempots
-
     def test_scan_chemical_potential_grid_wrong_chempots(self):
         """
-        Test the error message when chemical potentials in the wrong format
-        (i.e. just one user-provided chemical potential limit) are provided.
+        Test that ``ValueError`` is raised when no chempots are provided and
+        None are available in ``self.defect_thermodynamics``, or only a single
+        limit is provided.
         """
         # Temporarily remove chempots from defect_thermodynamics
-        original_chempots = self.defect_thermodynamics.chempots
-        self.defect_thermodynamics.chempots = None
+        solver = deepcopy(self.solver_doped)
+        solver.defect_thermodynamics.chempots = None
 
-        with pytest.raises(ValueError) as exc:
-            self.solver_doped.scan_chemical_potential_grid(
-                n_points=5,
-                chempots={"Cu": -0.5, "Si": -1.0, "Se": 2},
-                annealing_temperature=800,
-                quenched_temperature=300,
-            )
-        print(str(exc.value))
-        assert (
-            "Only one chemical potential limit is present in "
-            "`chempots`/`self.defect_thermodynamics.chempots`, which makes no sense for a chemical "
-            "potential grid scan"
-        ) in str(exc.value)
-
-        # Restore original chempots
-        self.defect_thermodynamics.chempots = original_chempots
+        for chempot_kwargs in [
+            {},
+            {"chempots": {"Cu": -0.5, "Si": -1.0, "Se": 2}},
+        ]:
+            print(f"Testing with {chempot_kwargs}")
+            with pytest.raises(ValueError) as exc:
+                solver.scan_chemical_potential_grid(
+                    n_points=5,
+                    annealing_temperature=800,
+                    quenched_temperature=300,
+                    **chempot_kwargs,
+                )
+            print(str(exc.value))
+            assert (
+                "Only one chemical potential limit is present in "
+                "`chempots`/`self.defect_thermodynamics.chempots`, which makes no sense for a chemical "
+                "potential grid scan"
+            ) in str(exc.value)
 
 
 # TODO: Add explicit type check for `min_max_X` functions, like:
