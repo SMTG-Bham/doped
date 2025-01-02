@@ -28,7 +28,7 @@ from doped.analysis import (
 )
 from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
-from doped.utils.eigenvalues import get_eigenvalue_analysis
+from doped.utils.eigenvalues import get_eigenvalue_analysis, is_shallow
 from doped.utils.parsing import (
     Vasprun,
     get_defect_type_and_composition_diff,
@@ -2913,6 +2913,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert not any(
             [bes.has_donor_phs, bes.has_occupied_localized_state, bes.has_unoccupied_localized_state]
         )
+        assert is_shallow(dp.defect_dict["v_Cu_0"])
 
         print("Testing v_Cu_0 with plot = False")
         bes2 = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis(

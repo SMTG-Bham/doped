@@ -736,3 +736,22 @@ def get_eigenvalue_analysis(
         emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
 
     return bes, fig
+
+
+def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
+    """
+    Return whether a ``DefectEntry`` is determined to be a shallow (perturbed
+    host) state, based on ``pydefect`` eigenvalue analysis.
+
+    Args:
+        defect_entry (DefectEntry):
+            ``doped`` ``DefectEntry`` object.
+        default (bool):
+            Default value to return if the eigenvalue analysis fails
+            (e.g. if eigenvalue data is not present).
+            Default is ``False``.
+    """
+    try:
+        return defect_entry.get_eigenvalue_analysis(plot=False).is_shallow
+    except Exception:
+        return default
