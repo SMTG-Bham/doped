@@ -1022,7 +1022,7 @@ class DefectsParser:
 
             for error, defect_list in parsing_errors_dict.items():
                 if defect_list:
-                    if len(defect_list) > 1:
+                    if len(set(defect_list)) > 1:
                         warnings.warn(
                             f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
                         )
@@ -1048,9 +1048,9 @@ class DefectsParser:
 
             for warning, defect_name_list in duplicate_warnings.items():
                 # remove None and don't warn if later encountered parsing error (already warned)
-                defect_list = [defect_name for defect_name in defect_name_list if defect_name]
-                if defect_list:
-                    warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
+                defect_set = {defect_name for defect_name in defect_name_list if defect_name}
+                if defect_set:
+                    warnings.warn(f"Defects: {defect_set} each encountered the same warning:\n{warning}")
 
         if not parsed_defect_entries:
             subfolder_string = f" and `subfolder`: '{self.subfolder}'" if self.subfolder != "." else ""

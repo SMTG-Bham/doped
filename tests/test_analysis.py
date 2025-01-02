@@ -85,7 +85,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         self.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
-        self.Sb2Si2Te6_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
+        self.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
 
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
@@ -98,7 +98,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "SiSbTe3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json.gz"))
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json.gz"))
@@ -531,7 +531,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert any(
             f"Defects: {i} each encountered the same warning:" in str(warn.message)
             for warn in w
-            for i in ["['v_Cd_-2', 'v_Cd_-1']", "['v_Cd_-1', 'v_Cd_-2']"]
+            for i in ["{'v_Cd_-2', 'v_Cd_-1'}", "{'v_Cd_-1', 'v_Cd_-2'}"]
         )
 
         for i in [
@@ -804,11 +804,12 @@ class DefectsParsingTestCase(unittest.TestCase):
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
         dp, w = _create_dp_and_capture_warnings(
-            self.Sb2Si2Te6_DATA_DIR,
+            self.Sb2Si2Te6_EXAMPLE_DIR,
             dielectric=self.Sb2Si2Te6_dielectric,
             json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
             parse_projected_eigen=False,
         )
+        assert any("Defects: {'v_Sb_-3'} each encountered" in str(warning.message) for warning in w)
         assert any(
             "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
             in str(warning.message)
@@ -825,7 +826,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp)
 
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
-        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json"))
+        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json"))
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
         print([str(warning.message) for warning in w])
