@@ -3580,6 +3580,59 @@ class DefectThermodynamics(MSONable):
 
         return conc_df
 
+    def _get_in_gap_fermi_level_stability_window(self, defect_entry: Union[str, DefectEntry]) -> float:
+        """
+        Convenience method to calculate the maximum difference between Fermi
+        levels at which ``defect_entry`` is the.
+
+        ground-state charge state, and the band edges (i.e. the
+        max of (CBM - lowest TL) and (highest TL - VBM) where
+        TL is any transition level involving ``defect_entry``).
+
+        Args:
+            defect_entry (str or DefectEntry):
+                Either a string of the defect entry name (in
+                ``DefectThermodynamics.defect_entries``), or a
+                ``DefectEntry`` object.
+
+        Returns:
+            float:
+                Maximum difference between Fermi levels at which
+                ``defect_entry`` is the ground-state charge state,
+                and the band edges.
+        """
+        if not isinstance(defect_entry, DefectEntry):
+            defect_entry = self.defect_entries[defect_entry]
+        assert isinstance(defect_entry, DefectEntry)
+
+        stable_entries_name_dict = {
+            name: [ent.name for ent in entry_list] for name, entry_list in self.stable_entries.items()
+        }
+        if not any(defect_entry.name in name_list for name_list in stable_entries_name_dict.values()):
+            return 0
+
+        grouped_defect_name_wout_charge = next(
+            name
+            for name in stable_entries_name_dict
+            if defect_entry.name in stable_entries_name_dict[name]
+        )
+        self.transition_level_map[grouped_defect_name_wout_charge]
+
+        # get highest and lowest TL (defining stability window):
+        lowest = np.inf
+        highest = -np.inf
+        for tl, charge_list in self.transition_level_map[grouped_defect_name_wout_charge].items():
+            if charge_list[-1] == defect_entry.charge_state:
+                lowest = tl
+            if charge_list[0] == defect_entry.charge_state:
+                highest = tl
+
+        if lowest == np.inf and highest == -np.inf:
+            # no TLs and already checked stable -> only stable charge state
+            return np.inf
+
+        return max(self.band_gap - lowest, highest, 0)
+
     def __repr__(self):
         """
         Returns a string representation of the ``DefectThermodynamics`` object.
