@@ -4337,14 +4337,7 @@ class FermiSolver(MSONable):
             required_backend (str):
                 Backend choice ("doped" or "py-sc-fermi") required.
         """
-        raise_error = False
-        if required_backend.lower() == "doped":
-            if not isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
-                raise_error = True
-        elif self._DOS is None:
-            raise_error = True
-
-        if raise_error:
+        if required_backend.lower() == "py-sc-fermi" and self._DOS is None:
             raise RuntimeError(
                 f"This function is only supported for the {required_backend} backend, but you are "
                 f"using the {self.backend} backend!"
