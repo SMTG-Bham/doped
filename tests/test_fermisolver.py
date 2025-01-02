@@ -177,11 +177,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
         self.defect_thermodynamics.chempots = loadfn("../examples/CdTe/CdTe_chempots.json")
         self.solver_py_sc_fermi = FermiSolver(
-            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi", skip_check=True
+            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi"
         )
-        self.solver_doped = FermiSolver(
-            defect_thermodynamics=self.defect_thermodynamics, backend="doped", skip_check=True
-        )
+        self.solver_doped = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
@@ -896,6 +894,28 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         with pytest.raises(ValueError):
             solver._parse_and_check_grid_like_chempots()
 
+    def test_skip_check(self):
+        """
+        Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
+        is skipped with ``skip_check``.
+
+        Main test code in ``test_thermodynamics.py``.
+        """
+        fd_up_fdos = deepcopy(self.defect_thermodynamics.bulk_dos)
+        fd_up_fdos.energies -= 0.1
+        defect_thermo = deepcopy(self.defect_thermodynamics)
+
+        from test_thermodynamics import _check_CdTe_mismatch_fermi_dos_warning
+
+        with warnings.catch_warnings(record=True) as w:
+            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos)
+        _check_CdTe_mismatch_fermi_dos_warning(None, w)
+
+        with warnings.catch_warnings(record=True) as w:
+            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos, skip_check=True)
+        print([str(warning.message) for warning in w])
+        assert not w
+
 
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     """
@@ -909,11 +929,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
         self.defect_thermodynamics.chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
         self.solver_py_sc_fermi = FermiSolver(
-            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi", skip_check=True
+            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi"
         )
-        self.solver_doped = FermiSolver(
-            defect_thermodynamics=self.defect_thermodynamics, backend="doped", skip_check=True
-        )
+        self.solver_doped = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 

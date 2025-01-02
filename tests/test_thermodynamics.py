@@ -2669,6 +2669,16 @@ def _check_doping_windows_dopability_limits_df(doping_df):
     assert doping_df.shape == (2, 3)
 
 
+def _check_CdTe_mismatch_fermi_dos_warning(output, w):
+    assert not output
+    assert any(
+        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
+        "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
+        in str(warn.message)
+        for warn in w
+    )
+
+
 class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -2866,6 +2876,38 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             "Note that the raw (DFT) energy of the bulk supercell calculation" in str(warn.message)
             for warn in w
         )
+
+    def test_skip_check(self):
+        """
+        Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
+        is skipped with ``skip_check``.
+        """
+        fd_up_fdos = deepcopy(self.fermi_dos)
+        fd_up_fdos.energies -= 0.1
+        defect_thermo = deepcopy(self.defect_thermo)
+
+        for func, kwargs in [
+            (DefectThermodynamics, {"defect_entries": defect_thermo.defect_entries}),
+            (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
+            (defect_thermo.get_fermi_level_and_concentrations, {"limit": "Te-rich"}),
+        ]:
+            fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
+            _check_CdTe_mismatch_fermi_dos_warning(output, w)
+            fl, output, w = _run_func_and_capture_stdout_warnings(
+                func, bulk_dos=fd_up_fdos, skip_check=True, **kwargs
+            )
+            assert not output
+            assert not w
+
+        with warnings.catch_warnings(record=True) as w:
+            defect_thermo.bulk_dos = fd_up_fdos
+        _check_CdTe_mismatch_fermi_dos_warning(None, w)
+
+        # no warning when already set:
+        fl, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_equilibrium_fermi_level, limit="Te-rich"
+        )
+        assert not w
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
     def test_calculated_fermi_levels(self):
