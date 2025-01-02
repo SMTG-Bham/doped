@@ -3035,6 +3035,7 @@ class DefectThermodynamics(MSONable):
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
+                If provided, will overwrite the ``self.bulk_dos`` attribute!
             temperature (float):
                 Temperature in Kelvin at which to calculate the equilibrium Fermi level.
                 Default is 300 K.
@@ -3242,6 +3243,7 @@ class DefectThermodynamics(MSONable):
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
+                If provided, will overwrite the ``self.bulk_dos`` attribute!
             annealing_temperature (float):
                 Temperature in Kelvin at which to calculate the high temperature
                 (fixed) total defect concentrations, which should correspond to the

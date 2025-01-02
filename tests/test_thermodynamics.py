@@ -1,7 +1,10 @@
 """
-Tests for the ``doped.thermodynamics`` module.
+Tests for the ``doped.thermodynamics`` module, primarily focusing on the
+``DefectThermodynamics`` class.
 
-Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file.
+Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file,
+which also indirectly tests much of this core ``doped.thermodynamics`` / ``DefectThermodynamics``
+functionality.
 """
 
 import os
@@ -25,7 +28,7 @@ from pymatgen.electronic_structure.dos import FermiDos
 
 from doped.analysis import DefectsParser, guess_defect_position
 from doped.generation import _sort_defect_entries
-from doped.thermodynamics import DefectThermodynamics, get_fermi_dos, scissor_dos
+from doped.thermodynamics import DefectThermodynamics, get_e_h_concs, get_fermi_dos, scissor_dos
 from doped.utils.parsing import _get_defect_supercell_bulk_site_coords, get_vasprun
 from doped.utils.symmetry import get_sga, point_symmetry_from_site, point_symmetry_from_structure
 
@@ -2722,8 +2725,147 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 "conc_df": conc_df,
             }
 
+        cls.defect_thermo.bulk_dos = cls.fermi_dos  # reset FermiDos
+
     def belas_linear_fit(self, T):  # linear fit of CdTe gap dependence with temperature
         return 1.6395 - 0.000438 * T
+
+    def test_get_equilibrium_fermi_level(self):
+        """
+        Test the ``get_equilibrium_fermi_level`` method and its various
+        options.
+        """
+        defect_thermo = deepcopy(self.defect_thermo)
+
+        for kwargs in [
+            {},  # straight up defaults
+            {"bulk_dos": self.fermi_dos},
+            {"bulk_dos": os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")},
+            {
+                "bulk_dos": get_vasprun(
+                    os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"),
+                    parse_dos=True,
+                )
+            },
+            {"temperature": 550},
+            {"skip_check": True},
+            {"return_concs": True},
+            {"return_concs": True, "skip_check": True, "temperature": 550},
+            {"effective_dopant_concentration": -1e18},
+            {"effective_dopant_concentration": -1e18, "return_concs": True},
+        ]:
+            fl_or_fl_e_h, output, w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_equilibrium_fermi_level, limit="Te-rich", **kwargs
+            )
+            assert not output
+            if not kwargs.get("bulk_dos"):  # TODO: Remove this caveat after
+                # https://github.com/materialsvirtuallab/monty/pull/733 merged and released,
+                # causing encoding warning
+                assert not w
+            assert isinstance(fl_or_fl_e_h, (float, tuple))
+            if isinstance(fl_or_fl_e_h, tuple):
+                assert kwargs.get("return_concs", False)
+                fl = fl_or_fl_e_h[0]
+                assert tuple(fl_or_fl_e_h[1:]) == get_e_h_concs(  # hard-code tested below
+                    defect_thermo.bulk_dos, fl + defect_thermo.vbm, kwargs.get("temperature", 300)
+                )
+            else:
+                assert not kwargs.get("return_concs", False)
+                fl = fl_or_fl_e_h
+
+            if not any(kwargs.get(i) for i in ["temperature", "effective_dopant_concentration"]):
+                assert np.isclose(fl, 0.7951, atol=1e-3)
+            elif kwargs.get("temperature") == 550:
+                assert np.isclose(fl, 0.7594, atol=1e-3)
+            elif kwargs.get("effective_dopant_concentration") == -1e18:
+                assert np.isclose(fl, 0.0592, atol=1e-3)
+
+        # test carrier concentrations (indirectly tests ``get_e_h_concs`` and ``get_doping``):
+        fl_e_h, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_equilibrium_fermi_level,
+            limit="Te-rich",
+            temperature=875,
+            return_concs=True,
+        )
+        assert not output
+        assert not w
+        assert np.isclose(fl_e_h[0], 0.7187, atol=1e-3)
+        assert np.isclose(fl_e_h[1], 5.8e13, rtol=0.05)
+        assert np.isclose(fl_e_h[2], 5.9e15, rtol=0.05)
+        # Note these values are close to those in CdTe_LZ_Te_rich_concentrations.png, but slightly
+        # smaller due to the use of scissored DOS in that example (and not here)
+
+        e_h, output, w = _run_func_and_capture_stdout_warnings(
+            get_e_h_concs, defect_thermo.bulk_dos, 0.318674 + defect_thermo.vbm, 300
+        )
+        assert not output
+        assert not w
+        assert np.isclose(e_h[0], 1.2e-3, rtol=0.05)
+        assert np.isclose(e_h[1], 4.5e13, rtol=0.05)  # CdTe_LZ_Te_rich_concentrations.png
+
+        # test chempots behaviour:
+        fl, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_equilibrium_fermi_level,
+        )
+        assert not output
+        limit = next(iter(defect_thermo.chempots["limits"].keys()))
+        assert any(
+            f"No chemical potential limit specified! Using {limit}" in str(warn.message) for warn in w
+        )
+        assert limit == "Cd-CdTe"
+        assert np.isclose(fl, 0.8639, atol=1e-3)
+        kwargs_list = [
+            {"limit": "Cd-rich"},
+            {"limit": "Cd-CdTe"},
+            {"chempots": defect_thermo.chempots, "limit": "Cd-CdTe"},
+            {"chempots": defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"]},
+            {
+                "chempots": defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"],
+                "el_refs": defect_thermo.chempots["elemental_refs"],
+            },
+            {
+                "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
+                "el_refs": {k: 0 for k in defect_thermo.chempots["elemental_refs"]},
+            },
+        ]
+
+        for kwargs in kwargs_list:
+            assert np.isclose(fl, defect_thermo.get_equilibrium_fermi_level(**kwargs))
+
+        kwargs_list = [
+            {"chempots": {k: (v + 0.25) for k, v in defect_thermo.chempots["limits"]["Cd-CdTe"].items()}},
+            {
+                "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
+                "el_refs": {k: (v - 0.25) for k, v in defect_thermo.chempots["elemental_refs"].items()},
+            },
+        ]
+
+        for kwargs in kwargs_list:
+            assert np.isclose(defect_thermo.get_equilibrium_fermi_level(**kwargs), 1.36009, atol=1e-3)
+
+        defect_thermo._chempots = None
+        defect_thermo._el_refs = None
+        fl, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_equilibrium_fermi_level,
+        )
+        assert not output
+        assert any(
+            "No chemical potentials supplied, so using 0 for all chemical potentials" in str(warn.message)
+            for warn in w
+        )
+        assert np.isclose(fl, 1.42277, atol=1e-3)
+
+        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo.chempots = None
+        print(defect_thermo.chempots)
+        fl, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_equilibrium_fermi_level,
+        )
+        assert not output
+        assert any(
+            "Note that the raw (DFT) energy of the bulk supercell calculation" in str(warn.message)
+            for warn in w
+        )
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
     def test_calculated_fermi_levels(self):
