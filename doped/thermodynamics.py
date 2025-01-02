@@ -10,7 +10,7 @@ import os
 import warnings
 from collections.abc import Iterable
 from copy import deepcopy
-from functools import reduce
+from functools import partial, reduce
 from itertools import chain, product
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union
 
@@ -3416,77 +3416,25 @@ class DefectThermodynamics(MSONable):
                 )
             )
 
-            def _get_constrained_concentrations(
-                fermi_level, per_charge=True, per_site=False, skip_formatting=False, lean=True
-            ):
-                conc_df = self.get_equilibrium_concentrations(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    temperature=quenched_temperature,
-                    fermi_level=fermi_level,
-                    skip_formatting=True,
-                    lean=lean,
-                )
-                conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
-                defects = conc_df["Defect"] if lean else conc_df.index.get_level_values("Defect")
-                conc_df["Total Concentration (cm^-3)"] = defects.map(total_concentrations)
-                conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
-                    conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
-                    / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
-                ) * conc_df["Total Concentration (cm^-3)"]
-
-                if not per_charge:
-                    conc_df = _group_defect_charge_state_concentrations(
-                        conc_df, per_site, skip_formatting=True, lean=lean
-                    )
-                    # drop Total Concentration column if ``per_charge=False``, as it's a duplicate of
-                    # the Concentration column in this case
-                    conc_df = conc_df.drop(columns=["Total Concentration (cm^-3)"])
-
-                if per_site:
-                    cm3_conc_df = self.get_equilibrium_concentrations(
-                        chempots=chempots,
-                        limit=limit,
-                        el_refs=el_refs,
-                        temperature=quenched_temperature,
-                        fermi_level=fermi_level,
-                        skip_formatting=True,
-                        per_charge=per_charge,
-                    )
-                    per_site_conc_df = self.get_equilibrium_concentrations(
-                        chempots=chempots,
-                        limit=limit,
-                        el_refs=el_refs,
-                        temperature=quenched_temperature,
-                        fermi_level=fermi_level,
-                        skip_formatting=True,
-                        per_site=True,
-                        per_charge=per_charge,
-                    )
-                    per_site_factors = (
-                        per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
-                    )
-                    conc_df["Concentration (per site)"] = (
-                        conc_df["Concentration (cm^-3)"] * per_site_factors
-                    )
-                    conc_df = conc_df.drop(columns=["Concentration (cm^-3)"])
-
-                    if not skip_formatting:
-                        conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
-                            _format_per_site_concentration
-                        )
-
-                elif not skip_formatting:
-                    conc_df["Concentration (cm^-3)"] = conc_df["Concentration (cm^-3)"].apply(
-                        lambda x: f"{x:.3e}"
-                    )
-
-                return conc_df
+            get_constrained_concentrations = partial(
+                self._get_constrained_concentrations,
+                total_concentrations=total_concentrations,
+                temperature=quenched_temperature,
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                per_charge=per_charge,
+                per_site=per_site,
+                skip_formatting=skip_formatting,
+                effective_dopant_concentration=effective_dopant_concentration,
+                lean=False,
+            )
 
             def _get_constrained_total_q(fermi_level):
-                conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
-                # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
+                conc_df = get_constrained_concentrations(
+                    fermi_level, per_charge=True, per_site=False, skip_formatting=True, lean=True
+                )
+                # Defect/Charge not set as index w/lean=True (default), for speed
                 qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
                 qd_tot += get_doping(  # use orig fermi dos for quenched temperature
                     fermi_dos=orig_fermi_dos,
@@ -3501,9 +3449,9 @@ class DefectThermodynamics(MSONable):
             e_conc, h_conc = get_e_h_concs(
                 orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
             )
-            conc_df = _get_constrained_concentrations(
-                eq_fermi_level, per_charge, per_site, skip_formatting, lean=False
-            )  # not lean for final output
+            conc_df = get_constrained_concentrations(
+                eq_fermi_level,
+            )  # not lean for output
 
             if not return_annealing_values:
                 return (eq_fermi_level, e_conc, h_conc, conc_df)
@@ -3511,16 +3459,10 @@ class DefectThermodynamics(MSONable):
             annealing_e_conc, annealing_h_conc = get_e_h_concs(
                 annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature  # type: ignore
             )
-            annealing_defect_concentrations = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=annealing_fermi_level,  # type: ignore
-                temperature=annealing_temperature,
-                per_charge=per_charge,
-                per_site=per_site,
-                skip_formatting=skip_formatting,
+            annealing_defect_concentrations = get_constrained_concentrations(
+                annealing_fermi_level, temperature=annealing_temperature
             )
+
             return (
                 eq_fermi_level,
                 e_conc,
@@ -3531,6 +3473,101 @@ class DefectThermodynamics(MSONable):
                 annealing_h_conc,
                 annealing_defect_concentrations,
             )
+
+    def _get_constrained_concentrations(
+        self,
+        fermi_level: float,
+        total_concentrations: dict[str, float],
+        temperature: float = 300,
+        chempots: Optional[dict] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict] = None,
+        per_charge: bool = True,
+        per_site: bool = False,
+        skip_formatting: bool = True,
+        effective_dopant_concentration: Optional[float] = None,
+        lean: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Convenience method to calculate defect populations under constrained
+        equilibrium, where total defect concentrations are fixed (according to
+        ``total_concentrations``, as a dict of ``{defect name: concentration in
+        cm^-3}``) and their relative charge state populations are re-calculated
+        at the quenched temperature (``temperature``).
+
+        See ``DefectThermodynamics.get_fermi_level_and_concentrations()`` for
+        details.
+        """
+        conc_df = self.get_equilibrium_concentrations(
+            chempots=chempots,
+            limit=limit,
+            el_refs=el_refs,
+            temperature=temperature,
+            fermi_level=fermi_level,
+            skip_formatting=True,
+            lean=lean,
+        )
+        conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
+        defects = conc_df["Defect"] if lean else conc_df.index.get_level_values("Defect")
+        conc_df["Total Concentration (cm^-3)"] = defects.map(total_concentrations)
+        conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
+            conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
+            / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
+        ) * conc_df["Total Concentration (cm^-3)"]
+
+        if not per_charge:
+            conc_df = _group_defect_charge_state_concentrations(
+                conc_df, per_site, skip_formatting=True, lean=lean
+            )
+            # drop Total Concentration column if ``per_charge=False``, as it's a duplicate of
+            # the Concentration column in this case
+            conc_df = conc_df.drop(columns=["Total Concentration (cm^-3)"])
+
+        if per_site:
+            cm3_conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                temperature=temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+                per_charge=per_charge,
+            )
+            per_site_conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                temperature=temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+                per_site=True,
+                per_charge=per_charge,
+            )
+            per_site_factors = (
+                per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
+            )
+            conc_df["Concentration (per site)"] = conc_df["Concentration (cm^-3)"] * per_site_factors
+            conc_df = conc_df.drop(columns=["Concentration (cm^-3)"])
+
+            if not skip_formatting:
+                conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
+                    _format_per_site_concentration
+                )
+
+        if not skip_formatting:
+            for conc_column_name in conc_df.columns:
+                if "(cm^-3)" in conc_column_name:
+                    conc_df[conc_column_name] = conc_df[conc_column_name].apply(lambda x: f"{x:.3e}")
+
+            if per_charge:  # format charge states
+                conc_df.index = conc_df.index.set_levels(
+                    conc_df.index.levels[1].map(
+                        lambda q: f"{'+' if q > 0 else ''}{int(q) if np.isclose(q, int(q)) else q}"
+                    ),
+                    level=1,
+                )
+
+        return conc_df
 
     def __repr__(self):
         """
@@ -3630,7 +3667,8 @@ def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: O
 
 
 def _add_effective_dopant_concentration(
-    conc_df: pd.DataFrame, effective_dopant_concentration: Optional[float] = None
+    conc_df: pd.DataFrame,
+    effective_dopant_concentration: Optional[float] = None,
 ):
     """
     Add the effective dopant concentration to the concentration ``DataFrame``.
@@ -3642,6 +3680,7 @@ def _add_effective_dopant_concentration(
             The effective dopant concentration to add to the ``DataFrame``.
             For dopants of charge ``q``, the input value should be
             ``q * 'Dopant Concentration'``.
+            (Default: None; no extrinsic dopant)
 
     Returns:
         pd.DataFrame:
@@ -3664,22 +3703,14 @@ def _add_effective_dopant_concentration(
         index=[0],
     )
     if not lean:
-        eff_dopant_df = eff_dopant_df.set_index(["Defect", "Charge"])
+        eff_dopant_df = eff_dopant_df.set_index(conc_df.index.names)
 
     for col in conc_df.columns:
         if col not in eff_dopant_df.columns:
             eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
 
-    if "Charge" not in (conc_df.columns if lean else conc_df.index.names):
-        columns_to_drop = ["Formation Energy (eV)", "Charge State Population"]
-        if lean:
-            columns_to_drop.append("Charge")
-        else:
-            eff_dopant_df = eff_dopant_df.droplevel("Charge")
-
-        eff_dopant_df = eff_dopant_df.drop(columns=columns_to_drop)
-        return pd.concat([conc_df, eff_dopant_df])
-
+    columns_to_drop = [col for col in eff_dopant_df.columns if col not in conc_df.columns]
+    eff_dopant_df = eff_dopant_df.drop(columns=columns_to_drop)
     return pd.concat([conc_df, eff_dopant_df], ignore_index=lean)
 
 
@@ -3735,6 +3766,10 @@ def _format_per_site_concentration(raw_concentration: float):
     """
     Format per-site concentrations for ``DataFrame`` outputs.
     """
+    if isinstance(raw_concentration, str):
+        return raw_concentration
+    if np.isnan(raw_concentration):
+        return "N/A"
     if raw_concentration > 1e-5:
         return f"{raw_concentration:.3%}"
     return f"{raw_concentration * 100:.3e} %"
