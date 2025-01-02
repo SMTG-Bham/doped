@@ -616,7 +616,8 @@ class DefectsParser:
                 Path to bulk supercell reference calculation folder. If not
                 specified, searches for folder with name "X_bulk" in the
                 ``output_path`` directory (matching the default ``doped`` name for
-                the bulk supercell reference folder).
+                the bulk supercell reference folder). Can be the full path, or the
+                relative path from the ``output_path`` directory.
             skip_corrections (bool):
                 Whether to skip the calculation & application of finite-size charge
                 corrections to the defect energies (not recommended in most cases).
@@ -709,7 +710,6 @@ class DefectsParser:
                 for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
                 for file in file_list
             )
-            and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
         ]
 
         if not possible_defect_folders:  # user may have specified the defect folder directly, so check
@@ -727,8 +727,8 @@ class DefectsParser:
                 and (
                     os.path.basename(self.output_path) in dir  # only that defect directory
                     or "bulk" in str(dir).lower()  # or a bulk directory, for later
+                    or (self.bulk_path is not None and str(self.bulk_path).lower() in str(dir).lower())
                 )
-                and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
             ]
             if possible_defect_folders:  # update output path (otherwise will crash with informative error)
                 self.output_path = os.path.join(self.output_path, os.pardir)
@@ -749,7 +749,13 @@ class DefectsParser:
             self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
         self.subfolder = str(self.subfolder)
 
-        possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in str(dir).lower()]
+        possible_bulk_folders = [
+            dir
+            for dir in possible_defect_folders
+            if "bulk" in str(dir).lower()
+            or (self.bulk_path is not None and str(dir).lower() == str(self.bulk_path).lower())
+        ]
+
         if self.bulk_path is None:  # determine bulk_path to use
             if len(possible_bulk_folders) == 1:
                 self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
@@ -764,6 +770,13 @@ class DefectsParser:
                     f"{self.output_path}, found {len(possible_bulk_folders)} folders containing "
                     f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
                     f"specify `bulk_path` manually."
+                )
+        if not os.path.isdir(self.bulk_path):
+            if len(possible_bulk_folders) == 1:
+                self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
+            else:
+                raise FileNotFoundError(
+                    f"Could not find bulk supercell calculation folder at '{self.bulk_path}'!"
                 )
 
         self.defect_folders = [

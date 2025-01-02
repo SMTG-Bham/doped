@@ -513,6 +513,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         fake_aniso_dielectric = [1, 2, 3]
         dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
+            bulk_path="CdTe_bulk",
             dielectric=fake_aniso_dielectric,
         )
         assert any(
@@ -744,7 +745,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # warning about negative corrections when using (fake) isotropic dielectric:
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
             output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
-            bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+            bulk_path="bulk",
             dielectric=40,  # fake isotropic dielectric
             parse_projected_eigen=False,
         )
