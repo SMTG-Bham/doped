@@ -28,7 +28,14 @@ from pymatgen.electronic_structure.dos import FermiDos
 
 from doped.analysis import DefectsParser, guess_defect_position
 from doped.generation import _sort_defect_entries
-from doped.thermodynamics import DefectThermodynamics, get_e_h_concs, get_fermi_dos, scissor_dos
+from doped.thermodynamics import (
+    DefectThermodynamics,
+    _add_effective_dopant_concentration,
+    _format_per_site_concentration,
+    get_e_h_concs,
+    get_fermi_dos,
+    scissor_dos,
+)
 from doped.utils.parsing import _get_defect_supercell_bulk_site_coords, get_vasprun
 from doped.utils.symmetry import get_sga, point_symmetry_from_site, point_symmetry_from_structure
 
@@ -564,6 +571,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print("Checking chempots_warning")
             assert chempots_warning == (chempots is None)
 
+            if kwargs.get("skip_formatting", False):
+                print("Checking `Charge` and `Concentration...` formats")
+                if kwargs.get("per_charge", True):
+                    assert all(isinstance(i, int) for i in df.index.get_level_values("Charge").unique())
+                assert all(
+                    isinstance(i, float) for col in df.columns if "Concentration" in col for i in df[col]
+                )
+
             # assert formation energies unchanged vs prev_df:
             if (
                 prev_df is not None
@@ -592,14 +607,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     assert set(df.columns) == {"Concentration (cm^-3)"}
                     assert set(df.index.names) == {"Defect"}
 
-            if kwargs.get("skip_formatting", False):
-                print("Checking `Charge` and `Concentration...` formats")
-                if kwargs.get("per_charge", True):
-                    assert all(isinstance(i, int) for i in df.index.get_level_values("Charge").unique())
-                assert all(
-                    isinstance(i, float) for col in df.columns if "Concentration" in col for i in df[col]
-                )
-
             print("Checking column and index names for different kwargs")
             if kwargs.get("per_charge", True) and not kwargs.get("lean"):
                 assert set(df.index.names) == {"Defect", "Charge"}
@@ -607,9 +614,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             elif not kwargs.get("lean"):
                 assert set(df.index.names) == {"Defect"}
                 assert "Charge State Population" not in df.columns
-                if kwargs.get("per_site", False):
-                    assert "Concentration (per site)" in df.columns
-                    assert "Concentration (cm^-3)" not in df.columns
+
+            if kwargs.get("per_site", False) and not kwargs.get("lean"):
+                assert "Concentration (per site)" in df.columns
+                assert "Concentration (cm^-3)" not in df.columns
 
         for w in [symm_w, conc_w]:  # the dub
             print("Checking expected warnings")
@@ -2867,7 +2875,6 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
         defect_thermo = deepcopy(self.defect_thermo)
         defect_thermo.chempots = None
-        print(defect_thermo.chempots)
         fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level,
         )
@@ -2908,6 +2915,414 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             defect_thermo.get_equilibrium_fermi_level, limit="Te-rich"
         )
         assert not w
+
+    def test_get_fermi_level_and_concentrations(self):
+        """
+        Test the ``get_fermi_level_and_concentrations`` method and its various
+        options.
+        """
+        defect_thermo = deepcopy(self.defect_thermo)
+
+        prev_df = None
+        for kwargs in [
+            {},  # straight up defaults
+            {"bulk_dos": self.fermi_dos},
+            {"bulk_dos": os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")},
+            {
+                "bulk_dos": get_vasprun(
+                    os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"),
+                    parse_dos=True,
+                )
+            },
+            {"delta_gap": -0.3},
+            {"delta_gap": 0.3},
+            {"annealing_temperature": 550},
+            {"annealing_temperature": 550, "quenched_temperature": 200},
+            {"skip_check": True},
+            {"skip_check": True, "annealing_temperature": 550},
+            {"effective_dopant_concentration": -1e18},
+            {"skip_formatting": True},
+            {"per_charge": False},
+            {"per_charge": False, "per_site": True},
+            {"skip_formatting": True, "per_charge": False, "per_site": True},
+            {"return_annealing_values": True},
+            {
+                "return_annealing_values": True,
+                "effective_dopant_concentration": -1e18,
+                "per_charge": False,
+                "per_site": True,
+                "skip_formatting": True,
+            },
+            {
+                "return_annealing_values": True,
+                "effective_dopant_concentration": -1e18,
+                "per_site": True,
+                "skip_formatting": True,
+            },
+            {
+                "return_annealing_values": True,
+                "effective_dopant_concentration": -1e18,
+                "skip_formatting": True,
+            },
+            {"delta_gap": 0.3, "verbose": True},  # scissor_dos kwargs
+            {"delta_gap": 0.3, "tol": 1e-1, "verbose": True},  # scissor_dos kwargs
+        ]:
+            results, output, w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_fermi_level_and_concentrations, limit="Te-rich", **kwargs
+            )
+            if not kwargs.get("return_annealing_values", False):
+                fermi_level, e_conc, h_conc, conc_df = results
+                expected_floats = [fermi_level, e_conc, h_conc]
+                expected_conc_dfs = [conc_df]
+            else:  # tests return_annealing_values
+                (
+                    fermi_level,
+                    e_conc,
+                    h_conc,
+                    conc_df,
+                    annealing_fermi_level,
+                    annealing_e_conc,
+                    annealing_h_conc,
+                    annealing_conc_df,
+                ) = results
+                expected_floats = [
+                    fermi_level,
+                    e_conc,
+                    h_conc,
+                    annealing_fermi_level,
+                    annealing_e_conc,
+                    annealing_h_conc,
+                ]
+                expected_conc_dfs = [conc_df, annealing_conc_df]
+
+            assert bool(output) == kwargs.get("verbose", False)
+            assert ("Orig gap:" in output) == kwargs.get("verbose", False)
+            if kwargs.get("delta_gap") == 0.3 and kwargs.get("verbose", False):
+                if kwargs.get("tol") == 1e-1:
+                    assert "Orig gap: 2.7513, new gap:3.0513" in output
+                else:
+                    assert "Orig gap: 1.5126, new gap:1.8126" in output
+                    assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
+
+            if not kwargs.get("bulk_dos"):  # TODO: Remove this caveat after
+                # https://github.com/materialsvirtuallab/monty/pull/733 merged and released,
+                # causing encoding warning
+                assert not w
+
+            for expected_float in expected_floats:
+                assert isinstance(expected_float, float)
+            for expected_conc_df in expected_conc_dfs:
+                assert isinstance(expected_conc_df, pd.DataFrame)
+                assert "Raw Concentrations" not in expected_conc_df.columns
+
+            assert (e_conc, h_conc) == get_e_h_concs(
+                defect_thermo.bulk_dos,
+                fermi_level + defect_thermo.vbm,
+                kwargs.get("quenched_temperature", 300),
+            )
+
+            anneal_at_1000K_quench_at_RT_no_dopants_scissoring = not any(
+                kwargs.get(i)
+                for i in [
+                    "annealing_temperature",
+                    "quenched_temperature",
+                    "effective_dopant_concentration",
+                    "delta_gap",
+                ]
+            )
+            # Similar values to CdTe_LZ_Te_rich_concentrations.png, slightly different due to no scissoring
+            assert (
+                np.isclose(fermi_level, 0.33745, atol=1e-3)
+                == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
+            )
+            assert (
+                np.isclose(e_conc, 2.5e-3, rtol=0.05) == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
+            )
+            assert (
+                np.isclose(h_conc, 2.2e13, rtol=0.05) == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
+            )
+
+            for conc_df, annealing in zip(expected_conc_dfs, [False, True]):
+                if kwargs.get("skip_formatting", False):
+                    print("Checking `Charge` and `Concentration...` formats")
+                    if kwargs.get("per_charge", True):
+                        assert all(
+                            isinstance(i, int) for i in conc_df.index.get_level_values("Charge").unique()
+                        )
+                    assert all(
+                        isinstance(i, float)
+                        for col in conc_df.columns
+                        if "Concentration" in col
+                        for i in conc_df[col]
+                    )
+
+                print("Checking column and index names for different kwargs")
+                if kwargs.get("per_charge", True):
+                    assert set(conc_df.index.names) == {"Defect", "Charge"}
+                    assert "Charge State Population" in conc_df.columns
+                else:
+                    assert set(conc_df.index.names) == {"Defect"}
+                    assert "Charge State Population" not in conc_df.columns
+
+                if kwargs.get("per_site", False):
+                    assert "Concentration (per site)" in conc_df.columns
+                    assert "Concentration (cm^-3)" not in conc_df.columns
+
+                if kwargs.get("effective_dopant_concentration"):
+                    assert "Dopant" in conc_df.index.get_level_values("Defect")
+                    if not kwargs.get("per_site") and kwargs.get("per_charge", True):
+                        assert (
+                            conc_df.loc["Dopant"]["Concentration (cm^-3)"].sum() == 1e18
+                            if kwargs.get("skip_formatting")
+                            else "1.000e+18"
+                        )
+                    elif (
+                        kwargs.get("per_site")
+                        and not kwargs.get("per_charge", True)
+                        and kwargs.get("skip_formatting")
+                    ):
+                        assert np.isnan(conc_df.loc["Dopant"]["Concentration (per site)"])
+                    elif (
+                        kwargs.get("per_site")
+                        and kwargs.get("per_charge", True)
+                        and kwargs.get("skip_formatting")
+                    ):
+                        assert np.isnan(conc_df.loc["Dopant"]["Concentration (per site)"].to_numpy()[0])
+
+                    if kwargs.get("per_charge", True):
+                        assert (
+                            conc_df.loc["Dopant"].index.to_numpy()[0] == -1
+                            if kwargs.get("skip_formatting")
+                            else "-1"
+                        )
+
+                    assert np.isclose(fermi_level, 0.0592, atol=1e-3)
+                    if kwargs.get("return_annealing_values", False):
+                        assert np.isclose(annealing_fermi_level, 0.4018, atol=1e-3)
+
+                if annealing:  # compare against total equilibrium methods, and then skip the
+                    # comparisons to previous conc_df (only for quenched case)
+                    assert np.isclose(
+                        annealing_fermi_level,
+                        defect_thermo.get_equilibrium_fermi_level(
+                            limit="Te-rich",
+                            temperature=kwargs.get("annealing_temperature", 1000),
+                            **{
+                                k: v
+                                for k, v in kwargs.items()
+                                if k
+                                not in [
+                                    "return_annealing_values",
+                                    "per_charge",
+                                    "per_site",
+                                    "skip_formatting",
+                                ]
+                            },
+                        ),
+                        atol=1e-3,
+                    )
+                    # Note that this check requires ``skip_formatting`` to be True as we don't format the
+                    # dopant values here:
+                    expected_df = _add_effective_dopant_concentration(
+                        defect_thermo.get_equilibrium_concentrations(
+                            fermi_level=annealing_fermi_level,
+                            limit="Te-rich",
+                            temperature=kwargs.get("annealing_temperature", 1000),
+                            **{
+                                k: v
+                                for k, v in kwargs.items()
+                                if k not in ["return_annealing_values", "effective_dopant_concentration"]
+                            },
+                        ),
+                        kwargs.get("effective_dopant_concentration"),
+                    )
+                    if kwargs.get("per_charge", True):
+                        conc_df_to_compare = conc_df.drop(columns=["Total Concentration (cm^-3)"])
+                    # replace NaNs with "N/A" (Dopant per site conc):
+                    conc_df_to_compare = conc_df_to_compare.fillna("N/A")
+                    print(conc_df_to_compare, expected_df)  # for debugging
+                    print(conc_df_to_compare.columns, expected_df.columns)  # for debugging
+                    pd.testing.assert_frame_equal(conc_df_to_compare, expected_df)
+                    continue
+
+                # assert formation energies unchanged vs prev_df, for same Fermi level (-> conditions)
+                if prev_df is not None and prev_df.index.names == conc_df.index.names:
+                    print("Comparing to previous conc_df")
+                    if all(kwargs.get(i, True) for i in ["per_charge"]):
+                        for df_to_compare in [conc_df, prev_df]:
+                            df_to_compare.index = df_to_compare.index.set_levels(
+                                df_to_compare.index.levels[1].astype(int), level=1
+                            )  # in case skip_formatting
+                    for column in [
+                        "Formation Energy (eV)Charge State Population",
+                        "Concentration (per site)",
+                        "Concentration (cm^-3)",
+                        "Total Concentration (cm^-3)",
+                    ]:
+                        if column not in conc_df.columns:
+                            continue
+
+                        print(f"Checking column {column}")
+                        if "Concentration" in column and kwargs.get("skip_formatting", False):
+                            assert all(isinstance(i, float) for i in conc_df[column])
+                            # format for comparisons:
+                            if "cm^-3" in column:
+                                conc_df[column] = conc_df[column].apply(lambda x: f"{x:.3e}")
+                            elif "per site" in column:
+                                conc_df[column] = conc_df[column].apply(_format_per_site_concentration)
+
+                        if column in prev_df.columns:
+                            assert (
+                                conc_df[column].equals(prev_df[column])
+                                == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
+                            )
+
+                if anneal_at_1000K_quench_at_RT_no_dopants_scissoring:
+                    prev_df = conc_df
+
+        # hard test with/without per_site, per_charge conc df values (concentration and population):
+        assert np.isclose(
+            self.defect_thermo.get_fermi_level_and_concentrations(
+                limit="Te-rich", per_charge=False, skip_formatting=True
+            )[-1].loc["v_Cd"]["Concentration (cm^-3)"],
+            1.485e16,
+            rtol=1e-2,
+        )
+        assert (
+            self.defect_thermo.get_fermi_level_and_concentrations(
+                limit="Te-rich",
+            )[-1].loc[
+                ("v_Cd", "0")
+            ]["Total Concentration (cm^-3)"]
+            == "1.485e+16"
+        )
+        assert np.isclose(
+            self.defect_thermo.get_fermi_level_and_concentrations(limit="Te-rich", skip_formatting=True)[
+                -1
+            ].loc[("v_Cd", 0)]["Concentration (cm^-3)"],
+            1.393e16,
+            rtol=1e-2,
+        )
+        assert (
+            self.defect_thermo.get_fermi_level_and_concentrations(
+                limit="Te-rich",
+            )[-1].loc[
+                ("v_Cd", "0")
+            ]["Charge State Population"]
+            == "93.80%"
+        )
+        assert np.isclose(
+            self.defect_thermo.get_fermi_level_and_concentrations(
+                limit="Te-rich", per_site=True, skip_formatting=True
+            )[-1].loc[("v_Cd", 0)]["Total Concentration (cm^-3)"],
+            1.485e16,
+            rtol=1e-2,
+        )
+        assert (
+            self.defect_thermo.get_fermi_level_and_concentrations(limit="Te-rich", per_site=True)[-1].loc[
+                ("v_Cd", "0")
+            ]["Concentration (per site)"]
+            == "9.753e-05 %"
+        )
+        assert (
+            self.defect_thermo.get_fermi_level_and_concentrations(limit="Te-rich", per_site=True)[-1].loc[
+                ("v_Cd", "0")
+            ]["Charge State Population"]
+            == "93.80%"
+        )
+        assert (
+            self.defect_thermo.get_fermi_level_and_concentrations(
+                limit="Te-rich", per_site=True, per_charge=False
+            )[-1].loc["v_Cd"]["Concentration (per site)"]
+            == "1.040e-04 %"
+        )
+
+        # test chempots behaviour:
+        results, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_fermi_level_and_concentrations,
+        )
+        assert not output
+        limit = next(iter(defect_thermo.chempots["limits"].keys()))
+        assert any(
+            f"No chemical potential limit specified! Using {limit}" in str(warn.message) for warn in w
+        )
+        assert limit == "Cd-CdTe"
+        new_results, new_output, new_w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_fermi_level_and_concentrations, limit=limit
+        )
+        assert not new_w
+        assert new_results[-1].equals(results[-1])
+
+        assert np.isclose(results[0], 1.44127, atol=1e-3)
+        kwargs_list = [
+            {"limit": "Cd-rich"},
+            {"limit": "Cd-CdTe"},
+            {"chempots": defect_thermo.chempots, "limit": "Cd-CdTe"},
+            {"chempots": defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"]},
+            {
+                "chempots": defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"],
+                "el_refs": defect_thermo.chempots["elemental_refs"],
+            },
+            {
+                "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
+                "el_refs": {k: 0 for k in defect_thermo.chempots["elemental_refs"]},
+            },
+        ]
+
+        for kwargs in kwargs_list:
+            results = defect_thermo.get_fermi_level_and_concentrations(
+                return_annealing_values=True, **kwargs
+            )
+            assert np.isclose(
+                results[4],  # annealing fermi level
+                defect_thermo.get_equilibrium_fermi_level(temperature=1000, **kwargs),
+                atol=1e-3,
+            )
+            assert np.isclose(results[0], 1.44127, atol=1e-3)
+            assert np.isclose(results[4], 1.0269, atol=1e-3)
+
+        kwargs_list = [
+            {"chempots": {k: (v + 0.25) for k, v in defect_thermo.chempots["limits"]["Cd-CdTe"].items()}},
+            {
+                "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
+                "el_refs": {k: (v - 0.25) for k, v in defect_thermo.chempots["elemental_refs"].items()},
+            },
+        ]
+
+        for kwargs in kwargs_list:
+            results = defect_thermo.get_fermi_level_and_concentrations(
+                return_annealing_values=True, **kwargs
+            )
+            assert np.isclose(results[0], 1.3601, atol=1e-3)
+            assert np.isclose(results[4], 1.3115, atol=1e-3)
+            assert np.isclose(
+                results[4],  # annealing fermi level
+                defect_thermo.get_equilibrium_fermi_level(temperature=1000, **kwargs),
+                atol=1e-3,
+            )
+
+        defect_thermo._chempots = None
+        defect_thermo._el_refs = None
+        results, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_fermi_level_and_concentrations,
+        )
+        assert not output
+        assert any(
+            "No chemical potentials supplied, so using 0 for all chemical potentials" in str(warn.message)
+            for warn in w
+        )
+        assert np.isclose(results[0], 1.1319, atol=1e-3)
+
+        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo.chempots = None
+        fl, output, w = _run_func_and_capture_stdout_warnings(
+            defect_thermo.get_fermi_level_and_concentrations,
+        )
+        assert not output
+        assert any(
+            "Note that the raw (DFT) energy of the bulk supercell calculation" in str(warn.message)
+            for warn in w
+        )
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
     def test_calculated_fermi_levels(self):
