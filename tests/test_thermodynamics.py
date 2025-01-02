@@ -2655,6 +2655,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
         _check_compatibility_warnings(w)
 
+    def test_get_in_gap_fermi_level_stability_window(self):
+        for defect_entry, stability_window in [
+            ("v_Cd_0", 0.47),
+            (self.CdTe_defect_thermo.defect_entries["v_Cd_0"], 0.47),
+            ("v_Cd_-2", 1.03),
+            ("Te_Cd_+1", np.inf),
+            ("Int_Te_3_Unperturbed_1", 0),
+            ("Int_Te_3_1", 1.465),
+            ("Int_Te_3_2", 0.035),
+        ]:
+            assert np.isclose(
+                self.CdTe_defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry),
+                stability_window,
+                atol=1e-2,
+            )
+
 
 def belas_linear_fit(T):  #
     """
@@ -3324,6 +3340,21 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             for warn in w
         )
 
+    def test_get_in_gap_fermi_level_stability_window(self):
+        print(self.defect_thermo.transition_level_map)
+        for defect_entry, stability_window in [  # LZ TLs
+            ("v_Cd_0", 0.35),
+            (self.defect_thermo.defect_entries["v_Cd_0"], 0.35),
+            ("v_Cd_-2", 1.15),
+            ("Te_Cd_0", 1.374),  # this case, of being bounded by other charges on both sides,
+            # wasn't tested with CdTe_example_thermo in DefectThermodynamicsTestCase
+        ]:
+            assert np.isclose(
+                self.defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry),
+                stability_window,
+                atol=1e-2,
+            )
+
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
     def test_calculated_fermi_levels(self):
         plt.style.use(STYLE)
@@ -3477,7 +3508,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         def _array_from_conc_df(name):
             return np.array(
                 [
-                    self.annealing_dict[temp]["conc_df"].loc[(name, 0), "Total Concentration (cm^-3)"]
+                    self.annealing_dict[temp]["conc_df"].loc[(name, "0"), "Total Concentration (cm^-3)"]
                     for temp in self.anneal_temperatures
                 ]
             )
