@@ -3382,6 +3382,7 @@ class DefectThermodynamics(MSONable):
 
         with warnings.catch_warnings():  # already warned once if necessary
             warnings.filterwarnings("ignore", "No chemical potential")
+            warnings.filterwarnings("ignore", "The VBM eigenvalue")
 
             annealing_fermi_level = self.get_equilibrium_fermi_level(
                 annealing_dos,
@@ -3391,8 +3392,7 @@ class DefectThermodynamics(MSONable):
                 temperature=annealing_temperature,
                 return_concs=False,
                 effective_dopant_concentration=effective_dopant_concentration,
-                skip_check=kwargs.get("skip_check", delta_gap != 0),  # skip check by default if delta
-                # gap not 0
+                skip_check=True,  # already warned if necessary
             )
             assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
             self.bulk_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
@@ -4245,7 +4245,7 @@ class FermiSolver(MSONable):
         self.defect_thermodynamics = defect_thermodynamics
         self.skip_check = skip_check
         if bulk_dos is not None:
-            self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
+            self.defect_thermodynamics._bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
                 bulk_dos, skip_check=self.skip_check
             )
         if self.defect_thermodynamics.bulk_dos is None:
