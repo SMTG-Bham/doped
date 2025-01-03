@@ -576,7 +576,7 @@ class DefectsParser:
 
         By default, tries multiprocessing to speed up defect parsing, which can be
         controlled with ``processes``. If parsing hangs, this may be due to memory
-        issues, in which case you should reduce ``processes`` (e.g. 4 or less).
+        issues, in which case you should manually reduce ``processes`` (e.g. <=4).
 
         Defect charge states are automatically determined from the defect
         calculation outputs if ``POTCAR``\s are set up with ``pymatgen`` (see docs
@@ -625,7 +625,14 @@ class DefectsParser:
             error_tolerance (float):
                 If the estimated error in any charge correction, based on the
                 variance of the potential in the sampling region, is greater than
-                this value (in eV), then a warning is raised. (default: 0.05 eV)
+                this value (in eV), then a warning is raised. Default = 0.05 eV.
+                Note that this warning is skipped for defects which are predicted to
+                not be stable for any Fermi level in the band gap (based on all
+                parsed defects here), or are predicted to be shallow (perturbed host)
+                states according to eigenvalue analysis and only be stable for Fermi
+                levels within a small window to a band edge (taken as the smaller of
+                ``error_tolerance`` or 10% of the band gap, by default, or can be
+                set by a ``charge_stability_tolerance = X`` keyword argument).
             bulk_band_gap_vr (PathLike or Vasprun):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
                 object, from which to determine the bulk band gap and band edge
@@ -671,11 +678,13 @@ class DefectsParser:
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``;
                 including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
-                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
-                for each defect.
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``; or for controlling
+                shallow defect charge correction error warnings with (see arg docstring
+                for ``error_tolerance`` above) with ``charge_stability_tolerance``
+                Primarily used by ``DefectsParser`` to expedite parsing by avoiding
+                reloading bulk data for each defect.
 
         Attributes:
             defect_dict (dict):
@@ -1173,7 +1182,23 @@ class DefectsParser:
 
         FNV_correction_errors = []
         eFNV_correction_errors = []
+        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False)
         for name, defect_entry in self.defect_dict.items():
+            from doped.utils.eigenvalues import is_shallow
+
+            # first check if it's a stable defect:
+            stable = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry) > 0
+
+            if not stable or (
+                is_shallow(defect_entry)
+                and defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+                < kwargs.get(
+                    "charge_stability_tolerance",
+                    min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+                )
+            ):
+                continue  # no charge correction warnings for unstable charge states
+
             if (
                 defect_entry.corrections_metadata.get("freysoldt_charge_correction_error", 0)
                 > error_tolerance
