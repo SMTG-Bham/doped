@@ -2167,8 +2167,6 @@ class DefectThermodynamics(MSONable):
             index=["p-type", "n-type"],
         )
 
-    # TODO: Don't show chempot table by default? At least if limit explicitly chosen?
-    # Default = None; shown if multiple plots else False.
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
     #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
@@ -2190,7 +2188,7 @@ class DefectThermodynamics(MSONable):
         el_refs: Optional[dict] = None,
         all_entries: Union[bool, str] = False,
         unstable_entries: Union[bool, str] = "not shallow",
-        chempot_table: bool = True,
+        chempot_table: Optional[bool] = None,
         style_file: Optional[PathLike] = None,
         xlim: Optional[tuple] = None,
         ylim: Optional[tuple] = None,
@@ -2281,9 +2279,10 @@ class DefectThermodynamics(MSONable):
                 ``charge_stability_tolerance = X`` keyword argument (positive or negative).
                 If ``True``, defect entries are not pruned based on stability/shallow
                 classification.
-            chempot_table (bool):
-                Whether to print the chemical potential table above the plot.
-                (Default: True)
+            chempot_table (Optional[bool]):
+                Whether to include a table of the chemical potentials above the formation
+                energy plot. If ``None`` (default), shown if multiple plots are generated
+                (i.e. multiple chemical potential limits) else not shown.
             style_file (PathLike):
                 Path to a mplstyle file to use for the plot. If None (default), uses
                 the default doped style (from ``doped/utils/doped.mplstyle``).
@@ -2428,7 +2427,7 @@ class DefectThermodynamics(MSONable):
                         thermo_to_plot,
                         dft_chempots=dft_chempots,
                         el_refs=el_refs,
-                        chempot_table=chempot_table,
+                        chempot_table=chempot_table if chempot_table is not None else len(limits) > 1,
                         all_entries=all_entries,
                         xlim=xlim,
                         ylim=ylim,
