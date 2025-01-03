@@ -2797,9 +2797,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 )
             },
             {"temperature": 550},
-            {"skip_check": True},
+            {"skip_vbm_check": True},
             {"return_concs": True},
-            {"return_concs": True, "skip_check": True, "temperature": 550},
+            {"return_concs": True, "skip_vbm_check": True, "temperature": 550},
             {"effective_dopant_concentration": -1e18},
             {"effective_dopant_concentration": -1e18, "return_concs": True},
         ]:
@@ -2915,10 +2915,10 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             for warn in w
         )
 
-    def test_skip_check(self):
+    def test_skip_vbm_check(self):
         """
         Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
-        is skipped with ``skip_check``.
+        is skipped with ``skip_vbm_check``.
         """
         fd_up_fdos = deepcopy(self.fermi_dos)
         fd_up_fdos.energies -= 0.1
@@ -2932,7 +2932,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             _check_CdTe_mismatch_fermi_dos_warning(output, w)
             fl, output, w = _run_func_and_capture_stdout_warnings(
-                func, bulk_dos=fd_up_fdos, skip_check=True, **kwargs
+                func, bulk_dos=fd_up_fdos, skip_vbm_check=True, **kwargs
             )
             assert not output
             assert not w
@@ -2969,8 +2969,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             {"delta_gap": 0.3},
             {"annealing_temperature": 550},
             {"annealing_temperature": 550, "quenched_temperature": 200},
-            {"skip_check": True},
-            {"skip_check": True, "annealing_temperature": 550},
+            {"skip_vbm_check": True},
+            {"skip_vbm_check": True, "annealing_temperature": 550},
             {"effective_dopant_concentration": -1e18},
             {"skip_formatting": True},
             {"per_charge": False},

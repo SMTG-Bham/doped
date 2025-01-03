@@ -1481,7 +1481,7 @@ class DefectsParser:
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
         bulk_dos: Optional[FermiDos] = None,
-        skip_check: bool = False,
+        skip_vbm_check: bool = False,
     ) -> DefectThermodynamics:
         r"""
         Generates a DefectThermodynamics object from the parsed ``DefectEntry``
@@ -1565,7 +1565,7 @@ class DefectsParser:
                 convergence wrt `k`-point sampling. Consistent functional settings should be
                 used for the bulk DOS and defect supercell calculations.
                 (Default: None)
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable. (Default: False)
@@ -1589,7 +1589,7 @@ class DefectsParser:
             dist_tol=dist_tol,
             check_compatibility=check_compatibility,
             bulk_dos=bulk_dos,
-            skip_check=skip_check,
+            skip_vbm_check=skip_vbm_check,
         )
 
     def __repr__(self):

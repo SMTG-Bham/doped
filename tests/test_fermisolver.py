@@ -895,10 +895,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         with pytest.raises(ValueError):
             solver._parse_and_check_grid_like_chempots()
 
-    def test_skip_check(self):
+    def test_skip_vbm_check(self):
         """
         Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
-        is skipped with ``skip_check``.
+        is skipped with ``skip_vbm_check``.
 
         Main test code in ``test_thermodynamics.py``.
         """
@@ -913,7 +913,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         _check_CdTe_mismatch_fermi_dos_warning(None, w)
 
         with warnings.catch_warnings(record=True) as w:
-            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos, skip_check=True)
+            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos, skip_vbm_check=True)
         print([str(warning.message) for warning in w])
         assert not w
 
