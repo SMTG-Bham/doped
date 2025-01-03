@@ -5,6 +5,8 @@ Tests for the ``doped.thermodynamics`` module, primarily focusing on the
 Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file,
 which also indirectly tests much of this core ``doped.thermodynamics`` / ``DefectThermodynamics``
 functionality.
+
+Tests for ``DefectThermodynamics.plot()`` are in the separate ``test_plotting.py`` file.
 """
 
 import os
@@ -147,7 +149,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.ZnS_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
 
         self.Se_ext_no_pnict_thermo = deepcopy(self.orig_Se_ext_no_pnict_thermo)
-        self.Se_pnict_thermo = deepcopy(self.orig_Se_pnict_thermo)
+        self.Se_pnict_thermo = deepcopy(self.orig_Se_pnict_thermo)  # primarily used in test_plotting.py
         self.cdte_chempot_warning_message = (
             "Note that the raw (DFT) energy of the bulk supercell calculation (-3.37 eV/atom) differs "
             "from that expected from the supplied chemical potentials (-3.50 eV/atom) by >0.025 eV. This "
@@ -2661,7 +2663,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.CdTe_defect_thermo.defect_entries["v_Cd_0"], 0.47),
             ("v_Cd_-2", 1.03),
             ("Te_Cd_+1", np.inf),
-            ("Int_Te_3_Unperturbed_1", 0),
+            ("Int_Te_3_Unperturbed_1", -np.inf),
             ("Int_Te_3_1", 1.465),
             ("Int_Te_3_2", 0.035),
         ]:
@@ -2670,6 +2672,19 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 stability_window,
                 atol=1e-2,
             )
+
+        assert np.isclose(
+            self.Se_ext_no_pnict_thermo._get_in_gap_fermi_level_stability_window("inter_3_Te_1"),
+            -0.0989,
+            atol=1e-3,
+        )
+
+    def test_is_shallow(self):
+        from doped.utils.eigenvalues import is_shallow
+
+        assert not is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_F_on_Se_-2"])  # not cut
+        # by default in plots (see Se ``unstable_entries`` test plots from ``test_plotting.py``)
+        assert not is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_Te_on_Se_1"])  # cut
 
 
 def belas_linear_fit(T):  #
