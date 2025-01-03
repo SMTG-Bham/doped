@@ -284,14 +284,12 @@ def group_defects_by_distance(
     Returns:
         dict: {simple defect name: {(equivalent defect sites): [DefectEntry]}
     """
-    # TODO: This algorithm works well for the vast majority of cases, however it can be sensitive to how
-    #  many defects are parsed at once. For instance, in the full parsed CdTe defect dicts in test data,
-    #  when parsing with metastable states, all Te_i are combined as each entry is within `dist_tol =
-    #  1.5` of another interstitial, but without metastable states (`wout_meta`), Te_i_+2 is excluded (
-    #  because it's not within `dist_tol` of any other _stable_ Te_i). Ideally our clustering algorithm
-    #  would be independent of this... but challenging to setup without complex clustering approaches (
-    #  for now this works very well as is, and this is a rare case and usually not a problem anyway as
-    #  dist_tol can just be adjusted as needed)
+    # Note: This algorithm works well for the vast majority of cases, however because it involves
+    # clustering, the results can be sensitive to which / how many defects are parsed together. For
+    # instance, in the full parsed CdTe defect dicts in test data, when parsing with metastable states,
+    # all Te_i are combined as each entry is within `dist_tol = 1.5` of another interstitial,
+    # but without metastable states (`wout_meta`), Te_i_+2 is excluded (because it's not within
+    # `dist_tol` of any other _stable_ Te_i). However, the user can always adjust `dist_tol` as desired.
 
     # initial group by Defect.name (same nominal defect), then distance to equiv sites
     # first make dictionary of nominal defect name: list of entries with that name
