@@ -19,6 +19,8 @@ from pymatgen.core.structure import IStructure, Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
 from sympy import Eq, simplify, solve, symbols
 
 from doped.core import DefectEntry
@@ -281,6 +283,7 @@ def apply_symm_op_to_site(
     site: PeriodicSite,
     fractional: bool = False,
     rotate_lattice: Union[Lattice, bool] = True,
+    just_unit_cell_frac_coords: bool = False,
 ) -> PeriodicSite:
     """
     Apply the given symmetry operation to the input site (**not in place**) and
@@ -291,19 +294,23 @@ def apply_symm_op_to_site(
     ``rotate_lattice=False``.
 
     Args:
-        symm_op: ``pymatgen`` ``SymmOp`` object.
-        site: ``pymatgen`` ``PeriodicSite`` object.
-        fractional:
+        symm_op (SymmOp): ``pymatgen`` ``SymmOp`` object.
+        site (PeriodicSite): ``pymatgen`` ``PeriodicSite`` object.
+        fractional (bool):
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
             ``site.coords``). Default: False
-        rotate_lattice:
+        rotate_lattice (Union[Lattice, bool]):
             Either a ``pymatgen`` ``Lattice`` object (to use as the new
             lattice basis of the transformed site, which can be provided
             to reduce computation time when looping) or ``True/False``.
             If ``True`` (default), the ``SymmOp`` rotation matrix will be
             applied to the input site lattice, or if ``False``, the
             original lattice will be retained.
+        just_unit_cell_frac_coords (bool):
+            If ``True``, just returns the `fractional coordinates` of the
+            transformed site (rather than the site itself), within the unit
+            cell. Default: False
 
     Returns:
         ``pymatgen`` ``PeriodicSite`` object with the symmetry operation
@@ -327,6 +334,12 @@ def apply_symm_op_to_site(
         new_coords = site.lattice.get_cartesian_coords(frac_coords)
     else:
         new_coords = symm_op.operate(site.coords)
+
+    if just_unit_cell_frac_coords:
+        rotated_frac_coords = rotated_lattice.get_fractional_coords(new_coords)
+        return np.array(
+            [np.mod(f, 1) if p else f for p, f in zip(rotated_lattice.pbc, rotated_frac_coords)]
+        )
 
     return PeriodicSite(
         site.species,
@@ -413,7 +426,25 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
 
 
-def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"):
+def _cluster_coords(fcoords, struct, dist_tol=0.01):
+    """
+    Cluster fractional coordinates based on their distances (using ``scipy``
+    functions) and return the cluster numbers (as an array matching the shape
+    and order of ``fcoords``).
+    """
+    dist_matrix = np.array(struct.lattice.get_all_distances(fcoords, fcoords))
+    dist_matrix = (dist_matrix + dist_matrix.T) / 2
+
+    for i in range(len(dist_matrix)):
+        dist_matrix[i, i] = 0
+    condensed_m = squareform(dist_matrix)
+    z = linkage(condensed_m)
+    return fcluster(z, dist_tol, criterion="distance")
+
+
+def _get_all_equiv_sites(
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X", just_frac_coords=False
+):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
@@ -424,20 +455,36 @@ def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_
     dummy_site = PeriodicSite(species, frac_coords, struct.lattice)
     x_sites = []
     for symm_op in symm_ops:
-        x_site = apply_symm_op_to_site(
-            symm_op, dummy_site, fractional=True, rotate_lattice=struct.lattice
-        ).to_unit_cell()  # enforce same lattice, as we just want transformed frac coords here
-        # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
-        if (
-            not x_sites
-            or struct.lattice.get_all_distances(
-                np.array([site.frac_coords for site in x_sites]), x_site.frac_coords
-            ).min()
-            > dist_tol
-        ):
-            x_sites.append(x_site)
+        if just_frac_coords:
+            x_site = apply_symm_op_to_site(
+                symm_op,
+                dummy_site,
+                fractional=True,
+                rotate_lattice=struct.lattice,
+                just_unit_cell_frac_coords=True,
+            )
+        else:
+            x_site = apply_symm_op_to_site(
+                symm_op, dummy_site, fractional=True, rotate_lattice=struct.lattice
+            ).to_unit_cell()  # enforce same lattice, as we just want transformed frac coords here
 
-    return x_sites
+        x_sites.append(x_site)
+
+    all_frac_coords = [
+        tuple(i.round(3) if dist_tol != 0 else i)
+        for i in (x_sites if just_frac_coords else [site.frac_coords for site in x_sites])
+    ]
+    current_x_frac_coords = list(set(all_frac_coords))
+    unique_x_sites = [
+        x_sites[all_frac_coords.index(x_frac_coords)] for x_frac_coords in current_x_frac_coords
+    ]
+
+    cn = _cluster_coords(current_x_frac_coords, struct, dist_tol=dist_tol)
+    inequivalent_x_sites = []
+    for n in set(cn):
+        inequivalent_x_sites.append(unique_x_sites[np.where(cn == n)[0][0]])  # take first of each cluster
+
+    return inequivalent_x_sites
 
 
 def _get_symm_dataset_of_struc_with_all_equiv_sites(
