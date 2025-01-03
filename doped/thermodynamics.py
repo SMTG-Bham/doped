@@ -327,12 +327,11 @@ def group_defects_by_distance(
             bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
             # need to use relaxed defect site if bulk_site not in calculation_metadata
 
-            min_dist_list = [
-                min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
-                    bulk_site.distance_and_image(site)[0] for site in equiv_site_tuple
-                )
-                for equiv_site_tuple in defect_site_dict[name]
+            min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
+                bulk_site.lattice.get_all_distances(bulk_site.frac_coords, list(equiv_site_tuple)).min()
+                for equiv_site_tuple in defect_site_dict[entry.defect.name]
             ]
+
             if min_dist_list and min(min_dist_list) < dist_tol:  # less than dist_tol, add to corresponding
                 idxmin = np.argmin(min_dist_list)  # entry list
                 if min_dist_list[idxmin] > 0.05:  # likely interstitials, need to add equiv sites to tuple
@@ -341,10 +340,12 @@ def group_defects_by_distance(
                     defect_entry_list = defect_site_dict[name].pop(orig_tuple)
                     equiv_site_tuple = (
                         tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                            _get_all_equiv_sites(
+                            tuple(frac_coords)
+                            for frac_coords in _get_all_equiv_sites(
                                 bulk_site.frac_coords,
                                 symm_bulk_struct,
                                 bulk_symm_ops,
+                                just_frac_coords=True,
                             )
                         )
                         + orig_tuple
@@ -358,14 +359,14 @@ def group_defects_by_distance(
             else:  # no match found, add new entry
                 try:
                     equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        symm_bulk_struct.find_equivalent_sites(bulk_site)
+                        tuple(site.frac_coords)
+                        for site in symm_bulk_struct.find_equivalent_sites(bulk_site)
                     )
                 except ValueError:  # likely interstitials, need to add equiv sites to tuple
                     equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        _get_all_equiv_sites(
-                            bulk_site.frac_coords,
-                            symm_bulk_struct,
-                            bulk_symm_ops,
+                        tuple(frac_coords)
+                        for frac_coords in _get_all_equiv_sites(
+                            bulk_site.frac_coords, symm_bulk_struct, bulk_symm_ops, just_frac_coords=True
                         )
                     )
 
