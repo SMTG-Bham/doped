@@ -1213,5 +1213,6 @@ def plot_chemical_potential_table(
 
     for cell in tab.get_celld().values():
         cell.set_linewidth(0)
+        cell.set_facecolor("none")  # make transparent as with rest of plot
 
     return tab
