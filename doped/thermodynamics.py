@@ -458,7 +458,7 @@ class DefectThermodynamics(MSONable):
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
         bulk_dos: Optional[FermiDos] = None,
-        skip_check: bool = False,
+        skip_vbm_check: bool = False,
     ):
         r"""
         Create a ``DefectThermodynamics`` object, which can be used to analyse
@@ -555,7 +555,7 @@ class DefectThermodynamics(MSONable):
                 convergence wrt `k`-point sampling. Consistent functional settings should be
                 used for the bulk DOS and defect supercell calculations.
                 (Default: None)
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable. (Default: False)
@@ -591,7 +591,7 @@ class DefectThermodynamics(MSONable):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of states
                 (DOS), used for calculating Fermi level positions and defect/carrier
                 concentrations.
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable.
@@ -608,7 +608,7 @@ class DefectThermodynamics(MSONable):
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
         self._dist_tol = dist_tol
         self.check_compatibility = check_compatibility
-        self.skip_check = skip_check
+        self.skip_vbm_check = skip_vbm_check
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
@@ -707,7 +707,7 @@ class DefectThermodynamics(MSONable):
             "check_compatibility": self.check_compatibility,
             "bulk_formula": self.bulk_formula,
             "bulk_dos": self.bulk_dos,
-            "skip_check": self.skip_check,
+            "skip_vbm_check": self.skip_vbm_check,
         }
 
     @classmethod
@@ -747,7 +747,7 @@ class DefectThermodynamics(MSONable):
             dist_tol=d.get("dist_tol", 1.5),
             check_compatibility=d.get("check_compatibility", True),
             bulk_dos=FermiDos.from_dict(d.get("bulk_dos")) if d.get("bulk_dos") else None,
-            skip_check=d.get("skip_check"),
+            skip_vbm_check=d.get("skip_vbm_check"),
         )
 
     def to_json(self, filename: Optional[PathLike] = None):
@@ -1348,7 +1348,7 @@ class DefectThermodynamics(MSONable):
         convergence wrt `k`-point sampling. Consistent functional settings should be
         used for the bulk DOS and defect supercell calculations.
         """
-        self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_check=self.skip_check)
+        self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_vbm_check=self.skip_vbm_check)
 
     @property
     def defect_names(self):
@@ -2407,7 +2407,7 @@ class DefectThermodynamics(MSONable):
                 {
                     "defect_entries": defect_entries_to_plot,
                     "check_compatibility": False,
-                    "skip_check": True,
+                    "skip_vbm_check": True,
                 }
             )
             thermo_to_plot = DefectThermodynamics.from_dict(defect_thermo_dict)
@@ -3002,7 +3002,7 @@ class DefectThermodynamics(MSONable):
         )
 
     def _parse_fermi_dos(
-        self, bulk_dos: Optional[Union[PathLike, Vasprun, FermiDos]] = None, skip_check: bool = False
+        self, bulk_dos: Optional[Union[PathLike, Vasprun, FermiDos]] = None, skip_vbm_check: bool = False
     ) -> FermiDos:
         if bulk_dos is None:
             return None
@@ -3020,7 +3020,7 @@ class DefectThermodynamics(MSONable):
             fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
             fdos = get_fermi_dos(bulk_dos)
 
-        if abs(fdos_vbm - self.vbm) > 0.05 and not skip_check:
+        if abs(fdos_vbm - self.vbm) > 0.05 and not skip_vbm_check:
             warnings.warn(
                 f"The VBM eigenvalue of the bulk DOS calculation ({fdos_vbm:.2f} eV, band gap = "
                 f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
@@ -3048,7 +3048,7 @@ class DefectThermodynamics(MSONable):
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
         return_concs: bool = False,
-        skip_check: bool = False,
+        skip_vbm_check: bool = False,
         effective_dopant_concentration: Optional[float] = None,
     ) -> Union[float, tuple[float, float, float]]:
         r"""
@@ -3163,7 +3163,7 @@ class DefectThermodynamics(MSONable):
             return_concs (bool):
                 Whether to return the corresponding electron and hole concentrations
                 (in cm^-3) as well as the Fermi level. (default: False)
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from ``self.vbm``
                 by >0.05 eV. Should only be used when the reason for this difference is
                 known/acceptable. (default: False)
@@ -3182,7 +3182,7 @@ class DefectThermodynamics(MSONable):
             corresponding electron and hole concentrations (in cm^-3) if ``return_concs=True``.
         """
         if bulk_dos is not None:
-            self._bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
+            self._bulk_dos = self._parse_fermi_dos(bulk_dos, skip_vbm_check=skip_vbm_check)
 
         if self.bulk_dos is None:  # none provided, and none previously set
             raise ValueError(
@@ -3410,7 +3410,7 @@ class DefectThermodynamics(MSONable):
                 (Default: None; no extrinsic dopant)
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
-                is not 0) or ``_parse_fermi_dos`` (``skip_check``; to skip the warning about
+                is not 0) or ``_parse_fermi_dos`` (``skip_vbm_check``; to skip the warning about
                 the DOS VBM differing from ``self.vbm`` by >0.05 eV; default is False).
 
         Returns:
@@ -3422,11 +3422,13 @@ class DefectThermodynamics(MSONable):
             ``(fermi_level, e_conc, h_conc, conc_df, annealing_fermi_level, annealing_e_conc,
             annealing_h_conc, annealing_conc_df)``.
         """
-        if kwargs and any(i not in ["verbose", "tol", "skip_check"] for i in kwargs):
+        if kwargs and any(i not in ["verbose", "tol", "skip_vbm_check"] for i in kwargs):
             raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
 
         if bulk_dos is not None:
-            self._bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
+            self._bulk_dos = self._parse_fermi_dos(
+                bulk_dos, skip_vbm_check=kwargs.get("skip_vbm_check", False)
+            )
 
         if self.bulk_dos is None:  # none provided, and none previously set
             raise ValueError(
@@ -3465,7 +3467,7 @@ class DefectThermodynamics(MSONable):
                 temperature=annealing_temperature,
                 return_concs=False,
                 effective_dopant_concentration=effective_dopant_concentration,
-                skip_check=True,  # already warned if necessary
+                skip_vbm_check=True,  # already warned if necessary
             )
             assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
             self.bulk_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
@@ -4272,7 +4274,7 @@ class FermiSolver(MSONable):
         chempots: Optional[dict] = None,
         el_refs: Optional[dict] = None,
         backend: str = "doped",
-        skip_check: bool = False,
+        skip_vbm_check: bool = False,
     ):
         r"""
         Class to calculate the Fermi level, defect and carrier concentrations
@@ -4373,7 +4375,7 @@ class FermiSolver(MSONable):
                 while ``"doped"`` is usually (but not always) quicker. Default is
                 ``doped``, but will attempt to switch to ``py-sc-fermi`` if required
                 (and installed).
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 ``DefectThermodynamics.vbm`` by >0.05 eV. Should only be used when the
                 reason for this difference is known/acceptable. Default is ``False``.
@@ -4388,7 +4390,7 @@ class FermiSolver(MSONable):
             volume (float):
                 Volume of the unit cell in the bulk DOS calculation (stored in
                 ``self.defect_thermodynamics.bulk_dos``).
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable.
@@ -4405,10 +4407,10 @@ class FermiSolver(MSONable):
         # locking / synchronisation (which shouldn't be necessary...). Worth keeping in mind if
         # needed in future.
         self.defect_thermodynamics = defect_thermodynamics
-        self.skip_check = skip_check
+        self.skip_vbm_check = skip_vbm_check
         if bulk_dos is not None:
             self.defect_thermodynamics._bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
-                bulk_dos, skip_check=self.skip_check
+                bulk_dos, skip_vbm_check=self.skip_vbm_check
             )
         if self.defect_thermodynamics.bulk_dos is None:
             raise ValueError(
