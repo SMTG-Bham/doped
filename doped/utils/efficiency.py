@@ -20,9 +20,7 @@ from pymatgen.core.composition import Composition, Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Structure
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
-from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial import Voronoi
-from scipy.spatial.distance import squareform
 
 from doped.utils import symmetry
 
@@ -520,14 +518,7 @@ def _doped_cluster_frac_coords(
     lattice = structure.lattice
     sga = symmetry.get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
     symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
-    dist_matrix = (dist_matrix + dist_matrix.T) / 2
-
-    for i in range(len(dist_matrix)):
-        dist_matrix[i, i] = 0
-    condensed_m = squareform(dist_matrix)
-    z = linkage(condensed_m)
-    cn = fcluster(z, tol, criterion="distance")
+    cn = symmetry._cluster_coords(fcoords, structure, dist_tol=tol)
     unique_fcoords = []
 
     for n in set(cn):
