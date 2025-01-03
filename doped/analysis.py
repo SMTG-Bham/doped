@@ -632,7 +632,7 @@ class DefectsParser:
                 states according to eigenvalue analysis and only be stable for Fermi
                 levels within a small window to a band edge (taken as the smaller of
                 ``error_tolerance`` or 10% of the band gap, by default, or can be
-                set by a ``charge_stability_tolerance = X`` keyword argument).
+                set by a ``shallow_charge_stability_tolerance = X`` keyword argument).
             bulk_band_gap_vr (PathLike or Vasprun):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
                 object, from which to determine the bulk band gap and band edge
@@ -681,8 +681,8 @@ class DefectsParser:
                 ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``;
                 including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
                 ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``; or for controlling
-                shallow defect charge correction error warnings with (see arg docstring
-                for ``error_tolerance`` above) with ``charge_stability_tolerance``
+                shallow defect charge correction error warnings (see ``error_tolerance``
+                argument description) with ``shallow_charge_stability_tolerance``.
                 Primarily used by ``DefectsParser`` to expedite parsing by avoiding
                 reloading bulk data for each defect.
 
@@ -1187,13 +1187,13 @@ class DefectsParser:
             from doped.utils.eigenvalues import is_shallow
 
             # first check if it's a stable defect:
-            stable = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry) > 0
+            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
 
-            if not stable or (
+            if fermi_stability_window < 0 or (
                 is_shallow(defect_entry)
-                and defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+                and fermi_stability_window
                 < kwargs.get(
-                    "charge_stability_tolerance",
+                    "shallow_charge_stability_tolerance",
                     min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
                 )
             ):

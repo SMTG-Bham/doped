@@ -2168,7 +2168,7 @@ class DefectThermodynamics(MSONable):
         )
 
     # TODO: Don't show chempot table by default? At least if limit explicitly chosen?
-    # TODO: Add option to only plot defect states that are stable at some point in the bandgap
+    # Default = None; shown if multiple plots else False.
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
     #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
@@ -2182,17 +2182,15 @@ class DefectThermodynamics(MSONable):
     #   can also change the colours of the different defect lines (e.g. for CdTe_wout_meta increasing
     #   `dist_tol` to 2 to merge all Te interstitials, results in the colours of other defect lines (
     #   e.g. Cd_Te) changing at the same time - ideally this wouldn't happen!
-    #  TODO: optionally retain/remove unstable (in the gap) charge states (rather than current
-    #  default range of (VBM - 1eV, CBM + 1eV))... depends on if shallow defect tagging with pydefect is
-    #  implemented or not really, what would be best to do by default
 
     def plot(
         self,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
-        chempot_table: bool = True,
         all_entries: Union[bool, str] = False,
+        unstable_entries: Union[bool, str] = "not shallow",
+        chempot_table: bool = True,
         style_file: Optional[PathLike] = None,
         xlim: Optional[tuple] = None,
         ylim: Optional[tuple] = None,
@@ -2202,6 +2200,7 @@ class DefectThermodynamics(MSONable):
         linestyles: Union[str, list[str]] = "-",
         auto_labels: bool = False,
         filename: Optional[PathLike] = None,
+        **kwargs,
     ) -> Union[Figure, list[Figure]]:
         r"""
         Produce a defect formation energy vs Fermi level plot (a.k.a. a defect
@@ -2259,15 +2258,32 @@ class DefectThermodynamics(MSONable):
                 (with the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            chempot_table (bool):
-                Whether to print the chemical potential table above the plot.
-                (Default: True)
             all_entries (bool, str):
                 Whether to plot the formation energy lines of `all` defect entries,
                 rather than the default of showing only the equilibrium states at each
                 Fermi level position (traditional). If instead set to "faded", will plot
                 the equilibrium states in bold, and all unstable states in faded grey
                 (Default: False)
+            unstable_entries (bool, str):
+                Controls the plotting of unstable/shallow defect states; allowed values
+                are ``True``, ``False`` or ``"not shallow"``. If ``"not shallow"``
+                (default), defect entries which are predicted to be shallow (perturbed
+                host) states according to eigenvalue analysis and only stable for Fermi
+                levels within a small window to a band edge (``shallow_stability_tol``)
+                are omitted from plotting. If ``False``, `all` defects which are not
+                stable for any Fermi level in the band gap are `also` omitted from
+                plotting.
+                ``shallow_stability_tol`` is set to the smaller of 0.05 eV or 10% of the
+                band gap by default, but can be set by a
+                ``shallow_charge_stability_tolerance = X`` keyword argument. If
+                ``unstable_entries=False``, the Fermi window stability tolerance for all
+                defects (default = 0; meaning any in-gap stability) can be set by a
+                ``charge_stability_tolerance = X`` keyword argument (positive or negative).
+                If ``True``, defect entries are not pruned based on stability/shallow
+                classification.
+            chempot_table (bool):
+                Whether to print the chemical potential table above the plot.
+                (Default: True)
             style_file (PathLike):
                 Path to a mplstyle file to use for the plot. If None (default), uses
                 the default doped style (from ``doped/utils/doped.mplstyle``).
@@ -2309,6 +2325,11 @@ class DefectThermodynamics(MSONable):
                 states. If there are many transition levels, this can be quite ugly.
                 (Default: False)
             filename (PathLike): Filename to save the plot to. (Default: None (not saved))
+            **kwargs:
+                Additional keyword arguments for advanced customisation, such as
+                ``shallow_charge_stability_tolerance`` or ``charge_stability_tolerance``
+                for controlling stability window tolerances with the ``unstable_entries``
+                parameter (see argument description for more info).
 
         Returns:
             ``matplotlib`` ``Figure`` object, or list of ``Figure`` objects if multiple
@@ -2317,8 +2338,7 @@ class DefectThermodynamics(MSONable):
         from shakenbreak.plotting import _install_custom_font
 
         _install_custom_font()
-        # check input options:
-        if all_entries not in [False, True, "faded"]:
+        if all_entries not in [False, True, "faded"]:  # check input options
             raise ValueError(
                 f"`all_entries` option must be either False, True, or 'faded', not {all_entries}"
             )
@@ -2351,6 +2371,44 @@ class DefectThermodynamics(MSONable):
                 "of formation energies, but the transition level positions will be unaffected."
             )
 
+        if unstable_entries not in [False, True, "not shallow"]:  # check unstable_entries input options
+            raise ValueError(
+                f"`unstable_entries` option must be either True, False, 'not shallow', "
+                f"not {unstable_entries}. See DefectThermodynamics.plot docstring for more info."
+            )
+
+        if unstable_entries is True:  # all
+            thermo_to_plot = self
+        else:  # prune to chosen defects
+            # determine tolerances:
+            default_shallow_tol = kwargs.get(
+                "shallow_charge_stability_tolerance",
+                min(0.05, self.band_gap * 0.1 if self.band_gap else 0.05),
+            )
+            if unstable_entries == "not shallow":
+                stability_tol = None
+                shallow_tol = default_shallow_tol
+            else:
+                stability_tol = kwargs.get("charge_stability_tolerance", 0)
+                shallow_tol = default_shallow_tol
+
+            defect_entries_to_plot = {}
+            from doped.utils.eigenvalues import is_shallow
+
+            for defect_entry in self.defect_entries.values():
+                fermi_stability_window = self._get_in_gap_fermi_level_stability_window(defect_entry)
+                if stability_tol is not None and fermi_stability_window < stability_tol:
+                    continue  # skip
+
+                if is_shallow(defect_entry) and fermi_stability_window < shallow_tol:
+                    continue  # skip
+
+                defect_entries_to_plot[defect_entry.name] = defect_entry
+
+            defect_thermo_dict = self.as_dict()
+            defect_thermo_dict["defect_entries"] = defect_entries_to_plot
+            thermo_to_plot = DefectThermodynamics.from_dict(defect_thermo_dict)
+
         style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         with plt.style.context(style_file):
@@ -2367,7 +2425,7 @@ class DefectThermodynamics(MSONable):
                 with warnings.catch_warnings():  # avoid double warning about no chempots supplied
                     warnings.filterwarnings("ignore", "No chemical potentials")
                     fig = _TLD_plot(
-                        self,
+                        thermo_to_plot,
                         dft_chempots=dft_chempots,
                         el_refs=el_refs,
                         chempot_table=chempot_table,
@@ -3631,7 +3689,8 @@ class DefectThermodynamics(MSONable):
             # no TLs and already checked stable -> only stable charge state
             return np.inf
 
-        return max(self.band_gap - lowest, highest)
+        stability_windows = np.array([self.band_gap - lowest, highest])
+        return min(stability_windows[np.isfinite(stability_windows)])
 
     def __repr__(self):
         """

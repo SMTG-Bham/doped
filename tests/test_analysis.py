@@ -1294,8 +1294,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         ``test_DefectsParser_corrections_errors_warning``) or if the defect is
         detected to be shallow (via ``pydefect`` eigenvalue analysis) and have
         a Fermi level stability region smaller than a given tolerance (given by
-        the ``"charge_stability_tolerance"`` kwarg if set, otherwise the
-        minimum of ``error_tolerance`` or 10% of the band gap value).
+        the ``"shallow_charge_stability_tolerance"`` kwarg if set, otherwise
+        the minimum of ``error_tolerance`` or 10% of the band gap value).
 
         This function tests the latter case.
         """
@@ -1360,11 +1360,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=True)
 
         dp, w = _create_dp_and_capture_warnings(
-            # error above tol, shallow with larger stability window, but `charge_stability_tolerance` set
+            # error > tol, shallow w/larger stability window, but `shallow_charge_stability_tolerance` set
             output_path=self.shallow_O_Se_DATA_DIR,
             dielectric=self.Se_dielectric,
             error_tolerance=0.003,
-            charge_stability_tolerance=0.01,
+            shallow_charge_stability_tolerance=0.01,
         )
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
 
