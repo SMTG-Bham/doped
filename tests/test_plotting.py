@@ -61,14 +61,19 @@ class DefectPlottingTestCase(unittest.TestCase):
         return self.CdTe_thermo.plot(self.CdTe_chempots, colormap="viridis")[1]
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_plot_CdTe_multiple_figs(self):
+    def test_plot_CdTe_multiple_figs_no_chempot_table(self):
         # when limits not specified, plots all of them (second should be Te-rich here)
-        return self.CdTe_thermo.plot(self.CdTe_chempots)[1]
+        # chempot_table true by default with multiple figures, test setting to False
+        fig = self.CdTe_thermo.plot(self.CdTe_chempots, chempot_table=False)[1]
+        fig.gca().set_title("")  # remove the title by setting it to an empty string
+        return fig
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_plot_CdTe_Cd_rich(self):
         # when limits not specified, plots all of them (first should be Cd-rich here)
-        return self.CdTe_thermo.plot(self.CdTe_chempots)[0]
+        fig = self.CdTe_thermo.plot(self.CdTe_chempots)[0]
+        fig.gca().set_title("")  # remove the title by setting it to an empty string
+        return fig
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
     def test_plot_YTOS(self):
@@ -509,7 +514,9 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_default_CdTe_plot_Cd_rich(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Cd-rich")
+        return self.CdTe_defect_thermo.plot(
+            chempots=self.CdTe_chempots, limit="Cd-rich", chempot_table=True
+        )
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_O_rich_plot(self):

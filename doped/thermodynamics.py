@@ -139,8 +139,8 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
 
     Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
     """
+    chempots = deepcopy(chempots)  # don't modify original dict
     if chempots is not None and any("facets" in key or "elt_refs" in key for key in chempots):
-        chempots = deepcopy(chempots)  # don't modify original dict
         for key, subdict in list(chempots.items()):
             chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
 
@@ -2392,7 +2392,7 @@ class DefectThermodynamics(MSONable):
             defect_entries_to_plot = {}
             from doped.utils.eigenvalues import is_shallow
 
-            for defect_entry in self.defect_entries.values():
+            for name, defect_entry in self.defect_entries.items():
                 fermi_stability_window = self._get_in_gap_fermi_level_stability_window(defect_entry)
                 if stability_tol is not None and fermi_stability_window < stability_tol:
                     continue  # skip
@@ -2400,10 +2400,16 @@ class DefectThermodynamics(MSONable):
                 if is_shallow(defect_entry) and fermi_stability_window < shallow_tol:
                     continue  # skip
 
-                defect_entries_to_plot[defect_entry.name] = defect_entry
+                defect_entries_to_plot[name] = defect_entry
 
             defect_thermo_dict = self.as_dict()
-            defect_thermo_dict["defect_entries"] = defect_entries_to_plot
+            defect_thermo_dict.update(
+                {
+                    "defect_entries": defect_entries_to_plot,
+                    "check_compatibility": False,
+                    "skip_check": True,
+                }
+            )
             thermo_to_plot = DefectThermodynamics.from_dict(defect_thermo_dict)
 
         style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"

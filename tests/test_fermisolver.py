@@ -43,6 +43,8 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         Test conversion of FermiDos to py_sc_fermi DOS with default parameters.
         """
         # Create a mock FermiDos object
+        # TODO: Why are we mocking `FermiDos` here, when we set the densities and energies anyway?
+        # Can just test like: https://github.com/materialsproject/pymatgen/pull/4240/commits/83b988d054000256b3ffaeedcdb84cd43bf26f67
         mock_fermi_dos = MagicMock(spec=FermiDos)
         mock_fermi_dos.densities = {
             Spin.up: np.array([1.0, 2.0, 3.0, 4.0]),
@@ -70,7 +72,6 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
 
         # Test with default values
         pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
-        print(pyscfermi_dos._n0_index())
 
         # Assertions
         assert pyscfermi_dos.nelect == mock_fermi_dos.nelecs
