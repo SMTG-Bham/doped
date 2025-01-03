@@ -3609,14 +3609,13 @@ class DefectThermodynamics(MSONable):
             name: [ent.name for ent in entry_list] for name, entry_list in self.stable_entries.items()
         }
         if not any(defect_entry.name in name_list for name_list in stable_entries_name_dict.values()):
-            return 0
+            return -np.inf
 
         grouped_defect_name_wout_charge = next(
             name
             for name in stable_entries_name_dict
             if defect_entry.name in stable_entries_name_dict[name]
         )
-        self.transition_level_map[grouped_defect_name_wout_charge]
 
         # get highest and lowest TL (defining stability window):
         lowest = np.inf
@@ -3631,7 +3630,7 @@ class DefectThermodynamics(MSONable):
             # no TLs and already checked stable -> only stable charge state
             return np.inf
 
-        return max(self.band_gap - lowest, highest, 0)
+        return max(self.band_gap - lowest, highest)
 
     def __repr__(self):
         """

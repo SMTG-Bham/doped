@@ -93,6 +93,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
         self.CaO_DATA_DIR = os.path.join(self.module_path, "data/CaO")
         self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
+        self.shallow_O_Se_DATA_DIR = os.path.join(self.module_path, "data/shallow_O_Se_+1")
+        self.Se_dielectric = np.array([0.627551, 0.627551, 0.943432]) + np.array(
+            [6.714217, 6.714317, 10.276149]
+        )
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
@@ -105,6 +109,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CaO_DATA_DIR, "CaO_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.shallow_O_Se_DATA_DIR, "Se_defect_dict.json.gz"))
 
         for i in os.listdir(self.SOLID_SOLUTION_DATA_DIR):
             if "json" in i:
@@ -612,10 +617,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "Estimated error in the Kumagai (eFNV) ",
             "charge correction for certain defects is greater than the `error_tolerance` (= 1.00e-03 eV):",
             "v_Cd_-2: 1.08e-02 eV",
-            "v_Cd_-1: 8.46e-03 eV",
+            # "v_Cd_-1: 8.46e-03 eV",  # now not printed because not stable charge states
             "Int_Te_3_1: 3.10e-03 eV",
             "Te_Cd_+1: 2.02e-03 eV",
-            "Int_Te_3_Unperturbed_1: 4.91e-03 eV",
+            # "Int_Te_3_Unperturbed_1: 4.91e-03 eV",  # now not printed because not stable charge states
             "Int_Te_3_2: 1.24e-02 eV",
             "You may want to check the accuracy of the corrections by",
             "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
@@ -1281,6 +1286,87 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.01) == 8.0
+
+    def test_shallow_defect_correction_warning_skipping(self):
+        """
+        Warnings about charge correction errors are skipped if the defects are
+        not stable for any Fermi level in the gap (tested above in
+        ``test_DefectsParser_corrections_errors_warning``) or if the defect is
+        detected to be shallow (via ``pydefect`` eigenvalue analysis) and have
+        a Fermi level stability region smaller than a given tolerance (given by
+        the ``"charge_stability_tolerance"`` kwarg if set, otherwise the
+        minimum of ``error_tolerance`` or 10% of the band gap value).
+
+        This function tests the latter case.
+        """
+        # Note that we have artificially modified the energy of ``sub_1_O_on_Se_1`` to be 0.17 eV lower,
+        # so that it is found to be (just about) stable in the band gap for the purposes of this test
+        dp, w = _create_dp_and_capture_warnings(
+            output_path=self.shallow_O_Se_DATA_DIR, dielectric=self.Se_dielectric
+        )
+
+        def _check_shallow_O_Se_dp_w(dp, w, correction_warning=False):
+            assert any("There are mismatching INCAR tags" in str(warn.message) for warn in w)
+            assert any("('NKRED', 1, 2)" in str(warn.message) for warn in w)
+            # warning about our artificially shifted vasprun energy:
+            assert any(
+                "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` (-381.559 "
+                "eV), used to obtain the atomic core potentials for the eFNV correction, "
+                "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
+                "energy), used for" in str(warn.message)
+                for warn in w
+            )
+            # no charge correction warning by default, as charge correction error is only 6.36 meV here:
+            assert any("Estimated error" in str(warn.message) for warn in w) == correction_warning
+            assert (
+                any("sub_1_O_on_Se_1: 6.36e-03 eV" in str(warn.message) for warn in w)
+                == correction_warning
+            )
+            assert len(dp.defect_dict) == 2
+            self._check_DefectsParser(dp)
+
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
+        thermo = dp.get_defect_thermodynamics()
+        assert np.isclose(
+            next(thermo.transition_level_map["sub_1_O_on_Se"].keys()),
+            0.00367,
+            atol=1e-4,
+        )
+        assert np.isclose(
+            thermo._get_in_gap_fermi_level_stability_window("sub_1_O_on_Se_1"),
+            0.00367,
+            atol=1e-4,
+        )
+        assert np.isclose(
+            dp.defect_dict["sub_1_O_on_Se_1"].corrections_metadata["kumagai_charge_correction_error"],
+            0.00636,
+            atol=1e-4,
+        )
+
+        dp, w = _create_dp_and_capture_warnings(
+            # error above tol but shallow with smaller stability window, no warning
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+            error_tolerance=0.005,
+        )
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
+
+        dp, w = _create_dp_and_capture_warnings(
+            # error above tol, shallow but with larger stability window, warning
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+            error_tolerance=0.003,
+        )
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=True)
+
+        dp, w = _create_dp_and_capture_warnings(
+            # error above tol, shallow with larger stability window, but `charge_stability_tolerance` set
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+            error_tolerance=0.003,
+            charge_stability_tolerance=0.01,
+        )
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
 
 
 class DopedParsingTestCase(unittest.TestCase):
