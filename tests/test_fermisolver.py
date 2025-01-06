@@ -1,5 +1,5 @@
 """
-Tests for FermiSolver class in doped.thermodynamics module.
+Tests for the ``FermiSolver`` class in ``doped.thermodynamics``.
 """
 
 import builtins
@@ -17,8 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from monty.serialization import loadfn
-from pymatgen.electronic_structure.core import Spin
-from pymatgen.electronic_structure.dos import FermiDos
+from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
 
 from doped.thermodynamics import (
     FermiSolver,
@@ -37,56 +36,58 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
     Tests for the ``_get_py_sc_fermi_dos_from_fermi_dos`` function.
     """
 
+    @classmethod
+    def setUpClass(cls):
+        cls.CdTe_fermi_dos = get_fermi_dos(
+            os.path.join(EXAMPLE_DIR, "CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
+        )
+
     @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
     def test_get_py_sc_fermi_dos(self):
         """
-        Test conversion of FermiDos to py_sc_fermi DOS with default parameters.
+        Test conversion of ``FermiDos`` to ``py_sc_fermi`` DOS with default
+        parameters.
         """
-        # Create a mock FermiDos object
-        # TODO: Why are we mocking `FermiDos` here, when we set the densities and energies anyway?
-        # Can just test like: https://github.com/materialsproject/pymatgen/pull/4240/commits/83b988d054000256b3ffaeedcdb84cd43bf26f67
-        mock_fermi_dos = MagicMock(spec=FermiDos)
-        mock_fermi_dos.densities = {
-            Spin.up: np.array([1.0, 2.0, 3.0, 4.0]),
-            Spin.down: np.array([0.5, 1.0, 1.5, 2.0]),
-        }
-        mock_fermi_dos.energies = np.array([0.0, 0.5, 1.0, 1.5])
-        mock_fermi_dos.get_cbm_vbm.return_value = (1.0, 0.5)  # VBM = 0.5
-        mock_fermi_dos.nelecs = 7.5  # Mock number of electrons
-        mock_fermi_dos.get_gap.return_value = 0.4999  # Mock bandgap
-        mock_fermi_dos.volume = 1
-        mock_fermi_dos.idx_vbm = 1
-        mock_fermi_dos.idx_cbm = 2
-        mock_fermi_dos.de = (
-            np.hstack((mock_fermi_dos.energies[1:], mock_fermi_dos.energies[-1])) - mock_fermi_dos.energies
+        dos = Dos(
+            energies=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+            densities={
+                Spin.up: np.array([1.0, 2.0, 0.0, 3.0, 4.0]),
+                Spin.down: np.array([0.5, 1.0, 0.0, 1.5, 2.0]),
+            },
+            efermi=0.5,
         )
-        e_vbm = mock_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
-        tdos = sum(mock_fermi_dos.densities.values())
-        mock_fermi_dos.tdos = (
-            tdos
-            * mock_fermi_dos.nelecs
-            / (tdos * mock_fermi_dos.de)[mock_fermi_dos.energies <= e_vbm].sum()
-        )
-        mock_fermi_dos.A_to_cm = 1e-8
-        gap = mock_fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+        fermi_dos = FermiDos(dos, structure=self.CdTe_fermi_dos.structure)
+        e_cbm, e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)
+        assert np.isclose(e_vbm, 0.5)
+        assert np.isclose(e_cbm, 1.5)
+        gap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+        assert np.isclose(gap, 1.0)
+
+        from py_sc_fermi.dos import DOS
+
+        # https://github.com/bjmorgan/py-sc-fermi/pull/39
+        def _n0_index(self) -> int:
+            return np.where(self._edos >= self.bandgap)[0][0]
+
+        DOS._n0_index = _n0_index
 
         # Test with default values
-        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(mock_fermi_dos)
-
-        # Assertions
-        assert pyscfermi_dos.nelect == mock_fermi_dos.nelecs
+        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(fermi_dos)
+        assert pyscfermi_dos.nelect == fermi_dos.nelecs
         assert pyscfermi_dos.bandgap == gap
         assert pyscfermi_dos.spin_polarised
-        np.testing.assert_array_equal(pyscfermi_dos.edos, mock_fermi_dos.energies - e_vbm)
+        np.testing.assert_array_equal(pyscfermi_dos.edos, fermi_dos.energies - e_vbm)
+
+        print(pyscfermi_dos._p0_index(), pyscfermi_dos._n0_index())  # for debugging
 
         # test carrier concentrations (indirectly tests DOS densities, this is the relevant property
         # from the DOS objects):
-        pyscfermi_scale = 1e24 / mock_fermi_dos.volume
+        pyscfermi_scale = 1e24 / fermi_dos.volume
         for e_fermi, temperature in itertools.product(
             np.linspace(-0.25, gap + 0.25, 10), np.linspace(300, 1000.0, 10)
         ):
             pyscfermi_h_e = pyscfermi_dos.carrier_concentrations(e_fermi, temperature)  # rel to VBM
-            doped_e_h = get_e_h_concs(mock_fermi_dos, e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
+            doped_e_h = get_e_h_concs(fermi_dos, e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
             assert np.allclose(
                 (pyscfermi_h_e[1] * pyscfermi_scale, pyscfermi_h_e[0] * pyscfermi_scale),
                 doped_e_h,
@@ -105,20 +106,15 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         """
         Test conversion with custom vbm, nelect, and bandgap.
         """
-        # Create a mock FermiDos object
-        mock_fermi_dos = MagicMock(spec=FermiDos)
-        mock_fermi_dos.densities = {Spin.up: np.array([1.0, 2.0, 3.0])}
-        mock_fermi_dos.energies = np.array([0.0, 0.5, 1.0])
-        mock_fermi_dos.get_cbm_vbm.return_value = (None, 0.0)
-        mock_fermi_dos.nelecs = 10
-        mock_fermi_dos.get_gap.return_value = 0.5
-
-        # Test with custom parameters
-        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
-            mock_fermi_dos, vbm=0.1, nelect=12, bandgap=0.5
+        dos = Dos(
+            energies=np.array([0.0, 0.5, 1.0]),
+            densities={Spin.up: np.array([1.0, 2.0, 3.0])},
+            efermi=0.1,
         )
+        fermi_dos = FermiDos(dos, structure=self.CdTe_fermi_dos.structure)
 
-        # Assertions
+        # Test with custom parameters; overrides values in the ``FermiDos`` object
+        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(fermi_dos, vbm=0.1, nelect=12, bandgap=0.5)
         assert pyscfermi_dos.nelect == 12
         assert pyscfermi_dos.bandgap == 0.5
         np.testing.assert_array_equal(pyscfermi_dos.edos, np.array([-0.1, 0.4, 0.9]))
@@ -129,28 +125,27 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         """
         Test conversion of FermiDos to py_sc_fermi DOS with default parameters.
         """
-        fermi_dos = get_fermi_dos(
-            os.path.join(EXAMPLE_DIR, "CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
-        )
-        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(fermi_dos)
-        assert pyscfermi_dos.nelect == fermi_dos.nelecs
+        pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(self.CdTe_fermi_dos)
+        assert pyscfermi_dos.nelect == self.CdTe_fermi_dos.nelecs
         assert pyscfermi_dos.nelect == 18
-        assert np.isclose(pyscfermi_dos.bandgap, fermi_dos.get_gap(tol=1e-4, abs_tol=True))
+        assert np.isclose(pyscfermi_dos.bandgap, self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True))
         assert np.isclose(pyscfermi_dos.bandgap, 1.526, atol=1e-3)
         assert not pyscfermi_dos.spin_polarised  # SOC DOS
 
-        e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
-        gap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
-        np.testing.assert_array_equal(pyscfermi_dos.edos, fermi_dos.energies - e_vbm)
+        e_vbm = self.CdTe_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+        gap = self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+        np.testing.assert_array_equal(pyscfermi_dos.edos, self.CdTe_fermi_dos.energies - e_vbm)
 
         # test carrier concentrations (indirectly tests DOS densities, this is the relevant property
         # from the DOS objects):
-        pyscfermi_scale = 1e24 / fermi_dos.volume
+        pyscfermi_scale = 1e24 / self.CdTe_fermi_dos.volume
         for e_fermi, temperature in itertools.product(
             np.linspace(-0.5, gap + 0.5, 10), np.linspace(300, 2000.0, 10)
         ):
             pyscfermi_h_e = pyscfermi_dos.carrier_concentrations(e_fermi, temperature)  # rel to VBM
-            doped_e_h = get_e_h_concs(fermi_dos, e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
+            doped_e_h = get_e_h_concs(
+                self.CdTe_fermi_dos, e_fermi + e_vbm, temperature
+            )  # raw Fermi eigenvalue
             assert np.allclose(
                 (pyscfermi_h_e[1] * pyscfermi_scale, pyscfermi_h_e[0] * pyscfermi_scale),
                 doped_e_h,
