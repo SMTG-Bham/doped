@@ -8,6 +8,7 @@ import os
 import unittest
 import warnings
 from copy import deepcopy
+from functools import wraps
 
 # Check if py_sc_fermi is available
 from importlib.util import find_spec
@@ -161,6 +162,25 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
 
 
 # TODO: Use pytest fixtures to reduce code redundancy here?
+def parameterize_backend():
+    """
+    A test decorator to allow easy running of ``FermiSolver`` tests with both
+    the ``doped`` and ``py-sc-fermi`` backends.
+    """
+
+    def decorator(test_func):
+        @wraps(test_func)
+        def wrapper(self, *args, **kwargs):
+            for backend in ["doped", "py-sc-fermi"]:
+                with self.subTest(backend=backend):
+                    print(f"Testing with {backend} backend")
+                    test_func(self, backend, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 class TestFermiSolverWithLoadedData(unittest.TestCase):
     """
     Tests for ``FermiSolver`` initialization with loaded data.
@@ -168,7 +188,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.example_thermo = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_example_thermo.json"))
+        cls.example_thermo = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_LZ_thermo_wout_meta.json.gz"))
         cls.CdTe_fermi_dos = get_fermi_dos(
             os.path.join(EXAMPLE_DIR, "CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         )
@@ -420,14 +440,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert "Limit 'nonexistent_limit' not found" in str(context.value)
 
     # Tests for equilibrium_solve
-    def test_equilibrium_solve_doped_backend(self):
+    @parameterize_backend()
+    def test_equilibrium_solve(self, backend):
         """
-        Test ``equilibrium_solve`` method for doped backend.
+        Test ``equilibrium_solve`` method for both backends.
         """
-        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         # Call the method
-        concentrations = self.solver_doped.equilibrium_solve(
+        concentrations = solver.equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
             el_refs=self.example_thermo.el_refs,
             temperature=300,
@@ -435,12 +457,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             append_chempots=True,
         )
 
-        # Assertions
-        assert "Fermi Level" in concentrations.columns
-        assert "Electrons (cm^-3)" in concentrations.columns
-        assert "Holes (cm^-3)" in concentrations.columns
-        assert "Temperature" in concentrations.columns
-        assert "Dopant (cm^-3)" in concentrations.columns
+        for i in [
+            "Fermi Level",
+            "Electrons (cm^-3)",
+            "Holes (cm^-3)",
+            "Temperature",
+            "Dopant (cm^-3)",
+        ]:
+            assert i in concentrations.columns, f"Missing column: {i}"
+
         # Check that concentrations are reasonable numbers
         assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
         # Check appended chemical potentials
@@ -448,9 +473,21 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
-    def test_equilibrium_solve_py_sc_fermi_backend(self):
+        expected_fermi_level = self.example_thermo.get_equilibrium_fermi_level(
+            limit="Te-rich", temperature=300, effective_dopant_concentration=1e16
+        )
+        assert np.isclose(concentrations["Fermi Level"].iloc[0], expected_fermi_level)
+        doped_e_h = get_e_h_concs(self.CdTe_fermi_dos, expected_fermi_level + self.example_thermo.vbm, 300)
+        assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], doped_e_h[0], rtol=1e-3)
+        assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], doped_e_h[1], rtol=1e-3)
+        # doped_defect_concs = self.example_thermo.get_equilibrium_concentrations(
+        #     fermi_level=expected_fermi_level, limit="Te-rich", temperature=300
+        # )
+
+    def test_equilibrium_solve_mocked_py_sc_fermi_backend(self):
         """
-        Test equilibrium_solve method for py-sc-fermi backend.
+        Test equilibrium_solve method for a mocked ``py-sc-fermi`` backend (so
+        test works even when ``py-sc-fermi`` is not installed).
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
 
@@ -479,12 +516,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             append_chempots=True,
         )
 
-        # Assertions
-        assert "Fermi Level" in concentrations.columns
-        assert "Electrons (cm^-3)" in concentrations.columns
-        assert "Holes (cm^-3)" in concentrations.columns
-        assert "Temperature" in concentrations.columns
-        assert "Dopant (cm^-3)" in concentrations.columns
+        for i in [
+            "Fermi Level",
+            "Electrons (cm^-3)",
+            "Holes (cm^-3)",
+            "Temperature",
+            "Dopant (cm^-3)",
+        ]:
+            assert i in concentrations.columns, f"Missing column: {i}"
+
         # Check defects are included
         assert "defect1" in concentrations.index
         assert "defect2" in concentrations.index
