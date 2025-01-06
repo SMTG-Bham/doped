@@ -188,19 +188,19 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.example_thermo = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_LZ_thermo_wout_meta.json.gz"))
+        cls.CdTe_thermo = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_LZ_thermo_wout_meta.json.gz"))
         cls.CdTe_fermi_dos = get_fermi_dos(
             os.path.join(EXAMPLE_DIR, "CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         )
-        cls.example_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_chempots.json"))
+        cls.CdTe_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_chempots.json"))
 
-        cls.CdTe_300K_eff_1e16_fermi_level = cls.example_thermo.get_equilibrium_fermi_level(
+        cls.CdTe_300K_eff_1e16_fermi_level = cls.CdTe_thermo.get_equilibrium_fermi_level(
             limit="Te-rich", temperature=300, effective_dopant_concentration=1e16
         )
         cls.CdTe_300K_eff_1e16_e_h = get_e_h_concs(
-            cls.CdTe_fermi_dos, cls.CdTe_300K_eff_1e16_fermi_level + cls.example_thermo.vbm, 300
+            cls.CdTe_fermi_dos, cls.CdTe_300K_eff_1e16_fermi_level + cls.CdTe_thermo.vbm, 300
         )
-        cls.CdTe_300K_eff_1e16_conc_df = cls.example_thermo.get_equilibrium_concentrations(
+        cls.CdTe_300K_eff_1e16_conc_df = cls.CdTe_thermo.get_equilibrium_concentrations(
             fermi_level=cls.CdTe_300K_eff_1e16_fermi_level,
             limit="Te-rich",
             temperature=300,
@@ -208,12 +208,25 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             skip_formatting=True,
         )  # currently FermiSolver only supports per charge=False
 
-    def setUp(self):
-        self.example_thermo.bulk_dos = self.CdTe_fermi_dos
-        self.solver_py_sc_fermi = FermiSolver(
-            defect_thermodynamics=self.example_thermo, backend="py-sc-fermi"
+        (
+            cls.CdTe_anneal_800K_eff_1e16_fermi_level,
+            cls.CdTe_anneal_800K_eff_1e16_e_conc,
+            cls.CdTe_anneal_800K_eff_1e16_h_conc,
+            cls.CdTe_anneal_800K_eff_1e16_conc_df,
+        ) = cls.CdTe_thermo.get_fermi_level_and_concentrations(
+            annealing_temperature=800,
+            effective_dopant_concentration=1e16,
+            limit="Te-rich",
+            per_charge=False,  # currently FermiSolver only supports per charge=False
+            skip_formatting=True,
         )
-        self.solver_doped = FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
+
+    def setUp(self):
+        self.CdTe_thermo.bulk_dos = self.CdTe_fermi_dos
+        self.solver_py_sc_fermi = FermiSolver(
+            defect_thermodynamics=self.CdTe_thermo, backend="py-sc-fermi"
+        )
+        self.solver_doped = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="doped")
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
@@ -221,9 +234,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         Test default initialization, which uses ``doped`` backend.
         """
-        solver = FermiSolver(defect_thermodynamics=self.example_thermo)
+        solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo)
         assert solver.backend == "doped"
-        assert solver.defect_thermodynamics == self.example_thermo
+        assert solver.defect_thermodynamics == self.CdTe_thermo
         assert solver.volume is not None
 
     @patch("doped.thermodynamics.importlib.util.find_spec")
@@ -234,12 +247,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         mock_find_spec.return_value = None  # Simulate py_sc_fermi not installed
 
         # Ensure bulk_dos is set
-        assert self.example_thermo.bulk_dos is not None, "bulk_dos is not set."
+        assert self.CdTe_thermo.bulk_dos is not None, "bulk_dos is not set."
 
         # Initialize FermiSolver
-        solver = FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
+        solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="doped")
         assert solver.backend == "doped"
-        assert solver.defect_thermodynamics == self.example_thermo
+        assert solver.defect_thermodynamics == self.CdTe_thermo
         assert solver.volume is not None
 
     @patch("doped.thermodynamics.importlib.util.find_spec")
@@ -252,9 +265,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         mock_activate_backend.return_value = None
 
         # Initialize FermiSolver
-        solver = FermiSolver(defect_thermodynamics=self.example_thermo, backend="py-sc-fermi")
+        solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="py-sc-fermi")
         assert solver.backend == "py-sc-fermi"
-        assert solver.defect_thermodynamics == self.example_thermo
+        assert solver.defect_thermodynamics == self.CdTe_thermo
         assert solver.volume is not None
         mock_activate_backend.assert_called_once()
 
@@ -262,10 +275,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         Test initialization failure due to missing bulk_dos.
         """
-        self.example_thermo.bulk_dos = None  # Remove bulk_dos
+        self.CdTe_thermo.bulk_dos = None  # Remove bulk_dos
 
         with pytest.raises(ValueError) as context:
-            FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
+            FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="doped")
 
         assert "No bulk DOS calculation" in str(context.value)
 
@@ -274,7 +287,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test initialization failure due to invalid backend.
         """
         with pytest.raises(ValueError) as context:
-            FermiSolver(defect_thermodynamics=self.example_thermo, backend="invalid_backend")
+            FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="invalid_backend")
 
         assert "Unrecognised `backend`" in str(context.value)
 
@@ -362,7 +375,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             with patch("doped.thermodynamics._get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()):
                 # Set non-integer volume scaling
                 self.solver_py_sc_fermi.volume = 100.0
-                first_defect_entry = next(iter(self.example_thermo.defect_entries.values()))
+                first_defect_entry = next(iter(self.CdTe_thermo.defect_entries.values()))
 
                 # Patch the volume property
                 with patch.object(
@@ -423,15 +436,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
         fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
             single_chempot_dict=single_chempot_dict,
-            el_refs=self.example_thermo.el_refs,
+            el_refs=self.CdTe_thermo.el_refs,
             temperature=300,
             effective_dopant_concentration=None,
         )
 
         assert np.isclose(
-            fermi_level, self.example_thermo.get_equilibrium_fermi_level(limit="Te-rich", temperature=300)
+            fermi_level, self.CdTe_thermo.get_equilibrium_fermi_level(limit="Te-rich", temperature=300)
         )
-        doped_e_h = get_e_h_concs(self.CdTe_fermi_dos, fermi_level + self.example_thermo.vbm, 300)
+        doped_e_h = get_e_h_concs(self.CdTe_fermi_dos, fermi_level + self.CdTe_thermo.vbm, 300)
         assert np.isclose(electrons, doped_e_h[0], rtol=1e-3)
         assert np.isclose(holes, doped_e_h[1], rtol=1e-3)
 
@@ -441,8 +454,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test that the correct chemical potential dictionary is returned.
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
-        assert single_chempot_dict == self.example_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"]
-        assert el_refs == self.example_thermo.el_refs
+        assert single_chempot_dict == self.CdTe_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"]
+        assert el_refs == self.CdTe_thermo.el_refs
 
     def test_get_single_chempot_dict_limit_not_found(self):
         """
@@ -464,7 +477,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         concentrations = solver.equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
-            el_refs=self.example_thermo.el_refs,
+            el_refs=self.CdTe_thermo.el_refs,
             temperature=300,
             effective_dopant_concentration=1e16,
             append_chempots=True,
@@ -548,7 +561,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # Call the method
         concentrations = self.solver_py_sc_fermi.equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
-            el_refs=self.example_thermo.el_refs,
+            el_refs=self.CdTe_thermo.el_refs,
             temperature=300,
             effective_dopant_concentration=1e16,
             append_chempots=True,
@@ -608,16 +621,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
-        fermi_level, e_conc, h_conc, conc_df = self.example_thermo.get_fermi_level_and_concentrations(
-            annealing_temperature=800,
-            effective_dopant_concentration=1e16,
-            limit="Te-rich",
-            per_charge=False,  # currently FermiSolver only supports per charge=False
-            skip_formatting=True,
+        assert np.isclose(
+            concentrations["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
         )
-        assert np.isclose(concentrations["Fermi Level"].iloc[0], fermi_level)
-        assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], e_conc, rtol=1e-3)
-        assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], h_conc, rtol=1e-3)
+        assert np.isclose(
+            concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_e_conc, rtol=1e-3
+        )
+        assert np.isclose(
+            concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h_conc, rtol=1e-3
+        )
 
         fermisolver_concentrations = concentrations["Concentration (cm^-3)"]
         if backend == "py-sc-fermi":
@@ -626,7 +638,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
             )
         pd.testing.assert_series_equal(
-            conc_df["Concentration (cm^-3)"], fermisolver_concentrations, rtol=1e-3
+            self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
+            fermisolver_concentrations,
+            rtol=1e-3,
         )  # also checks the index and ordering
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
@@ -701,7 +715,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         concentrations = solver.scan_temperature(
             temperature_range=temperatures,
             limit="Te-rich",  # test using limit option
-            el_refs=self.example_thermo.chempots["elemental_refs"],
+            el_refs=self.CdTe_thermo.chempots["elemental_refs"],
             effective_dopant_concentration=1e16,
         )
 
@@ -768,16 +782,85 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
         assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
 
+        # test some values:
+        concentrations_800K = concentrations[
+            (concentrations["Annealing Temperature"] == 800)
+            & (concentrations["Quenched Temperature"] == 300)
+        ]
+        assert np.isclose(
+            concentrations_800K["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+        )
+        assert np.isclose(
+            concentrations_800K["Electrons (cm^-3)"].iloc[0],
+            self.CdTe_anneal_800K_eff_1e16_e_conc,
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            concentrations_800K["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h_conc, rtol=1e-3
+        )
+
+        fermisolver_concentrations = concentrations_800K["Concentration (cm^-3)"]
+        if backend == "py-sc-fermi":
+            fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
+            fermisolver_concentrations = fermisolver_concentrations.drop(
+                ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
+            )
+        pd.testing.assert_series_equal(
+            self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
+            fermisolver_concentrations,
+            rtol=1e-3,
+        )  # also checks the index and ordering
+
     @parameterize_backend()
-    def test_scan_temperature_error_catch(self, backend):
+    def test_scan_func_error_catch(self, backend):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with pytest.raises(ValueError) as exc:
             solver.scan_temperature(
                 annealing_temperature_range=[300, 350],
                 temperature_range=[300, 400],
-                chempots="Te-rich",
             )
         assert "Both ``annealing_temperature_range`` and ``temperature_range`` were set" in str(exc.value)
+
+        with pytest.raises(ValueError) as exc:
+            solver.scan_temperature(
+                quenched_temperature_range=[300, 350],
+            )
+        assert "Quenched temperature was set but no annealing temperature was given!" in str(exc.value)
+
+        # test for other methods:
+        for func, additional_kwargs in {
+            "scan_dopant_concentration": {"effective_dopant_concentration_range": [1e15, 1e16, 1e17]},
+            "interpolate_chempots": {"limits": ["Cd-rich", "Te-rich"]},
+            "scan_chempots": {},
+            "scan_chemical_potential_grid": {},
+            "min_max_X": {"target": "Electrons (cm^-3)"},
+        }.items():
+            with pytest.raises(ValueError) as exc:
+                getattr(solver, func)(
+                    annealing_temperature=400,
+                    temperature=400,
+                    **additional_kwargs,
+                )
+            assert "Both ``annealing_temperature`` and ``temperature`` were set" in str(exc.value)
+
+            with pytest.raises(ValueError) as exc:
+                getattr(solver, func)(
+                    quenched_temperature=400,
+                    **additional_kwargs,
+                )
+            assert "Quenched temperature was set but no annealing temperature was given!" in str(exc.value)
+
+    @parameterize_backend()
+    def test_scan_function_no_chempots_error_catch(self, backend):
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.scan_temperature(
+                annealing_temperature_range=[300, 350],
+            )
+        assert (
+            "Limit 'None' not found in the chemical potentials dictionary! You must specify an "
+            "appropriate limit or provide an appropriate chempots dictionary"
+        ) in str(exc.value)
 
     # Tests for scan_dopant_concentration:
     @patch("doped.thermodynamics.tqdm")
@@ -859,7 +942,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert len(concentrations) > 0
         # Check that the concentrations have been calculated at n_points
         unique_chempot_sets = concentrations[
-            [f"μ_{el}" for el in self.example_thermo.chempots["elemental_refs"]]
+            [f"μ_{el}" for el in self.CdTe_thermo.chempots["elemental_refs"]]
         ].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
@@ -913,13 +996,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         with pytest.raises(ValueError):
             self.solver_doped.interpolate_chempots(
                 n_points=5,
-                chempots=self.example_thermo.chempots,
+                chempots=self.CdTe_thermo.chempots,
                 annealing_temperature=800,
                 quenched_temperature=300,
                 limits=None,  # Limits are not provided
             )
 
     # Tests for min_max_X
+
+    # TODO: add scan_chempots tests
 
     @patch("doped.thermodynamics.tqdm")
     def test_min_max_X_maximize_electrons(self, mock_tqdm):
@@ -993,7 +1078,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         Test _parse_and_check_grid_like_chempots method.
         """
-        chempots = self.example_thermo.chempots
+        chempots = self.CdTe_thermo.chempots
 
         parsed_chempots, el_refs = self.solver_doped._parse_and_check_grid_like_chempots(chempots)
 
@@ -1021,9 +1106,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         Main test code in ``test_thermodynamics.py``.
         """
-        fd_up_fdos = deepcopy(self.example_thermo.bulk_dos)
+        fd_up_fdos = deepcopy(self.CdTe_thermo.bulk_dos)
         fd_up_fdos.energies -= 0.1
-        defect_thermo = deepcopy(self.example_thermo)
+        defect_thermo = deepcopy(self.CdTe_thermo)
 
         from test_thermodynamics import _check_CdTe_mismatch_fermi_dos_warning
 
