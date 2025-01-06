@@ -1,6 +1,6 @@
 # `doped` Development To-Do List
 ## Chemical potential
-- Need to recheck validity of approximations used for extrinsic competing phases (and code for this). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
+- Need to recheck validity of approximations used for extrinsic competing phases (and code for this)(see `full_sub_approach_understanding` folder). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases.
 
 ## Defect Complexes
@@ -84,16 +84,18 @@
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
   there's any useful functionality we want to add!
-- Add short example notebook showing how to generate a defect PES for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB).
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
 - Update generation notebook to use structure file string input
 - Quick run through tutorial notebooks to check code all updated and running.
 - Clean up repo, removing old unnecessary git blobs
+- Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout.
+- Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB).
+
 - Note in chempots tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
-- Add note to chempots tutorial that if your bulk phase is lower energy than its version on the MP (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation.
-- - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout.
+- Add note to chempots tutorial that if your bulk phase is lower energy than its version on the MP (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation. 
+- Tests for configuration coordinate diagram generation code
 - Quick-start tutorial suggested by Alex G
 - Test chempot grid plotting tool.
 - `dist_tol` should also group defects for the concentration etc functions, currently doesn't (e.g. `CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)` and `CdTe_thermo.dist_tol=10; CdTe_thermo.get_equilibrium_concentrations(limit="Te-rich", per_charge=False, fermi_level=0.5)`, same output). This also affects the grouping for concentration outputs by the two different `FermiSolver` backends, so keep an eye on this.

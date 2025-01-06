@@ -2165,6 +2165,110 @@ class DefectThermodynamics(MSONable):
             index=["p-type", "n-type"],
         )
 
+    def prune_to_stable_entries(
+        self,
+        unstable_entries: Union[bool, str] = "not shallow",
+        shallow_charge_stability_tolerance: Optional[float] = None,
+        charge_stability_tolerance: float = 0,
+        **kwargs,
+    ) -> "DefectThermodynamics":
+        """
+        This function takes the defect entries in
+        ``DefectThermodynamics.defect_entries``, prunes them to only those
+        which pass a given stability criterion, and regenerates a new
+        ``DefectThermodynamics`` object with these defect entries.
+
+        This function can be used to prune out defect entries which are
+        detected to be shallow (perturbed host, 'fake') states according to
+        eigenvalue analysis (see
+        https://doped.readthedocs.io/en/latest/Tips.html#eigenvalue-electronic-structure-analysis
+        for more info), and/or entries which are only stable for certain
+        Fermi levels outside or within a small window of the band edges.
+
+        Does not modify the original ``DefectThermodynamics`` (``self``) object!
+
+        This function is used internally in ``doped`` with the
+        ``unstable_entries`` argument in ``DefectThermodynamics.plot()``,
+        but can also be used to prune out shallow/unstable defect entries for
+        other purposes (e.g. if one wants to exclude these entries in
+        concentration calculations -- though usually these states are irrelevant
+        in such calculations due to their low/near-negligible statibilites;
+        particularly when reasonable supercell sizes, DFT functionals and
+        structure searching are used).
+
+        Args:
+            unstable_entries (bool, str):
+                Controls the pruning of unstable/shallow defect states; allowed
+                values are ``True``, ``False`` or ``"not shallow"``. If
+                ``"not shallow"`` (default), defect entries which are predicted
+                to be shallow (perturbed host) states according to eigenvalue
+                analysis and only stable for Fermi levels within a small window
+                to a band edge (``shallow_stability_tol``) are omitted.
+                If ``False``, `all` defects which are not stable for any Fermi
+                level in the band gap (``charge_stability_tol``) are `also` omitted.
+                ``shallow_stability_tol`` and ``charge_stability_tol`` can be tuned
+                with the ``shallow_charge_stability_tolerance`` and
+                ``charge_stability_tolerance`` keyword arguments respectively.
+                If ``True``, defect entries are not pruned based on
+                stability/shallow classification.
+            shallow_charge_stability_tolerance (float):
+                Tolerance for the Fermi level stability window for defects which
+                have been classified as shallow states. If ``None`` (default), will
+                be set to the smaller of 0.05 eV or 10% of the band gap.
+            charge_stability_tolerance (float):
+                Tolerance for the Fermi level stability window for `all` defect
+                charge states, if ``unstable_entries=False``. Default is 0 eV,
+                meaning all charge states which are stable for any Fermi level in
+                the band gap will be included, but can be set to a positive value
+                (meaning only defect charge states which are stable at Fermi levels
+                in the band gap `further` than this energy window from a band edge)
+                or negative value (which is a less strict pruning, only excluding
+                charge states which become stable at Fermi levels outside the band
+                gap `further` than the absolute value of this energy window from a
+                band edge).
+            **kwargs:
+                Additional keyword arguments to pass to the ``DefectThermodynamics()``
+                initialisation (via ``DefectThermodynamics.from_dict()``).
+
+        Returns:
+            New ``DefectThermodynamics`` object with pruned defect entries.
+        """
+        if unstable_entries is True:  # all
+            return self
+
+        # prune to chosen defects
+        # determine tolerances:
+        shallow_tol = (
+            shallow_charge_stability_tolerance
+            if shallow_charge_stability_tolerance
+            else min(0.05, self.band_gap * 0.1 if self.band_gap else 0.05)
+        )
+        stability_tol = None if unstable_entries == "not shallow" else charge_stability_tolerance
+
+        pruned_defect_entries = {}
+        from doped.utils.eigenvalues import is_shallow
+
+        for name, defect_entry in self.defect_entries.items():
+            fermi_stability_window = self._get_in_gap_fermi_level_stability_window(defect_entry)
+            if stability_tol is not None and fermi_stability_window < stability_tol:
+                continue  # skip
+
+            if is_shallow(defect_entry) and fermi_stability_window < shallow_tol:
+                continue  # skip
+
+            pruned_defect_entries[name] = defect_entry
+
+        defect_thermo_dict = self.as_dict()
+        defect_thermo_dict.update(
+            {
+                "defect_entries": pruned_defect_entries,
+                "check_compatibility": False,
+                "skip_vbm_check": True,
+            }
+        )
+        defect_thermo_dict.update(kwargs)
+        return DefectThermodynamics.from_dict(defect_thermo_dict)
+
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
     #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
@@ -2276,7 +2380,7 @@ class DefectThermodynamics(MSONable):
                 defects (default = 0; meaning any in-gap stability) can be set by a
                 ``charge_stability_tolerance = X`` keyword argument (positive or negative).
                 If ``True``, defect entries are not pruned based on stability/shallow
-                classification.
+                classification. See ``prune_to_stable_entries`` for more info.
             chempot_table (Optional[bool]):
                 Whether to include a table of the chemical potentials above the formation
                 energy plot. If ``None`` (default), shown if multiple plots are generated
@@ -2374,43 +2478,10 @@ class DefectThermodynamics(MSONable):
                 f"not {unstable_entries}. See DefectThermodynamics.plot docstring for more info."
             )
 
-        if unstable_entries is True:  # all
-            thermo_to_plot = self
-        else:  # prune to chosen defects
-            # determine tolerances:
-            default_shallow_tol = kwargs.get(
-                "shallow_charge_stability_tolerance",
-                min(0.05, self.band_gap * 0.1 if self.band_gap else 0.05),
-            )
-            if unstable_entries == "not shallow":
-                stability_tol = None
-                shallow_tol = default_shallow_tol
-            else:
-                stability_tol = kwargs.get("charge_stability_tolerance", 0)
-                shallow_tol = default_shallow_tol
-
-            defect_entries_to_plot = {}
-            from doped.utils.eigenvalues import is_shallow
-
-            for name, defect_entry in self.defect_entries.items():
-                fermi_stability_window = self._get_in_gap_fermi_level_stability_window(defect_entry)
-                if stability_tol is not None and fermi_stability_window < stability_tol:
-                    continue  # skip
-
-                if is_shallow(defect_entry) and fermi_stability_window < shallow_tol:
-                    continue  # skip
-
-                defect_entries_to_plot[name] = defect_entry
-
-            defect_thermo_dict = self.as_dict()
-            defect_thermo_dict.update(
-                {
-                    "defect_entries": defect_entries_to_plot,
-                    "check_compatibility": False,
-                    "skip_vbm_check": True,
-                }
-            )
-            thermo_to_plot = DefectThermodynamics.from_dict(defect_thermo_dict)
+        # unstable_entries pruning:
+        thermo_to_plot = self.prune_to_stable_entries(
+            unstable_entries=unstable_entries, **kwargs
+        )  # Note that this will need to be updated if we add other kwarg options to this function
 
         style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
