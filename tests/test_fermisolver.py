@@ -183,10 +183,19 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
+    def test_default_initialization(self):
+        """
+        Test default initialization, which uses ``doped`` backend.
+        """
+        solver = FermiSolver(defect_thermodynamics=self.example_thermo)
+        assert solver.backend == "doped"
+        assert solver.defect_thermodynamics == self.example_thermo
+        assert solver.volume is not None
+
     @patch("doped.thermodynamics.importlib.util.find_spec")
     def test_valid_initialization_doped_backend(self, mock_find_spec):
         """
-        Test initialization with doped backend.
+        Test initialization with ``doped`` backend.
         """
         mock_find_spec.return_value = None  # Simulate py_sc_fermi not installed
 
@@ -195,8 +204,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         # Initialize FermiSolver
         solver = FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
-
-        # Assertions
         assert solver.backend == "doped"
         assert solver.defect_thermodynamics == self.example_thermo
         assert solver.volume is not None
@@ -205,42 +212,33 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @patch("doped.thermodynamics.FermiSolver._activate_py_sc_fermi_backend")
     def test_valid_initialization_py_sc_fermi_backend(self, mock_activate_backend, mock_find_spec):
         """
-        Test initialization with py-sc-fermi backend.
+        Test initialization with ``py-sc-fermi`` backend.
         """
         mock_find_spec.return_value = True  # Simulate py_sc_fermi installed
         mock_activate_backend.return_value = None
 
         # Initialize FermiSolver
         solver = FermiSolver(defect_thermodynamics=self.example_thermo, backend="py-sc-fermi")
-
-        # Assertions
         assert solver.backend == "py-sc-fermi"
         assert solver.defect_thermodynamics == self.example_thermo
         assert solver.volume is not None
         mock_activate_backend.assert_called_once()
 
-    @patch("doped.thermodynamics.importlib.util.find_spec")
-    def test_missing_bulk_dos(self, mock_find_spec):
+    def test_missing_bulk_dos(self):
         """
         Test initialization failure due to missing bulk_dos.
         """
-        mock_find_spec.return_value = None
-
-        # Remove bulk_dos
-        self.example_thermo.bulk_dos = None
+        self.example_thermo.bulk_dos = None  # Remove bulk_dos
 
         with pytest.raises(ValueError) as context:
             FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
 
         assert "No bulk DOS calculation" in str(context.value)
 
-    @patch("doped.thermodynamics.importlib.util.find_spec")
-    def test_invalid_backend(self, mock_find_spec):
+    def test_invalid_backend(self):
         """
         Test initialization failure due to invalid backend.
         """
-        mock_find_spec.return_value = None
-
         with pytest.raises(ValueError) as context:
             FermiSolver(defect_thermodynamics=self.example_thermo, backend="invalid_backend")
 
@@ -248,7 +246,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     def test_activate_backend_py_sc_fermi_installed(self):
         """
-        Test backend activation when py_sc_fermi is installed.
+        Test backend activation when ``py_sc_fermi`` is installed.
         """
         with patch.dict(
             "sys.modules",
@@ -268,21 +266,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             # Activate backend
             self.solver_py_sc_fermi._activate_py_sc_fermi_backend()
 
-            # Assertions
-            assert self.solver_py_sc_fermi._DefectSystem is not None
-            assert self.solver_py_sc_fermi._DefectSpecies is not None
-            assert self.solver_py_sc_fermi._DefectChargeState is not None
-            assert self.solver_py_sc_fermi._DOS is not None
-            assert self.solver_py_sc_fermi.py_sc_fermi_dos is not None
-            assert self.solver_py_sc_fermi.multiplicity_scaling is not None
             assert self.solver_py_sc_fermi._DefectSystem == DefectSystem
             assert self.solver_py_sc_fermi._DefectSpecies == DefectSpecies
             assert self.solver_py_sc_fermi._DefectChargeState == DefectChargeState
             assert self.solver_py_sc_fermi._DOS == DOS
+            assert self.solver_py_sc_fermi.py_sc_fermi_dos is not None
+            assert self.solver_py_sc_fermi.multiplicity_scaling is not None
 
     def test_activate_backend_py_sc_fermi_not_installed(self):
         """
-        Test backend activation failure when py_sc_fermi is not installed.
+        Test backend activation failure when ``py_sc_fermi`` is not installed.
         """
         original_import = builtins.__import__
 
@@ -351,26 +344,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                         assert len(w) > 0
                         assert "non-integer" in str(w[-1].message)
 
-    # Tests for _check_required_backend_and_error
-
-    def test_check_required_backend_and_error_doped_missing_bulk_dos(self):
-        """
-        Test that RuntimeError is raised when bulk_dos is missing for doped
-        backend.
-        """
-        # Remove bulk_dos to simulate missing DOS
-        self.solver_doped.defect_thermodynamics.bulk_dos = None
-
-        with pytest.raises(RuntimeError) as context:
-            self.solver_doped._check_required_backend_and_error("doped")
-        assert "This function is only supported for the doped backend" in str(context.value)
-
+    # Tests for _check_required_backend_and_error:
     def test_check_required_backend_and_error_doped_correct(self):
         """
-        Test that no error is raised when bulk_dos is present for doped
-        backend.
+        Test that no error is raised with ``_check_required_backend_and_error``
+        for ``doped`` backend.
         """
-        # bulk_dos is correctly set
         try:
             self.solver_doped._check_required_backend_and_error("doped")
         except RuntimeError as e:
@@ -378,9 +357,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     def test_check_required_backend_and_error_py_sc_fermi_missing_DOS(self):
         """
-        Test that RuntimeError is raised when _DOS is missing for py-sc-fermi
-        backend.
+        Test that ``RuntimeError`` is raised when ``_DOS`` is missing for ``py-
+        sc-fermi`` backend.
         """
+        # first test that no error is raised when _DOS is present
+        self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
+
         # Remove _DOS to simulate missing DOS
         self.solver_py_sc_fermi._DOS = None
 
@@ -388,25 +370,22 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
         assert "This function is only supported for the py-sc-fermi backend" in str(context.value)
 
-    def test_check_required_backend_and_error_py_sc_fermi_correct(self):
+    def test_check_required_backend_and_error_py_sc_fermi_doped_backend(self):
         """
-        Test that no error is raised when _DOS is present for py-sc-fermi
-        backend.
+        Test that ``RuntimeError`` is raised when
+        ``_check_required_backend_and_error`` is called when ``py-sc-fermi``
+        backend functionality is required, but the backend is set to ``doped``.
         """
-        # _DOS is correctly set
-        try:
-            self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
-        except RuntimeError as e:
-            self.fail(f"RuntimeError raised unexpectedly: {e}")
+        with pytest.raises(RuntimeError) as context:
+            self.solver_doped._check_required_backend_and_error("py-sc-fermi")
+        assert "This function is only supported for the py-sc-fermi backend" in str(context.value)
 
     # Tests for _get_fermi_level_and_carriers
-
     def test_get_fermi_level_and_carriers(self):
         """
-        Test _get_fermi_level_and_carriers returns correct values for doped
-        backend.
+        Test ``_get_fermi_level_and_carriers`` returns correct values for
+        ``doped`` backend.
         """
-        # Use actual method
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
         fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
             single_chempot_dict=single_chempot_dict,
@@ -415,36 +394,35 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             effective_dopant_concentration=None,
         )
 
-        # Assertions
-        assert isinstance(fermi_level, float)
-        assert isinstance(electrons, float)
-        assert isinstance(holes, float)
+        assert np.isclose(
+            fermi_level, self.example_thermo.get_equilibrium_fermi_level(limit="Te-rich", temperature=300)
+        )
+        doped_e_h = get_e_h_concs(self.CdTe_fermi_dos, fermi_level + self.example_thermo.vbm, 300)
+        assert np.isclose(electrons, doped_e_h[0], rtol=1e-3)
+        assert np.isclose(holes, doped_e_h[1], rtol=1e-3)
 
     # Tests for _get_single_chempot_dict
-
     def test_get_single_chempot_dict_correct(self):
         """
         Test that the correct chemical potential dictionary is returned.
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
-
-        expected_chempots = self.example_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"]
-        assert single_chempot_dict == expected_chempots
+        assert single_chempot_dict == self.example_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"]
         assert el_refs == self.example_thermo.el_refs
 
     def test_get_single_chempot_dict_limit_not_found(self):
         """
-        Test that ValueError is raised when the specified limit is not found.
+        Test that ``ValueError`` is raised when the specified limit is not
+        found.
         """
         with pytest.raises(ValueError) as context:
             self.solver_doped._get_single_chempot_dict(limit="nonexistent_limit")
         assert "Limit 'nonexistent_limit' not found" in str(context.value)
 
     # Tests for equilibrium_solve
-
     def test_equilibrium_solve_doped_backend(self):
         """
-        Test equilibrium_solve method for doped backend.
+        Test ``equilibrium_solve`` method for doped backend.
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
 
