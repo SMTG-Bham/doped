@@ -462,12 +462,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
             "Temperature",
-            "Dopant (cm^-3)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
         # Check that concentrations are reasonable numbers
         assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
+        assert np.isclose(concentrations["Temperature"].iloc[0], 300)
         # Check appended chemical potentials
         for element in single_chempot_dict:
             assert f"μ_{element}" in concentrations.columns
@@ -480,9 +480,25 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         doped_e_h = get_e_h_concs(self.CdTe_fermi_dos, expected_fermi_level + self.example_thermo.vbm, 300)
         assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], doped_e_h[0], rtol=1e-3)
         assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], doped_e_h[1], rtol=1e-3)
-        # doped_defect_concs = self.example_thermo.get_equilibrium_concentrations(
-        #     fermi_level=expected_fermi_level, limit="Te-rich", temperature=300
-        # )
+        doped_defect_concs = self.example_thermo.get_equilibrium_concentrations(
+            fermi_level=expected_fermi_level,
+            limit="Te-rich",
+            temperature=300,
+            per_charge=False,
+            skip_formatting=True,
+        )  # currently FermiSolver only supports per charge=False
+
+        fermisolver_concentrations = concentrations["Concentration (cm^-3)"]
+        fermisolver_concentrations = fermisolver_concentrations.drop("Dopant")
+        # drop Dopant row, not included with ``DefectThermodynamics.get_equilibrium_concentrations()``
+        if backend == "py-sc-fermi":
+            fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
+            fermisolver_concentrations = fermisolver_concentrations.drop(
+                ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
+            )
+        pd.testing.assert_series_equal(
+            doped_defect_concs["Concentration (cm^-3)"], fermisolver_concentrations, rtol=1e-3
+        )  # also checks the index and ordering
 
     def test_equilibrium_solve_mocked_py_sc_fermi_backend(self):
         """
@@ -521,7 +537,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
             "Temperature",
-            "Dopant (cm^-3)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
@@ -535,14 +550,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     # Tests for pseudo_equilibrium_solve
 
-    def test_pseudo_equilibrium_solve_doped_backend(self):
+    @parameterize_backend()
+    def test_pseudo_equilibrium_solve_doped_backend(self, backend):
         """
-        Test pseudo_equilibrium_solve method for doped backend.
+        Test ``pseudo_equilibrium_solve`` method for both backends.
         """
-        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         # Call the method
-        concentrations = self.solver_doped.pseudo_equilibrium_solve(
+        concentrations = solver.pseudo_equilibrium_solve(
             annealing_temperature=800,
             single_chempot_dict=single_chempot_dict,
             el_refs=el_refs,
@@ -551,18 +568,44 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             append_chempots=True,
         )
 
-        # Assertions
-        assert "Fermi Level" in concentrations.columns
-        assert "Electrons (cm^-3)" in concentrations.columns
-        assert "Holes (cm^-3)" in concentrations.columns
-        assert "Annealing Temperature" in concentrations.columns
-        assert "Quenched Temperature" in concentrations.columns
+        for i in [
+            "Fermi Level",
+            "Electrons (cm^-3)",
+            "Holes (cm^-3)",
+            "Annealing Temperature",
+            "Quenched Temperature",
+        ]:
+            assert i in concentrations.columns, f"Missing column: {i}"
+
         # Check that concentrations are reasonable numbers
         assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
+        assert np.isclose(concentrations["Quenched Temperature"].iloc[0], 300)
+        assert np.isclose(concentrations["Annealing Temperature"].iloc[0], 800)
         # Check appended chemical potentials
         for element in single_chempot_dict:
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+
+        fermi_level, e_conc, h_conc, conc_df = self.example_thermo.get_fermi_level_and_concentrations(
+            annealing_temperature=800,
+            effective_dopant_concentration=1e16,
+            limit="Te-rich",
+            per_charge=False,  # currently FermiSolver only supports per charge=False
+            skip_formatting=True,
+        )
+        assert np.isclose(concentrations["Fermi Level"].iloc[0], fermi_level)
+        assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], e_conc, rtol=1e-3)
+        assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], h_conc, rtol=1e-3)
+
+        fermisolver_concentrations = concentrations["Concentration (cm^-3)"]
+        if backend == "py-sc-fermi":
+            fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
+            fermisolver_concentrations = fermisolver_concentrations.drop(
+                ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
+            )
+        pd.testing.assert_series_equal(
+            conc_df["Concentration (cm^-3)"], fermisolver_concentrations, rtol=1e-3
+        )  # also checks the index and ordering
 
     def test_pseudo_equilibrium_solve_py_sc_fermi_backend(self):
         """
@@ -600,14 +643,22 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         # Assertions
-        assert "Fermi Level" in concentrations.columns
-        assert "Electrons (cm^-3)" in concentrations.columns
-        assert "Holes (cm^-3)" in concentrations.columns
-        assert "Annealing Temperature" in concentrations.columns
-        assert "Quenched Temperature" in concentrations.columns
+        for i in [
+            "Fermi Level",
+            "Electrons (cm^-3)",
+            "Holes (cm^-3)",
+            "Annealing Temperature",
+            "Quenched Temperature",
+        ]:
+            assert i in concentrations.columns, f"Missing column: {i}"
+
         # Check defects are included
         assert "defect1" in concentrations.index
         assert "defect2" in concentrations.index
+
+        assert np.isclose(concentrations["Quenched Temperature"].iloc[0], 300)
+        assert np.isclose(concentrations["Annealing Temperature"].iloc[0], 800)
+
         # Check appended chemical potentials
         for element in single_chempot_dict:
             assert f"μ_{element}" in concentrations.columns
