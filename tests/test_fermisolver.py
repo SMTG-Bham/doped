@@ -163,19 +163,23 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
 # TODO: Use pytest fixtures to reduce code redundancy here?
 class TestFermiSolverWithLoadedData(unittest.TestCase):
     """
-    Tests for FermiSolver initialization with loaded data.
+    Tests for ``FermiSolver`` initialization with loaded data.
     """
 
-    def setUp(self):
-        # Adjust the paths to your actual data files
-        self.defect_thermodynamics = loadfn("../examples/CdTe/CdTe_example_thermo.json")
-        vasprun_path = "../examples/CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"
-        self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
-        self.defect_thermodynamics.chempots = loadfn("../examples/CdTe/CdTe_chempots.json")
-        self.solver_py_sc_fermi = FermiSolver(
-            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi"
+    @classmethod
+    def setUpClass(cls):
+        cls.example_thermo = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_example_thermo.json"))
+        cls.CdTe_fermi_dos = get_fermi_dos(
+            os.path.join(EXAMPLE_DIR, "CdTe/CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         )
-        self.solver_doped = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
+        cls.example_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_chempots.json"))
+
+    def setUp(self):
+        self.example_thermo.bulk_dos = self.CdTe_fermi_dos
+        self.solver_py_sc_fermi = FermiSolver(
+            defect_thermodynamics=self.example_thermo, backend="py-sc-fermi"
+        )
+        self.solver_doped = FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
@@ -187,14 +191,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         mock_find_spec.return_value = None  # Simulate py_sc_fermi not installed
 
         # Ensure bulk_dos is set
-        assert self.defect_thermodynamics.bulk_dos is not None, "bulk_dos is not set."
+        assert self.example_thermo.bulk_dos is not None, "bulk_dos is not set."
 
         # Initialize FermiSolver
-        solver = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
+        solver = FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
 
         # Assertions
         assert solver.backend == "doped"
-        assert solver.defect_thermodynamics == self.defect_thermodynamics
+        assert solver.defect_thermodynamics == self.example_thermo
         assert solver.volume is not None
 
     @patch("doped.thermodynamics.importlib.util.find_spec")
@@ -207,11 +211,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         mock_activate_backend.return_value = None
 
         # Initialize FermiSolver
-        solver = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi")
+        solver = FermiSolver(defect_thermodynamics=self.example_thermo, backend="py-sc-fermi")
 
         # Assertions
         assert solver.backend == "py-sc-fermi"
-        assert solver.defect_thermodynamics == self.defect_thermodynamics
+        assert solver.defect_thermodynamics == self.example_thermo
         assert solver.volume is not None
         mock_activate_backend.assert_called_once()
 
@@ -223,10 +227,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         mock_find_spec.return_value = None
 
         # Remove bulk_dos
-        self.defect_thermodynamics.bulk_dos = None
+        self.example_thermo.bulk_dos = None
 
         with pytest.raises(ValueError) as context:
-            FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
+            FermiSolver(defect_thermodynamics=self.example_thermo, backend="doped")
 
         assert "No bulk DOS calculation" in str(context.value)
 
@@ -238,7 +242,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         mock_find_spec.return_value = None
 
         with pytest.raises(ValueError) as context:
-            FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="invalid_backend")
+            FermiSolver(defect_thermodynamics=self.example_thermo, backend="invalid_backend")
 
         assert "Unrecognised `backend`" in str(context.value)
 
@@ -331,7 +335,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             with patch("doped.thermodynamics._get_py_sc_fermi_dos_from_fermi_dos", return_value=DOS()):
                 # Set non-integer volume scaling
                 self.solver_py_sc_fermi.volume = 100.0
-                first_defect_entry = next(iter(self.defect_thermodynamics.defect_entries.values()))
+                first_defect_entry = next(iter(self.example_thermo.defect_entries.values()))
 
                 # Patch the volume property
                 with patch.object(
@@ -406,7 +410,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
         fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
             single_chempot_dict=single_chempot_dict,
-            el_refs=self.defect_thermodynamics.el_refs,
+            el_refs=self.example_thermo.el_refs,
             temperature=300,
             effective_dopant_concentration=None,
         )
@@ -424,9 +428,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
 
-        expected_chempots = self.defect_thermodynamics.chempots["limits_wrt_el_refs"]["CdTe-Te"]
+        expected_chempots = self.example_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"]
         assert single_chempot_dict == expected_chempots
-        assert el_refs == self.defect_thermodynamics.el_refs
+        assert el_refs == self.example_thermo.el_refs
 
     def test_get_single_chempot_dict_limit_not_found(self):
         """
@@ -447,7 +451,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # Call the method
         concentrations = self.solver_doped.equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
-            el_refs=self.defect_thermodynamics.el_refs,
+            el_refs=self.example_thermo.el_refs,
             temperature=300,
             effective_dopant_concentration=1e16,
             append_chempots=True,
@@ -491,7 +495,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # Call the method
         concentrations = self.solver_py_sc_fermi.equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
-            el_refs=self.defect_thermodynamics.el_refs,
+            el_refs=self.example_thermo.el_refs,
             temperature=300,
             effective_dopant_concentration=1e16,
             append_chempots=True,
@@ -735,7 +739,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert len(concentrations) > 0
         # Check that the concentrations have been calculated at n_points
         unique_chempot_sets = concentrations[
-            [f"μ_{el}" for el in self.defect_thermodynamics.chempots["elemental_refs"]]
+            [f"μ_{el}" for el in self.example_thermo.chempots["elemental_refs"]]
         ].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
@@ -789,7 +793,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         with pytest.raises(ValueError):
             self.solver_doped.interpolate_chempots(
                 n_points=5,
-                chempots=self.defect_thermodynamics.chempots,
+                chempots=self.example_thermo.chempots,
                 annealing_temperature=800,
                 quenched_temperature=300,
                 limits=None,  # Limits are not provided
@@ -869,7 +873,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         Test _parse_and_check_grid_like_chempots method.
         """
-        chempots = self.defect_thermodynamics.chempots
+        chempots = self.example_thermo.chempots
 
         parsed_chempots, el_refs = self.solver_doped._parse_and_check_grid_like_chempots(chempots)
 
@@ -897,9 +901,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         Main test code in ``test_thermodynamics.py``.
         """
-        fd_up_fdos = deepcopy(self.defect_thermodynamics.bulk_dos)
+        fd_up_fdos = deepcopy(self.example_thermo.bulk_dos)
         fd_up_fdos.energies -= 0.1
-        defect_thermo = deepcopy(self.defect_thermodynamics)
+        defect_thermo = deepcopy(self.example_thermo)
 
         from test_thermodynamics import _check_CdTe_mismatch_fermi_dos_warning
 
@@ -915,19 +919,22 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     """
-    Tests for FermiSolver initialization with loaded data.
+    Tests for ``FermiSolver`` initialization with loaded data, for a ternary
+    system.
     """
 
+    @classmethod
+    def setUpClass(cls):
+        cls.Cu2SiSe3_thermo = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_thermo.json")
+        cls.Cu2SiSe3_fermi_dos = get_fermi_dos(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/vasprun.xml.gz"))
+        cls.Cu2SiSe3_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
+
     def setUp(self):
-        # Adjust the paths to your actual data files
-        self.defect_thermodynamics = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_thermo.json")
-        vasprun_path = "../examples/Cu2SiSe3/vasprun.xml.gz"
-        self.defect_thermodynamics.bulk_dos = self.defect_thermodynamics._parse_fermi_dos(vasprun_path)
-        self.defect_thermodynamics.chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
+        self.Cu2SiSe3_thermo.bulk_dos = self.Cu2SiSe3_fermi_dos
         self.solver_py_sc_fermi = FermiSolver(
-            defect_thermodynamics=self.defect_thermodynamics, backend="py-sc-fermi"
+            defect_thermodynamics=self.Cu2SiSe3_thermo, backend="py-sc-fermi"
         )
-        self.solver_doped = FermiSolver(defect_thermodynamics=self.defect_thermodynamics, backend="doped")
+        self.solver_doped = FermiSolver(defect_thermodynamics=self.Cu2SiSe3_thermo, backend="doped")
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
@@ -999,15 +1006,15 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         unique_chempot_sets = concentrations[
-            [f"μ_{el}" for el in self.defect_thermodynamics.chempots["elemental_refs"]]
+            [f"μ_{el}" for el in self.Cu2SiSe3_thermo.chempots["elemental_refs"]]
         ].drop_duplicates()
         assert len(unique_chempot_sets) > 0
 
     def test_scan_chemical_potential_grid_wrong_chempots(self):
         """
         Test that ``ValueError`` is raised when no chempots are provided and
-        None are available in ``self.defect_thermodynamics``, or only a single
-        limit is provided.
+        None are available in ``self.Cu2SiSe3_thermo``, or only a single limit
+        is provided.
         """
         # Temporarily remove chempots from defect_thermodynamics
         solver = deepcopy(self.solver_doped)
