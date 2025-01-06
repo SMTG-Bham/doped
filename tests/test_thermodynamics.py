@@ -2684,7 +2684,58 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         assert not is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_F_on_Se_-2"])  # not cut
         # by default in plots (see Se ``unstable_entries`` test plots from ``test_plotting.py``)
-        assert not is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_Te_on_Se_1"])  # cut
+        assert is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_Te_on_Se_1"])  # cut
+
+    def test_prune_to_stable_entries(self):
+        # test default; "not shallow":
+        assert len(self.Se_ext_no_pnict_thermo) == 80
+        assert len(self.Se_ext_no_pnict_thermo.transition_level_map) == 16
+        print(self.Se_ext_no_pnict_thermo.transition_level_map)
+        assert (
+            len(
+                [
+                    k
+                    for k in self.Se_ext_no_pnict_thermo.transition_level_map
+                    if k.startswith("inter_") and "_H" in k
+                ]
+            )
+            == 2
+        )
+        for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1", "inter_3_Te_1"]:
+            assert i in self.Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
+
+        pruned_Se_ext_no_pnict_thermo = self.Se_ext_no_pnict_thermo.prune_to_stable_entries()
+        assert len(pruned_Se_ext_no_pnict_thermo) == 70
+        assert len(pruned_Se_ext_no_pnict_thermo.transition_level_map) == 16
+        for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1", "inter_3_Te_1"]:
+            assert i not in pruned_Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
+        assert (
+            len(
+                [
+                    k
+                    for k in pruned_Se_ext_no_pnict_thermo.transition_level_map
+                    if k.startswith("inter_") and "_H" in k
+                ]
+            )
+            == 2
+        )
+
+        # test kwargs:
+        pruned_Se_ext_no_pnict_thermo_dt10 = self.Se_ext_no_pnict_thermo.prune_to_stable_entries(
+            dist_tol=10
+        )
+        assert len(pruned_Se_ext_no_pnict_thermo_dt10.transition_level_map) == 14
+        assert (
+            len(
+                [
+                    k
+                    for k in pruned_Se_ext_no_pnict_thermo_dt10.transition_level_map
+                    if k.startswith("inter_") and "_H" in k
+                ]
+            )
+            == 1
+        )  # now merged
+        # other options covered by ``unstable_entries`` plotting tests where this function is used
 
 
 def belas_linear_fit(T):  #
