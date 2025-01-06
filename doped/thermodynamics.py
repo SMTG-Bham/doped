@@ -4968,6 +4968,7 @@ class FermiSolver(MSONable):
                 fixing, useful for highly mobile defects that are not expected
                 to be "frozen-in" upon quenching. Defaults to ``None``.
                 # TODO: Allow matching of substring, and update docstring accordingly
+                # TODO: Also for other similar options (fixed_defects), and same for each function?
             append_chempots (bool):
                 Whether to append the chemical potentials (and effective dopant
                 concentration, if provided) to the output ``DataFrame``.
@@ -4997,6 +4998,8 @@ class FermiSolver(MSONable):
                 Additional columns may include concentrations for specific defects
                 and other relevant data.
         """
+        # TODO: In future the ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options may
+        #  be added to the ``doped`` backend (in theory very simple to add)
         py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
             self._activate_py_sc_fermi_backend(
@@ -5019,7 +5022,7 @@ class FermiSolver(MSONable):
                 per_charge=False,
                 skip_formatting=True,  # keep concentration values as floats
             )  # use already-set bulk dos
-            # TODO: Add per-charge, per-site options?
+            # TODO: Use per-charge, per-site options? kwargs?
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
@@ -5044,6 +5047,7 @@ class FermiSolver(MSONable):
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
             )
+            # TODO: Add per-charge, per-site options like in ``doped`` ``DefectThermodynamics``
 
             with np.errstate(all="ignore"):
                 conc_dict = defect_system.concentration_dict()
@@ -5085,7 +5089,6 @@ class FermiSolver(MSONable):
         Helper function to check the user input temperature settings, and warn
         or raise errors as appropriate.
         """
-        # TODO: Test these!
         message = (
             "Both ``annealing_temperature`` and ``temperature`` were set, but they are "
             "mutually-exclusive options, with ``annealing_temperature`` employing the 'frozen defect "
