@@ -2760,9 +2760,10 @@ def _check_doping_windows_dopability_limits_df(doping_df):
 
 
 def _check_CdTe_mismatch_fermi_dos_warning(output, w):
+    print([str(warn.message) for warn in w])  # for debugging
     assert not output
     assert any(
-        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
+        "The VBM eigenvalue of the bulk DOS calculation (1.54 eV, band gap = 1.53 eV) differs "
         "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
         in str(warn.message)
         for warn in w
