@@ -5803,8 +5803,7 @@ class FermiSolver(MSONable):
                 set of chemical potentials. Each row corresponds to a different set
                 of chemical potentials.
         """
-        if chempots is None:
-            chempots = self.defect_thermodynamics.chempots
+        chempots = chempots if chempots is not None else self.defect_thermodynamics.chempots
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
 
         if isinstance(chempots, dict):  # should be a dictionary in the ``doped`` format or ``None``:

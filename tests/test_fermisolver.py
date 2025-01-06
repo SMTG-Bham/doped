@@ -544,7 +544,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         # Mock _generate_defect_system
         self.solver_py_sc_fermi._generate_defect_system = MagicMock()
-        # Mock defect_system object
+        # Mock defect_system object:
         defect_system = MagicMock()
         defect_system.concentration_dict.return_value = {
             "Fermi Energy": 0.5,
@@ -593,7 +593,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
-        # Call the method
         concentrations = solver.pseudo_equilibrium_solve(
             annealing_temperature=800,
             single_chempot_dict=single_chempot_dict,
@@ -680,7 +679,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             append_chempots=True,
         )
 
-        # Assertions
         for i in [
             "Fermi Level",
             "Electrons (cm^-3)",
@@ -718,8 +716,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             el_refs=self.CdTe_thermo.chempots["elemental_refs"],
             effective_dopant_concentration=1e16,
         )
-
-        assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         assert set(temperatures).issubset(concentrations["Temperature"].unique())
 
@@ -768,7 +764,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         annealing_temperatures = [800, 900]
         quenched_temperatures = [300, 350]
 
-        # Call the method
         concentrations = solver.scan_temperature(
             annealing_temperature_range=annealing_temperatures,
             quenched_temperature_range=quenched_temperatures,
@@ -863,8 +858,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ) in str(exc.value)
 
     # Tests for scan_dopant_concentration:
-    @patch("doped.thermodynamics.tqdm")
-    def test_scan_dopant_concentration_equilibrium(self, mock_tqdm):
+    def test_scan_dopant_concentration_equilibrium(self):
         """
         Test scan_dopant_concentration method under thermodynamic equilibrium.
         """
@@ -872,36 +866,23 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         dopant_concentrations = [1e15, 1e16, 1e17]
 
-        # Mock tqdm to return the dopant concentrations directly
-        mock_tqdm.side_effect = lambda x: x
-
-        # Call the method
         concentrations = self.solver_doped.scan_dopant_concentration(
             effective_dopant_concentration_range=dopant_concentrations,
             chempots=single_chempot_dict,
             el_refs=el_refs,
             temperature=300,
         )
-
-        # Assertions
-        assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         assert set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique())
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_scan_dopant_concentration_pseudo_equilibrium(self, mock_tqdm):
+    def test_scan_dopant_concentration_pseudo_equilibrium(self):
         """
         Test scan_dopant_concentration method under pseudo-equilibrium
         conditions.
         """
         single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
-
         dopant_concentrations = [1e15, 1e16, 1e17]
 
-        # Mock tqdm to return the dopant concentrations directly
-        mock_tqdm.side_effect = lambda x: x
-
-        # Call the method
         concentrations = self.solver_doped.scan_dopant_concentration(
             effective_dopant_concentration_range=dopant_concentrations,
             chempots=single_chempot_dict,
@@ -909,26 +890,18 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             annealing_temperature=800,
             quenched_temperature=300,
         )
-
-        # Assertions
-        assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         assert set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique())
         assert "Annealing Temperature" in concentrations.columns
         assert "Quenched Temperature" in concentrations.columns
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_interpolate_chempots_with_limits(self, mock_tqdm):
+    def test_interpolate_chempots_with_limits(self):
         """
         Test interpolate_chempots method using limits.
         """
-        # Mock tqdm to avoid progress bar output
-        mock_tqdm.side_effect = lambda x: x
-
         n_points = 5
         limits = ["Cd-rich", "Te-rich"]
 
-        # Call the method
         concentrations = self.solver_doped.interpolate_chempots(
             n_points=n_points,
             limits=limits,
@@ -936,9 +909,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             quenched_temperature=300,
             effective_dopant_concentration=1e16,
         )
-
-        # Assertions
-        assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         # Check that the concentrations have been calculated at n_points
         unique_chempot_sets = concentrations[
@@ -946,21 +916,17 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_interpolate_chempots_with_chempot_dicts(self, mock_tqdm):
+    def test_interpolate_chempots_with_chempot_dicts(self):
         """
         Test interpolate_chempots method with manually specified chemical
         potentials.
         """
-        mock_tqdm.side_effect = lambda x: x
-
         n_points = 3
         chempots_list = [
             {"Cd": -0.5, "Te": -1.0},
             {"Cd": -1.0, "Te": -0.5},
         ]
 
-        # Call the method
         concentrations = self.solver_doped.interpolate_chempots(
             n_points=n_points,
             chempots=chempots_list,
@@ -968,9 +934,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             quenched_temperature=300,
             effective_dopant_concentration=1e16,
         )
-
-        # Assertions
-        assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         unique_chempot_sets = concentrations[["μ_Cd", "μ_Te"]].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
@@ -1006,14 +969,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     # TODO: add scan_chempots tests
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_min_max_X_maximize_electrons(self, mock_tqdm):
+    def test_min_max_X_maximize_electrons(self):
         """
         Test min_max_X method to maximize electron concentration.
         """
-        mock_tqdm.side_effect = lambda x: x
-
-        # Call the method
         result = self.solver_doped.min_max_X(
             target="Electrons (cm^-3)",
             min_or_max="max",
@@ -1023,20 +982,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             n_points=5,
             effective_dopant_concentration=1e16,
         )
-
-        # Assertions
-        assert isinstance(result, pd.DataFrame)
         assert len(result) > 0
         assert "Electrons (cm^-3)" in result.columns
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_min_max_X_minimize_holes(self, mock_tqdm):
+    def test_min_max_X_minimize_holes(self):
         """
-        Test min_max_X method to minimize hole concentration.
+        Test ``min_max_X`` method to minimize hole concentration.
         """
-        mock_tqdm.side_effect = lambda x: x
-
-        # Call the method
         result = self.solver_doped.min_max_X(
             target="Holes (cm^-3)",
             min_or_max="min",
@@ -1046,9 +998,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             n_points=5,
             effective_dopant_concentration=1e16,
         )
-
-        # Assertions
-        assert isinstance(result, pd.DataFrame)
         assert len(result) > 0
         assert "Holes (cm^-3)" in result.columns
 
@@ -1056,7 +1005,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     def test_get_interpolated_chempots(self):
         """
-        Test _get_interpolated_chempots method.
+        Test ``_get_interpolated_chempots`` method.
         """
         chempot_start = {"Cd": -0.5, "Te": -1.0}
         chempot_end = {"Cd": -1.0, "Te": -0.5}
@@ -1066,7 +1015,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             chempot_start, chempot_end, n_points
         )
 
-        # Assertions
         assert len(interpolated_chempots) == n_points
         assert interpolated_chempots[0] == chempot_start
         assert interpolated_chempots[-1] == chempot_end
@@ -1079,10 +1027,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test _parse_and_check_grid_like_chempots method.
         """
         chempots = self.CdTe_thermo.chempots
-
         parsed_chempots, el_refs = self.solver_doped._parse_and_check_grid_like_chempots(chempots)
 
-        # Assertions
         assert isinstance(parsed_chempots, dict)
         assert isinstance(el_refs, dict)
         assert "limits" in parsed_chempots
@@ -1143,14 +1089,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_min_max_X_maximize_electrons(self, mock_tqdm):
+    def test_min_max_X_maximize_electrons(self):
         """
-        Test min_max_X method to maximize electron concentration.
+        Test ``min_max_X`` method to maximize electron concentration.
         """
-        mock_tqdm.side_effect = lambda x: x
-
-        # Call the method
         result = self.solver_doped.min_max_X(
             target="Electrons (cm^-3)",
             min_or_max="max",
@@ -1160,20 +1102,13 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             n_points=5,
             effective_dopant_concentration=1e16,
         )
-
-        # Assertions
-        assert isinstance(result, pd.DataFrame)
         assert len(result) > 0
         assert "Electrons (cm^-3)" in result.columns
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_min_max_X_minimize_holes(self, mock_tqdm):
+    def test_min_max_X_minimize_holes(self):
         """
-        Test min_max_X method to minimize hole concentration.
+        Test ``min_max_X`` method to minimize hole concentration.
         """
-        mock_tqdm.side_effect = lambda x: x
-
-        # Call the method
         self.solver_doped.min_max_X(
             target="Holes (cm^-3)",
             min_or_max="min",
@@ -1182,33 +1117,22 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             tolerance=0.05,
             n_points=5,
             effective_dopant_concentration=1e16,
-        )
+        )  # TODO: Actually test outputs here
 
     # Tests for scan_chemical_potential_grid
 
-    @patch("doped.thermodynamics.tqdm")
-    def test_scan_chemical_potential_grid(self, mock_tqdm):
+    def test_scan_chemical_potential_grid(self):
         """
         Test ``scan_chemical_potential_grid`` method.
         """
-        mock_tqdm.side_effect = lambda x: x
-
         n_points = 5
-
-        # Provide chempots with multiple limits
-        chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
-
-        # Call the method
         concentrations = self.solver_doped.scan_chemical_potential_grid(
-            chempots=chempots,
+            # use self.defect_thermodynamics.chempots by default
             n_points=n_points,
             annealing_temperature=800,
             quenched_temperature=300,
             effective_dopant_concentration=1e16,
         )
-
-        # Assertions
-        assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
         unique_chempot_sets = concentrations[
             [f"μ_{el}" for el in self.Cu2SiSe3_thermo.chempots["elemental_refs"]]
