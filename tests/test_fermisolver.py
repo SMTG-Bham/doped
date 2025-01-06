@@ -391,7 +391,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                         assert len(w) > 0
                         assert "non-integer" in str(w[-1].message)
 
-    # Tests for _check_required_backend_and_error:
     def test_check_required_backend_and_error_doped_correct(self):
         """
         Test that no error is raised with ``_check_required_backend_and_error``
@@ -427,7 +426,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             self.solver_doped._check_required_backend_and_error("py-sc-fermi")
         assert "This function is only supported for the py-sc-fermi backend" in str(context.value)
 
-    # Tests for _get_fermi_level_and_carriers
     def test_get_fermi_level_and_carriers(self):
         """
         Test ``_get_fermi_level_and_carriers`` returns correct values for
@@ -448,7 +446,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert np.isclose(electrons, doped_e_h[0], rtol=1e-3)
         assert np.isclose(holes, doped_e_h[1], rtol=1e-3)
 
-    # Tests for _get_single_chempot_dict
     def test_get_single_chempot_dict_correct(self):
         """
         Test that the correct chemical potential dictionary is returned.
@@ -466,7 +463,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             self.solver_doped._get_single_chempot_dict(limit="nonexistent_limit")
         assert "Limit 'nonexistent_limit' not found" in str(context.value)
 
-    # Tests for equilibrium_solve
     @parameterize_backend()
     def test_equilibrium_solve(self, backend):
         """
@@ -583,8 +579,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
-    # Tests for pseudo_equilibrium_solve
-
     @parameterize_backend()
     def test_pseudo_equilibrium_solve_doped_backend(self, backend):
         """
@@ -699,8 +693,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for element in single_chempot_dict:
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
-
-    # Tests for scan_temperature
 
     @parameterize_backend()
     def test_scan_temperature_equilibrium(self, backend):
@@ -857,7 +849,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "appropriate limit or provide an appropriate chempots dictionary"
         ) in str(exc.value)
 
-    # Tests for scan_dopant_concentration:
     def test_scan_dopant_concentration_equilibrium(self):
         """
         Test scan_dopant_concentration method under thermodynamic equilibrium.
@@ -965,8 +956,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 limits=None,  # Limits are not provided
             )
 
-    # Tests for min_max_X
-
     # TODO: add scan_chempots tests
 
     def test_min_max_X_maximize_electrons(self):
@@ -1000,8 +989,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
         assert len(result) > 0
         assert "Holes (cm^-3)" in result.columns
-
-    # Additional tests for internal methods
 
     def test_get_interpolated_chempots(self):
         """
@@ -1118,8 +1105,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             n_points=5,
             effective_dopant_concentration=1e16,
         )  # TODO: Actually test outputs here
-
-    # Tests for scan_chemical_potential_grid
 
     def test_scan_chemical_potential_grid(self):
         """
