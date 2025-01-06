@@ -5101,14 +5101,6 @@ class FermiSolver(MSONable):
                 "Quenched temperature was set but no annealing temperature was given! Required for the "
                 "'frozen defect approximation', see docstrings/tutorials."
             )
-        if temperature != 300 and quenched_temperature != 300:
-            # both set by user and annealing temperature is None, quenched ignored
-            message = message.replace("annealing_", "quenched_")
-            message += (
-                " Quenched temperature setting will be ignored and total equilibrium assumed "
-                "(see docstrings/tutorials)."
-            )
-            warnings.warn(message)
 
     def _solve(
         self,
@@ -5471,7 +5463,7 @@ class FermiSolver(MSONable):
 
     def interpolate_chempots(
         self,
-        n_points: int,
+        n_points: int = 10,
         chempots: Optional[Union[list[dict], dict]] = None,
         limits: Optional[list[str]] = None,
         el_refs: Optional[dict[str, float]] = None,
@@ -5505,7 +5497,7 @@ class FermiSolver(MSONable):
         Args:
             n_points (int):
                 The number of points to generate between chemical potential
-                end points.
+                end points. Defaults to 10.
             chempots (Optional[list[dict]]):
                 The chemical potentials to interpolate between. This can be
                 either a list containing two dictionaries, each representing
@@ -5685,7 +5677,7 @@ class FermiSolver(MSONable):
 
     def scan_chempots(
         self,
-        chempots: Union[list[dict[str, float]], dict[str, dict]],
+        chempots: Optional[Union[list[dict[str, float]], dict[str, dict]]] = None,
         limits: Optional[list[str]] = None,
         el_refs: Optional[dict[str, float]] = None,
         annealing_temperature: Optional[float] = None,
@@ -5811,6 +5803,8 @@ class FermiSolver(MSONable):
                 set of chemical potentials. Each row corresponds to a different set
                 of chemical potentials.
         """
+        if chempots is None:
+            chempots = self.defect_thermodynamics.chempots
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
 
         if isinstance(chempots, dict):  # should be a dictionary in the ``doped`` format or ``None``:
@@ -5943,6 +5937,7 @@ class FermiSolver(MSONable):
             pd.DataFrame: A ``DataFrame`` containing the Fermi level solutions at the grid
             points, based on the provided chemical potentials and conditions.
         """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         grid = ChemicalPotentialGrid(chempots).get_grid(n_points)
         chempot_dict_list = [
@@ -6127,6 +6122,7 @@ class FermiSolver(MSONable):
                 If neither ``chempots`` nor ``self.chempots`` is provided, or if
                 ``min_or_max`` is not ``"minimise"/"min"`` or ``"maximise"/"max"``.
         """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         # Determine the dimensionality of the chemical potential space, and call appropriate method
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         kwargs = {
