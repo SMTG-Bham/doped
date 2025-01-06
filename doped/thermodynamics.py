@@ -4660,7 +4660,9 @@ class FermiSolver(MSONable):
     ) -> tuple[dict[str, float], Any]:
         """
         Get the chemical potentials for a single limit (``limit``) from the
-        ``chempots`` (or ``self.defect_thermodynamics.chempots``) dictionary.
+        ``chempots`` (or ``self.defect_thermodynamics.chempots``) dictionary,
+        giving the chemical potentials `with respect to the elemental
+        references` (i.e. from ``"limits_wrt_el_refs"``).
 
         Returns a `single` chemical potential dictionary for the specified limit.
         """
@@ -4705,7 +4707,7 @@ class FermiSolver(MSONable):
                 should be a dictionary of chemical potentials for a single limit
                 (``limit``), in the format: ``{element symbol: chemical potential}``.
                 If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
-                then it is the formal chemical potentials (i.e. relative to the elemental
+                then it is the `formal` chemical potentials (i.e. relative to the elemental
                 reference energies) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
             el_refs (dict[str, float]):
@@ -4808,19 +4810,28 @@ class FermiSolver(MSONable):
                 conc_dict = defect_system.concentration_dict()
             data = []
 
+            df_dict_base = {
+                "Temperature": defect_system.temperature,
+                "Fermi Level": conc_dict["Fermi Energy"],
+                "Electrons (cm^-3)": conc_dict["n0"],
+                "Holes (cm^-3)": conc_dict["p0"],
+            }
             for k, v in conc_dict.items():
                 if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
                     row = {
                         "Defect": k,
                         "Concentration (cm^-3)": v,
-                        "Temperature": defect_system.temperature,
-                        "Fermi Level": conc_dict["Fermi Energy"],
-                        "Electrons (cm^-3)": conc_dict["n0"],
-                        "Holes (cm^-3)": conc_dict["p0"],
+                        **df_dict_base,
                     }
-                    if "Dopant" in conc_dict:
-                        row["Dopant (cm^-3)"] = conc_dict["Dopant"]
                     data.append(row)
+            if "Dopant" in conc_dict:
+                data.append(
+                    {
+                        "Defect": "Dopant",
+                        "Concentration (cm^-3)": conc_dict["Dopant"],
+                        **df_dict_base,
+                    }
+                )
 
             concentrations = pd.DataFrame(data)
             concentrations = concentrations.set_index("Defect", drop=True)
@@ -4828,8 +4839,6 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key}"] = value
-            if effective_dopant_concentration:
-                concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
 
@@ -4910,7 +4919,7 @@ class FermiSolver(MSONable):
                 potentials for a single limit (``limit``), in the format:
                 ``{element symbol: chemical potential}``.
                 If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
-                then it is the formal chemical potentials (i.e. relative to the elemental
+                then it is the `formal` chemical potentials (i.e. relative to the elemental
                 reference energies) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
             el_refs (dict[str, float]):
@@ -5062,8 +5071,6 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key}"] = value
-            if effective_dopant_concentration:
-                concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
 
@@ -6360,7 +6367,7 @@ class FermiSolver(MSONable):
                 should be a dictionary of chemical potentials for a single limit
                 (``limit``), in the format: ``{element symbol: chemical potential}``.
                 If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
-                then it is the formal chemical potentials (i.e. relative to the elemental
+                then it is the `formal` chemical potentials (i.e. relative to the elemental
                 reference energies) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
             el_refs (dict[str, float]):
@@ -6402,6 +6409,9 @@ class FermiSolver(MSONable):
         self._check_required_backend_and_error("py-sc-fermi")
         assert self._DefectSpecies
         assert self._DefectSystem
+        single_chempot_dict, el_refs = self.defect_thermodynamics._get_chempots(
+            single_chempot_dict, el_refs
+        )  # returns self.defect_thermodynamics.chempots/self.defect_thermodynamics.el_refs if None
         dft_chempots = _get_dft_chempots(single_chempot_dict, el_refs)
 
         defect_species = []  # dicts of: {"charge_states": {...}, "nsites": X, "name": label}
@@ -6535,7 +6545,7 @@ class FermiSolver(MSONable):
                 potentials for a single limit (``limit``), in the format:
                 ``{element symbol: chemical potential}``.
                 If ``el_refs`` is provided or set in
-                ``self.defect_thermodynamics.el_refs`` then it is the formal
+                ``self.defect_thermodynamics.el_refs`` then it is the `formal`
                 chemical potentials (i.e. relative to the elemental reference
                 energies) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
