@@ -1182,15 +1182,15 @@ class DefectsParser:
 
         FNV_correction_errors = []
         eFNV_correction_errors = []
-        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False)
+        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_vbm_check=True)
         for name, defect_entry in self.defect_dict.items():
             from doped.utils.eigenvalues import is_shallow
 
             # first check if it's a stable defect:
             fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
 
-            if fermi_stability_window < 0 or (
-                is_shallow(defect_entry)
+            if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
+                is_shallow(defect_entry)  # as this would require two ``DefectThermodynamics`` inits...
                 and fermi_stability_window
                 < kwargs.get(
                     "shallow_charge_stability_tolerance",

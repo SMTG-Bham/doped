@@ -382,6 +382,12 @@ PHS on the transition level diagram with a clear circle is shown on the right.
    Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
    Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
+In ``doped``, this eigenvalue analysis is performed automatically, and shallow/unstable defect charge
+states can be omitted from plotting and analysis using the ``unstable_entries`` argument and/or
+``DefectThermodynamics.prune_to_stable_entries()`` method. By default, parsed defect entries which are
+detected to be shallow ('perturbed host') states and unstable for Fermi levels in the band gap are omitted
+from plotting for clarity & accuracy.
+
 Spin Polarisation
 -----------------
 Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
