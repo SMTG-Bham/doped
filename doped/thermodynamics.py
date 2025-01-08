@@ -6604,7 +6604,7 @@ class FermiSolver(MSONable):
         initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
 
         # Exclude the free_defects, carrier concentrations and Fermi level from fixing
-        all_free_defects = ["Fermi Energy", "n0", "p0", *free_defects]
+        all_free_defects = ["Dopant", "Fermi Energy", "n0", "p0", *free_defects]
 
         # Get the fixed concentrations of non-exceptional (not-free) defects
         decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
@@ -6629,7 +6629,7 @@ class FermiSolver(MSONable):
                     if key in list(fixed_concs.keys()):
                         v.fix_concentration(fixed_concs[key] / 1e24 * defect_system.volume)
 
-            elif defect_species.name in fixed_concs:
+            elif defect_species.name in fixed_concs and defect_species.name:
                 defect_species.fix_concentration(
                     fixed_concs[defect_species.name] / 1e24 * defect_system.volume
                 )
