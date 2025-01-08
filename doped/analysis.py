@@ -14,12 +14,11 @@ from multiprocessing import Pool, cpu_count
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
-from filelock import FileLock
 from monty.json import MontyDecoder
-from monty.serialization import dumpfn, loadfn
+from monty.serialization import dumpfn
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
@@ -198,7 +197,10 @@ def defect_from_structures(
             site-matching, listed above. (Default = False)
         bulk_voronoi_node_dict (dict):
             Dictionary of bulk supercell Voronoi node information, for
-            expedited site-matching. If None, will be re-calculated.
+            expedited site-matching. If ``None`` (default), will be
+            re-calculated. Mostly deprecated as Voronoi tessellation in
+            ``doped`` has been massively accelerated, now typically taking
+            negligible time.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
             bulk and defect supercell lattice definitions are matched
@@ -281,7 +283,7 @@ def defect_from_structures(
         if defect_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
-            if not bulk_voronoi_node_dict:  # first time parsing
+            if not bulk_voronoi_node_dict:
                 voronoi_frac_coords = [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)]
                 bulk_voronoi_node_dict = {
                     "bulk_supercell": bulk_supercell,
@@ -574,7 +576,7 @@ class DefectsParser:
 
         By default, tries multiprocessing to speed up defect parsing, which can be
         controlled with ``processes``. If parsing hangs, this may be due to memory
-        issues, in which case you should reduce ``processes`` (e.g. 4 or less).
+        issues, in which case you should manually reduce ``processes`` (e.g. <=4).
 
         Defect charge states are automatically determined from the defect
         calculation outputs if ``POTCAR``\s are set up with ``pymatgen`` (see docs
@@ -614,7 +616,8 @@ class DefectsParser:
                 Path to bulk supercell reference calculation folder. If not
                 specified, searches for folder with name "X_bulk" in the
                 ``output_path`` directory (matching the default ``doped`` name for
-                the bulk supercell reference folder).
+                the bulk supercell reference folder). Can be the full path, or the
+                relative path from the ``output_path`` directory.
             skip_corrections (bool):
                 Whether to skip the calculation & application of finite-size charge
                 corrections to the defect energies (not recommended in most cases).
@@ -622,7 +625,14 @@ class DefectsParser:
             error_tolerance (float):
                 If the estimated error in any charge correction, based on the
                 variance of the potential in the sampling region, is greater than
-                this value (in eV), then a warning is raised. (default: 0.05 eV)
+                this value (in eV), then a warning is raised. Default = 0.05 eV.
+                Note that this warning is skipped for defects which are predicted to
+                not be stable for any Fermi level in the band gap (based on all
+                parsed defects here), or are predicted to be shallow (perturbed host)
+                states according to eigenvalue analysis and only be stable for Fermi
+                levels within a small window to a band edge (taken as the smaller of
+                ``error_tolerance`` or 10% of the band gap, by default, or can be
+                set by a ``shallow_charge_stability_tolerance = X`` keyword argument).
             bulk_band_gap_vr (PathLike or Vasprun):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
                 object, from which to determine the bulk band gap and band edge
@@ -668,11 +678,13 @@ class DefectsParser:
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
+                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``;
                 including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
-                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
-                for each defect.
+                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``; or for controlling
+                shallow defect charge correction error warnings (see ``error_tolerance``
+                argument description) with ``shallow_charge_stability_tolerance``.
+                Primarily used by ``DefectsParser`` to expedite parsing by avoiding
+                reloading bulk data for each defect.
 
         Attributes:
             defect_dict (dict):
@@ -707,7 +719,6 @@ class DefectsParser:
                 for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
                 for file in file_list
             )
-            and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
         ]
 
         if not possible_defect_folders:  # user may have specified the defect folder directly, so check
@@ -725,8 +736,8 @@ class DefectsParser:
                 and (
                     os.path.basename(self.output_path) in dir  # only that defect directory
                     or "bulk" in str(dir).lower()  # or a bulk directory, for later
+                    or (self.bulk_path is not None and str(self.bulk_path).lower() in str(dir).lower())
                 )
-                and dir not in (self.bulk_path.split("/") if self.bulk_path else [])
             ]
             if possible_defect_folders:  # update output path (otherwise will crash with informative error)
                 self.output_path = os.path.join(self.output_path, os.pardir)
@@ -747,7 +758,13 @@ class DefectsParser:
             self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
         self.subfolder = str(self.subfolder)
 
-        possible_bulk_folders = [dir for dir in possible_defect_folders if "bulk" in str(dir).lower()]
+        possible_bulk_folders = [
+            dir
+            for dir in possible_defect_folders
+            if "bulk" in str(dir).lower()
+            or (self.bulk_path is not None and str(dir).lower() == str(self.bulk_path).lower())
+        ]
+
         if self.bulk_path is None:  # determine bulk_path to use
             if len(possible_bulk_folders) == 1:
                 self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
@@ -762,6 +779,13 @@ class DefectsParser:
                     f"{self.output_path}, found {len(possible_bulk_folders)} folders containing "
                     f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
                     f"specify `bulk_path` manually."
+                )
+        if not os.path.isdir(self.bulk_path):
+            if len(possible_bulk_folders) == 1:
+                self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
+            else:
+                raise FileNotFoundError(
+                    f"Could not find bulk supercell calculation folder at '{self.bulk_path}'!"
                 )
 
         self.defect_folders = [
@@ -859,9 +883,6 @@ class DefectsParser:
                         parsed_defect_entries.append(parsed_defect_entry)
 
         else:  # otherwise multiprocessing:
-            with FileLock("voronoi_nodes.json.lock"):  # avoid reading/writing simultaneously
-                pass  # create and release lock, to be used in multiprocessing parsing
-
             # guess a charged defect in defect_folders, to try initially check if dielectric and
             # corrections correctly set, before multiprocessing with the same settings for all folders:
             charged_defect_folder = None
@@ -935,9 +956,6 @@ class DefectsParser:
 
             finally:
                 pbar.close()
-
-            if os.path.exists("voronoi_nodes.json.lock"):  # remove lock file
-                os.remove("voronoi_nodes.json.lock")
 
         if parsing_warnings := [
             warning for warning in parsing_warnings if warning  # remove empty strings
@@ -1026,7 +1044,7 @@ class DefectsParser:
 
             for error, defect_list in parsing_errors_dict.items():
                 if defect_list:
-                    if len(defect_list) > 1:
+                    if len(set(defect_list)) > 1:
                         warnings.warn(
                             f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
                         )
@@ -1052,9 +1070,9 @@ class DefectsParser:
 
             for warning, defect_name_list in duplicate_warnings.items():
                 # remove None and don't warn if later encountered parsing error (already warned)
-                defect_list = [defect_name for defect_name in defect_name_list if defect_name]
-                if defect_list:
-                    warnings.warn(f"Defects: {defect_list} each encountered the same warning:\n{warning}")
+                defect_set = {defect_name for defect_name in defect_name_list if defect_name}
+                if defect_set:
+                    warnings.warn(f"Defects: {defect_set} each encountered the same warning:\n{warning}")
 
         if not parsed_defect_entries:
             subfolder_string = f" and `subfolder`: '{self.subfolder}'" if self.subfolder != "." else ""
@@ -1164,7 +1182,23 @@ class DefectsParser:
 
         FNV_correction_errors = []
         eFNV_correction_errors = []
+        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_vbm_check=True)
         for name, defect_entry in self.defect_dict.items():
+            from doped.utils.eigenvalues import is_shallow
+
+            # first check if it's a stable defect:
+            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+
+            if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
+                is_shallow(defect_entry)  # as this would require two ``DefectThermodynamics`` inits...
+                and fermi_stability_window
+                < kwargs.get(
+                    "shallow_charge_stability_tolerance",
+                    min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+                )
+            ):
+                continue  # no charge correction warnings for unstable charge states
+
             if (
                 defect_entry.corrections_metadata.get("freysoldt_charge_correction_error", 0)
                 > error_tolerance
@@ -1447,16 +1481,19 @@ class DefectsParser:
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
         bulk_dos: Optional[FermiDos] = None,
-        skip_check: bool = False,
+        skip_vbm_check: bool = False,
     ) -> DefectThermodynamics:
         r"""
-        Generates a DefectThermodynamics object from the parsed ``DefectEntry``
-        objects in self.defect_dict, which can then be used to analyse and plot
-        the defect thermodynamics (formation energies, transition levels,
-        concentrations etc).
+        Generates a ``DefectThermodynamics`` object from the parsed
+        ``DefectEntry`` objects in ``self.defect_dict``\, which can then be
+        used to analyse and plot the defect thermodynamics (formation energies,
+        transition levels, concentrations etc).
 
-        Note that the DefectEntry.name attributes (rather than the defect_name key
-        in the defect_dict) are used to label the defects in plots.
+        Note that the ``DefectEntry.name`` attributes (rather than the ``defect_name``
+        key in the ``defect_dict``) are used to label the defects in plots.
+
+        See the ``DefectThermodynamics`` and accompanying methods docstrings in
+        ``doped.thermodynamics`` for more.
 
         Args:
             chempots (dict):
@@ -1477,7 +1514,7 @@ class DefectsParser:
                 (i.e. relative to the elemental references) that should be given here,
                 otherwise the absolute (DFT) chemical potentials should be given.
 
-                If None (default), sets all chemical potentials to zero. Chemical
+                If ``None`` (default), sets all chemical potentials to zero. Chemical
                 potentials can also be supplied later in each analysis function.
                 (Default: None)
             el_refs (dict):
@@ -1487,7 +1524,10 @@ class DefectsParser:
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided in format generated by ``doped`` (see tutorials).
-                (Default: None)
+
+                If ``None`` (default), sets all elemental reference energies to zero. Reference
+                energies can also be supplied later in each analysis function, or set
+                using ``DefectThermodynamics.el_refs = ...`` (with the same input options).
             vbm (float):
                 VBM eigenvalue to use as Fermi level reference point for analysis.
                 If None (default), will use ``"vbm"`` from the ``calculation_metadata``
@@ -1501,15 +1541,17 @@ class DefectsParser:
                 and the reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-                If None (default), will use "gap" from the calculation_metadata
+                If ``None`` (default), will use "gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
-                to be grouped together (for plotting and transition level
-                analysis). If the minimum distance between equivalent defect
-                sites is less than ``dist_tol``, then they will be grouped
-                together, otherwise treated as separate defects.
+                to be grouped together (for plotting, transition level analysis
+                and defect concentration calculations). If the minimum distance between
+                equivalent defect sites is less than ``dist_tol``, then they will be
+                grouped together, otherwise treated as separate defects.
+                See ``plot()`` and ``get_fermi_level_and_concentrations()`` docstrings
+                for more information.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
@@ -1521,7 +1563,7 @@ class DefectsParser:
                 Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
                 Can also be provided later when using ``get_equilibrium_fermi_level()``,
-                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``get_fermi_level_and_concentrations`` etc, or set using
                 ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
 
                 Usually this is a static calculation with the `primitive` cell of the bulk
@@ -1531,13 +1573,13 @@ class DefectsParser:
                 convergence wrt `k`-point sampling. Consistent functional settings should be
                 used for the bulk DOS and defect supercell calculations.
                 (Default: None)
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable. (Default: False)
 
         Returns:
-            doped DefectThermodynamics object (``DefectThermodynamics``)
+            ``doped`` ``DefectThermodynamics`` object
         """
         if not self.defect_dict or self.defect_dict is None:
             raise ValueError(
@@ -1555,7 +1597,7 @@ class DefectsParser:
             dist_tol=dist_tol,
             check_compatibility=check_compatibility,
             bulk_dos=bulk_dos,
-            skip_check=skip_check,
+            skip_vbm_check=skip_vbm_check,
         )
 
     def __repr__(self):
@@ -1894,32 +1936,6 @@ class DefectParser:
             )
 
         # identify defect site, structural information, and create defect object:
-        # try load previous bulk_voronoi_node_dict if present:
-        def _read_bulk_voronoi_node_dict(bulk_path):
-            if os.path.exists(os.path.join(bulk_path, "voronoi_nodes.json")):
-                return loadfn(os.path.join(bulk_path, "voronoi_nodes.json"))
-            return {}
-
-        if os.path.exists("voronoi_nodes.json.lock"):
-            with FileLock("voronoi_nodes.json.lock"):
-                prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
-        else:
-            prev_bulk_voronoi_node_dict = _read_bulk_voronoi_node_dict(bulk_path)
-
-        if prev_bulk_voronoi_node_dict and not StructureMatcher(
-            stol=0.05,
-            primitive_cell=False,
-            scale=False,
-            attempt_supercell=False,
-            allow_subset=False,
-            comparator=ElementComparator(),
-        ).fit(prev_bulk_voronoi_node_dict["bulk_supercell"], bulk_supercell):
-            warnings.warn(
-                "Previous bulk voronoi_nodes.json detected, but does not match current bulk "
-                "supercell. Recalculating Voronoi nodes."
-            )
-            prev_bulk_voronoi_node_dict = {}
-
         # Can specify initial defect structure (to help find the defect site if we have a very distorted
         # final structure), but regardless try using the final structure (from defect OUTCAR) first:
         try:
@@ -1932,12 +1948,11 @@ class DefectParser:
                 bulk_site_index,
                 guessed_initial_defect_structure,
                 unrelaxed_defect_structure,
-                bulk_voronoi_node_dict,
+                _bulk_voronoi_node_dict,
             ) = defect_from_structures(
                 bulk_supercell,
                 defect_structure.copy(),
                 return_all_info=True,
-                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -1954,12 +1969,11 @@ class DefectParser:
                 bulk_site_index,
                 guessed_initial_defect_structure,
                 unrelaxed_defect_structure,
-                bulk_voronoi_node_dict,
+                _bulk_voronoi_node_dict,
             ) = defect_from_structures(
                 bulk_supercell,
                 defect_structure_for_ID,
                 return_all_info=True,
-                bulk_voronoi_node_dict=prev_bulk_voronoi_node_dict,
                 oxi_state=kwargs.get("oxi_state"),
             )
 
@@ -2050,15 +2064,6 @@ class DefectParser:
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
-
-        if bulk_voronoi_node_dict and bulk_path and not prev_bulk_voronoi_node_dict:
-            with contextlib.suppress(Exception):  # ignore any file IO errors
-                # save to bulk folder for future expedited parsing:
-                if os.path.exists("voronoi_nodes.json.lock"):
-                    with FileLock("voronoi_nodes.json.lock"):
-                        dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
-                else:
-                    dumpfn(bulk_voronoi_node_dict, os.path.join(bulk_path, "voronoi_nodes.json"))
 
         check_and_set_defect_entry_name(
             defect_entry, possible_defect_name, bulk_symm_ops=bulk_supercell_symm_ops

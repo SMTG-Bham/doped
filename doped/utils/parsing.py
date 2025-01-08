@@ -232,13 +232,17 @@ def _check_outcar_energy(
             outcar.final_energy if isinstance(outcar, Outcar) else _get_final_energy_from_outcar(outcar)
         )
         total_energy = total_energy if isinstance(total_energy, list) else [total_energy]
+        total_energies = set(np.round(total_energy, 3))
+        formatted_total_energy = "eV, ".join(f"{energy:.3f}" for energy in total_energies) + " eV"
+        if len(total_energies) == 2:  # most cases, final energy and last electronic step energy
+            formatted_total_energy += "; final energy & last electronic step energy"
         if not any(np.isclose(outcar_energy, energy, atol=0.025) for energy in total_energy):
             # 0.025 eV tolerance
             warnings.warn(
                 f"The total energies of the provided (bulk) `OUTCAR` ({outcar_energy:.3f} eV), "
                 f"used to obtain the atomic core potentials for the eFNV correction, and the "
-                f"`vasprun.xml` ({set(total_energy)}), used for energies and structures, do not match. "
-                f"Please make sure the correct file combination is being used!"
+                f"`vasprun.xml` ({formatted_total_energy}), used for energies and structures, do not "
+                f"match. Please make sure the correct file combination is being used!"
             )
 
 

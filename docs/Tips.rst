@@ -382,6 +382,12 @@ PHS on the transition level diagram with a clear circle is shown on the right.
    Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
    Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
+In ``doped``, this eigenvalue analysis is performed automatically, and shallow/unstable defect charge
+states can be omitted from plotting and analysis using the ``unstable_entries`` argument and/or
+``DefectThermodynamics.prune_to_stable_entries()`` method. By default, parsed defect entries which are
+detected to be shallow ('perturbed host') states and unstable for Fermi levels in the band gap are omitted
+from plotting for clarity & accuracy.
+
 Spin Polarisation
 -----------------
 Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
@@ -554,11 +560,6 @@ In the typical defect calculation workflow with ``doped`` (exemplified in the tu
   ``DefectsParser(json_filename="custom_name.json")``, but the default is
   ``{Host Chemical Formula}_defect_dict.json``.
 
-    - Additionally, a ``voronoi_nodes.json`` file is saved to the bulk supercell calculation directory if
-      any interstitial defects are parsed. This contains information about the Voronoi tessellation nodes
-      in the host structure, which are used for analysing interstitial positions but can be somewhat costly
-      to calculate – so are automatically saved to file once initially computed to reduce parsing times.
-
 - Additionally, if following the recommended structure-searching approach with ``ShakeNBreak`` as shown in
   the tutorials, ``distortion_metadata.json`` files will be written to the top directory (``output_path``,
   containing distortion information about all defects) and to each defect directory (containing just the
@@ -572,7 +573,7 @@ is not done automatically.
 ^^^^^^^^^^^^^^^^^^^^^
 Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as the result, such as the
 ``get_symmetries_and_degeneracies()``, ``get_formation_energies()``, ``get_equilibrium_concentrations()``,
-``get_quenched_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
+``get_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
 ``get_transition_levels()`` methods for ``DefectThermodynamics`` objects, and the ``formation_energy_df``
 attribute and ``calculate_chempots()`` method for ``CompetingPhasesAnalyzer``. As mentioned in the
 tutorials, these ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the

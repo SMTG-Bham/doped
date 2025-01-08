@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from test_analysis import if_present_rm
 
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
@@ -154,9 +153,6 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     v_Cd_dict: dict[Any, Any]
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
-
-    def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_bulk_data_dir, "voronoi_nodes.json"))
 
     @classmethod
     def setUpClass(cls) -> None:

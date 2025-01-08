@@ -504,7 +504,7 @@ def get_eigenvalue_analysis(
             summed orbital projection differences, normalised by the total orbital
             projection coefficients,  are less than this value, then the orbitals
             are considered similar. Default is to try with 0.2 (``pydefect`` default),
-            then if this fails increase to 0.35.
+            then if this fails increase to 0.35, and lastly 0.5.
         similar_energy_criterion (float):
             Threshold criterion for considering two eigenstates similar in energy,
             used for identifying band-edge (and defect states). Bands within this
@@ -537,7 +537,7 @@ def get_eigenvalue_analysis(
             bulk_site_index,
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
-            bulk_voronoi_node_dict,
+            _bulk_voronoi_node_dict,
         ) = defect_from_structures(
             bulk_vr.final_structure,
             defect_vr.final_structure,
@@ -617,16 +617,22 @@ def get_eigenvalue_analysis(
     try:
         bes = make_band_edge_states(band_orb, perfect)
     except ValueError:  # increase to pydefect defaults:
+        defaults._similar_orb_criterion = 0.35
+        defaults._similar_energy_criterion = 0.5
+        try:
+            bes = make_band_edge_states(band_orb, perfect)
+        except ValueError:
+            defaults._similar_orb_criterion = 0.5
+            bes = make_band_edge_states(band_orb, perfect)  # if fails, let it raise pydefect error
+
         if dynamic_criterion_warning:  # only warn if user has set custom criteria
             warnings.warn(
                 f"Band-edge state identification failed with the current criteria: "
+                f"similar_orb_criterion={similar_orb_criterion}, "
+                f"similar_energy_criterion={similar_energy_criterion} eV, but succeeded with "
                 f"similar_orb_criterion={defaults._similar_orb_criterion}, "
                 f"similar_energy_criterion={defaults._similar_energy_criterion} eV. "
-                f"Trying with values of 0.35 and 0.5 eV."
             )
-        defaults._similar_orb_criterion = 0.35
-        defaults._similar_energy_criterion = 0.5
-        bes = make_band_edge_states(band_orb, perfect)  # if 2nd round fails, let it raise pydefect error
 
     if not plot:
         return bes
@@ -730,3 +736,22 @@ def get_eigenvalue_analysis(
         emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
 
     return bes, fig
+
+
+def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
+    """
+    Return whether a ``DefectEntry`` is determined to be a shallow (perturbed
+    host) state, based on ``pydefect`` eigenvalue analysis.
+
+    Args:
+        defect_entry (DefectEntry):
+            ``doped`` ``DefectEntry`` object.
+        default (bool):
+            Default value to return if the eigenvalue analysis fails
+            (e.g. if eigenvalue data is not present).
+            Default is ``False``.
+    """
+    try:
+        return defect_entry.get_eigenvalue_analysis(plot=False).is_shallow
+    except Exception:
+        return default

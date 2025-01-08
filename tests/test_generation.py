@@ -767,6 +767,9 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         self.se_supercell = Structure.from_file(f"{self.data_dir}/Se_supercell_POSCAR")
         self.sn5o6 = Structure.from_file(f"{self.data_dir}/Sn5O6_POSCAR")
         self.navcdo4_supercell = Structure.from_file(f"{self.data_dir}/NaVCdO4_supercell_POSCAR")
+        # load CoH12(BrO3)2-mp-510271 from JSON to keep the MAGMOM info, which is what makes spglib
+        # symmetry determination tricky:
+        self.coh12_bro3_2 = loadfn(f"{self.data_dir}/CoH12(BrO3)2-mp-510271_Structure.json")
 
     def _save_defect_gen_jsons(self, defect_gen, heavy=False):
         defect_gen.to_json()  # test default
@@ -911,6 +914,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 defect_gen.structure.lattice.matrix,
                 atol=1e-3,
             )
+        print("Finished general DefectsGenerator check")
 
     def _check_defect_entry(self, defect_entry, defect_name, defect_gen, charge_states_removed=False):
         print(f"Checking DefectEntry {defect_name} attributes")
@@ -931,7 +935,10 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         )
 
         # only run more intensive checks on neutral entries, as charged entries are just copies of this
-        if defect_entry.charge_state == 0:
+        if (
+            defect_entry.charge_state == 0
+            and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula
+        ):
             sga = SpacegroupAnalyzer(defect_gen.structure)
             reoriented_conv_structure = swap_axes(
                 sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
@@ -3595,3 +3602,26 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         self._general_defect_gen_check(defect_gen)
         assert min_dist(defect_gen.bulk_supercell) > 1
         assert np.isclose(min_dist(defect_gen.bulk_supercell), min_dist(self.navcdo4_supercell), atol=1e-3)
+
+    def test_auto_symprec_adjust(self):
+        """
+        Test automatic adjustment of default ``symprec`` and accompanying
+        warning for rare cases where ``spglib`` symmetry determination fails
+        with default ``symprec`` settings.
+
+        e.g. odd case is CoH12(BrO3)2 where ``SpacegroupAnalyzer``
+        initialisation and symmetry dataset output proceeds without error, but
+        then ``sga._get_symmetry()`` (used in various methods such as
+        ``sga.get_primitive_standard_structure()``) fails with the same ``symprec``.
+        Code in ``doped.utils.symmetry.get_sga`` now catches and handles this.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_gen = DefectsGenerator(self.coh12_bro3_2)
+
+        print([str(warning.message) for warning in w])  # for debugging
+        self._general_defect_gen_check(defect_gen)
+        assert (
+            "Symmetry determination failed for the default symprec value of 0.01, but succeeded with "
+            "symprec = 0.1, which will be used for symmetry determination functions here."
+        ) in str(w[-1].message)

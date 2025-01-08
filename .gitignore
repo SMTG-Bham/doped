@@ -2,6 +2,7 @@
 
 # No PyCharm
 .idea/
+tests/__init__.py
 
 # Ignore Mac Finder metadata file
 .DS_Store

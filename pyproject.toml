@@ -45,9 +45,10 @@ Repository = "https://github.com/SMTG-Bham/doped"
 
 [project.optional-dependencies]
 tests = [
-    "pytest>=8.3",  # with pytest==8.2.0, seemed to cause memory issue on GH Actions mpl tests, python=3.10
+    "pytest>=8.3",
     "pytest-mpl>=0.16.1",
     "mp-api",  # not required by default as user can use legacy API, but needed for tests
+    "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
 ]
 docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
 analysis = [
@@ -129,4 +130,4 @@ wrap-summaries = 79
 wrap-descriptions = 79
 
 [tool.codespell]
-ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe"  # lowercase!
+ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll"  # lowercase!
