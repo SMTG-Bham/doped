@@ -1,5 +1,8 @@
 """
 Tests for the ``FermiSolver`` class in ``doped.thermodynamics``.
+
+The ``scan_chemical_potential_grid`` tests here indirectly test the ``ChemicalPotentialGrid`` class in
+``doped.chemical_potentials``.
 """
 
 import builtins
@@ -580,7 +583,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
     @parameterize_backend()
-    def test_pseudo_equilibrium_solve_doped_backend(self, backend):
+    def test_pseudo_equilibrium_solve(self, backend):
         """
         Test ``pseudo_equilibrium_solve`` method for both backends.
         """
@@ -640,7 +643,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
             fermisolver_concentrations,
             rtol=1e-3,
-        )
+        )  # also checks the index and ordering
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
         """
@@ -844,7 +847,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert "Quenched temperature was set but no annealing temperature was given!" in str(exc.value)
 
     @parameterize_backend()
-    def test_scan_function_no_chempots_error_catch(self, backend):
+    def test_scan_temperature_no_chempots_error_catch(self, backend):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with pytest.raises(ValueError) as exc:
             solver.scan_temperature(
@@ -854,6 +857,42 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "Limit 'None' not found in the chemical potentials dictionary! You must specify an "
             "appropriate limit or provide an appropriate chempots dictionary"
         ) in str(exc.value)
+
+    @parameterize_backend()
+    def test_scan_dopant_concentration_no_chempots_error_catch(self, backend):
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.scan_dopant_concentration(
+                annealing_temperature=400,
+                effective_dopant_concentration=[1e16, 1e18],
+            )
+        assert (
+            "Limit 'None' not found in the chemical potentials dictionary! You must specify an "
+            "appropriate limit or provide an appropriate chempots dictionary"
+        ) in str(exc.value)
+
+    @parameterize_backend()
+    def test_interpolate_chempots_no_chempots_error_catch(self, backend):
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.interpolate_chempots()
+        assert "If `chempots` is not provided as a list, then `limits` must be a list" in str(exc.value)
+
+    # Note that the following methods use the ``self.defect_thermodynamics.chempots`` by default,
+    # and so do not throw an error if no chempots are provided:
+    # scan_chempots, scan_chemical_potential_grid, min_max_X
+
+    @parameterize_backend()
+    def test_scan_chemical_potential_grid_non_2D_data(self, backend):
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.scan_chemical_potential_grid()
+        assert (
+            "Chemical potential grid generation is only possible for systems with "
+            "two or more independent variables (chemical potentials), i.e. ternary or "
+            "higher-dimensional systems. Stable chemical potential ranges are just a line for binary "
+            "systems, for which ``FermiSolver.interpolate_chempots()`` can be used." in str(exc.value)
+        )
 
     def test_scan_dopant_concentration_equilibrium(self):
         """
