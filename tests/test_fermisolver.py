@@ -199,6 +199,19 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
         cls.CdTe_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_chempots.json"))
 
+        cls.CdTe_700K_fermi_level, cls.CdTe_700K_e, cls.CdTe_700K_h = (
+            cls.CdTe_thermo.get_equilibrium_fermi_level(
+                limit="Cd-rich", temperature=700, return_concs=True
+            )
+        )
+        cls.CdTe_700K_conc_df = cls.CdTe_thermo.get_equilibrium_concentrations(
+            fermi_level=cls.CdTe_700K_fermi_level,
+            limit="Cd-rich",
+            temperature=700,
+            per_charge=False,
+            skip_formatting=True,
+        )  # currently FermiSolver only supports per charge=False
+
         cls.CdTe_300K_eff_1e16_fermi_level, cls.CdTe_300K_eff_1e16_e, cls.CdTe_300K_eff_1e16_h = (
             cls.CdTe_thermo.get_equilibrium_fermi_level(
                 limit="Te-rich", temperature=300, effective_dopant_concentration=1e16, return_concs=True
@@ -214,8 +227,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         (
             cls.CdTe_anneal_800K_eff_1e16_fermi_level,
-            cls.CdTe_anneal_800K_eff_1e16_e_conc,
-            cls.CdTe_anneal_800K_eff_1e16_h_conc,
+            cls.CdTe_anneal_800K_eff_1e16_e,
+            cls.CdTe_anneal_800K_eff_1e16_h,
             cls.CdTe_anneal_800K_eff_1e16_conc_df,
         ) = cls.CdTe_thermo.get_fermi_level_and_concentrations(
             annealing_temperature=800,
@@ -229,6 +242,18 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "Dopant", errors="ignore"
         )
         cls.CdTe_anneal_800K_eff_1e16_conc_df["Dopant (cm^-3)"] = 1e16
+
+        (
+            cls.CdTe_anneal_1400K_fermi_level,
+            cls.CdTe_anneal_1400K_e,
+            cls.CdTe_anneal_1400K_h,
+            cls.CdTe_anneal_1400K_conc_df,
+        ) = cls.CdTe_thermo.get_fermi_level_and_concentrations(
+            annealing_temperature=1400,
+            limit="Cd-rich",
+            per_charge=False,  # currently FermiSolver only supports per charge=False
+            skip_formatting=True,
+        )
 
     def setUp(self):
         self.CdTe_thermo.bulk_dos = self.CdTe_fermi_dos
@@ -523,12 +548,63 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             # https://github.com/bjmorgan/py-sc-fermi/issues/41
             annealing_temperature=300,  # set to 300 to match equilibrium_solve
         )
-        pseudo_concentrations["Temperature"] = pseudo_concentrations["Annealing Temperature"]
-        pseudo_concentrations = pseudo_concentrations.drop(
-            columns=["Annealing Temperature", "Quenched Temperature"]
+        pseudo_concentrations = pseudo_concentrations.rename(
+            columns={"Annealing Temperature": "Temperature"}
+        )  # retains ordering
+        pseudo_concentrations = pseudo_concentrations.drop(columns=["Quenched Temperature"])
+        pd.testing.assert_frame_equal(
+            concentrations, pseudo_concentrations, rtol=1e-3, check_dtype=False
+        )  # Temperature can be int/float
+
+    @parameterize_backend()
+    def test_equilibrium_solve_700K_no_eff_dopant(self, backend):
+        """
+        Test ``equilibrium_solve`` method for both backends, this time with
+        ``temperature=700``, no effective dopant and Cd-rich conditions.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
+        concentrations = solver.equilibrium_solve(
+            single_chempot_dict=single_chempot_dict,
+            el_refs=self.CdTe_thermo.el_refs,
+            temperature=700,
+            append_chempots=True,
         )
-        # reorder columns to match equilibrium_solve: (temperature rearranged here)
-        pseudo_concentrations = pseudo_concentrations[concentrations.columns]
+
+        for i in [
+            "Fermi Level",
+            "Electrons (cm^-3)",
+            "Holes (cm^-3)",
+            "Temperature",
+        ]:
+            assert i in concentrations.columns, f"Missing column: {i}"
+
+        assert np.isclose(concentrations["Temperature"].iloc[0], 700)
+        # Check appended chemical potentials
+        for element in single_chempot_dict:
+            assert f"μ_{element}" in concentrations.columns
+            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+
+        assert np.isclose(concentrations["Fermi Level"].iloc[0], self.CdTe_700K_fermi_level)
+        assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_700K_e, rtol=1e-3)
+        assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_700K_h, rtol=1e-3)
+
+        pd.testing.assert_series_equal(
+            self.CdTe_700K_conc_df["Concentration (cm^-3)"],
+            concentrations["Concentration (cm^-3)"],
+            rtol=1e-3,
+        )  # also checks the index and ordering
+
+        # check against pseudo_equilibrium_solve
+        pseudo_concentrations = solver.pseudo_equilibrium_solve(
+            single_chempot_dict=single_chempot_dict,
+            annealing_temperature=700,  # match equilibrium_solve
+            quenched_temperature=700,
+        )
+        pseudo_concentrations = pseudo_concentrations.rename(
+            columns={"Annealing Temperature": "Temperature"}
+        )  # retains ordering
+        pseudo_concentrations = pseudo_concentrations.drop(columns=["Quenched Temperature"])
         pd.testing.assert_frame_equal(
             concentrations, pseudo_concentrations, rtol=1e-3, check_dtype=False
         )  # Temperature can be int/float
@@ -620,10 +696,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             concentrations["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
         )
         assert np.isclose(
-            concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_e_conc, rtol=1e-3
+            concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_e, rtol=1e-3
         )
         assert np.isclose(
-            concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h_conc, rtol=1e-3
+            concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h, rtol=1e-3
         )
 
         pd.testing.assert_series_equal(
@@ -769,11 +845,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
         assert np.isclose(
             concentrations_800K["Electrons (cm^-3)"].iloc[0],
-            self.CdTe_anneal_800K_eff_1e16_e_conc,
+            self.CdTe_anneal_800K_eff_1e16_e,
             rtol=1e-3,
         )
         assert np.isclose(
-            concentrations_800K["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h_conc, rtol=1e-3
+            concentrations_800K["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h, rtol=1e-3
         )
         pd.testing.assert_series_equal(
             self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
