@@ -189,8 +189,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     Tests for ``FermiSolver`` initialization with loaded data.
     """
 
-    # TODO: Add quick (pseudo_)eq_solve tests without eff dopant
-
     @classmethod
     def setUpClass(cls):
         cls.CdTe_thermo = loadfn(os.path.join(EXAMPLE_DIR, "CdTe/CdTe_LZ_thermo_wout_meta.json.gz"))
@@ -244,12 +242,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         cls.CdTe_anneal_800K_eff_1e16_conc_df["Dopant (cm^-3)"] = 1e16
 
         (
-            cls.CdTe_anneal_1400K_fermi_level,
-            cls.CdTe_anneal_1400K_e,
-            cls.CdTe_anneal_1400K_h,
-            cls.CdTe_anneal_1400K_conc_df,
+            cls.CdTe_anneal_1400K_quenched_150K_fermi_level,
+            cls.CdTe_anneal_1400K_quenched_150K_e,
+            cls.CdTe_anneal_1400K_quenched_150K_h,
+            cls.CdTe_anneal_1400K_quenched_150K_conc_df,
         ) = cls.CdTe_thermo.get_fermi_level_and_concentrations(
             annealing_temperature=1400,
+            quenched_temperature=150,
             limit="Cd-rich",
             per_charge=False,  # currently FermiSolver only supports per charge=False
             skip_formatting=True,
@@ -706,6 +705,58 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
             concentrations["Concentration (cm^-3)"],
             rtol=1e-3,
+        )  # also checks the index and ordering
+
+    @parameterize_backend()
+    def test_pseudo_equilibrium_solve_1400K_no_eff_dopant(self, backend):
+        """
+        Test ``pseudo_equilibrium_solve`` method for both backends, now with
+        ``annealing_temperature=1400``, ``quenched_temperature=150``,
+        ``limit="Cd-rich"`` and no effective dopant.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
+
+        concentrations = solver.pseudo_equilibrium_solve(
+            annealing_temperature=1400,
+            single_chempot_dict=single_chempot_dict,
+            el_refs=el_refs,
+            quenched_temperature=150,
+            append_chempots=True,
+        )
+
+        for i in [
+            "Fermi Level",
+            "Electrons (cm^-3)",
+            "Holes (cm^-3)",
+            "Annealing Temperature",
+            "Quenched Temperature",
+        ]:
+            assert i in concentrations.columns, f"Missing column: {i}"
+
+        # Check that concentrations are reasonable numbers
+        assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
+        assert np.isclose(concentrations["Quenched Temperature"].iloc[0], 150)
+        assert np.isclose(concentrations["Annealing Temperature"].iloc[0], 1400)
+        # Check appended chemical potentials
+        for element in single_chempot_dict:
+            assert f"μ_{element}" in concentrations.columns
+            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+
+        assert np.isclose(
+            concentrations["Fermi Level"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_fermi_level
+        )
+        assert np.isclose(
+            concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_e, rtol=1e-3
+        )
+        assert np.isclose(
+            concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_h, rtol=1e-3
+        )
+
+        pd.testing.assert_series_equal(
+            self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
+            concentrations["Concentration (cm^-3)"],
+            rtol=3e-3,
         )  # also checks the index and ordering
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
