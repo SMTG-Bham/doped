@@ -2878,8 +2878,8 @@ class CompetingPhasesAnalyzer:
         #  control; implement this (removes need for np.unique() call)), units = plot y units
         # TODO: Code in this function (particularly label position handling and intersections) should be
         #  able to be made more succinct, and also modularise a bit?
-        # TODO: Use ``ChemicalPotentialGrid`` from ``dopey_fermi`` PR when fixed and merged to develop (
-        #  will also make handling >ternary systems easier?)
+        # TODO: Merge gridding code with ``ChemicalPotentialGrid`` below (should make handling >ternary
+        #  systems easier?)
         # TODO: Option to only show all calculated competing phases?
 
         # Note that we could also add option to instead plot competing phases lines coloured,
@@ -3435,17 +3435,18 @@ class ChemicalPotentialGrid:
 
         Args:
             n_points (int):
-                The number of points to generate along each axis of the grid.
-                Note that this may not always be the final number of points in the grid,
-                as points lying outside the convex hull are excluded.
+                The number of points to generate along each axis (i.e. chemical
+                potential range) of the grid. Note that this may not always be
+                the final number of points in the grid, as points lying outside
+                the convex hull are excluded.
                 Default is 100.
 
         Returns:
             pd.DataFrame:
                 A ``DataFrame`` containing the points within the convex hull,
-                along with their corresponding interpolated chemical potential values.
-                Each row represents a point in the grid with associated chemical
-                potential values.
+                along with their corresponding interpolated chemical potential
+                values. Each row represents a point in the grid with associated
+                chemical potential values.
         """
         return self.grid_from_dataframe(self.vertices, n_points)
 
@@ -3467,10 +3468,11 @@ class ChemicalPotentialGrid:
                 and the preceding columns representing the independent
                 variables.
             n_points (int):
-                The number of points to generate along each axis of the
-                grid. Note that this may not always be the final number
-                of points in the grid, as points lying outside the convex
-                hull are excluded. Defaults to 100.
+                The number of points to generate along each axis (i.e.
+                chemical potential range) of the grid. Note that this
+                may not always be the final number of points in the grid,
+                as points lying outside the convex hull are excluded.
+                Defaults to 100.
 
         Returns:
             pd.DataFrame:
@@ -3484,6 +3486,13 @@ class ChemicalPotentialGrid:
         independent_vars = mu_dataframe.drop(columns=dependent_variable)
 
         n_dims = independent_vars.shape[1]  # Get the number of independent variables (dimensions)
+        if n_dims < 2:
+            raise ValueError(
+                "Chemical potential grid generation is only possible for systems with "
+                "two or more independent variables (chemical potentials), i.e. ternary or "
+                "higher-dimensional systems. Stable chemical potential ranges are just a line for binary "
+                "systems, for which ``FermiSolver.interpolate_chempots()`` can be used."
+            )
 
         # Get the convex hull of the vertices
         hull = ConvexHull(independent_vars.values)
