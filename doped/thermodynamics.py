@@ -269,6 +269,15 @@ def group_defects_by_distance(
     multiple sets of equivalent sites, then it is matched to the one with
     the lowest minimum distance.
 
+    This is used to group together different defect entries (different charge
+    states, and/or ground and metastable states (different spin or geometries))
+    which correspond to the same defect type (e.g. interstitials at a given
+    site), which is then used in plotting, transition level analysis and defect
+    concentration calculations; e.g. in the frozen defect approximation, the
+    total concentration of a given defect type group is calculated at the
+    annealing temperature, and then the equilibrium relative population of the
+    constituent entries is recalculated at the quenched temperature.
+
     Args:
         entry_list ([DefectEntry]):
             A list of DefectEntry objects to group together.
@@ -525,15 +534,17 @@ class DefectThermodynamics(MSONable):
                 and the reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-                If None (default), will use "gap" from the calculation_metadata
+                If ``None`` (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in ``defect_entries``.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
-                to be grouped together (for plotting and transition level
-                analysis). If the minimum distance between equivalent defect
-                sites is less than ``dist_tol``, then they will be grouped
-                together, otherwise treated as separate defects.
+                to be grouped together (for plotting, transition level analysis
+                and defect concentration calculations). If the minimum distance between
+                equivalent defect sites is less than ``dist_tol``, then they will be
+                grouped together, otherwise treated as separate defects.
+                See ``plot()`` and ``get_fermi_level_and_concentrations()`` docstrings
+                for more information.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
@@ -577,8 +588,8 @@ class DefectThermodynamics(MSONable):
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
-                to be grouped together (for plotting and transition level
-                analysis).
+                to be grouped together (for plotting, transition level analysis
+                and defect concentration calculations).
             transition_levels (dict):
                 Dictionary of charge transition levels for each defect entry.
                 (e.g. ``{defect_name: {charge: transition_level}}``).
@@ -1388,13 +1399,23 @@ class DefectThermodynamics(MSONable):
     def dist_tol(self):
         r"""
         Get the distance tolerance (in Å) used for grouping (equivalent)
-        defects together (for plotting and transition level analysis).
+        defects together (for plotting, transition level analysis and defect
+        concentration calculations).
 
         ``DefectEntry``\s of the same type and with a closest distance between
         equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
         grouped together. If a DefectEntry's site has a closest distance less
         than ``dist_tol`` to multiple sets of equivalent sites, then it is
         matched to the one with the lowest minimum distance.
+
+        This is used to group together different defect entries (different charge
+        states, and/or ground and metastable states (different spin or geometries))
+        which correspond to the same defect type (e.g. interstitials at a given
+        site), which is then used in plotting, transition level analysis and defect
+        concentration calculations; e.g. in the frozen defect approximation, the
+        total concentration of a given defect type group is calculated at the
+        annealing temperature, and then the equilibrium relative population of the
+        constituent entries is recalculated at the quenched temperature.
         """
         return self._dist_tol
 
@@ -1402,15 +1423,24 @@ class DefectThermodynamics(MSONable):
     def dist_tol(self, input_dist_tol: float):
         r"""
         Set the distance tolerance (in Å) used for grouping (equivalent)
-        defects together (for plotting and transition level analysis), and
-        reparse the thermodynamic information (transition levels etc) with this
-        tolerance.
+        defects together (for plotting, transition level analysis and defect
+        concentration calculations), and reparse the thermodynamic information
+        (transition levels etc) with this tolerance.
 
         ``DefectEntry``\s of the same type and with a closest distance between
         equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
         grouped together. If a DefectEntry's site has a closest distance less
         than ``dist_tol`` to multiple sets of equivalent sites, then it is
         matched to the one with the lowest minimum distance.
+
+        This is used to group together different defect entries (different charge
+        states, and/or ground and metastable states (different spin or geometries))
+        which correspond to the same defect type (e.g. interstitials at a given
+        site), which is then used in plotting, transition level analysis and defect
+        concentration calculations; e.g. in the frozen defect approximation, the
+        total concentration of a given defect type group is calculated at the
+        annealing temperature, and then the equilibrium relative population of the
+        constituent entries is recalculated at the quenched temperature.
         """
         self._dist_tol = input_dist_tol
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
@@ -2311,6 +2341,14 @@ class DefectThermodynamics(MSONable):
         ``self.band_gap``, which are parsed from the `bulk supercell calculation` by
         default, unless ``bulk_band_gap_vr`` is set during defect parsing.
 
+        Note that different defect entries (different charge states, and/or ground
+        and metastable states (different spin or geometries); e.g. interstitials
+        at a given site) are grouped together in distinct defect types according
+        to ``self.dist_tol`` , which is also used in transition level analysis and
+        defect concentrations. This can be adjusted as shown in the plotting
+        customisation tutorial:
+        https://doped.readthedocs.io/en/latest/plotting_customisation_tutorial.html
+
         Args:
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
@@ -2989,66 +3027,66 @@ class DefectThermodynamics(MSONable):
                 "elemental_refs": el_refs or empty_el_dict,
             }
 
-        for defect_entry in self.defect_entries.values():
-            with warnings.catch_warnings():  # already warned if necessary
-                warnings.filterwarnings("ignore", "No chemical potential")
-                formation_energy = defect_entry.formation_energy(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    fermi_level=fermi_level,
-                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                )
-                raw_concentration = defect_entry.equilibrium_concentration(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    fermi_level=fermi_level,
-                    vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                    temperature=temperature,
-                    per_site=False,  # only concentration in cm^-3 here
-                    formation_energy=formation_energy,  # reduce compute times
-                )
+        for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
+            for defect_entry in defect_entry_list:
+                with warnings.catch_warnings():  # already warned if necessary
+                    warnings.filterwarnings("ignore", "No chemical potential")
+                    formation_energy = defect_entry.formation_energy(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        fermi_level=fermi_level,
+                        vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                    )
+                    raw_concentration = defect_entry.equilibrium_concentration(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        fermi_level=fermi_level,
+                        vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                        temperature=temperature,
+                        per_site=False,  # only concentration in cm^-3 here
+                        formation_energy=formation_energy,  # reduce compute times
+                    )
 
-            defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
-            charge = (
-                defect_entry.charge_state
-                if skip_formatting
-                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
-            )
-            if lean:
-                energy_concentration_list.append(
-                    {
-                        "Defect": defect_name,
-                        "Charge": charge,
-                        "Concentration (cm^-3)": raw_concentration,
-                    }
+                charge = (
+                    defect_entry.charge_state
+                    if skip_formatting
+                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
                 )
-            else:
-                energy_concentration_list.append(
-                    {
-                        "Defect": defect_name,
-                        "Charge": charge,
-                        "Formation Energy (eV)": round(formation_energy, 3),
-                        "Raw Concentration": (
-                            raw_concentration / defect_entry.bulk_site_concentration
-                            if (per_site and not per_charge)
-                            else raw_concentration  # if per_site but per_charge, keep as cm^-3 to avoid
-                            # rounding differences in charge state population
-                        ),
-                        (
-                            "Concentration (per site)" if per_site else "Concentration (cm^-3)"
-                        ): _format_concentration(
-                            (
+                if lean:
+                    energy_concentration_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charge": charge,
+                            "Concentration (cm^-3)": raw_concentration,
+                        }
+                    )
+                else:
+                    energy_concentration_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charge": charge,
+                            "Formation Energy (eV)": round(formation_energy, 3),
+                            "Raw Concentration": (
                                 raw_concentration / defect_entry.bulk_site_concentration
-                                if per_site
-                                else raw_concentration
+                                if (per_site and not per_charge)
+                                else raw_concentration  # if per_site but per_charge, keep as cm^-3 to
+                                # avoid rounding differences in charge state population
                             ),
-                            per_site=per_site,
-                            skip_formatting=skip_formatting,
-                        ),
-                    }
-                )
+                            (
+                                "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                            ): _format_concentration(
+                                (
+                                    raw_concentration / defect_entry.bulk_site_concentration
+                                    if per_site
+                                    else raw_concentration
+                                ),
+                                per_site=per_site,
+                                skip_formatting=skip_formatting,
+                            ),
+                        }
+                    )
 
         conc_df = pd.DataFrame(energy_concentration_list)
         # Note that in concentration / FermiSolver functions, we avoid altering the output ordering and
@@ -3324,7 +3362,7 @@ class DefectThermodynamics(MSONable):
         charge neutrality.
 
         This function works by calculating the self-consistent Fermi level
-        and total concentration of each defect at the annealing temperature,
+        and total concentration of each defect type at the annealing temperature,
         then fixing the total concentrations to these values and
         re-calculating the self-consistent (constrained equilibrium) Fermi
         level and relative charge state concentrations under this constraint
@@ -3351,6 +3389,15 @@ class DefectThermodynamics(MSONable):
         fine-grained control over constraints and approximations in defect
         concentration calculations, as demonstrated in the tutorial:
         https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+
+        Note that different defect entries (different charge states, and/or ground
+        and metastable states (different spin or geometries); e.g. interstitials
+        at a given site) are grouped together in distinct defect types according
+        to ``self.dist_tol`` , which is also used in plotting and transition level
+        analysis. In the frozen defect approximation here, the total concentration
+        of a given defect type group is calculated at the annealing temperature,
+        and then the equilibrium relative population of the constituent entries is
+        recalculated at the quenched temperature.
 
         Note that the bulk DOS calculation should be well-converged with respect
         to `k`-points for accurate Fermi level predictions!
