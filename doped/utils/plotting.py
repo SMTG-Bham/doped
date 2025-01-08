@@ -957,7 +957,7 @@ def _get_in_gap_yvals(x_coords, y_coords, x_range):
     return np.interp(relevant_x, x_coords, y_coords)  # y values in range
 
 
-def _TLD_plot(
+def formation_energy_plot(
     defect_thermodynamics: "DefectThermodynamics",
     dft_chempots: Optional[dict] = None,
     el_refs: Optional[dict] = None,

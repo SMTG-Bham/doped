@@ -47,7 +47,7 @@ from doped.utils.parsing import (
     get_nelect_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
+from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot
 from doped.utils.symmetry import _get_all_equiv_sites, get_primitive_structure, get_sga
 
 if TYPE_CHECKING:
@@ -757,7 +757,11 @@ class DefectThermodynamics(MSONable):
             band_gap=d.get("band_gap"),
             dist_tol=d.get("dist_tol", 1.5),
             check_compatibility=d.get("check_compatibility", True),
-            bulk_dos=FermiDos.from_dict(d.get("bulk_dos")) if d.get("bulk_dos") else None,
+            bulk_dos=(
+                FermiDos.from_dict(d["bulk_dos"])
+                if isinstance(d.get("bulk_dos"), dict)
+                else d.get("bulk_dos")
+            ),
             skip_vbm_check=d.get("skip_vbm_check"),
         )
 
@@ -2536,7 +2540,7 @@ class DefectThermodynamics(MSONable):
 
                 with warnings.catch_warnings():  # avoid double warning about no chempots supplied
                     warnings.filterwarnings("ignore", "No chemical potentials")
-                    fig = _TLD_plot(
+                    fig = formation_energy_plot(
                         thermo_to_plot,
                         dft_chempots=dft_chempots,
                         el_refs=el_refs,
