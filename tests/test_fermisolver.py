@@ -631,17 +631,23 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h_conc, rtol=1e-3
         )
 
-        fermisolver_concentrations = concentrations["Concentration (cm^-3)"]
+        fermisolver_concentrations = concentrations["Concentration (cm^-3)"].copy()
+
+        # Only modify if backend is "py-sc-fermi"
         if backend == "py-sc-fermi":
-            fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
-            fermisolver_concentrations = fermisolver_concentrations.drop(
-                ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
+            # Rename "Te_i_Td_Te2.83_a" to "Te_i_Td_Te2.83" (same position in the Series)
+            fermisolver_concentrations = fermisolver_concentrations.rename(
+                {"Te_i_Td_Te2.83_a": "Te_i_Td_Te2.83"}
             )
+            # Drop "Te_i_Td_Te2.83_b" to remove it completely
+            fermisolver_concentrations = fermisolver_concentrations.drop("Te_i_Td_Te2.83_b")
+
+        # Final assertion to compare with expected data
         pd.testing.assert_series_equal(
             self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
             fermisolver_concentrations,
             rtol=1e-3,
-        )  # also checks the index and ordering
+        )
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
         """
