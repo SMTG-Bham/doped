@@ -4780,9 +4780,6 @@ class FermiSolver(MSONable):
                 per_site=False,
                 skip_formatting=False,
             )
-            concentrations = _add_effective_dopant_concentration(
-                concentrations, effective_dopant_concentration
-            )
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
                 "Temperature": temperature,
@@ -4810,28 +4807,18 @@ class FermiSolver(MSONable):
                 conc_dict = defect_system.concentration_dict()
             data = []
 
-            df_dict_base = {
-                "Temperature": defect_system.temperature,
-                "Fermi Level": conc_dict["Fermi Energy"],
-                "Electrons (cm^-3)": conc_dict["n0"],
-                "Holes (cm^-3)": conc_dict["p0"],
-            }
             for k, v in conc_dict.items():
                 if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
-                    row = {
-                        "Defect": k,
-                        "Concentration (cm^-3)": v,
-                        **df_dict_base,
-                    }
-                    data.append(row)
-            if "Dopant" in conc_dict:
-                data.append(
-                    {
-                        "Defect": "Dopant",
-                        "Concentration (cm^-3)": conc_dict["Dopant"],
-                        **df_dict_base,
-                    }
-                )
+                    data.append(
+                        {
+                            "Defect": k,
+                            "Concentration (cm^-3)": v,
+                            "Temperature": defect_system.temperature,
+                            "Fermi Level": conc_dict["Fermi Energy"],
+                            "Electrons (cm^-3)": conc_dict["n0"],
+                            "Holes (cm^-3)": conc_dict["p0"],
+                        }
+                    )
 
             concentrations = pd.DataFrame(data)
             concentrations = concentrations.set_index("Defect", drop=True)
@@ -4839,6 +4826,8 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key}"] = value
+        if effective_dopant_concentration:
+            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
 
@@ -5036,6 +5025,9 @@ class FermiSolver(MSONable):
             for column, value in new_columns.items():
                 concentrations[column] = value
 
+            # drop Dopant row, included as column instead
+            concentrations = concentrations.drop("Dopant", errors="ignore")
+
         else:  # py-sc-fermi
             defect_system = self._generate_annealed_defect_system(
                 annealing_temperature=annealing_temperature,
@@ -5054,20 +5046,18 @@ class FermiSolver(MSONable):
 
             data = []  # order is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             for k, v in conc_dict.items():
-                if k not in ["Fermi Energy", "n0", "p0"]:
-                    row = {
-                        "Defect": k,
-                        "Concentration (cm^-3)": v,
-                        "Annealing Temperature": annealing_temperature,
-                        "Quenched Temperature": quenched_temperature,
-                        "Fermi Level": conc_dict["Fermi Energy"],
-                        "Electrons (cm^-3)": conc_dict["n0"],
-                        "Holes (cm^-3)": conc_dict["p0"],
-                    }
-                    row.update({"Defect": k, "Concentration (cm^-3)": v})
-                    if "Dopant" in conc_dict:
-                        row["Dopant (cm^-3)"] = conc_dict["Dopant"]
-                    data.append(row)
+                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
+                    data.append(
+                        {
+                            "Defect": k,
+                            "Concentration (cm^-3)": v,
+                            "Annealing Temperature": annealing_temperature,
+                            "Quenched Temperature": quenched_temperature,
+                            "Fermi Level": conc_dict["Fermi Energy"],
+                            "Electrons (cm^-3)": conc_dict["n0"],
+                            "Holes (cm^-3)": conc_dict["p0"],
+                        }
+                    )
 
             concentrations = pd.DataFrame(data)
             concentrations = concentrations.set_index("Defect", drop=True)
@@ -5075,6 +5065,8 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key}"] = value
+        if effective_dopant_concentration:
+            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
 

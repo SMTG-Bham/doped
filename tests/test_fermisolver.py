@@ -223,6 +223,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             per_charge=False,  # currently FermiSolver only supports per charge=False
             skip_formatting=True,
         )
+        # drop Dopant row, included as column instead
+        cls.CdTe_anneal_800K_eff_1e16_conc_df = cls.CdTe_anneal_800K_eff_1e16_conc_df.drop(
+            "Dopant", errors="ignore"
+        )
+        cls.CdTe_anneal_800K_eff_1e16_conc_df["Dopant (cm^-3)"] = 1e16
 
     def setUp(self):
         self.CdTe_thermo.bulk_dos = self.CdTe_fermi_dos
@@ -507,13 +512,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         fermisolver_concentrations = concentrations["Concentration (cm^-3)"]
-        fermisolver_concentrations = fermisolver_concentrations.drop("Dopant")
-        # drop Dopant row, not included with ``DefectThermodynamics.get_equilibrium_concentrations()``
+
         if backend == "py-sc-fermi":
-            fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
-            fermisolver_concentrations = fermisolver_concentrations.drop(
-                ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
-            )
+            # TODO: In future will want doped and py-sc-fermi backends to group defects in the same way...
+            fermisolver_concentrations = fermisolver_concentrations.rename(
+                {"Te_i_Td_Te2.83_a": "Te_i_Td_Te2.83"}
+            )  # Rename "Te_i_Td_Te2.83_a" to "Te_i_Td_Te2.83" (same position in the Series)
+            # Drop "Te_i_Td_Te2.83_b" to remove it completely
+            fermisolver_concentrations = fermisolver_concentrations.drop("Te_i_Td_Te2.83_b")
         pd.testing.assert_series_equal(
             self.CdTe_300K_eff_1e16_conc_df["Concentration (cm^-3)"], fermisolver_concentrations, rtol=1e-3
         )  # also checks the index and ordering
@@ -522,6 +528,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         pseudo_concentrations = solver.pseudo_equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
             effective_dopant_concentration=1e16,  # TODO: Not working for py-sc-fermi?
+            # https://github.com/bjmorgan/py-sc-fermi/issues/41
             annealing_temperature=300,  # set to 300 to match equilibrium_solve
         )
         pseudo_concentrations["Temperature"] = pseudo_concentrations["Annealing Temperature"]
@@ -631,10 +638,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         # Only modify if backend is "py-sc-fermi"
         if backend == "py-sc-fermi":
-            # Rename "Te_i_Td_Te2.83_a" to "Te_i_Td_Te2.83" (same position in the Series)
             fermisolver_concentrations = fermisolver_concentrations.rename(
                 {"Te_i_Td_Te2.83_a": "Te_i_Td_Te2.83"}
-            )
+            )  # Rename "Te_i_Td_Te2.83_a" to "Te_i_Td_Te2.83" (same position in the Series)
             # Drop "Te_i_Td_Te2.83_b" to remove it completely
             fermisolver_concentrations = fermisolver_concentrations.drop("Te_i_Td_Te2.83_b")
 
@@ -731,13 +737,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         fermisolver_concentrations = concentrations_300K["Concentration (cm^-3)"]
-        fermisolver_concentrations = fermisolver_concentrations.drop("Dopant")
-        # drop Dopant row, not included with ``DefectThermodynamics.get_equilibrium_concentrations()``
         if backend == "py-sc-fermi":
-            fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
-            fermisolver_concentrations = fermisolver_concentrations.drop(
-                ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
-            )
+            fermisolver_concentrations = fermisolver_concentrations.rename(
+                {"Te_i_Td_Te2.83_a": "Te_i_Td_Te2.83"}
+            )  # Rename "Te_i_Td_Te2.83_a" to "Te_i_Td_Te2.83" (same position in the Series)
+            # Drop "Te_i_Td_Te2.83_b" to remove it completely:
+            fermisolver_concentrations = fermisolver_concentrations.drop("Te_i_Td_Te2.83_b")
+
         pd.testing.assert_series_equal(
             self.CdTe_300K_eff_1e16_conc_df["Concentration (cm^-3)"], fermisolver_concentrations, rtol=1e-3
         )  # also checks the index and ordering
@@ -864,7 +870,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         with pytest.raises(ValueError) as exc:
             solver.scan_dopant_concentration(
                 annealing_temperature=400,
-                effective_dopant_concentration=[1e16, 1e18],
+                effective_dopant_concentration_range=[1e16, 1e18],
             )
         assert (
             "Limit 'None' not found in the chemical potentials dictionary! You must specify an "
@@ -894,22 +900,63 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "systems, for which ``FermiSolver.interpolate_chempots()`` can be used." in str(exc.value)
         )
 
-    def test_scan_dopant_concentration_equilibrium(self):
+    @parameterize_backend()
+    def test_scan_dopant_concentration_equilibrium(self, backend):
         """
-        Test scan_dopant_concentration method under thermodynamic equilibrium.
+        Test ``scan_dopant_concentration`` method under thermodynamic
+        equilibrium.
         """
-        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         dopant_concentrations = [1e15, 1e16, 1e17]
-
-        concentrations = self.solver_doped.scan_dopant_concentration(
+        concentrations = solver.scan_dopant_concentration(
             effective_dopant_concentration_range=dopant_concentrations,
-            chempots=single_chempot_dict,
+            limit="Te-rich",
             el_refs=el_refs,
             temperature=300,
         )
         assert len(concentrations) > 0
         assert set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique())
+
+        # test some values:
+        # concentrations_1e16 = concentrations[concentrations["Dopant"] == 300]
+        # assert np.isclose(concentrations_1e16["Fermi Level"].iloc[0],
+        # self.CdTe_300K_eff_1e16_fermi_level)
+        # assert np.isclose(
+        #     concentrations_1e16["Electrons (cm^-3)"].iloc[0], self.CdTe_300K_eff_1e16_e_h[0], rtol=1e-3
+        # )
+        # assert np.isclose(
+        #     concentrations_1e16["Holes (cm^-3)"].iloc[0], self.CdTe_300K_eff_1e16_e_h[1], rtol=1e-3
+        # )
+        #
+        # fermisolver_concentrations = concentrations_1e16["Concentration (cm^-3)"]
+        # fermisolver_concentrations = fermisolver_concentrations.drop("Dopant")
+        # # drop Dopant row, not included with ``DefectThermodynamics.get_equilibrium_concentrations()``
+        # if backend == "py-sc-fermi":
+        #     fermisolver_concentrations["Te_i_Td_Te2.83"] = fermisolver_concentrations["Te_i_Td_Te2.83_a"]
+        #     fermisolver_concentrations = fermisolver_concentrations.drop(
+        #         ["Te_i_Td_Te2.83_a", "Te_i_Td_Te2.83_b"],
+        #     )
+        # pd.testing.assert_series_equal(
+        #     self.CdTe_300K_eff_1e16_conc_df["Concentration (cm^-3)"],
+        #     fermisolver_concentrations, rtol=1e-3
+        # )  # also checks the index and ordering
+        #
+        # # v_Cd concentration is basically the same at all <=500K temperatures here, as it's the only
+        # # significant compensating species to the effective dopant concentration:
+        # concentrations_lte_500K = concentrations[concentrations["Temperature"] <= 500]
+        # assert np.allclose(concentrations_lte_500K.loc["v_Cd", "Concentration (cm^-3)"], 5e15, rtol=1e-3)
+        # for defect in set(concentrations.index.values):
+        #     print(f"Checking {defect}")
+        #     assert np.isclose(
+        #         concentrations[concentrations["Temperature"] == 200].loc[defect,
+        #         "Concentration (cm^-3)"],
+        #         concentrations[concentrations["Temperature"] == 400].loc[defect,
+        #         "Concentration (cm^-3)"],
+        #         atol=1e-40,
+        #         rtol=1e-3,
+        #     ) == (defect in ["Dopant", "v_Cd"])
 
     def test_scan_dopant_concentration_pseudo_equilibrium(self):
         """
