@@ -184,6 +184,41 @@ def parameterize_backend():
     return decorator
 
 
+def check_concentrations_df(solver, concentrations):
+    """
+    Convenience function to test that the defect concentrations in a given
+    ``DataFrame`` match the corresponding Fermi levels and chemical potentials.
+
+    Note: Will need to update when testing ``free_defects``, ``fixed_defects``.
+    """
+    annealing = "Annealing Temperature" in concentrations.columns
+
+    for defect, row in concentrations.iterrows():
+        print(f"Checking {defect}")
+        total_concentration = 0
+        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        temperature = row["Annealing Temperature"] if annealing else row["Temperature"]
+        if annealing:
+            dopant_concentration = row["Dopant (cm^-3)"] if "Dopant (cm^-3)" in row.index else None
+            fermi_level = solver.defect_thermodynamics.get_equilibrium_fermi_level(
+                temperature=temperature,
+                chempots=formal_chempots,
+                effective_dopant_concentration=dopant_concentration,
+            )
+
+        for defect_entry in solver.defect_thermodynamics.all_entries[defect]:
+            total_concentration += defect_entry.equilibrium_concentration(
+                temperature=temperature,
+                fermi_level=fermi_level if annealing else row["Fermi Level"],
+                chempots=formal_chempots,
+                el_refs=solver.defect_thermodynamics.el_refs,
+            )
+
+        # higher rtol required with large temperatures, concentrations more sensitive to rounded numbers:
+        rtol = 1e-3 * (np.exp(temperature / 300))
+        assert np.isclose(total_concentration, row["Concentration (cm^-3)"], rtol=rtol)
+
+
 class TestFermiSolverWithLoadedData(unittest.TestCase):
     """
     Tests for ``FermiSolver`` initialization with loaded data.
@@ -528,6 +563,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         assert np.isclose(concentrations["Fermi Level"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level)
         assert np.isclose(
             concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_300K_eff_1e16_e, rtol=1e-3
@@ -584,6 +623,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         assert np.isclose(concentrations["Fermi Level"].iloc[0], self.CdTe_700K_fermi_level)
         assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_700K_e, rtol=1e-3)
         assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_700K_h, rtol=1e-3)
@@ -691,6 +734,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert f"μ_{element}" in concentrations.columns
             assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
 
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         assert np.isclose(
             concentrations["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
         )
@@ -756,7 +803,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         pd.testing.assert_series_equal(
             self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
             concentrations["Concentration (cm^-3)"],
-            rtol=3e-3,
+            rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
         )  # also checks the index and ordering
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
@@ -834,7 +881,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert len(concentrations) > 0
         assert set(temperatures).issubset(concentrations["Temperature"].unique())
 
-        # test some values:
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         concentrations_300K = concentrations[concentrations["Temperature"] == 300]
         assert np.isclose(concentrations_300K["Fermi Level"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level)
         assert np.isclose(
@@ -886,7 +936,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
         assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
 
-        # test some values:
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         concentrations_800K = concentrations[
             (concentrations["Annealing Temperature"] == 800)
             & (concentrations["Quenched Temperature"] == 300)
@@ -1014,7 +1067,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert len(concentrations) > 0
         assert set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique())
 
-        # test some values:
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         concentrations_1e16 = concentrations[concentrations["Dopant (cm^-3)"] == 1e16]
         assert np.isclose(concentrations_1e16["Fermi Level"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level)
         assert np.isclose(
@@ -1069,7 +1125,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert "Quenched Temperature" in concentrations.columns
         assert "Temperature" not in concentrations.columns
 
-        # test some values:
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
         concentrations_1e16 = concentrations[concentrations["Dopant (cm^-3)"] == 1e16]
         assert np.isclose(
             concentrations_1e16["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
@@ -1109,18 +1168,20 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         pd.testing.assert_series_equal(
             self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
             concentrations_0["Concentration (cm^-3)"],
-            rtol=1e-3,
+            rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
         )  # also checks the index and ordering
 
-    def test_interpolate_chempots_with_limits(self):
+    @parameterize_backend()
+    def test_interpolate_chempots_with_limits(self, backend):
         """
         Test interpolate_chempots method using limits.
         """
         # TODO: Marker for progress in fixing these tests
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         n_points = 5
         limits = ["Cd-rich", "Te-rich"]
 
-        concentrations = self.solver_doped.interpolate_chempots(
+        concentrations = solver.interpolate_chempots(
             n_points=n_points,
             limits=limits,
             annealing_temperature=800,
