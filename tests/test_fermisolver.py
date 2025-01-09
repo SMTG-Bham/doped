@@ -1267,19 +1267,21 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
         )  # also checks the index and ordering
 
-    def test_interpolate_chempots_with_chempot_dicts(self):
+    @parameterize_backend()
+    def test_interpolate_chempots_with_chempot_dicts(self, backend):
         """
         Test interpolate_chempots method with manually specified chemical
         potentials.
         """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         # TODO: Marker for progress in fixing these tests
-        n_points = 3
+        n_points = 30
         chempots_list = [
             {"Cd": -0.5, "Te": -1.0},
             {"Cd": -1.0, "Te": -0.5},
         ]
 
-        concentrations = self.solver_doped.interpolate_chempots(
+        concentrations = solver.interpolate_chempots(
             n_points=n_points,
             chempots=chempots_list,
             annealing_temperature=800,
@@ -1290,26 +1292,34 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         unique_chempot_sets = concentrations[["μ_Cd", "μ_Te"]].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
-    def test_interpolate_chempots_invalid_chempots_list_length(self):
+    @parameterize_backend()
+    def test_interpolate_chempots_invalid_chempots_list_length(self, backend):
         """
-        Test that ValueError is raised when chempots list does not contain
+        Test that ``ValueError`` is raised when chempots list does not contain
         exactly two dictionaries.
         """
-        with pytest.raises(ValueError):
-            self.solver_doped.interpolate_chempots(
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.interpolate_chempots(
                 n_points=5,
                 chempots=[{"Cd": -0.5}],  # Only one chempot dict provided
                 annealing_temperature=800,
                 quenched_temperature=300,
             )
+        assert (
+            "If `chempots` is a list, it must contain two dictionaries representing the starting and "
+            "ending chemical potentials. The provided list has 1 entries!" in str(exc.value)
+        )
 
-    def test_interpolate_chempots_missing_limits(self):
+    @parameterize_backend()
+    def test_interpolate_chempots_missing_limits(self, backend):
         """
-        Test that ValueError is raised when limits are missing and chempots is
-        in doped format.
+        Test that ``ValueError`` is raised when limits are missing and
+        ``chempots`` is in ``doped`` format.
         """
-        with pytest.raises(ValueError):
-            self.solver_doped.interpolate_chempots(
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.interpolate_chempots(
                 n_points=5,
                 chempots=self.CdTe_thermo.chempots,
                 annealing_temperature=800,
@@ -1317,7 +1327,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 limits=None,  # Limits are not provided
             )
 
-    # TODO: add scan_chempots tests
+        assert (
+            "If `chempots` is not provided as a list, then `limits` must be a list containing two "
+            "strings representing the chemical potential limits to interpolate between. The provided "
+            "`limits` is: None." in str(exc.value)
+        )
+
+    # TODO: add scan_chempots tests, and any others missing?
 
     def test_min_max_X_maximize_electrons(self):
         """
