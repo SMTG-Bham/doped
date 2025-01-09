@@ -192,11 +192,17 @@ def check_concentrations_df(solver, concentrations):
     Note: Will need to update when testing ``free_defects``, ``fixed_defects``.
     """
     annealing = "Annealing Temperature" in concentrations.columns
+    formation_energy = None
 
     for defect, row in concentrations.iterrows():
         print(f"Checking {defect}")
         total_concentration = 0
         formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        this_row_formation_energy = sum(formal_chempots.values())
+        if formation_energy is not None:
+            assert np.isclose(this_row_formation_energy, formation_energy, atol=1e-4)
+        formation_energy = this_row_formation_energy
+
         temperature = row["Annealing Temperature"] if annealing else row["Temperature"]
         if annealing:
             dopant_concentration = row["Dopant (cm^-3)"] if "Dopant (cm^-3)" in row.index else None
@@ -1176,7 +1182,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         Test interpolate_chempots method using limits.
         """
-        # TODO: Marker for progress in fixing these tests
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         n_points = 5
         limits = ["Cd-rich", "Te-rich"]
@@ -1195,11 +1200,79 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
+        for mu_col in [col for col in concentrations.columns if "μ_" in col]:
+            elt = mu_col.strip("μ_")
+            chempot_vals = [
+                limit_dict[elt]
+                for limit_dict in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
+            ]
+            assert set(np.round(unique_chempot_sets[mu_col].to_numpy(), 3)) == set(
+                np.round(
+                    np.linspace(
+                        min(chempot_vals),
+                        max(chempot_vals),
+                        n_points,
+                    ),
+                    3,
+                )
+            )
+
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations)
+
+        # test Fermi level, carrier and defect concentrations against known values
+        concentrations_Te_rich = concentrations[concentrations["μ_Te"] == 0]
+        assert np.isclose(
+            concentrations_Te_rich["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+        )
+        assert np.isclose(
+            concentrations_Te_rich["Electrons (cm^-3)"].iloc[0],
+            self.CdTe_anneal_800K_eff_1e16_e,
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            concentrations_Te_rich["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h, rtol=1e-3
+        )
+
+        pd.testing.assert_series_equal(
+            self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
+            concentrations_Te_rich["Concentration (cm^-3)"],
+            rtol=1e-3,
+        )  # also checks the index and ordering
+
+        # test dopant concentration = 0 values:
+        concentrations = solver.interpolate_chempots(
+            n_points=n_points,
+            limits=limits,
+            annealing_temperature=1400,
+            quenched_temperature=150,
+        )
+        concentrations_Cd_rich = concentrations[concentrations["μ_Cd"] == 0]
+        assert np.isclose(
+            concentrations_Cd_rich["Fermi Level"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_fermi_level
+        )
+        assert np.isclose(
+            concentrations_Cd_rich["Electrons (cm^-3)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_e,
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            concentrations_Cd_rich["Holes (cm^-3)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_h,
+            rtol=1e-3,
+        )
+        pd.testing.assert_series_equal(
+            self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
+            concentrations_Cd_rich["Concentration (cm^-3)"],
+            rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
+        )  # also checks the index and ordering
+
     def test_interpolate_chempots_with_chempot_dicts(self):
         """
         Test interpolate_chempots method with manually specified chemical
         potentials.
         """
+        # TODO: Marker for progress in fixing these tests
         n_points = 3
         chempots_list = [
             {"Cd": -0.5, "Te": -1.0},
