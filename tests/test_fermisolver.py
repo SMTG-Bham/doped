@@ -1004,7 +1004,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
-        dopant_concentrations = [1e15, 1e16, 1e17]
+        dopant_concentrations = [0, 1e15, 1e16, 1e17]
         concentrations = solver.scan_dopant_concentration(
             effective_dopant_concentration_range=dopant_concentrations,
             limit="Te-rich",
@@ -1030,15 +1030,33 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             rtol=1e-3,
         )  # also checks the index and ordering
 
-    def test_scan_dopant_concentration_pseudo_equilibrium(self):
+        # test dopant concentration = 0 values:
+        concentrations = solver.scan_dopant_concentration(
+            effective_dopant_concentration_range=dopant_concentrations,
+            limit="Cd-rich",  # Cd-rich for 700 K no eff dopant tests
+            temperature=700,
+        )
+        concentrations_0 = concentrations[concentrations["Dopant (cm^-3)"] == 0]
+        assert np.isclose(concentrations_0["Fermi Level"].iloc[0], self.CdTe_700K_fermi_level)
+        assert np.isclose(concentrations_0["Electrons (cm^-3)"].iloc[0], self.CdTe_700K_e, rtol=1e-3)
+        assert np.isclose(concentrations_0["Holes (cm^-3)"].iloc[0], self.CdTe_700K_h, rtol=1e-3)
+        pd.testing.assert_series_equal(
+            self.CdTe_700K_conc_df["Concentration (cm^-3)"],
+            concentrations_0["Concentration (cm^-3)"],
+            rtol=1e-3,
+        )  # also checks the index and ordering
+
+    @parameterize_backend()
+    def test_scan_dopant_concentration_pseudo_equilibrium(self, backend):
         """
-        Test scan_dopant_concentration method under pseudo-equilibrium
+        Test ``scan_dopant_concentration`` method under pseudo-equilibrium
         conditions.
         """
-        single_chempot_dict, el_refs = self.solver_doped._get_single_chempot_dict(limit="Te-rich")
-        dopant_concentrations = [1e15, 1e16, 1e17]
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
+        dopant_concentrations = [0, 1e15, 1e16, 1e17]
 
-        concentrations = self.solver_doped.scan_dopant_concentration(
+        concentrations = solver.scan_dopant_concentration(
             effective_dopant_concentration_range=dopant_concentrations,
             chempots=single_chempot_dict,
             el_refs=el_refs,
@@ -1051,10 +1069,54 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert "Quenched Temperature" in concentrations.columns
         assert "Temperature" not in concentrations.columns
 
+        # test some values:
+        concentrations_1e16 = concentrations[concentrations["Dopant (cm^-3)"] == 1e16]
+        assert np.isclose(
+            concentrations_1e16["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+        )
+        assert np.isclose(
+            concentrations_1e16["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_e, rtol=1e-3
+        )
+        assert np.isclose(
+            concentrations_1e16["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_h, rtol=1e-3
+        )
+
+        pd.testing.assert_series_equal(
+            self.CdTe_anneal_800K_eff_1e16_conc_df["Concentration (cm^-3)"],
+            concentrations_1e16["Concentration (cm^-3)"],
+            rtol=1e-3,
+        )  # also checks the index and ordering
+
+        # test dopant concentration = 0 values:
+        concentrations = solver.scan_dopant_concentration(
+            effective_dopant_concentration_range=dopant_concentrations,
+            limit="Cd-rich",  # Cd-rich for no eff dopant tests
+            annealing_temperature=1400,
+            quenched_temperature=150,
+        )
+        concentrations_0 = concentrations[concentrations["Dopant (cm^-3)"] == 0]
+        assert np.isclose(
+            concentrations_0["Fermi Level"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_fermi_level
+        )
+        assert np.isclose(
+            concentrations_0["Electrons (cm^-3)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_e,
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            concentrations_0["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_h, rtol=1e-3
+        )
+        pd.testing.assert_series_equal(
+            self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
+            concentrations_0["Concentration (cm^-3)"],
+            rtol=1e-3,
+        )  # also checks the index and ordering
+
     def test_interpolate_chempots_with_limits(self):
         """
         Test interpolate_chempots method using limits.
         """
+        # TODO: Marker for progress in fixing these tests
         n_points = 5
         limits = ["Cd-rich", "Te-rich"]
 

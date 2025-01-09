@@ -2274,8 +2274,8 @@ class DefectThermodynamics(MSONable):
         # determine tolerances:
         shallow_tol = (
             shallow_charge_stability_tolerance
-            if shallow_charge_stability_tolerance
-            else min(0.05, self.band_gap * 0.1 if self.band_gap else 0.05)
+            if shallow_charge_stability_tolerance is not None
+            else min(0.05, self.band_gap * 0.1 if self.band_gap is not None else 0.05)
         )
         stability_tol = None if unstable_entries == "not shallow" else charge_stability_tolerance
 
@@ -4877,7 +4877,7 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key}"] = value
-        if effective_dopant_concentration:
+        if effective_dopant_concentration is not None:
             concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
@@ -5116,7 +5116,7 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key}"] = value
-        if effective_dopant_concentration:
+        if effective_dopant_concentration is not None:
             concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
@@ -6193,8 +6193,8 @@ class FermiSolver(MSONable):
     def _min_max_X_line(
         self,
         target: str,
-        min_or_max: str,
-        chempots: dict,
+        min_or_max: str = "max",
+        chempots: Optional[dict] = None,
         annealing_temperature: Optional[float] = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
@@ -6211,8 +6211,9 @@ class FermiSolver(MSONable):
 
         See the main ``min_max_X`` docstring for more details.
         """
+        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+
         # Assuming 1D space, focus on one label and get the Rich/Poor limits:
-        el_refs = chempots["elemental_refs"]
         unformatted_chempots_labels = list(el_refs.keys())
         rich = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-rich")
         poor = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-poor")
