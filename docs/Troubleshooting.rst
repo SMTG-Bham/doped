@@ -136,7 +136,8 @@ A known issue with ``spglib`` is that it can give unnecessary errors or warnings
   spglib: get_bravais_exact_positions_and_lattice failed
   spglib: ref_get_exact_structure_and_symmetry failed.
 
-Typically this can be fixed by updating to ``spglib>=2.5`` with `pip install --upgrade spglib``.
+Typically this can be fixed by updating to ``spglib>=2.5`` with ``pip install --upgrade spglib``.
+
 .. see doped_spglib_warnings.ipynb
 
 ``ShakeNBreak``
