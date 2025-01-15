@@ -843,8 +843,8 @@ def check_atom_mapping_far_from_defect(
         message = (
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
-            f"mismatch between the bulk and defect supercell definitions (see troubleshooting docs) or an "
-            f"unconverged supercell size, both of which could cause errors in parsing. The mean "
+            f"mismatch between the bulk and defect supercell definitions (-> see troubleshooting docs) or "
+            f"an unconverged supercell size, both of which could cause errors in parsing. The mean "
             f"displacement of the following species, at sites far from the determined defect position, "
             f"is >{displacement_tol} Å: {list(far_from_defect_large_disps.keys())}"
         )
