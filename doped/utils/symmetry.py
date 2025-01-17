@@ -275,7 +275,7 @@ def _cache_ready_get_sga(struct: Structure, symprec: float = 0.01, return_sympre
 
     raise SymmetryUndeterminedError(
         f"Could not determine symmetry of input structure! Got spglib error: {spglib.get_error_message()}"
-    )  # well shiiii...
+    )
 
 
 def apply_symm_op_to_site(
@@ -432,6 +432,9 @@ def _cluster_coords(fcoords, struct, dist_tol=0.01):
     functions) and return the cluster numbers (as an array matching the shape
     and order of ``fcoords``).
     """
+    if len(fcoords) == 1:  # only one input coordinates
+        return np.array([0])
+
     dist_matrix = np.array(struct.lattice.get_all_distances(fcoords, fcoords))
     dist_matrix = (dist_matrix + dist_matrix.T) / 2
 
@@ -471,7 +474,7 @@ def _get_all_equiv_sites(
         x_sites.append(x_site)
 
     all_frac_coords = [
-        tuple(i.round(3) if dist_tol != 0 else i)
+        tuple(i.round(_get_num_places_for_dist_precision(struct, dist_tol)) if dist_tol != 0 else i)
         for i in (x_sites if just_frac_coords else [site.frac_coords for site in x_sites])
     ]
     current_x_frac_coords = list(set(all_frac_coords))
