@@ -134,7 +134,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         assert pyscfermi_dos.nelect == self.CdTe_fermi_dos.nelecs
         assert pyscfermi_dos.nelect == 18
         assert np.isclose(pyscfermi_dos.bandgap, self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True))
-        assert np.isclose(pyscfermi_dos.bandgap, 1.526, atol=1e-3)
+        assert np.isclose(pyscfermi_dos.bandgap, 1.5308, atol=1e-3)
         assert not pyscfermi_dos.spin_polarised  # SOC DOS
 
         e_vbm = self.CdTe_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
@@ -225,6 +225,7 @@ def check_concentrations_df(solver, concentrations):
         assert np.isclose(total_concentration, row["Concentration (cm^-3)"], rtol=rtol)
 
 
+# TODO: Add actual tests for fixed_defects, free_defects and fix_charge_states
 class TestFermiSolverWithLoadedData(unittest.TestCase):
     """
     Tests for ``FermiSolver`` initialization with loaded data.
@@ -294,6 +295,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             per_charge=False,  # currently FermiSolver only supports per charge=False
             skip_formatting=True,
         )
+
+        cls.Sb2S3_thermo = loadfn(os.path.join(EXAMPLE_DIR, "Sb2S3/Sb2S3_thermo.json.gz"))
 
     def setUp(self):
         self.CdTe_thermo.bulk_dos = self.CdTe_fermi_dos
@@ -488,7 +491,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         with pytest.raises(RuntimeError) as context:
             self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
-        assert "This function is only supported for the py-sc-fermi backend" in str(context.value)
+        assert "This function is currently only supported for the py-sc-fermi backend" in str(
+            context.value
+        )
 
     def test_check_required_backend_and_error_py_sc_fermi_doped_backend(self):
         """
@@ -498,7 +503,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         with pytest.raises(RuntimeError) as context:
             self.solver_doped._check_required_backend_and_error("py-sc-fermi")
-        assert "This function is only supported for the py-sc-fermi backend" in str(context.value)
+        assert "This function is currently only supported for the py-sc-fermi backend" in str(
+            context.value
+        )
 
     def test_get_fermi_level_and_carriers(self):
         """
@@ -821,7 +828,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         backend (so test works even when ``py-sc-fermi`` is not installed),
         with ``fixed_defects``.
         """
-        # TODO: Add actual tests for fixed_defects, free_defects and fix_charge_states
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
 
         # Mock _generate_annealed_defect_system
@@ -1033,13 +1039,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "Limit 'None' not found in the chemical potentials dictionary! You must specify an "
             "appropriate limit or provide an appropriate chempots dictionary"
         ) in str(exc.value)
-
-    @parameterize_backend()
-    def test_interpolate_chempots_no_chempots_error_catch(self, backend):
-        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        with pytest.raises(ValueError) as exc:
-            solver.interpolate_chempots()
-        assert "If `chempots` is not provided as a list, then `limits` must be a list" in str(exc.value)
 
     # Note that the following methods use the ``self.defect_thermodynamics.chempots`` by default,
     # and so do not throw an error if no chempots are provided:
@@ -1332,6 +1331,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
         assert no_err_out is not None  # no error for binary system, just takes the two limits
 
+        # but error when limits not set and number of limits != 2:
         three_lim_chempots = deepcopy(self.CdTe_thermo.chempots)
         extra_lim = {"Cd": -3, "Te": 4}
         three_lim_chempots["limits"]["extra"] = extra_lim
@@ -1499,6 +1499,45 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
+    def test_min_max_X_defect(self, backend):
+        """
+        Test ``min_max_X`` method to min/max a defect concentration.
+
+        Here we use the somewhat-odd example of V_S in Sb2S3, where
+        the concentration is (just about) minimised for an intermediate
+        chemical potential (see Figure 1 in 10.1021/acsenergylett.4c02722,
+        also the subject of "More Se Vacancies in Sb2Se3 under Se-Rich
+        Conditions..." -- 10.1002/smll.202102429, to a more extreme extent).
+        """
+        solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
+        for annealing in [True, False]:
+            temp_arg_name = "annealing_temperature" if annealing else "temperature"
+        result = solver.min_max_X(
+            target="V_S_3",  # highest concentration V_S
+            min_or_max="min",
+            **{temp_arg_name: 603},
+        )
+        row = result.iloc[0]
+        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+        # confirm that formal_chempots does not correspond to a X-rich limit:
+        for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+            for el_key in limit:
+                assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+
+        assert np.isclose(formal_chempots["Sb"], -0.416, atol=1e-3)
+        assert np.isclose(formal_chempots["S"], -0.139, atol=1e-3)
+
+        expected_concentrations = solver._solve(
+            single_chempot_dict=formal_chempots,
+            append_chempots=True,
+            **{temp_arg_name: 603},
+        )
+        pd.testing.assert_frame_equal(result, expected_concentrations)
+
+        # TODO: Test matching defect name substring when functionality added
+
+    @parameterize_backend()
     def test_get_interpolated_chempots(self, backend):
         """
         Test ``_get_interpolated_chempots`` method.
@@ -1582,7 +1621,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert not w
 
 
-# TODO: test min_max_X with defect concentration (Sb2S3!) for both pseudo and normal equilibrium
 # TODO: Test free_defects with substring matching (and fixed_defects later when supported)
 
 

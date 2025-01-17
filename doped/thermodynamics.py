@@ -4838,7 +4838,7 @@ class FermiSolver(MSONable):
                 temperature=temperature,
                 per_charge=False,
                 per_site=False,
-                skip_formatting=False,
+                skip_formatting=True,  # keep concentration values as floats
             )
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
