@@ -1369,7 +1369,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
             # should correspond to Cd-rich for max electrons, Te-rich for min electrons
-            limit = {"min": "Te-rich", "max": "Cd-rich"}[min_max]
+            limit = "Cd-rich" if min_max == "max" else "Te-rich"
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
             expected_concentrations = solver.pseudo_equilibrium_solve(
                 annealing_temperature=800,
@@ -1465,7 +1465,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
             # should correspond to Te-rich for max holes, Cd-rich for min holes
-            limit = {"min": "Cd-rich", "max": "Te-rich"}[min_max]
+            limit = "Te-rich" if min_max == "max" else "Cd-rich"
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
             expected_concentrations = solver.pseudo_equilibrium_solve(
                 annealing_temperature=800,
@@ -1585,6 +1585,36 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 single_chempot_dict=formal_chempots,
                 append_chempots=True,
                 annealing_temperature=973,  # SK Thesis Fig. 6.17
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
+
+    @parameterize_backend()
+    def test_min_max_X_chempot(self, backend):
+        """
+        Test ``min_max_X`` method to min/max a chemical potential.
+
+        Usually not a desired usage, but could be a handy convenience method in
+        some cases.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        for min_max in ["min", "max"]:
+            print(f"Testing {min_max}imising chemical potential...")
+            result = solver.min_max_X(target="μ_Te", min_or_max=min_max, annealing_temperature=973)
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+            # corresponds to Te-rich/poor limits:
+            limit = "Te-rich" if min_max == "max" else "Cd-rich"
+            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+            assert all(
+                np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
+                for el_key in single_chempot_dict
+            )
+
+            expected_concentrations = solver._solve(
+                single_chempot_dict=formal_chempots,
+                append_chempots=True,
+                annealing_temperature=973,
             )
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
