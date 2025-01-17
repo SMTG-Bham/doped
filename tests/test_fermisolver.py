@@ -1582,7 +1582,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert not w
 
 
-# TODO: test min_max_X with defect concentration
+# TODO: test min_max_X with defect concentration (Sb2S3!) for both pseudo and normal equilibrium
+# TODO: Test free_defects with substring matching (and fixed_defects later when supported)
 
 
 # TODO: Use plots in FermiSolver tutorial as quick test cases here
