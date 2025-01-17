@@ -5574,7 +5574,8 @@ class FermiSolver(MSONable):
                 dictionary.
 
                 If not provided, ``chempots`` must be specified as a list of two
-                single chemical potential dictionaries for single limits.
+                single chemical potential dictionaries for single limits, or must be a
+                binary system with only two limits in ``chempots``.
             el_refs (dict):
                 Dictionary of elemental reference energies for the chemical potentials
                 in the format:
@@ -5655,11 +5656,14 @@ class FermiSolver(MSONable):
             chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
 
             if limits is None or len(limits) != 2:
-                raise ValueError(
-                    f"If `chempots` is not provided as a list, then `limits` must be a list containing "
-                    f"two strings representing the chemical potential limits to interpolate between. "
-                    f"The provided `limits` is: {limits}."
-                )
+                if len(chempots["limits"]) == 2:
+                    limits = list(chempots["limits"].keys())
+                else:
+                    raise ValueError(
+                        f"If `chempots` is not provided as a list, then `limits` must be a list "
+                        f"containing two strings representing the chemical potential limits to "
+                        f"interpolate between. The provided `limits` is: {limits}."
+                    )
 
             single_chempot_dict_1, el_refs = self._get_single_chempot_dict(limits[0], chempots, el_refs)
             single_chempot_dict_2, el_refs = self._get_single_chempot_dict(limits[1], chempots, el_refs)
@@ -5737,6 +5741,13 @@ class FermiSolver(MSONable):
         """
         Scan over a range of chemical potentials and solve for the defect
         concentrations and Fermi level at each set of chemical potentials.
+
+        Note that this function only solves for the Fermi level and
+        defect/carrier concentrations _at the given chemical potentials_
+        (and not at any points between them), whereas
+        ``scan_chemical_potential_grid``, ``interpolate_chempots`` and
+        ``min_max_X`` scan over the grid/points between chemical potential
+        limits, which may be desired.
 
         If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
         default) are specified, then the frozen defect approximation is
@@ -6125,8 +6136,8 @@ class FermiSolver(MSONable):
                 stops when the relative change in the target value is less than
                 this value. Defaults to ``0.01``.
             n_points (int):
-                The number of points to generate along each axis of the grid for
-                the initial search. Defaults to ``10``.
+                The number of points to generate along each axis of the chemical
+                potentials grid for each iteration of the search. Defaults to ``10``.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -6269,8 +6280,6 @@ class FermiSolver(MSONable):
             )
 
         return target_df
-        # TODO: Check and update tests, previously wrongly within the while block (but tests passed
-        #  because only needed one round for CdTe test case, find better test)
 
     def _min_max_X_grid(
         self,

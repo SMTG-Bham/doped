@@ -1274,7 +1274,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         potentials.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        # TODO: Marker for progress in fixing these tests
         n_points = 30
         chempots_list = [
             {"Cd": -0.5, "Te": -1.0},
@@ -1366,11 +1365,78 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
-    def test_min_max_X_minimize_holes(self):
+            # quick test for anneal at 1400 K with no eff dopant:
+            if min_max == "min":
+                continue  # this doesn't actually occur at the Cd-rich limit
+            result = solver.min_max_X(
+                target="Electrons (cm^-3)",
+                min_or_max=min_max,
+                annealing_temperature=1400,
+                quenched_temperature=150,
+                tolerance=0.05,
+                n_points=5,
+            )
+            expected_concentrations = solver.pseudo_equilibrium_solve(
+                annealing_temperature=1400,
+                quenched_temperature=150,
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                append_chempots=True,
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
+
+    @parameterize_backend()
+    def test_min_max_X_electrons_non_limit_extremum(self, backend):
+        """
+        Test ``min_max_X`` method for a binary system (CdTe) where the extremum
+        occurs at an internal chemical potential point, not at a limiting
+        chemical potential point.
+        """
+        # Note: This function takes a bit of time, but the majority (>90%) is ``concentration_dict()``
+        # from ``py-sc-fermi``; while ``doped`` backend is much faster
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        rtol = 0.1
+        known_min_e = 1.50946e-23  # when using interpolate_chempots with 100 n_points
+        result = solver.min_max_X(
+            target="Electrons (cm^-3)",
+            min_or_max="min",
+            annealing_temperature=1400,
+            quenched_temperature=150,
+            tolerance=rtol,
+            n_points=5,
+        )  # requires 3 iterations for convergence within tolerance
+        assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=rtol)
+
+        result = solver.min_max_X(
+            target="Electrons (cm^-3)",
+            min_or_max="min",
+            annealing_temperature=1400,
+            quenched_temperature=150,
+            tolerance=rtol / 100,
+            n_points=5,
+        )  # requires 4 iterations for convergence within tolerance
+        # small non-convergence in py-sc-fermi for small concentrations:
+        tight_rtol = rtol / 100 if backend == "doped" else rtol / 10
+        assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=tight_rtol)
+
+        # test dataframe output:
+        row = result.iloc[0]
+        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        expected_concentrations = solver.pseudo_equilibrium_solve(
+            annealing_temperature=1400,
+            quenched_temperature=150,
+            single_chempot_dict=formal_chempots,
+            append_chempots=True,
+        )
+        pd.testing.assert_frame_equal(result, expected_concentrations)
+
+    @parameterize_backend()
+    def test_min_max_X_minimize_holes(self, backend):
         """
         Test ``min_max_X`` method to minimize hole concentration.
         """
-        result = self.solver_doped.min_max_X(
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        result = solver.min_max_X(
             target="Holes (cm^-3)",
             min_or_max="min",
             annealing_temperature=800,
@@ -1379,8 +1445,18 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             n_points=5,
             effective_dopant_concentration=1e16,
         )
-        assert len(result) > 0
-        assert "Holes (cm^-3)" in result.columns
+
+        # should correspond to Cd-rich here
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
+        expected_concentrations = solver.pseudo_equilibrium_solve(
+            annealing_temperature=800,
+            single_chempot_dict=single_chempot_dict,
+            el_refs=el_refs,
+            quenched_temperature=300,
+            effective_dopant_concentration=1e16,
+            append_chempots=True,
+        )
+        pd.testing.assert_frame_equal(result, expected_concentrations)
 
     def test_get_interpolated_chempots(self):
         """
@@ -1473,6 +1549,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         """
         Test ``min_max_X`` method to maximize electron concentration.
         """
+        # TODO: Would be good to test this for a >=3D case where the extremum occurs not at a boundary
         result = self.solver_doped.min_max_X(
             target="Electrons (cm^-3)",
             min_or_max="max",
