@@ -6731,16 +6731,13 @@ def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max
         target_chempot = target_df[chempots_labels]
 
     else:
-        # Filter the DataFrame for the specific defect
-        filtered_df = results_df[results_df.index == target]
-        # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
-        current_value = min_or_max_func(filtered_df["Concentration (cm^-3)"])
-        target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == current_value][
+        filtered_df = results_df[results_df.index == target]  # filter df for the chosen defect
+        current_value = min_or_max_func(filtered_df["Concentration (cm^-3)"])  # find the extremum row
+        target_chempot = filtered_df[filtered_df["Concentration (cm^-3)"] == current_value][
             chempots_labels
-        ]
-        target_df = results_df[
-            results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
-        ]  # TODO: Check if rearranging as in `if` block above gives same output
+        ]  # get chempots which min/maximise the target
+        # get all DataFrame rows which have the chempots matching the extremum row:
+        target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
 
     target_chempot = target_chempot.drop_duplicates(ignore_index=True)
     return target_df, current_value, target_chempot
