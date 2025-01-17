@@ -1337,9 +1337,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_min_max_X_electrons(self, backend):
         """
-        Test ``min_max_X`` method to maximize electron concentration.
+        Test ``min_max_X`` method to min/max electron concentration.
         """
-        # TODO: Marker for progress in fixing these tests
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
             result = solver.min_max_X(
@@ -1366,8 +1365,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
             # quick test for anneal at 1400 K with no eff dopant:
-            if min_max == "min":
-                continue  # this doesn't actually occur at the Cd-rich limit
             result = solver.min_max_X(
                 target="Electrons (cm^-3)",
                 min_or_max=min_max,
@@ -1383,7 +1380,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 el_refs=el_refs,
                 append_chempots=True,
             )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            if min_max == "min":  # this doesn't actually occur at the Te-rich limit
+                assert not result.iloc[0].equals(expected_concentrations.iloc[0])
+            else:
+                pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
     def test_min_max_X_electrons_non_limit_extremum(self, backend):
@@ -1431,37 +1431,62 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_min_max_X_minimize_holes(self, backend):
+    def test_min_max_X_holes(self, backend):
         """
-        Test ``min_max_X`` method to minimize hole concentration.
+        Test ``min_max_X`` method to min/max hole concentration.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        result = solver.min_max_X(
-            target="Holes (cm^-3)",
-            min_or_max="min",
-            annealing_temperature=800,
-            quenched_temperature=300,
-            tolerance=0.05,
-            n_points=5,
-            effective_dopant_concentration=1e16,
-        )
+        for min_max in ["min", "max"]:
+            result = solver.min_max_X(
+                target="Holes (cm^-3)",
+                min_or_max=min_max,
+                annealing_temperature=800,
+                quenched_temperature=300,
+                tolerance=0.05,
+                n_points=5,
+                effective_dopant_concentration=1e16,
+            )
 
-        # should correspond to Cd-rich here
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
-        expected_concentrations = solver.pseudo_equilibrium_solve(
-            annealing_temperature=800,
-            single_chempot_dict=single_chempot_dict,
-            el_refs=el_refs,
-            quenched_temperature=300,
-            effective_dopant_concentration=1e16,
-            append_chempots=True,
-        )
-        pd.testing.assert_frame_equal(result, expected_concentrations)
+            # should correspond to Te-rich for max holes, Cd-rich for min holes
+            limit = {"min": "Cd-rich", "max": "Te-rich"}[min_max]
+            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+            expected_concentrations = solver.pseudo_equilibrium_solve(
+                annealing_temperature=800,
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                quenched_temperature=300,
+                effective_dopant_concentration=1e16,
+                append_chempots=True,
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
 
+            # quick test for anneal at 1400 K with no eff dopant:
+            result = solver.min_max_X(
+                target="Holes (cm^-3)",
+                min_or_max=min_max,
+                annealing_temperature=1400,
+                quenched_temperature=150,
+                tolerance=0.05,
+                n_points=5,
+            )
+            expected_concentrations = solver.pseudo_equilibrium_solve(
+                annealing_temperature=1400,
+                quenched_temperature=150,
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                append_chempots=True,
+            )
+            if min_max == "max":  # this doesn't actually occur at the Te-rich limit
+                assert not result.iloc[0].equals(expected_concentrations.iloc[0])
+            else:
+                pd.testing.assert_frame_equal(result, expected_concentrations)
+
+    @parameterize_backend()
     def test_get_interpolated_chempots(self):
         """
         Test ``_get_interpolated_chempots`` method.
         """
+        # TODO: Marker for progress in fixing these tests
         chempot_start = {"Cd": -0.5, "Te": -1.0}
         chempot_end = {"Cd": -1.0, "Te": -0.5}
         n_points = 3
