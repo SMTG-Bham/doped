@@ -1335,21 +1335,36 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     # TODO: add scan_chempots tests, and any others missing?
 
-    def test_min_max_X_maximize_electrons(self):
+    @parameterize_backend()
+    def test_min_max_X_electrons(self, backend):
         """
-        Test min_max_X method to maximize electron concentration.
+        Test ``min_max_X`` method to maximize electron concentration.
         """
-        result = self.solver_doped.min_max_X(
-            target="Electrons (cm^-3)",
-            min_or_max="max",
-            annealing_temperature=800,
-            quenched_temperature=300,
-            tolerance=0.05,
-            n_points=5,
-            effective_dopant_concentration=1e16,
-        )
-        assert len(result) > 0
-        assert "Electrons (cm^-3)" in result.columns
+        # TODO: Marker for progress in fixing these tests
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        for min_max in ["min", "max"]:
+            result = solver.min_max_X(
+                target="Electrons (cm^-3)",
+                min_or_max=min_max,
+                annealing_temperature=800,
+                quenched_temperature=300,
+                tolerance=0.05,
+                n_points=5,
+                effective_dopant_concentration=1e16,
+            )
+
+            # should correspond to Cd-rich for max electrons, Te-rich for min electrons
+            limit = {"min": "Te-rich", "max": "Cd-rich"}[min_max]
+            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+            expected_concentrations = solver.pseudo_equilibrium_solve(
+                annealing_temperature=800,
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                quenched_temperature=300,
+                effective_dopant_concentration=1e16,
+                append_chempots=True,
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
 
     def test_min_max_X_minimize_holes(self):
         """
