@@ -165,7 +165,6 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
             # tested here
 
 
-# TODO: Use pytest fixtures to reduce code redundancy here?
 def parameterize_backend():
     """
     A test decorator to allow easy running of ``FermiSolver`` tests with both
@@ -593,8 +592,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # check against pseudo_equilibrium_solve
         pseudo_concentrations = solver.pseudo_equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
-            effective_dopant_concentration=1e16,  # TODO: Not working for py-sc-fermi?
-            # https://github.com/bjmorgan/py-sc-fermi/issues/41
+            effective_dopant_concentration=1e16,
             annealing_temperature=300,  # set to 300 to match equilibrium_solve
         )
         pseudo_concentrations = pseudo_concentrations.rename(
@@ -1185,7 +1183,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_interpolate_chempots_with_limits(self, backend):
         """
-        Test interpolate_chempots method using limits.
+        Test ``interpolate_chempots()`` using limits.
+
+        Note that this and the other ``interpolate_chempots()`` tests
+        implicitly test the simpler ``scan_chempots()`` method, as it
+        is used within this function.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         n_points = 5
@@ -1348,8 +1350,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "strings representing the chemical potential limits to interpolate between. The provided "
             "`limits` is: None." in str(exc.value)
         )
-
-    # TODO: add scan_chempots tests, and any others missing?
 
     @parameterize_backend()
     def test_min_max_X_electrons(self, backend):
@@ -1580,6 +1580,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
         print([str(warning.message) for warning in w])
         assert not w
+
+
+# TODO: test min_max_X with defect concentration
 
 
 # TODO: Use plots in FermiSolver tutorial as quick test cases here
