@@ -6162,8 +6162,12 @@ class FermiSolver(MSONable):
             )
             if (  # Check if the change in the target value is less than the tolerance
                 previous_value is not None
-                and abs((current_value - previous_value) / previous_value) < tolerance
-            ):
+                and (
+                    current_value == previous_value
+                    or abs((current_value - previous_value) / (previous_value or current_value))
+                    < tolerance
+                )
+            ):  # divide by (previous_value or current_value) to avoid division by zero
                 break
 
             previous_value = current_value  # otherwise update
