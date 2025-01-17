@@ -4243,151 +4243,6 @@ def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, 
     return Dos.from_dict(scissored_dos_dict)
 
 
-def _get_label_and_charge(name: str) -> tuple[str, int]:
-    """
-    Extracts the label and charge from a defect name string.
-
-    Args:
-        name (str): Name of the defect.
-
-    Returns:
-        tuple: A tuple containing the label and charge.
-    """
-    last_underscore = name.rfind("_")
-    label = name[:last_underscore] if last_underscore != -1 else name
-    charge_str = name[last_underscore + 1 :] if last_underscore != -1 else None
-
-    charge = 0  # Initialize charge with a default value
-    if charge_str is not None:
-        with contextlib.suppress(ValueError):
-            charge = int(charge_str)
-
-    return label, charge
-
-
-def _get_py_sc_fermi_dos_from_fermi_dos(
-    fermi_dos: FermiDos,
-    vbm: Optional[float] = None,
-    nelect: Optional[int] = None,
-    bandgap: Optional[float] = None,
-) -> "DOS":
-    """
-    Given an input ``pymatgen`` ``FermiDos`` object, return a corresponding
-    ``py-sc-fermi`` ``DOS`` object (which can then be used with the ``py-sc-
-    fermi`` ``FermiSolver`` backend).
-
-    Args:
-        fermi_dos (FermiDos):
-            ``pymatgen`` ``FermiDos`` object to convert to ``py-sc-fermi``
-            ``DOS``.
-        vbm (float):
-            The valence band maximum (VBM) eigenvalue in eV. If not provided,
-            the VBM will be taken from the FermiDos object. When this function
-            is used internally in ``doped``, the ``DefectThermodynamics.vbm``
-            attribute is used.
-        nelect (int):
-            The total number of electrons in the system. If not provided, the
-            number of electrons will be taken from the ``FermiDos`` object (which
-            usually takes this value from the ``vasprun.xml(.gz)`` when parsing).
-        bandgap (float):
-            Band gap of the system in eV. If not provided, the band gap will be
-            taken from the ``FermiDos`` object. When this function is used internally
-            in ``doped``, the ``DefectThermodynamics.band_gap`` attribute is used.
-
-    Returns:
-        DOS: A ``py-sc-fermi`` ``DOS`` object.
-    """
-    try:
-        from py_sc_fermi.dos import DOS
-    except ImportError as exc:
-        raise ImportError("py-sc-fermi must be installed to use this function!") from exc
-
-    densities = fermi_dos.densities
-    if vbm is None:  # tol 1e-4 is lowest possible, as VASP rounds to 4 dp:
-        vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
-
-    edos = fermi_dos.energies - vbm
-    if len(densities) == 2:
-        dos = np.array([densities[Spin.up], densities[Spin.down]])
-        spin_pol = True
-    else:
-        dos = np.array(densities[Spin.up])
-        spin_pol = False
-
-    if nelect is None:
-        # this requires the input dos to be a FermiDos. NELECT could be calculated alternatively
-        # by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected to be
-        # a common use case and using parsed NELECT from vasprun.xml(.gz) is more reliable
-        nelect = fermi_dos.nelecs
-    if bandgap is None:
-        bandgap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
-
-    return DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
-
-
-def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max: str) -> tuple:
-    """
-    Convenience function to get the minimum or maximum value(s) of a ``target``
-    column or row in a ``results_df`` DataFrame, and the corresponding chemical
-    potentials.
-
-    Mainly intended for internal ``doped`` usage in the ``FermiSolver``
-    ``min_max_X`` method.
-
-    Args:
-        results_df (pd.DataFrame):
-            ``DataFrame`` of defect concentrations, as output by the
-            ``FermiSolver`` ``scan_chempots`` / ``scan_chemical_potential_grid``
-            methods (which corresponds to the ``(pseudo_)equilibrium_solve``
-            ``DataFrame`` outputs, appended together for multiple chemical
-            potentials).
-        target (str):
-            The target defect name or column label for minimising/maximising.
-        min_or_max (str):
-            Whether to find the minimum or maximum value(s) of the target.
-            Should be either "min" or "max".
-
-    Returns:
-        tuple:
-            A tuple containing the results ``DataFrame`` at the chemical potentials
-            which minimise/maximise the target property (``target_df``), the
-            minimised/maximised value of the target property, and the corresponding
-            chemical potentials -- in the given chemical potential range.
-    """
-
-    def min_or_max_func(x):
-        return x.min() if "min" in min_or_max else x.max()
-
-    chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
-    if target in results_df.columns:
-        current_value = min_or_max_func(results_df[target])
-        target_df = results_df[results_df[target] == current_value]
-        target_chempot = target_df[chempots_labels]
-
-    else:
-        # Filter the DataFrame for the specific defect
-        filtered_df = results_df[results_df.index == target]
-        # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
-        current_value = min_or_max_func(filtered_df["Concentration (cm^-3)"])
-        target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == current_value][
-            chempots_labels
-        ]
-        target_df = results_df[
-            results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
-        ]  # TODO: Check if rearranging as in `if` block above gives same output
-
-    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
-    return target_df, current_value, target_chempot
-
-
-def _ensure_list(
-    var: Optional[Union[float, int, range, list, np.ndarray]] = None
-) -> Optional[Union[list[Union[float, int]], np.ndarray[Union[float, int]]]]:
-    if isinstance(var, range):
-        return list(var)
-    return [var] if isinstance(var, (int, float)) else var
-
-
 class FermiSolver(MSONable):
     def __init__(
         self,
@@ -6752,3 +6607,148 @@ class FermiSolver(MSONable):
         self._fix_defect_concentrations(defect_system, fixed_defects, fixed_concs)
         defect_system.temperature = quenched_temperature
         return defect_system
+
+
+def _get_label_and_charge(name: str) -> tuple[str, int]:
+    """
+    Extracts the label and charge from a defect name string.
+
+    Args:
+        name (str): Name of the defect.
+
+    Returns:
+        tuple: A tuple containing the label and charge.
+    """
+    last_underscore = name.rfind("_")
+    label = name[:last_underscore] if last_underscore != -1 else name
+    charge_str = name[last_underscore + 1 :] if last_underscore != -1 else None
+
+    charge = 0  # Initialize charge with a default value
+    if charge_str is not None:
+        with contextlib.suppress(ValueError):
+            charge = int(charge_str)
+
+    return label, charge
+
+
+def _get_py_sc_fermi_dos_from_fermi_dos(
+    fermi_dos: FermiDos,
+    vbm: Optional[float] = None,
+    nelect: Optional[int] = None,
+    bandgap: Optional[float] = None,
+) -> "DOS":
+    """
+    Given an input ``pymatgen`` ``FermiDos`` object, return a corresponding
+    ``py-sc-fermi`` ``DOS`` object (which can then be used with the ``py-sc-
+    fermi`` ``FermiSolver`` backend).
+
+    Args:
+        fermi_dos (FermiDos):
+            ``pymatgen`` ``FermiDos`` object to convert to ``py-sc-fermi``
+            ``DOS``.
+        vbm (float):
+            The valence band maximum (VBM) eigenvalue in eV. If not provided,
+            the VBM will be taken from the FermiDos object. When this function
+            is used internally in ``doped``, the ``DefectThermodynamics.vbm``
+            attribute is used.
+        nelect (int):
+            The total number of electrons in the system. If not provided, the
+            number of electrons will be taken from the ``FermiDos`` object (which
+            usually takes this value from the ``vasprun.xml(.gz)`` when parsing).
+        bandgap (float):
+            Band gap of the system in eV. If not provided, the band gap will be
+            taken from the ``FermiDos`` object. When this function is used internally
+            in ``doped``, the ``DefectThermodynamics.band_gap`` attribute is used.
+
+    Returns:
+        DOS: A ``py-sc-fermi`` ``DOS`` object.
+    """
+    try:
+        from py_sc_fermi.dos import DOS
+    except ImportError as exc:
+        raise ImportError("py-sc-fermi must be installed to use this function!") from exc
+
+    densities = fermi_dos.densities
+    if vbm is None:  # tol 1e-4 is lowest possible, as VASP rounds to 4 dp:
+        vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+
+    edos = fermi_dos.energies - vbm
+    if len(densities) == 2:
+        dos = np.array([densities[Spin.up], densities[Spin.down]])
+        spin_pol = True
+    else:
+        dos = np.array(densities[Spin.up])
+        spin_pol = False
+
+    if nelect is None:
+        # this requires the input dos to be a FermiDos. NELECT could be calculated alternatively
+        # by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected to be
+        # a common use case and using parsed NELECT from vasprun.xml(.gz) is more reliable
+        nelect = fermi_dos.nelecs
+    if bandgap is None:
+        bandgap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+
+    return DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
+
+
+def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max: str) -> tuple:
+    """
+    Convenience function to get the minimum or maximum value(s) of a ``target``
+    column or row in a ``results_df`` DataFrame, and the corresponding chemical
+    potentials.
+
+    Mainly intended for internal ``doped`` usage in the ``FermiSolver``
+    ``min_max_X`` method.
+
+    Args:
+        results_df (pd.DataFrame):
+            ``DataFrame`` of defect concentrations, as output by the
+            ``FermiSolver`` ``scan_chempots`` / ``scan_chemical_potential_grid``
+            methods (which corresponds to the ``(pseudo_)equilibrium_solve``
+            ``DataFrame`` outputs, appended together for multiple chemical
+            potentials).
+        target (str):
+            The target defect name or column label for minimising/maximising.
+        min_or_max (str):
+            Whether to find the minimum or maximum value(s) of the target.
+            Should be either "min" or "max".
+
+    Returns:
+        tuple:
+            A tuple containing the results ``DataFrame`` at the chemical potentials
+            which minimise/maximise the target property (``target_df``), the
+            minimised/maximised value of the target property, and the corresponding
+            chemical potentials -- in the given chemical potential range.
+    """
+
+    def min_or_max_func(x):
+        return x.min() if "min" in min_or_max else x.max()
+
+    chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
+    if target in results_df.columns:
+        current_value = min_or_max_func(results_df[target])
+        target_df = results_df[results_df[target] == current_value]
+        target_chempot = target_df[chempots_labels]
+
+    else:
+        # Filter the DataFrame for the specific defect
+        filtered_df = results_df[results_df.index == target]
+        # Find the row where "Concentration (cm^-3)" is at its minimum or maximum
+        current_value = min_or_max_func(filtered_df["Concentration (cm^-3)"])
+        target_chempot = results_df.loc[results_df["Concentration (cm^-3)"] == current_value][
+            chempots_labels
+        ]
+        target_df = results_df[
+            results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)
+        ]  # TODO: Check if rearranging as in `if` block above gives same output
+
+    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
+    return target_df, current_value, target_chempot
+
+
+def _ensure_list(
+    var: Optional[Union[float, int, range, list, np.ndarray]] = None
+) -> Optional[Union[list[Union[float, int]], np.ndarray[Union[float, int]]]]:
+    if isinstance(var, range):
+        return list(var)
+    return [var] if isinstance(var, (int, float)) else var
