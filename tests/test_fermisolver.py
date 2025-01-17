@@ -1494,6 +1494,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 append_chempots=True,
             )
             if min_max == "max":  # this doesn't actually occur at the Te-rich limit
+                # e.g. see SK Thesis Fig. 6.18 (though without eff dopant conc, but similar behaviour)
                 assert not result.iloc[0].equals(expected_concentrations.iloc[0])
             else:
                 pd.testing.assert_frame_equal(result, expected_concentrations)
@@ -1512,30 +1513,80 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
         for annealing in [True, False]:
             temp_arg_name = "annealing_temperature" if annealing else "temperature"
-        result = solver.min_max_X(
-            target="V_S_3",  # highest concentration V_S
-            min_or_max="min",
-            **{temp_arg_name: 603},
-        )
-        row = result.iloc[0]
-        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            result = solver.min_max_X(
+                target="V_S_3",  # highest concentration V_S
+                min_or_max="min",
+                **{temp_arg_name: 603},
+            )
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
 
-        # confirm that formal_chempots does not correspond to a X-rich limit:
-        for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
-            for el_key in limit:
-                assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+            # confirm that formal_chempots does not correspond to a X-rich limit:
+            for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+                for el_key in limit:
+                    assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
 
-        assert np.isclose(formal_chempots["Sb"], -0.416, atol=1e-3)
-        assert np.isclose(formal_chempots["S"], -0.139, atol=1e-3)
+            assert np.isclose(formal_chempots["Sb"], -0.416, atol=1e-3)
+            assert np.isclose(formal_chempots["S"], -0.139, atol=1e-3)
 
-        expected_concentrations = solver._solve(
-            single_chempot_dict=formal_chempots,
-            append_chempots=True,
-            **{temp_arg_name: 603},
-        )
-        pd.testing.assert_frame_equal(result, expected_concentrations)
+            expected_concentrations = solver._solve(
+                single_chempot_dict=formal_chempots,
+                append_chempots=True,
+                **{temp_arg_name: 603},
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
 
-        # TODO: Test matching defect name substring when functionality added
+            # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
+            result = solver.min_max_X(
+                "S_Sb_1",
+                min_or_max="max",
+                **{temp_arg_name: 603},
+            )
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            assert any(
+                all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
+                for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
+            )
+            # TODO: Test matching defect name substring when functionality added
+
+    @parameterize_backend()
+    def test_min_max_X_fermi_level(self, backend):
+        """
+        Test ``min_max_X`` method to min/max the Fermi level.
+
+        Here we use CdTe as an example, where the most p-type Fermi level upon
+        quenching is actually not at the Te-rich limit (but close); see SK
+        Thesis Fig. 6.17. For most n-type Fermi level, it is at the Cd-rich
+        limit as is typical.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        for min_max in ["min", "max"]:
+            print(f"Testing {min_max}imising Fermi level...")
+            result = solver.min_max_X(
+                target="Fermi Level", min_or_max=min_max, annealing_temperature=973  # SK Thesis Fig. 6.17
+            )
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+            if min_max == "min":  # formal_chempots does not correspond to a X-rich limit, for min Fermi:
+                for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+                    for el_key in limit:
+                        assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+            else:  # for max (i.e. most n-type Fermi level), it is at Cd-rich
+                assert any(
+                    all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
+                    for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
+                )
+
+            assert np.isclose(formal_chempots["Cd"], -1.05 if min_max == "min" else 0, atol=1e-2)
+
+            expected_concentrations = solver._solve(
+                single_chempot_dict=formal_chempots,
+                append_chempots=True,
+                annealing_temperature=973,  # SK Thesis Fig. 6.17
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
     def test_get_interpolated_chempots(self, backend):
