@@ -33,6 +33,7 @@ from doped.thermodynamics import (
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
 module_path = os.path.dirname(os.path.abspath(__file__))
 EXAMPLE_DIR = os.path.join(module_path, "../examples")
+DATA_DIR = os.path.join(module_path, "data")
 
 
 class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
@@ -504,6 +505,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         Test ``_get_fermi_level_and_carriers`` returns correct values for
         ``doped`` backend.
+
+        This method is only used for the doped backend.
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
         fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
@@ -528,13 +531,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert single_chempot_dict == self.CdTe_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"]
         assert el_refs == self.CdTe_thermo.el_refs
 
-    def test_get_single_chempot_dict_limit_not_found(self):
+    @parameterize_backend()
+    def test_get_single_chempot_dict_limit_not_found(self, backend):
         """
         Test that ``ValueError`` is raised when the specified limit is not
         found.
         """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with pytest.raises(ValueError) as context:
-            self.solver_doped._get_single_chempot_dict(limit="nonexistent_limit")
+            solver._get_single_chempot_dict(limit="nonexistent_limit")
         assert "Limit 'nonexistent_limit' not found" in str(context.value)
 
     @parameterize_backend()
@@ -1317,10 +1322,22 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ``chempots`` is in ``doped`` format.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        no_err_out = solver.interpolate_chempots(
+            n_points=5,
+            annealing_temperature=800,
+            quenched_temperature=300,
+            limits=None,  # Limits are not provided
+        )
+        assert no_err_out is not None  # no error for binary system, just takes the two limits
+
+        three_lim_chempots = deepcopy(self.CdTe_thermo.chempots)
+        extra_lim = {"Cd": -3, "Te": 4}
+        three_lim_chempots["limits"]["extra"] = extra_lim
+        three_lim_chempots["limits_wrt_el_refs"]["extra"] = extra_lim
         with pytest.raises(ValueError) as exc:
             solver.interpolate_chempots(
                 n_points=5,
-                chempots=self.CdTe_thermo.chempots,
+                chempots=three_lim_chempots,
                 annealing_temperature=800,
                 quenched_temperature=300,
                 limits=None,  # Limits are not provided
@@ -1482,18 +1499,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_get_interpolated_chempots(self):
+    def test_get_interpolated_chempots(self, backend):
         """
         Test ``_get_interpolated_chempots`` method.
         """
-        # TODO: Marker for progress in fixing these tests
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         chempot_start = {"Cd": -0.5, "Te": -1.0}
         chempot_end = {"Cd": -1.0, "Te": -0.5}
         n_points = 3
 
-        interpolated_chempots = self.solver_doped._get_interpolated_chempots(
-            chempot_start, chempot_end, n_points
-        )
+        interpolated_chempots = solver._get_interpolated_chempots(chempot_start, chempot_end, n_points)
 
         assert len(interpolated_chempots) == n_points
         assert interpolated_chempots[0] == chempot_start
@@ -1502,30 +1517,44 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         expected_middle = {"Cd": -0.75, "Te": -0.75}
         assert interpolated_chempots[1] == expected_middle
 
-    def test_parse_and_check_grid_like_chempots(self):
+    @parameterize_backend()
+    def test_parse_and_check_grid_like_chempots(self, backend):
         """
-        Test _parse_and_check_grid_like_chempots method.
+        Test ``_parse_and_check_grid_like_chempots`` method.
         """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         chempots = self.CdTe_thermo.chempots
-        parsed_chempots, el_refs = self.solver_doped._parse_and_check_grid_like_chempots(chempots)
+        parsed_chempots, el_refs = solver._parse_and_check_grid_like_chempots(chempots)
 
         assert isinstance(parsed_chempots, dict)
         assert isinstance(el_refs, dict)
         assert "limits" in parsed_chempots
         assert "elemental_refs" in parsed_chempots
 
-    def test_parse_and_check_grid_like_chempots_invalid_chempots(self):
+        # test error with single-chempot-limit system:
+        Se_pnict_thermo = loadfn(os.path.join(DATA_DIR, "Se_Pnict_Thermo.json.gz"))
+        solver = FermiSolver(
+            Se_pnict_thermo, bulk_dos=self.CdTe_fermi_dos, skip_vbm_check=True, backend=backend
+        )
+        with pytest.raises(ValueError) as exc:
+            solver._parse_and_check_grid_like_chempots()
+        assert "Only one chemical potential limit is present in " in str(exc.value)
+
+    @parameterize_backend()
+    def test_parse_and_check_grid_like_chempots_invalid_chempots(self, backend):
         """
         Test that ``ValueError`` is raised when ``chempots`` is ``None``.
         """
-        # Temporarily remove chempots from defect_thermodynamics
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        # Temporarily remove chempots from defect_thermodynamics:
         solver = deepcopy(self.solver_doped)
         solver.defect_thermodynamics.chempots = None
 
         with pytest.raises(ValueError):
             solver._parse_and_check_grid_like_chempots()
 
-    def test_skip_vbm_check(self):
+    @parameterize_backend()
+    def test_skip_vbm_check(self, backend):
         """
         Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
         is skipped with ``skip_vbm_check``.
@@ -1539,11 +1568,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         from test_thermodynamics import _check_CdTe_mismatch_fermi_dos_warning
 
         with warnings.catch_warnings(record=True) as w:
-            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos)
+            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos, backend=backend)
         _check_CdTe_mismatch_fermi_dos_warning(None, w)
 
         with warnings.catch_warnings(record=True) as w:
-            FermiSolver(defect_thermodynamics=defect_thermo, bulk_dos=fd_up_fdos, skip_vbm_check=True)
+            FermiSolver(
+                defect_thermodynamics=defect_thermo,
+                bulk_dos=fd_up_fdos,
+                skip_vbm_check=True,
+                backend=backend,
+            )
         print([str(warning.message) for warning in w])
         assert not w
 
@@ -1570,12 +1604,15 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
-    def test_min_max_X_maximize_electrons(self):
+    # TODO: Marker for progress in fixing these tests
+    @parameterize_backend()
+    def test_min_max_X_maximize_electrons(self, backend):
         """
         Test ``min_max_X`` method to maximize electron concentration.
         """
         # TODO: Would be good to test this for a >=3D case where the extremum occurs not at a boundary
-        result = self.solver_doped.min_max_X(
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        result = solver.min_max_X(
             target="Electrons (cm^-3)",
             min_or_max="max",
             annealing_temperature=800,
@@ -1587,11 +1624,13 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         assert len(result) > 0
         assert "Electrons (cm^-3)" in result.columns
 
-    def test_min_max_X_minimize_holes(self):
+    @parameterize_backend()
+    def test_min_max_X_minimize_holes(self, backend):
         """
         Test ``min_max_X`` method to minimize hole concentration.
         """
-        self.solver_doped.min_max_X(
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        solver.min_max_X(
             target="Holes (cm^-3)",
             min_or_max="min",
             annealing_temperature=800,
@@ -1601,12 +1640,14 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             effective_dopant_concentration=1e16,
         )  # TODO: Actually test outputs here
 
-    def test_scan_chemical_potential_grid(self):
+    @parameterize_backend()
+    def test_scan_chemical_potential_grid(self, backend):
         """
         Test ``scan_chemical_potential_grid`` method.
         """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         n_points = 5
-        concentrations = self.solver_doped.scan_chemical_potential_grid(
+        concentrations = solver.scan_chemical_potential_grid(
             # use self.defect_thermodynamics.chempots by default
             n_points=n_points,
             annealing_temperature=800,
