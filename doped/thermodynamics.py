@@ -4419,10 +4419,16 @@ class FermiSolver(MSONable):
         (DOS) data from either the input ``DefectThermodynamics`` or ``bulk_dos``.
 
         If using the ``py-sc-fermi`` backend (currently required for the
-        ``free_defects`` and ``fix_charge_states`` options in the scanning
-        functions), please cite the code paper:
+        ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options in
+        the scanning functions), please cite the code paper:
         Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
         https://doi.org/10.21105/joss.04962
+
+        Note that the ``delta_gap`` argument used in ``DefectThermodynamics``
+        methods is not directly supported in this class. If band gap modulation
+        is desired, it is recommended to use the ``DefectThermodynamics`` methods
+        directly with ``delta_gap`` as shown in the (advanced) defect thermodynamics
+        tutorials.
 
         Args:
             defect_thermodynamics (DefectThermodynamics):
@@ -4492,11 +4498,11 @@ class FermiSolver(MSONable):
             backend (Optional[str]):
                 The code backend to use for the thermodynamic calculations, which
                 can be either ``"doped"`` or ``"py-sc-fermi"``. ``"py-sc-fermi"``
-                allows the use of ``free_defects`` for advanced constrained defect
-                equilibria (i.e. mobile defects, see advanced thermodynamics tutorial),
-                while ``"doped"`` is usually (but not always) quicker. Default is
-                ``doped``, but will attempt to switch to ``py-sc-fermi`` if required
-                (and installed).
+                allows the use of ``fixed_defects`` and ``free_defects`` for advanced
+                constrained defect equilibria (e.g. mobile defects, see advanced
+                thermodynamics tutorial), while ``"doped"`` is usually much quicker.
+                Default is ``doped``, but will attempt to switch to ``py-sc-fermi``
+                if required (and installed).
             skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
                 ``DefectThermodynamics.vbm`` by >0.05 eV. Should only be used when the
@@ -4627,8 +4633,8 @@ class FermiSolver(MSONable):
         """
         if required_backend.lower() == "py-sc-fermi" and self._DOS is None:
             raise RuntimeError(
-                f"This function is only supported for the {required_backend} backend, but you are "
-                f"using the {self.backend} backend!"
+                f"This function is currently only supported for the {required_backend} backend, "
+                f"but you are using the {self.backend} backend!"
             )
 
     def _get_fermi_level_and_carriers(
@@ -4789,11 +4795,13 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
 
         Returns:
@@ -4812,7 +4820,8 @@ class FermiSolver(MSONable):
         py_sc_fermi_required = fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
             self._activate_py_sc_fermi_backend(
-                error_message="The `fixed_defects` options are only supported for the py-sc-fermi backend"
+                error_message="The `fixed_defects` option is currently only supported for the py-sc-fermi "
+                "backend"
             )
 
         if self.backend == "doped" and not py_sc_fermi_required:
@@ -4894,7 +4903,7 @@ class FermiSolver(MSONable):
         append_chempots: bool = True,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
-        """
+        r"""
         Calculate the self-consistent Fermi level and corresponding
         carrier/defect calculations under pseudo-equilibrium conditions given a
         set of elemental chemical potentials, an annealing temperature, and a
@@ -4994,21 +5003,25 @@ class FermiSolver(MSONable):
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
             fixed_defects (Optional[dict[str, float]]):
-                A dictionary of defect concentrations to fix at the quenched temperature,
-                in the format: ``{defect_name: concentration}``. Concentrations should be
-                given in cm^-3. The this can be used to fix the concentrations of specific
-                defects regardless of the chemical potentials, or anneal-quench procedure
-                (e.g. to simulate the effect of a fixed impurity concentration).
-                If a fixed-concentration of a specific charge state is desired,
-                the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                A dictionary of defect concentrations to fix at the quenched
+                temperature, in the format: ``{defect_name: concentration}``,
+                where ``defect_name`` is the the name of a defect entry without
+                (e.g. ``"v_O"``) or with (e.g. ``"v_O_+2"``) the charge state;
+                which will then fix either the total concentration of that defect
+                or only the concentration for the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to fix
+                the concentrations of specific defects regardless of the chemical
+                potentials, or anneal-quench procedure (e.g. to simulate the effect
+                of a fixed impurity concentration).
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
-                # TODO: Allow matching of substring, and update docstring accordingly
-                # TODO: Also for other similar options (fixed_defects), and same for each function?
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             append_chempots (bool):
                 Whether to append the chemical potentials (and effective dopant
                 concentration, if provided) to the output ``DataFrame``.
@@ -5038,15 +5051,23 @@ class FermiSolver(MSONable):
                 Additional columns may include concentrations for specific defects
                 and other relevant data.
         """
+        # TODO: Allow matching of substring (e.g. "O_i" matching "O_i_C2" and "O_i_Ci") for fixed_defects
+        #  and update docstrings ("...where the _total_ concentration of all defect entries whose names
+        #  begin with ``defect_name`` will...") & tests accordingly
+        # TODO: Related: Should allow just specifying an extrinsic element for ``fixed_defects``,
+        #  to allow the user to specify the known concentration of a dopant (but with unknown relative
+        #  populations of different possible defects) -- not possible with current py-sc-fermi
+        #  implementation
         # TODO: In future the ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options may
         #  be added to the ``doped`` backend (in theory very simple to add)
         py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
             self._activate_py_sc_fermi_backend(
                 error_message="The `fix_charge_states`, `free_defects` and `fixed_defects` options are "
-                "only supported for the py-sc-fermi backend"
+                "currently only supported for the py-sc-fermi backend"
             )
 
+        # TODO: Add per-charge, per-site options like in ``doped`` ``DefectThermodynamics``
         if self.backend == "doped" and not py_sc_fermi_required:
             (
                 fermi_level,
@@ -5062,7 +5083,6 @@ class FermiSolver(MSONable):
                 per_charge=False,
                 skip_formatting=True,  # keep concentration values as floats
             )  # use already-set bulk dos
-            # TODO: Use per-charge, per-site options? kwargs?
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
@@ -5090,7 +5110,6 @@ class FermiSolver(MSONable):
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
             )
-            # TODO: Add per-charge, per-site options like in ``doped`` ``DefectThermodynamics``
 
             with np.errstate(all="ignore"):
                 conc_dict = defect_system.concentration_dict()
@@ -5299,16 +5318,22 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -5463,16 +5488,22 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -5521,7 +5552,7 @@ class FermiSolver(MSONable):
         free_defects: Optional[list[str]] = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
-        """
+        r"""
         Interpolate between two sets of chemical potentials and solve for the
         defect concentrations and Fermi level at each interpolated point.
 
@@ -5620,16 +5651,22 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -5738,7 +5775,7 @@ class FermiSolver(MSONable):
         free_defects: Optional[list[str]] = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
-        """
+        r"""
         Scan over a range of chemical potentials and solve for the defect
         concentrations and Fermi level at each set of chemical potentials.
 
@@ -5838,16 +5875,22 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -5973,16 +6016,22 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -6093,8 +6142,6 @@ class FermiSolver(MSONable):
                 analysis functions, including...
                 # TODO (and note in main body of docstring, and update docstrings below)
                 # TODO: Allow this to match a substring of the column name.
-                # TODO: Test the target as defect name, with or without charge? for both pseudo and
-                # TODO: ...normal equilibrium
             min_or_max (str):
                 Specify whether to "minimise" ("min") or "maximise" ("max"; default)
                 the target variable.
@@ -6151,16 +6198,22 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature concentration
-                fixing, useful for highly mobile defects that are not expected
-                to be "frozen-in" upon quenching. Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
                 (``True``) or allow charge states to vary while keeping total defect
@@ -6195,6 +6248,7 @@ class FermiSolver(MSONable):
             "free_defects": free_defects,
             "fix_charge_states": fix_charge_states,
         }
+        # TODO: When per-charge option added, test setting target to a defect species (with charge)
 
         if len(el_refs) == 2:
             return self._min_max_X_line(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
@@ -6444,11 +6498,13 @@ class FermiSolver(MSONable):
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
 
         Returns:
@@ -6516,22 +6572,24 @@ class FermiSolver(MSONable):
 
         Args:
             defect_system (DefectSystem):
-                ``py-sc-fermi`` ``DefectSystem`` for which to fix the concentrations of
-                defects (in ``defect_system.defect_species``) according to the
-                ``fixed_defects`` input.
+                ``py-sc-fermi`` ``DefectSystem`` for which to fix the
+                concentrations of defects (in ``defect_system.defect_species``)
+                according to the ``fixed_defects`` input.
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
-                ``{defect_name: concentration}``. Concentrations should be given in cm^-3.
-                The this can be used to simulate the effect of a fixed impurity
-                concentration. If a fixed-concentration of a specific charge state is
-                desired, the defect name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
             fixed_concs (dict):
-                Dictionary of total concentrations of defects, which if provided will be
-                compared to input concentration constraints (``fixed_defects``) and a warning
-                will be thrown if
+                Dictionary of total concentrations of defects, which if
+                provided will be compared to input concentration constraints
+                (``fixed_defects``) and a warning will be thrown if
                 ``fixed_concs[defect_name_without_charge] > fixed_defects[defect_name_with_charge]``.
                 Default is ``None``.
         """
@@ -6570,7 +6628,7 @@ class FermiSolver(MSONable):
         free_defects: Optional[list[str]] = None,
         fix_charge_states: bool = False,
     ) -> "DefectSystem":
-        """
+        r"""
         Generate a ``py-sc-fermi`` ``DefectSystem`` object that has defect
         concentrations fixed to the values determined at a high temperature
         (``annealing_temperature``), and then set to a lower temperature
@@ -6620,19 +6678,23 @@ class FermiSolver(MSONable):
                 Defaults to ``None``, corresponding to no extrinsic dopant.
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix at the quenched
-                temperature, in the format: ``{defect_name: concentration}``.
-                Concentrations should be given in cm^-3. The this can be used to
-                fix the concentrations of specific defects regardless of the
-                chemical potentials, or anneal-quench procedure (e.g. to simulate
-                the effect of a fixed impurity concentration). If a fixed
-                concentration of a specific charge state is desired, the defect
-                name should be formatted as ``"defect_name_charge"``;
-                i.e. ``"v_O_+2"`` for a doubly positively charged oxygen vacancy.
-                Defaults to ``None``.
+                temperature, in the format: ``{defect_name: concentration}``,
+                where ``defect_name`` is the the name of a defect entry without
+                (e.g. ``"v_O"``) or with (e.g. ``"v_O_+2"``) the charge state;
+                which will then fix either the total concentration of that defect
+                or only the concentration for the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to fix
+                the concentrations of specific defects regardless of the chemical
+                potentials, or anneal-quench procedure (e.g. to simulate the effect
+                of a fixed impurity concentration).
             free_defects (Optional[list[str]]):
-                A list of defects to be excluded from high-temperature
-                concentration fixing, useful for highly mobile defects that are
-                not expected to be "frozen-in." Defaults to ``None``.
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge
                 states (``True``) or allow charge states to vary while keeping
