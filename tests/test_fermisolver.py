@@ -1881,8 +1881,8 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         row = result.iloc[0]
         formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
 
-        # corresponds to Cu-poor limit:
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-poor")
+        # corresponds to Cu-rich limit: (minimising v_Cu)
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-rich")
         assert all(
             np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
             for el_key in single_chempot_dict
@@ -1902,15 +1902,33 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         Test ``optimise`` method to minimize hole concentration.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        solver.optimise(
-            target="Holes (cm^-3)",
-            min_or_max="min",
+        with patch("builtins.print") as mock_print:
+            result = solver.optimise(
+                target="Holes (cm^-3)",
+                min_or_max="min",
+                annealing_temperature=800,
+                effective_dopant_concentration=1e16,
+            )
+        mock_print.assert_called_once_with(
+            "Searching for chemical potentials which minimise the target column: ['Holes (cm^-3)']..."
+        )
+        row = result.iloc[0]
+        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+        # corresponds to Cu-rich limit: (minimising v_Cu)
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-rich")
+        assert all(
+            np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
+            for el_key in single_chempot_dict
+        )
+
+        expected_concentrations = solver._solve(
+            single_chempot_dict=formal_chempots,
+            append_chempots=True,
             annealing_temperature=800,
-            quenched_temperature=300,
-            tolerance=0.05,
-            n_points=5,
             effective_dopant_concentration=1e16,
-        )  # TODO: Actually test outputs here
+        )
+        pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
     def test_optimise_defect_3D_non_limiting_chempot(self, backend):
