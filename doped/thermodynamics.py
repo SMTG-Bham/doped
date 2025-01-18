@@ -6312,9 +6312,9 @@ class FermiSolver(MSONable):
 
             previous_value = current_value  # otherwise update
 
-            new_vertices = [  # get midpoint between current vertices and target_chempot
-                (starting_grid.vertices + row[1]) / 2 for row in target_chempot.iterrows()
-            ]
+            new_vertices_df = (
+                starting_grid.vertices + target_chempot.iloc[0]
+            ) / 2  # 1 row - target_chempot
             # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
             # function, then we could just take the closest vertices around ``target_chempot`` and use
             # these, but we know that chempots & temperature & other constraints -> defect concentrations
@@ -6322,10 +6322,7 @@ class FermiSolver(MSONable):
             # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
             # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
 
-            # Generate a new grid around the target_chempot that
-            # does not go outside the bounds of the starting grid
-            new_vertices_df = pd.DataFrame(new_vertices[0], columns=list(new_vertices[0].columns))
-            # TODO: Is the columns parameter necessary here? Check! (print and check)
+            # Generate a new grid around target_chempot which doesn't go outside the starting grid bounds:
             starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
 
         return target_df
