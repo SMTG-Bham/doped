@@ -662,9 +662,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
-        dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
-        )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -686,9 +683,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
-        dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
-        )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -702,9 +696,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
-        dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
-        )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     def test_DefectsParser_no_defects_parsed_error(self):
@@ -2217,7 +2208,9 @@ class DopedParsingTestCase(unittest.TestCase):
             print([warn.message for warn in w])  # for debugging
             assert not w  # this supercell is not periodicity breaking
         assert relaxed_defect_name == "F_i_C4v_O2.57"
-        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_C1_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False, symprec=0.02) == "F_i_C4v_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False, symprec=0.01) == "F_i_C1_O2.57"
 
         return eig_fig  # test eigenvalue plot for ISPIN = 1 case
 

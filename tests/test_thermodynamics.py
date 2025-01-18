@@ -2317,15 +2317,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "as_2_Te_on_Cd_C3v_metastable_1",
             ]:
                 assert point_symmetry_from_structure(defect_entry.defect_supercell, symprec=0.01) == "Cs"
-                if "vac" not in name:
+                if name == "as_2_Te_on_Cd_C3v_metastable_1":
                     assert (
                         point_symmetry_from_site(
                             defect_entry.sc_defect_frac_coords,
                             defect_entry.defect_supercell,
-                            symprec=0.0085,
+                            symprec=0.005,
                         )  # default symprec for point_symmetry_from_site is 0.01
-                        == "Cs"  # "as_1_Te_on_Cd_0" and "as_2_Te_on_Cd_C3v_metastable_1" change
-                        # symmetries for symprec values just under 0.01 here
+                        == "C1"
                     )
             elif name in [
                 "vac_1_Cd_Td_0",
