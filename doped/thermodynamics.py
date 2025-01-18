@@ -6093,27 +6093,24 @@ class FermiSolver(MSONable):
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         # Determine the dimensionality of the chemical potential space, and call appropriate method
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        kwargs = {
-            "target": target,
-            "min_or_max": min_or_max,
-            "chempots": chempots,
-            "annealing_temperature": annealing_temperature,
-            "quenched_temperature": quenched_temperature,
-            "temperature": temperature,
-            "tolerance": tolerance,
-            "n_points": n_points,
-            "effective_dopant_concentration": effective_dopant_concentration,
-            "fixed_defects": fixed_defects,
-            "free_defects": free_defects,
-            "fix_charge_states": fix_charge_states,
-        }
         # TODO: Add option of just specifying an element, to min/max its summed defect concentrations
         # TODO: When per-charge option added, test setting target to a defect species (with charge)
 
-        if len(el_refs) == 2:
-            return self._optimise_line(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
-
-        return self._optimise_grid(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
+        optimise_func = self._optimise_line if len(el_refs) == 2 else self._optimise_grid
+        return optimise_func(
+            target=target,
+            min_or_max=min_or_max,
+            chempots=chempots,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            tolerance=tolerance,
+            n_points=n_points,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
+        )
 
     def _optimise_line(
         self,
