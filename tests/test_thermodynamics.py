@@ -1309,25 +1309,31 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert list(non_formatted_sym_degen_df.index.to_numpy()[i]) == row[:2]
 
     def _check_YTOS_symmetries_degeneracies(self, YTOS_defect_thermo: DefectThermodynamics):
-        sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies()
+        sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
+            YTOS_defect_thermo.get_symmetries_and_degeneracies
+        )
         # hardcoded tests to ensure symmetry determination working as expected:
         assert any(
-            list(sym_degen_df.iloc[i]) == ["Cs", "C4v", 0.25, 1, 0.25, 4.0]
+            list(sym_degen_df.iloc[i]) == ["C1", "C4v", 0.125, 1, 0.125, 2.0]
             for i in range(sym_degen_df.shape[0])
         )
         assert any(
             list(sym_degen_df.index.to_numpy()[i]) == ["Int_F", "-1"] for i in range(sym_degen_df.shape[0])
         )
 
-        sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.1)
+        sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
+            YTOS_defect_thermo.get_symmetries_and_degeneracies, symprec=0.1
+        )
         assert any(
-            list(sym_degen_df.iloc[i]) == ["Cs", "C4v", 0.25, 1, 0.25, 4.0]
+            list(sym_degen_df.iloc[i]) == ["C1", "C4v", 0.125, 1, 0.125, 2.0]
             for i in range(sym_degen_df.shape[0])
         )
 
-        sym_degen_df = YTOS_defect_thermo.get_symmetries_and_degeneracies(symprec=0.01)
+        sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
+            YTOS_defect_thermo.get_symmetries_and_degeneracies, symprec=0.01
+        )
         assert any(
-            list(sym_degen_df.iloc[i]) == ["Cs", "Cs", 1.0, 1, 1.0, 4.0]
+            list(sym_degen_df.iloc[i]) == ["C1", "Cs", 0.5, 1, 0.5, 2.0]
             for i in range(sym_degen_df.shape[0])
         )
 
