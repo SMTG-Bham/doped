@@ -1358,14 +1358,30 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
-            result = solver.min_max_X(
-                target="Electrons (cm^-3)",
-                min_or_max=min_max,
-                annealing_temperature=800,
-                quenched_temperature=300,
-                tolerance=0.05,
-                n_points=5,
-                effective_dopant_concentration=1e16,
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(
+                    target="Electrons (cm^-3)",
+                    min_or_max=min_max,
+                    annealing_temperature=800,
+                    quenched_temperature=300,
+                    tolerance=0.05,
+                    n_points=5,
+                    effective_dopant_concentration=1e16,
+                )
+            mock_print.assert_called_once_with(
+                f"Searching for chemical potentials which {min_max}imise the target column: ['Electrons "
+                f"(cm^-3)']..."
+            )
+
+            assert result.equals(
+                solver.min_max_X(
+                    target="e",  # target as column substring also fine
+                    min_or_max=min_max,
+                    annealing_temperature=800,
+                    tolerance=0.05,
+                    n_points=5,
+                    effective_dopant_concentration=1e16,
+                )
             )
 
             # should correspond to Cd-rich for max electrons, Te-rich for min electrons
@@ -1454,14 +1470,19 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
-            result = solver.min_max_X(
-                target="Holes (cm^-3)",
-                min_or_max=min_max,
-                annealing_temperature=800,
-                quenched_temperature=300,
-                tolerance=0.05,
-                n_points=5,
-                effective_dopant_concentration=1e16,
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(
+                    target="Holes (cm^-3)",
+                    min_or_max=min_max,
+                    annealing_temperature=800,
+                    quenched_temperature=300,
+                    tolerance=0.05,
+                    n_points=5,
+                    effective_dopant_concentration=1e16,
+                )
+            mock_print.assert_called_once_with(
+                f"Searching for chemical potentials which {min_max}imise the target column: ['Holes ("
+                f"cm^-3)']..."
             )
 
             # should correspond to Te-rich for max holes, Cd-rich for min holes
@@ -1513,10 +1534,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
         for annealing in [True, False]:
             temp_arg_name = "annealing_temperature" if annealing else "temperature"
-            result = solver.min_max_X(
-                target="V_S_3",  # highest concentration V_S
-                min_or_max="min",
-                **{temp_arg_name: 603},
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(
+                    target="V_S_3",  # highest concentration V_S
+                    min_or_max="min",
+                    **{temp_arg_name: 603},
+                )
+            mock_print.assert_called_once_with(
+                "Searching for chemical potentials which minimise the target defect(s): ['V_S_3']..."
             )
             row = result.iloc[0]
             formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
@@ -1548,7 +1573,66 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
                 for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
             )
-            # TODO: Test matching defect name substring when functionality added
+
+    @parameterize_backend()
+    def test_min_max_X_multiple_defects(self, backend):
+        """
+        Test ``min_max_X`` method to min/max a defect concentration, where now
+        we use a defect name substring to match multiple defects.
+
+        Here we use the vacanies in Sb2S3 as an example case; see
+        10.1021/acsenergylett.4c02722 for reference.
+        """
+        solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
+        for annealing in [True, False]:
+            temp_arg_name = "annealing_temperature" if annealing else "temperature"
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(
+                    target="V_S",  # V_S and V_Sb (renamed defect folders, not default doped names)
+                    min_or_max="min",
+                    **{temp_arg_name: 603},
+                )
+            mock_print.assert_called_once_with(
+                "Searching for chemical potentials which minimise the target defect(s): ['V_S_1', "
+                "'V_S_2', 'V_S_3', 'V_Sb_1', 'V_Sb_2']..."
+            )
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+            # here the minimising chempots are an intermediate chempot again, but slightly different
+            # to before:
+            for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+                for el_key in limit:  # confirm that formal_chempots don't correspond to X-rich limits
+                    assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+
+            assert np.isclose(formal_chempots["Sb"], -0.277, atol=1e-3)
+            assert np.isclose(formal_chempots["S"], -0.231, atol=1e-3)
+
+            expected_concentrations = solver._solve(
+                single_chempot_dict=formal_chempots,
+                append_chempots=True,
+                **{temp_arg_name: 603},
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
+
+            # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(
+                    "S_Sb",  # less ambiguity this time
+                    min_or_max="max",
+                    **{temp_arg_name: 603},
+                )
+            mock_print.assert_called_once_with(
+                "Searching for chemical potentials which maximise the target defect(s): ['S_Sb_1', "
+                "'S_Sb_2']..."
+            )
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="S-rich")
+            assert all(  # for S_Sb total concentration, maximised at S-rich limit:
+                np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
+                for el_key in single_chempot_dict
+            )
 
     @parameterize_backend()
     def test_min_max_X_fermi_level(self, backend):
@@ -1563,9 +1647,24 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
             print(f"Testing {min_max}imising Fermi level...")
-            result = solver.min_max_X(
-                target="Fermi Level", min_or_max=min_max, annealing_temperature=973  # SK Thesis Fig. 6.17
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(
+                    target="Fermi Level",
+                    min_or_max=min_max,
+                    annealing_temperature=973,  # SK Thesis Fig. 6.17
+                )
+            mock_print.assert_called_once_with(
+                f"Searching for chemical potentials which {min_max}imise the target column: ['Fermi "
+                f"Level']..."
             )
+            assert result.equals(
+                solver.min_max_X(
+                    target="fermi",  # target as column substring also fine
+                    min_or_max=min_max,
+                    annealing_temperature=973,  # SK Thesis Fig. 6.17
+                )
+            )
+
             row = result.iloc[0]
             formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
 
@@ -1599,7 +1698,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
             print(f"Testing {min_max}imising chemical potential...")
-            result = solver.min_max_X(target="μ_Te", min_or_max=min_max, annealing_temperature=973)
+            with patch("builtins.print") as mock_print:
+                result = solver.min_max_X(target="μ_Te", min_or_max=min_max, annealing_temperature=973)
+            mock_print.assert_called_once_with(
+                f"Searching for chemical potentials which {min_max}imise the target column: ['μ_Te']..."
+            )
             row = result.iloc[0]
             formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
 
@@ -1617,6 +1720,100 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 annealing_temperature=973,
             )
             pd.testing.assert_frame_equal(result, expected_concentrations)
+
+    @parameterize_backend()
+    def test_min_max_X_invalid_target(self, backend):
+        """
+        Test ``min_max_X`` method error with an invalid input target.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with pytest.raises(ValueError) as exc:
+            solver.min_max_X(target="WTF?")
+        assert (
+            "Target 'WTF?' not found in results DataFrame! Must be a column or defect name/substring! "
+            "See docstring for more info."
+        ) in str(exc.value)
+
+    @parameterize_backend()
+    def test_min_max_X_multiple_column_matches(self, backend):
+        """
+        Test ``min_max_X`` method error with an input target which matches
+        multiple columns.
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        with warnings.catch_warnings(record=True) as w:
+            solver.min_max_X(target="cm^-3")
+        print([str(warning.message) for warning in w])  # for debugging
+        assert (
+            "Multiple columns with the name 'cm^-3' found in the results DataFrame! Choosing the first "
+            "match"
+        ) in str(w[-1].message)
+
+    # TODO: Add explicit type check for `min_max_X` functions, like:
+    # from typing import Callable
+    #
+    # # Define a callable signature
+    # MinMaxCall = Callable[
+    #     [
+    #         float,  # target
+    #         str,  # min_or_max
+    #         dict,  # chempots
+    #         float,  # annealing_temperature
+    #         float,  # quenched_temperature
+    #         float,  # temperature
+    #         float,  # tolerance
+    #         int,  # n_points
+    #         float,  # effective_dopant_concentration
+    #         dict,  # fix_charge_states
+    #         dict,  # fixed_defects
+    #         dict,  # free_defects
+    #     ],
+    #     float,  # return type
+    # ]
+    #
+    #
+    # # Example functions adhering to the same signature
+    # def _min_max_X_line(
+    #         target: float,
+    #         min_or_max: str,
+    #         chempots: dict,
+    #         annealing_temperature: float,
+    #         quenched_temperature: float,
+    #         temperature: float,
+    #         tolerance: float,
+    #         n_points: int,
+    #         effective_dopant_concentration: float,
+    #         fix_charge_states: dict,
+    #         fixed_defects: dict,
+    #         free_defects: dict,
+    # ) -> float:
+    #     # Implementation here
+    #     return 0.0
+    #
+    #
+    # def _min_max_X_grid(
+    #         target: float,
+    #         min_or_max: str,
+    #         chempots: dict,
+    #         annealing_temperature: float,
+    #         quenched_temperature: float,
+    #         temperature: float,
+    #         tolerance: float,
+    #         n_points: int,
+    #         effective_dopant_concentration: float,
+    #         fix_charge_states: dict,
+    #         fixed_defects: dict,
+    #         free_defects: dict,
+    # ) -> float:
+    #     # Implementation here
+    #     return 0.0
+    #
+    #
+    # # Assign functions to the Callable type to enforce signature matching
+    # func_line: MinMaxCall = _min_max_X_line
+    # func_grid: MinMaxCall = _min_max_X_grid
+    #
+    # # Now you can use mypy to ensure both functions' signatures match the `MinMaxCall` type.
 
     @parameterize_backend()
     def test_get_interpolated_chempots(self, backend):
@@ -1703,8 +1900,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
 
 # TODO: Test free_defects with substring matching (and fixed_defects later when supported)
-
-
 # TODO: Use plots in FermiSolver tutorial as quick test cases here
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     """
@@ -1811,73 +2006,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 "`chempots`/`self.defect_thermodynamics.chempots`, which makes no sense for a chemical "
                 "potential grid scan"
             ) in str(exc.value)
-
-
-# TODO: Add explicit type check for `min_max_X` functions, like:
-# from typing import Callable
-#
-# # Define a callable signature
-# MinMaxCall = Callable[
-#     [
-#         float,  # target
-#         str,  # min_or_max
-#         dict,  # chempots
-#         float,  # annealing_temperature
-#         float,  # quenched_temperature
-#         float,  # temperature
-#         float,  # tolerance
-#         int,  # n_points
-#         float,  # effective_dopant_concentration
-#         dict,  # fix_charge_states
-#         dict,  # fixed_defects
-#         dict,  # free_defects
-#     ],
-#     float,  # return type
-# ]
-#
-#
-# # Example functions adhering to the same signature
-# def _min_max_X_line(
-#         target: float,
-#         min_or_max: str,
-#         chempots: dict,
-#         annealing_temperature: float,
-#         quenched_temperature: float,
-#         temperature: float,
-#         tolerance: float,
-#         n_points: int,
-#         effective_dopant_concentration: float,
-#         fix_charge_states: dict,
-#         fixed_defects: dict,
-#         free_defects: dict,
-# ) -> float:
-#     # Implementation here
-#     return 0.0
-#
-#
-# def _min_max_X_grid(
-#         target: float,
-#         min_or_max: str,
-#         chempots: dict,
-#         annealing_temperature: float,
-#         quenched_temperature: float,
-#         temperature: float,
-#         tolerance: float,
-#         n_points: int,
-#         effective_dopant_concentration: float,
-#         fix_charge_states: dict,
-#         fixed_defects: dict,
-#         free_defects: dict,
-# ) -> float:
-#     # Implementation here
-#     return 0.0
-#
-#
-# # Assign functions to the Callable type to enforce signature matching
-# func_line: MinMaxCall = _min_max_X_line
-# func_grid: MinMaxCall = _min_max_X_grid
-#
-# # Now you can use mypy to ensure both functions' signatures match the `MinMaxCall` type.
 
 
 if __name__ == "__main__":

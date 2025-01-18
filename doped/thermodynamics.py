@@ -4908,11 +4908,11 @@ class FermiSolver(MSONable):
         """
         # TODO: Allow matching of substring (e.g. "O_i" matching "O_i_C2" and "O_i_Ci") for fixed_defects
         #  and update docstrings ("...where the _total_ concentration of all defect entries whose names
-        #  begin with ``defect_name`` will...") & tests accordingly
-        # TODO: Related: Should allow just specifying an extrinsic element for ``fixed_defects``,
-        #  to allow the user to specify the known concentration of a dopant (but with unknown relative
-        #  populations of different possible defects) -- not possible with current py-sc-fermi
-        #  implementation
+        #  begin with ``defect_name`` will...") & tests accordingly, see _get_min_max_target_values
+        # TODO: Related: Should allow just specifying an element for ``fixed_defects``, to allow the
+        #  user to specify the known concentration of a dopant (or over/under-stoichiometry of an
+        #  element? (but with unknown relative populations of different possible defects) -- not possible
+        #  with current py-sc-fermi implementation, see code in _get_min_max_target_values()
         # TODO: In future the ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options may
         #  be added to the ``doped`` backend (in theory very simple to add)
         py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
@@ -5972,9 +5972,10 @@ class FermiSolver(MSONable):
         Search for the chemical potentials that minimise or maximise a target
         variable, such as electron concentration, within a specified tolerance.
 
-        This function iterates over a grid of chemical potentials and "zooms in" on
-        the chemical potential that either minimises or maximises the target variable.
-        The process continues until the relative change in the target variable is
+        See ``target`` argument description below for valid choices. This function
+        iterates over a grid of chemical potentials and "zooms in" on the chemical
+        potential that either minimises or maximises the target variable. The
+        process continues until the _relative_ change in the target variable is
         less than the specified tolerance.
 
         If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
@@ -5991,12 +5992,15 @@ class FermiSolver(MSONable):
 
         Args:
             target (str):
-                The target variable to minimise or maximise, e.g., "Electrons (cm^-3)" or
-                "v_Cd_-2" or "Te_i". Valid ``target`` values are the column or row
-                (i.e. defect) names of the output ``DataFrame``\s from thermodynamic
-                analysis functions, including...
-                # TODO (and note in main body of docstring, and update docstrings below)
-                # TODO: Allow this to match a substring of the column name.
+                The target variable to minimise or maximise, e.g., "Electrons",
+                "Te_i", "Fermi Level" etc. Valid ``target`` values are column names (or
+                substrings), such as 'Electrons', 'Holes', 'Fermi Level', 'μ_X', etc.,
+                or defect names (without charge states), such as 'v_O', 'Te_i', etc.
+                If a full defect name is given (e.g. Te_i_Td_Te2.83) then the
+                concentration of that defect will be used as the target variable. If
+                a defect name substring is given instead (e.g. Te_i), then the target
+                variable will be the summed concentration of all defects with that
+                substring in their name (e.g. Te_i_Td_Te2.83, Te_i_C3v etc).
             min_or_max (str):
                 Specify whether to "minimise" ("min") or "maximise" ("max"; default)
                 the target variable.
@@ -6103,6 +6107,7 @@ class FermiSolver(MSONable):
             "free_defects": free_defects,
             "fix_charge_states": fix_charge_states,
         }
+        # TODO: Add option of just specifying an element, to min/max its summed defect concentrations
         # TODO: When per-charge option added, test setting target to a defect species (with charge)
 
         if len(el_refs) == 2:
@@ -6145,7 +6150,11 @@ class FermiSolver(MSONable):
                 {k.replace("μ_", ""): v for k, v in chempot_series.items()}
                 for chempot_series in starting_line
             ]
-            results_df = self.scan_chempots(
+            target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
+                target=target,
+                min_or_max=min_or_max,
+                previous_value=previous_value,
+                tolerance=tolerance,
                 chempots=chempots_dict_list,
                 el_refs=el_refs,
                 annealing_temperature=annealing_temperature,
@@ -6155,19 +6164,9 @@ class FermiSolver(MSONable):
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
+                verbose=previous_value is None,  # first iteration, print info on target cols/rows
             )
-
-            target_df, current_value, target_chempot = _get_min_max_target_values(
-                results_df, target, min_or_max
-            )
-            if (  # Check if the change in the target value is less than the tolerance
-                previous_value is not None
-                and (
-                    current_value == previous_value
-                    or abs((current_value - previous_value) / (previous_value or current_value))
-                    < tolerance
-                )
-            ):  # divide by (previous_value or current_value) to avoid division by zero
+            if converged:
                 break
 
             previous_value = current_value  # otherwise update
@@ -6193,6 +6192,77 @@ class FermiSolver(MSONable):
             )
 
         return target_df
+
+    def _scan_chempots_and_compare(  # noqa: D417
+        self,
+        target: str,
+        min_or_max: str,
+        previous_value: Optional[float] = None,
+        tolerance: float = 0.01,
+        chempots: Optional[Union[list[dict[str, float]], dict[str, dict]]] = None,
+        limits: Optional[list[str]] = None,
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+        verbose: bool = False,
+    ):
+        """
+        Convenience method for use in the ``_min_max_X_...`` methods, which
+        scans over a set of chemical potentials and compares the target value
+        to a previous value, returning the new target dataframe, value and
+        corresponding chemical potentials.
+
+        Args:
+            previous_value (float):
+                The previous value of the target variable.
+            verbose (bool):
+                Whether to print information on identified target
+                rows/columns.
+            *args:
+                All other arguments are the same as for the ``min_max_X`` method,
+                see its docstring for more details.
+
+        Returns:
+            target_df (pd.DataFrame):
+                A ``DataFrame`` containing the current results of the optimisation,
+                including the optimal chemical potentials and corresponding values
+                of the target variable.
+            current_value (float):
+                The current (updated) value of the target variable.
+            target_chempot (pd.DataFrame):
+                The chemical potentials corresponding to the current value.
+            converged (bool):
+                Whether the search has converged to within ``tolerance``.
+        """
+        results_df = self.scan_chempots(
+            chempots=chempots,
+            el_refs=el_refs,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
+        )
+
+        target_df, current_value, target_chempot = _get_min_max_target_values(
+            results_df, target, min_or_max, verbose=verbose
+        )
+        converged = (  # Check if the change in the target value is less than the tolerance
+            previous_value is not None
+            and (
+                current_value == previous_value
+                or abs((current_value - previous_value) / (previous_value or current_value)) < tolerance
+            )
+        )  # divide by (previous_value or current_value) to avoid division by zero
+
+        return target_df, current_value, target_chempot, converged
 
     def _min_max_X_grid(
         self,
@@ -6224,7 +6294,11 @@ class FermiSolver(MSONable):
                 {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
                 for _idx, chempot_series in starting_grid.get_grid(n_points).iterrows()
             ]
-            results_df = self.scan_chempots(
+            target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
+                target=target,
+                min_or_max=min_or_max,
+                previous_value=previous_value,
+                tolerance=tolerance,
                 chempots=chempots_dict_list,
                 el_refs=el_refs,
                 annealing_temperature=annealing_temperature,
@@ -6234,16 +6308,9 @@ class FermiSolver(MSONable):
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
+                verbose=previous_value is None,  # first iteration, print info on target cols/rows
             )
-
-            # Find chemical potentials value where target is lowest or highest
-            target_df, current_value, target_chempot = _get_min_max_target_values(
-                results_df, target, min_or_max
-            )
-            if (  # Check if the change in the target value is less than the tolerance
-                previous_value is not None
-                and abs((current_value - previous_value) / previous_value) < tolerance
-            ):
+            if converged:
                 break
 
             previous_value = current_value  # otherwise update
@@ -6695,7 +6762,9 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
     return DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
 
 
-def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max: str) -> tuple:
+def _get_min_max_target_values(
+    results_df: pd.DataFrame, target: str, min_or_max: str, verbose: bool = False
+) -> tuple:
     """
     Convenience function to get the minimum or maximum value(s) of a ``target``
     column or row in a ``results_df`` DataFrame, and the corresponding chemical
@@ -6712,10 +6781,20 @@ def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max
             ``DataFrame`` outputs, appended together for multiple chemical
             potentials).
         target (str):
-            The target defect name or column label for minimising/maximising.
+            The target variable to minimise or maximise, e.g., "Electrons",
+            "Te_i", "Fermi Level" etc. Valid ``target`` values are column names (or
+            substrings), such as 'Electrons', 'Holes', 'Fermi Level', 'μ_X', etc.,
+            or defect names (without charge states), such as 'v_O', 'Te_i', etc.
+            If a full defect name is given (e.g. Te_i_Td_Te2.83) then the
+            concentration of that defect will be used as the target variable. If
+            a defect name substring is given instead (e.g. Te_i), then the target
+            variable will be the summed concentration of all defects with that
+            substring in their name (e.g. Te_i_Td_Te2.83, Te_i_C3v etc).
         min_or_max (str):
             Whether to find the minimum or maximum value(s) of the target.
             Should be either "min" or "max".
+        verbose (bool):
+            Whether to print information on identified target rows/columns.
 
     Returns:
         tuple:
@@ -6729,17 +6808,57 @@ def _get_min_max_target_values(results_df: pd.DataFrame, target: str, min_or_max
         return x.min() if "min" in min_or_max else x.max()
 
     chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
-    if target in results_df.columns:
-        current_value = min_or_max_func(results_df[target])
-        target_df = results_df[results_df[target] == current_value]
+
+    # determine target; can be column, defect name, element (TODO), starting string of column name,
+    # starting string of defect name, column name subset or defect name subset, w/that preferential order:
+
+    target_names = (
+        [col for col in results_df.columns if col == target]
+        or [defect_name for defect_name in results_df.index if defect_name == target]
+        or [col for col in results_df.columns if col.lower().startswith(target.lower())]
+        or [
+            defect_name
+            for defect_name in results_df.index
+            if defect_name.lower().startswith(target.lower())
+        ]
+        or [col for col in results_df.columns if target in col]
+        or [defect_name for defect_name in (results_df.index) if target in defect_name]
+    )
+    target_names = sorted(set(target_names), key=target_names.index)  # preserve order
+
+    if not target_names:
+        raise ValueError(
+            f"Target '{target}' not found in results DataFrame! Must be a column or defect "
+            f"name/substring! See docstring for more info."
+        )
+
+    column = next(iter(target_names)) in results_df.columns
+
+    if verbose:
+        print(
+            f"Searching for chemical potentials which {min_or_max}imise the target "
+            f"{'column' if column else 'defect(s)'}: {target_names}..."
+        )
+
+    if column:
+        target_name = next(iter(target_names))
+        if len(target_names) > 1:  # can only match one column
+            warnings.warn(
+                f"Multiple columns with the name '{target}' found in the results DataFrame! "
+                f"Choosing the first match '{target_name}' as the target."
+            )
+        current_value = min_or_max_func(results_df[target_name])
+        target_df = results_df[results_df[target_name] == current_value]
         target_chempot = target_df[chempots_labels]
 
     else:
-        filtered_df = results_df[results_df.index == target]  # filter df for the chosen defect
-        current_value = min_or_max_func(filtered_df["Concentration (cm^-3)"])  # find the extremum row
-        target_chempot = filtered_df[filtered_df["Concentration (cm^-3)"] == current_value][
-            chempots_labels
-        ]  # get chempots which min/maximise the target
+        filtered_df = results_df[results_df.index.isin(target_names)]  # filter df for the chosen defect(s)
+        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects):
+        summed_df = filtered_df.groupby(chempots_labels).sum()
+        # TODO: When adding element option, will need to subtract for vacancies...
+        current_value = min_or_max_func(summed_df["Concentration (cm^-3)"])  # find the extremum row
+        # get chempots which min/maximise the target:
+        target_chempot = summed_df[summed_df["Concentration (cm^-3)"] == current_value].index.to_frame()
         # get all DataFrame rows which have the chempots matching the extremum row:
         target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
 
