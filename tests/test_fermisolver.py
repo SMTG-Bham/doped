@@ -1440,15 +1440,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             # should correspond to Cd-rich for max electrons, Te-rich for min electrons
             limit = "Cd-rich" if min_max == "max" else "Te-rich"
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
-            expected_concentrations = solver.pseudo_equilibrium_solve(
-                annealing_temperature=800,
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                quenched_temperature=300,
-                effective_dopant_concentration=1e16,
-                append_chempots=True,
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            assert formal_chempots == single_chempot_dict
+            _check_output_concentrations(solver, result)
 
             # quick test for anneal at 1400 K with no eff dopant:
             result = solver.optimise(
@@ -1459,17 +1454,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 tolerance=0.05,
                 n_points=5,
             )
-            expected_concentrations = solver.pseudo_equilibrium_solve(
-                annealing_temperature=1400,
-                quenched_temperature=150,
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                append_chempots=True,
-            )
-            if min_max == "min":  # this doesn't actually occur at the Te-rich limit
-                assert not result.iloc[0].equals(expected_concentrations.iloc[0])
-            else:
-                pd.testing.assert_frame_equal(result, expected_concentrations)
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            _check_output_concentrations(solver, result)
+
+            # doesn't actually occur at the Te-rich limit for min electrons:
+            assert (formal_chempots == single_chempot_dict) == (min_max != "min")
 
     @parameterize_backend()
     def test_optimise_electrons_non_limit_extremum(self, backend):
@@ -1505,16 +1495,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         tight_rtol = rtol / 100 if backend == "doped" else rtol / 10
         assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=tight_rtol)
 
-        # test dataframe output:
-        row = result.iloc[0]
-        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
-        expected_concentrations = solver.pseudo_equilibrium_solve(
-            annealing_temperature=1400,
-            quenched_temperature=150,
-            single_chempot_dict=formal_chempots,
-            append_chempots=True,
-        )
-        pd.testing.assert_frame_equal(result, expected_concentrations)
+        _check_output_concentrations(solver, result)  # test dataframe output
 
     @parameterize_backend()
     def test_optimise_holes(self, backend):
@@ -1541,15 +1522,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             # should correspond to Te-rich for max holes, Cd-rich for min holes
             limit = "Te-rich" if min_max == "max" else "Cd-rich"
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
-            expected_concentrations = solver.pseudo_equilibrium_solve(
-                annealing_temperature=800,
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                quenched_temperature=300,
-                effective_dopant_concentration=1e16,
-                append_chempots=True,
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            assert formal_chempots == single_chempot_dict
+            _check_output_concentrations(solver, result)
 
             # quick test for anneal at 1400 K with no eff dopant:
             result = solver.optimise(
@@ -1560,18 +1536,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 tolerance=0.05,
                 n_points=5,
             )
-            expected_concentrations = solver.pseudo_equilibrium_solve(
-                annealing_temperature=1400,
-                quenched_temperature=150,
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                append_chempots=True,
-            )
-            if min_max == "max":  # this doesn't actually occur at the Te-rich limit
-                # e.g. see SK Thesis Fig. 6.18 (though without eff dopant conc, but similar behaviour)
-                assert not result.iloc[0].equals(expected_concentrations.iloc[0])
-            else:
-                pd.testing.assert_frame_equal(result, expected_concentrations)
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            _check_output_concentrations(solver, result)
+
+            # doesn't actually occur at the Te-rich limit for max quenched holes:
+            # e.g. see SK Thesis Fig. 6.18 (though without eff dopant conc, but similar behaviour)
+            assert (formal_chempots == single_chempot_dict) == (min_max != "max")
 
     @parameterize_backend()
     def test_optimise_defect(self, backend):
@@ -1607,12 +1578,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert np.isclose(formal_chempots["Sb"], -0.416, atol=1e-3)
             assert np.isclose(formal_chempots["S"], -0.139, atol=1e-3)
 
-            expected_concentrations = solver._solve(
-                single_chempot_dict=formal_chempots,
-                append_chempots=True,
-                **{temp_arg_name: 603},
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            _check_output_concentrations(solver, result)
 
             # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
             result = solver.optimise(
@@ -1626,6 +1592,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
                 for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
             )
+            _check_output_concentrations(solver, result)
 
     @parameterize_backend()
     def test_optimise_multiple_defects(self, backend):
@@ -1661,12 +1628,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert np.isclose(formal_chempots["Sb"], -0.277, atol=1e-3)
             assert np.isclose(formal_chempots["S"], -0.231, atol=1e-3)
 
-            expected_concentrations = solver._solve(
-                single_chempot_dict=formal_chempots,
-                append_chempots=True,
-                **{temp_arg_name: 603},
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            _check_output_concentrations(solver, result)
 
             # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
             with patch("builtins.print") as mock_print:
@@ -1686,6 +1648,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
                 for el_key in single_chempot_dict
             )
+            _check_output_concentrations(solver, result)
 
     @parameterize_backend()
     def test_optimise_fermi_level(self, backend):
@@ -1733,12 +1696,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
             assert np.isclose(formal_chempots["Cd"], -1.05 if min_max == "min" else 0, atol=1e-2)
 
-            expected_concentrations = solver._solve(
-                single_chempot_dict=formal_chempots,
-                append_chempots=True,
-                annealing_temperature=973,  # SK Thesis Fig. 6.17
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            _check_output_concentrations(solver, result)  # SK Thesis Fig. 6.17
 
     @parameterize_backend()
     def test_optimise_chempot(self, backend):
@@ -1767,12 +1725,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 for el_key in single_chempot_dict
             )
 
-            expected_concentrations = solver._solve(
-                single_chempot_dict=formal_chempots,
-                append_chempots=True,
-                annealing_temperature=973,
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            _check_output_concentrations(solver, result)
 
     @parameterize_backend()
     def test_optimise_invalid_target(self, backend):
@@ -1886,6 +1839,27 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert not w
 
 
+def _check_output_concentrations(solver, result):
+    row = result.iloc[0]  # same parameters for each concentration row from ``optimise()`` method
+    kwargs = {
+        "single_chempot_dict": {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+    }
+    if "Annealing Temperature" in row.index:
+        kwargs["annealing_temperature"] = row["Annealing Temperature"]
+        kwargs["quenched_temperature"] = row["Quenched Temperature"]
+    else:
+        kwargs["temperature"] = row["Temperature"]
+    if "Dopant (cm^-3)" in row.index:
+        kwargs["effective_dopant_concentration"] = row["Dopant (cm^-3)"]
+
+    expected_concentrations = solver._solve(
+        **kwargs,
+        append_chempots=True,
+    )
+    print(f"Comparing:\n{result}\nto\n{expected_concentrations}\nwith kwargs: {kwargs}")
+    pd.testing.assert_frame_equal(result, expected_concentrations, check_dtype=False)
+
+
 # TODO: Test free_defects with substring matching (and fixed_defects later when supported)
 # TODO: Use plots in FermiSolver tutorial as quick test cases here
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
@@ -1918,7 +1892,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
-    # TODO: Fold in duplicate df comparison code
     @parameterize_backend()
     def test_optimise_maximize_electrons(self, backend):
         """
@@ -1948,13 +1921,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             for el_key in single_chempot_dict
         )
 
-        expected_concentrations = solver._solve(
-            single_chempot_dict=formal_chempots,
-            append_chempots=True,
-            annealing_temperature=800,
-            effective_dopant_concentration=1e16,
-        )
-        pd.testing.assert_frame_equal(result, expected_concentrations)
+        _check_output_concentrations(solver, result)
 
     @parameterize_backend()
     def test_optimise_minimize_holes(self, backend):
@@ -1982,13 +1949,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             for el_key in single_chempot_dict
         )
 
-        expected_concentrations = solver._solve(
-            single_chempot_dict=formal_chempots,
-            append_chempots=True,
-            annealing_temperature=800,
-            effective_dopant_concentration=1e16,
-        )
-        pd.testing.assert_frame_equal(result, expected_concentrations)
+        _check_output_concentrations(solver, result)
 
     @parameterize_backend()
     def test_optimise_defect_3D_non_limiting_chempot(self, backend):
@@ -2035,12 +1996,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             assert np.isclose(formal_chempots["Se"], -0.532, atol=1e-3)
             assert np.isclose(formal_chempots["Si"], -0.530, atol=1e-3)
 
-            expected_concentrations = solver._solve(
-                single_chempot_dict=formal_chempots,
-                append_chempots=True,
-                **{temp_arg_name: 1000},
-            )
-            pd.testing.assert_frame_equal(result, expected_concentrations)
+            _check_output_concentrations(solver, result)
 
             # test that when v_Cu is included, the extremum _is_ at a limiting chempot:
             w_v_Cu_solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
@@ -2068,6 +2024,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                     np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
                     for el_key in single_chempot_dict
                 )
+                _check_output_concentrations(solver, result)
 
     @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png")
     def test_plot_scan_chemical_potential_grid(self, backend="doped"):
