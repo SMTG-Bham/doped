@@ -998,7 +998,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "interpolate_chempots": {"limits": ["Cd-rich", "Te-rich"]},
             "scan_chempots": {},
             "scan_chemical_potential_grid": {},
-            "min_max_X": {"target": "Electrons (cm^-3)"},
+            "optimise": {"target": "Electrons (cm^-3)"},
         }.items():
             with pytest.raises(ValueError) as exc:
                 getattr(solver, func)(
@@ -1042,7 +1042,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     # Note that the following methods use the ``self.defect_thermodynamics.chempots`` by default,
     # and so do not throw an error if no chempots are provided:
-    # scan_chempots, scan_chemical_potential_grid, min_max_X
+    # scan_chempots, scan_chemical_potential_grid, optimise
 
     @parameterize_backend()
     def test_scan_chemical_potential_grid_non_2D_data(self, backend):
@@ -1352,14 +1352,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
     @parameterize_backend()
-    def test_min_max_X_electrons(self, backend):
+    def test_optimise_electrons(self, backend):
         """
-        Test ``min_max_X`` method to min/max electron concentration.
+        Test ``optimise`` method to min/max electron concentration.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(
+                result = solver.optimise(
                     target="Electrons (cm^-3)",
                     min_or_max=min_max,
                     annealing_temperature=800,
@@ -1374,7 +1374,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
             assert result.equals(
-                solver.min_max_X(
+                solver.optimise(
                     target="e",  # target as column substring also fine
                     min_or_max=min_max,
                     annealing_temperature=800,
@@ -1398,7 +1398,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
             # quick test for anneal at 1400 K with no eff dopant:
-            result = solver.min_max_X(
+            result = solver.optimise(
                 target="Electrons (cm^-3)",
                 min_or_max=min_max,
                 annealing_temperature=1400,
@@ -1419,9 +1419,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_min_max_X_electrons_non_limit_extremum(self, backend):
+    def test_optimise_electrons_non_limit_extremum(self, backend):
         """
-        Test ``min_max_X`` method for a binary system (CdTe) where the extremum
+        Test ``optimise`` method for a binary system (CdTe) where the extremum
         occurs at an internal chemical potential point, not at a limiting
         chemical potential point.
         """
@@ -1430,7 +1430,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         rtol = 0.1
         known_min_e = 1.50946e-23  # when using interpolate_chempots with 100 n_points
-        result = solver.min_max_X(
+        result = solver.optimise(
             target="Electrons (cm^-3)",
             min_or_max="min",
             annealing_temperature=1400,
@@ -1440,7 +1440,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )  # requires 3 iterations for convergence within tolerance
         assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=rtol)
 
-        result = solver.min_max_X(
+        result = solver.optimise(
             target="Electrons (cm^-3)",
             min_or_max="min",
             annealing_temperature=1400,
@@ -1464,14 +1464,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_min_max_X_holes(self, backend):
+    def test_optimise_holes(self, backend):
         """
-        Test ``min_max_X`` method to min/max hole concentration.
+        Test ``optimise`` method to min/max hole concentration.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         for min_max in ["min", "max"]:
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(
+                result = solver.optimise(
                     target="Holes (cm^-3)",
                     min_or_max=min_max,
                     annealing_temperature=800,
@@ -1499,7 +1499,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
             # quick test for anneal at 1400 K with no eff dopant:
-            result = solver.min_max_X(
+            result = solver.optimise(
                 target="Holes (cm^-3)",
                 min_or_max=min_max,
                 annealing_temperature=1400,
@@ -1521,9 +1521,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_min_max_X_defect(self, backend):
+    def test_optimise_defect(self, backend):
         """
-        Test ``min_max_X`` method to min/max a defect concentration.
+        Test ``optimise`` method to min/max a defect concentration.
 
         Here we use the somewhat-odd example of V_S in Sb2S3, where
         the concentration is (just about) minimised for an intermediate
@@ -1535,7 +1535,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for annealing in [True, False]:
             temp_arg_name = "annealing_temperature" if annealing else "temperature"
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(
+                result = solver.optimise(
                     target="V_S_3",  # highest concentration V_S
                     min_or_max="min",
                     **{temp_arg_name: 603},
@@ -1562,7 +1562,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
             # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
-            result = solver.min_max_X(
+            result = solver.optimise(
                 "S_Sb_1",
                 min_or_max="max",
                 **{temp_arg_name: 603},
@@ -1575,9 +1575,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
     @parameterize_backend()
-    def test_min_max_X_multiple_defects(self, backend):
+    def test_optimise_multiple_defects(self, backend):
         """
-        Test ``min_max_X`` method to min/max a defect concentration, where now
+        Test ``optimise`` method to min/max a defect concentration, where now
         we use a defect name substring to match multiple defects.
 
         Here we use the vacanies in Sb2S3 as an example case; see
@@ -1587,7 +1587,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for annealing in [True, False]:
             temp_arg_name = "annealing_temperature" if annealing else "temperature"
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(
+                result = solver.optimise(
                     target="V_S",  # V_S and V_Sb (renamed defect folders, not default doped names)
                     min_or_max="min",
                     **{temp_arg_name: 603},
@@ -1617,7 +1617,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
             # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(
+                result = solver.optimise(
                     "S_Sb",  # less ambiguity this time
                     min_or_max="max",
                     **{temp_arg_name: 603},
@@ -1635,9 +1635,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
     @parameterize_backend()
-    def test_min_max_X_fermi_level(self, backend):
+    def test_optimise_fermi_level(self, backend):
         """
-        Test ``min_max_X`` method to min/max the Fermi level.
+        Test ``optimise`` method to min/max the Fermi level.
 
         Here we use CdTe as an example, where the most p-type Fermi level upon
         quenching is actually not at the Te-rich limit (but close); see SK
@@ -1648,7 +1648,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for min_max in ["min", "max"]:
             print(f"Testing {min_max}imising Fermi level...")
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(
+                result = solver.optimise(
                     target="Fermi Level",
                     min_or_max=min_max,
                     annealing_temperature=973,  # SK Thesis Fig. 6.17
@@ -1658,7 +1658,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 f"Level']..."
             )
             assert result.equals(
-                solver.min_max_X(
+                solver.optimise(
                     target="fermi",  # target as column substring also fine
                     min_or_max=min_max,
                     annealing_temperature=973,  # SK Thesis Fig. 6.17
@@ -1688,9 +1688,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_min_max_X_chempot(self, backend):
+    def test_optimise_chempot(self, backend):
         """
-        Test ``min_max_X`` method to min/max a chemical potential.
+        Test ``optimise`` method to min/max a chemical potential.
 
         Usually not a desired usage, but could be a handy convenience method in
         some cases.
@@ -1699,7 +1699,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for min_max in ["min", "max"]:
             print(f"Testing {min_max}imising chemical potential...")
             with patch("builtins.print") as mock_print:
-                result = solver.min_max_X(target="μ_Te", min_or_max=min_max, annealing_temperature=973)
+                result = solver.optimise(target="μ_Te", min_or_max=min_max, annealing_temperature=973)
             mock_print.assert_called_once_with(
                 f"Searching for chemical potentials which {min_max}imise the target column: ['μ_Te']..."
             )
@@ -1722,34 +1722,34 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
-    def test_min_max_X_invalid_target(self, backend):
+    def test_optimise_invalid_target(self, backend):
         """
-        Test ``min_max_X`` method error with an invalid input target.
+        Test ``optimise`` method error with an invalid input target.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with pytest.raises(ValueError) as exc:
-            solver.min_max_X(target="WTF?")
+            solver.optimise(target="WTF?")
         assert (
             "Target 'WTF?' not found in results DataFrame! Must be a column or defect name/substring! "
             "See docstring for more info."
         ) in str(exc.value)
 
     @parameterize_backend()
-    def test_min_max_X_multiple_column_matches(self, backend):
+    def test_optimise_multiple_column_matches(self, backend):
         """
-        Test ``min_max_X`` method error with an input target which matches
+        Test ``optimise`` method error with an input target which matches
         multiple columns.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with warnings.catch_warnings(record=True) as w:
-            solver.min_max_X(target="cm^-3")
+            solver.optimise(target="cm^-3")
         print([str(warning.message) for warning in w])  # for debugging
         assert (
             "Multiple columns with the name 'cm^-3' found in the results DataFrame! Choosing the first "
             "match"
         ) in str(w[-1].message)
 
-    # TODO: Add explicit type check for `min_max_X` functions, like:
+    # TODO: Add explicit type check for `optimise` functions, like:
     # from typing import Callable
     #
     # # Define a callable signature
@@ -1773,7 +1773,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     #
     #
     # # Example functions adhering to the same signature
-    # def _min_max_X_line(
+    # def _optimise_line(
     #         target: float,
     #         min_or_max: str,
     #         chempots: dict,
@@ -1791,7 +1791,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     #     return 0.0
     #
     #
-    # def _min_max_X_grid(
+    # def _optimise_grid(
     #         target: float,
     #         min_or_max: str,
     #         chempots: dict,
@@ -1810,8 +1810,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     #
     #
     # # Assign functions to the Callable type to enforce signature matching
-    # func_line: MinMaxCall = _min_max_X_line
-    # func_grid: MinMaxCall = _min_max_X_grid
+    # func_line: MinMaxCall = _optimise_line
+    # func_grid: MinMaxCall = _optimise_grid
     #
     # # Now you can use mypy to ensure both functions' signatures match the `MinMaxCall` type.
 
@@ -1924,13 +1924,13 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
 
     # TODO: Marker for progress in fixing these tests
     @parameterize_backend()
-    def test_min_max_X_maximize_electrons(self, backend):
+    def test_optimise_maximize_electrons(self, backend):
         """
-        Test ``min_max_X`` method to maximize electron concentration.
+        Test ``optimise`` method to maximize electron concentration.
         """
         # TODO: Would be good to test this for a >=3D case where the extremum occurs not at a boundary
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        result = solver.min_max_X(
+        result = solver.optimise(
             target="Electrons (cm^-3)",
             min_or_max="max",
             annealing_temperature=800,
@@ -1943,12 +1943,12 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         assert "Electrons (cm^-3)" in result.columns
 
     @parameterize_backend()
-    def test_min_max_X_minimize_holes(self, backend):
+    def test_optimise_minimize_holes(self, backend):
         """
-        Test ``min_max_X`` method to minimize hole concentration.
+        Test ``optimise`` method to minimize hole concentration.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        solver.min_max_X(
+        solver.optimise(
             target="Holes (cm^-3)",
             min_or_max="min",
             annealing_temperature=800,
