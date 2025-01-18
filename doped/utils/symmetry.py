@@ -1932,21 +1932,32 @@ def _check_relaxed_defect_symmetry_determination(
             bulk_symm_ops = get_sga(bulk_supercell).get_symmetry_operations()
         else:
             bulk_symm_ops = None
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_supercell_bulk_site_coords,
-            bulk_supercell,
-            symm_ops=bulk_symm_ops,
-            symprec=symprec,
-            dist_tol=symprec,
-            species=(
-                defect_entry.defect.site.species_string
-                if defect_entry.defect.defect_type == DefectType.Interstitial
-                else "X"
-            ),
-        )
-        bulk_spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
-        if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
+        match = False
+        # allow some variation in dist_tol as this can be a little sensitive and not always perfectly
+        # mappable to symprec:
+        for trial_dist_tol in [symprec, symprec * 0.85, symprec * 1.15]:
+            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+                defect_supercell_bulk_site_coords,
+                bulk_supercell,
+                symm_ops=bulk_symm_ops,
+                symprec=symprec,
+                dist_tol=trial_dist_tol,
+                species=(
+                    defect_entry.defect.site.species_string
+                    if defect_entry.defect.defect_type == DefectType.Interstitial
+                    else "X"
+                ),
+            )
+            bulk_spglib_point_group_symbol = schoenflies_from_hermann(
+                symm_dataset.site_symmetry_symbols[-1]
+            )
+
+            if bulk_spglib_point_group_symbol == unrelaxed_spglib_point_group_symbol:
+                match = True
+                break
+
+        if not match:
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
