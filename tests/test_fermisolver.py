@@ -186,13 +186,14 @@ def parameterize_backend():
     return decorator
 
 
-def check_concentrations_df(solver, concentrations):
+def check_concentrations_df(solver, concentrations, free_defects=None):
     """
     Convenience function to test that the defect concentrations in a given
     ``DataFrame`` match the corresponding Fermi levels and chemical potentials.
 
     Note: Will need to update when testing ``free_defects``, ``fixed_defects``.
     """
+    free_defects = free_defects or []
     annealing = "Annealing Temperature" in concentrations.columns
     formation_energy = None
 
@@ -224,7 +225,10 @@ def check_concentrations_df(solver, concentrations):
 
         # higher rtol required with large temperatures, concentrations more sensitive to rounded numbers:
         rtol = 1e-3 * (np.exp(temperature / 300))
-        assert np.isclose(total_concentration, row["Concentration (cm^-3)"], rtol=rtol)
+        if defect in free_defects:
+            assert row["Concentration (cm^-3)"] < total_concentration
+        else:
+            assert np.isclose(total_concentration, row["Concentration (cm^-3)"], rtol=rtol)
 
 
 # TODO: Add actual tests for fixed_defects, free_defects and fix_charge_states
@@ -514,7 +518,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test ``_get_fermi_level_and_carriers`` returns correct values for
         ``doped`` backend.
 
-        This method is only used for the doped backend.
+        This method is only used for the ``doped`` backend.
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
         fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
@@ -977,6 +981,53 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             concentrations_800K["Concentration (cm^-3)"],
             rtol=1e-3,
         )  # also checks the index and ordering
+
+    @parameterize_backend()
+    def test_scan_temperature_pseudo_equilibrium_free_defects(self, backend):
+        """
+        Test ``scan_temperature`` method under pseudo-equilibrium conditions,
+        using the ``free_defects`` parameter.
+
+        Note that here we use the ``free_defects`` parameter which is currently
+        only supported by the ``py-sc-fermi`` backend, but this is fine for
+        both initial backends, as we automatically switch to the ``py-sc-fermi``
+        backend if required (and ``py-sc-fermi`` installed).
+        """
+        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
+        annealing_temperatures = [800, 900]
+        quenched_temperatures = [300, 350]
+
+        with warnings.catch_warnings(record=True) as w:
+            concentrations = solver.scan_temperature(
+                annealing_temperature_range=annealing_temperatures,
+                quenched_temperature_range=quenched_temperatures,
+                chempots=single_chempot_dict,
+                el_refs=el_refs,
+                free_defects=["v_Cd"],
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+
+        assert isinstance(concentrations, pd.DataFrame)
+        assert len(concentrations) > 0
+        assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
+        assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
+
+        # check concentrations match Fermi level and chemical potentials:
+        check_concentrations_df(solver, concentrations, free_defects=["v_Cd"])
+
+        # test Fermi level, carrier and defect concentrations against known values
+        concentrations_800K = concentrations[
+            (concentrations["Annealing Temperature"] == 800)
+            & (concentrations["Quenched Temperature"] == 300)
+        ]
+        assert not np.isclose(  # changed from before
+            concentrations_800K["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+        )
+        assert np.isclose(
+            concentrations_800K["Fermi Level"].iloc[0], 0.936, atol=1e-3
+        )  # much more n-type now, with v_Cd as free defect
 
     @parameterize_backend()
     def test_scan_func_error_catch(self, backend):
