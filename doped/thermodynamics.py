@@ -5638,7 +5638,7 @@ class FermiSolver(MSONable):
         defect/carrier concentrations _at the given chemical potentials_
         (and not at any points between them), whereas
         ``scan_chemical_potential_grid``, ``interpolate_chempots`` and
-        ``min_max_X`` scan over the grid/points between chemical potential
+        ``optimise`` scan over the grid/points between chemical potential
         limits, which may be desired.
 
         If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
@@ -5948,12 +5948,12 @@ class FermiSolver(MSONable):
             raise ValueError(
                 "Only one chemical potential limit is present in "
                 "`chempots`/`self.defect_thermodynamics.chempots`, which makes no sense for a chemical "
-                "potential grid scan (with `scan_chemical_potential_grid`/`min_max_X`/`scan_chempots`)!"
+                "potential grid scan (with `scan_chemical_potential_grid`/`optimise`/`scan_chempots`)!"
             )
 
         return chempots, el_refs
 
-    def min_max_X(
+    def optimise(
         self,
         target: str,
         min_or_max: str = "max",
@@ -6111,11 +6111,11 @@ class FermiSolver(MSONable):
         # TODO: When per-charge option added, test setting target to a defect species (with charge)
 
         if len(el_refs) == 2:
-            return self._min_max_X_line(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
+            return self._optimise_line(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
 
-        return self._min_max_X_grid(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
+        return self._optimise_grid(**kwargs)  # type: ignore  # (mypy fails to detect types, tested)
 
-    def _min_max_X_line(
+    def _optimise_line(
         self,
         target: str,
         min_or_max: str = "max",
@@ -6131,10 +6131,10 @@ class FermiSolver(MSONable):
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
-        ``min_max_X`` function for 1D chemical potential spaces (i.e. binary
+        ``optimise`` function for 1D chemical potential spaces (i.e. binary
         systems).
 
-        See the main ``min_max_X`` docstring for more details.
+        See the main ``optimise`` docstring for more details.
         """
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
 
@@ -6212,7 +6212,7 @@ class FermiSolver(MSONable):
         verbose: bool = False,
     ):
         """
-        Convenience method for use in the ``_min_max_X_...`` methods, which
+        Convenience method for use in the ``_optimise_...`` methods, which
         scans over a set of chemical potentials and compares the target value
         to a previous value, returning the new target dataframe, value and
         corresponding chemical potentials.
@@ -6224,7 +6224,7 @@ class FermiSolver(MSONable):
                 Whether to print information on identified target
                 rows/columns.
             *args:
-                All other arguments are the same as for the ``min_max_X`` method,
+                All other arguments are the same as for the ``optimise`` method,
                 see its docstring for more details.
 
         Returns:
@@ -6264,7 +6264,7 @@ class FermiSolver(MSONable):
 
         return target_df, current_value, target_chempot, converged
 
-    def _min_max_X_grid(
+    def _optimise_grid(
         self,
         target: str,
         min_or_max: str = "max",
@@ -6280,10 +6280,10 @@ class FermiSolver(MSONable):
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
-        ``min_max_X`` function for >=2D chemical potential spaces (i.e. non-
+        ``optimise`` function for >=2D chemical potential spaces (i.e. non-
         binary/elementary systems).
 
-        See the main ``min_max_X`` docstring for more details.
+        See the main ``optimise`` docstring for more details.
         """
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         starting_grid = ChemicalPotentialGrid(chempots)
@@ -6771,7 +6771,7 @@ def _get_min_max_target_values(
     potentials.
 
     Mainly intended for internal ``doped`` usage in the ``FermiSolver``
-    ``min_max_X`` method.
+    ``optimise`` method.
 
     Args:
         results_df (pd.DataFrame):
