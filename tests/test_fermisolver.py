@@ -24,6 +24,7 @@ from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
 
 from doped.thermodynamics import (
+    DefectThermodynamics,
     FermiSolver,
     _get_py_sc_fermi_dos_from_fermi_dos,
     get_e_h_concs,
@@ -1837,13 +1838,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 # TODO: Use plots in FermiSolver tutorial as quick test cases here
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     """
-    Tests for ``FermiSolver`` initialization with loaded data, for a ternary
-    system.
+    Tests for ``FermiSolver`` with loaded data, for a ternary system (Cu2SiSe3
+    in this case).
     """
 
     @classmethod
     def setUpClass(cls):
-        cls.Cu2SiSe3_thermo = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_thermo.json")
+        cls.Cu2SiSe3_thermo = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_thermo.json"))
         cls.Cu2SiSe3_fermi_dos = get_fermi_dos(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/vasprun.xml.gz"))
         cls.Cu2SiSe3_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
 
@@ -1857,24 +1858,43 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         self.solver_py_sc_fermi._DOS = MagicMock()
 
     # TODO: Marker for progress in fixing these tests
+    # TODO: Fold in duplicate df comparison code
     @parameterize_backend()
     def test_optimise_maximize_electrons(self, backend):
         """
         Test ``optimise`` method to maximize electron concentration.
         """
-        # TODO: Would be good to test this for a >=3D case where the extremum occurs not at a boundary
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        result = solver.optimise(
-            target="Electrons (cm^-3)",
-            min_or_max="max",
+        with patch("builtins.print") as mock_print:
+            result = solver.optimise(
+                target="Electrons (cm^-3)",
+                min_or_max="max",
+                annealing_temperature=800,
+                quenched_temperature=300,
+                tolerance=0.05,
+                n_points=5,
+                effective_dopant_concentration=1e16,
+            )
+        mock_print.assert_called_once_with(
+            "Searching for chemical potentials which maximise the target column: ['Electrons (cm^-3)']..."
+        )
+        row = result.iloc[0]
+        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+        # corresponds to Cu-poor limit:
+        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-poor")
+        assert all(
+            np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
+            for el_key in single_chempot_dict
+        )
+
+        expected_concentrations = solver._solve(
+            single_chempot_dict=formal_chempots,
+            append_chempots=True,
             annealing_temperature=800,
-            quenched_temperature=300,
-            tolerance=0.05,
-            n_points=5,
             effective_dopant_concentration=1e16,
         )
-        assert len(result) > 0
-        assert "Electrons (cm^-3)" in result.columns
+        pd.testing.assert_frame_equal(result, expected_concentrations)
 
     @parameterize_backend()
     def test_optimise_minimize_holes(self, backend):
@@ -1891,6 +1911,91 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             n_points=5,
             effective_dopant_concentration=1e16,
         )  # TODO: Actually test outputs here
+
+    @parameterize_backend()
+    def test_optimise_defect_3D_non_limiting_chempot(self, backend):
+        """
+        Test ``optimise`` method for a ternary system (Cu2SiSe3) where the
+        extremum occurs at an internal chemical potential point, not at a
+        limiting chemical potential point.
+
+        For Cu2SiSe3, the defect/carrier concentrations are dominated
+        by v_Cu, which means that extrema for all defects/carriers/Fermi
+        levels basically always occur at limiting chemical potentials.
+        If we create a 'fake' defect thermo with `v_Cu` removed however,
+        we then get a minimum `Cu_i` concentration for chemical potentials
+        along the tangent line between two of the limiting chemical
+        potentials, which is tested here.
+        """
+        fake_no_v_Cu_Cu2SiSe3_thermo = DefectThermodynamics(
+            [
+                entry
+                for name, entry in self.Cu2SiSe3_thermo.defect_entries.items()
+                if not name.startswith("v_Cu")
+            ],
+            chempots=self.Cu2SiSe3_thermo.chempots,
+        )
+
+        solver = FermiSolver(
+            fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
+        )
+
+        for annealing in [True, False]:
+            temp_arg_name = "annealing_temperature" if annealing else "temperature"
+            with patch("builtins.print") as mock_print:
+                result = solver.optimise(
+                    target="Int_Cu",  # older doped names
+                    min_or_max="min",
+                    **{temp_arg_name: 1000},
+                )
+            mock_print.assert_called_once_with(
+                "Searching for chemical potentials which minimise the target defect(s): ['Int_Cu']..."
+            )
+            row = result.iloc[0]
+            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+
+            # confirm that formal_chempots does not correspond to a X-rich limit:
+            for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+                for el_key in limit:
+                    assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+
+            assert np.isclose(formal_chempots["Cu"], -0.197, atol=1e-3)
+            assert np.isclose(formal_chempots["Se"], -0.532, atol=1e-3)
+            assert np.isclose(formal_chempots["Si"], -0.530, atol=1e-3)
+
+            expected_concentrations = solver._solve(
+                single_chempot_dict=formal_chempots,
+                append_chempots=True,
+                **{temp_arg_name: 1000},
+            )
+            pd.testing.assert_frame_equal(result, expected_concentrations)
+
+            # test that when v_Cu is included, the extremum _is_ at a limiting chempot:
+            w_v_Cu_solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+            for min_max in ["min", "max"]:
+                print(f"Testing {min_max}imising chemical potential...")
+                with patch("builtins.print") as mock_print:
+                    result = w_v_Cu_solver.optimise(
+                        "Int_Cu",
+                        min_or_max=min_max,
+                        **{temp_arg_name: 1000},
+                    )
+                mock_print.assert_called_once_with(
+                    f"Searching for chemical potentials which {min_max}imise the target defect(s): ["
+                    f"'Int_Cu']..."
+                )
+                row = result.iloc[0]
+                formal_chempots = {
+                    mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col
+                }
+
+                # corresponds to Cu-rich/poor limits:
+                limit = "Cu-rich" if min_max == "max" else "Cu-poor"
+                single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+                assert all(
+                    np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
+                    for el_key in single_chempot_dict
+                )
 
     @parameterize_backend()
     def test_scan_chemical_potential_grid(self, backend):
