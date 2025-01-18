@@ -17,11 +17,13 @@ from functools import wraps
 from importlib.util import find_spec
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
+from test_thermodynamics import STYLE, custom_mpl_image_compare, data_dir
 
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -34,7 +36,6 @@ from doped.thermodynamics import (
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
 module_path = os.path.dirname(os.path.abspath(__file__))
 EXAMPLE_DIR = os.path.join(module_path, "../examples")
-DATA_DIR = os.path.join(module_path, "data")
 
 
 class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
@@ -1784,7 +1785,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert "elemental_refs" in parsed_chempots
 
         # test error with single-chempot-limit system:
-        Se_pnict_thermo = loadfn(os.path.join(DATA_DIR, "Se_Pnict_Thermo.json.gz"))
+        Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
         solver = FermiSolver(
             Se_pnict_thermo, bulk_dos=self.CdTe_fermi_dos, skip_vbm_check=True, backend=backend
         )
@@ -1848,6 +1849,15 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         cls.Cu2SiSe3_fermi_dos = get_fermi_dos(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/vasprun.xml.gz"))
         cls.Cu2SiSe3_thermo.chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
 
+        cls.fake_no_v_Cu_Cu2SiSe3_thermo = DefectThermodynamics(
+            [
+                entry
+                for name, entry in cls.Cu2SiSe3_thermo.defect_entries.items()
+                if not name.startswith("v_Cu")
+            ],
+            chempots=cls.Cu2SiSe3_thermo.chempots,
+        )
+
     def setUp(self):
         self.Cu2SiSe3_thermo.bulk_dos = self.Cu2SiSe3_fermi_dos
         self.solver_py_sc_fermi = FermiSolver(
@@ -1857,7 +1867,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         # Mock the _DOS attribute for py-sc-fermi backend if needed
         self.solver_py_sc_fermi._DOS = MagicMock()
 
-    # TODO: Marker for progress in fixing these tests
     # TODO: Fold in duplicate df comparison code
     @parameterize_backend()
     def test_optimise_maximize_electrons(self, backend):
@@ -1944,18 +1953,12 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         we then get a minimum `Cu_i` concentration for chemical potentials
         along the tangent line between two of the limiting chemical
         potentials, which is tested here.
-        """
-        fake_no_v_Cu_Cu2SiSe3_thermo = DefectThermodynamics(
-            [
-                entry
-                for name, entry in self.Cu2SiSe3_thermo.defect_entries.items()
-                if not name.startswith("v_Cu")
-            ],
-            chempots=self.Cu2SiSe3_thermo.chempots,
-        )
 
+        See ``test_plot_scan_chemical_potential_grid`` for visualisation
+        confirming minimum not at limiting chemical potentials.
+        """
         solver = FermiSolver(
-            fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
+            self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
         )
 
         for annealing in [True, False]:
@@ -2015,11 +2018,50 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                     for el_key in single_chempot_dict
                 )
 
+    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png")
+    def test_plot_scan_chemical_potential_grid(self, backend="doped"):
+        """
+        Test ``scan_chemical_potential_grid`` method, by plotting the output
+        with the ``fake_no_v_Cu_Cu2SiSe3_thermo`` system.
+
+        Note this code takes >7 mins with with the ``py-sc-fermi``
+        backend, but only 45 seconds with ``doped`` backend.
+        """
+        solver = FermiSolver(
+            self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
+        )
+        data = solver.scan_chemical_potential_grid(
+            n_points=50,  # n_points in each dimension when scanning over the chemical potential grid
+            annealing_temperature=1000,  # the temperature at which to anneal the system
+        )
+
+        from matplotlib.colors import LogNorm
+
+        Cu_i_data = data.loc["Int_Cu"]
+        Cu_i_concs = Cu_i_data["Concentration (cm^-3)"]
+
+        plt.style.use(STYLE)
+        fig, ax = plt.subplots()
+        sc = ax.scatter(
+            Cu_i_data["μ_Se"],
+            Cu_i_data["μ_Cu"],
+            c=Cu_i_concs,
+            cmap="viridis",
+            norm=LogNorm(min(Cu_i_concs), min(Cu_i_concs) * 1.1),  # small range for better contrast
+        )
+        fig.colorbar(sc, ax=ax, label="Cu$_i$ Concentration (cm$^{-3}$)")
+        ax.set_xlabel("$\mu_{Se}$ (eV)")
+        ax.set_ylabel("$\mu_{Cu}$ (eV)")
+        return fig
+
     @parameterize_backend()
     def test_scan_chemical_potential_grid(self, backend):
         """
         Test ``scan_chemical_potential_grid`` method.
         """
+        # Note: Plotting tests are likely the easiest for testing the actual output of this function,
+        # as done in ``test_plot_scan_chemical_potential_grid``. This function is also implicitly tested
+        # via the ``optimise()`` tests
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         n_points = 5
         concentrations = solver.scan_chemical_potential_grid(
@@ -2038,8 +2080,8 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     def test_scan_chemical_potential_grid_wrong_chempots(self):
         """
         Test that ``ValueError`` is raised when no chempots are provided and
-        None are available in ``self.Cu2SiSe3_thermo``, or only a single limit
-        is provided.
+        ``None`` are available in ``self.Cu2SiSe3_thermo``, or only a single
+        limit is provided.
         """
         # Temporarily remove chempots from defect_thermodynamics
         solver = deepcopy(self.solver_doped)
