@@ -905,7 +905,7 @@ class DefectThermodynamics(MSONable):
             sorted_defect_entries = sorted(
                 grouped_defect_entries, key=lambda x: (-x.charge_state, x.get_ediff())
             )  # sort by charge (most positive first, following left-to-right order in formation energy
-            # diagrams), and then energy (for those of the same charge) for deterministic behaviour
+            # diagrams), and then energy (for those of the same charge) for ordering in output plots/dfs
 
             # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0 where E_fermi and E are

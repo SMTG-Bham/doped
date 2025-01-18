@@ -2024,7 +2024,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                     np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
                     for el_key in single_chempot_dict
                 )
-                _check_output_concentrations(solver, result)
+                _check_output_concentrations(w_v_Cu_solver, result)
 
     @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png")
     def test_plot_scan_chemical_potential_grid(self, backend="doped"):

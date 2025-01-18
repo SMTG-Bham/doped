@@ -6,7 +6,6 @@ import collections
 import contextlib
 import warnings
 from dataclasses import dataclass, field
-from functools import reduce
 from multiprocessing import Process, SimpleQueue, current_process
 from typing import TYPE_CHECKING, Any, Optional, Union
 
@@ -918,7 +917,7 @@ class DefectEntry(thermo.DefectEntry):
                   limit in the ``chempots`` dict.
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor limit will be used (e.g. "Li-rich").
-                - A key in the ``(self.)chempots["limits"]`` dictionary.
+                - A key in the ``chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in the
                 ``doped`` format (see chemical potentials tutorial).
@@ -1109,7 +1108,7 @@ class DefectEntry(thermo.DefectEntry):
                   limit in the ``chempots`` dict.
                 - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor limit will be used (e.g. "Li-rich").
-                - A key in the ``(self.)chempots["limits"]`` dictionary.
+                - A key in the ``chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in the
                 ``doped`` format (see chemical potentials tutorial).
@@ -1201,9 +1200,7 @@ class DefectEntry(thermo.DefectEntry):
             )
 
             degeneracy_factor = (
-                reduce(lambda x, y: x * y, self.degeneracy_factors.values())
-                if self.degeneracy_factors
-                else 1
+                np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
             )
             if per_site:
                 return exp_factor * degeneracy_factor
