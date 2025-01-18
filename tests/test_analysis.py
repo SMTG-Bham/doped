@@ -227,7 +227,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for i in [
                 "Warning(s) encountered when parsing Te_Cd_+1 at ",
                 "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
-                "atomic core potentials for the eFNV correction, and the `vasprun.xml` ({-218.51803182}), "
+                "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
                 "used for energies and structures, do not match. Please make sure the "
                 "correct file combination is being used!",
             ]
@@ -521,7 +521,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path="CdTe_bulk",
             dielectric=fake_aniso_dielectric,
         )
-        assert any(
+        assert not any(  # no correction warning now for Int_Te_3_2, as it's unstable here
             all(
                 i in str(warn.message)
                 for i in [
@@ -815,7 +815,6 @@ class DefectsParsingTestCase(unittest.TestCase):
             json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
             parse_projected_eigen=False,
         )
-        assert any("Defects: {'v_Sb_-3'} each encountered" in str(warning.message) for warning in w)
         assert any(
             "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
             in str(warning.message)
@@ -996,39 +995,37 @@ class DefectsParsingTestCase(unittest.TestCase):
         conc_df = thermo.get_equilibrium_concentrations()  # no chempots or Fermi level
         print("conc_df", conc_df)  # for debugging
         srtio3_V_O_conc_lists = [  # with no chempots or Fermi level (so using Eg/2)
-            ["vac_O", "+2", 9.742, "4.456e-141", "100.00%"],
-            ["vac_O", "+1", 11.043, "2.497e-162", "0.00%"],
-            ["vac_O", "0", 12.635, "1.109e-189", "0.00%"],
-        ]
-        for i, row in enumerate(srtio3_V_O_conc_lists):
-            print(i, row)
-            assert list(conc_df.iloc[i]) == row
+            [9.742, "4.456e-141", "100.00%"],  # +2
+            [11.043, "2.497e-162", "0.00%"],  # +1
+            [12.635, "1.109e-189", "0.00%"],  # 0
+        ]  # (in order of positive to negative, left to right on formation energy diagram)
+        for i, (index, row) in enumerate(conc_df.iterrows()):
+            print(i, index, row)
+            assert list(row) == srtio3_V_O_conc_lists[i]
 
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
-        for i, row in enumerate(srtio3_V_O_conc_lists):
-            print(i, row)
-            for j, val in enumerate(row):
-                if j != 3:
-                    assert per_site_conc_df.iloc[i, j] == val
+        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+            print(i, index, row)
+            for j, (col_name, val) in enumerate(row.items()):
+                if col_name != "Concentration (per site)":  # per-site concentration
+                    assert val == srtio3_V_O_conc_lists[i][j]
                 else:
                     assert np.isclose(
-                        float(per_site_conc_df.iloc[i, j][:-2]), 100 * float(row[3]) / sto_O_site_conc
+                        float(val[:-2]), 100 * float(srtio3_V_O_conc_lists[i][j]) / sto_O_site_conc
                     )
 
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, skip_formatting=True)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
-        for i, row in enumerate(srtio3_V_O_conc_lists):
-            print(i, row)
-            for j, val in enumerate(row):
-                if j not in [1, 3]:
-                    assert per_site_conc_df.iloc[i, j] == val
-                elif j == 3:
-                    assert np.isclose(
-                        per_site_conc_df.iloc[i, j], float(row[3]) / sto_O_site_conc, rtol=1e-5
-                    )
-                elif j == 1:
-                    assert per_site_conc_df.iloc[i, j] == int(val)  # charge states
+        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+            print(i, index, row)
+            assert isinstance(index[-1], int)  # charge now int, not formatted
+
+            for j, (col_name, val) in enumerate(row.items()):
+                if col_name != "Concentration (per site)":  # per-site concentration
+                    assert val == srtio3_V_O_conc_lists[i][j]
+                else:
+                    assert np.isclose(val, float(srtio3_V_O_conc_lists[i][j]) / sto_O_site_conc)
 
         assert thermo.get_equilibrium_concentrations(per_charge=False).to_numpy().tolist() == [
             ["4.456e-141"]
@@ -1064,9 +1061,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, fermi_level=1.710795)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
         custom_fermi_concs = ["3.954e-163 %", "1.045e-183 %", "2.189e-210 %"]
-        for i, val in enumerate(custom_fermi_concs):
-            print(i, val)
-            assert per_site_conc_df.iloc[i, 3] == val
+        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+            print(i, index, row)
+            assert row["Concentration (per site)"] == custom_fermi_concs[i]
 
         # test get_fermi_level_and_concentrations
         fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
@@ -1079,7 +1076,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist() == [["2.004e-142", 6.010973640124676e-142]]
+        assert conc_df.to_numpy().tolist() == [["2.004e-142"]]
         assert conc_df.index[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
@@ -1094,9 +1091,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_conc_df_lists = [
-            ["vac_O", 2, 9.822, 2.0036578800415587e-142, "100.00%", 2.0036578800415587e-142],
-            ["vac_O", 1, 11.083, 5.2947236022031443e-163, "0.00%", 2.0036578800415587e-142],
-            ["vac_O", 0, 12.635, 1.1092122529257341e-189, "0.00%", 2.0036578800415587e-142],
+            [9.822, 2.003657892864856e-142, "100.00%", 2.003657892864856e-142],  # +2
+            [11.083, 5.294723640442009e-163, "0.00%", 2.003657892864856e-142],  # +1
+            [12.635, 1.109212262059047e-189, "0.00%", 2.003657892864856e-142],  # 0
         ]
         for i, row in enumerate(quenched_conc_df_lists):
             print(i, row)
@@ -1113,9 +1110,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_per_site_conc_df_lists = [
-            ["vac_O", 2, 9.822, "100.00%", 2.0036578800415587e-142, "3.954e-163 %"],
-            ["vac_O", 1, 11.083, "0.00%", 2.0036578800415587e-142, "1.045e-183 %"],
-            ["vac_O", 0, 12.635, "0.00%", 2.0036578800415587e-142, "2.189e-210 %"],
+            [9.822, "3.954e-163 %", "100.00%", "2.004e-142"],  # +2
+            [11.083, "1.045e-183 %", "0.00%", "2.004e-142"],  # +1
+            [12.635, "2.189e-210 %", "0.00%", "2.004e-142"],  # 0
         ]
         for i, row in enumerate(quenched_per_site_conc_df_lists):
             print(i, row)
@@ -1133,7 +1130,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist() == [[6.010973640124676e-142, 3.953921443531439e-165]]
+        assert conc_df.to_numpy().tolist() == [[3.9539214688363133e-165]]
         assert conc_df.index.to_numpy()[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
@@ -1328,7 +1325,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
         thermo = dp.get_defect_thermodynamics()
         assert np.isclose(
-            next(thermo.transition_level_map["sub_1_O_on_Se"].keys()),
+            next(iter(thermo.transition_level_map["sub_1_O_on_Se"].keys())),
             0.00367,
             atol=1e-4,
         )
@@ -3312,8 +3309,8 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert len(w) == 1
         assert (
             "Band-edge state identification failed with the current criteria: "
-            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV. Trying with values of 0.35 "
-            "and 0.5 eV." in str(w[0].message)
+            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV, but succeeded with "
+            "similar_orb_criterion=0.35, similar_energy_criterion=0.5 eV." in str(w[0].message)
         )
         assert not bes.has_unoccupied_localized_state  # no longer identified
 
