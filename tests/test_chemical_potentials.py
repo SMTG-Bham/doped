@@ -10,12 +10,14 @@ from copy import deepcopy
 from functools import wraps
 from io import StringIO
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.core.structure import Structure
 from test_analysis import if_present_rm
+from test_plotting import custom_mpl_image_compare
 
 from doped import chemical_potentials
 from doped.utils.symmetry import get_primitive_structure
@@ -177,19 +179,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cdte_cp = chemical_potentials.CompetingPhases("CdTe", api_key=api_key)
         if len(api_key) != 32:
             assert [entry.data["doped_name"] for entry in cdte_cp.entries] == [
+                "CdTe_F-43m_EaH_0",
                 "Cd_P6_3/mmc_EaH_0",
                 "Te_P3_121_EaH_0",
                 "Te_P3_221_EaH_0",
                 "Cd_Fm-3m_EaH_0.001",
                 "Cd_R-3m_EaH_0.001",
+                "CdTe_P6_3mc_EaH_0.003",
+                "CdTe_Cmc2_1_EaH_0.006",
                 "Cd_P6_3/mmc_EaH_0.018",
                 "Te_C2/m_EaH_0.044",
                 "Te_Pm-3m_EaH_0.047",
                 "Te_Pmma_EaH_0.047",
                 "Te_Pmc2_1_EaH_0.049",
-                "CdTe_F-43m_EaH_0",
-                "CdTe_P6_3mc_EaH_0.003",
-                "CdTe_Cmc2_1_EaH_0.006",
             ]
         else:  # slightly different for new MP API, Te entries the same
             for i in [
@@ -474,10 +476,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 
         # names of intrinsic entries: ['Zr', 'O2', 'Zr3O', 'ZrO2']
         assert len(ex_cp.intrinsic_entries) == 4
-        assert ex_cp.intrinsic_entries[0].name == "Zr"
-        assert ex_cp.intrinsic_entries[1].name == "O2"
-        assert ex_cp.intrinsic_entries[2].name == "Zr3O"
-        assert ex_cp.intrinsic_entries[3].name == "ZrO2"
+        assert [entry.name for entry in ex_cp.intrinsic_entries] == self.zro2_entry_list[:4]
         assert all(
             chemical_potentials._get_e_above_hull(entry.data) == 0 for entry in ex_cp.intrinsic_entries
         )
@@ -639,6 +638,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
         cpa.from_vaspruns(path=self.zro2_path, subfolder="relax", csv_path=self.csv_path)
         assert len(cpa.elements) == 2
+        print([i["Formula"] for i in cpa.data])  # for debugging
         assert cpa.data[0]["Formula"] == "Zr"
         assert cpa.data[1]["Formula"] == "O2"
 
@@ -1035,6 +1035,39 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert np.isclose(min(self.grid.vertices["μ_Si"]), -1.708951, rtol=1e-5)
         assert np.isclose(min(self.grid.vertices["μ_Se"]), -0.758105, rtol=1e-5)
         assert len(grid_df) == 3886
+
+    @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
+    def test_Na2FePO4F_chempot_grid(self):
+        """
+        Test ``ChemicalPotentialGrid`` generation and plotting for a complex
+        quinary system (Na2FePO4F).
+        """
+        na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F")
+        na2fepo4f_doped_chempots = chemical_potentials.get_doped_chempots_from_entries(
+            na2fepo4f_cp.entries, "Na2FePO4F"
+        )
+        chempot_grid = chemical_potentials.ChemicalPotentialGrid(na2fepo4f_doped_chempots)
+        grid_df = chempot_grid.get_grid(100)
+
+        # get the average Fe and P chempots, then plot a heatmap plot of the others at these fixed values:
+        mean_mu_Fe = grid_df["μ_Fe"].mean()
+        mean_mu_P = grid_df["μ_P"].mean()
+
+        fixed_chempot_df = grid_df[
+            (np.isclose(grid_df["μ_Fe"], mean_mu_Fe, atol=0.05))
+            & (np.isclose(grid_df["μ_P"], mean_mu_P, atol=0.05))
+        ]
+
+        fig, ax = plt.subplots()
+        sc = ax.scatter(
+            fixed_chempot_df["μ_Na"], fixed_chempot_df["μ_O"], c=fixed_chempot_df["μ_F"], cmap="viridis"
+        )
+        fig.colorbar(sc, ax=ax, label="μ$_F$")
+        ax.set_xlabel("μ$_{Na}$")
+        ax.set_ylabel("μ$_{O}$")
+        return fig
+
+        # TODO: Use this as a plotting example in chemical potentials tutorial
 
 
 # TODO: Use Cs2SnBr6 competing phase energies csv in JOSS data folder and LiPS4 data for test cases with
