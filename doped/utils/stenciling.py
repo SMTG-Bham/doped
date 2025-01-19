@@ -785,7 +785,7 @@ def _get_candidate_supercell_sites(
 def _remove_overlapping_sites(
     candidate_sites_in_target: list[PeriodicSite],
     def_new_supercell_sites_to_check_in_target: list[PeriodicSite],
-    big_supercell_defect_coords: np.ndarray[float],
+    big_supercell_defect_coords: np.ndarray,
     bulk_min_bond_length: Optional[float] = None,
     pbar: tqdm = None,
 ) -> list[PeriodicSite]:

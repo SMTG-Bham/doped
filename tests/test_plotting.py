@@ -61,14 +61,19 @@ class DefectPlottingTestCase(unittest.TestCase):
         return self.CdTe_thermo.plot(self.CdTe_chempots, colormap="viridis")[1]
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
-    def test_plot_CdTe_multiple_figs(self):
+    def test_plot_CdTe_multiple_figs_no_chempot_table(self):
         # when limits not specified, plots all of them (second should be Te-rich here)
-        return self.CdTe_thermo.plot(self.CdTe_chempots)[1]
+        # chempot_table true by default with multiple figures, test setting to False
+        fig = self.CdTe_thermo.plot(self.CdTe_chempots, chempot_table=False)[1]
+        fig.gca().set_title("")  # remove the title by setting it to an empty string
+        return fig
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_plot_CdTe_Cd_rich(self):
         # when limits not specified, plots all of them (first should be Cd-rich here)
-        return self.CdTe_thermo.plot(self.CdTe_chempots)[0]
+        fig = self.CdTe_thermo.plot(self.CdTe_chempots)[0]
+        fig.gca().set_title("")  # remove the title by setting it to an empty string
+        return fig
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
     def test_plot_YTOS(self):
@@ -509,7 +514,9 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_Cd_rich.png")
     def test_default_CdTe_plot_Cd_rich(self):
-        return self.CdTe_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Cd-rich")
+        return self.CdTe_defect_thermo.plot(
+            chempots=self.CdTe_chempots, limit="Cd-rich", chempot_table=True
+        )
 
     @custom_mpl_image_compare(filename="neutral_v_O_plot.png")
     def test_V2O5_O_rich_plot(self):
@@ -676,6 +683,73 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert all(any(i in text for i in ["{C_{2}}}", "_{Se"]) for text in legend_txt)
 
         return fig
+
+    @custom_mpl_image_compare(filename="Se_ext_no_pnict_thermo_unstable_entries_True.png")
+    def test_unstable_entries_True(self):
+        """
+        Test plotting behaviour with non-pnictogen impurities in Se, with
+        ``unstable_entries=True`` (plot all entries regardless of
+        stability/shallowness).
+        """
+        return self.Se_ext_no_pnict_thermo.plot(unstable_entries=True)
+
+    @custom_mpl_image_compare(filename="Se_ext_no_pnict_thermo_unstable_entries_default.png")
+    def test_unstable_entries_default(self):
+        """
+        Test plotting behaviour with non-pnictogen impurities in Se, with
+        default ``unstable_entries`` ("not shallow").
+        """
+        return self.Se_ext_no_pnict_thermo.plot()  # unstable_entries="not shallow" by default
+
+    @custom_mpl_image_compare(filename="Se_ext_no_pnict_thermo_unstable_entries_default.png")
+    def test_unstable_entries_not_shallow(self):
+        """
+        Test plotting behaviour with non-pnictogen impurities in Se, with
+        ``unstable_entries="not shallow"`` (same as above, checking explicit
+        choice).
+        """
+        return self.Se_ext_no_pnict_thermo.plot(unstable_entries="not shallow")
+
+    @custom_mpl_image_compare(filename="Se_ext_no_pnict_thermo_unstable_entries_False.png")
+    def test_unstable_entries_False(self):
+        """
+        Test plotting behaviour with non-pnictogen impurities in Se, with
+        ``unstable_entries=False`` (no shallow within default tol, and no non
+        in-gap stable).
+        """
+        return self.Se_ext_no_pnict_thermo.plot(unstable_entries=False, ylim=(0, 2.5))
+
+    def test_unstable_entries_error(self):
+        """
+        Test error with ``unstable_entries="wrong input"``.
+        """
+        with pytest.raises(ValueError) as e:
+            self.Se_ext_no_pnict_thermo.plot(unstable_entries="wrong input")
+        assert (
+            "`unstable_entries` option must be either True, False, 'not shallow', not wrong input"
+            in str(e.value)
+        )
+
+    @custom_mpl_image_compare(
+        filename="Se_ext_no_pnict_thermo_unstable_entries_charge_stability_kwarg.png"
+    )
+    def test_unstable_entries_charge_stability_kwarg(self):
+        """
+        Test plotting behaviour with non-pnictogen impurities in Se, with
+        ``unstable_entries=False`` and ``charge_stability_tolerance=0.4``.
+        """
+        return self.Se_ext_no_pnict_thermo.plot(
+            unstable_entries=False, ylim=(0, 2.5), charge_stability_tolerance=0.4
+        )
+
+    @custom_mpl_image_compare(filename="Se_ext_no_pnict_thermo_unstable_entries_True.png")
+    def test_unstable_entries_shallow_charge_stability_kwarg(self):
+        """
+        Test plotting behaviour with non-pnictogen impurities in Se, with
+        ``shallow_charge_stability_tolerance=-0.2`` -> here equivalent to
+        ``unstable_entries=True``.
+        """
+        return self.Se_ext_no_pnict_thermo.plot(shallow_charge_stability_tolerance=-0.2)
 
     @custom_mpl_image_compare(filename="Se_extrinsic_interstitials_linestyles_plot.png")
     def test_plotting_linestyles_and_colors_ext_Se(self):

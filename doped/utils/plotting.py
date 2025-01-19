@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colormaps, ticker
 from matplotlib.colors import Colormap, ListedColormap
+from matplotlib.font_manager import FontProperties
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
@@ -262,7 +263,7 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
 
 def format_defect_name(
     defect_species: str,
-    include_site_info_in_name: bool,
+    include_site_info_in_name: bool = False,
     wout_charge: bool = False,
 ) -> Optional[str]:
     r"""
@@ -277,10 +278,10 @@ def format_defect_name(
             Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``)
         include_site_info_in_name (:obj:`bool`):
             Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
-            or ``"$Cd_{i_{C3v}}^{0}$"``\).
+            or ``"$Cd_{i_{C3v}}^{0}$"``\). Defaults to ``False``.
         wout_charge (:obj:`bool`, optional):
-            Whether the charge state is included in the defect_species name.
-            Defaults to False.
+            Whether to exclude the charge state from the formatted
+            ``defect_species`` name. Defaults to ``False``.
 
     Returns:
         :obj:`str`:
@@ -777,6 +778,23 @@ def _get_legend_txt(for_legend, all_entries=False, include_site_info=False):
     return final_legend_txt
 
 
+def get_legend_font_size() -> float:
+    """
+    Convenience function to get the current ``matplotlib`` legend font size, in
+    points (pt).
+
+    Returns:
+        float: Current legend font size in points (pt).
+    """
+    font_size = plt.rcParams["legend.fontsize"]  # current legend font size from rcParams
+
+    # if the font size is a string (like 'medium'), convert it using FontProperties
+    if isinstance(font_size, str):
+        font_properties = FontProperties(size=font_size)
+        return font_properties.get_size_in_points()
+    return font_size  # otherwise numeric, return as is
+
+
 def _rename_key_and_dicts(
     key: str,
     output_dicts: list,
@@ -939,7 +957,7 @@ def _get_in_gap_yvals(x_coords, y_coords, x_range):
     return np.interp(relevant_x, x_coords, y_coords)  # y values in range
 
 
-def _TLD_plot(
+def formation_energy_plot(
     defect_thermodynamics: "DefectThermodynamics",
     dft_chempots: Optional[dict] = None,
     el_refs: Optional[dict] = None,
@@ -1112,14 +1130,21 @@ def _TLD_plot(
                         annotation_clip=True,
                     )  # only show label if coords in current axes
 
+    legend_txt = _get_legend_txt(
+        defect_names_for_legend,
+        all_entries=all_entries is True,
+        include_site_info=include_site_info,
+    )
+    user_figsize_legend_fontsize_ratio = (plt.rcParams["figure.figsize"][1] / get_legend_font_size()) / (
+        3.5 / 9
+    )
     ax.legend(
-        _get_legend_txt(
-            defect_names_for_legend,
-            all_entries=all_entries is True,
-            include_site_info=include_site_info,
-        ),
-        loc=2,
-        bbox_to_anchor=(1, 1),
+        legend_txt,
+        loc="upper left",  # (of bbox)
+        bbox_to_anchor=(1.05, 1),
+        borderaxespad=0.0,  # adjust padding to move closer to the axes
+        # max 10 labels per column with default settings:
+        ncol=np.ceil(len(legend_txt) / (10 * user_figsize_legend_fontsize_ratio)),
     )
 
     if ylim is None:
@@ -1133,19 +1158,39 @@ def _TLD_plot(
         ax, defect_thermodynamics.band_gap, xlim, ylim, fermi_level=fermi_level
     )  # Show colourful band edges
     if chempot_table and dft_chempots:
-        _plot_chemical_potential_table(ax, dft_chempots, loc="left", el_refs=el_refs)
+        plot_chemical_potential_table(ax, dft_chempots, el_refs=el_refs)
 
     _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_font_size)
 
     return fig
 
 
-def _plot_chemical_potential_table(
-    ax,
-    dft_chempots,
-    loc="left",
-    el_refs=None,
-):
+def plot_chemical_potential_table(
+    ax: plt.Axes,
+    dft_chempots: dict[str, float],
+    cellLoc: str = "left",
+    el_refs: Optional[dict[str, float]] = None,
+) -> plt.table:
+    """
+    Plot a table of chemical potentials above the plot in ``ax``.
+
+    Args:
+        ax (plt.Axes):
+            Axes object to plot the table in.
+        dft_chempots (dict):
+            Dictionary of chemical potentials of the form
+            ``{Element: value}``.
+        cellLoc (str):
+            Alignment of text in cells. Default is "left".
+        el_refs (dict):
+            Dictionary of elemental reference energies of the form
+            ``{Element: value}``. If provided, the chemical potentials
+            are given with respect to these reference energies.
+
+    Returns:
+        The ``matplotlib.table.Table`` object (which has been
+        added to the ``ax`` object).
+    """
     if el_refs is not None:
         dft_chempots = {el: energy - el_refs[el] for el, energy in dft_chempots.items()}
     labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(dft_chempots.keys())]
@@ -1163,10 +1208,11 @@ def _plot_chemical_potential_table(
     else:
         text_list = ["(from calculations)", *text_list, "  [eV]"]
     widths = [0.1] + [0.9 / len(dft_chempots)] * (len(dft_chempots) + 2)
-    tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=loc)
+    tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=cellLoc)
     tab.auto_set_column_width(list(range(len(widths))))
 
     for cell in tab.get_celld().values():
         cell.set_linewidth(0)
+        cell.set_facecolor("none")  # make transparent as with rest of plot
 
     return tab

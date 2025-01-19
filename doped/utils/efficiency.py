@@ -8,18 +8,19 @@ import operator
 import re
 from collections import defaultdict
 from collections.abc import Sequence
+from fractions import Fraction
 from functools import lru_cache
 from typing import Callable
 
 import numpy as np
+from numpy.typing import NDArray
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Structure
-from scipy.cluster.hierarchy import fcluster, linkage
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from scipy.spatial import Voronoi
-from scipy.spatial.distance import squareform
 
 from doped.utils import symmetry
 
@@ -254,6 +255,56 @@ IStructure.__eq__ = _Structure__eq__
 Structure.__eq__ = _Structure__eq__
 
 
+def _get_symmetry(self) -> tuple[NDArray, NDArray]:
+    """
+    Get the symmetry operations associated with the structure.
+
+    Refactored from ``pymatgen`` to allow caching, to boost efficiency
+    when working with large defect supercells.
+
+    Returns:
+        Symmetry operations as a tuple of two equal length sequences.
+        (rotations, translations). "rotations" is the numpy integer array
+        of the rotation matrices for scaled positions
+        "translations" gives the numpy float64 array of the translation
+        vectors in scaled positions.
+    """
+    return _cache_ready_get_symmetry(
+        cell=self._cell, symprec=self._symprec, angle_tol=self._angle_tol, formula=self._structure.formula
+    )
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_symmetry(cell, symprec, angle_tol, formula=None):
+    """
+    Cached version of ``get_symmetry`` method, to speed up symmetry operations
+    in ``pymatgen``.
+
+    Refactored from ``pymatgen`` to allow caching, to boost efficiency
+    when working with large defect supercells.
+    """
+    import spglib
+
+    dct = spglib.get_symmetry(cell, symprec=symprec, angle_tolerance=angle_tol)
+    if dct is None:
+        raise ValueError(
+            f"Symmetry detection failed for structure with formula {formula}. "
+            f"Try setting {symprec=} to a different value."
+        )
+    # Sometimes spglib returns small translation vectors, e.g.
+    # [1e-4, 2e-4, 1e-4]
+    # (these are in fractional coordinates, so should be small denominator fractions)
+    translations: NDArray = np.array(
+        [[float(Fraction(c).limit_denominator(1000)) for c in trans] for trans in dct["translations"]]
+    )
+
+    translations[np.abs(translations) == 1] = 0  # Fractional translations of 1 are more simply 0
+    return dct["rotations"], translations
+
+
+SpacegroupAnalyzer._get_symmetry = _get_symmetry
+
+
 class DopedTopographyAnalyzer:
     """
     This is a modified version of
@@ -467,14 +518,7 @@ def _doped_cluster_frac_coords(
     lattice = structure.lattice
     sga = symmetry.get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
     symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
-    dist_matrix = (dist_matrix + dist_matrix.T) / 2
-
-    for i in range(len(dist_matrix)):
-        dist_matrix[i, i] = 0
-    condensed_m = squareform(dist_matrix)
-    z = linkage(condensed_m)
-    cn = fcluster(z, tol, criterion="distance")
+    cn = symmetry._cluster_coords(fcoords, structure, dist_tol=tol)
     unique_fcoords = []
 
     for n in set(cn):

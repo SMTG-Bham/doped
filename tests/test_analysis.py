@@ -28,7 +28,7 @@ from doped.analysis import (
 )
 from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
-from doped.utils.eigenvalues import get_eigenvalue_analysis
+from doped.utils.eigenvalues import get_eigenvalue_analysis, is_shallow
 from doped.utils.parsing import (
     Vasprun,
     get_defect_type_and_composition_diff,
@@ -85,7 +85,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         self.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
-        self.Sb2Si2Te6_DATA_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
+        self.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(self.EXAMPLE_DIR, "Sb2Si2Te6")
 
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
@@ -93,20 +93,23 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
         self.CaO_DATA_DIR = os.path.join(self.module_path, "data/CaO")
         self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
+        self.shallow_O_Se_DATA_DIR = os.path.join(self.module_path, "data/shallow_O_Se_+1")
+        self.Se_dielectric = np.array([0.627551, 0.627551, 0.943432]) + np.array(
+            [6.714217, 6.714317, 10.276149]
+        )
 
     def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.Sb2Si2Te6_DATA_DIR, "SiSbTe3_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "SiSbTe3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.Sb2Se3_DATA_DIR, "defect/Sb2Se3_defect_dict.json.gz"))
         if_present_rm("V2O5_test")
         if_present_rm(os.path.join(self.SrTiO3_DATA_DIR, "SrTiO3_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
         if_present_rm(os.path.join(self.CaO_DATA_DIR, "CaO_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.shallow_O_Se_DATA_DIR, "Se_defect_dict.json.gz"))
 
         for i in os.listdir(self.SOLID_SOLUTION_DATA_DIR):
             if "json" in i:
@@ -224,7 +227,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for i in [
                 "Warning(s) encountered when parsing Te_Cd_+1 at ",
                 "The total energies of the provided (bulk) `OUTCAR` (-218.565 eV), used to obtain the "
-                "atomic core potentials for the eFNV correction, and the `vasprun.xml` ({-218.51803182}), "
+                "atomic core potentials for the eFNV correction, and the `vasprun.xml` (-218.518 eV), "
                 "used for energies and structures, do not match. Please make sure the "
                 "correct file combination is being used!",
             ]
@@ -515,9 +518,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         fake_aniso_dielectric = [1, 2, 3]
         dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
+            bulk_path="CdTe_bulk",
             dielectric=fake_aniso_dielectric,
         )
-        assert any(
+        assert not any(  # no correction warning now for Int_Te_3_2, as it's unstable here
             all(
                 i in str(warn.message)
                 for i in [
@@ -533,7 +537,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert any(
             f"Defects: {i} each encountered the same warning:" in str(warn.message)
             for warn in w
-            for i in ["['v_Cd_-2', 'v_Cd_-1']", "['v_Cd_-1', 'v_Cd_-2']"]
+            for i in ["{'v_Cd_-2', 'v_Cd_-1'}", "{'v_Cd_-1', 'v_Cd_-2'}"]
         )
 
         for i in [
@@ -613,10 +617,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             "Estimated error in the Kumagai (eFNV) ",
             "charge correction for certain defects is greater than the `error_tolerance` (= 1.00e-03 eV):",
             "v_Cd_-2: 1.08e-02 eV",
-            "v_Cd_-1: 8.46e-03 eV",
+            # "v_Cd_-1: 8.46e-03 eV",  # now not printed because not stable charge states
             "Int_Te_3_1: 3.10e-03 eV",
             "Te_Cd_+1: 2.02e-03 eV",
-            "Int_Te_3_Unperturbed_1: 4.91e-03 eV",
+            # "Int_Te_3_Unperturbed_1: 4.91e-03 eV",  # now not printed because not stable charge states
             "Int_Te_3_2: 1.24e-02 eV",
             "You may want to check the accuracy of the corrections by",
             "(using `defect_entry.get_freysoldt_correction()` with `plot=True`)",
@@ -658,9 +662,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
-        dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
-        )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -682,9 +683,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
-        dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
-        )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     @custom_mpl_image_compare(filename="YTOS_example_defects_plot.png")
@@ -698,9 +696,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w
         self._check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
-        dumpfn(
-            thermo, os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
-        )  # for test_plotting
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
     def test_DefectsParser_no_defects_parsed_error(self):
@@ -746,7 +741,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # warning about negative corrections when using (fake) isotropic dielectric:
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
             output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
-            bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
+            bulk_path="bulk",
             dielectric=40,  # fake isotropic dielectric
             parse_projected_eigen=False,
         )
@@ -806,7 +801,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV(self):
         dp, w = _create_dp_and_capture_warnings(
-            self.Sb2Si2Te6_DATA_DIR,
+            self.Sb2Si2Te6_EXAMPLE_DIR,
             dielectric=self.Sb2Si2Te6_dielectric,
             json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
             parse_projected_eigen=False,
@@ -827,7 +822,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(dp)
 
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
-        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_DATA_DIR, "Sb2Si2Te6_example_thermo.json"))
+        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json"))
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
         print([str(warning.message) for warning in w])
@@ -991,39 +986,37 @@ class DefectsParsingTestCase(unittest.TestCase):
         conc_df = thermo.get_equilibrium_concentrations()  # no chempots or Fermi level
         print("conc_df", conc_df)  # for debugging
         srtio3_V_O_conc_lists = [  # with no chempots or Fermi level (so using Eg/2)
-            ["vac_O", "+2", 9.742, "4.456e-141", "100.00%"],
-            ["vac_O", "+1", 11.043, "2.497e-162", "0.00%"],
-            ["vac_O", "0", 12.635, "1.109e-189", "0.00%"],
-        ]
-        for i, row in enumerate(srtio3_V_O_conc_lists):
-            print(i, row)
-            assert list(conc_df.iloc[i]) == row
+            [9.742, "4.456e-141", "100.00%"],  # +2
+            [11.043, "2.497e-162", "0.00%"],  # +1
+            [12.635, "1.109e-189", "0.00%"],  # 0
+        ]  # (in order of positive to negative, left to right on formation energy diagram)
+        for i, (index, row) in enumerate(conc_df.iterrows()):
+            print(i, index, row)
+            assert list(row) == srtio3_V_O_conc_lists[i]
 
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
-        for i, row in enumerate(srtio3_V_O_conc_lists):
-            print(i, row)
-            for j, val in enumerate(row):
-                if j != 3:
-                    assert per_site_conc_df.iloc[i, j] == val
+        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+            print(i, index, row)
+            for j, (col_name, val) in enumerate(row.items()):
+                if col_name != "Concentration (per site)":  # per-site concentration
+                    assert val == srtio3_V_O_conc_lists[i][j]
                 else:
                     assert np.isclose(
-                        float(per_site_conc_df.iloc[i, j][:-2]), 100 * float(row[3]) / sto_O_site_conc
+                        float(val[:-2]), 100 * float(srtio3_V_O_conc_lists[i][j]) / sto_O_site_conc
                     )
 
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, skip_formatting=True)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
-        for i, row in enumerate(srtio3_V_O_conc_lists):
-            print(i, row)
-            for j, val in enumerate(row):
-                if j not in [1, 3]:
-                    assert per_site_conc_df.iloc[i, j] == val
-                elif j == 3:
-                    assert np.isclose(
-                        per_site_conc_df.iloc[i, j], float(row[3]) / sto_O_site_conc, rtol=1e-5
-                    )
-                elif j == 1:
-                    assert per_site_conc_df.iloc[i, j] == int(val)  # charge states
+        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+            print(i, index, row)
+            assert isinstance(index[-1], int)  # charge now int, not formatted
+
+            for j, (col_name, val) in enumerate(row.items()):
+                if col_name != "Concentration (per site)":  # per-site concentration
+                    assert val == srtio3_V_O_conc_lists[i][j]
+                else:
+                    assert np.isclose(val, float(srtio3_V_O_conc_lists[i][j]) / sto_O_site_conc)
 
         assert thermo.get_equilibrium_concentrations(per_charge=False).to_numpy().tolist() == [
             ["4.456e-141"]
@@ -1059,12 +1052,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, fermi_level=1.710795)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
         custom_fermi_concs = ["3.954e-163 %", "1.045e-183 %", "2.189e-210 %"]
-        for i, val in enumerate(custom_fermi_concs):
-            print(i, val)
-            assert per_site_conc_df.iloc[i, 3] == val
+        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+            print(i, index, row)
+            assert row["Concentration (per site)"] == custom_fermi_concs[i]
 
-        # test get_quenched_fermi_level_and_concentrations
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        # test get_fermi_level_and_concentrations
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_charge=False,
@@ -1074,11 +1067,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist() == [["2.004e-142", 6.010973640124676e-142]]
+        assert conc_df.to_numpy().tolist() == [["2.004e-142"]]
         assert conc_df.index[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             skip_formatting=True,
@@ -1089,15 +1082,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_conc_df_lists = [
-            ["vac_O", 2, 9.822, 2.0036578800415587e-142, "100.00%", 2.0036578800415587e-142],
-            ["vac_O", 1, 11.083, 5.2947236022031443e-163, "0.00%", 2.0036578800415587e-142],
-            ["vac_O", 0, 12.635, 1.1092122529257341e-189, "0.00%", 2.0036578800415587e-142],
+            [9.822, 2.003657892864856e-142, "100.00%", 2.003657892864856e-142],  # +2
+            [11.083, 5.294723640442009e-163, "0.00%", 2.003657892864856e-142],  # +1
+            [12.635, 1.109212262059047e-189, "0.00%", 2.003657892864856e-142],  # 0
         ]
         for i, row in enumerate(quenched_conc_df_lists):
             print(i, row)
             assert list(conc_df.iloc[i]) == row
 
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_site=True,
@@ -1108,15 +1101,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_per_site_conc_df_lists = [
-            ["vac_O", 2, 9.822, "100.00%", 2.0036578800415587e-142, "3.954e-163 %"],
-            ["vac_O", 1, 11.083, "0.00%", 2.0036578800415587e-142, "1.045e-183 %"],
-            ["vac_O", 0, 12.635, "0.00%", 2.0036578800415587e-142, "2.189e-210 %"],
+            [9.822, "3.954e-163 %", "100.00%", "2.004e-142"],  # +2
+            [11.083, "1.045e-183 %", "0.00%", "2.004e-142"],  # +1
+            [12.635, "2.189e-210 %", "0.00%", "2.004e-142"],  # 0
         ]
         for i, row in enumerate(quenched_per_site_conc_df_lists):
             print(i, row)
             assert list(conc_df.iloc[i]) == row
 
-        fermi_level, e_conc, h_conc, conc_df = thermo.get_quenched_fermi_level_and_concentrations(
+        fermi_level, e_conc, h_conc, conc_df = thermo.get_fermi_level_and_concentrations(
             bulk_dos=f"{self.SrTiO3_DATA_DIR}/bulk_sp333/vasprun.xml",
             annealing_temperature=300,
             per_site=True,
@@ -1128,7 +1121,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist() == [[6.010973640124676e-142, 3.953921443531439e-165]]
+        assert conc_df.to_numpy().tolist() == [[3.9539214688363133e-165]]
         assert conc_df.index.to_numpy()[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
@@ -1282,6 +1275,87 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.01) == 8.0
 
+    def test_shallow_defect_correction_warning_skipping(self):
+        """
+        Warnings about charge correction errors are skipped if the defects are
+        not stable for any Fermi level in the gap (tested above in
+        ``test_DefectsParser_corrections_errors_warning``) or if the defect is
+        detected to be shallow (via ``pydefect`` eigenvalue analysis) and have
+        a Fermi level stability region smaller than a given tolerance (given by
+        the ``"shallow_charge_stability_tolerance"`` kwarg if set, otherwise
+        the minimum of ``error_tolerance`` or 10% of the band gap value).
+
+        This function tests the latter case.
+        """
+        # Note that we have artificially modified the energy of ``sub_1_O_on_Se_1`` to be 0.17 eV lower,
+        # so that it is found to be (just about) stable in the band gap for the purposes of this test
+        dp, w = _create_dp_and_capture_warnings(
+            output_path=self.shallow_O_Se_DATA_DIR, dielectric=self.Se_dielectric
+        )
+
+        def _check_shallow_O_Se_dp_w(dp, w, correction_warning=False):
+            assert any("There are mismatching INCAR tags" in str(warn.message) for warn in w)
+            assert any("('NKRED', 1, 2)" in str(warn.message) for warn in w)
+            # warning about our artificially shifted vasprun energy:
+            assert any(
+                "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` (-381.559 "
+                "eV), used to obtain the atomic core potentials for the eFNV correction, "
+                "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
+                "energy), used for" in str(warn.message)
+                for warn in w
+            )
+            # no charge correction warning by default, as charge correction error is only 6.36 meV here:
+            assert any("Estimated error" in str(warn.message) for warn in w) == correction_warning
+            assert (
+                any("sub_1_O_on_Se_1: 6.36e-03 eV" in str(warn.message) for warn in w)
+                == correction_warning
+            )
+            assert len(dp.defect_dict) == 2
+            self._check_DefectsParser(dp)
+
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
+        thermo = dp.get_defect_thermodynamics()
+        assert np.isclose(
+            next(iter(thermo.transition_level_map["sub_1_O_on_Se"].keys())),
+            0.00367,
+            atol=1e-4,
+        )
+        assert np.isclose(
+            thermo._get_in_gap_fermi_level_stability_window("sub_1_O_on_Se_1"),
+            0.00367,
+            atol=1e-4,
+        )
+        assert np.isclose(
+            dp.defect_dict["sub_1_O_on_Se_1"].corrections_metadata["kumagai_charge_correction_error"],
+            0.00636,
+            atol=1e-4,
+        )
+
+        dp, w = _create_dp_and_capture_warnings(
+            # error above tol but shallow with smaller stability window, no warning
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+            error_tolerance=0.005,
+        )
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
+
+        dp, w = _create_dp_and_capture_warnings(
+            # error above tol, shallow but with larger stability window, warning
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+            error_tolerance=0.003,
+        )
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=True)
+
+        dp, w = _create_dp_and_capture_warnings(
+            # error > tol, shallow w/larger stability window, but `shallow_charge_stability_tolerance` set
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+            error_tolerance=0.003,
+            shallow_charge_stability_tolerance=0.01,
+        )
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
+
 
 class DopedParsingTestCase(unittest.TestCase):
     def setUp(self):
@@ -1304,8 +1378,6 @@ class DopedParsingTestCase(unittest.TestCase):
         self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
     def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
-
         if os.path.exists(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz"):
             shutil.move(
                 f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz",
@@ -1928,7 +2000,6 @@ class DopedParsingTestCase(unittest.TestCase):
         Test parsing of Te (split-)interstitial and Kumagai-Oba (eFNV)
         correction.
         """
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
         with patch("builtins.print") as mock_print:
             te_i_2_ent = defect_entry_from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
@@ -1954,7 +2025,6 @@ class DopedParsingTestCase(unittest.TestCase):
             )
 
         mock_print.assert_not_called()
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
 
     def test_substitution_parsing_and_kumagai(self):
         """
@@ -2080,8 +2150,6 @@ class DopedParsingTestCase(unittest.TestCase):
             atol=1e-2,
         )  # approx match, not exact because relaxed bulk supercell
 
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
-
         # test error_tolerance setting:
         with warnings.catch_warnings(record=True) as w:
             int_F_minus1_ent = defect_entry_from_paths(
@@ -2140,7 +2208,9 @@ class DopedParsingTestCase(unittest.TestCase):
             print([warn.message for warn in w])  # for debugging
             assert not w  # this supercell is not periodicity breaking
         assert relaxed_defect_name == "F_i_C4v_O2.57"
-        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_Cs_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False) == "F_i_C1_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False, symprec=0.02) == "F_i_C4v_O2.57"
+        assert get_defect_name_from_entry(int_F_minus1_ent, relaxed=False, symprec=0.01) == "F_i_C1_O2.57"
 
         return eig_fig  # test eigenvalue plot for ISPIN = 1 case
 
@@ -2278,48 +2348,6 @@ class DopedParsingTestCase(unittest.TestCase):
 
         return correction_test_dict
 
-    def test_voronoi_structure_mismatch_and_reparse(self):
-        """
-        Test that a mismatch in bulk_supercell structure from previously parsed
-        Voronoi nodes json file with current defect bulk supercell is detected
-        and re-parsed.
-        """
-        with patch("builtins.print"):
-            for i in os.listdir(self.CdTe_EXAMPLE_DIR):
-                if "Int_Te" in i:  # loop folders and parse those with "Int_Te" in name
-                    defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
-                    # parse with no explicitly-set-charge:
-                    defect_entry_from_paths(
-                        defect_path=defect_path,
-                        bulk_path=self.CdTe_BULK_DATA_DIR,
-                        dielectric=self.CdTe_dielectric,
-                        parse_projected_eigen=False,
-                    )
-        shutil.copyfile(
-            os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"),
-            f"{self.YTOS_EXAMPLE_DIR}/Bulk/voronoi_nodes.json",
-        )  # mismatching voronoi nodes
-
-        with warnings.catch_warnings(record=True) as w:
-            defect_path = f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/"
-            # parse with no explicitly-set-charge:
-            defect_entry_from_paths(
-                defect_path=defect_path,
-                bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-                dielectric=self.ytos_dielectric,
-                charge_state=-1,  # test manually specifying charge state
-                parse_projected_eigen=False,
-            )
-
-        warning_message = (
-            "Previous bulk voronoi_nodes.json detected, but does not match current bulk supercell. "
-            "Recalculating Voronoi nodes."
-        )
-        user_warnings = [warning for warning in w if warning.category == UserWarning]
-        assert len(user_warnings) == 1
-        assert warning_message in str(user_warnings[0].message)
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
-
     def test_tricky_relaxed_interstitial_corrections_kumagai(self):
         """
         Test the eFNV correction performance with tricky-to-locate relaxed
@@ -2454,8 +2482,6 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
 
     def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_BULK_DATA_DIR, "voronoi_nodes.json"))
-        if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk", "voronoi_nodes.json"))
         if_present_rm("./vasprun.xml")
 
         for dir in ["bulk", "v_Cu_0", "Si_i_-1"]:
@@ -2466,10 +2492,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                 )
 
         if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "bulk/vasp_std/voronoi_nodes.json"))
-
         if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "bulk/voronoi_nodes.json"))
 
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
@@ -2529,7 +2552,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         bulk_site_index,
                         guessed_initial_defect_structure,
                         unrelaxed_defect_structure,
-                        bulk_voronoi_node_dict,
+                        _bulk_voronoi_node_dict,
                     ) = defect_from_structures(
                         defect_entry.bulk_supercell,
                         rattled_defect_supercell,
@@ -2605,7 +2628,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
                         bulk_site_index,
                         guessed_initial_defect_structure,
                         unrelaxed_defect_structure,
-                        bulk_voronoi_node_dict,
+                        _bulk_voronoi_node_dict,
                     ) = defect_from_structures(
                         rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         defect_entry.defect_supercell,
@@ -2966,6 +2989,7 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert not any(
             [bes.has_donor_phs, bes.has_occupied_localized_state, bes.has_unoccupied_localized_state]
         )
+        assert is_shallow(dp.defect_dict["v_Cu_0"])
 
         print("Testing v_Cu_0 with plot = False")
         bes2 = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis(
@@ -3278,8 +3302,8 @@ class DopedParsingFunctionsTestCase(unittest.TestCase):
         assert len(w) == 1
         assert (
             "Band-edge state identification failed with the current criteria: "
-            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV. Trying with values of 0.35 "
-            "and 0.5 eV." in str(w[0].message)
+            "similar_orb_criterion=0.01, similar_energy_criterion=0.01 eV, but succeeded with "
+            "similar_orb_criterion=0.35, similar_energy_criterion=0.5 eV." in str(w[0].message)
         )
         assert not bes.has_unoccupied_localized_state  # no longer identified
 

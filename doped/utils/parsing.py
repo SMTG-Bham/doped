@@ -232,13 +232,17 @@ def _check_outcar_energy(
             outcar.final_energy if isinstance(outcar, Outcar) else _get_final_energy_from_outcar(outcar)
         )
         total_energy = total_energy if isinstance(total_energy, list) else [total_energy]
+        total_energies = set(np.round(total_energy, 3))
+        formatted_total_energy = "eV, ".join(f"{energy:.3f}" for energy in total_energies) + " eV"
+        if len(total_energies) == 2:  # most cases, final energy and last electronic step energy
+            formatted_total_energy += "; final energy & last electronic step energy"
         if not any(np.isclose(outcar_energy, energy, atol=0.025) for energy in total_energy):
             # 0.025 eV tolerance
             warnings.warn(
                 f"The total energies of the provided (bulk) `OUTCAR` ({outcar_energy:.3f} eV), "
                 f"used to obtain the atomic core potentials for the eFNV correction, and the "
-                f"`vasprun.xml` ({set(total_energy)}), used for energies and structures, do not match. "
-                f"Please make sure the correct file combination is being used!"
+                f"`vasprun.xml` ({formatted_total_energy}), used for energies and structures, do not "
+                f"match. Please make sure the correct file combination is being used!"
             )
 
 
@@ -540,6 +544,10 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     return (defect_type, *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff))
 
 
+# maintain backwards compatibility with old function name for now, to be removed in next major release
+get_defect_site_idxs_and_unrelaxed_structure = get_defect_type_site_idxs_and_unrelaxed_structure
+
+
 def _get_species_from_composition_diff(composition_diff, el_change):
     """
     Get the species corresponding to the given change in composition.
@@ -839,8 +847,8 @@ def check_atom_mapping_far_from_defect(
         message = (
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
-            f"mismatch between the bulk and defect supercell definitions (see troubleshooting docs) or an "
-            f"unconverged supercell size, both of which could cause errors in parsing. The mean "
+            f"mismatch between the bulk and defect supercell definitions (-> see troubleshooting docs) or "
+            f"an unconverged supercell size, both of which could cause errors in parsing. The mean "
             f"displacement of the following species, at sites far from the determined defect position, "
             f"is >{displacement_tol} Å: {list(far_from_defect_large_disps.keys())}"
         )
