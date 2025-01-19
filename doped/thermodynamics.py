@@ -5,12 +5,14 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 """
 
 import contextlib
+import importlib.util
 import os
 import warnings
+from collections.abc import Iterable
 from copy import deepcopy
-from functools import reduce
+from functools import partial, reduce
 from itertools import chain, product
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,14 +23,20 @@ from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin, f0
-from pymatgen.io.vasp.outputs import Vasprun
+from pymatgen.io.vasp import Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
+from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods
-from doped.chemical_potentials import get_X_poor_limit, get_X_rich_limit
-from doped.core import DefectEntry, _no_chempots_warning, _orientational_degeneracy_warning
+from doped.chemical_potentials import ChemicalPotentialGrid, get_X_poor_limit, get_X_rich_limit
+from doped.core import (
+    DefectEntry,
+    _get_dft_chempots,
+    _no_chempots_warning,
+    _orientational_degeneracy_warning,
+)
 from doped.generation import _sort_defect_entries
 from doped.utils.parsing import (
     _compare_incar_tags,
@@ -39,8 +47,16 @@ from doped.utils.parsing import (
     get_nelect_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import _rename_key_and_dicts, _TLD_plot
-from doped.utils.symmetry import _get_all_equiv_sites, get_sga
+from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot
+from doped.utils.symmetry import _get_all_equiv_sites, get_primitive_structure, get_sga
+
+if TYPE_CHECKING:
+    # from pymatgen.util.typing import PathLike
+
+    with contextlib.suppress(ImportError):
+        from py_sc_fermi.defect_species import DefectSpecies
+        from py_sc_fermi.defect_system import DefectSystem
+        from py_sc_fermi.dos import DOS
 
 
 def bold_print(string: str) -> None:
@@ -123,8 +139,8 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
 
     Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
     """
-    if chempots is not None:
-        chempots = deepcopy(chempots)  # don't modify original dict
+    chempots = deepcopy(chempots)  # don't modify original dict
+    if chempots is not None and any("facets" in key or "elt_refs" in key for key in chempots):
         for key, subdict in list(chempots.items()):
             chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
 
@@ -253,6 +269,15 @@ def group_defects_by_distance(
     multiple sets of equivalent sites, then it is matched to the one with
     the lowest minimum distance.
 
+    This is used to group together different defect entries (different charge
+    states, and/or ground and metastable states (different spin or geometries))
+    which correspond to the same defect type (e.g. interstitials at a given
+    site), which is then used in plotting, transition level analysis and defect
+    concentration calculations; e.g. in the frozen defect approximation, the
+    total concentration of a given defect type group is calculated at the
+    annealing temperature, and then the equilibrium relative population of the
+    constituent entries is recalculated at the quenched temperature.
+
     Args:
         entry_list ([DefectEntry]):
             A list of DefectEntry objects to group together.
@@ -268,14 +293,12 @@ def group_defects_by_distance(
     Returns:
         dict: {simple defect name: {(equivalent defect sites): [DefectEntry]}
     """
-    # TODO: This algorithm works well for the vast majority of cases, however it can be sensitive to how
-    #  many defects are parsed at once. For instance, in the full parsed CdTe defect dicts in test data,
-    #  when parsing with metastable states, all Te_i are combined as each entry is within `dist_tol =
-    #  1.5` of another interstitial, but without metastable states (`wout_meta`), Te_i_+2 is excluded (
-    #  because it's not within `dist_tol` of any other _stable_ Te_i). Ideally our clustering algorithm
-    #  would be independent of this... but challenging to setup without complex clustering approaches (
-    #  for now this works very well as is, and this is a rare case and usually not a problem anyway as
-    #  dist_tol can just be adjusted as needed)
+    # Note: This algorithm works well for the vast majority of cases, however because it involves
+    # clustering, the results can be sensitive to which / how many defects are parsed together. For
+    # instance, in the full parsed CdTe defect dicts in test data, when parsing with metastable states,
+    # all Te_i are combined as each entry is within `dist_tol = 1.5` of another interstitial,
+    # but without metastable states (`wout_meta`), Te_i_+2 is excluded (because it's not within
+    # `dist_tol` of any other _stable_ Te_i). However, the user can always adjust `dist_tol` as desired.
 
     # initial group by Defect.name (same nominal defect), then distance to equiv sites
     # first make dictionary of nominal defect name: list of entries with that name
@@ -311,12 +334,11 @@ def group_defects_by_distance(
             bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
             # need to use relaxed defect site if bulk_site not in calculation_metadata
 
-            min_dist_list = [
-                min(  # get min dist for all equiv site tuples, in case multiple less than dist_tol
-                    bulk_site.distance_and_image(site)[0] for site in equiv_site_tuple
-                )
-                for equiv_site_tuple in defect_site_dict[name]
+            min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
+                bulk_site.lattice.get_all_distances(bulk_site.frac_coords, list(equiv_site_tuple)).min()
+                for equiv_site_tuple in defect_site_dict[entry.defect.name]
             ]
+
             if min_dist_list and min(min_dist_list) < dist_tol:  # less than dist_tol, add to corresponding
                 idxmin = np.argmin(min_dist_list)  # entry list
                 if min_dist_list[idxmin] > 0.05:  # likely interstitials, need to add equiv sites to tuple
@@ -325,10 +347,12 @@ def group_defects_by_distance(
                     defect_entry_list = defect_site_dict[name].pop(orig_tuple)
                     equiv_site_tuple = (
                         tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                            _get_all_equiv_sites(
+                            tuple(frac_coords)
+                            for frac_coords in _get_all_equiv_sites(
                                 bulk_site.frac_coords,
                                 symm_bulk_struct,
                                 bulk_symm_ops,
+                                just_frac_coords=True,
                             )
                         )
                         + orig_tuple
@@ -342,14 +366,14 @@ def group_defects_by_distance(
             else:  # no match found, add new entry
                 try:
                     equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        symm_bulk_struct.find_equivalent_sites(bulk_site)
+                        tuple(site.frac_coords)
+                        for site in symm_bulk_struct.find_equivalent_sites(bulk_site)
                     )
                 except ValueError:  # likely interstitials, need to add equiv sites to tuple
                     equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        _get_all_equiv_sites(
-                            bulk_site.frac_coords,
-                            symm_bulk_struct,
-                            bulk_symm_ops,
+                        tuple(frac_coords)
+                        for frac_coords in _get_all_equiv_sites(
+                            bulk_site.frac_coords, symm_bulk_struct, bulk_symm_ops, just_frac_coords=True
                         )
                     )
 
@@ -405,16 +429,32 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
-    Similar to a pymatgen PhaseDiagram object, allowing the analysis of
+    Similar to a ``pymatgen`` ``PhaseDiagram`` object, allowing the analysis of
     formation energies as functions of Fermi level and chemical potentials
     (i.e. defect formation energy / transition level diagrams), charge
-    transition levels, defect/carrier concentrations etc.
+    transition levels, defect/carrier concentrations as functions of
+    temperature, chemical potential etc.
 
-    This class is able to get:
-        a) stability of charge states for a given defect,
-        b) list of all formation energies,
-        c) transition levels in the gap,
-        d) used as input to doped plotting/analysis functions
+    This class can be used to return:
+        a) defect formation energy diagrams (plots),
+        b) stability of charge states for a given defect,
+        c) tables of all formation energies / symmetries & degeneracies,
+        d) tables of equilibrium and constrained defect/carrier concentrations,
+        e) charge transition levels, including metastable states,
+        f) doping analysis,
+        g) ...
+
+    Note that ``DefectThermodynamics`` objects can be used to initialise the
+    ``FermiSolver`` class in this module, which implements a number of
+    convenience methods for thermodynamic analyses; such as scanning over
+    temperatures, chemical potentials, effective dopant concentrations etc,
+    minimising or maximising a target property (e.g. defect/carrier
+    concentration), and also allowing greater control over constraints and
+    approximations in defect concentration calculations; such as specifying
+    (known) fixed concentrations of a defect/dopant, specifying defects to
+    exclude from high-temperature concentration fixing in the frozen defect
+    approximation (e.g. highly-mobile defects), and/or fixing defect charge
+    states upon quenching.
     """
 
     def __init__(
@@ -427,16 +467,16 @@ class DefectThermodynamics(MSONable):
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
         bulk_dos: Optional[FermiDos] = None,
-        skip_check: bool = False,
+        skip_vbm_check: bool = False,
     ):
         r"""
-        Create a DefectThermodynamics object, which can be used to analyse the
-        calculated thermodynamics of defects in solids (formation energies,
+        Create a ``DefectThermodynamics`` object, which can be used to analyse
+        the calculated thermodynamics of defects in solids (formation energies,
         transition levels, concentrations etc).
 
-        Usually initialised using DefectsParser.get_defect_thermodynamics(), but
-        can also be initialised with a list or dict of DefectEntry objects (e.g.
-        from DefectsParser.defect_dict).
+        Usually initialised using ``DefectsParser.get_defect_thermodynamics()``, but
+        can also be initialised with a list or dict of ``DefectEntry`` objects (e.g.
+        from ``DefectsParser.defect_dict``).
 
         Note that the ``DefectEntry.name`` attributes are used to label the defects in
         plots.
@@ -467,9 +507,9 @@ class DefectThermodynamics(MSONable):
                 (i.e. relative to the elemental references) that should be given here,
                 otherwise the absolute (DFT) chemical potentials should be given.
 
-                If None (default), sets all chemical potentials to zero. Chemical
-                potentials can also be supplied later in each analysis function.
-                (Default: None)
+                If ``None`` (default), sets all chemical potentials to zero. Chemical
+                potentials can also be supplied later in each analysis function, or set
+                using ``DefectThermodynamics.chempots = ...`` (with the same input options).
             el_refs (dict):
                 Dictionary of elemental reference energies for the chemical potentials
                 in the format:
@@ -477,7 +517,10 @@ class DefectThermodynamics(MSONable):
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided in format generated by ``doped`` (see tutorials).
-                (Default: None)
+
+                If ``None`` (default), sets all elemental reference energies to zero. Reference
+                energies can also be supplied later in each analysis function, or set
+                using ``DefectThermodynamics.el_refs = ...`` (with the same input options).
             vbm (float):
                 VBM eigenvalue to use as Fermi level reference point for analysis.
                 If None (default), will use ``"vbm"`` from the ``calculation_metadata``
@@ -491,15 +534,17 @@ class DefectThermodynamics(MSONable):
                 and the reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-                If None (default), will use "gap" from the calculation_metadata
+                If ``None`` (default), will use "gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in ``defect_entries``.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
-                to be grouped together (for plotting and transition level
-                analysis). If the minimum distance between equivalent defect
-                sites is less than ``dist_tol``, then they will be grouped
-                together, otherwise treated as separate defects.
+                to be grouped together (for plotting, transition level analysis
+                and defect concentration calculations). If the minimum distance between
+                equivalent defect sites is less than ``dist_tol``, then they will be
+                grouped together, otherwise treated as separate defects.
+                See ``plot()`` and ``get_fermi_level_and_concentrations()`` docstrings
+                for more information.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each defect
@@ -511,7 +556,7 @@ class DefectThermodynamics(MSONable):
                 Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
                 Can also be provided later when using ``get_equilibrium_fermi_level()``,
-                ``get_quenched_fermi_level_and_concentrations`` etc, or set using
+                ``get_fermi_level_and_concentrations`` etc, or set using
                 ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
 
                 Usually this is a static calculation with the `primitive` cell of the bulk
@@ -521,7 +566,7 @@ class DefectThermodynamics(MSONable):
                 convergence wrt `k`-point sampling. Consistent functional settings should be
                 used for the bulk DOS and defect supercell calculations.
                 (Default: None)
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable. (Default: False)
@@ -543,8 +588,8 @@ class DefectThermodynamics(MSONable):
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
-                to be grouped together (for plotting and transition level
-                analysis).
+                to be grouped together (for plotting, transition level analysis
+                and defect concentration calculations).
             transition_levels (dict):
                 Dictionary of charge transition levels for each defect entry.
                 (e.g. ``{defect_name: {charge: transition_level}}``).
@@ -557,7 +602,7 @@ class DefectThermodynamics(MSONable):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of states
                 (DOS), used for calculating Fermi level positions and defect/carrier
                 concentrations.
-            skip_check (bool):
+            skip_vbm_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable.
@@ -574,7 +619,7 @@ class DefectThermodynamics(MSONable):
         self._chempots, self._el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
         self._dist_tol = dist_tol
         self.check_compatibility = check_compatibility
-        self.skip_check = skip_check
+        self.skip_vbm_check = skip_vbm_check
 
         # get and check VBM/bandgap values:
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
@@ -673,7 +718,7 @@ class DefectThermodynamics(MSONable):
             "check_compatibility": self.check_compatibility,
             "bulk_formula": self.bulk_formula,
             "bulk_dos": self.bulk_dos,
-            "skip_check": self.skip_check,
+            "skip_vbm_check": self.skip_vbm_check,
         }
 
     @classmethod
@@ -712,8 +757,12 @@ class DefectThermodynamics(MSONable):
             band_gap=d.get("band_gap"),
             dist_tol=d.get("dist_tol", 1.5),
             check_compatibility=d.get("check_compatibility", True),
-            bulk_dos=FermiDos.from_dict(d.get("bulk_dos")) if d.get("bulk_dos") else None,
-            skip_check=d.get("skip_check"),
+            bulk_dos=(
+                FermiDos.from_dict(d["bulk_dos"])
+                if isinstance(d.get("bulk_dos"), dict)
+                else d.get("bulk_dos")
+            ),
+            skip_vbm_check=d.get("skip_vbm_check"),
         )
 
     def to_json(self, filename: Optional[PathLike] = None):
@@ -755,14 +804,16 @@ class DefectThermodynamics(MSONable):
         """
         return loadfn(filename)
 
-    def _get_chempots(self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None):
+    def _get_chempots(
+        self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+    ) -> tuple[Optional[dict], Optional[dict]]:
         """
         Parse chemical potentials, either using input values (after formatting
-        them in the doped format) or using the class attributes if set.
+        them in the ``doped`` format) or using the class attributes if set.
         """
         if isinstance(chempots, dict) and "elemental_refs" in chempots and el_refs is None:
             # doped chempot dict input, use its elemental refs
-            chempots, el_refs = _parse_chempots(chempots, chempots.get("elemental_refs"))
+            chempots, el_refs = _parse_chempots(chempots, chempots["elemental_refs"])
 
         else:  # use stored or provided el_refs
             chempots, el_refs = _parse_chempots(
@@ -852,9 +903,9 @@ class DefectThermodynamics(MSONable):
 
         for grouped_defect_entries in grouped_entries_list:
             sorted_defect_entries = sorted(
-                grouped_defect_entries, key=lambda x: (abs(x.charge_state), x.get_ediff())
-            )  # sort by charge, starting with closest to zero, and then formation energy for
-            # deterministic behaviour
+                grouped_defect_entries, key=lambda x: (-x.charge_state, x.get_ediff())
+            )  # sort by charge (most positive first, following left-to-right order in formation energy
+            # diagrams), and then energy (for those of the same charge) for ordering in output plots/dfs
 
             # prepping coefficient matrix for half-space intersection
             # [-Q, 1, -1*(E_form+Q*VBM)] -> -Q*E_fermi+E+-1*(E_form+Q*VBM) <= 0 where E_fermi and E are
@@ -1303,7 +1354,7 @@ class DefectThermodynamics(MSONable):
         ``pymatgen`` ``Vasprun`` object or path to the  ``vasprun.xml(.gz)``
         output of a bulk DOS calculation in VASP.
         Can also be provided later when using ``get_equilibrium_fermi_level()``,
-        ``get_quenched_fermi_level_and_concentrations`` etc.
+        ``get_fermi_level_and_concentrations`` etc.
 
         Usually this is a static calculation with the `primitive` cell of the bulk
         material, with relatively dense `k`-point sampling (especially for materials
@@ -1312,7 +1363,7 @@ class DefectThermodynamics(MSONable):
         convergence wrt `k`-point sampling. Consistent functional settings should be
         used for the bulk DOS and defect supercell calculations.
         """
-        self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_check=self.skip_check)
+        self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_vbm_check=self.skip_vbm_check)
 
     @property
     def defect_names(self):
@@ -1352,13 +1403,23 @@ class DefectThermodynamics(MSONable):
     def dist_tol(self):
         r"""
         Get the distance tolerance (in Å) used for grouping (equivalent)
-        defects together (for plotting and transition level analysis).
+        defects together (for plotting, transition level analysis and defect
+        concentration calculations).
 
         ``DefectEntry``\s of the same type and with a closest distance between
         equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
         grouped together. If a DefectEntry's site has a closest distance less
         than ``dist_tol`` to multiple sets of equivalent sites, then it is
         matched to the one with the lowest minimum distance.
+
+        This is used to group together different defect entries (different charge
+        states, and/or ground and metastable states (different spin or geometries))
+        which correspond to the same defect type (e.g. interstitials at a given
+        site), which is then used in plotting, transition level analysis and defect
+        concentration calculations; e.g. in the frozen defect approximation, the
+        total concentration of a given defect type group is calculated at the
+        annealing temperature, and then the equilibrium relative population of the
+        constituent entries is recalculated at the quenched temperature.
         """
         return self._dist_tol
 
@@ -1366,95 +1427,100 @@ class DefectThermodynamics(MSONable):
     def dist_tol(self, input_dist_tol: float):
         r"""
         Set the distance tolerance (in Å) used for grouping (equivalent)
-        defects together (for plotting and transition level analysis), and
-        reparse the thermodynamic information (transition levels etc) with this
-        tolerance.
+        defects together (for plotting, transition level analysis and defect
+        concentration calculations), and reparse the thermodynamic information
+        (transition levels etc) with this tolerance.
 
         ``DefectEntry``\s of the same type and with a closest distance between
         equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
         grouped together. If a DefectEntry's site has a closest distance less
         than ``dist_tol`` to multiple sets of equivalent sites, then it is
         matched to the one with the lowest minimum distance.
+
+        This is used to group together different defect entries (different charge
+        states, and/or ground and metastable states (different spin or geometries))
+        which correspond to the same defect type (e.g. interstitials at a given
+        site), which is then used in plotting, transition level analysis and defect
+        concentration calculations; e.g. in the frozen defect approximation, the
+        total concentration of a given defect type group is calculated at the
+        annealing temperature, and then the equilibrium relative population of the
+        constituent entries is recalculated at the quenched temperature.
         """
         self._dist_tol = input_dist_tol
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
             warnings.filterwarnings("ignore", message="No chemical potentials")
             self._parse_transition_levels()
 
-    def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
-        """
-        Handle the input Fermi level choice.
-
-        If Fermi level not set, defaults to mid-gap Fermi level (E_g/2) and
-        prints an info message to the user.
-        """
-        if fermi_level is None:
-            fermi_level = 0.5 * self.band_gap  # type: ignore
-            print(
-                f"Fermi level was not set, so using mid-gap Fermi level (E_g/2 = {fermi_level:.2f} eV "
-                f"relative to the VBM)."
-            )
-        return fermi_level
-
-    def get_equilibrium_concentrations(
+    def get_formation_energies(
         self,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
         fermi_level: Optional[float] = None,
-        temperature: float = 300,
-        per_charge: bool = True,
-        per_site: bool = False,
         skip_formatting: bool = False,
-        lean: bool = False,
-    ) -> pd.DataFrame:
+    ) -> Union[pd.DataFrame, list[pd.DataFrame]]:
         r"""
-        Compute the `equilibrium` concentrations (in cm^-3) for all
-        ``DefectEntry``\s in the ``DefectThermodynamics`` object, at a given
-        chemical potential limit, fermi_level and temperature, assuming the
-        dilute limit approximation.
+        Generates defect formation energy tables (DataFrames) for either a
+        single chemical potential limit (i.e. phase diagram ``limit``) or each
+        limit in the phase diagram (chempots dict), depending on input
+        ``limit`` and ``chempots``.
 
-        Note that these are the `equilibrium` defect concentrations!
-        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
-        instead be used to calculate the Fermi level and defect concentrations
-        for a material grown/annealed at higher temperatures and then cooled
-        (quenched) to room/operating temperature (where defect concentrations
-        are assumed to remain fixed) - this is known as the frozen defect
-        approach and is typically the most valid approximation (see its
-        docstring for more information).
+        Table Key: (all energies in eV):
 
-        The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation (see discussion in https://doi.org/10.1039/D2FD00043A
-        and https://doi.org/10.1039/D3CS00432E), affecting the final concentration by
-        up to ~2 orders of magnitude. This factor is taken from the product of the
-        ``defect_entry.defect.multiplicity`` and ``defect_entry.degeneracy_factors``
-        attributes.
+        - 'Defect':
+            Defect name (without charge)
+        - 'q':
+            Defect charge state.
+        - 'ΔEʳᵃʷ':
+            Raw DFT energy difference between defect and host supercell (E_defect - E_host).
+        - 'qE_VBM':
+            Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
+        - 'qE_F':
+            Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
+            (if "vbm" in ``DefectEntry.calculation_metadata``)
+        - 'Σμ_ref':
+            Sum of reference energies of the elemental phases in the chemical potentials sum.
+        - 'Σμ_formal':
+            Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
+        - 'E_corr':
+            Finite-size supercell charge correction.
+        - 'Eᶠᵒʳᵐ':
+            Defect formation energy, with the specified chemical potentials and Fermi level.
+            Equals the sum of all other terms.
+        - 'Path':
+            Path to the defect calculation folder.
+        - 'Δ[E_corr]':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
 
         Args:
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the defect
-                formation energies (and thus concentrations). If ``None`` (default),
-                will use ``self.chempots`` (= 0 for all chemical potentials by default).
+                formation energies. If None (default), will use ``self.chempots``.
                 This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
                 (the format generated by ``doped``\'s chemical potential parsing
                 functions (see tutorials)) and specific limits (chemical potential
                 limits) can then be chosen using ``limit``.
 
                 Alternatively this can be a dictionary of chemical potentials for a
-                single limit (``limit``), in the format: ``{element symbol: chemical potential}``.
+                single limit (limit), in the format: ``{element symbol: chemical potential}``.
                 If manually specifying chemical potentials this way, you can set the
                 ``el_refs`` option with the DFT reference energies of the elemental phases,
                 in which case it is the formal chemical potentials (i.e. relative to the
                 elemental references) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
+
+                If None (default), sets all chemical potentials to zero.
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
+                (Default: None)
             limit (str):
                 The chemical potential limit for which to
-                obtain the equilibrium concentrations. Can be either:
+                tabulate formation energies. Can be either:
 
-                - ``None``, if ``chempots`` corresponds to a single chemical potential
-                  limit - otherwise will use the first chemical potential limit in the
-                  ``chempots`` dict.
-                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                - None, in which case tables are generated for all limits in ``chempots``.
+                - "X-rich"/"X-poor" where X is an element in the system, in which
                   case the most X-rich/poor limit will be used (e.g. "Li-rich").
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
@@ -1468,667 +1534,184 @@ class DefectThermodynamics(MSONable):
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
                 (Default: None)
             fermi_level (float):
                 Value corresponding to the electron chemical potential, referenced
-                to the VBM (using ``self.vbm``, which is the VBM of the `bulk supercell`
-                calculation by default). If None (default), set to the mid-gap Fermi
-                level (E_g/2).
-            temperature (float):
-                Temperature in Kelvin at which to calculate the equilibrium concentrations.
-                Default is 300 K.
-            per_charge (bool):
-                Whether to break down the defect concentrations into individual defect charge
-                states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
-                (default: True)
-            per_site (bool):
-                Whether to return the concentrations as percent concentrations per site,
-                rather than the default of per cm^3. (default: False)
+                to the VBM eigenvalue, which is taken from the ``calculation_metadata``
+                dict attributes of ``DefectEntry``\s in ``self.defect_entries`` if present,
+                otherwise ``self.vbm`` -- which correspond to the VBM of the `bulk supercell`
+                calculation by default, unless ``bulk_band_gap_vr`` is set during defect
+                parsing).  ``None`` (default), set to the mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
-                Whether to skip formatting the defect charge states and concentrations as
-                strings (and keep as ``int``\s and ``float``\s instead). (default: False)
-            lean (bool):
-                Whether to return a leaner ``DataFrame`` with only the defect name, charge
-                state, and concentration in cm^-3 (assumes ``skip_formatting=True``). Only
-                really intended for internal ``doped`` usage, to reduce compute times when
-                calculating defect concentrations repeatedly. (default: False)
+                Whether to skip formatting the defect charge states as
+                strings (and keep as ``int``\s and ``float``\s instead).
+                (default: False)
 
         Returns:
-            ``pandas`` ``DataFrame`` of defect concentrations (and formation energies)
-            for each ``DefectEntry`` in the ``DefectThermodynamics`` object.
+            ``pandas`` ``DataFrame`` or list of ``DataFrame``\s
         """
         fermi_level = self._get_and_set_fermi_level(fermi_level)
         chempots, el_refs = self._get_chempots(
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
-        skip_formatting = skip_formatting or lean
 
-        energy_concentration_list = []
-
-        if chempots is None:  # only warn once
-            _no_chempots_warning()
-            all_comps = [
-                entry.sc_entry.composition if entry.sc_entry else entry.bulk_entry.composition
-                for entry in self.defect_entries.values()
-            ]
-            empty_el_dict = {el: 0 for el in {el.symbol for comp in all_comps for el in comp}}
-            chempots = {
-                "limits": {"No User Chemical Potentials": empty_el_dict},
-                "limits_wrt_el_refs": {"No User Chemical Potentials": empty_el_dict},
-                "elemental_refs": el_refs or empty_el_dict,
+        if chempots is None:
+            _no_chempots_warning()  # warn only once
+            chempots = {  # empty sub-dicts so they're iterable (for following code)
+                "limits": {"No User Chemical Potentials": {}},
+                "limits_wrt_el_refs": {"No User Chemical Potentials": {}},
             }
 
-        for defect_entry in self.defect_entries.values():
-            formation_energy = defect_entry.formation_energy(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
-            raw_concentration = defect_entry.equilibrium_concentration(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-                temperature=temperature,
-                per_site=per_site,
-                formation_energy=formation_energy,  # reduce compute times
-            )
+        limit = _parse_limit(chempots, limit)
+        limits = [limit] if limit is not None else list(chempots["limits"].keys())
 
-            defect_name = defect_entry.name.rsplit("_", 1)[0]  # name without charge
-            charge = (
-                defect_entry.charge_state
-                if skip_formatting
-                else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
-            )
-            if lean:
-                energy_concentration_list.append(
-                    {
-                        "Defect": defect_name,
-                        "Charge": charge,
-                        "Concentration (cm^-3)": raw_concentration,
-                    }
+        list_of_dfs = []
+        with warnings.catch_warnings():  # avoid double warning, already warned above
+            warnings.filterwarnings("ignore", "Chemical potentials not present")
+            for limit in limits:
+                limits_wrt_el_refs = chempots.get("limits_wrt_el_refs") or chempots.get(
+                    "limits_wrt_elt_refs"
                 )
-            else:
-                energy_concentration_list.append(
-                    {
-                        "Defect": defect_name,
-                        "Raw Charge": defect_entry.charge_state,  # for sorting
-                        "Charge": charge,
-                        "Formation Energy (eV)": round(formation_energy, 3),
-                        "Raw Concentration": raw_concentration,
-                        (
-                            "Concentration (per site)" if per_site else "Concentration (cm^-3)"
-                        ): _format_concentration(
-                            raw_concentration, per_site=per_site, skip_formatting=skip_formatting
-                        ),
-                    }
+                if limits_wrt_el_refs is None:
+                    raise ValueError("Supplied chempots are not in a recognised format (see docstring)!")
+                relative_chempots = limits_wrt_el_refs[limit]
+                if el_refs is None:
+                    el_refs = (
+                        {el: 0 for el in relative_chempots}
+                        if chempots.get("elemental_refs") is None
+                        else chempots["elemental_refs"]
+                    )
+
+                single_formation_energy_df = self._single_formation_energy_table(
+                    relative_chempots, el_refs, fermi_level, skip_formatting
                 )
+                list_of_dfs.append(single_formation_energy_df)
 
-        conc_df = pd.DataFrame(energy_concentration_list)
+        return list_of_dfs[0] if len(list_of_dfs) == 1 else list_of_dfs
 
-        if per_charge:
-            if lean:
-                return conc_df
-
-            conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
-                "Raw Concentration"
-            ].transform("sum")
-            conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
-                lambda x: f"{x:.2%}"
-            )
-            conc_df = conc_df.drop(columns=["Raw Charge", "Raw Concentration"])
-            return conc_df.reset_index(drop=True)
-
-        # group by defect and sum concentrations:
-        return _group_defect_charge_state_concentrations(
-            conc_df, per_site=per_site, skip_formatting=skip_formatting
-        )
-
-    def _parse_fermi_dos(
-        self, bulk_dos: Optional[Union[PathLike, Vasprun, FermiDos]] = None, skip_check: bool = False
-    ) -> FermiDos:
-        if bulk_dos is None:
-            return None
-
-        if isinstance(bulk_dos, FermiDos):
-            fdos = bulk_dos
-            # most similar settings to Vasprun.eigenvalue_band_properties:
-            fdos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]  # tol 1e-4 is lowest possible, as VASP
-            fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
-
-        if isinstance(bulk_dos, PathLike):
-            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)  # converted to fdos in next block
-
-        if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
-            fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
-            fdos = get_fermi_dos(bulk_dos)
-
-        if abs(fdos_vbm - self.vbm) > 0.05 and not skip_check:
-            warnings.warn(
-                f"The VBM eigenvalue of the bulk DOS calculation ({fdos_vbm:.2f} eV, band gap = "
-                f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
-                f"({self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the bulk "
-                f"supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
-                f"parsing). If this is only due to differences in kpoint sampling for the bulk DOS vs "
-                f"supercell calculations, then you should use the `bulk_band_gap_vr` option during "
-                f"defect parsing to set the bulk band gap and VBM eigenvalue "
-                f"(`DefectThermodynamics.gap/vbm`) to the correct values (though the absolute values of "
-                f"predictions should not be affected as the eigenvalue references in the calculations "
-                f"are consistent, just the reported Fermi levels will be referenced to "
-                f"`DefectThermodynamics.vbm` which may not be the exact VBM position here).\n"
-                f"Otherwise if this is due to changes in functional settings (LHFCALC, AEXX etc), then "
-                f"the calculations should be redone with consistent settings to ensure accurate "
-                f"predictions.\n"
-                f"Note that the Fermi level will be always referenced to `DefectThermodynamics.vbm`!"
-            )
-        return fdos
-
-    def get_equilibrium_fermi_level(
+    def _single_formation_energy_table(
         self,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        temperature: float = 300,
-        return_concs: bool = False,
-        skip_check: bool = False,
-    ) -> Union[float, tuple[float, float, float]]:
-        r"""
-        Calculate the self-consistent Fermi level, at a given chemical
-        potential limit and temperature, assuming `equilibrium` defect
-        concentrations (i.e. under annealing) and the dilute limit
-        approximation, by self-consistently solving for the Fermi level which
-        yields charge neutrality.
-
-        Note that the returned Fermi level is given relative to ``self.vbm``,
-        which is the VBM eigenvalue of the bulk supercell calculation by
-        default, unless ``bulk_band_gap_vr`` is set during defect parsing.
-
-        Note that this assumes `equilibrium` defect concentrations!
-        DefectThermodynamics.get_quenched_fermi_level_and_concentrations() can
-        instead be used to calculate the Fermi level and defect concentrations
-        for a material grown/annealed at higher temperatures and then cooled
-        (quenched) to room/operating temperature (where defect concentrations
-        are assumed to remain fixed) - this is known as the frozen defect
-        approach and is typically the most valid approximation (see its
-        docstring for more information).
-
-        Note that the bulk DOS calculation should be well-converged with respect to
-        k-points for accurate Fermi level predictions!
-
-        The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation and thus Fermi level calculation (see discussion in
-        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
-        affecting the final concentration by up to ~2 orders of magnitude. This factor
-        is taken from the product of the ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes.
-
-        Args:
-            bulk_dos (FermiDos or Vasprun or PathLike):
-                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
-                for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
-                ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
-                calculation in VASP -- however this will be much slower when looping over many
-                conditions as it will re-parse the DOS each time! (So preferably use
-                ``get_fermi_dos()`` as shown in the defect thermodynamics tutorial).
-
-                Usually this is a static calculation with the `primitive` cell of the bulk
-                material, with relatively dense `k`-point sampling (especially for materials
-                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-                convergence wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
-
-                ``bulk_dos`` can also be left as ``None`` (default), if it has previously
-                been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
-            chempots (dict):
-                Dictionary of chemical potentials to use for calculating the defect
-                formation energies (and thus concentrations and Fermi level).
-                If ``None`` (default), will use ``self.chempots`` (= 0 for all chemical
-                potentials by default).
-                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
-                (the format generated by ``doped``\'s chemical potential parsing
-                functions (see tutorials)) and specific limits (chemical potential
-                limits) can then be chosen using ``limit``.
-
-                Alternatively this can be a dictionary of chemical potentials for a
-                single limit (limit), in the format: ``{element symbol: chemical potential}``.
-                If manually specifying chemical potentials this way, you can set the
-                ``el_refs`` option with the DFT reference energies of the elemental phases,
-                in which case it is the formal chemical potentials (i.e. relative to the
-                elemental references) that should be given here, otherwise the absolute
-                (DFT) chemical potentials should be given.
-            limit (str):
-                The chemical potential limit for which to
-                determine the equilibrium Fermi level. Can be either:
-
-                - ``None``, if ``chempots`` corresponds to a single chemical potential
-                  limit - otherwise will use the first chemical potential limit in the
-                  ``chempots`` dict.
-                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
-                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
-                - A key in the ``(self.)chempots["limits"]`` dictionary.
-
-                The latter two options can only be used if ``chempots`` is in the
-                ``doped`` format (see chemical potentials tutorial).
-                (Default: None)
-            el_refs (dict):
-                Dictionary of elemental reference energies for the chemical potentials
-                in the format:
-                ``{element symbol: reference energy}`` (to determine the formal chemical
-                potentials, when ``chempots`` has been manually specified as
-                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
-                provided/present in format generated by ``doped`` (see tutorials).
-                (Default: None)
-            temperature (float):
-                Temperature in Kelvin at which to calculate the equilibrium Fermi level.
-                Default is 300 K.
-            return_concs (bool):
-                Whether to return the corresponding electron and hole concentrations
-                (in cm^-3) as well as the Fermi level. (default: False)
-            skip_check (bool):
-                Whether to skip the warning about the DOS VBM differing from ``self.vbm``
-                by >0.05 eV. Should only be used when the reason for this difference is
-                known/acceptable. (default: False)
-
-        Returns:
-            Self consistent Fermi level (in eV from the VBM (``self.vbm``)), and the
-            corresponding electron and hole concentrations (in cm^-3) if ``return_concs=True``.
-        """
-        if bulk_dos is not None:
-            self.bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=skip_check)
-
-        if self.bulk_dos is None:  # none provided, and none previously set
-            raise ValueError(
-                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
-                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
-                "concentrations and solving for Fermi level position."
-            )
-
-        chempots, el_refs = self._get_chempots(
-            chempots, el_refs
-        )  # returns self.chempots/self.el_refs if chempots is None
-        if chempots is None:  # handle once here, as otherwise brentq function results in this being
-            # called many times
-            _no_chempots_warning()
-
-        def _get_total_q(fermi_level):
-            conc_df = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                temperature=temperature,
-                fermi_level=fermi_level,
-                lean=True,
-            )
-            qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            qd_tot += get_doping(
-                fermi_dos=self.bulk_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
-            )
-            return qd_tot
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
-            # as given once above
-
-            eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
-            if return_concs:
-                e_conc, h_conc = get_e_h_concs(
-                    self.bulk_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
-                )
-                return eq_fermi_level, e_conc, h_conc
-
-        return eq_fermi_level
-
-    def get_quenched_fermi_level_and_concentrations(
-        self,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        annealing_temperature: float = 1000,
-        quenched_temperature: float = 300,
-        delta_gap: float = 0,
-        per_charge: bool = True,
-        per_site: bool = False,
+        relative_chempots: dict,
+        el_refs: dict,
+        fermi_level: float = 0,
         skip_formatting: bool = False,
-        return_annealing_values: bool = False,
-        **kwargs,
-    ) -> Union[
-        tuple[float, float, float, pd.DataFrame],
-        tuple[float, float, float, pd.DataFrame, float, float, float, pd.DataFrame],
-    ]:
+    ) -> pd.DataFrame:
         r"""
-        Calculate the self-consistent Fermi level and corresponding
-        carrier/defect calculations, for a given chemical potential limit,
-        annealing temperature and quenched/operating temperature, using the
-        frozen defect and dilute limit approximations under the constraint of
-        charge neutrality.
+        Returns a defect formation energy table for a single chemical potential
+        limit as a pandas ``DataFrame``.
 
-        According to the 'frozen defect' approximation, we typically expect defect
-        concentrations to reach equilibrium during annealing/crystal growth
-        (at elevated temperatures), but `not` upon quenching (i.e. at
-        room/operating temperature) where we expect kinetic inhibition of defect
-        annhiliation and hence non-equilibrium defect concentrations / Fermi level.
-        Typically this is approximated by computing the equilibrium Fermi level and
-        defect concentrations at the annealing temperature, and then assuming the
-        total concentration of each defect is fixed to this value, but that the
-        relative populations of defect charge states (and the Fermi level) can
-        re-equilibrate at the lower (room) temperature. See discussion in
-        https://doi.org/10.1039/D3CS00432E (brief),
-        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
-        ``doped``/``py-sc-fermi`` tutorials for more information.
-        In certain cases (such as Li-ion battery materials or extremely slow charge
-        capture/emission), these approximations may have to be adjusted such that some
-        defects/charge states are considered fixed and some are allowed to
-        re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
-        these specific cases is demonstrated in:
-        py-sc-fermi.readthedocs.io/en/latest/tutorial.html#3.-Applying-concentration-constraints
+        Table Key: (all energies in eV):
 
-        This function works by calculating the self-consistent Fermi level and total
-        concentration of each defect at the annealing temperature, then fixing the
-        total concentrations to these values and re-calculating the self-consistent
-        (constrained equilibrium) Fermi level and relative charge state concentrations
-        under this constraint at the quenched/operating temperature.
-
-        Note that the bulk DOS calculation should be well-converged with respect to
-        k-points for accurate Fermi level predictions!
-
-        The degeneracy/multiplicity factor "g" is an important parameter in the defect
-        concentration equation and thus Fermi level calculation (see discussion in
-        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
-        affecting the final concentration by up to 2 orders of magnitude. This factor
-        is taken from the product of the ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes.
-
-        If you use this code in your work, please also cite:
-        Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
-        https://doi.org/10.21105/joss.04962
+        - 'Defect':
+            Defect name (without charge)
+        - 'q':
+            Defect charge state.
+        - 'ΔEʳᵃʷ':
+            Raw DFT energy difference between defect and host supercell (E_defect - E_host).
+        - 'qE_VBM':
+            Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
+        - 'qE_F':
+            Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
+            (if "vbm" in ``DefectEntry.calculation_metadata``)
+        - 'Σμ_ref':
+            Sum of reference energies of the elemental phases in the chemical potentials sum.
+        - 'Σμ_formal':
+            Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
+        - 'E_corr':
+            Finite-size supercell charge correction.
+        - 'Eᶠᵒʳᵐ':
+            Defect formation energy, with the specified chemical potentials and Fermi level.
+            Equals the sum of all other terms.
+        - 'Path':
+            Path to the defect calculation folder.
+        - 'Δ[E_corr]':
+            Estimated error in the charge correction, from the variance of the potential in
+            the sampling region.
 
         Args:
-            bulk_dos (FermiDos or Vasprun or PathLike):
-                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
-                for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
-                ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
-                calculation in VASP -- however this will be much slower when looping over many
-                conditions as it will re-parse the DOS each time! (So preferably use
-                ``get_fermi_dos()`` as shown in the defect thermodynamics tutorial).
-
-                Usually this is a static calculation with the `primitive` cell of the bulk
-                material, with relatively dense `k`-point sampling (especially for materials
-                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-                convergence wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
-
-                ``bulk_dos`` can also be left as ``None`` (default), if it has previously
-                been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
-            chempots (dict):
-                Dictionary of chemical potentials to use for calculating the defect
-                formation energies (and thus concentrations and Fermi level).
-                If ``None`` (default), will use ``self.chempots`` (= 0 for all chemical
-                potentials by default).
-                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
-                (the format generated by ``doped``\'s chemical potential parsing
-                functions (see tutorials)) and specific limits (chemical potential
-                limits) can then be chosen using ``limit``.
-
-                Alternatively this can be a dictionary of chemical potentials for a
-                single limit (limit), in the format: ``{element symbol: chemical potential}``.
-                If manually specifying chemical potentials this way, you can set the
-                ``el_refs`` option with the DFT reference energies of the elemental phases,
-                in which case it is the formal chemical potentials (i.e. relative to the
-                elemental references) that should be given here, otherwise the absolute
-                (DFT) chemical potentials should be given.
-            limit (str):
-                The chemical potential limit for which to
-                determine the Fermi level and concentrations. Can be either:
-
-                - ``None``, if ``chempots`` corresponds to a single chemical potential
-                  limit - otherwise will use the first chemical potential limit in the
-                  ``chempots`` dict.
-                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
-                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
-                - A key in the ``(self.)chempots["limits"]`` dictionary.
-
-                The latter two options can only be used if ``chempots`` is in the
-                ``doped`` format (see chemical potentials tutorial).
-                (Default: None)
+            relative_chempots (dict):
+                Dictionary of formal (i.e. relative to elemental reference energies)
+                chemical potentials in the form ``{element symbol: energy}``.
             el_refs (dict):
                 Dictionary of elemental reference energies for the chemical potentials
-                in the format:
-                ``{element symbol: reference energy}`` (to determine the formal chemical
-                potentials, when ``chempots`` has been manually specified as
-                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
-                provided/present in format generated by ``doped`` (see tutorials).
+                in the format: ``{element symbol: reference energy}``
                 (Default: None)
-            annealing_temperature (float):
-                Temperature in Kelvin at which to calculate the high temperature
-                (fixed) total defect concentrations, which should correspond to the
-                highest temperature during annealing/synthesis of the material (at
-                which we assume equilibrium defect concentrations) within the frozen
-                defect approach. Default is 1000 K.
-            quenched_temperature (float):
-                Temperature in Kelvin at which to calculate the self-consistent
-                (constrained equilibrium) Fermi level and carrier concentrations,
-                given the fixed total concentrations, which should correspond to
-                operating temperature of the material (typically room temperature).
-                Default is 300 K.
-            delta_gap (float):
-                Change in band gap (in eV) of the host material at the annealing
-                temperature (e.g. due to thermal renormalisation), relative to the
-                original band gap of the ``FermiDos`` object (assumed to correspond to the
-                quenching temperature). If set, applies a scissor correction to ``fermi_dos``
-                which renormalises the band gap symmetrically about the VBM and CBM (i.e.
-                assuming equal up/downshifts of the band-edges around their original
-                eigenvalues) while the defect levels remain fixed.
-                (Default: 0)
-            per_charge (bool):
-                Whether to break down the defect concentrations into individual defect charge
-                states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
-                (default: True)
-            per_site (bool):
-                Whether to return the concentrations as percent concentrations per site,
-                rather than the default of per cm^3. (default: False)
+            fermi_level (float):
+                Value corresponding to the electron chemical potential, referenced
+                to the VBM eigenvalue, which is taken from the ``calculation_metadata``
+                dict attributes of ``DefectEntry``\s in ``self.defect_entries`` if present,
+                otherwise ``self.vbm`` -- which correspond to the VBM of the `bulk supercell`
+                calculation by default, unless ``bulk_band_gap_vr`` is set during defect
+                parsing). If ``None`` (default), set to the mid-gap Fermi level (E_g/2).
             skip_formatting (bool):
-                Whether to skip formatting the defect charge states and concentrations as
-                strings (and keep as ``int``\s and ``float``\s instead). (default: False)
-            return_annealing_values (bool):
-                If True, also returns the Fermi level, electron and hole concentrations and
-                defect concentrations at the annealing temperature. (default: False)
-            **kwargs:
-                Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
-                is not 0) or ``_parse_fermi_dos`` (``skip_check``; to skip the warning about
-                the DOS VBM differing from ``self.vbm`` by >0.05 eV; default is False).
+                Whether to skip formatting the defect charge states as
+                strings (and keep as ``int``\s and ``float``\s instead).
+                (default: False)
 
         Returns:
-            Predicted quenched Fermi level (in eV from the VBM (``self.vbm``)), the
-            corresponding electron and hole concentrations (in cm^-3) and a dataframe of the
-            quenched defect concentrations (in cm^-3); ``(fermi_level, e_conc, h_conc, conc_df)``.
-            If ``return_annealing_values=True``, also returns the annealing Fermi level, electron
-            and hole concentrations and a dataframe of the annealing defect concentrations (in cm^-3);
-            ``(fermi_level, e_conc, h_conc, conc_df, annealing_fermi_level, annealing_e_conc,
-            annealing_h_conc, annealing_conc_df)``.
+            ``pandas`` ``DataFrame`` sorted by formation energy
         """
-        # TODO: Update docstrings after `py-sc-fermi` interface written, to point toward it for more
-        #  advanced analysis
-        if kwargs and any(i not in ["verbose", "tol", "skip_check"] for i in kwargs):
-            raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
+        table = []
 
-        if bulk_dos is not None:
-            self.bulk_dos = self._parse_fermi_dos(bulk_dos, skip_check=kwargs.get("skip_check", False))
-
-        if self.bulk_dos is None:  # none provided, and none previously set
-            raise ValueError(
-                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
-                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
-                "concentrations and solving for Fermi level position."
+        for name, defect_entry in self.defect_entries.items():
+            row = [
+                name.rsplit("_", 1)[0],  # name without charge,
+                (
+                    defect_entry.charge_state
+                    if skip_formatting
+                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
+                ),
+            ]
+            row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
+            row += [defect_entry.charge_state * defect_entry.calculation_metadata.get("vbm", self.vbm)]
+            row += [defect_entry.charge_state * fermi_level]
+            row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
+            row += [defect_entry._get_chempot_term(relative_chempots)]
+            row += [sum(defect_entry.corrections.values())]
+            dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
+            formation_energy = defect_entry.formation_energy(
+                chempots=dft_chempots,
+                fermi_level=fermi_level,
+                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
             )
-        orig_fermi_dos = deepcopy(self.bulk_dos)  # can get modified during annealing loops
+            row += [formation_energy]
+            row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
+            row += [
+                sum(
+                    [
+                        val
+                        for key, val in defect_entry.corrections_metadata.items()
+                        if "charge_correction_error" in key
+                    ]
+                )
+            ]
 
-        chempots, el_refs = self._get_chempots(
-            chempots, el_refs
-        )  # returns self.chempots/self.el_refs if chempots is None
-        if chempots is None:  # handle once here, as otherwise brentq function results in this being
-            # called many times
-            _no_chempots_warning()
+            table.append(row)
 
-        annealing_dos = (
-            self.bulk_dos
-            if delta_gap == 0
-            else scissor_dos(
-                delta_gap,
-                self.bulk_dos,
-                verbose=kwargs.get("verbose", False),
-                tol=kwargs.get("tol", 1e-8),
-            )
+        formation_energy_df = pd.DataFrame(
+            table,
+            columns=[
+                "Defect",
+                "q",
+                "ΔEʳᵃʷ",
+                "qE_VBM",
+                "qE_F",
+                "Σμ_ref",
+                "Σμ_formal",
+                "E_corr",
+                "Eᶠᵒʳᵐ",
+                "Path",
+                "Δ[E_corr]",
+            ],
         )
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "No chemical potentials")  # ignore chempots warning,
-            # as given once above
-
-            annealing_fermi_level = self.get_equilibrium_fermi_level(
-                annealing_dos,
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                temperature=annealing_temperature,
-                return_concs=False,
-                skip_check=kwargs.get("skip_check", delta_gap != 0),  # skip check by default if delta
-                # gap not 0
-            )
-            assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
-            self.bulk_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
-
-            annealing_defect_concentrations = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=annealing_fermi_level,  # type: ignore
-                temperature=annealing_temperature,
-                per_charge=False,  # give total concentrations for each defect
-                lean=True,
-            )
-            total_concentrations = dict(  # {Defect: Total Concentration (cm^-3)}
-                zip(
-                    annealing_defect_concentrations.index,  # index is Defect name, when per_charge=False
-                    annealing_defect_concentrations["Concentration (cm^-3)"],
-                )
-            )
-
-            def _get_constrained_concentrations(
-                fermi_level, per_charge=True, per_site=False, skip_formatting=False, lean=True
-            ):
-                conc_df = self.get_equilibrium_concentrations(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
-                    temperature=quenched_temperature,
-                    fermi_level=fermi_level,
-                    skip_formatting=True,
-                    lean=lean,
-                )
-                conc_df["Total Concentration (cm^-3)"] = conc_df["Defect"].map(total_concentrations)
-                conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
-                    conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
-                    / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
-                ) * conc_df["Total Concentration (cm^-3)"]
-
-                if not per_charge:
-                    conc_df = _group_defect_charge_state_concentrations(
-                        conc_df, per_site, skip_formatting=True
-                    )
-
-                if per_site:
-                    cm3_conc_df = self.get_equilibrium_concentrations(
-                        chempots=chempots,
-                        limit=limit,
-                        el_refs=el_refs,
-                        temperature=quenched_temperature,
-                        fermi_level=fermi_level,
-                        skip_formatting=True,
-                        per_charge=per_charge,
-                    )
-                    per_site_conc_df = self.get_equilibrium_concentrations(
-                        chempots=chempots,
-                        limit=limit,
-                        el_refs=el_refs,
-                        temperature=quenched_temperature,
-                        fermi_level=fermi_level,
-                        skip_formatting=True,
-                        per_site=True,
-                        per_charge=per_charge,
-                    )
-                    per_site_factors = (
-                        per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
-                    )
-                    conc_df["Concentration (per site)"] = (
-                        conc_df["Concentration (cm^-3)"] * per_site_factors
-                    )
-                    conc_df = conc_df.drop(columns=["Concentration (cm^-3)"])
-
-                    if not skip_formatting:
-                        conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
-                            _format_per_site_concentration
-                        )
-
-                elif not skip_formatting:
-                    conc_df["Concentration (cm^-3)"] = conc_df["Concentration (cm^-3)"].apply(
-                        lambda x: f"{x:.3e}"
-                    )
-
-                return conc_df
-
-            def _get_constrained_total_q(fermi_level):
-                conc_df = _get_constrained_concentrations(fermi_level, skip_formatting=True)
-                qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-                qd_tot += get_doping(  # use orig fermi dos for quenched temperature
-                    fermi_dos=orig_fermi_dos,
-                    fermi_level=fermi_level + self.vbm,
-                    temperature=quenched_temperature,
-                )
-                return qd_tot
-
-            eq_fermi_level: float = brentq(
-                _get_constrained_total_q, -1.0, self.band_gap + 1.0  # type: ignore
-            )
-            e_conc, h_conc = get_e_h_concs(
-                orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
-            )
-            conc_df = _get_constrained_concentrations(
-                eq_fermi_level, per_charge, per_site, skip_formatting, lean=False
-            )  # not lean for final output
-
-            if not return_annealing_values:
-                return (eq_fermi_level, e_conc, h_conc, conc_df)
-
-            annealing_e_conc, annealing_h_conc = get_e_h_concs(
-                annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature  # type: ignore
-            )
-            annealing_defect_concentrations = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                fermi_level=annealing_fermi_level,  # type: ignore
-                temperature=annealing_temperature,
-                per_charge=per_charge,
-                per_site=per_site,
-                skip_formatting=skip_formatting,
-            )
-            return (
-                eq_fermi_level,
-                e_conc,
-                h_conc,
-                conc_df,
-                annealing_fermi_level,
-                annealing_e_conc,
-                annealing_h_conc,
-                annealing_defect_concentrations,
-            )
+        # round all floats to 3dp:
+        formation_energy_df = formation_energy_df.round(3)
+        return formation_energy_df.set_index(["Defect", "q"])
 
     def get_formation_energy(
         self,
@@ -2167,6 +1750,9 @@ class DefectThermodynamics(MSONable):
                 (DFT) chemical potentials should be given.
 
                 If None (default), sets all chemical potentials to zero.
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
                 (Default: None)
             limit (str):
                 The chemical potential limit for which to
@@ -2189,6 +1775,10 @@ class DefectThermodynamics(MSONable):
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
                 (Default: None)
             fermi_level (float):
                 Value corresponding to the electron chemical potential, referenced
@@ -2300,6 +1890,11 @@ class DefectThermodynamics(MSONable):
                 in which case it is the formal chemical potentials (i.e. relative to the
                 elemental references) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
+
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
+                (Default: None)
             limit (str):
                 The chemical potential limit for which to
                 calculate formation energies (and thus dopability limits). Can be either:
@@ -2321,6 +1916,10 @@ class DefectThermodynamics(MSONable):
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
                 (Default: None)
 
         Returns:
@@ -2478,6 +2077,11 @@ class DefectThermodynamics(MSONable):
                 in which case it is the formal chemical potentials (i.e. relative to the
                 elemental references) that should be given here, otherwise the absolute
                 (DFT) chemical potentials should be given.
+
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
+                (Default: None)
             limit (str):
                 The chemical potential limit for which to
                 calculate formation energies (and thus doping windows). Can be either:
@@ -2499,6 +2103,10 @@ class DefectThermodynamics(MSONable):
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
                 (Default: None)
 
         Returns:
@@ -2591,8 +2199,110 @@ class DefectThermodynamics(MSONable):
             index=["p-type", "n-type"],
         )
 
-    # TODO: Don't show chempot table by default? At least is limit explicitly chosen?
-    # TODO: Add option to only plot defect states that are stable at some point in the bandgap
+    def prune_to_stable_entries(
+        self,
+        unstable_entries: Union[bool, str] = "not shallow",
+        shallow_charge_stability_tolerance: Optional[float] = None,
+        charge_stability_tolerance: float = 0,
+        **kwargs,
+    ) -> "DefectThermodynamics":
+        """
+        This function takes the defect entries in
+        ``DefectThermodynamics.defect_entries``, prunes them to only those
+        which pass a given stability criterion, and regenerates a new
+        ``DefectThermodynamics`` object with these defect entries.
+
+        This function can be used to prune out defect entries which are
+        detected to be shallow (perturbed host, 'fake') states according to
+        eigenvalue analysis (see
+        https://doped.readthedocs.io/en/latest/Tips.html#eigenvalue-electronic-structure-analysis
+        for more info), and/or entries which are only stable for certain
+        Fermi levels outside or within a small window of the band edges.
+
+        Does not modify the original ``DefectThermodynamics`` (``self``) object!
+
+        This function is used internally in ``doped`` with the
+        ``unstable_entries`` argument in ``DefectThermodynamics.plot()``,
+        but can also be used to prune out shallow/unstable defect entries for
+        other purposes (e.g. if one wants to exclude these entries in
+        concentration calculations -- though usually these states are irrelevant
+        in such calculations due to their low/near-negligible statibilites;
+        particularly when reasonable supercell sizes, DFT functionals and
+        structure searching are used).
+
+        Args:
+            unstable_entries (bool, str):
+                Controls the pruning of unstable/shallow defect states; allowed
+                values are ``True``, ``False`` or ``"not shallow"``. If
+                ``"not shallow"`` (default), defect entries which are predicted
+                to be shallow (perturbed host) states according to eigenvalue
+                analysis and only stable for Fermi levels within a small window
+                to a band edge (``shallow_stability_tol``) are omitted.
+                If ``False``, `all` defects which are not stable for any Fermi
+                level in the band gap (``charge_stability_tol``) are `also` omitted.
+                ``shallow_stability_tol`` and ``charge_stability_tol`` can be tuned
+                with the ``shallow_charge_stability_tolerance`` and
+                ``charge_stability_tolerance`` keyword arguments respectively.
+                If ``True``, defect entries are not pruned based on
+                stability/shallow classification.
+            shallow_charge_stability_tolerance (float):
+                Tolerance for the Fermi level stability window for defects which
+                have been classified as shallow states. If ``None`` (default), will
+                be set to the smaller of 0.05 eV or 10% of the band gap.
+            charge_stability_tolerance (float):
+                Tolerance for the Fermi level stability window for `all` defect
+                charge states, if ``unstable_entries=False``. Default is 0 eV,
+                meaning all charge states which are stable for any Fermi level in
+                the band gap will be included, but can be set to a positive value
+                (meaning only defect charge states which are stable at Fermi levels
+                in the band gap `further` than this energy window from a band edge)
+                or negative value (which is a less strict pruning, only excluding
+                charge states which become stable at Fermi levels outside the band
+                gap `further` than the absolute value of this energy window from a
+                band edge).
+            **kwargs:
+                Additional keyword arguments to pass to the ``DefectThermodynamics()``
+                initialisation (via ``DefectThermodynamics.from_dict()``).
+
+        Returns:
+            New ``DefectThermodynamics`` object with pruned defect entries.
+        """
+        if unstable_entries is True:  # all
+            return self
+
+        # prune to chosen defects
+        # determine tolerances:
+        shallow_tol = (
+            shallow_charge_stability_tolerance
+            if shallow_charge_stability_tolerance is not None
+            else min(0.05, self.band_gap * 0.1 if self.band_gap is not None else 0.05)
+        )
+        stability_tol = None if unstable_entries == "not shallow" else charge_stability_tolerance
+
+        pruned_defect_entries = {}
+        from doped.utils.eigenvalues import is_shallow
+
+        for name, defect_entry in self.defect_entries.items():
+            fermi_stability_window = self._get_in_gap_fermi_level_stability_window(defect_entry)
+            if stability_tol is not None and fermi_stability_window < stability_tol:
+                continue  # skip
+
+            if is_shallow(defect_entry) and fermi_stability_window < shallow_tol:
+                continue  # skip
+
+            pruned_defect_entries[name] = defect_entry
+
+        defect_thermo_dict = self.as_dict()
+        defect_thermo_dict.update(
+            {
+                "defect_entries": pruned_defect_entries,
+                "check_compatibility": False,
+                "skip_vbm_check": True,
+            }
+        )
+        defect_thermo_dict.update(kwargs)
+        return DefectThermodynamics.from_dict(defect_thermo_dict)
+
     # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
     #  make this the default if no chempots are specified? Or better default to plot both the most (
     #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
@@ -2606,17 +2316,15 @@ class DefectThermodynamics(MSONable):
     #   can also change the colours of the different defect lines (e.g. for CdTe_wout_meta increasing
     #   `dist_tol` to 2 to merge all Te interstitials, results in the colours of other defect lines (
     #   e.g. Cd_Te) changing at the same time - ideally this wouldn't happen!
-    #  TODO: optionally retain/remove unstable (in the gap) charge states (rather than current
-    #  default range of (VBM - 1eV, CBM + 1eV))... depends on if shallow defect tagging with pydefect is
-    #  implemented or not really, what would be best to do by default
 
     def plot(
         self,
         chempots: Optional[dict] = None,
         limit: Optional[str] = None,
         el_refs: Optional[dict] = None,
-        chempot_table: bool = True,
         all_entries: Union[bool, str] = False,
+        unstable_entries: Union[bool, str] = "not shallow",
+        chempot_table: Optional[bool] = None,
         style_file: Optional[PathLike] = None,
         xlim: Optional[tuple] = None,
         ylim: Optional[tuple] = None,
@@ -2626,6 +2334,7 @@ class DefectThermodynamics(MSONable):
         linestyles: Union[str, list[str]] = "-",
         auto_labels: bool = False,
         filename: Optional[PathLike] = None,
+        **kwargs,
     ) -> Union[Figure, list[Figure]]:
         r"""
         Produce a defect formation energy vs Fermi level plot (a.k.a. a defect
@@ -2635,6 +2344,14 @@ class DefectThermodynamics(MSONable):
         Note that the band edge positions are taken from ``self.vbm`` and
         ``self.band_gap``, which are parsed from the `bulk supercell calculation` by
         default, unless ``bulk_band_gap_vr`` is set during defect parsing.
+
+        Note that different defect entries (different charge states, and/or ground
+        and metastable states (different spin or geometries); e.g. interstitials
+        at a given site) are grouped together in distinct defect types according
+        to ``self.dist_tol`` , which is also used in transition level analysis and
+        defect concentrations. This can be adjusted as shown in the plotting
+        customisation tutorial:
+        https://doped.readthedocs.io/en/latest/plotting_customisation_tutorial.html
 
         Args:
             chempots (dict):
@@ -2655,6 +2372,9 @@ class DefectThermodynamics(MSONable):
                 otherwise the absolute (DFT) chemical potentials should be given.
 
                 If None (default), sets all chemical potentials to zero.
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
                 (Default: None)
             limit (str):
                 The chemical potential limit for which to
@@ -2675,16 +2395,38 @@ class DefectThermodynamics(MSONable):
                 potentials, when ``chempots`` has been manually specified as
                 ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
                 provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
                 (Default: None)
-            chempot_table (bool):
-                Whether to print the chemical potential table above the plot.
-                (Default: True)
             all_entries (bool, str):
                 Whether to plot the formation energy lines of `all` defect entries,
                 rather than the default of showing only the equilibrium states at each
                 Fermi level position (traditional). If instead set to "faded", will plot
                 the equilibrium states in bold, and all unstable states in faded grey
                 (Default: False)
+            unstable_entries (bool, str):
+                Controls the plotting of unstable/shallow defect states; allowed values
+                are ``True``, ``False`` or ``"not shallow"``. If ``"not shallow"``
+                (default), defect entries which are predicted to be shallow (perturbed
+                host) states according to eigenvalue analysis and only stable for Fermi
+                levels within a small window to a band edge (``shallow_stability_tol``)
+                are omitted from plotting. If ``False``, `all` defects which are not
+                stable for any Fermi level in the band gap are `also` omitted from
+                plotting.
+                ``shallow_stability_tol`` is set to the smaller of 0.05 eV or 10% of the
+                band gap by default, but can be set by a
+                ``shallow_charge_stability_tolerance = X`` keyword argument. If
+                ``unstable_entries=False``, the Fermi window stability tolerance for all
+                defects (default = 0; meaning any in-gap stability) can be set by a
+                ``charge_stability_tolerance = X`` keyword argument (positive or negative).
+                If ``True``, defect entries are not pruned based on stability/shallow
+                classification. See ``prune_to_stable_entries`` for more info.
+            chempot_table (Optional[bool]):
+                Whether to include a table of the chemical potentials above the formation
+                energy plot. If ``None`` (default), shown if multiple plots are generated
+                (i.e. multiple chemical potential limits) else not shown.
             style_file (PathLike):
                 Path to a mplstyle file to use for the plot. If None (default), uses
                 the default doped style (from ``doped/utils/doped.mplstyle``).
@@ -2726,6 +2468,11 @@ class DefectThermodynamics(MSONable):
                 states. If there are many transition levels, this can be quite ugly.
                 (Default: False)
             filename (PathLike): Filename to save the plot to. (Default: None (not saved))
+            **kwargs:
+                Additional keyword arguments for advanced customisation, such as
+                ``shallow_charge_stability_tolerance`` or ``charge_stability_tolerance``
+                for controlling stability window tolerances with the ``unstable_entries``
+                parameter (see argument description for more info).
 
         Returns:
             ``matplotlib`` ``Figure`` object, or list of ``Figure`` objects if multiple
@@ -2734,8 +2481,7 @@ class DefectThermodynamics(MSONable):
         from shakenbreak.plotting import _install_custom_font
 
         _install_custom_font()
-        # check input options:
-        if all_entries not in [False, True, "faded"]:
+        if all_entries not in [False, True, "faded"]:  # check input options
             raise ValueError(
                 f"`all_entries` option must be either False, True, or 'faded', not {all_entries}"
             )
@@ -2768,6 +2514,17 @@ class DefectThermodynamics(MSONable):
                 "of formation energies, but the transition level positions will be unaffected."
             )
 
+        if unstable_entries not in [False, True, "not shallow"]:  # check unstable_entries input options
+            raise ValueError(
+                f"`unstable_entries` option must be either True, False, 'not shallow', "
+                f"not {unstable_entries}. See DefectThermodynamics.plot docstring for more info."
+            )
+
+        # unstable_entries pruning:
+        thermo_to_plot = self.prune_to_stable_entries(
+            unstable_entries=unstable_entries, **kwargs
+        )  # Note that this will need to be updated if we add other kwarg options to this function
+
         style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         with plt.style.context(style_file):
@@ -2783,11 +2540,11 @@ class DefectThermodynamics(MSONable):
 
                 with warnings.catch_warnings():  # avoid double warning about no chempots supplied
                     warnings.filterwarnings("ignore", "No chemical potentials")
-                    fig = _TLD_plot(
-                        self,
+                    fig = formation_energy_plot(
+                        thermo_to_plot,
                         dft_chempots=dft_chempots,
                         el_refs=el_refs,
-                        chempot_table=chempot_table,
+                        chempot_table=chempot_table if chempot_table is not None else len(limits) > 1,
                         all_entries=all_entries,
                         xlim=xlim,
                         ylim=ylim,
@@ -2978,261 +2735,6 @@ class DefectThermodynamics(MSONable):
                         print(f"Transition level {index[1]} at {row['eV from VBM']:.3f} eV above the VBM")
                 print("")  # add space
 
-    def get_formation_energies(
-        self,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        fermi_level: Optional[float] = None,
-        skip_formatting: bool = False,
-    ) -> Union[pd.DataFrame, list[pd.DataFrame]]:
-        r"""
-        Generates defect formation energy tables (DataFrames) for either a
-        single chemical potential limit (i.e. phase diagram ``limit``) or each
-        limit in the phase diagram (chempots dict), depending on input
-        ``limit`` and ``chempots``.
-
-        Table Key: (all energies in eV):
-
-        - 'Defect':
-            Defect name (without charge)
-        - 'q':
-            Defect charge state.
-        - 'ΔEʳᵃʷ':
-            Raw DFT energy difference between defect and host supercell (E_defect - E_host).
-        - 'qE_VBM':
-            Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
-        - 'qE_F':
-            Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-            (if "vbm" in ``DefectEntry.calculation_metadata``)
-        - 'Σμ_ref':
-            Sum of reference energies of the elemental phases in the chemical potentials sum.
-        - 'Σμ_formal':
-            Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
-        - 'E_corr':
-            Finite-size supercell charge correction.
-        - 'Eᶠᵒʳᵐ':
-            Defect formation energy, with the specified chemical potentials and Fermi level.
-            Equals the sum of all other terms.
-        - 'Path':
-            Path to the defect calculation folder.
-        - 'Δ[E_corr]':
-            Estimated error in the charge correction, from the variance of the potential in
-            the sampling region.
-
-        Args:
-            chempots (dict):
-                Dictionary of chemical potentials to use for calculating the defect
-                formation energies. If None (default), will use ``self.chempots``.
-                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
-                (the format generated by ``doped``\'s chemical potential parsing
-                functions (see tutorials)) and specific limits (chemical potential
-                limits) can then be chosen using ``limit``.
-
-                Alternatively this can be a dictionary of chemical potentials for a
-                single limit (limit), in the format: ``{element symbol: chemical potential}``.
-                If manually specifying chemical potentials this way, you can set the
-                ``el_refs`` option with the DFT reference energies of the elemental phases,
-                in which case it is the formal chemical potentials (i.e. relative to the
-                elemental references) that should be given here, otherwise the absolute
-                (DFT) chemical potentials should be given.
-
-                If None (default), sets all chemical potentials to zero.
-                (Default: None)
-            limit (str):
-                The chemical potential limit for which to
-                tabulate formation energies. Can be either:
-
-                - None, in which case tables are generated for all limits in ``chempots``.
-                - "X-rich"/"X-poor" where X is an element in the system, in which
-                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
-                - A key in the ``(self.)chempots["limits"]`` dictionary.
-
-                The latter two options can only be used if ``chempots`` is in the
-                ``doped`` format (see chemical potentials tutorial).
-                (Default: None)
-            el_refs (dict):
-                Dictionary of elemental reference energies for the chemical potentials
-                in the format:
-                ``{element symbol: reference energy}`` (to determine the formal chemical
-                potentials, when ``chempots`` has been manually specified as
-                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
-                provided/present in format generated by ``doped`` (see tutorials).
-                (Default: None)
-            fermi_level (float):
-                Value corresponding to the electron chemical potential, referenced
-                to the VBM eigenvalue, which is taken from the ``calculation_metadata``
-                dict attributes of ``DefectEntry``\s in ``self.defect_entries`` if present,
-                otherwise ``self.vbm`` -- which correspond to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set during defect
-                parsing).  ``None`` (default), set to the mid-gap Fermi level (E_g/2).
-            skip_formatting (bool):
-                Whether to skip formatting the defect charge states as
-                strings (and keep as ``int``\s and ``float``\s instead).
-                (default: False)
-
-        Returns:
-            ``pandas`` ``DataFrame`` or list of ``DataFrame``\s
-        """
-        fermi_level = self._get_and_set_fermi_level(fermi_level)
-        chempots, el_refs = self._get_chempots(
-            chempots, el_refs
-        )  # returns self.chempots/self.el_refs if chempots is None
-
-        if chempots is None:
-            _no_chempots_warning()
-            chempots = {  # empty sub-dicts so they're iterable (for following code)
-                "limits": {"No User Chemical Potentials": {}},
-                "limits_wrt_el_refs": {"No User Chemical Potentials": {}},
-            }
-
-        limit = _parse_limit(chempots, limit)
-        limits = [limit] if limit is not None else list(chempots["limits"].keys())
-
-        list_of_dfs = []
-        with warnings.catch_warnings():  # avoid double warning, already warned above
-            warnings.filterwarnings("ignore", "Chemical potentials not present")
-            for limit in limits:
-                limits_wrt_el_refs = chempots.get("limits_wrt_el_refs") or chempots.get(
-                    "limits_wrt_elt_refs"
-                )
-                if limits_wrt_el_refs is None:
-                    raise ValueError("Supplied chempots are not in a recognised format (see docstring)!")
-                relative_chempots = limits_wrt_el_refs[limit]
-                if el_refs is None:
-                    el_refs = (
-                        {el: 0 for el in relative_chempots}
-                        if chempots.get("elemental_refs") is None
-                        else chempots["elemental_refs"]
-                    )
-
-                single_formation_energy_df = self._single_formation_energy_table(
-                    relative_chempots, el_refs, fermi_level, skip_formatting
-                )
-                list_of_dfs.append(single_formation_energy_df)
-
-        return list_of_dfs[0] if len(list_of_dfs) == 1 else list_of_dfs
-
-    def _single_formation_energy_table(
-        self,
-        relative_chempots: dict,
-        el_refs: dict,
-        fermi_level: float = 0,
-        skip_formatting: bool = False,
-    ) -> pd.DataFrame:
-        r"""
-        Returns a defect formation energy table for a single chemical potential
-        limit as a pandas ``DataFrame``.
-
-        Table Key: (all energies in eV):
-
-        - 'Defect':
-            Defect name (without charge)
-        - 'q':
-            Defect charge state.
-        - 'ΔEʳᵃʷ':
-            Raw DFT energy difference between defect and host supercell (E_defect - E_host).
-        - 'qE_VBM':
-            Defect charge times the VBM eigenvalue (to reference the Fermi level to the VBM)
-        - 'qE_F':
-            Defect charge times the Fermi level (referenced to the VBM if qE_VBM is not 0
-            (if "vbm" in ``DefectEntry.calculation_metadata``)
-        - 'Σμ_ref':
-            Sum of reference energies of the elemental phases in the chemical potentials sum.
-        - 'Σμ_formal':
-            Sum of `formal` atomic chemical potential terms (Σμ_DFT = Σμ_ref + Σμ_formal).
-        - 'E_corr':
-            Finite-size supercell charge correction.
-        - 'Eᶠᵒʳᵐ':
-            Defect formation energy, with the specified chemical potentials and Fermi level.
-            Equals the sum of all other terms.
-        - 'Path':
-            Path to the defect calculation folder.
-        - 'Δ[E_corr]':
-            Estimated error in the charge correction, from the variance of the potential in
-            the sampling region.
-
-        Args:
-            relative_chempots (dict):
-                Dictionary of formal (i.e. relative to elemental reference energies)
-                chemical potentials in the form ``{element symbol: energy}``.
-            el_refs (dict):
-                Dictionary of elemental reference energies for the chemical potentials
-                in the format: ``{element symbol: reference energy}``
-                (Default: None)
-            fermi_level (float):
-                Value corresponding to the electron chemical potential, referenced
-                to the VBM eigenvalue, which is taken from the ``calculation_metadata``
-                dict attributes of ``DefectEntry``\s in ``self.defect_entries`` if present,
-                otherwise ``self.vbm`` -- which correspond to the VBM of the `bulk supercell`
-                calculation by default, unless ``bulk_band_gap_vr`` is set during defect
-                parsing). If ``None`` (default), set to the mid-gap Fermi level (E_g/2).
-            skip_formatting (bool):
-                Whether to skip formatting the defect charge states as
-                strings (and keep as ``int``\s and ``float``\s instead).
-                (default: False)
-
-        Returns:
-            ``pandas`` ``DataFrame`` sorted by formation energy
-        """
-        table = []
-
-        for name, defect_entry in self.defect_entries.items():
-            row = [
-                name.rsplit("_", 1)[0],  # name without charge,
-                (
-                    defect_entry.charge_state
-                    if skip_formatting
-                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
-                ),
-            ]
-            row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
-            row += [defect_entry.charge_state * defect_entry.calculation_metadata.get("vbm", self.vbm)]
-            row += [defect_entry.charge_state * fermi_level]
-            row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
-            row += [defect_entry._get_chempot_term(relative_chempots)]
-            row += [sum(defect_entry.corrections.values())]
-            dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
-            formation_energy = defect_entry.formation_energy(
-                chempots=dft_chempots,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
-            row += [formation_energy]
-            row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
-            row += [
-                sum(
-                    [
-                        val
-                        for key, val in defect_entry.corrections_metadata.items()
-                        if "charge_correction_error" in key
-                    ]
-                )
-            ]
-
-            table.append(row)
-
-        formation_energy_df = pd.DataFrame(
-            table,
-            columns=[
-                "Defect",
-                "q",
-                "ΔEʳᵃʷ",
-                "qE_VBM",
-                "qE_F",
-                "Σμ_ref",
-                "Σμ_formal",
-                "E_corr",
-                "Eᶠᵒʳᵐ",
-                "Path",
-                "Δ[E_corr]",
-            ],
-        )
-
-        # round all floats to 3dp:
-        formation_energy_df = formation_energy_df.round(3)
-        return formation_energy_df.set_index(["Defect", "q"])
-
     def get_symmetries_and_degeneracies(
         self,
         skip_formatting: bool = False,
@@ -3333,7 +2835,7 @@ class DefectThermodynamics(MSONable):
             defect_entry._parse_and_set_degeneracies(symprec=symprec)
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
-                    len(defect_entry.defect.structure.to_primitive())  # spglib primitive
+                    len(get_primitive_structure(defect_entry.defect.structure))  # spglib primitive
                     / len(defect_entry.defect.structure)
                 )
 
@@ -3371,6 +2873,951 @@ class DefectThermodynamics(MSONable):
             symmetry_df["q"] = symmetry_df["q"].apply(lambda x: f"{'+' if x > 0 else ''}{x}")
 
         return symmetry_df.set_index(["Defect", "q"])
+
+    def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
+        """
+        Handle the input Fermi level choice.
+
+        If Fermi level not set, defaults to mid-gap Fermi level (E_g/2) and
+        prints an info message to the user.
+        """
+        if fermi_level is None:
+            fermi_level = 0.5 * self.band_gap  # type: ignore
+            print(
+                f"Fermi level was not set, so using mid-gap Fermi level (E_g/2 = {fermi_level:.2f} eV "
+                f"relative to the VBM)."
+            )
+        return fermi_level
+
+    def get_equilibrium_concentrations(
+        self,
+        temperature: float = 300,
+        chempots: Optional[dict] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict] = None,
+        fermi_level: Optional[float] = None,
+        per_charge: bool = True,
+        per_site: bool = False,
+        skip_formatting: bool = False,
+        lean: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Compute the `equilibrium` concentrations (in cm^-3) for all
+        ``DefectEntry``\s in the ``DefectThermodynamics`` object, at a given
+        chemical potential limit, Fermi level and temperature, assuming the
+        dilute limit approximation.
+
+        Note that these are the `equilibrium` defect concentrations!
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()``
+        can instead be used to calculate the Fermi level and defect
+        concentrations for a material grown/annealed at higher temperatures
+        and then cooled (quenched) to room/operating temperature (where defect
+        concentrations are assumed to remain fixed) - this is known as the
+        frozen defect approach and is typically the most valid approximation
+        (see its docstring for more information).
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the
+        defect concentration equation (see discussion in
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to ~2 orders of magnitude. This
+        factor is taken from the product of the ``defect_entry.defect.multiplicity``
+        and ``defect_entry.degeneracy_factors`` attributes.
+
+        Note that the ``FermiSolver`` class implements a number of convenience
+        methods for thermodynamic analyses; such as scanning over temperatures,
+        chemical potentials, effective dopant concentrations etc, minimising or
+        maximising a target property (e.g. defect/carrier concentration), and
+        also allowing greater control over constraints and approximations in
+        defect concentration calculations (i.e. fixed/variable defect(s) and
+        charge states), which may be useful. See the ``FermiSolver`` tutorial:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+
+        Args:
+            temperature (float):
+                Temperature in Kelvin at which to calculate the equilibrium concentrations.
+                Default is 300 K.
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations). If ``None`` (default),
+                will use ``self.chempots`` (= 0 for all chemical potentials by default).
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)) and specific limits (chemical potential
+                limits) can then be chosen using ``limit``.
+
+                Alternatively this can be a dictionary of chemical potentials for a
+                single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
+                (Default: None)
+            limit (str):
+                The chemical potential limit for which to
+                obtain the equilibrium concentrations. Can be either:
+
+                - ``None``, if ``chempots`` corresponds to a single chemical potential
+                  limit - otherwise will use the first chemical potential limit in the
+                  ``chempots`` dict.
+                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
+                - A key in the ``(self.)chempots["limits"]`` dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
+                (Default: None)
+            fermi_level (float):
+                Value corresponding to the electron chemical potential, referenced
+                to the VBM (using ``self.vbm``, which is the VBM of the `bulk supercell`
+                calculation by default). If None (default), set to the mid-gap Fermi
+                level (E_g/2).
+            per_charge (bool):
+                Whether to break down the defect concentrations into individual defect charge
+                states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
+                (default: True)
+            per_site (bool):
+                Whether to return the concentrations as percent concentrations per site,
+                rather than the default of per cm^3. (default: False)
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states and concentrations as
+                strings (and keep as ``int``\s and ``float``\s instead). (default: False)
+            lean (bool):
+                Whether to return a leaner ``DataFrame`` with only the defect name, charge
+                state, and concentration in cm^-3 (assumes ``skip_formatting=True`` and
+                ``per_site=False``). Only really intended for internal ``doped`` usage, to
+                reduce compute times when calculating defect concentrations repeatedly.
+                (default: False)
+
+        Returns:
+            ``pandas`` ``DataFrame`` of defect concentrations (and formation energies)
+            for each ``DefectEntry`` in the ``DefectThermodynamics`` object.
+        """
+        fermi_level = self._get_and_set_fermi_level(fermi_level)
+        chempots, el_refs = self._get_chempots(
+            chempots, el_refs
+        )  # returns self.chempots/self.el_refs if chempots is None
+        skip_formatting = skip_formatting or lean
+
+        energy_concentration_list = []
+
+        _check_chempots_and_limit_settings(chempots, limit)  # only warn once
+        if chempots is None:
+            all_comps = [
+                entry.sc_entry.composition if entry.sc_entry else entry.bulk_entry.composition
+                for entry in self.defect_entries.values()
+            ]
+            empty_el_dict = {el: 0 for el in {el.symbol for comp in all_comps for el in comp}}
+            chempots = {
+                "limits": {"No User Chemical Potentials": empty_el_dict},
+                "limits_wrt_el_refs": {"No User Chemical Potentials": empty_el_dict},
+                "elemental_refs": el_refs or empty_el_dict,
+            }
+
+        for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
+            for defect_entry in defect_entry_list:
+                with warnings.catch_warnings():  # already warned if necessary
+                    warnings.filterwarnings("ignore", "No chemical potential")
+                    formation_energy = defect_entry.formation_energy(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        fermi_level=fermi_level,
+                        vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                    )
+                    raw_concentration = defect_entry.equilibrium_concentration(
+                        chempots=chempots,
+                        limit=limit,
+                        el_refs=el_refs,
+                        fermi_level=fermi_level,
+                        vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
+                        temperature=temperature,
+                        per_site=False,  # only concentration in cm^-3 here
+                        formation_energy=formation_energy,  # reduce compute times
+                    )
+
+                charge = (
+                    defect_entry.charge_state
+                    if skip_formatting
+                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
+                )
+                if lean:
+                    energy_concentration_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charge": charge,
+                            "Concentration (cm^-3)": raw_concentration,
+                        }
+                    )
+                else:
+                    energy_concentration_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charge": charge,
+                            "Formation Energy (eV)": round(formation_energy, 3),
+                            "Raw Concentration": (
+                                raw_concentration / defect_entry.bulk_site_concentration
+                                if (per_site and not per_charge)
+                                else raw_concentration  # if per_site but per_charge, keep as cm^-3 to
+                                # avoid rounding differences in charge state population
+                            ),
+                            (
+                                "Concentration (per site)" if per_site else "Concentration (cm^-3)"
+                            ): _format_concentration(
+                                (
+                                    raw_concentration / defect_entry.bulk_site_concentration
+                                    if per_site
+                                    else raw_concentration
+                                ),
+                                per_site=per_site,
+                                skip_formatting=skip_formatting,
+                            ),
+                        }
+                    )
+
+        conc_df = pd.DataFrame(energy_concentration_list)
+        # Note that in concentration / FermiSolver functions, we avoid altering the output ordering and
+        # try to just use the DefectThermodynamics entry ordering (which is already controlled) as is
+
+        if per_charge:
+            if lean:
+                return conc_df  # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
+
+            conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
+                "Raw Concentration"  # here Raw Concentration is in cm^-3
+            ].transform("sum")
+            conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
+                lambda x: f"{x:.2%}"
+            )
+            conc_df = conc_df.drop(columns=["Raw Concentration"])
+            return conc_df.set_index(["Defect", "Charge"])
+
+        # group by defect and sum concentrations:
+        return _group_defect_charge_state_concentrations(
+            conc_df, per_site=per_site, skip_formatting=skip_formatting, lean=lean
+        )
+
+    def _parse_fermi_dos(
+        self, bulk_dos: Optional[Union[PathLike, Vasprun, FermiDos]] = None, skip_vbm_check: bool = False
+    ) -> FermiDos:
+        if bulk_dos is None:
+            return None
+
+        if isinstance(bulk_dos, FermiDos):
+            fdos = bulk_dos
+            # most similar settings to Vasprun.eigenvalue_band_properties:
+            fdos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]  # tol 1e-4 is lowest possible, as VASP
+            fdos_band_gap = fdos.get_gap(tol=1e-4, abs_tol=True)  # rounds the DOS outputs to 4 dp
+
+        if isinstance(bulk_dos, PathLike):
+            bulk_dos = get_vasprun(bulk_dos, parse_dos=True)  # converted to fdos in next block
+
+        if isinstance(bulk_dos, Vasprun):  # either supplied Vasprun or parsed from string there
+            fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
+            fdos = get_fermi_dos(bulk_dos)
+
+        if abs(fdos_vbm - self.vbm) > 0.05 and not skip_vbm_check:
+            warnings.warn(
+                f"The VBM eigenvalue of the bulk DOS calculation ({fdos_vbm:.2f} eV, band gap = "
+                f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
+                f"({self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the bulk "
+                f"supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
+                f"parsing). If this is only due to differences in kpoint sampling for the bulk DOS vs "
+                f"supercell calculations, then you should use the `bulk_band_gap_vr` option during "
+                f"defect parsing to set the bulk band gap and VBM eigenvalue "
+                f"(`DefectThermodynamics.gap/vbm`) to the correct values (though the absolute values of "
+                f"predictions should not be affected as the eigenvalue references in the calculations "
+                f"are consistent, just the reported Fermi levels will be referenced to "
+                f"`DefectThermodynamics.vbm` which may not be the exact VBM position here).\n"
+                f"Otherwise if this is due to changes in functional settings (LHFCALC, AEXX etc), then "
+                f"the calculations should be redone with consistent settings to ensure accurate "
+                f"predictions.\n"
+                f"Note that the Fermi level will be always referenced to `DefectThermodynamics.vbm`!"
+            )
+        return fdos
+
+    def get_equilibrium_fermi_level(
+        self,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
+        temperature: float = 300,
+        chempots: Optional[dict] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict] = None,
+        return_concs: bool = False,
+        skip_vbm_check: bool = False,
+        effective_dopant_concentration: Optional[float] = None,
+    ) -> Union[float, tuple[float, float, float]]:
+        r"""
+        Calculate the self-consistent Fermi level, at a given chemical
+        potential limit and temperature, assuming `equilibrium` defect
+        concentrations (i.e. under annealing) and the dilute limit
+        approximation, by self-consistently solving for the Fermi level which
+        yields charge neutrality.
+
+        Note that the returned Fermi level is given relative to ``self.vbm``,
+        which is the VBM eigenvalue of the bulk supercell calculation by
+        default, unless ``bulk_band_gap_vr`` is set during defect parsing.
+
+        Note that this assumes `equilibrium` defect concentrations!
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()``
+        can instead be used to calculate the Fermi level and defect
+        concentrations for a material grown/annealed at higher temperatures
+        and then cooled (quenched) to room/operating temperature (where defect
+        concentrations are assumed to remain fixed) - this is known as the
+        frozen defect approach and is typically the most valid approximation
+        (see its docstring for more information).
+
+        Note that the bulk DOS calculation should be well-converged with
+        respect to `k`-points for accurate Fermi level predictions!
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the
+        defect concentration equation (see discussion in
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to ~2 orders of magnitude. This
+        factor is taken from the product of the ``defect_entry.defect.multiplicity``
+        and ``defect_entry.degeneracy_factors`` attributes.
+
+        Note that the ``FermiSolver`` class implements a number of convenience
+        methods for thermodynamic analyses; such as scanning over temperatures,
+        chemical potentials, effective dopant concentrations etc, minimising or
+        maximising a target property (e.g. defect/carrier concentration), and
+        also allowing greater control over constraints and approximations in
+        defect concentration calculations (i.e. fixed/variable defect(s) and
+        charge states), which may be useful. See the ``FermiSolver`` tutorial:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+
+        Args:
+            bulk_dos (FermiDos or Vasprun or PathLike):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
+                ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
+                calculation in VASP -- however this will be much slower when looping over many
+                conditions as it will re-parse the DOS each time! (So preferably use
+                ``get_fermi_dos()`` as shown in the defect thermodynamics tutorial).
+
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+
+                ``bulk_dos`` can also be left as ``None`` (default), if it has previously
+                been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
+                If provided, will overwrite the ``self.bulk_dos`` attribute!
+            temperature (float):
+                Temperature in Kelvin at which to calculate the equilibrium Fermi level.
+                Default is 300 K.
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level).
+                If ``None`` (default), will use ``self.chempots`` (= 0 for all chemical
+                potentials by default).
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)) and specific limits (chemical potential
+                limits) can then be chosen using ``limit``.
+
+                Alternatively this can be a dictionary of chemical potentials for a
+                single limit (limit), in the format: ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
+                (Default: None)
+            limit (str):
+                The chemical potential limit for which to
+                determine the equilibrium Fermi level. Can be either:
+
+                - ``None``, if ``chempots`` corresponds to a single chemical potential
+                  limit - otherwise will use the first chemical potential limit in the
+                  ``chempots`` dict.
+                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
+                - A key in the ``(self.)chempots["limits"]`` dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
+                (Default: None)
+            return_concs (bool):
+                Whether to return the corresponding electron and hole concentrations
+                (in cm^-3) as well as the Fermi level. (default: False)
+            skip_vbm_check (bool):
+                Whether to skip the warning about the DOS VBM differing from ``self.vbm``
+                by >0.05 eV. Should only be used when the reason for this difference is
+                known/acceptable. (default: False)
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping. For dopants of charge ``q``, the input
+                value should be ``q * 'Dopant Concentration'``.
+                (Default: None; no extrinsic dopant)
+
+        Returns:
+            Self consistent Fermi level (in eV from the VBM (``self.vbm``)), and the
+            corresponding electron and hole concentrations (in cm^-3) if ``return_concs=True``.
+        """
+        if bulk_dos is not None:
+            self._bulk_dos = self._parse_fermi_dos(bulk_dos, skip_vbm_check=skip_vbm_check)
+
+        if self.bulk_dos is None:  # none provided, and none previously set
+            raise ValueError(
+                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
+                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
+                "concentrations and solving for Fermi level position."
+            )
+
+        chempots, el_refs = self._get_chempots(
+            chempots, el_refs
+        )  # returns self.chempots/self.el_refs if chempots is None
+        # handle chempot warning(s) once here, as otherwise brentq calls this function many times:
+        _check_chempots_and_limit_settings(chempots, limit)
+
+        def _get_total_q(fermi_level):
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", "No chemical potential")
+                conc_df = self.get_equilibrium_concentrations(
+                    chempots=chempots,
+                    limit=limit,
+                    el_refs=el_refs,
+                    temperature=temperature,
+                    fermi_level=fermi_level,
+                    lean=True,
+                )
+            # add effective dopant concentration if supplied:
+            conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
+            # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
+            qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
+            qd_tot += get_doping(
+                fermi_dos=self.bulk_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
+            )
+            return qd_tot
+
+        eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
+        if return_concs:
+            e_conc, h_conc = get_e_h_concs(
+                self.bulk_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
+            )
+            return eq_fermi_level, e_conc, h_conc
+
+        return eq_fermi_level
+
+    def get_fermi_level_and_concentrations(
+        self,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
+        annealing_temperature: float = 1000,
+        quenched_temperature: float = 300,
+        chempots: Optional[dict] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict] = None,
+        delta_gap: float = 0,
+        per_charge: bool = True,
+        per_site: bool = False,
+        skip_formatting: bool = False,
+        return_annealing_values: bool = False,
+        effective_dopant_concentration: Optional[float] = None,
+        **kwargs,
+    ) -> Union[
+        tuple[float, float, float, pd.DataFrame],
+        tuple[float, float, float, pd.DataFrame, float, float, float, pd.DataFrame],
+    ]:
+        r"""
+        Calculate the self-consistent Fermi level and corresponding
+        carrier/defect calculations, for a given chemical potential limit,
+        annealing temperature and quenched/operating temperature, using the
+        frozen defect and dilute limit approximations under the constraint of
+        charge neutrality.
+
+        This function works by calculating the self-consistent Fermi level
+        and total concentration of each defect type at the annealing temperature,
+        then fixing the total concentrations to these values and
+        re-calculating the self-consistent (constrained equilibrium) Fermi
+        level and relative charge state concentrations under this constraint
+        at the quenched/operating temperature.
+
+        According to the 'frozen defect' approximation, we typically expect
+        defect concentrations to reach equilibrium during annealing/crystal
+        growth (at elevated temperatures), but `not` upon quenching (i.e. at
+        room/operating temperature) where we expect kinetic inhibition of
+        defect annhiliation and hence non-equilibrium defect concentrations /
+        Fermi level. Typically this is approximated by computing the
+        equilibrium Fermi level and defect concentrations at the annealing
+        temperature, and then assuming the total concentration of each defect
+        is fixed to this value, but that the relative populations of defect
+        charge states (and the Fermi level) can re-equilibrate at the lower
+        (room) temperature. See discussion in https://doi.org/10.1039/D3CS00432E
+        (brief), https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
+        ``doped``/``py-sc-fermi`` tutorials for more information.
+        In certain cases (such as Li-ion battery materials or extremely slow
+        charge capture/emission), these approximations may have to be adjusted
+        such that some defects/charge states are considered fixed and some are
+        allowed to re-equilibrate (e.g. highly mobile Li vacancies/interstitials).
+        The ``FermiSolver`` class can be used in these cases for more
+        fine-grained control over constraints and approximations in defect
+        concentration calculations, as demonstrated in the tutorial:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+
+        Note that different defect entries (different charge states, and/or ground
+        and metastable states (different spin or geometries); e.g. interstitials
+        at a given site) are grouped together in distinct defect types according
+        to ``self.dist_tol`` , which is also used in plotting and transition level
+        analysis. In the frozen defect approximation here, the total concentration
+        of a given defect type group is calculated at the annealing temperature,
+        and then the equilibrium relative population of the constituent entries is
+        recalculated at the quenched temperature.
+
+        Note that the bulk DOS calculation should be well-converged with respect
+        to `k`-points for accurate Fermi level predictions!
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the
+        defect concentration equation (see discussion in
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to ~2 orders of magnitude. This
+        factor is taken from the product of the ``defect_entry.defect.multiplicity``
+        and ``defect_entry.degeneracy_factors`` attributes.
+
+        Note that, in addition to finer-grained control over constraints and
+        approximations as mentioned above, the ``FermiSolver`` class implements
+        a number of convenience methods for thermodynamic analyses; such as
+        scanning over temperatures, chemical potentials, effective dopant
+        concentrations etc, minimising or maximising a target property
+        (e.g. defect/carrier concentration), which may be useful -- see tutorial.
+
+        Args:
+            bulk_dos (FermiDos or Vasprun or PathLike):
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
+                for calculating carrier concentrations. Alternatively, can be a ``pymatgen``
+                ``Vasprun`` object or path to the ``vasprun.xml(.gz)`` output of a bulk DOS
+                calculation in VASP -- however this will be much slower when looping over many
+                conditions as it will re-parse the DOS each time! (So preferably use
+                ``get_fermi_dos()`` as shown in the defect thermodynamics tutorial).
+
+                Usually this is a static calculation with the `primitive` cell of the bulk
+                material, with relatively dense `k`-point sampling (especially for materials
+                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
+                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
+                convergence wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+
+                ``bulk_dos`` can also be left as ``None`` (default), if it has previously
+                been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
+                If provided, will overwrite the ``self.bulk_dos`` attribute!
+            annealing_temperature (float):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to the
+                highest temperature during annealing/synthesis of the material (at
+                which we assume equilibrium defect concentrations) within the frozen
+                defect approach. Default is 1000 K.
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level).
+                If ``None`` (default), will use ``self.chempots`` (= 0 for all chemical
+                potentials by default).
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}]}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)) and specific limits (chemical potential
+                limits) can then be chosen using ``limit``.
+
+                Alternatively this can be a dictionary of chemical potentials for a
+                single limit (limit), in the format: ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                Note that you can also set ``DefectThermodynamics.chempots = ...``
+                (with the same input options) to set the default chemical potentials
+                for all calculations.
+                (Default: None)
+            limit (str):
+                The chemical potential limit for which to
+                determine the Fermi level and concentrations. Can be either:
+
+                - ``None``, if ``chempots`` corresponds to a single chemical potential
+                  limit - otherwise will use the first chemical potential limit in the
+                  ``chempots`` dict.
+                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
+                - A key in the ``(self.)chempots["limits"]`` dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``DefectThermodynamics.el_refs = ...``
+                (with the same input options) to set the default elemental reference
+                energies for all calculations.
+                (Default: None)
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the annealing
+                temperature (e.g. due to thermal renormalisation), relative to the
+                original band gap of the ``FermiDos`` object (assumed to correspond to the
+                quenched temperature). If set, applies a scissor correction to ``fermi_dos``
+                which renormalises the band gap symmetrically about the VBM and CBM (i.e.
+                assuming equal up/downshifts of the band-edges around their original
+                eigenvalues) while the defect levels remain fixed.
+                (Default: 0)
+            per_charge (bool):
+                Whether to break down the defect concentrations into individual defect charge
+                states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2`` instead of ``v_Cd``).
+                (default: True)
+            per_site (bool):
+                Whether to return the concentrations as percent concentrations per site,
+                rather than the default of per cm^3. (default: False)
+            skip_formatting (bool):
+                Whether to skip formatting the defect charge states and concentrations as
+                strings (and keep as ``int``\s and ``float``\s instead). (default: False)
+            return_annealing_values (bool):
+                If True, also returns the Fermi level, electron and hole concentrations and
+                defect concentrations at the annealing temperature. (default: False)
+            effective_dopant_concentration (float):
+                Fixed concentration (in cm^-3) of an arbitrary dopant/impurity in the
+                material to include in the charge neutrality condition, in order to
+                analyse the Fermi level / doping response under hypothetical doping
+                conditions. If a negative value is given, the dopant is assumed to be
+                an acceptor dopant (i.e. negative defect charge state), while a positive
+                value corresponds to donor doping. For dopants of charge ``q``, the input
+                value should be ``q * 'Dopant Concentration'``.
+                (Default: None; no extrinsic dopant)
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
+                is not 0) or ``_parse_fermi_dos`` (``skip_vbm_check``; to skip the warning about
+                the DOS VBM differing from ``self.vbm`` by >0.05 eV; default is False).
+
+        Returns:
+            Predicted quenched Fermi level (in eV from the VBM (``self.vbm``)), the
+            corresponding electron and hole concentrations (in cm^-3) and a dataframe of the
+            quenched defect concentrations (in cm^-3); ``(fermi_level, e_conc, h_conc, conc_df)``.
+            If ``return_annealing_values=True``, also returns the annealing Fermi level, electron
+            and hole concentrations and a dataframe of the annealing defect concentrations (in cm^-3);
+            ``(fermi_level, e_conc, h_conc, conc_df, annealing_fermi_level, annealing_e_conc,
+            annealing_h_conc, annealing_conc_df)``.
+        """
+        if kwargs and any(i not in ["verbose", "tol", "skip_vbm_check"] for i in kwargs):
+            raise ValueError(f"Invalid keyword arguments: {', '.join(kwargs.keys())}")
+
+        if bulk_dos is not None:
+            self._bulk_dos = self._parse_fermi_dos(
+                bulk_dos, skip_vbm_check=kwargs.get("skip_vbm_check", False)
+            )
+
+        if self.bulk_dos is None:  # none provided, and none previously set
+            raise ValueError(
+                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
+                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
+                "concentrations and solving for Fermi level position."
+            )
+        orig_fermi_dos = deepcopy(self.bulk_dos)  # can get modified during annealing loops
+
+        chempots, el_refs = self._get_chempots(
+            chempots, el_refs
+        )  # returns self.chempots/self.el_refs if chempots is None
+        # handle chempot warning(s) once here, as otherwise brentq calls this function many times:
+        _check_chempots_and_limit_settings(chempots, limit)
+
+        annealing_dos = (
+            self.bulk_dos
+            if delta_gap == 0
+            else scissor_dos(
+                delta_gap,
+                self.bulk_dos,
+                verbose=kwargs.get("verbose", False),
+                tol=kwargs.get("tol", 1e-8),
+            )
+        )
+
+        with warnings.catch_warnings():  # already warned once if necessary
+            warnings.filterwarnings("ignore", "No chemical potential")
+            warnings.filterwarnings("ignore", "The VBM eigenvalue")
+
+            annealing_fermi_level = self.get_equilibrium_fermi_level(
+                annealing_dos,
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                temperature=annealing_temperature,
+                return_concs=False,
+                effective_dopant_concentration=effective_dopant_concentration,
+                skip_vbm_check=True,  # already warned if necessary
+            )
+            assert not isinstance(annealing_fermi_level, tuple)  # float w/ return_concs=False, for typing
+            self.bulk_dos = orig_fermi_dos  # reset to original DOS for quenched calculations
+
+            annealing_defect_concentrations = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                fermi_level=annealing_fermi_level,  # type: ignore
+                temperature=annealing_temperature,
+                per_charge=False,  # give total concentrations for each defect
+                lean=True,
+            )
+            annealing_defect_concentrations = _add_effective_dopant_concentration(
+                annealing_defect_concentrations, effective_dopant_concentration
+            )  # add effective dopant concentration if supplied
+            total_concentrations = dict(  # {Defect: Total Concentration (cm^-3)}
+                zip(
+                    annealing_defect_concentrations.index,  # index is Defect name, when per_charge=False
+                    annealing_defect_concentrations["Concentration (cm^-3)"],
+                )
+            )
+
+            get_constrained_concentrations = partial(
+                self._get_constrained_concentrations,
+                total_concentrations=total_concentrations,
+                temperature=quenched_temperature,
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                per_charge=per_charge,
+                per_site=per_site,
+                skip_formatting=skip_formatting,
+                effective_dopant_concentration=effective_dopant_concentration,
+                lean=False,
+            )
+
+            def _get_constrained_total_q(fermi_level):
+                conc_df = get_constrained_concentrations(
+                    fermi_level, per_charge=True, per_site=False, skip_formatting=True, lean=True
+                )
+                # Defect/Charge not set as index w/lean=True (default), for speed
+                qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
+                qd_tot += get_doping(  # use orig fermi dos for quenched temperature
+                    fermi_dos=orig_fermi_dos,
+                    fermi_level=fermi_level + self.vbm,
+                    temperature=quenched_temperature,
+                )
+                return qd_tot
+
+            eq_fermi_level: float = brentq(
+                _get_constrained_total_q, -1.0, self.band_gap + 1.0  # type: ignore
+            )
+            e_conc, h_conc = get_e_h_concs(
+                orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
+            )
+            conc_df = get_constrained_concentrations(
+                eq_fermi_level,
+            )  # not lean for output
+
+            if not return_annealing_values:
+                return (eq_fermi_level, e_conc, h_conc, conc_df)
+
+            annealing_e_conc, annealing_h_conc = get_e_h_concs(
+                annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature  # type: ignore
+            )
+            annealing_defect_concentrations = get_constrained_concentrations(
+                annealing_fermi_level, temperature=annealing_temperature
+            )
+
+            return (
+                eq_fermi_level,
+                e_conc,
+                h_conc,
+                conc_df,
+                annealing_fermi_level,
+                annealing_e_conc,
+                annealing_h_conc,
+                annealing_defect_concentrations,
+            )
+
+    def _get_constrained_concentrations(
+        self,
+        fermi_level: float,
+        total_concentrations: dict[str, float],
+        temperature: float = 300,
+        chempots: Optional[dict] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict] = None,
+        per_charge: bool = True,
+        per_site: bool = False,
+        skip_formatting: bool = True,
+        effective_dopant_concentration: Optional[float] = None,
+        lean: bool = True,
+    ) -> pd.DataFrame:
+        """
+        Convenience method to calculate defect populations under constrained
+        equilibrium, where total defect concentrations are fixed (according to
+        ``total_concentrations``, as a dict of ``{defect name: concentration in
+        cm^-3}``) and their relative charge state populations are re-calculated
+        at the quenched temperature (``temperature``).
+
+        See ``DefectThermodynamics.get_fermi_level_and_concentrations()`` for
+        details.
+        """
+        conc_df = self.get_equilibrium_concentrations(
+            chempots=chempots,
+            limit=limit,
+            el_refs=el_refs,
+            temperature=temperature,
+            fermi_level=fermi_level,
+            skip_formatting=True,
+            lean=lean,
+        )
+        conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
+        defects = conc_df["Defect"] if lean else conc_df.index.get_level_values("Defect")
+        conc_df["Total Concentration (cm^-3)"] = defects.map(total_concentrations)
+        conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
+            conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
+            / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
+        ) * conc_df["Total Concentration (cm^-3)"]
+
+        if not per_charge:
+            conc_df = _group_defect_charge_state_concentrations(
+                conc_df, per_site, skip_formatting=True, lean=lean
+            )
+            # drop Total Concentration column if ``per_charge=False``, as it's a duplicate of
+            # the Concentration column in this case
+            conc_df = conc_df.drop(columns=["Total Concentration (cm^-3)"])
+
+        if per_site:
+            cm3_conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                temperature=temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+                per_charge=per_charge,
+            )
+            per_site_conc_df = self.get_equilibrium_concentrations(
+                chempots=chempots,
+                limit=limit,
+                el_refs=el_refs,
+                temperature=temperature,
+                fermi_level=fermi_level,
+                skip_formatting=True,
+                per_site=True,
+                per_charge=per_charge,
+            )
+            per_site_factors = (
+                per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
+            )
+            conc_df["Concentration (cm^-3)"] *= per_site_factors  # convert to per site & keep column order
+            conc_df = conc_df.rename(columns={"Concentration (cm^-3)": "Concentration (per site)"})
+
+            if not skip_formatting:
+                conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
+                    _format_per_site_concentration
+                )
+
+        if not skip_formatting:
+            for conc_column_name in conc_df.columns:
+                if "(cm^-3)" in conc_column_name:
+                    conc_df[conc_column_name] = conc_df[conc_column_name].apply(lambda x: f"{x:.3e}")
+
+            if per_charge:  # format charge states
+                conc_df.index = conc_df.index.set_levels(
+                    conc_df.index.levels[1].map(
+                        lambda q: f"{'+' if q > 0 else ''}{int(q) if np.isclose(q, int(q)) else q}"
+                    ),
+                    level=1,
+                )
+
+        return conc_df
+
+    def _get_in_gap_fermi_level_stability_window(self, defect_entry: Union[str, DefectEntry]) -> float:
+        """
+        Convenience method to calculate the maximum difference between Fermi
+        levels at which ``defect_entry`` is the.
+
+        ground-state charge state, and the band edges (i.e. the
+        max of (CBM - lowest TL) and (highest TL - VBM) where
+        TL is any transition level involving ``defect_entry``).
+
+        Args:
+            defect_entry (str or DefectEntry):
+                Either a string of the defect entry name (in
+                ``DefectThermodynamics.defect_entries``), or a
+                ``DefectEntry`` object.
+
+        Returns:
+            float:
+                Maximum difference between Fermi levels at which
+                ``defect_entry`` is the ground-state charge state,
+                and the band edges.
+        """
+        if not isinstance(defect_entry, DefectEntry):
+            defect_entry = self.defect_entries[defect_entry]
+        assert isinstance(defect_entry, DefectEntry)
+
+        stable_entries_name_dict = {
+            name: [ent.name for ent in entry_list] for name, entry_list in self.stable_entries.items()
+        }
+        if not any(defect_entry.name in name_list for name_list in stable_entries_name_dict.values()):
+            return -np.inf
+
+        grouped_defect_name_wout_charge = next(
+            name
+            for name in stable_entries_name_dict
+            if defect_entry.name in stable_entries_name_dict[name]
+        )
+
+        # get highest and lowest TL (defining stability window):
+        lowest = np.inf
+        highest = -np.inf
+        for tl, charge_list in self.transition_level_map[grouped_defect_name_wout_charge].items():
+            if charge_list[-1] == defect_entry.charge_state:
+                lowest = tl
+            if charge_list[0] == defect_entry.charge_state:
+                highest = tl
+
+        if lowest == np.inf and highest == -np.inf:
+            # no TLs and already checked stable -> only stable charge state
+            return np.inf
+
+        stability_windows = np.array([self.band_gap - lowest, highest])
+        return min(stability_windows[np.isfinite(stability_windows)])
 
     def __repr__(self):
         """
@@ -3445,27 +3892,107 @@ class DefectThermodynamics(MSONable):
         return iter(self.defect_entries)
 
 
-def _group_defect_charge_state_concentrations(
-    conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False
+DefectThermodynamics.get_quenched_fermi_level_and_concentrations = (
+    DefectThermodynamics.get_fermi_level_and_concentrations
+)  # for backwards compatibility, to be removed in next major release
+
+
+def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: Optional[str] = None):
+    """
+    Convenience function to check the input values of ``chempots`` and
+    ``limit`` for ``doped`` thermodynamic analysis functions, and warn users
+    (once) if no chemical potentials or limits are specified.
+    """
+    if chempots is None:
+        _no_chempots_warning()
+    else:
+        limit = _parse_limit(chempots, limit)
+        if limit is None:
+            limit = next(iter(chempots["limits"].keys()))
+            if len(chempots["limits"]) > 1:  # more than 1 limit, so warn
+                warnings.warn(
+                    f"No chemical potential limit specified! Using {limit} for computing the formation "
+                    f"energy"
+                )
+
+
+def _add_effective_dopant_concentration(
+    conc_df: pd.DataFrame,
+    effective_dopant_concentration: Optional[float] = None,
 ):
-    summed_df = conc_df.groupby("Defect").sum(numeric_only=True)
+    """
+    Add the effective dopant concentration to the concentration ``DataFrame``.
+
+    Args:
+        conc_df (pd.DataFrame):
+            ``DataFrame`` of defect concentrations.
+        effective_dopant_concentration (float):
+            The effective dopant concentration to add to the ``DataFrame``.
+            For dopants of charge ``q``, the input value should be
+            ``q * 'Dopant Concentration'``.
+            (Default: None; no extrinsic dopant)
+
+    Returns:
+        pd.DataFrame:
+            ``DataFrame`` of defect concentrations with the effective
+            dopant concentration
+    """
+    if effective_dopant_concentration is None:
+        return conc_df
+
+    # if ``lean`` was ``True``, then Defect/Charge not set as indices:
+    lean = all(i in conc_df.columns for i in ["Defect", "Charge"])
+    eff_dopant_df = pd.DataFrame(
+        {
+            "Defect": "Dopant",
+            "Charge": int(np.sign(effective_dopant_concentration)),
+            "Formation Energy (eV)": "N/A",
+            "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
+            "Charge State Population": "100.0%",
+        },
+        index=[0],
+    )
+    if not lean:
+        eff_dopant_df = eff_dopant_df.set_index(conc_df.index.names)
+
+    for col in conc_df.columns:
+        if col not in eff_dopant_df.columns:
+            eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
+
+    columns_to_drop = [col for col in eff_dopant_df.columns if col not in conc_df.columns]
+    eff_dopant_df = eff_dopant_df.drop(columns=columns_to_drop)
+    eff_dopant_df = eff_dopant_df[conc_df.columns]  # ensure it matches the original order
+    return pd.concat([conc_df, eff_dopant_df], ignore_index=lean)
+
+
+def _group_defect_charge_state_concentrations(
+    conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False, lean: bool = False
+):
+    summed_df = conc_df.groupby("Defect").sum(numeric_only=True)  # auto-reordered by groupby sum
+    conc_column = next(k for k in conc_df.columns if k.startswith("Concentration"))
     raw_concentrations = (
         summed_df["Raw Concentration"]
         if "Raw Concentration" in summed_df.columns
-        else summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))]
+        else summed_df[conc_column]
     )
-    summed_df[next(k for k in conc_df.columns if k.startswith("Concentration"))] = (
-        raw_concentrations.apply(
-            lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
+    summed_df[conc_column] = raw_concentrations.apply(
+        lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
+    )
+    if not lean:  # Group and sort by original order
+        defect_list = (
+            conc_df["Defect"].unique()
+            if "Defect" in conc_df.columns
+            else conc_df.index.get_level_values("Defect").unique()
         )
-    )
-    return summed_df.drop(
+        original_order = {k: i for i, k in enumerate(defect_list)}  # preserve order
+        summed_df["order"] = summed_df.index.map(original_order)
+        summed_df = summed_df.sort_values(by="order").drop(columns="order")
+    return summed_df.drop(  # Defect set as index now, from groupby()
         columns=[
             i
             for i in [
                 "Charge",
                 "Formation Energy (eV)",
-                "Raw Charge",
                 "Raw Concentration",
                 "Charge State Population",
             ]
@@ -3490,6 +4017,10 @@ def _format_per_site_concentration(raw_concentration: float):
     """
     Format per-site concentrations for ``DataFrame`` outputs.
     """
+    if isinstance(raw_concentration, str):
+        return raw_concentration
+    if np.isnan(raw_concentration):
+        return "N/A"
     if raw_concentration > 1e-5:
         return f"{raw_concentration:.3%}"
     return f"{raw_concentration * 100:.3e} %"
@@ -3544,31 +4075,30 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
     Returns:
         tuple[float, float]: The electron and hole concentrations in cm^-3.
     """
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", "overflow")  # ignore overflow warnings from f0, can remove in
+    with np.errstate(over="ignore"):  # ignore overflow warnings from f0, can remove in
         # future versions following SK's fix in https://github.com/materialsproject/pymatgen/pull/3879
         # code for obtaining the electron and hole concentrations here is taken from
         # FermiDos.get_doping(), and updated by SK to be independent of estimated VBM/CBM positions (using
         # correct DOS integral) and better handle exponential overflows (by editing `f0` in `pymatgen`)
         idx_mid_gap = int(fermi_dos.idx_vbm + (fermi_dos.idx_cbm - fermi_dos.idx_vbm) / 2)
         e_conc: float = np.sum(
-            fermi_dos.tdos[idx_mid_gap:]
+            fermi_dos.tdos[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :]
             * f0(
-                fermi_dos.energies[idx_mid_gap:],
+                fermi_dos.energies[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :],
                 fermi_level,  # type: ignore
                 temperature,
             )
-            * fermi_dos.de[idx_mid_gap:],
+            * fermi_dos.de[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :],
             axis=0,
         ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
         h_conc: float = np.sum(
-            fermi_dos.tdos[: idx_mid_gap + 1]
+            fermi_dos.tdos[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1]
             * f0(
-                -fermi_dos.energies[: idx_mid_gap + 1],
+                -fermi_dos.energies[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1],
                 -fermi_level,  # type: ignore
                 temperature,
             )
-            * fermi_dos.de[: idx_mid_gap + 1],
+            * fermi_dos.de[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1],
             axis=0,
         ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
 
@@ -3711,3 +4241,2635 @@ def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, 
     if isinstance(dos, FermiDos):
         return FermiDos.from_dict(scissored_dos_dict)
     return Dos.from_dict(scissored_dos_dict)
+
+
+class FermiSolver(MSONable):
+    def __init__(
+        self,
+        defect_thermodynamics: DefectThermodynamics,
+        bulk_dos: Optional[Union[FermiDos, Vasprun, "PathLike"]] = None,
+        chempots: Optional[dict] = None,
+        el_refs: Optional[dict] = None,
+        backend: str = "doped",
+        skip_vbm_check: bool = False,
+    ):
+        r"""
+        Class to calculate the Fermi level, defect and carrier concentrations
+        under various conditions, using the input ``DefectThermodynamics``
+        object.
+
+        This class implements a number of convenience methods for thermodynamic
+        analyses; such as scanning over temperatures, chemical potentials,
+        effective dopant concentrations etc, minimising or maximising a target
+        property (e.g. defect/carrier concentration), and also allowing greater
+        control over constraints and approximations in defect concentration
+        calculations; such as specifying (known) fixed concentrations of a
+        defect/dopant, specifying defects to exclude from high-temperature
+        concentration fixing in the frozen defect approximation
+        (e.g. highly-mobile defects), and/or fixing defect charge states upon
+        quenching.
+
+        This constructor initializes a ``FermiSolver`` object, setting up the
+        necessary attributes, which includes loading the bulk density of states
+        (DOS) data from either the input ``DefectThermodynamics`` or ``bulk_dos``.
+
+        If using the ``py-sc-fermi`` backend (currently required for the
+        ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options in
+        the scanning functions), please cite the code paper:
+        Squires et al., (2023). Journal of Open Source Software, 8(82), 4962
+        https://doi.org/10.21105/joss.04962
+
+        Note that the ``delta_gap`` argument used in ``DefectThermodynamics``
+        methods is not directly supported in this class. If band gap modulation
+        is desired, it is recommended to use the ``DefectThermodynamics`` methods
+        directly with ``delta_gap`` as shown in the (advanced) defect thermodynamics
+        tutorials.
+
+        Args:
+            defect_thermodynamics (DefectThermodynamics):
+                A ``DefectThermodynamics`` object, providing access to defect
+                formation energies and other related thermodynamic properties.
+            bulk_dos (FermiDos or Vasprun or PathLike):
+                Either a path to the ``vasprun.xml(.gz)`` output of a bulk DOS
+                calculation in VASP, a ``pymatgen`` ``Vasprun`` object or a
+                ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, for
+                calculating carrier concentrations.
+                If not provided, uses ``DefectThermodynamics.bulk_dos`` if present.
+
+                Usually this is a static calculation with the `primitive` cell of
+                the bulk material, with relatively dense `k`-point sampling
+                (especially for materials with disperse band edges) to ensure an
+                accurately-converged DOS and thus Fermi level. ``ISMEAR = -5``
+                (tetrahedron smearing) is usually recommended for best convergence
+                wrt `k`-point sampling. Consistent functional settings should be
+                used for the bulk DOS and defect supercell calculations.
+
+                Note that the ``DefectThermodynamics.bulk_dos`` will be set to match
+                this input, if provided.
+            chempots (Optional[dict]):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations and Fermi level), under
+                different chemical environments.
+
+                If ``None`` (default), will use ``DefectThermodynamics.chempots``
+                (= 0 for all chemical potentials by default, if not set).
+
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}], ...}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)) and specific limits (chemical potential
+                limits) can then be chosen using ``limit``.
+
+                Alternatively this can be a dictionary of chemical potentials for a
+                single limit (limit), in the format: ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                If provided here, then ``defect_thermodynamics.chempots`` is set to this
+                input.
+
+                Chemical potentials can also be supplied later in each analysis function, or
+                set using ``FermiSolver.defect_thermodynamics.chempots = ...`` or
+                ``DefectThermodynamics.chempots = ...`` (with the same input options).
+            el_refs (Optional[dict]):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in ``DefectThermodynamics`` in the format generated by
+                ``doped`` (see tutorials), or if ``DefectThermodynamics.el_refs`` has been
+                set.
+
+                If provided here, then ``defect_thermodynamics.el_refs`` is set to this
+                input.
+
+                Elemental reference energies can also be supplied later in each analysis
+                function, or set using ``FermiSolver.defect_thermodynamics.el_refs = ...``
+                or ``DefectThermodynamics.el_refs = ...`` (with the same input options).
+                Default is ``None``.
+            backend (Optional[str]):
+                The code backend to use for the thermodynamic calculations, which
+                can be either ``"doped"`` or ``"py-sc-fermi"``. ``"py-sc-fermi"``
+                allows the use of ``fixed_defects`` and ``free_defects`` for advanced
+                constrained defect equilibria (e.g. mobile defects, see advanced
+                thermodynamics tutorial), while ``"doped"`` is usually much quicker.
+                Default is ``doped``, but will attempt to switch to ``py-sc-fermi``
+                if required (and installed).
+            skip_vbm_check (bool):
+                Whether to skip the warning about the DOS VBM differing from
+                ``DefectThermodynamics.vbm`` by >0.05 eV. Should only be used when the
+                reason for this difference is known/acceptable. Default is ``False``.
+
+        Key attributes:
+            defect_thermodynamics (DefectThermodynamics):
+                The ``DefectThermodynamics`` object used for the thermodynamic
+                calculations.
+            backend (str):
+                The code backend used for the thermodynamic calculations (``"doped"``
+                or ``"py-sc-fermi"``).
+            volume (float):
+                Volume of the unit cell in the bulk DOS calculation (stored in
+                ``self.defect_thermodynamics.bulk_dos``).
+            skip_vbm_check (bool):
+                Whether to skip the warning about the DOS VBM differing from the defect
+                entries VBM by >0.05 eV. Should only be used when the reason for this
+                difference is known/acceptable.
+            multiplicity_scaling (int):
+                Scaling factor to account for the difference in volume between the
+                defect supercells and the bulk DOS calculation cell, when using the
+                ``py-sc-fermi`` backend.
+            py_sc_fermi_dos (DOS):
+                A ``py-sc-fermi`` ``DOS`` object, generated from the input
+                ``FermiDos`` object, for use with the ``py-sc-fermi`` backend.
+        """
+        # Note: In theory multiprocessing could be introduced to make thermodynamic calculations
+        # over large grids faster, but with the current code there seems to be issues with thread
+        # locking / synchronisation (which shouldn't be necessary...). Worth keeping in mind if
+        # needed in future.
+        self.defect_thermodynamics = defect_thermodynamics
+        self.skip_vbm_check = skip_vbm_check
+        if bulk_dos is not None:
+            self.defect_thermodynamics._bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
+                bulk_dos, skip_vbm_check=self.skip_vbm_check
+            )
+        if self.defect_thermodynamics.bulk_dos is None:
+            raise ValueError(
+                "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
+                "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
+                "concentrations and solving for Fermi level position."
+            )
+        self.volume = self.defect_thermodynamics.bulk_dos.volume
+
+        if "fermi" in backend.lower():
+            if bool(importlib.util.find_spec("py_sc_fermi")):
+                self.backend = "py-sc-fermi"
+            else:  # py-sc-fermi explicitly chosen but not installed
+                raise ImportError(
+                    "py-sc-fermi is not installed, so only the doped FermiSolver backend is available."
+                )
+        elif backend.lower() == "doped":
+            self.backend = "doped"
+        else:
+            raise ValueError(f"Unrecognised `backend`: {backend}")
+
+        self.multiplicity_scaling = 1
+        self.py_sc_fermi_dos = None
+        self._DefectSystem = self._DefectSpecies = self._DefectChargeState = self._DOS = None
+
+        if self.backend == "py-sc-fermi":
+            self._activate_py_sc_fermi_backend()
+
+        # Parse chemical potentials, either using input values (after formatting them in the doped format)
+        # or using the class attributes if set:
+        self.defect_thermodynamics._chempots, self.defect_thermodynamics._el_refs = _parse_chempots(
+            chempots or self.defect_thermodynamics.chempots, el_refs or self.defect_thermodynamics.el_refs
+        )
+
+        if self.defect_thermodynamics.chempots is None:
+            raise ValueError(
+                "You must supply a chemical potentials dictionary or have them present in the "
+                "DefectThermodynamics object."
+            )
+
+    def _activate_py_sc_fermi_backend(self, error_message: Optional[str] = None):
+        try:
+            from py_sc_fermi.defect_charge_state import DefectChargeState
+            from py_sc_fermi.defect_species import DefectSpecies
+            from py_sc_fermi.defect_system import DefectSystem
+            from py_sc_fermi.dos import DOS
+        except ImportError as exc:  # py-sc-fermi activation attempted but not installed
+            finishing_message = (
+                ", but py-sc-fermi is not installed, so only the doped FermiSolver "
+                "backend is available!"
+            )
+            message = (
+                error_message + finishing_message
+                if error_message
+                else "The py-sc-fermi backend was attempted to be activated" + finishing_message
+            )
+            raise ImportError(message) from exc
+
+        self._DefectSystem = DefectSystem
+        self._DefectSpecies = DefectSpecies
+        self._DefectChargeState = DefectChargeState
+        self._DOS = DOS
+
+        if isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
+            self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
+                self.defect_thermodynamics.bulk_dos,
+                vbm=self.defect_thermodynamics.vbm,
+                bandgap=self.defect_thermodynamics.band_gap,
+            )
+
+        ms = (
+            next(iter(self.defect_thermodynamics.defect_entries.values())).sc_entry.structure.volume
+            / self.volume
+        )
+        if not np.isclose(ms, round(ms), atol=3e-2):  # check multiplicity scaling is almost an integer
+            warnings.warn(
+                f"The detected volume ratio ({ms:.3f}) between the defect supercells and the DOS "
+                f"calculation cell is non-integer, indicating that they correspond to (slightly) "
+                f"different unit cell volumes. This can cause quantitative errors of a similar "
+                f"relative magnitude in the predicted defect/carrier concentrations!"
+            )
+        self.multiplicity_scaling = round(ms)
+
+    def _check_required_backend_and_error(self, required_backend: str):
+        """
+        Check if the attributes needed for the ``required_backend`` backend are
+        set, and throw an error message if not.
+
+        Args:
+            required_backend (str):
+                Backend choice ("doped" or "py-sc-fermi") required.
+        """
+        if required_backend.lower() == "py-sc-fermi" and self._DOS is None:
+            raise RuntimeError(
+                f"This function is currently only supported for the {required_backend} backend, "
+                f"but you are using the {self.backend} backend!"
+            )
+
+    def _get_fermi_level_and_carriers(
+        self,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+    ) -> tuple[float, float, float]:
+        """
+        Calculate the equilibrium Fermi level and carrier concentrations under
+        a given chemical potential regime and temperature.
+
+        Args:
+            single_chempot_dict (dict[str, float]):
+                Dictionary of chemical potentials to use for calculating the equilibrium
+                Fermi level position. Here, this should be a dictionary of chemical
+                potentials for a single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
+                then it is the formal chemical potentials (i.e. relative to the elemental
+                reference energies) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+            el_refs (dict[str, float]):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format: ``{element symbol: reference energy}``. Unnecessary if
+                ``self.defect_thermodynamics.el_refs`` is set (i.e. if ``chempots`` was
+                provided to ``self.defect_thermodynamics`` in the format generated by
+                ``doped``). (Default: None)
+            temperature (float):
+                The temperature at which to solve for the Fermi level and carrier
+                concentrations, in Kelvin. Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+
+        Returns:
+            tuple[float, float, float]: A tuple containing:
+                - The Fermi level (float) in eV.
+                - The electron concentration (float) in cm^-3.
+                - The hole concentration (float) in cm^-3.
+        """
+        self._check_required_backend_and_error("doped")
+        fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
+            chempots=single_chempot_dict,
+            el_refs=el_refs,
+            temperature=temperature,
+            return_concs=True,
+            effective_dopant_concentration=effective_dopant_concentration,
+        )  # use already-set bulk dos
+        return fermi_level, electrons, holes
+
+    def _get_and_check_thermo_chempots(
+        self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+    ) -> tuple[dict, dict]:
+        """
+        Convenience method to get the ``chempots`` and ``el_refs`` from
+        ``self.defect_thermodynamics.chempots`` and check that ``chempots`` is
+        not ``None``.
+        """
+        chempots, el_refs = self.defect_thermodynamics._get_chempots(
+            chempots, el_refs
+        )  # returns self.defect_thermodynamics.chempots if chempots is None
+        if chempots is None:
+            raise ValueError(  # this function is only called if no user chempots were supplied
+                "No chemical potentials supplied or present in self.defect_thermodynamics.chempots!"
+            )
+        assert isinstance(el_refs, dict)  # both returned as dictionaries now
+        return chempots, el_refs
+
+    def _get_single_chempot_dict(
+        self, limit: Optional[str] = None, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+    ) -> tuple[dict[str, float], Any]:
+        """
+        Get the chemical potentials for a single limit (``limit``) from the
+        ``chempots`` (or ``self.defect_thermodynamics.chempots``) dictionary,
+        giving the chemical potentials `with respect to the elemental
+        references` (i.e. from ``"limits_wrt_el_refs"``).
+
+        Returns a `single` chemical potential dictionary for the specified limit.
+        """
+        chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
+        limit = _parse_limit(chempots, limit)
+
+        if (
+            limit not in chempots["limits_wrt_el_refs"]
+            and "User Chemical Potentials" not in chempots["limits_wrt_el_refs"]
+        ):
+            raise ValueError(
+                f"Limit '{limit}' not found in the chemical potentials dictionary! You must specify "
+                f"an appropriate limit or provide an appropriate chempots dictionary."
+            )
+
+        return chempots["limits_wrt_el_refs"][limit or "User Chemical Potentials"], el_refs
+
+    def equilibrium_solve(
+        self,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        append_chempots: bool = True,
+        fixed_defects: Optional[dict[str, float]] = None,
+    ) -> pd.DataFrame:
+        """
+        Calculate the Fermi level and defect/carrier concentrations under
+        `thermodynamic equilibrium`, given a set of chemical potentials and a
+        temperature.
+
+        Typically not intended for direct usage, as the same functionality
+        is provided by
+        ``DefectThermodynamics.get_equilibrium_concentrations/fermi_level()``.
+        Rather this is used internally to provide a unified interface for both
+        backends, within the ``scan_...`` functions.
+
+        Args:
+            single_chempot_dict (dict[str, float]):
+                Dictionary of chemical potentials to use for calculating the equilibrium
+                Fermi level position and defect/carrier concentrations. Here, this
+                should be a dictionary of chemical potentials for a single limit
+                (``limit``), in the format: ``{element symbol: chemical potential}``.
+                If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
+                then it is the `formal` chemical potentials (i.e. relative to the elemental
+                reference energies) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+            el_refs (dict[str, float]):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}``. Unnecessary if
+                ``self.defect_thermodynamics.el_refs`` is set (i.e. if ``chempots`` was
+                provided to ``self.defect_thermodynamics`` in the format generated by
+                ``doped``).
+                (Default: None)
+            temperature (float):
+                The temperature at which to solve for defect concentrations, in Kelvin.
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            append_chempots (bool):
+                Whether to append the chemical potentials (and effective dopant
+                concentration, if provided) to the output ``DataFrame``.
+                Default is ``True``.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing the calculated defect and carrier concentrations,
+                along with the self-consistent Fermi level. The columns include:
+                    - "Defect": The defect type.
+                    - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
+                    - "Temperature": The temperature at which the calculation was performed.
+                    - "Fermi Level": The self-consistent Fermi level in eV.
+                    - "Electrons (cm^-3)": The electron concentration.
+                    - "Holes (cm^-3)": The hole concentration.
+                    - "μ_X": Chemical potentials in eV, if ``append_chempots`` is ``True``.
+                    - "Dopant (cm^-3)": The effective arbitrary dopant concentration, if set.
+        """
+        py_sc_fermi_required = fixed_defects is not None
+        if py_sc_fermi_required and self._DOS is None:
+            self._activate_py_sc_fermi_backend(
+                error_message="The `fixed_defects` option is currently only supported for the py-sc-fermi "
+                "backend"
+            )
+
+        if self.backend == "doped" and not py_sc_fermi_required:
+            fermi_level, electrons, holes = self._get_fermi_level_and_carriers(
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                temperature=temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+            )
+            concentrations = self.defect_thermodynamics.get_equilibrium_concentrations(
+                chempots=single_chempot_dict,
+                el_refs=el_refs,
+                fermi_level=fermi_level,
+                temperature=temperature,
+                per_charge=False,
+                per_site=False,
+                skip_formatting=True,  # keep concentration values as floats
+            )
+            # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
+            new_columns = {
+                "Temperature": temperature,
+                "Fermi Level": fermi_level,
+                "Electrons (cm^-3)": electrons,
+                "Holes (cm^-3)": holes,
+            }
+
+            for column, value in new_columns.items():
+                concentrations[column] = value
+            excluded_columns = ["Defect", "Charge", "Charge State Population"]
+            for column in concentrations.columns.difference(excluded_columns):
+                concentrations[column] = concentrations[column].astype(float)
+
+        else:  # py-sc-fermi backend:
+            defect_system = self._generate_defect_system(
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                temperature=temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
+            )
+
+            with np.errstate(all="ignore"):
+                conc_dict = defect_system.concentration_dict()
+            data = []
+
+            for k, v in conc_dict.items():
+                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
+                    data.append(
+                        {
+                            "Defect": k,
+                            "Concentration (cm^-3)": v,
+                            "Temperature": defect_system.temperature,
+                            "Fermi Level": conc_dict["Fermi Energy"],
+                            "Electrons (cm^-3)": conc_dict["n0"],
+                            "Holes (cm^-3)": conc_dict["p0"],
+                        }
+                    )
+
+            concentrations = pd.DataFrame(data)
+            concentrations = concentrations.set_index("Defect", drop=True)
+
+        if append_chempots:
+            for key, value in single_chempot_dict.items():
+                concentrations[f"μ_{key}"] = value
+        if effective_dopant_concentration is not None:
+            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
+
+        return concentrations
+
+    def pseudo_equilibrium_solve(
+        self,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: float = 1000,
+        quenched_temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        append_chempots: bool = True,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Calculate the self-consistent Fermi level and corresponding
+        carrier/defect calculations under pseudo-equilibrium conditions given a
+        set of elemental chemical potentials, an annealing temperature, and a
+        quenched temperature.
+
+        Typically not intended for direct usage, as the same functionality
+        is provided by
+        ``DefectThermodynamics.get_fermi_level_and_concentrations()``.
+        Rather this is used internally to provide a unified interface for both
+        backends, within the ``scan_...`` functions.
+
+        'Pseudo-equilibrium' here refers to the use of frozen defect and dilute
+        limit approximations under the constraint of charge neutrality (i.e.
+        constrained equilibrium). According to the 'frozen defect' approximation,
+        we typically expect defect concentrations to reach equilibrium during
+        annealing/crystal growth (at elevated temperatures), but `not` upon
+        quenching (i.e. at room/operating temperature) where we expect kinetic
+        inhibition of defect annhiliation and hence non-equilibrium defect
+        concentrations / Fermi level.
+        Typically this is approximated by computing the equilibrium Fermi level and
+        defect concentrations at the annealing temperature, and then assuming the
+        total concentration of each defect is fixed to this value, but that the
+        relative populations of defect charge states (and the Fermi level) can
+        re-equilibrate at the lower (room) temperature. See discussion in
+        https://doi.org/10.1039/D3CS00432E (brief),
+        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
+        ``doped``/``py-sc-fermi`` tutorials for more information.
+        In certain cases (such as Li-ion battery materials or extremely slow charge
+        capture/emission), these approximations may have to be adjusted such that some
+        defects/charge states are considered fixed and some are allowed to
+        re-equilibrate (e.g. highly mobile Li vacancies/interstitials). Modelling
+        these specific cases can be achieved using the ``free_defects`` and/or
+        ``fix_charge_states`` options, as demonstrated in:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+
+        This function works by calculating the self-consistent Fermi level and total
+        concentration of each defect at the annealing temperature, then fixing the
+        total concentrations to these values and re-calculating the self-consistent
+        (constrained equilibrium) Fermi level and relative charge state concentrations
+        under this constraint at the quenched/operating temperature. If using the
+        ``"py-sc-fermi"`` backend, then you can optionally fix the concentrations of
+        individual defect `charge states` (rather than fixing total defect concentrations)
+        using ``fix_charge_states=True``, and/or optionally specify ``free_defects`` to
+        exclude from high-temperature concentration fixing (e.g. highly mobile defects).
+
+        Note that the bulk DOS calculation should be well-converged with respect to
+        k-points for accurate Fermi level predictions!
+
+        The degeneracy/multiplicity factor "g" is an important parameter in the defect
+        concentration equation and thus Fermi level calculation (see discussion in
+        https://doi.org/10.1039/D2FD00043A and https://doi.org/10.1039/D3CS00432E),
+        affecting the final concentration by up to 2 orders of magnitude. This factor
+        is taken from the product of the ``defect_entry.defect.multiplicity`` and
+        ``defect_entry.degeneracy_factors`` attributes, automatically determined
+        during ``doped`` defect calculation parsing.
+
+        Args:
+            single_chempot_dict (dict[str, float]):
+                Dictionary of chemical potentials to use for calculating the
+                pseudo-equilibrium Fermi level position and defect/carrier
+                concentrations. Here, this should be a dictionary of chemical
+                potentials for a single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
+                then it is the `formal` chemical potentials (i.e. relative to the elemental
+                reference energies) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+            el_refs (dict[str, float]):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}``. Unnecessary if
+                ``self.defect_thermodynamics.el_refs`` is set (i.e. if ``chempots`` was
+                provided to ``self.defect_thermodynamics`` in the format generated by
+                ``doped``).
+                (Default: None)
+            annealing_temperature (float):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to the
+                highest temperature during annealing/synthesis of the material (at
+                which we assume equilibrium defect concentrations) within the frozen
+                defect approach.
+                Defaults to 1000 K.
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix at the quenched
+                temperature, in the format: ``{defect_name: concentration}``,
+                where ``defect_name`` is the the name of a defect entry without
+                (e.g. ``"v_O"``) or with (e.g. ``"v_O_+2"``) the charge state;
+                which will then fix either the total concentration of that defect
+                or only the concentration for the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to fix
+                the concentrations of specific defects regardless of the chemical
+                potentials, or anneal-quench procedure (e.g. to simulate the effect
+                of a fixed impurity concentration).
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            append_chempots (bool):
+                Whether to append the chemical potentials (and effective dopant
+                concentration, if provided) to the output ``DataFrame``.
+                Default is ``True``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing the defect and carrier concentrations
+                under pseudo-equilibrium conditions, along with the self-consistent
+                Fermi level.
+                The columns include:
+                    - "Defect": The defect type.
+                    - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
+                    - "Annealing Temperature": The annealing temperature.
+                    - "Quenched Temperature": The quenched temperature.
+                    - "Fermi Level": The self-consistent Fermi level in eV.
+                    - "Electrons (cm^-3)": The electron concentration.
+                    - "Holes (cm^-3)": The hole concentration.
+                    - "μ_X": Chemical potentials in eV, if ``append_chempots`` is ``True``.
+                    - "Dopant (cm^-3)": The effective arbitrary dopant concentration, if set.
+
+                Additional columns may include concentrations for specific defects
+                and other relevant data.
+        """
+        # TODO: Allow matching of substring (e.g. "O_i" matching "O_i_C2" and "O_i_Ci") for fixed_defects
+        #  and update docstrings ("...where the _total_ concentration of all defect entries whose names
+        #  begin with ``defect_name`` will...") & tests accordingly, see _get_min_max_target_values
+        # TODO: Related: Should allow just specifying an element for ``fixed_defects``, to allow the
+        #  user to specify the known concentration of a dopant (or over/under-stoichiometry of an
+        #  element? (but with unknown relative populations of different possible defects) -- not possible
+        #  with current py-sc-fermi implementation, see code in _get_min_max_target_values()
+        # TODO: In future the ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options may
+        #  be added to the ``doped`` backend (in theory very simple to add)
+        py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
+        if py_sc_fermi_required and self._DOS is None:
+            self._activate_py_sc_fermi_backend(
+                error_message="The `fix_charge_states`, `free_defects` and `fixed_defects` options are "
+                "currently only supported for the py-sc-fermi backend"
+            )
+
+        # TODO: Add per-charge, per-site options like in ``doped`` ``DefectThermodynamics``
+        if self.backend == "doped" and not py_sc_fermi_required:
+            (
+                fermi_level,
+                electrons,
+                holes,
+                concentrations,
+            ) = self.defect_thermodynamics.get_fermi_level_and_concentrations(  # type: ignore
+                chempots=single_chempot_dict,
+                el_refs=el_refs,
+                annealing_temperature=annealing_temperature,
+                quenched_temperature=quenched_temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                per_charge=False,
+                skip_formatting=True,  # keep concentration values as floats
+            )  # use already-set bulk dos
+
+            # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
+            new_columns = {
+                "Annealing Temperature": annealing_temperature,
+                "Quenched Temperature": quenched_temperature,
+                "Fermi Level": fermi_level,
+                "Electrons (cm^-3)": electrons,
+                "Holes (cm^-3)": holes,
+            }
+
+            for column, value in new_columns.items():
+                concentrations[column] = value
+
+            # drop Dopant row, included as column instead
+            concentrations = concentrations.drop("Dopant", errors="ignore")
+
+        else:  # py-sc-fermi
+            defect_system = self._generate_annealed_defect_system(
+                annealing_temperature=annealing_temperature,
+                single_chempot_dict=single_chempot_dict,
+                el_refs=el_refs,
+                quenched_temperature=quenched_temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
+                free_defects=free_defects,
+                fix_charge_states=fix_charge_states,
+            )
+
+            with np.errstate(all="ignore"):
+                conc_dict = defect_system.concentration_dict()
+
+            data = []  # order is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
+            for k, v in conc_dict.items():
+                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
+                    data.append(
+                        {
+                            "Defect": k,
+                            "Concentration (cm^-3)": v,
+                            "Annealing Temperature": annealing_temperature,
+                            "Quenched Temperature": quenched_temperature,
+                            "Fermi Level": conc_dict["Fermi Energy"],
+                            "Electrons (cm^-3)": conc_dict["n0"],
+                            "Holes (cm^-3)": conc_dict["p0"],
+                        }
+                    )
+
+            concentrations = pd.DataFrame(data)
+            concentrations = concentrations.set_index("Defect", drop=True)
+
+        if append_chempots:
+            for key, value in single_chempot_dict.items():
+                concentrations[f"μ_{key}"] = value
+        if effective_dopant_concentration is not None:
+            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
+
+        return concentrations
+
+    def _check_temperature_settings(
+        self,
+        annealing_temperature: Optional[Union[float, list[float]]] = None,
+        temperature: Union[float, list[float]] = 300,
+        quenched_temperature: Union[float, list[float]] = 300,
+        range=False,
+    ):
+        """
+        Helper function to check the user input temperature settings, and warn
+        or raise errors as appropriate.
+        """
+        message = (
+            "Both ``annealing_temperature`` and ``temperature`` were set, but they are "
+            "mutually-exclusive options, with ``annealing_temperature`` employing the 'frozen defect "
+            "approximation' (typically desired) and ``temperature`` assuming total equilibrium "
+            "(see docstrings/tutorials)!"
+        )
+        if range:
+            message = message.replace("`` ", "_range`` ")
+        if annealing_temperature is not None and temperature != 300:  # both set by user
+            raise ValueError(message)
+        if annealing_temperature is None and quenched_temperature != 300:  # quenched set but no annealing
+            raise ValueError(
+                "Quenched temperature was set but no annealing temperature was given! Required for the "
+                "'frozen defect approximation', see docstrings/tutorials."
+            )
+
+    def _solve(
+        self,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        append_chempots: bool = True,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        PseudoSolveFunc: TypeAlias = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
+        EquilibriumSolveFunc: TypeAlias = Callable[..., pd.DataFrame]
+        solve_func: PseudoSolveFunc | EquilibriumSolveFunc = (
+            self.pseudo_equilibrium_solve if annealing_temperature is not None else self.equilibrium_solve
+        )
+        kwargs = {
+            "single_chempot_dict": single_chempot_dict,
+            "el_refs": el_refs,
+            "effective_dopant_concentration": effective_dopant_concentration,
+            "fixed_defects": fixed_defects,
+            "append_chempots": append_chempots,
+        }
+        if annealing_temperature is not None:  # pseudo_equilibrium_solve
+            kwargs.update(
+                {
+                    "annealing_temperature": annealing_temperature,
+                    "quenched_temperature": quenched_temperature,
+                    "free_defects": free_defects,  # type: ignore
+                    "fix_charge_states": fix_charge_states,
+                }
+            )
+        else:  # equilibrium_solve
+            kwargs.update({"temperature": temperature})
+
+        return solve_func(**kwargs)
+
+    def scan_temperature(
+        self,
+        annealing_temperature_range: Optional[Union[float, list[float]]] = None,
+        quenched_temperature_range: Union[float, list[float]] = 300,
+        temperature_range: Union[float, list[float]] = 300,
+        chempots: Optional[dict[str, float]] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict[str, float]] = None,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Scan over a range of temperatures and solve for the defect
+        concentrations, carrier concentrations, and Fermi level at each
+        temperature / annealing & quenched temperature pair.
+
+        If ``annealing_temperature_range`` (and ``quenched_temperature_range``;
+        just 300 K by default) are specified, then the frozen defect approximation
+        is employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature_range`` is
+        specified, then the Fermi level and defect/carrier concentrations are
+        calculated assuming thermodynamic equilibrium at each temperature.
+
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
+        Args:
+            annealing_temperature_range (Optional[Union[float, list[float]]]):
+                Temperature range in Kelvin at which to calculate the high
+                temperature (fixed) total defect concentrations, which should
+                correspond to the highest temperature during annealing/synthesis
+                of the material (at which we assume equilibrium defect
+                concentrations) within the frozen defect approach. Default is
+                ``None`` (uses ``temperature_range`` under thermodynamic equilibrium).
+            quenched_temperature_range (Union[float, list[float]]):
+                Temperature, or range of temperatures, in Kelvin at which to
+                calculate the self-consistent (constrained equilibrium) Fermi
+                level and carrier concentrations, given the fixed total concentrations,
+                which should correspond to operating temperature of the material
+                (typically room temperature).
+                Default is just 300 K.
+            temperature_range (Union[float, list[float]]):
+                Temperature range to solve over, under thermodynamic equilibrium
+                (if ``annealing_temperature_range`` is not specified).
+                Defaults to just 300 K.
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations). If ``None`` (default),
+                will use ``self.defect_thermodynamics.chempots`` (= 0 for all
+                chemical potentials by default).
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}], ...}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)) and specific limits (chemical potential
+                limits) can then be chosen using ``limit``.
+
+                Alternatively this can be a dictionary of chemical potentials for a
+                single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                Note that you can also set ``FermiSolver.defect_thermodynamics.chempots = ...``
+                or ``DefectThermodynamics.chempots = ...`` (with the same input options)
+                to set the default chemical potentials for all calculations.
+                (Default: None)
+            limit (str):
+                The chemical potential limit for which to calculate the Fermi level
+                positions and defect/carrier concentrations. Can be either:
+
+                - ``None``, if ``chempots`` corresponds to a single chemical potential
+                  limit - otherwise will use the first chemical potential limit in the
+                  ``chempots`` dict.
+                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
+                - A key in the ``(self.defect_thermodynamics.)chempots["limits"]``
+                  dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``FermiSolver.defect_thermodynamics.el_refs = ...``
+                or ``DefectThermodynamics.el_refs = ...`` (with the same input options)
+                to set the default elemental reference energies for all calculations.
+                (Default: None)
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame: DataFrame containing defect and carrier concentrations.
+        """
+        self._check_temperature_settings(
+            annealing_temperature_range, temperature_range, quenched_temperature_range, range=True
+        )
+        # Ensure temperature ranges are lists:
+        temperature_list = _ensure_list(temperature_range)
+        annealing_temperature_list = _ensure_list(annealing_temperature_range)  # returns None if None
+        quenched_temperature_list = _ensure_list(quenched_temperature_range)
+
+        single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
+
+        temp_args = product(  # type: ignore
+            *(
+                [i] if not isinstance(i, Iterable) else i
+                for i in [annealing_temperature_list, quenched_temperature_list, temperature_list]
+            )
+        )
+        return pd.concat(
+            [
+                self._solve(
+                    single_chempot_dict=single_chempot_dict,
+                    el_refs=el_refs,
+                    annealing_temperature=annealing_temperature,
+                    quenched_temperature=quenched_temperature,
+                    temperature=temperature,
+                    effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
+                    free_defects=free_defects,
+                    fix_charge_states=fix_charge_states,
+                )
+                for annealing_temperature, quenched_temperature, temperature in tqdm(list(temp_args))
+            ]
+        )
+
+    def scan_dopant_concentration(
+        self,
+        effective_dopant_concentration_range: Union[float, list[float]],
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        chempots: Optional[dict[str, float]] = None,
+        limit: Optional[str] = None,
+        el_refs: Optional[dict[str, float]] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Calculate the defect concentrations under a range of effective
+        (hypothetical) dopant concentrations.
+
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
+        Args:
+            effective_dopant_concentration_range (Union[float, list[float]]):
+                The range of effective dopant concentrations to solve over.
+                This can be a single value or a list of values representing
+                different concentrations. These are taken as fixed
+                concentrations (in cm^-3) of an arbitrary dopant or impurity
+                in the material, included in the charge neutrality condition
+                to analyze the Fermi level and doping response under
+                hypothetical doping conditions.
+                Positive values correspond to donor doping, while negative
+                values correspond to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi level, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
+            chempots (dict):
+                Dictionary of chemical potentials to use for calculating the defect
+                formation energies (and thus concentrations). If ``None`` (default),
+                will use ``self.defect_thermodynamics.chempots`` (= 0 for all
+                chemical potentials by default).
+                This can have the form of ``{"limits": [{'limit': [chempot_dict]}], ...}``
+                (the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials)) and specific limits (chemical potential
+                limits) can then be chosen using ``limit``.
+
+                Alternatively this can be a dictionary of chemical potentials for a
+                single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If manually specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the elemental phases,
+                in which case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+
+                Note that you can also set ``FermiSolver.defect_thermodynamics.chempots = ...``
+                or ``DefectThermodynamics.chempots = ...`` (with the same input options)
+                to set the default chemical potentials for all calculations.
+                (Default: None)
+            limit (str):
+                The chemical potential limit for which to calculate the Fermi level
+                positions and defect/carrier concentrations. Can be either:
+
+                - ``None``, if ``chempots`` corresponds to a single chemical potential
+                  limit - otherwise will use the first chemical potential limit in the
+                  ``chempots`` dict.
+                - ``"X-rich"/"X-poor"`` where X is an element in the system, in which
+                  case the most X-rich/poor limit will be used (e.g. "Li-rich").
+                - A key in the ``(self.defect_thermodynamics.)chempots["limits"]``
+                  dictionary.
+
+                The latter two options can only be used if ``chempots`` is in the
+                ``doped`` format (see chemical potentials tutorial).
+                (Default: None)
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
+                provided/present in format generated by ``doped`` (see tutorials).
+
+                Note that you can also set ``FermiSolver.defect_thermodynamics.el_refs = ...``
+                or ``DefectThermodynamics.el_refs = ...`` (with the same input options)
+                to set the default elemental reference energies for all calculations.
+                (Default: None)
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing the defect and carrier concentrations for each
+                effective dopant concentration. Each row represents the concentrations
+                for a different dopant concentration.
+        """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+        effective_dopant_concentration_list = _ensure_list(effective_dopant_concentration_range)
+
+        single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
+
+        return pd.concat(
+            [
+                self._solve(
+                    single_chempot_dict=single_chempot_dict,
+                    el_refs=el_refs,
+                    annealing_temperature=annealing_temperature,
+                    quenched_temperature=quenched_temperature,
+                    temperature=temperature,
+                    effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
+                    free_defects=free_defects,
+                    fix_charge_states=fix_charge_states,
+                )
+                for effective_dopant_concentration in tqdm(effective_dopant_concentration_list)
+            ]
+        )
+
+    def interpolate_chempots(
+        self,
+        n_points: int = 10,
+        chempots: Optional[Union[list[dict], dict]] = None,
+        limits: Optional[list[str]] = None,
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Interpolate between two sets of chemical potentials and solve for the
+        defect concentrations and Fermi level at each interpolated point.
+
+        Chemical potentials can be interpolated between two sets of chemical
+        potential dictionaries/values, or between two specified limits.
+
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
+        Args:
+            n_points (int):
+                The number of points to generate between chemical potential
+                end points. Defaults to 10.
+            chempots (Optional[list[dict]]):
+                The chemical potentials to interpolate between. This can be
+                either a list containing two dictionaries, each representing
+                a set of chemical potentials for a single limit (in the format:
+                ``{element symbol: chemical potential}``) to interpolate between,
+                or can be a single chemical potentials dictionary in the
+                ``doped`` format (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``)
+                -- in which case ``limits`` must be specified to pick the
+                end-points to interpolate between.
+
+                If ``None`` (default), will use ``self.defect_thermodynamics.chempots``.
+                Note that you can also set
+                ``FermiSolver.defect_thermodynamics.chempots = ...``
+                or ``DefectThermodynamics.chempots = ...`` (with the same input
+                options) to set the default chemical potentials for all calculations.
+
+                If manually specifying chemical potentials with a list of two
+                dictionaries, you can also set the ``el_refs`` option with the DFT
+                reference energies of the elemental phases if desired, in which case
+                it is the formal chemical potentials (i.e. relative to the elemental
+                references) that should be given here, otherwise the absolute (DFT)
+                chemical potentials should be given.
+            limits (Optional[list[str]]):
+                The chemical potential limits to interpolate between, as a list
+                containing two strings. Each string should be in the format
+                ``"X-rich"/"X-poor"``, where X is an element in the system, or
+                be a key in the ``(self.defect_thermodynamics.)chempots["limits"]``
+                dictionary.
+
+                If not provided, ``chempots`` must be specified as a list of two
+                single chemical potential dictionaries for single limits, or must be a
+                binary system with only two limits in ``chempots``.
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``[{element symbol: chemical potential}, ...]``). Unnecessary if
+                ``chempots`` is provided/present in format generated by ``doped``
+                (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``).
+
+                Note that you can also set ``FermiSolver.defect_thermodynamics.el_refs = ...``
+                or ``DefectThermodynamics.el_refs = ...`` (with the same input options)
+                to set the default elemental reference energies for all calculations.
+                (Default: None)
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi level, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing the defect and carrier concentrations for
+                each interpolated set of chemical potentials. Each row represents the
+                concentrations for a different interpolated point.
+        """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+
+        if isinstance(chempots, list):  # should be two single chempot dictionaries
+            if len(chempots) != 2:
+                raise ValueError(
+                    f"If `chempots` is a list, it must contain two dictionaries representing the starting "
+                    f"and ending chemical potentials. The provided list has {len(chempots)} entries!"
+                )
+            single_chempot_dict_1, single_chempot_dict_2 = chempots
+
+        else:  # should be a dictionary in the ``doped`` format or ``None``:
+            chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
+
+            if limits is None or len(limits) != 2:
+                if len(chempots["limits"]) == 2:
+                    limits = list(chempots["limits"].keys())
+                else:
+                    raise ValueError(
+                        f"If `chempots` is not provided as a list, then `limits` must be a list "
+                        f"containing two strings representing the chemical potential limits to "
+                        f"interpolate between. The provided `limits` is: {limits}."
+                    )
+
+            single_chempot_dict_1, el_refs = self._get_single_chempot_dict(limits[0], chempots, el_refs)
+            single_chempot_dict_2, el_refs = self._get_single_chempot_dict(limits[1], chempots, el_refs)
+
+        interpolated_chempots = self._get_interpolated_chempots(
+            single_chempot_dict_1, single_chempot_dict_2, n_points
+        )
+
+        return self.scan_chempots(
+            interpolated_chempots,
+            el_refs=el_refs,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
+        )
+
+    def _get_interpolated_chempots(
+        self,
+        chempot_start: dict,
+        chempot_end: dict,
+        n_points: int,
+    ) -> list:
+        """
+        Generate a list of interpolated chemical potentials between two points.
+
+        Here, these should be dictionaries of chemical potentials for `single`
+        limits, in the format: ``{element symbol: chemical potential}``.
+        If ``el_refs`` is provided (to the parent function) or set in
+        ``self.defect_thermodynamics.el_refs``, then it is the formal chemical
+        potentials (i.e. relative to the elemental reference energies) that
+        should be used here, otherwise the absolute (DFT) chemical potentials
+        should be used.
+
+        Args:
+            chempot_start (dict):
+                A dictionary representing the starting chemical potentials.
+            chempot_end (dict):
+                A dictionary representing the ending chemical potentials.
+            n_points (int):
+                The number of interpolated points to generate, `including`
+                the start and end points.
+
+        Returns:
+            list:
+                A list of dictionaries, where each dictionary contains a `single`
+                set of interpolated chemical potentials. The length of the list
+                corresponds to `n_points`, and each dictionary corresponds to an
+                interpolated state between the starting and ending chemical potentials.
+        """
+        return [
+            {
+                key: chempot_start[key] + (chempot_end[key] - chempot_start[key]) * i / (n_points - 1)
+                for key in chempot_start
+            }
+            for i in range(n_points)
+        ]
+
+    def scan_chempots(
+        self,
+        chempots: Optional[Union[list[dict[str, float]], dict[str, dict]]] = None,
+        limits: Optional[list[str]] = None,
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Scan over a range of chemical potentials and solve for the defect
+        concentrations and Fermi level at each set of chemical potentials.
+
+        Note that this function only solves for the Fermi level and
+        defect/carrier concentrations _at the given chemical potentials_
+        (and not at any points between them), whereas
+        ``scan_chemical_potential_grid``, ``interpolate_chempots`` and
+        ``optimise`` scan over the grid/points between chemical potential
+        limits, which may be desired.
+
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
+        Args:
+            chempots (Optional[Union[list[dict], dict]]):
+                The chemical potentials to scan over. This can be either a list
+                containing dictionaries of a set of chemical potentials for a
+                `single` limit (in the format: ``{element symbol: chemical potential}``),
+                or can be a single chemical potentials dictionary in the
+                ``doped`` format (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``)
+                -- in which case ``limits`` can be specified to pick the chemical
+                potential limits to scan over (otherwise scans over all limits in the
+                ``chempots`` dictionary).
+
+                If ``None`` (default), will use ``self.defect_thermodynamics.chempots``.
+                Note that you can also set
+                ``FermiSolver.defect_thermodynamics.chempots = ...``
+                or ``DefectThermodynamics.chempots = ...`` (with the same input
+                options) to set the default chemical potentials for all calculations.
+
+                If manually specifying chemical potentials with a list of dictionaries,
+                you can also set the ``el_refs`` option with the DFT reference energies
+                of the elemental phases if desired, in which case it is the formal
+                chemical potentials (i.e. relative to the elemental references) that
+                should be given here, otherwise the absolute (DFT) chemical potentials
+                should be given.
+            limits (Optional[list[str]]):
+                The chemical potential limits to scan over, as a list of strings, if
+                ``chempots`` was provided / is present in the ``doped`` format. Each
+                string should be in the format ``"X-rich"/"X-poor"``, where X is an
+                element in the system, or be a key in the
+                ``(self.defect_thermodynamics.)chempots["limits"]`` dictionary.
+
+                If ``None`` (default) and ``chempots`` is in the ``doped`` format
+                (rather than a list of single chemical potential limits), will scan
+                over all limits in the ``chempots`` dictionary.
+            el_refs (dict):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}`` (to determine the formal chemical
+                potentials, when ``chempots`` has been manually specified as
+                ``[{element symbol: chemical potential}, ...]``). Unnecessary if
+                ``chempots`` is provided/present in format generated by ``doped``
+                (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``).
+
+                Note that you can also set ``FermiSolver.defect_thermodynamics.el_refs = ...``
+                or ``DefectThermodynamics.el_refs = ...`` (with the same input options)
+                to set the default elemental reference energies for all calculations.
+                (Default: None)
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi level, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing defect and carrier concentrations for each
+                set of chemical potentials. Each row corresponds to a different set
+                of chemical potentials.
+        """
+        chempots = chempots if chempots is not None else self.defect_thermodynamics.chempots
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+
+        if isinstance(chempots, dict):  # should be a dictionary in the ``doped`` format or ``None``:
+            chempots, el_refs = self._get_and_check_thermo_chempots(chempots, el_refs)
+            chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+
+            if limits is None:
+                limits = list(chempots["limits_wrt_el_refs"].keys())
+            elif not isinstance(limits, list):
+                raise ValueError(
+                    "`limits` must be either a list of limits (as strings) or `None` for `scan_chempots`!"
+                )
+
+            chempots = [self._get_single_chempot_dict(limit, chempots, el_refs)[0] for limit in limits]
+
+        return pd.concat(
+            [
+                self._solve(
+                    single_chempot_dict=single_chempot_dict,
+                    el_refs=el_refs,
+                    annealing_temperature=annealing_temperature,
+                    quenched_temperature=quenched_temperature,
+                    temperature=temperature,
+                    effective_dopant_concentration=effective_dopant_concentration,
+                    fixed_defects=fixed_defects,
+                    free_defects=free_defects,
+                    fix_charge_states=fix_charge_states,
+                )
+                for single_chempot_dict in tqdm(chempots)
+            ]
+        )
+
+    def scan_chemical_potential_grid(
+        self,
+        chempots: Optional[dict] = None,
+        n_points: int = 10,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Given a ``doped``-formatted chemical potential dictionary, generate a
+        ``ChemicalPotentialGrid`` object and calculate the Fermi level
+        positions and defect/carrier concentrations at the grid points.
+
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
+        Args:
+            chempots (Optional[dict]):
+                Dictionary of chemical potentials to scan over, in the ``doped``
+                format (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``)
+                -- the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials).
+
+                If ``None`` (default), will use ``self.defect_thermodynamics.chempots``.
+
+                Note that you can also set
+                ``FermiSolver.defect_thermodynamics.chempots = ...`` or
+                ``DefectThermodynamics.chempots = ...`` to set the default chemical
+                potentials for all calculations, and you can set
+                ``FermiSolver.defect_thermodynamics.el_refs = ...`` or
+                ``DefectThermodynamics.el_refs = ...`` if you want to update the
+                elemental reference energies for any reason.
+            n_points (int):
+                The number of points to generate along each axis of the grid.
+                The actual number of grid points may be less, as points outside
+                the convex hull are excluded. Default is 10.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi level, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame: A ``DataFrame`` containing the Fermi level solutions at the grid
+            points, based on the provided chemical potentials and conditions.
+        """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+        grid = ChemicalPotentialGrid(chempots).get_grid(n_points)
+        chempot_dict_list = [
+            {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
+            for _idx, chempot_series in grid.iterrows()
+        ]
+        return self.scan_chempots(
+            chempots=chempot_dict_list,
+            el_refs=el_refs,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
+        )
+
+    def _parse_and_check_grid_like_chempots(self, chempots: Optional[dict] = None) -> tuple[dict, dict]:
+        r"""
+        Parse a dictionary of chemical potentials for the chemical potential
+        scanning functions, checking that it is in the correct format.
+
+        Args:
+            chempots (Optional[dict]):
+                Dictionary of chemical potentials to scan over, in the ``doped``
+                format (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``)
+                -- the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials).
+
+                If ``None`` (default), will use ``self.defect_thermodynamics.chempots``.
+
+                Note that you can also set
+                ``FermiSolver.defect_thermodynamics.chempots = ...`` or
+                ``DefectThermodynamics.chempots = ...`` to set the default chemical
+                potentials for all calculations, and you can set
+                ``FermiSolver.defect_thermodynamics.el_refs = ...`` or
+                ``DefectThermodynamics.el_refs = ...`` if you want to update the
+                elemental reference energies for any reason.
+
+        Returns:
+            dict:
+                The chemical potentials in the correct format, along with the
+                elemental reference energies.
+        """
+        chempots, el_refs = self._get_and_check_thermo_chempots(chempots)
+        if len(chempots["limits"]) == 1:
+            raise ValueError(
+                "Only one chemical potential limit is present in "
+                "`chempots`/`self.defect_thermodynamics.chempots`, which makes no sense for a chemical "
+                "potential grid scan (with `scan_chemical_potential_grid`/`optimise`/`scan_chempots`)!"
+            )
+
+        return chempots, el_refs
+
+    def optimise(
+        self,
+        target: str,
+        min_or_max: str = "max",
+        chempots: Optional[dict] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        tolerance: float = 0.01,
+        n_points: int = 10,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        Search for the chemical potentials that minimise or maximise a target
+        variable, such as electron concentration, within a specified tolerance.
+
+        See ``target`` argument description below for valid choices. This function
+        iterates over a grid of chemical potentials and "zooms in" on the chemical
+        potential that either minimises or maximises the target variable. The
+        process continues until the _relative_ change in the target variable is
+        less than the specified tolerance.
+
+        If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by
+        default) are specified, then the frozen defect approximation is
+        employed, whereby total defect concentrations are calculated at the
+        elevated annealing temperature, then fixed at these values (unless
+        ``free_defects`` or ``fix_charge_states`` are specified) and the Fermi
+        level and relative charge state populations are recalculated at the
+        quenched temperature. Otherwise, if only ``temperature`` is specified,
+        then the Fermi level and defect/carrier concentrations are calculated
+        assuming thermodynamic equilibrium at that temperature.
+
+        See ``(pseudo_)equilibrium_solve`` docstrings for more details.
+
+        Args:
+            target (str):
+                The target variable to minimise or maximise, e.g., "Electrons",
+                "Te_i", "Fermi Level" etc. Valid ``target`` values are column names (or
+                substrings), such as 'Electrons', 'Holes', 'Fermi Level', 'μ_X', etc.,
+                or defect names (without charge states), such as 'v_O', 'Te_i', etc.
+                If a full defect name is given (e.g. Te_i_Td_Te2.83) then the
+                concentration of that defect will be used as the target variable. If
+                a defect name substring is given instead (e.g. Te_i), then the target
+                variable will be the summed concentration of all defects with that
+                substring in their name (e.g. Te_i_Td_Te2.83, Te_i_C3v etc).
+            min_or_max (str):
+                Specify whether to "minimise" ("min") or "maximise" ("max"; default)
+                the target variable.
+            chempots (Optional[dict]):
+                Dictionary of chemical potentials to scan over, in the ``doped``
+                format (i.e. ``{"limits": [{'limit': [chempot_dict]}], ...}``)
+                -- the format generated by ``doped``\'s chemical potential parsing
+                functions (see tutorials).
+
+                If ``None`` (default), will use ``self.defect_thermodynamics.chempots``.
+
+                Note that you can also set
+                ``FermiSolver.defect_thermodynamics.chempots = ...`` or
+                ``DefectThermodynamics.chempots = ...`` to set the default chemical
+                potentials for all calculations, and you can set
+                ``FermiSolver.defect_thermodynamics.el_refs = ...`` or
+                ``DefectThermodynamics.el_refs = ...`` if you want to update the
+                elemental reference energies for any reason.
+            annealing_temperature (Optional[float]):
+                Temperature in Kelvin at which to calculate the high temperature
+                (fixed) total defect concentrations, which should correspond to
+                the highest temperature during annealing/synthesis of the material
+                (at which we assume equilibrium defect concentrations) within the
+                frozen defect approach. Default is ``None`` (uses ``temperature``
+                under thermodynamic equilibrium).
+            quenched_temperature (float):
+                Temperature in Kelvin at which to calculate the self-consistent
+                (constrained equilibrium) Fermi level and carrier concentrations,
+                given the fixed total concentrations, which should correspond to
+                operating temperature of the material (typically room temperature).
+                Default is 300 K.
+            temperature (float):
+                The temperature at which to solve for defect concentrations
+                and Fermi level, under thermodynamic equilibrium (if
+                ``annealing_temperature`` is not specified).
+                Defaults to 300 K.
+            tolerance (float):
+                The convergence criterion for the target variable. The search
+                stops when the relative change in the target value is less than
+                this value. Defaults to ``0.01``.
+            n_points (int):
+                The number of points to generate along each axis of the chemical
+                potentials grid for each iteration of the search. Defaults to ``10``.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or
+                impurity in the material. This value is included in the charge
+                neutrality condition to analyze the Fermi level and doping
+                response under hypothetical doping conditions.
+                A positive value corresponds to donor doping, while a negative
+                value corresponds to acceptor doping. For dopants of charge ``q``,
+                the input value should be ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no additional extrinsic
+                dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge states
+                (``True``) or allow charge states to vary while keeping total defect
+                concentrations fixed (``False``) upon quenching. Not expected to be
+                physically sensible in most cases. Defaults to ``False``.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing the results of the minimisation or
+                maximisation process, including the optimal chemical potentials and
+                the corresponding values of the target variable.
+
+        Raises:
+            ValueError:
+                If neither ``chempots`` nor ``self.chempots`` is provided, or if
+                ``min_or_max`` is not ``"minimise"/"min"`` or ``"maximise"/"max"``.
+        """
+        self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
+        # Determine the dimensionality of the chemical potential space, and call appropriate method
+        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+        # TODO: Add option of just specifying an element, to min/max its summed defect concentrations
+        # TODO: When per-charge option added, test setting target to a defect species (with charge)
+
+        optimise_func = self._optimise_line if len(el_refs) == 2 else self._optimise_grid
+        return optimise_func(
+            target=target,
+            min_or_max=min_or_max,
+            chempots=chempots,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            tolerance=tolerance,
+            n_points=n_points,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
+        )
+
+    def _optimise_line(
+        self,
+        target: str,
+        min_or_max: str = "max",
+        chempots: Optional[dict] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        tolerance: float = 0.01,
+        n_points: int = 10,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        ``optimise`` function for 1D chemical potential spaces (i.e. binary
+        systems).
+
+        See the main ``optimise`` docstring for more details.
+        """
+        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+
+        # Assuming 1D space, focus on one label and get the Rich/Poor limits:
+        unformatted_chempots_labels = list(el_refs.keys())
+        rich = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-rich")
+        poor = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-poor")
+        starting_line = self._get_interpolated_chempots(rich[0], poor[0], n_points)
+
+        previous_value = None
+        while True:  # Calculate results based on the given temperature conditions
+            chempots_dict_list = [
+                {k.replace("μ_", ""): v for k, v in chempot_series.items()}
+                for chempot_series in starting_line
+            ]
+            target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
+                target=target,
+                min_or_max=min_or_max,
+                previous_value=previous_value,
+                tolerance=tolerance,
+                chempots=chempots_dict_list,
+                el_refs=el_refs,
+                annealing_temperature=annealing_temperature,
+                quenched_temperature=quenched_temperature,
+                temperature=temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
+                free_defects=free_defects,
+                fix_charge_states=fix_charge_states,
+                verbose=previous_value is None,  # first iteration, print info on target cols/rows
+            )
+            if converged:
+                break
+
+            previous_value = current_value  # otherwise update
+
+            # get midpoints of starting_line and target_chempot, and use these:
+            midpoint_chempots = [
+                {
+                    k.replace("μ_", ""): (starting_line_chempot_dict[k.replace("μ_", "")] + v) / 2
+                    for k, v in target_chempot.iloc[0].items()
+                }
+                for starting_line_chempot_dict in [starting_line[0], starting_line[-1]]
+            ]
+            # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
+            # function, then we could just take the closest vertices around ``target_chempot`` and use
+            # these, but we know that chempots & temperature & other constraints -> defect concentrations
+            # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
+            # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
+            # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
+            starting_line = self._get_interpolated_chempots(
+                chempot_start=midpoint_chempots[0],
+                chempot_end=midpoint_chempots[1],
+                n_points=n_points,
+            )
+
+        return target_df
+
+    def _scan_chempots_and_compare(  # noqa: D417
+        self,
+        target: str,
+        min_or_max: str,
+        previous_value: Optional[float] = None,
+        tolerance: float = 0.01,
+        chempots: Optional[Union[list[dict[str, float]], dict[str, dict]]] = None,
+        limits: Optional[list[str]] = None,
+        el_refs: Optional[dict[str, float]] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+        verbose: bool = False,
+    ):
+        """
+        Convenience method for use in the ``_optimise_...`` methods, which
+        scans over a set of chemical potentials and compares the target value
+        to a previous value, returning the new target dataframe, value and
+        corresponding chemical potentials.
+
+        Args:
+            previous_value (float):
+                The previous value of the target variable.
+            verbose (bool):
+                Whether to print information on identified target
+                rows/columns.
+            *args:
+                All other arguments are the same as for the ``optimise`` method,
+                see its docstring for more details.
+
+        Returns:
+            target_df (pd.DataFrame):
+                A ``DataFrame`` containing the current results of the optimisation,
+                including the optimal chemical potentials and corresponding values
+                of the target variable.
+            current_value (float):
+                The current (updated) value of the target variable.
+            target_chempot (pd.DataFrame):
+                The chemical potentials corresponding to the current value.
+            converged (bool):
+                Whether the search has converged to within ``tolerance``.
+        """
+        results_df = self.scan_chempots(
+            chempots=chempots,
+            el_refs=el_refs,
+            annealing_temperature=annealing_temperature,
+            quenched_temperature=quenched_temperature,
+            temperature=temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+            fixed_defects=fixed_defects,
+            free_defects=free_defects,
+            fix_charge_states=fix_charge_states,
+        )
+
+        target_df, current_value, target_chempot = _get_min_max_target_values(
+            results_df, target, min_or_max, verbose=verbose
+        )
+        converged = (  # Check if the change in the target value is less than the tolerance
+            previous_value is not None
+            and (
+                current_value == previous_value
+                or abs((current_value - previous_value) / (previous_value or current_value)) < tolerance
+            )
+        )  # divide by (previous_value or current_value) to avoid division by zero
+
+        return target_df, current_value, target_chempot, converged
+
+    def _optimise_grid(
+        self,
+        target: str,
+        min_or_max: str = "max",
+        chempots: Optional[dict] = None,
+        annealing_temperature: Optional[float] = None,
+        quenched_temperature: float = 300,
+        temperature: float = 300,
+        tolerance: float = 0.01,
+        n_points: int = 10,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> pd.DataFrame:
+        r"""
+        ``optimise`` function for >=2D chemical potential spaces (i.e. non-
+        binary/elementary systems).
+
+        See the main ``optimise`` docstring for more details.
+        """
+        chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
+        starting_grid = ChemicalPotentialGrid(chempots)
+
+        previous_value = None
+        while True:
+            chempots_dict_list = [
+                {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
+                for _idx, chempot_series in starting_grid.get_grid(n_points).iterrows()
+            ]
+            target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
+                target=target,
+                min_or_max=min_or_max,
+                previous_value=previous_value,
+                tolerance=tolerance,
+                chempots=chempots_dict_list,
+                el_refs=el_refs,
+                annealing_temperature=annealing_temperature,
+                quenched_temperature=quenched_temperature,
+                temperature=temperature,
+                effective_dopant_concentration=effective_dopant_concentration,
+                fixed_defects=fixed_defects,
+                free_defects=free_defects,
+                fix_charge_states=fix_charge_states,
+                verbose=previous_value is None,  # first iteration, print info on target cols/rows
+            )
+            if converged:
+                break
+
+            previous_value = current_value  # otherwise update
+
+            new_vertices_df = (
+                starting_grid.vertices + target_chempot.iloc[0]
+            ) / 2  # 1 row - target_chempot
+            # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
+            # function, then we could just take the closest vertices around ``target_chempot`` and use
+            # these, but we know that chempots & temperature & other constraints -> defect concentrations
+            # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
+            # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
+            # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
+
+            # Generate a new grid around target_chempot which doesn't go outside the starting grid bounds:
+            starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
+
+        return target_df
+
+    def _generate_dopant_for_py_sc_fermi(self, effective_dopant_concentration: float) -> "DefectSpecies":
+        """
+        Generate a dopant defect charge state object, for use with the ``py-sc-
+        fermi`` functions.
+
+        This method creates a defect charge state object representing an
+        arbitrary dopant or impurity in the material, used to include in the
+        charge neutrality condition and analyze the Fermi level/doping
+        response under hypothetical doping conditions.
+
+        Args:
+            effective_dopant_concentration (float):
+                The fixed concentration of the dopant or impurity in the
+                material, specified in cm^-3. A positive value indicates
+                donor doping (positive defect charge state), while a negative
+                value indicates acceptor doping (negative defect charge state).
+                For dopants of charge ``q``, the input value should be
+                ``q * 'Dopant Concentration'``.
+
+        Returns:
+            DefectSpecies:
+                An instance of the ``DefectSpecies`` class, representing the
+                generated dopant with the specified charge state and concentration.
+
+        Raises:
+            ValueError:
+                If ``effective_dopant_concentration`` is zero or if there is an
+                issue with generating the dopant.
+        """
+        self._check_required_backend_and_error("py-sc-fermi")
+        assert self._DefectChargeState
+        assert self._DefectSpecies
+        dopant = self._DefectChargeState(
+            charge=np.sign(effective_dopant_concentration),
+            fixed_concentration=abs(effective_dopant_concentration) / 1e24 * self.volume,
+            degeneracy=1,
+        )
+        return self._DefectSpecies(
+            nsites=1, charge_states={np.sign(effective_dopant_concentration): dopant}, name="Dopant"
+        )
+
+    def _generate_defect_system(
+        self,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+    ) -> "DefectSystem":
+        """
+        Generates a ``py-sc-fermi`` ``DefectSystem`` object from
+        ``self.defect_thermodynamics`` and a set of chemical potentials.
+
+        This method constructs a ``DefectSystem`` object, which encompasses all
+        relevant defect species and their properties under the given conditions,
+        including temperature, chemical potentials, and an optional dopant
+        concentration.
+
+        Args:
+            single_chempot_dict (dict[str, float]):
+                Dictionary of chemical potentials to use for calculating the equilibrium
+                Fermi level position and defect/carrier concentrations. Here, this
+                should be a dictionary of chemical potentials for a single limit
+                (``limit``), in the format: ``{element symbol: chemical potential}``.
+                If ``el_refs`` is provided or set in ``self.defect_thermodynamics.el_refs``
+                then it is the `formal` chemical potentials (i.e. relative to the elemental
+                reference energies) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+            el_refs (dict[str, float]):
+                Dictionary of elemental reference energies for the chemical potentials
+                in the format:
+                ``{element symbol: reference energy}``. Unnecessary if
+                ``self.defect_thermodynamics.el_refs`` is set (i.e. if ``chempots`` was
+                provided to ``self.defect_thermodynamics`` in the format generated by
+                ``doped``).
+                (Default: None)
+            temperature (float):
+                The temperature at which to perform the calculations, in Kelvin.
+                Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary dopant or impurity
+                in the material. This value is included in the charge neutrality
+                condition to analyze the Fermi level and doping response under
+                hypothetical doping conditions. A positive value corresponds to donor
+                doping, while a negative value corresponds to acceptor doping.
+                For dopants of charge ``q``, the input value should be
+                ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no extrinsic dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+
+        Returns:
+            DefectSystem:
+                An initialized ``DefectSystem`` object, containing the defect species
+                with their charge states, formation energies, and degeneracies, as well
+                as the density of states (DOS), volume, and temperature of the system.
+        """
+        self._check_required_backend_and_error("py-sc-fermi")
+        assert self._DefectSpecies
+        assert self._DefectSystem
+        single_chempot_dict, el_refs = self.defect_thermodynamics._get_chempots(
+            single_chempot_dict, el_refs
+        )  # returns self.defect_thermodynamics.chempots/self.defect_thermodynamics.el_refs if None
+        dft_chempots = _get_dft_chempots(single_chempot_dict, el_refs)
+
+        defect_species = []  # dicts of: {"charge_states": {...}, "nsites": X, "name": label}
+        for label, entry_list in self.defect_thermodynamics.all_entries.items():
+            defect_species_dict = {
+                "charge_states": {},
+                "nsites": entry_list[0].defect.multiplicity / self.multiplicity_scaling,
+                "name": label,
+            }
+            for entry in entry_list:
+                formation_energy = self.defect_thermodynamics.get_formation_energy(
+                    entry, chempots=dft_chempots, fermi_level=0
+                )
+                degeneracy_factor = (
+                    np.prod(list(entry.degeneracy_factors.values())) if entry.degeneracy_factors else 1
+                )
+                # py-sc-fermi assumes the same multiplicity (nsites) for all defect species / charge
+                # states of a given grouped defect, but this is not necessarily the case for
+                # interstitials (e.g. Te_i_Td_Te2.83_a), so we account for this in the degeneracy
+                # factors here:
+                degeneracy_factor *= entry.defect.multiplicity / entry_list[0].defect.multiplicity
+                defect_species_dict["charge_states"][entry.charge_state] = {
+                    "charge": entry.charge_state,
+                    "energy": formation_energy,
+                    "degeneracy": degeneracy_factor,
+                }
+            defect_species.append(defect_species_dict)
+
+        all_defect_species = [self._DefectSpecies.from_dict(subdict) for subdict in defect_species]
+        if effective_dopant_concentration is not None:
+            all_defect_species.append(
+                self._generate_dopant_for_py_sc_fermi(effective_dopant_concentration)
+            )
+
+        defect_system = self._DefectSystem(
+            defect_species=all_defect_species,
+            dos=self.py_sc_fermi_dos,
+            volume=self.volume,
+            temperature=temperature,
+            convergence_tolerance=1e-20,
+        )
+        self._fix_defect_concentrations(defect_system, fixed_defects)
+
+        return defect_system
+
+    def _fix_defect_concentrations(
+        self,
+        defect_system: "DefectSystem",
+        fixed_defects: Optional[dict[str, float]] = None,
+        fixed_concs: Optional[dict[str, float]] = None,
+    ) -> None:
+        """
+        Utility method to fix the concentrations of defects specified by
+        ``fix_defects`` in the ``py-sc-fermi`` ``defect_system``.
+
+        This method applies the concentration constraints to the
+        ``defect_system.defect_species`` in place.
+
+        Args:
+            defect_system (DefectSystem):
+                ``py-sc-fermi`` ``DefectSystem`` for which to fix the
+                concentrations of defects (in ``defect_system.defect_species``)
+                according to the ``fixed_defects`` input.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix regardless of
+                chemical potentials / temperature / Fermi level, in the format:
+                ``{defect_name: concentration}``, where ``defect_name`` is the
+                the name of a defect entry without (e.g. ``"v_O"``) or with (e.g.
+                ``"v_O_+2"``) the charge state; which will then fix either the
+                total concentration of that defect or only the concentration for
+                the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to
+                simulate the effect of a fixed impurity concentration.
+                Defaults to ``None``.
+            fixed_concs (dict):
+                Dictionary of total concentrations of defects, which if
+                provided will be compared to input concentration constraints
+                (``fixed_defects``) and a warning will be thrown if
+                ``fixed_concs[defect_name_without_charge] > fixed_defects[defect_name_with_charge]``.
+                Default is ``None``.
+        """
+        if fixed_defects is None:
+            return
+
+        for k, v in fixed_defects.items():
+            if k.split("_")[-1].strip("+-").isdigit():
+                defect_name_wout_charge, q_str = k.rsplit("_", 1)
+                q = int(q_str)
+                defect_system.defect_species_by_name(defect_name_wout_charge).charge_states[
+                    q
+                ].fix_concentration(v / 1e24 * self.volume)
+
+                if fixed_concs and v > fixed_concs[defect_name_wout_charge] * 1.001:  # small noise tol
+                    warnings.warn(
+                        f"Fixed concentration of {k} ({v}) is higher than the total concentration of "
+                        f"({fixed_concs[defect_name_wout_charge]}) at the annealing temperature. "
+                        f"Adjusting the total concentration of {defect_name_wout_charge} to {v}. Check "
+                        f"that this is the behaviour you expect."
+                    )
+                    defect_system.defect_species_by_name(defect_name_wout_charge).fix_concentration(
+                        v / 1e24 * self.volume
+                    )
+            else:
+                defect_system.defect_species_by_name(k).fix_concentration(v / 1e24 * self.volume)
+
+    def _generate_annealed_defect_system(
+        self,
+        annealing_temperature: float,
+        single_chempot_dict: dict[str, float],
+        el_refs: Optional[dict[str, float]] = None,
+        quenched_temperature: float = 300,
+        effective_dopant_concentration: Optional[float] = None,
+        fixed_defects: Optional[dict[str, float]] = None,
+        free_defects: Optional[list[str]] = None,
+        fix_charge_states: bool = False,
+    ) -> "DefectSystem":
+        r"""
+        Generate a ``py-sc-fermi`` ``DefectSystem`` object that has defect
+        concentrations fixed to the values determined at a high temperature
+        (``annealing_temperature``), and then set to a lower temperature
+        (``quenched_temperature``).
+
+        This method creates a defect system where defect concentrations are
+        initially calculated at an annealing temperature and then "frozen"
+        as the system is cooled to a lower quenched temperature. It can
+        optionally fix the concentrations of individual defect charge
+        states or allow charge states to vary while keeping total defect
+        concentrations fixed (default).
+
+        See ``pseudo_equilibrium_solve`` docstring for more details.
+
+        Args:
+            annealing_temperature (float):
+                The higher temperature (in Kelvin) at which the system is
+                annealed to set initial defect concentrations.
+            single_chempot_dict (dict[str, float]):
+                Dictionary of chemical potentials to use for calculating the
+                equilibrium Fermi level position and defect/carrier
+                concentrations. Here, this should be a dictionary of chemical
+                potentials for a single limit (``limit``), in the format:
+                ``{element symbol: chemical potential}``.
+                If ``el_refs`` is provided or set in
+                ``self.defect_thermodynamics.el_refs`` then it is the `formal`
+                chemical potentials (i.e. relative to the elemental reference
+                energies) that should be given here, otherwise the absolute
+                (DFT) chemical potentials should be given.
+            el_refs (dict[str, float]):
+                Dictionary of elemental reference energies for the chemical
+                potentials in the format:
+                ``{element symbol: reference energy}``. Unnecessary if
+                ``self.defect_thermodynamics.el_refs`` is set (i.e. if
+                ``chempots`` was provided to ``self.defect_thermodynamics`` in
+                the format generated by ``doped``).
+                (Default: None)
+            quenched_temperature (float):
+                The lower temperature (in Kelvin) to which the system is
+                quenched. Defaults to 300 K.
+            effective_dopant_concentration (Optional[float]):
+                The fixed concentration (in cm^-3) of an arbitrary
+                dopant/impurity in the material. A positive value indicates
+                donor doping, while a negative value indicates acceptor doping.
+                For dopants of charge ``q``, the input value should be
+                ``q * 'Dopant Concentration'``.
+                Defaults to ``None``, corresponding to no extrinsic dopant.
+            fixed_defects (Optional[dict[str, float]]):
+                A dictionary of defect concentrations to fix at the quenched
+                temperature, in the format: ``{defect_name: concentration}``,
+                where ``defect_name`` is the the name of a defect entry without
+                (e.g. ``"v_O"``) or with (e.g. ``"v_O_+2"``) the charge state;
+                which will then fix either the total concentration of that defect
+                or only the concentration for the specified charge state.
+                Concentrations should be given in cm^-3. This can be used to fix
+                the concentrations of specific defects regardless of the chemical
+                potentials, or anneal-quench procedure (e.g. to simulate the effect
+                of a fixed impurity concentration).
+            free_defects (Optional[list[str]]):
+                A list of defects (without charge states) to be excluded from
+                high-temperature concentration fixing. Useful for highly mobile
+                defects that are not expected to be "frozen-in" upon quenching.
+                Any defects whose names begin with a string in this list will be
+                excluded from high-temperature concentration fixing (e.g. "v_" will
+                match all vacancy defects with ``doped``\-formatted names).
+                Defaults to ``None``.
+            fix_charge_states (bool):
+                Whether to fix the concentrations of individual defect charge
+                states (``True``) or allow charge states to vary while keeping
+                total defect concentrations fixed (``False``).
+                Defaults to ``False``.
+
+        Returns:
+            DefectSystem:
+                A low-temperature defect system (`quenched_temperature`)
+                with defect concentrations fixed to high-temperature
+                (`annealing_temperature`) values.
+        """
+        self._check_required_backend_and_error("py-sc-fermi")
+        free_defects = free_defects or []
+
+        defect_system = self._generate_defect_system(
+            single_chempot_dict=single_chempot_dict,  # chempots handled in _generate_defect_system()
+            el_refs=el_refs,
+            temperature=annealing_temperature,
+            effective_dopant_concentration=effective_dopant_concentration,
+        )
+        initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
+
+        # Exclude the free_defects, carrier concentrations and Fermi level from fixing
+        all_free_defects = ["Dopant", "Fermi Energy", "n0", "p0", *free_defects]
+
+        # Get the fixed concentrations of non-exceptional (not-free) defects
+        decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
+        additional_data = {}
+        for k, v in decomposed_conc_dict.items():
+            if not any(k.startswith(i) for i in all_free_defects):
+                for k1, v1 in v.items():
+                    additional_data[k + "_" + str(k1)] = v1
+        initial_conc_dict.update(additional_data)
+
+        fixed_concs = {
+            k: v
+            for k, v in initial_conc_dict.items()
+            if not any(k.startswith(i) for i in all_free_defects)
+        }
+
+        # Apply the fixed concentrations
+        for defect_species in defect_system.defect_species:
+            if fix_charge_states:
+                for k, v in defect_species.charge_states.items():
+                    key = f"{defect_species.name}_{int(k)}"
+                    if key in list(fixed_concs.keys()):
+                        v.fix_concentration(fixed_concs[key] / 1e24 * defect_system.volume)
+
+            elif defect_species.name in fixed_concs and defect_species.name:
+                defect_species.fix_concentration(
+                    fixed_concs[defect_species.name] / 1e24 * defect_system.volume
+                )
+
+        self._fix_defect_concentrations(defect_system, fixed_defects, fixed_concs)
+        defect_system.temperature = quenched_temperature
+        return defect_system
+
+
+def _get_label_and_charge(name: str) -> tuple[str, int]:
+    """
+    Extracts the label and charge from a defect name string.
+
+    Args:
+        name (str): Name of the defect.
+
+    Returns:
+        tuple: A tuple containing the label and charge.
+    """
+    last_underscore = name.rfind("_")
+    label = name[:last_underscore] if last_underscore != -1 else name
+    charge_str = name[last_underscore + 1 :] if last_underscore != -1 else None
+
+    charge = 0  # Initialize charge with a default value
+    if charge_str is not None:
+        with contextlib.suppress(ValueError):
+            charge = int(charge_str)
+
+    return label, charge
+
+
+def _get_py_sc_fermi_dos_from_fermi_dos(
+    fermi_dos: FermiDos,
+    vbm: Optional[float] = None,
+    nelect: Optional[int] = None,
+    bandgap: Optional[float] = None,
+) -> "DOS":
+    """
+    Given an input ``pymatgen`` ``FermiDos`` object, return a corresponding
+    ``py-sc-fermi`` ``DOS`` object (which can then be used with the ``py-sc-
+    fermi`` ``FermiSolver`` backend).
+
+    Args:
+        fermi_dos (FermiDos):
+            ``pymatgen`` ``FermiDos`` object to convert to ``py-sc-fermi``
+            ``DOS``.
+        vbm (float):
+            The valence band maximum (VBM) eigenvalue in eV. If not provided,
+            the VBM will be taken from the FermiDos object. When this function
+            is used internally in ``doped``, the ``DefectThermodynamics.vbm``
+            attribute is used.
+        nelect (int):
+            The total number of electrons in the system. If not provided, the
+            number of electrons will be taken from the ``FermiDos`` object (which
+            usually takes this value from the ``vasprun.xml(.gz)`` when parsing).
+        bandgap (float):
+            Band gap of the system in eV. If not provided, the band gap will be
+            taken from the ``FermiDos`` object. When this function is used internally
+            in ``doped``, the ``DefectThermodynamics.band_gap`` attribute is used.
+
+    Returns:
+        DOS: A ``py-sc-fermi`` ``DOS`` object.
+    """
+    try:
+        from py_sc_fermi.dos import DOS
+    except ImportError as exc:
+        raise ImportError("py-sc-fermi must be installed to use this function!") from exc
+
+    densities = fermi_dos.densities
+    if vbm is None:  # tol 1e-4 is lowest possible, as VASP rounds to 4 dp:
+        vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+
+    edos = fermi_dos.energies - vbm
+    if len(densities) == 2:
+        dos = np.array([densities[Spin.up], densities[Spin.down]])
+        spin_pol = True
+    else:
+        dos = np.array(densities[Spin.up])
+        spin_pol = False
+
+    if nelect is None:
+        # this requires the input dos to be a FermiDos. NELECT could be calculated alternatively
+        # by integrating the tdos of a ``pymatgen`` ``Dos`` object, but this isn't expected to be
+        # a common use case and using parsed NELECT from vasprun.xml(.gz) is more reliable
+        nelect = fermi_dos.nelecs
+    if bandgap is None:
+        bandgap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+
+    return DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
+
+
+def _get_min_max_target_values(
+    results_df: pd.DataFrame, target: str, min_or_max: str, verbose: bool = False
+) -> tuple:
+    """
+    Convenience function to get the minimum or maximum value(s) of a ``target``
+    column or row in a ``results_df`` DataFrame, and the corresponding chemical
+    potentials.
+
+    Mainly intended for internal ``doped`` usage in the ``FermiSolver``
+    ``optimise`` method.
+
+    Args:
+        results_df (pd.DataFrame):
+            ``DataFrame`` of defect concentrations, as output by the
+            ``FermiSolver`` ``scan_chempots`` / ``scan_chemical_potential_grid``
+            methods (which corresponds to the ``(pseudo_)equilibrium_solve``
+            ``DataFrame`` outputs, appended together for multiple chemical
+            potentials).
+        target (str):
+            The target variable to minimise or maximise, e.g., "Electrons",
+            "Te_i", "Fermi Level" etc. Valid ``target`` values are column names (or
+            substrings), such as 'Electrons', 'Holes', 'Fermi Level', 'μ_X', etc.,
+            or defect names (without charge states), such as 'v_O', 'Te_i', etc.
+            If a full defect name is given (e.g. Te_i_Td_Te2.83) then the
+            concentration of that defect will be used as the target variable. If
+            a defect name substring is given instead (e.g. Te_i), then the target
+            variable will be the summed concentration of all defects with that
+            substring in their name (e.g. Te_i_Td_Te2.83, Te_i_C3v etc).
+        min_or_max (str):
+            Whether to find the minimum or maximum value(s) of the target.
+            Should be either "min" or "max".
+        verbose (bool):
+            Whether to print information on identified target rows/columns.
+
+    Returns:
+        tuple:
+            A tuple containing the results ``DataFrame`` at the chemical potentials
+            which minimise/maximise the target property (``target_df``), the
+            minimised/maximised value of the target property, and the corresponding
+            chemical potentials -- in the given chemical potential range.
+    """
+
+    def min_or_max_func(x):
+        return x.min() if "min" in min_or_max else x.max()
+
+    chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
+
+    # determine target; can be column, defect name, element (TODO), starting string of column name,
+    # starting string of defect name, column name subset or defect name subset, w/that preferential order:
+
+    target_names = (
+        [col for col in results_df.columns if col == target]
+        or [defect_name for defect_name in results_df.index if defect_name == target]
+        or [col for col in results_df.columns if col.lower().startswith(target.lower())]
+        or [
+            defect_name
+            for defect_name in results_df.index
+            if defect_name.lower().startswith(target.lower())
+        ]
+        or [col for col in results_df.columns if target in col]
+        or [defect_name for defect_name in (results_df.index) if target in defect_name]
+    )
+    target_names = sorted(set(target_names), key=target_names.index)  # preserve order
+
+    if not target_names:
+        raise ValueError(
+            f"Target '{target}' not found in results DataFrame! Must be a column or defect "
+            f"name/substring! See docstring for more info."
+        )
+
+    column = next(iter(target_names)) in results_df.columns
+
+    if verbose:
+        print(
+            f"Searching for chemical potentials which {min_or_max}imise the target "
+            f"{'column' if column else 'defect(s)'}: {target_names}..."
+        )
+
+    if column:
+        target_name = next(iter(target_names))
+        if len(target_names) > 1:  # can only match one column
+            warnings.warn(
+                f"Multiple columns with the name '{target}' found in the results DataFrame! "
+                f"Choosing the first match '{target_name}' as the target."
+            )
+        current_value = min_or_max_func(results_df[target_name])
+        target_df = results_df[results_df[target_name] == current_value]
+        target_chempot = target_df[chempots_labels]
+
+    else:
+        filtered_df = results_df[results_df.index.isin(target_names)]  # filter df for the chosen defect(s)
+        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects):
+        summed_df = filtered_df.groupby(chempots_labels).sum()
+        # TODO: When adding element option, will need to subtract for vacancies...
+        current_value = min_or_max_func(summed_df["Concentration (cm^-3)"])  # find the extremum row
+        # get chempots which min/maximise the target:
+        target_chempot = summed_df[summed_df["Concentration (cm^-3)"] == current_value].index.to_frame()
+        # get all DataFrame rows which have the chempots matching the extremum row:
+        target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
+
+    target_chempot = target_chempot.drop_duplicates(ignore_index=True)
+    return target_df, current_value, target_chempot
+
+
+def _ensure_list(
+    var: Optional[Union[float, int, range, list, np.ndarray]] = None
+) -> Optional[Union[list[Union[float, int]], np.ndarray[Union[float, int]]]]:
+    if isinstance(var, range):
+        return list(var)
+    return [var] if isinstance(var, (int, float)) else var

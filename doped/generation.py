@@ -2328,14 +2328,10 @@ def _get_element_list(defect: Union[Defect, DefectEntry, dict, list]) -> list[st
 
     def _get_single_defect_element_list(single_defect):
         element_list = [el.symbol for el in single_defect.structure.composition.elements]
-        element_list += sorted(
-            [  # extrinsic elements, sorted by periodic group and atomic number for deterministic ordering
-                el.symbol
-                for el in single_defect.defect_structure.composition.elements
-                if el.symbol not in element_list
-            ],
-            key=_element_sort_func,
-        )
+        defect_element = single_defect.defect_site.specie.symbol  # possibly extrinsic
+        if defect_element not in element_list:
+            element_list.append(defect_element)
+
         return element_list
 
     if isinstance(defect, (Defect, DefectEntry, core.Defect, thermo.DefectEntry)):
@@ -2356,18 +2352,11 @@ def _get_element_list(defect: Union[Defect, DefectEntry, dict, list]) -> list[st
     host_element_list = [el.symbol for el in next(iter(defect_list)).structure.composition.elements]
     extrinsic_element_list: list[str] = []
     for single_defect in defect_list:
-        extrinsic_element_list.extend(
-            [
-                el.symbol
-                for el in single_defect.defect_structure.composition.elements
-                if el.symbol not in host_element_list
-            ]
-        )
+        extrinsic_element_list.append(single_defect.defect_site.specie.symbol)  # possibly extrinsic
+    extrinsic_element_list = list(set(extrinsic_element_list) - set(host_element_list))
+
     # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
-    extrinsic_element_list = sorted(
-        set(extrinsic_element_list),
-        key=_element_sort_func,
-    )
+    extrinsic_element_list.sort(key=_element_sort_func)
     return host_element_list + extrinsic_element_list
 
 
