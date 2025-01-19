@@ -44,8 +44,6 @@ Mis-matching Bulk and Defect Supercells
 When parsing defect calculations with ``doped``, if you provide bulk and defect supercells which do not
 match, you will see the following warning:
 
-.. code::
-
     Detected atoms far from the defect site (>X Å) with major displacements (>0.5 Å) in the defect
     supercell. This likely indicates a mismatch between the bulk and defect supercell definitions or an
     unconverged supercell size, both of which could cause errors in parsing. The mean displacement of the
@@ -138,7 +136,8 @@ A known issue with ``spglib`` is that it can give unnecessary errors or warnings
   spglib: get_bravais_exact_positions_and_lattice failed
   spglib: ref_get_exact_structure_and_symmetry failed.
 
-Typically this can be fixed by updating to ``spglib>=2.5`` with `pip install --upgrade spglib``.
+Typically this can be fixed by updating to ``spglib>=2.5`` with ``pip install --upgrade spglib``.
+
 .. see doped_spglib_warnings.ipynb
 
 ``ShakeNBreak``
