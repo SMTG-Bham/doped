@@ -20,6 +20,16 @@
 - 2D corrections; like `pydefect_2d`, or recommended to use SCPC in VASP?
 - Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
 
+
+## FermiSolver
+- Per-charge outputs are currently not supported for `FermiSolver`, but are for `DefectThermodynamics`, and so only total defect concentrations are accessible. This is useful information to users in a lot of cases, so would be good to include in future. I think this is possible with `py-sc-fermi`, just needs to use the `decomposed` option with `concentration_dict`?
+- Should also allow just specifying an extrinsic element for fixed_defects, to allow the user to specify the known concentration of a dopant / over/under-stoichiometry of a given element (but with unknown relative populations of different possible defects) -- realistically the most commonly desired option (but would require a bit of refactoring from the current `py-sc-fermi` implementation). See in-code `TODO` and notes. The DefectThermodynamics JSONs in the repo for extrinsic-doped Selenium (link) would be a good test case for this.
+- In future the `fixed_defects`, `free_defects` and `fix_charge_states` options may be added to the `doped` backend (in theory very simple to add, and `doped` currently far quicker ~>10x)
+- Add per-site option like in `DefectThermodynamics`, should be quick to add (can use `per_volume=False` in `py-sc-fermi`).
+- Show example of extremum position for a defect/carrier concentration occurring at a non-limiting chemical potential (e.g. CdTe from SK thesis, V_S in Sb2S3 just about (https://pubs.acs.org/doi/10.1021/acsenergylett.4c02722)), as this is the main case where the `optimise` function is particularly powerful.
+- It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe.
+
+
 ## Housekeeping
 - Tutorials general structure clean-up
 - Remnant TODOs in code

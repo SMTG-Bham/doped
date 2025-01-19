@@ -5839,7 +5839,9 @@ class FermiSolver(MSONable):
             n_points (int):
                 The number of points to generate along each axis of the grid.
                 The actual number of grid points may be less, as points outside
-                the convex hull are excluded. Default is 10.
+                the convex hull are excluded. The higher the dimension of your chemical
+                system (i.e. number of elements), the more sensitive the runtime will
+                be to the choice of ``n_points``. Default is 10.
             annealing_temperature (Optional[float]):
                 Temperature in Kelvin at which to calculate the high temperature
                 (fixed) total defect concentrations, which should correspond to
@@ -6043,7 +6045,10 @@ class FermiSolver(MSONable):
                 this value. Defaults to ``0.01``.
             n_points (int):
                 The number of points to generate along each axis of the chemical
-                potentials grid for each iteration of the search. Defaults to ``10``.
+                potentials grid for each iteration of the search. The higher the
+                dimension of your chemical system (i.e. number of elements), the
+                more sensitive the runtime will be to the choice of ``n_points``.
+                Defaults to ``10``.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
