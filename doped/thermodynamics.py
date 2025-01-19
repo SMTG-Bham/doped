@@ -3894,7 +3894,7 @@ class DefectThermodynamics(MSONable):
 
 DefectThermodynamics.get_quenched_fermi_level_and_concentrations = (
     DefectThermodynamics.get_fermi_level_and_concentrations
-)  # for backwards compatibility
+)  # for backwards compatibility, to be removed in next major release
 
 
 def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: Optional[str] = None):
