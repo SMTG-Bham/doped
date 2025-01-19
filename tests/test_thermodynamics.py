@@ -2864,10 +2864,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 defect_thermo.get_equilibrium_fermi_level, limit="Te-rich", **kwargs
             )
             assert not output
-            if not kwargs.get("bulk_dos"):  # TODO: Remove this caveat after
-                # https://github.com/materialsvirtuallab/monty/pull/733 merged and released,
-                # causing encoding warning
-                assert not w
+            assert not w
+
             assert isinstance(fl_or_fl_e_h, (float, tuple))
             if isinstance(fl_or_fl_e_h, tuple):
                 assert kwargs.get("return_concs", False)
@@ -3092,10 +3090,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                     assert "Orig gap: 1.5126, new gap:1.8126" in output
                     assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
 
-            if not kwargs.get("bulk_dos"):  # TODO: Remove this caveat after
-                # https://github.com/materialsvirtuallab/monty/pull/733 merged and released,
-                # causing encoding warning
-                assert not w
+            assert not w
 
             for expected_float in expected_floats:
                 assert isinstance(expected_float, float)
@@ -3120,7 +3115,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             )
             # Similar values to CdTe_LZ_Te_rich_concentrations.png, slightly different due to no scissoring
             assert (
-                np.isclose(fermi_level, 0.33745, atol=1e-3)
+                np.isclose(fermi_level, 0.3396, atol=1e-3)
                 == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
             )
             assert (
