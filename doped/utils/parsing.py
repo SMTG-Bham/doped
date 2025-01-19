@@ -544,6 +544,10 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     return (defect_type, *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff))
 
 
+# maintain backwards compatibility with old function name for now, to be removed in next major release
+get_defect_site_idxs_and_unrelaxed_structure = get_defect_type_site_idxs_and_unrelaxed_structure
+
+
 def _get_species_from_composition_diff(composition_diff, el_change):
     """
     Get the species corresponding to the given change in composition.
