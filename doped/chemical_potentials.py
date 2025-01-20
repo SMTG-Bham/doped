@@ -1894,18 +1894,45 @@ class CompetingPhasesAnalyzer:
                 ``vasprun.xml(.gz)`` file sizes, and used if predicted to be
                 faster than serial processing. Set to 1 to prevent multiprocessing.
 
-        Attributes:
+        Key attributes:
             composition (str): The bulk (host) composition.
+            chempots (dict):
+                Dictionary of the chemical potential limits for the host
+                material, in the ``doped`` format (i.e. ``{"limits": [{'limit':
+                [chempot_dict]}], ...}``). This can be directly used with the
+                ``DefectThermodynamics`` plotting & analysis methods, and saved
+                to file with ``dumpfn`` from ``monty.serialization``.
+            chempots_df (DataFrame):
+                ``DataFrame`` of the chemical potential limits for the host.
             elements (list):
                 List of all elements in the chemical system (host + extrinsic),
                 from all parsed calculations.
             extrinsic_elements (str):
                 List of extrinsic elements in the chemical system (not present
                 in ``composition``).
-            formation_energy_df (pandas.DataFrame):
-                DataFrame containing the parsed competing phases data.
+            bulk_entry (ComputedStructureEntry):
+                The lowest energy computed entry for the host material.
+            unstable_host (bool):
+                Whether the host material is unstable with respect to competing
+                phases (i.e. has an energy above hull > 0).
+            entries (list[Union[ComputedEntry, ComputedStructureEntry]]):
+                List of all parsed ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+            phase_diagram (PhaseDiagram):
+                A ``pymatgen`` phase diagram generated from the parsed entries.
+                Note that this phase diagram is likely not a full phase diagram
+                for this chemical space, as we typically only generate the nearby
+                competing phases for the host material to reduce the number of
+                calculations.
+            intrinsic_phase_diagram (PhaseDiagram):
+                A ``pymatgen`` phase diagram containing only entries with
+                elements from the host material (i.e. no extrinsic elements).
+            elemental_energies (dict):
+                Dictionary of the lowest energy elemental phases for each element
+                in the chemical system.
+            parsed_folders (list):
+                List of folders from which VASP calculation outputs were parsed,
+                if ``entries`` was given as a path / paths to directories.
         """
-        # TODO: Update attributes docstring
         # TODO: Use smart subfolder detection as in DefectsParser, and update docstring!
         self.composition = Composition(composition)
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
@@ -2488,7 +2515,7 @@ class CompetingPhasesAnalyzer:
             raise ValueError("`splits` must be either 1 or 2")
         # done in the pyscfermi report style
         # TODO: Update (now dataframe output)
-        formation_energy_data = self.get_formation_energy_df(prune_polymorphs)
+        formation_energy_data = self.get_formation_energy_df(prune_polymorphs).to_dict("records")
 
         kpoints_col = any("k-points" in item for item in formation_energy_data)
 
@@ -3097,13 +3124,6 @@ def get_X_poor_limit(X: str, chempots: dict):
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
 
     return X_poor_limit
-
-
-def _move_dict_to_start(data, key, value):
-    for index, item in enumerate(data):
-        if key in item and item[key] == value:
-            data.insert(0, data.pop(index))
-            return
 
 
 def combine_extrinsic(first, second, extrinsic_species):
