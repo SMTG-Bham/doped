@@ -2299,7 +2299,12 @@ class CompetingPhasesAnalyzer:
 
         return self._from_entries(self.entries)
 
-    def get_formation_energy_df(self, prune_polymorphs: bool = False) -> pd.DataFrame:
+    def get_formation_energy_df(
+        self,
+        prune_polymorphs: bool = False,
+        include_dft_energies: bool = False,
+        skip_rounding: bool = False,
+    ) -> pd.DataFrame:
         """
         Generate a ``DataFrame`` of the formation energies of parsed competing
         phases calculations.
@@ -2321,8 +2326,13 @@ class CompetingPhasesAnalyzer:
                 composition. Doesn't affect chemical potential limits (only the
                 ground-state polymorphs matter for this).
                 Default is False.
+            include_dft_energies (bool):
+                Whether to include the raw DFT energies in the output ``DataFrame``.
+                Default is ``False``.
+            skip_rounding (bool):
+                Whether to skip rounding the energies to 3 decimal places
+                (1 meV/atom or meV/fu) for cleanliness. Default is ``False``.
         """
-        # TODO: Include space group and energy above hull!!!
         data = []
         for entry in self.entries:
             comp = entry.composition
@@ -2333,13 +2343,20 @@ class CompetingPhasesAnalyzer:
                 if (kpoints_data and len(kpoints_data) == 1)
                 else "N/A"
             )
+            space_group = (
+                entry.data.get("doped_name", f"{entry.name}_N/A_EaH_")
+                .split(f"{entry.name}_")[1]
+                .split("_EaH_")[0]
+            )
 
             d = {
                 "Formula": comp.reduced_formula,
-                "DFT Energy (eV/fu)": entry.energy / formulas_per_unit,
-                "DFT Energy (eV/atom)": entry.energy_per_atom,
+                "Space Group": space_group,
+                "Energy above Hull (eV/atom)": entry.data.get("energy_above_hull", "N/A"),
                 "Formation Energy (eV/fu)": self.phase_diagram.get_form_energy(entry) / formulas_per_unit,
                 "Formation Energy (eV/atom)": self.phase_diagram.get_form_energy_per_atom(entry),
+                "DFT Energy (eV/fu)": entry.energy / formulas_per_unit,
+                "DFT Energy (eV/atom)": entry.energy_per_atom,
                 "k-points": kpoints,
             }
             data.append(d)
@@ -2349,6 +2366,12 @@ class CompetingPhasesAnalyzer:
         if prune_polymorphs:  # only keep the lowest energy polymorphs
             indices = formation_energy_df.groupby("Formula")["DFT Energy (eV/atom)"].idxmin()
             formation_energy_df = formation_energy_df.loc[sorted(indices)]  # retain ordering
+
+        if not include_dft_energies:
+            formation_energy_df = formation_energy_df.drop(
+                columns=["DFT Energy (eV/fu)", "DFT Energy (eV/atom)"]
+            )
+        formation_energy_df = formation_energy_df.round(3) if not skip_rounding else formation_energy_df
 
         return formation_energy_df.set_index("Formula")
 
