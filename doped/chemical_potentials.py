@@ -194,75 +194,6 @@ def make_molecular_entry(computed_entry, legacy_MP=False):
     return molecular_entry
 
 
-def _calculate_formation_energies(data: list, elemental: dict):
-    """
-    Calculate formation energies for a list of dictionaries, using the input
-    elemental reference energies.
-
-    Args:
-        data (list):
-            List of dictionaries containing the energy data of the
-            phases to calculate formation energies for.
-        elemental (dict): Dictionary of elemental reference energies.
-
-    Returns:
-        pd.DataFrame: ``DataFrame`` of formation energies of the input phases.
-    """
-    for d in data:
-        for el in elemental:
-            d[el] = Composition(d["Formula"]).as_dict().get(el, 0)
-
-    formation_energy_df = pd.DataFrame(data)
-    formation_energy_df["num_atoms_in_fu"] = formation_energy_df["Formula"].apply(
-        lambda x: Composition(x).num_atoms
-    )
-    formation_energy_df["num_species"] = formation_energy_df["Formula"].apply(
-        lambda x: len(Composition(x).as_dict())
-    )
-    formation_energy_df["periodic_group_ordering"] = formation_energy_df["Formula"].apply(
-        lambda x: tuple(sorted([_element_sort_func(i.symbol) for i in Composition(x).elements]))
-    )
-
-    # get energy per fu then subtract elemental energies later, to get formation energies
-    if "DFT Energy (eV/fu)" in formation_energy_df.columns:
-        formation_energy_df["formation_energy_calc"] = formation_energy_df["DFT Energy (eV/fu)"]
-        if "DFT Energy (eV/atom)" not in formation_energy_df.columns:
-            formation_energy_df["DFT Energy (eV/atom)"] = formation_energy_df["DFT Energy (eV/fu)"] / (
-                formation_energy_df["num_atoms_in_fu"]
-            )
-
-    elif "DFT Energy (eV/atom)" in formation_energy_df.columns:
-        formation_energy_df["formation_energy_calc"] = (
-            formation_energy_df["DFT Energy (eV/atom)"] * formation_energy_df["num_atoms_in_fu"]
-        )
-        formation_energy_df["DFT Energy (eV/fu)"] = formation_energy_df["DFT Energy (eV/atom)"] * (
-            formation_energy_df["num_atoms_in_fu"]
-        )
-
-    else:
-        raise ValueError(
-            "No energy data (DFT Energy (eV/atom) or per Formula Unit (eV/fu)) found in input "
-            "data to calculate formation energies!"
-        )
-
-    for k, v in elemental.items():
-        formation_energy_df["formation_energy_calc"] -= formation_energy_df[k] * v
-
-    formation_energy_df["Formation Energy (eV/fu)"] = formation_energy_df["formation_energy_calc"]
-    formation_energy_df["Formation Energy (eV/atom)"] = (
-        formation_energy_df["formation_energy_calc"] / formation_energy_df["num_atoms_in_fu"]
-    )
-    formation_energy_df = formation_energy_df.drop(columns=["formation_energy_calc"])
-
-    # sort by num_species, then by periodic group/row of elements, then by num_atoms_in_fu,
-    # then by formation_energy
-    formation_energy_df = formation_energy_df.sort_values(
-        by=["num_species", "periodic_group_ordering", "num_atoms_in_fu", "Formation Energy (eV/fu)"],
-    )
-    # drop num_atoms_in_fu and num_species
-    return formation_energy_df.drop(columns=["num_atoms_in_fu", "num_species", "periodic_group_ordering"])
-
-
 def _renormalise_entry(entry, renormalisation_energy_per_atom, name=None, description=None):
     """
     Regenerate the input entry (``ComputedEntry``/``ComputedStructureEntry``)
@@ -1060,7 +991,7 @@ class CompetingPhases:
         self.e_above_hull = e_above_hull  # store parameters for reference
         self.full_phase_diagram = full_phase_diagram
         # get API key, and print info message if it corresponds to legacy MP -- remove this and legacy
-        # MP API warning filter in future versions (TODO)
+        # MP API warning filter in future versions, when legacy_MP no longer supported
         self.api_key, self.legacy_MP = _parse_MP_API_key(api_key, legacy_MP_info=True)
         warnings.filterwarnings(  # Remove in future when users have been given time to transition
             "ignore", message="You are using the legacy MPRester"
@@ -1905,14 +1836,6 @@ def get_doped_chempots_from_entries(
 
 
 class CompetingPhasesAnalyzer:
-    # TODO: Rename `calculate_chempots()` to `calculate_chempot_df()` or something else to make clear
-    #  that it's _different_ to the chempot limits!! (or something along those lines)
-    # TODO: Allow parsing using pymatgen ComputedEntries as well, to aid interoperability with
-    #  high-throughput architectures like AiiDA or atomate2. See:
-    #  https://github.com/SMTG-Bham/doped/commit/b4eb9a5083a0a2c9596be5ccc57d060e1fcec530
-    # TODO: Parse into ``ComputedStructureEntries`` (similar to ``CompetingPhases`` handling) for easier
-    #  maintenance, manipulation and interoperability, and update ``__repr__()`` to print entries list
-    #  with folder and ``doped`` names (like in ``CompetingPhases``)
     # TODO: Make MSONable!
     def __init__(
         self,
@@ -1921,7 +1844,6 @@ class CompetingPhasesAnalyzer:
             PathLike, list[PathLike], list[ComputedEntry], list[ComputedStructureEntry]
         ] = "CompetingPhases",
         subfolder: Optional[PathLike] = "vasp_std",
-        csv_path: Optional[PathLike] = None,
         verbose: bool = True,
         processes: Optional[int] = None,
     ):
@@ -1960,11 +1882,6 @@ class CompetingPhasesAnalyzer:
                 is a path to a base folder with VASP outputs. Default is to
                 search for ``vasp_std`` subfolders, or directly in the
                 ``formula_EaH_X`` folders.
-            csv_path (PathLike):
-                If set will save the parsed data to a csv at this filepath.
-                Further customisation of the output csv can be achieved with
-                the ``CompetingPhasesAnalyzer.to_csv()`` method.
-                Default is ``None`` (no output csv file).
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found),
@@ -2007,13 +1924,16 @@ class CompetingPhasesAnalyzer:
         else:
             self._from_entries(self.entries)
 
-        if csv_path is not None:
-            self.to_csv(csv_path)
-            print(f"Competing phase formation energies have been saved to {csv_path}")
-
     def _from_entries(self, entries: list[Union[ComputedEntry, ComputedStructureEntry]]):
-        """
-        TODO.
+        r"""
+        Initialises the ``CompetingPhasesAnalyzer`` object from a list of
+        ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+
+        Args:
+            entries (list[Union[ComputedEntry, ComputedStructureEntry]]):
+                List of ``ComputedEntry``\s / ``ComputedStructureEntry``\s,
+                from which to compute the phase diagram and chemical
+                potential limits.
         """
         self.entries = entries
         intrinsic_entries: list[Union[ComputedEntry, ComputedStructureEntry]] = []
@@ -2143,61 +2063,45 @@ class CompetingPhasesAnalyzer:
             self.phase_diagram.entries,
             key=lambda x: _entries_sort_func(x, bulk_composition=self.composition),
         )
-
-        self.formation_energy_df = self._get_and_sort_formation_energy_data()
-
         self.chempots_df = self.calculate_chempots(verbose=False)
 
-    # TODO: `from_vaspruns` should just be the default initialisation of CompetingPhasesAnalyzer,
-    #  which auto-parses vaspruns from the subdirectories (or optionally a list of vaspruns,
-    #  or a csv path); see shelved changes for this
     def _from_vaspruns(
         self,
         path: Union[PathLike, list[PathLike]] = "CompetingPhases",
         subfolder: Optional[PathLike] = "vasp_std",
-        csv_path: Optional[PathLike] = None,
         verbose: bool = True,
         processes: Optional[int] = None,
     ):
-        """
+        r"""
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
-        computes the formation energies and generates the
-        ``CompetingPhasesAnalyzer`` object.
-
-        By default, tries multiprocessing to speed up parsing, which can be
-        controlled with ``processes``. If parsing hangs, this may be due to
-        memory issues, in which case you should reduce ``processes`` (e.g.
-        4 or less).
+        generating ``ComputedStructureEntry``\s and then continuing
+        initialisation with the ``CompetingPhasesAnalyzer._from_entries``
+        method.
 
         Args:
             path (PathLike or list):
-                Either a path to the base folder in which you have your
-                competing phase calculation outputs (e.g.
-                ``formula_EaH_X/vasp_std/vasprun.xml(.gz)``, or
-                ``formula_EaH_X/vasprun.xml(.gz)``), or a list of strings/Paths
-                to ``vasprun.xml(.gz)`` files.
+                Either a path to the base folder containing competing
+                phase calculation outputs (e.g.
+                ``path/formula_EaH_X/{subfolder}/vasprun.xml(.gz)``, or
+                ``path/formula_EaH_X/vasprun.xml(.gz)``), or a list of
+                strings/Paths to ``vasprun.xml(.gz)`` files.
             subfolder (PathLike):
-                The subfolder in which your vasprun.xml(.gz) output files
-                are located (e.g. a file-structure like:
-                ``formula_EaH_X/{subfolder}/vasprun.xml(.gz)``). Default
+                The subfolder containing vasprun.xml(.gz) output files in
+                each calculation directory within ``path`` (e.g. a file
+                hierarchy like:
+                ``path/formula_EaH_X/{subfolder}/vasprun.xml(.gz)``). Default
                 is to search for ``vasp_std`` subfolders, or directly in the
                 ``formula_EaH_X`` folder.
-            csv_path (PathLike):
-                If set will save the parsed data to a csv at this filepath.
-                Further customisation of the output csv can be achieved with
-                the CompetingPhasesAnalyzer.to_csv() method.
             verbose (bool):
                 Whether to print out information about directories that were
-                skipped (due to no ``vasprun.xml`` files being found).
+                skipped (due to no ``vasprun.xml(.gz)`` files being found).
                 Default is ``True``.
             processes (int):
                 Number of processes to use for multiprocessing for expedited
-                parsing. If not set, defaults to one less than the number of
-                CPUs available, or 1 if less than 10 phases to parse. Set to
-                1 for no multiprocessing.
-
-        Returns:
-            None, sets ``self.data``, ``self.formation_energy_df`` and ``self.elemental_energies``
+                parsing of VASP outputs. If ``None`` (default), then the
+                parsing time with multiprocessing is estimated based on
+                ``vasprun.xml(.gz)`` file sizes, and used if predicted to be
+                faster than serial processing. Set to 1 to prevent multiprocessing.
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
@@ -2368,9 +2272,30 @@ class CompetingPhasesAnalyzer:
 
         return self._from_entries(self.entries)
 
-    def _get_and_sort_formation_energy_data(self, sort_by_energy=False, prune_polymorphs=False):
-        # data = copy.deepcopy(self.data)
+    def get_formation_energy_df(self, prune_polymorphs: bool = False) -> pd.DataFrame:
+        """
+        Generate a ``DataFrame`` of the formation energies of parsed competing
+        phases calculations.
 
+        Useful for quick summary and analysis of results, e.g. to include in
+        the SI of journal articles or a thesis -- to aid open-science and
+        reproducibility, or for quick data sharing, or for use with other codes.
+        Can be saved to file with ``formation_energy_df.to_csv()`` etc.
+
+        Rows are sorted according to ``CompetingPhasesAnalyzer.entries``, which
+        by default is sorted by energy above hull (with the host composition
+        first), then by the number of elements in the formula, then by the
+        position of elements in the periodic table (main group elements, then
+        transition metals, sorted by row), then alphabetically.
+
+        Args:
+            prune_polymorphs (bool):
+                Whether to only write the lowest energy polymorphs for each
+                composition. Doesn't affect chemical potential limits (only the
+                ground-state polymorphs matter for this).
+                Default is False.
+        """
+        # TODO: Include space group and energy above hull!!!
         data = []
         for entry in self.entries:
             comp = entry.composition
@@ -2384,72 +2309,25 @@ class CompetingPhasesAnalyzer:
 
             d = {
                 "Formula": comp.reduced_formula,
-                "k-points": kpoints,
                 "DFT Energy (eV/fu)": entry.energy / formulas_per_unit,
                 "DFT Energy (eV/atom)": entry.energy_per_atom,
-                "DFT Energy (eV)": entry.energy,
+                "Formation Energy (eV/fu)": self.phase_diagram.get_form_energy(entry) / formulas_per_unit,
+                "Formation Energy (eV/atom)": self.phase_diagram.get_form_energy_per_atom(entry),
+                "k-points": kpoints,
             }
             data.append(d)
 
-        formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
-        # self.data = formation_energy_df.to_dict(orient="records")
+        formation_energy_df = pd.DataFrame(data)
 
         if prune_polymorphs:  # only keep the lowest energy polymorphs
-            formation_energy_df = _calculate_formation_energies(data, self.elemental_energies)
             indices = formation_energy_df.groupby("Formula")["DFT Energy (eV/atom)"].idxmin()
-            pruned_df = formation_energy_df.loc[indices]
-            data = pruned_df.to_dict(orient="records")
+            formation_energy_df = formation_energy_df.loc[sorted(indices)]  # retain ordering
 
-        if sort_by_energy:
-            data = sorted(data, key=lambda x: x["Formation Energy (eV/fu)"], reverse=True)
-
-        # TODO: Not necessary with entries ordering now??
-        # moves the bulk composition to the top of the list
-        _move_dict_to_start(data, "Formula", self.composition.reduced_formula)
-
-        # TODO: Remove this, just get the dataframe and return it, and combine all in one function
-        # for each dict in data list, sort the _keys_ as formula, formation_energy, energy_per_atom,
-        # energy_per_fu, energy, kpoints, then element stoichiometries in order of appearance in
-        # composition dict + extrinsic elements:
-        copied_data = copy.deepcopy(data)
-        formation_energy_data = [
-            {
-                **{
-                    k: d.pop(k, None)
-                    for k in [
-                        "Formula",
-                        "Formation Energy (eV/fu)",
-                        "Formation Energy (eV/atom)",
-                        "DFT Energy (eV/atom)",
-                        "DFT Energy (eV/fu)",
-                        "DFT Energy (eV)",
-                        "k-points",
-                    ]
-                },
-                **{  # num elts columns, sorted by order of occurrence in bulk composition:
-                    str(elt): d.pop(str(elt), None)
-                    for elt in sorted(
-                        self.composition.elements,
-                        key=lambda x: self.composition.reduced_formula.index(str(x)),
-                    )
-                    + self.extrinsic_elements
-                },
-            }
-            for d in copied_data
-        ]
-        # if all values are None for a certain key, remove that key from all dicts in list:
-        keys_to_remove = [
-            k for k in formation_energy_data[0] if all(d[k] is None for d in formation_energy_data)
-        ]
-        sorted_data = [
-            {k: v for k, v in d.items() if k not in keys_to_remove} for d in (formation_energy_data)
-        ]
-        return pd.DataFrame(sorted_data).set_index("Formula")
+        return formation_energy_df.set_index("Formula")
 
     def calculate_chempots(
         self,
         extrinsic_species: Optional[Union[str, Element, list[str], list[Element]]] = None,
-        csv_path: Optional[PathLike] = None,
         sort_by: Optional[str] = None,
         verbose: bool = True,
     ):
@@ -2470,8 +2348,6 @@ class CompetingPhasesAnalyzer:
                 specified extrinsic species at the intrinsic chemical potential
                 limits. Can be a single element (str or ``Element``), or a list
                 of elements. If ``None`` (default), uses ``self.extrinsic_elements``.
-            csv_path (PathLike):
-                If set, will save the calculated chemical potential limits to ``csv_path``.
             sort_by (str):
                 If set, will sort the chemical potential limits in the output
                 ``DataFrame`` according to the chemical potential of the specified
@@ -2482,8 +2358,6 @@ class CompetingPhasesAnalyzer:
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
-        # TODO: Is outputting the chempot limits to `csv` useful? If so, should also be able to load from
-        #  csv? Show this in tutorials, or at least add easy function
         if extrinsic_species is None:
             extrinsic_species = self.extrinsic_elements
         if not isinstance(extrinsic_species, list):
@@ -2520,19 +2394,12 @@ class CompetingPhasesAnalyzer:
                 extrinsic_elements=extrinsic_elements,
                 chempots_df=chempots_df,
             )
-        # save and print
-        if csv_path is not None:
-            chempots_df.to_csv(csv_path)
-            if verbose:
-                print("Saved chemical potential limits to csv file: ", csv_path)
 
         if verbose:
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
             print(chempots_df)
 
-        return chempots_df
-
-    # TODO: Test chempots df as a property, and show in tutorial
+        return chempots_df  # TODO: Test chempots df as a property
 
     # TODO: This code (in all this module) should be rewritten to be more readable (re-used and
     #  uninformative variable names, missing informative comments, typing...)
@@ -2560,6 +2427,12 @@ class CompetingPhasesAnalyzer:
                     ):  # lower energy entry & μ_extrinsic_elt, and finite
                         chempots_df.loc[limit, extrinsic_elt.symbol] = mu_extrinsic
                         chempots_df.loc[limit, f"{extrinsic_elt.symbol}-Limiting Phase"] = entry.name
+
+        # move limiting phase columns to the end (for cases with multiple extrinsic elements)
+        chempots_df = chempots_df[
+            [c for c in chempots_df.columns if "-Limiting Phase" not in c]
+            + [c for c in chempots_df.columns if "-Limiting Phase" in c]
+        ]
 
         # reverse engineer chemical potential limits dict with extrinsic entries
         chempot_lim_dict_list = chempots_df.copy().to_dict(orient="records")
@@ -2589,151 +2462,7 @@ class CompetingPhasesAnalyzer:
 
         self.chempots = chempot_lims_w_extrinsic
 
-    def to_csv(self, csv_path: PathLike, sort_by_energy: bool = False, prune_polymorphs: bool = False):
-        """
-        Write parsed competing phases data to ``csv``.
-
-        Can be re-loaded with ``CompetingPhasesAnalyzer.from_csv()``.
-
-        Args:
-            csv_path (Pathlike): Path to csv file to write to.
-            sort_by_energy (bool):
-                If True, sorts the csv by formation energy (highest to lowest).
-                Default is False (sorting by formula).
-            prune_polymorphs (bool):
-                Whether to only write the lowest energy polymorphs for each composition.
-                Doesn't affect chemical potential limits (only the ground-state
-                polymorphs matter for this).
-                Default is False.
-        """
-        formation_energy_df = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
-        formation_energy_df.to_csv(csv_path)
-
-    def from_csv(self, csv_path: PathLike):
-        """
-        Read in data from a previously parsed formation energies csv file.
-
-        Args:
-            csv_path (PathLike):
-                Path to csv file. Must have columns 'Formula',
-                and 'DFT Energy per Formula Unit (ev/fu)' or
-                'DFT Energy per Atom (ev/atom)'.
-
-        Returns:
-            None, sets ``self.data`` and ``self.elemental_energies``.
-        """
-        # TODO: Need to update this to match new entries code
-        formation_energy_df = pd.read_csv(csv_path)
-        if "Formula" not in list(formation_energy_df.columns) or all(
-            x not in list(formation_energy_df.columns)
-            for x in [
-                "DFT Energy (eV/fu)",
-                "DFT Energy (eV/atom)",
-            ]
-        ):
-            raise ValueError(
-                "Supplied csv does not contain the minimal columns required ('Formula', and "
-                "'DFT Energy (eV/fu)' or 'DFT Energy (eV/atom)')"
-            )
-
-        self.data = formation_energy_df.to_dict(orient="records")
-        self.elemental_energies = {}
-        for i in self.data:
-            c = Composition(i["Formula"])
-            if len(c.elements) == 1:
-                el = str(next(iter(c.elements)))  # elemental, so first symbol is only (unique) element
-                if "DFT Energy (eV/atom)" in list(formation_energy_df.columns):
-                    el_energy_per_atom = i["DFT Energy (eV/atom)"]
-                else:
-                    el_energy_per_atom = i["DFT Energy (eV/fu)"] / c.num_atoms
-
-                if el not in self.elemental_energies or el_energy_per_atom < self.elemental_energies[el]:
-                    self.elemental_energies[el] = el_energy_per_atom
-                    if el not in self.elements + self.extrinsic_elements:  # new (extrinsic) element
-                        self.extrinsic_elements.append(el)
-
-        if "Formation Energy (eV/fu)" not in list(formation_energy_df.columns):
-            formation_energy_df = _calculate_formation_energies(self.data, self.elemental_energies)
-            self.data = formation_energy_df.to_dict(orient="records")
-
-        self.formation_energy_df = self._get_and_sort_formation_energy_data()
-
-        # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
-        # and add to self.elements:
-        self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sort_func)
-        self.elemental_energies = dict(
-            sorted(self.elemental_energies.items(), key=lambda x: _element_sort_func(x[0]))
-        )
-        self.elements += self.extrinsic_elements
-
-    def _cplap_input(self, dependent_variable: Optional[str] = None, filename: PathLike = "input.dat"):
-        """
-        Generates an ``input.dat`` file for the ``CPLAP`` ``FORTRAN`` code
-        (legacy code for computing and analysing chemical potential limits, no
-        longer recommended, tested or supported).
-
-        Args:
-            dependent_variable (str):
-                Pick one of the variables as dependent, the first element in
-                the composition is chosen if this isn't set.
-            filename (PathLike):
-                Filename, should end in ``.dat``.
-
-        Returns:
-            None, writes input.dat file.
-        """
-        # TODO: Update to match new code
-        with open(filename, "w", encoding="utf-8") as f, contextlib.redirect_stdout(f):
-            # get lowest energy bulk phase
-            bulk_entries = [
-                sub_dict
-                for sub_dict in self.data
-                if self.composition.reduced_composition
-                == Composition(sub_dict["Formula"]).reduced_composition
-            ]
-            bulk_entry = min(bulk_entries, key=lambda x: x["Formation Energy (eV/fu)"])
-            print(f"{len(self.composition.as_dict())}  # number of elements in bulk")
-            for k, v in self.composition.as_dict().items():
-                print(int(v), k, end=" ")
-            print(
-                f"{bulk_entry['Formation Energy (eV/fu)']}  # number of atoms, element, formation "
-                f"energy (bulk)"
-            )
-
-            if dependent_variable is not None:
-                print(f"{dependent_variable}  # dependent variable (element)")
-            else:
-                print(f"{self.elements[0]}  # dependent variable (element)")
-
-            # get only the lowest energy entries of compositions in self.data which are on a
-            # limit in self.intrinsic_chempots
-            bordering_phases = {phase for limit in self.chempots["limits"] for phase in limit.split("-")}
-            entries_for_cplap = [
-                entry_dict
-                for entry_dict in self.data
-                if entry_dict["Formula"] in bordering_phases
-                and Composition(entry_dict["Formula"]).reduced_composition
-                != self.composition.reduced_composition
-            ]
-            # cull to only the lowest energy entries of each composition
-            culled_cplap_entries: dict[str, dict] = {}
-            for entry in entries_for_cplap:
-                reduced_comp = Composition(entry["Formula"]).reduced_composition
-                if (
-                    reduced_comp not in culled_cplap_entries
-                    or entry["Formation Energy (eV/fu)"]
-                    < culled_cplap_entries[reduced_comp]["Formation Energy (eV/fu)"]
-                ):
-                    culled_cplap_entries[reduced_comp] = entry
-
-            print(f"{len(culled_cplap_entries)}  # number of bordering phases")
-            for i in culled_cplap_entries.values():
-                print(f"{len(Composition(i['Formula']).as_dict())}  # number of elements in phase:")
-                for k, v in Composition(i["Formula"]).as_dict().items():
-                    print(int(v), k, end=" ")
-                print(f"{i['Formation Energy (eV/fu)']}  # number of atoms, element, formation energy")
-
-    def to_LaTeX_table(self, splits=1, sort_by_energy=False, prune_polymorphs=True):
+    def to_LaTeX_table(self, splits=1, prune_polymorphs=True):
         """
         A very simple function to print out the competing phase formation
         energies in a LaTeX table format, showing the formula, kpoints (if
@@ -2748,9 +2477,6 @@ class CompetingPhasesAnalyzer:
                 Number of splits for the table; either 1 (default) or 2 (with
                 two large columns, each with the formula, kpoints (if present)
                 and formation energy (sub-)columns).
-            sort_by_energy (bool):
-                If True, sorts the table by formation energy (highest to lowest).
-                Default is False (sorting by formula).
             prune_polymorphs (bool):
                 Whether to only print out the lowest energy polymorphs for each composition.
                 Default is True.
@@ -2762,7 +2488,7 @@ class CompetingPhasesAnalyzer:
             raise ValueError("`splits` must be either 1 or 2")
         # done in the pyscfermi report style
         # TODO: Update (now dataframe output)
-        formation_energy_data = self._get_and_sort_formation_energy_data(sort_by_energy, prune_polymorphs)
+        formation_energy_data = self.get_formation_energy_df(prune_polymorphs)
 
         kpoints_col = any("k-points" in item for item in formation_energy_data)
 
@@ -2918,6 +2644,8 @@ class CompetingPhasesAnalyzer:
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
+        # TODO: Get CompetingPhasesAnalyzer json (when made MSONable) from Frazer for Li3PS4 and use for
+        #  testing and example in tutorial
         # TODO: Only works for ternary systems! For 2D, warn and return line plot?
         # For 4D+, could set constraint for fixed μ of other element, or fixed bordering phase?
         # -> Add to Future ToDo
@@ -3171,12 +2899,10 @@ class CompetingPhasesAnalyzer:
         """
         formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         properties, methods = _doped_obj_properties_methods(self)
-        # TODO: When entries parsing/handling implemented:
-        # joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
-        parsed_folder_list = "\n".join([str(folder) for folder in self.parsed_folders])
+        joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
         return (
-            f"doped CompetingPhasesAnalyzer for bulk composition {formula} with "
-            f"{len(self.parsed_folders)} folders parsed:\n{parsed_folder_list}\n\n"
+            f"doped CompetingPhasesAnalyzer for bulk composition {formula} with {len(self.entries)} "
+            f"entries (in self.entries):\n{joined_entry_list}\n\n"
             f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
 
