@@ -103,8 +103,6 @@
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout.
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB).
 
-- Note in chempots tutorial that LaTeX table generator website can also be used with the `to_csv()` function to generate LaTeX tables for the competing phases.
-- Add note to chempots tutorial that if your bulk phase is lower energy than its version on the MP (e.g. distorted perovskite), then you should use this for your bulk competing phase calculation. 
 - Tests for configuration coordinate diagram generation code
 - Quick-start tutorial suggested by Alex G
 - Test chempot grid plotting tool.
