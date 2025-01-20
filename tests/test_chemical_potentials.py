@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
-from monty.serialization import loadfn
+from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.core.structure import Structure
 from test_analysis import if_present_rm
@@ -1103,6 +1103,44 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             assert entry.data.get("doped_name", "N/A") in repr(la_cpa)
         assert "Available attributes:" in repr(la_cpa)
         assert "Available methods:" in repr(la_cpa)
+
+    def _compare_cpas(self, cpa_a, cpa_b):
+        for attr in [
+            "entries",
+            "chempots",
+            "extrinsic_elements",
+            "elements",
+            "vasprun_paths",
+            "parsed_folders",
+            "unstable_host",
+            "bulk_entry",
+            "composition",
+            "phase_diagram",
+            "chempots_df",
+        ]:
+            print(f"Checking {attr}")
+            if attr == "chempots_df":
+                assert cpa_a.chempots_df.equals(cpa_b.chempots_df)
+            elif attr == "phase_diagram":
+                assert cpa_a.phase_diagram.entries == cpa_b.phase_diagram.entries
+            else:
+                assert getattr(cpa_a, attr) == getattr(cpa_b, attr)
+
+    def _general_cpa_check(self, cpa):
+        cpa_dict = cpa.as_dict()
+        cpa_from_dict = chemical_potentials.CompetingPhasesAnalyzer.from_dict(cpa_dict)
+        self._compare_cpas(cpa, cpa_from_dict)
+
+        dumpfn(cpa_dict, "cpa.json")
+        reloaded_cpa = loadfn("cpa.json")
+        self._compare_cpas(cpa, reloaded_cpa)
+
+    def test_general_cpa_reloading(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.zro2_path)
+        self._general_cpa_check(cpa)
+
+        la_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.la_zro2_path)
+        self._general_cpa_check(la_cpa)
 
 
 class TestChemicalPotentialGrid(unittest.TestCase):
