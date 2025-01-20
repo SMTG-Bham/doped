@@ -3351,7 +3351,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         here (should be ``{"Sn4+":1, "Sn2+":4, "O2-":6}``), but it gets
         Sn3+ and Sn2+, but at least it's closer, and the point of this
         test is to check the ``doped`` functions at least behave as
-        expected with mixed valence systems.
+        expected with mixed valence systems).
         """
         # it's a low-symmetry system so don't bother auto-generating supercell, this functionality is
         # sufficiently tested:
@@ -3379,8 +3379,6 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
                 "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]       [0.441,0.198,0.292]  4e",
                 "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]       [0.045,0.178,0.130]  4e",
                 "v_O_C1_Sn2.09              [+2,+1,0,-1]       [0.642,0.323,0.461]  4e",
-                "Sn_Sn_C1_O2.08O2.11O2.14b    [+2,+1,0,-1]           [0.101,0.502,0.319]  4e",
-                "Sn_Sn_C1_O2.08Sn3.28O3.69a   [+1,0,-1]              [0.500,0.500,0.500]  2b",
                 "Sn_i_C1_Sn2.33O2.39O2.60d   [+4,+3,+2,+1,0]    [0.273,0.460,0.248]  4e",
                 "O_i_C1_O1.83Sn1.99Sn2.09a   [0,-1,-2]          [0.567,0.320,0.205]  4e",
             ]
@@ -3406,6 +3404,9 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
 
         for test_line in test_lines:
             assert test_line in defect_gen._defect_generator_info()
+
+        # no Sn_Sn defects, with SK pymatgen-analysis-defects PR #210:
+        assert "Sn_Sn" not in defect_gen._defect_generator_info()
 
     def test_liga5o8(self):
         """
