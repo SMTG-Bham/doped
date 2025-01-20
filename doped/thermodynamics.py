@@ -3969,6 +3969,7 @@ def _group_defect_charge_state_concentrations(
     conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False, lean: bool = False
 ):
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)  # auto-reordered by groupby sum
+    summed_df = summed_df.loc[conc_df["Defect"].unique()]  # retain ordering
     conc_column = next(k for k in conc_df.columns if k.startswith("Concentration"))
     raw_concentrations = (
         summed_df["Raw Concentration"]
@@ -3978,15 +3979,7 @@ def _group_defect_charge_state_concentrations(
     summed_df[conc_column] = raw_concentrations.apply(
         lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
     )
-    if not lean:  # Group and sort by original order
-        defect_list = (
-            conc_df["Defect"].unique()
-            if "Defect" in conc_df.columns
-            else conc_df.index.get_level_values("Defect").unique()
-        )
-        original_order = {k: i for i, k in enumerate(defect_list)}  # preserve order
-        summed_df["order"] = summed_df.index.map(original_order)
-        summed_df = summed_df.sort_values(by="order").drop(columns="order")
+
     return summed_df.drop(  # Defect set as index now, from groupby()
         columns=[
             i
