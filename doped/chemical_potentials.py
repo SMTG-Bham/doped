@@ -2234,7 +2234,7 @@ class CompetingPhasesAnalyzer(MSONable):
             def _estimate_uncompressed_vasprun_size(vasprun_path: PathLike) -> float:
                 return (os.path.getsize(vasprun_path) / 1e6) * (20 if vasprun_path.endswith(".gz") else 1)
 
-            vasprun_sizes_MB = [_estimate_uncompressed_vasprun_size(v) for v in self.vasprun_paths]
+            vasprun_sizes_MB = [_estimate_uncompressed_vasprun_size(v) for v in self.vasprun_paths] or [0]
             if sum(vasprun_sizes_MB) - max(vasprun_sizes_MB) > 50:
                 # only multiprocess as much as makes sense:
                 processes = min(max(1, cpu_count() - 1), sum(1 for s in vasprun_sizes_MB if s > 20) - 1)
