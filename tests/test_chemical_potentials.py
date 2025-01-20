@@ -1080,6 +1080,30 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert la_form_e_df.iloc[4].tolist() == ["Ia-3", 0.0, -18.017, -3.603, "3x3x3"]  # La2O3
         assert la_form_e_df.iloc[6].tolist() == ["Fd-3m", 0.0, -40.877, -3.716, "3x3x3"]  # La2Zr2O7
 
+    def test_repr(self):
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.zro2_path)
+        assert (
+            "doped CompetingPhasesAnalyzer for bulk composition ZrO2 with 8 entries (in self.entries):"
+            in repr(cpa)
+        )
+        for entry in cpa.entries:
+            assert entry.data.get("doped_name", "N/A") in repr(cpa)
+        assert "Available attributes:" in repr(cpa)
+        assert "Available methods:" in repr(cpa)
+
+        la_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            composition=self.stable_system,
+            entries=self.la_zro2_path,
+        )
+        assert (
+            "doped CompetingPhasesAnalyzer for bulk composition ZrO2 with 11 entries (in self.entries):"
+            in repr(la_cpa)
+        )
+        for entry in la_cpa.entries:
+            assert entry.data.get("doped_name", "N/A") in repr(la_cpa)
+        assert "Available attributes:" in repr(la_cpa)
+        assert "Available methods:" in repr(la_cpa)
+
 
 class TestChemicalPotentialGrid(unittest.TestCase):
     def setUp(self):
