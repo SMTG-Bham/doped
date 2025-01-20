@@ -22,6 +22,7 @@ import pandas as pd
 from labellines import labelLines
 from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
+from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -1835,8 +1836,7 @@ def get_doped_chempots_from_entries(
     return _round_floats(chempots, 4)
 
 
-class CompetingPhasesAnalyzer:
-    # TODO: Make MSONable!
+class CompetingPhasesAnalyzer(MSONable):
     def __init__(
         self,
         composition: Union[str, Composition],
@@ -1946,10 +1946,13 @@ class CompetingPhasesAnalyzer:
                 f"got type {type(entries)} instead!"
             )
 
+        self.vasprun_paths: list[str] = []
+        self.parsed_folders: list[str] = []
+
         if isinstance(entries, (str, PathLike)) or isinstance(entries[0], (str, PathLike)):
             self._from_vaspruns(path=entries, subfolder=subfolder, verbose=verbose, processes=processes)
         else:
-            self._from_entries(self.entries)
+            self._from_entries(entries)
 
     def _from_entries(self, entries: list[Union[ComputedEntry, ComputedStructureEntry]]):
         r"""
@@ -1996,7 +1999,8 @@ class CompetingPhasesAnalyzer:
         )
         self.elements += self.extrinsic_elements
 
-        # TODO: Warn if any missing elemental phases and remove any entries with them in composition
+        # TODO: Warn if any missing elemental phases and remove any entries with them in composition,
+        #  and remove from element lists?
         # set(Composition(d["Formula"]).elements).issubset(self.composition.elements)
         # or (
         #         extrinsic_elements
@@ -2135,9 +2139,7 @@ class CompetingPhasesAnalyzer:
         #  subfolders are found) - see how this is done in DefectsParser in analysis.py
         # TODO: Add check for matching INCAR and POTCARs from these calcs - can use code/functions from
         #  analysis.py for this
-        self.vasprun_paths = []
         skipped_folders = []
-        self.parsed_folders = []
 
         if isinstance(path, list):  # if path is just a list of all competing phases
             for p in path:
@@ -2298,6 +2300,54 @@ class CompetingPhasesAnalyzer:
             )
 
         return self._from_entries(self.entries)
+
+    def as_dict(self) -> dict:
+        """
+        Returns:
+            JSON-serializable dict representation of ``CompetingPhasesAnalyzer``.
+        """
+        return {
+            "@module": self.__class__.__module__,
+            "@class": self.__class__.__name__,
+            "composition": self.composition.as_dict(),
+            "entries": self.entries,
+            "unstable_host": self.unstable_host,
+            "bulk_entry": self.bulk_entry,
+            "parsed_folders": self.parsed_folders,
+            "vasprun_paths": self.vasprun_paths,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CompetingPhasesAnalyzer":
+        """
+        Reconstitute a ``CompetingPhasesAnalyzer`` object from a dict
+        representation created using ``as_dict()``.
+
+        Args:
+            d (dict): dict representation of ``CompetingPhasesAnalyzer``.
+
+        Returns:
+            ``CompetingPhasesAnalyzer`` object
+        """
+        entries = d["entries"]
+
+        def get_entry(entry_or_dict):
+            if isinstance(entry_or_dict, dict):
+                try:
+                    return ComputedStructureEntry.from_dict(entry_or_dict)
+                except Exception:
+                    return ComputedEntry.from_dict(entry_or_dict)
+            return entry_or_dict
+
+        cpa = cls(
+            composition=Composition.from_dict(d["composition"]),
+            entries=[get_entry(entry) for entry in entries],
+        )
+        cpa.unstable_host = d.get("unstable_host", cpa.unstable_host)
+        cpa.bulk_entry = get_entry(d.get("bulk_entry", cpa.bulk_entry))
+        cpa.parsed_folders = d.get("parsed_folders", cpa.parsed_folders)
+        cpa.vasprun_paths = d.get("vasprun_paths", cpa.vasprun_paths)
+        return cpa
 
     def get_formation_energy_df(
         self,
@@ -2949,7 +2999,7 @@ class CompetingPhasesAnalyzer:
         """
         formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         properties, methods = _doped_obj_properties_methods(self)
-        joined_entry_list = "\n".join([entry.data["doped_name"] for entry in self.entries])
+        joined_entry_list = "\n".join([entry.data.get("doped_name", "N/A") for entry in self.entries])
         return (
             f"doped CompetingPhasesAnalyzer for bulk composition {formula} with {len(self.entries)} "
             f"entries (in self.entries):\n{joined_entry_list}\n\n"
