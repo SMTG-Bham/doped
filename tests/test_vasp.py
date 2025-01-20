@@ -1134,6 +1134,7 @@ class DefectsSetTest(unittest.TestCase):
         check_incar=None,
         single_defect_dir=False,
         bulk=True,
+        ascii_encoding=False,
     ):
         if data_dir is None:
             data_dir = self.CdTe_data_dir
@@ -1191,6 +1192,11 @@ class DefectsSetTest(unittest.TestCase):
                 print(f.read())  # for debugging
             test_kpoints = Kpoints.from_file(f"{data_dir}/{folder}/{vasp_type}/KPOINTS")
             kpoints = Kpoints.from_file(f"{generated_dir}/{folder}/{vasp_type}/KPOINTS")
+            if ascii_encoding:
+                test_kpoints.comment = test_kpoints.comment.replace("Å⁻³", "Angstrom^(-3)").replace(
+                    "Γ", "Gamma"
+                )
+
             assert test_kpoints.as_dict() == kpoints.as_dict()
 
     def _general_defects_set_check(self, defects_set, **kwargs):
@@ -1406,6 +1412,7 @@ class DefectsSetTest(unittest.TestCase):
                 data_dir=f"{self.CdTe_data_dir}/Cd_i_C3v_+2",
                 check_potcar_spec=True,
                 single_defect_dir=True,
+                ascii_encoding=True,
             )
             self.check_generated_vasp_inputs(  # vasp_std
                 generated_dir="Cd_i_C3v_+2",
@@ -1414,6 +1421,7 @@ class DefectsSetTest(unittest.TestCase):
                 check_poscar=True,
                 check_potcar_spec=True,
                 single_defect_dir=True,
+                ascii_encoding=True,
             )
             self.check_generated_vasp_inputs(  # vasp_ncl
                 generated_dir="Cd_i_C3v_+2",
@@ -1422,6 +1430,7 @@ class DefectsSetTest(unittest.TestCase):
                 check_poscar=True,
                 check_potcar_spec=True,
                 single_defect_dir=True,
+                ascii_encoding=True,
             )
 
             # assert only +2 directory written:
