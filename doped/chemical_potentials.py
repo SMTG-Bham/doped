@@ -37,7 +37,7 @@ from pymatgen.entries.computed_entries import (
 from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
-from pymatgen.util.string import latexify
+from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
 from scipy.interpolate import griddata, interp1d
 from scipy.spatial import ConvexHull, Delaunay
@@ -2565,12 +2565,13 @@ class CompetingPhasesAnalyzer(MSONable):
     def to_LaTeX_table(self, splits=1, prune_polymorphs=True):
         """
         A very simple function to print out the competing phase formation
-        energies in a LaTeX table format, showing the formula, kpoints (if
-        present in the parsed data) and formation energy.
+        energies in a LaTeX table format, showing the formula, space group,
+        energy above hull, kpoints (if present in the parsed data) and
+        formation energy.
 
-        Needs the mhchem package to work and does `not` use the booktabs package
-        - change hline to toprule, midrule and bottomrule if you want to use
-        booktabs style.
+        Needs the ``mhchem`` package to work and does `not` use the ``booktabs``
+        package; change ``hline`` to ``toprule``, ``midrule`` and ``bottomrule``
+        if you want to use ``booktabs`` style.
 
         Args:
             splits (int):
@@ -2578,7 +2579,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 two large columns, each with the formula, kpoints (if present)
                 and formation energy (sub-)columns).
             prune_polymorphs (bool):
-                Whether to only print out the lowest energy polymorphs for each composition.
+                Whether to only print out the lowest energy polymorphs for each
+                composition.
                 Default is True.
 
         Returns:
@@ -2587,8 +2589,9 @@ class CompetingPhasesAnalyzer(MSONable):
         if splits not in [1, 2]:
             raise ValueError("`splits` must be either 1 or 2")
         # done in the pyscfermi report style
-        # TODO: Update (now dataframe output)
-        formation_energy_data = self.get_formation_energy_df(prune_polymorphs).to_dict("records")
+        form_e_df = self.get_formation_energy_df(prune_polymorphs)
+        form_e_df["Formula"] = form_e_df.index
+        formation_energy_data = form_e_df.to_dict(orient="records")
 
         kpoints_col = any("k-points" in item for item in formation_energy_data)
 
@@ -2598,13 +2601,17 @@ class CompetingPhasesAnalyzer(MSONable):
             + self.composition.reduced_formula
             + "} and all competing phases"
             + (", with k-meshes used in calculations." if kpoints_col else ".")
-            + (" Only the lowest energy polymorphs are included}\n" if prune_polymorphs else "}\n")
+            + (" Only the lowest energy polymorphs are included.}\n" if prune_polymorphs else "}\n")
         )
         string += "\\label{tab:competing_phase_formation_energies}\n"
-        column_names_string = "Formula" + (" & k-mesh" if kpoints_col else "") + " & $\\Delta E_f$ (eV/fu)"
+        column_names_string = (
+            "Formula & Space Group & E$_{\\textrm{Hull}}$ (eV/atom)"
+            + (" & k-mesh" if kpoints_col else "")
+            + " & $\\Delta E_f$ (eV/fu)"
+        )
 
         if splits == 1:
-            string += "\\begin{tabular}" + ("{ccc}" if kpoints_col else "{cc}") + "\n"
+            string += "\\begin{tabular}" + ("{ccccc}" if kpoints_col else "{cccc}") + "\n"
             string += "\\hline\n"
             string += column_names_string + " \\\\ \\hline \n"
             for i in formation_energy_data:
@@ -2614,13 +2621,17 @@ class CompetingPhasesAnalyzer(MSONable):
                     "\\ce{"
                     + i["Formula"]
                     + "}"
+                    + " & "
+                    + latexify_spacegroup(i.get("Space Group", "N/A"))
+                    + " & "
+                    + f"{i['Energy above Hull (eV/atom)']:.3f}"
                     + (f" & {kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}" if kpoints_col else "")
                     + " & "
                     + f"{fe:.3f} \\\\ \n"
                 )
 
         elif splits == 2:
-            string += "\\begin{tabular}" + ("{ccc|ccc}" if kpoints_col else "{cc|cc}") + "\n"
+            string += "\\begin{tabular}" + ("{ccccc|ccccc}" if kpoints_col else "{cccc|cccc}") + "\n"
             string += "\\hline\n"
             string += column_names_string + " & " + column_names_string + " \\\\ \\hline \n"
 
@@ -2637,6 +2648,10 @@ class CompetingPhasesAnalyzer(MSONable):
                     "\\ce{"
                     + i["Formula"]
                     + "}"
+                    + " & "
+                    + latexify_spacegroup(i.get("Space Group", "N/A"))
+                    + " & "
+                    + f"{i['Energy above Hull (eV/atom)']:.3f}"
                     + (
                         f" & {kpoints1[0]}$\\times${kpoints1[1]}$\\times${kpoints1[2]}"
                         if kpoints_col
@@ -2647,6 +2662,10 @@ class CompetingPhasesAnalyzer(MSONable):
                     + "\\ce{"
                     + j["Formula"]
                     + "}"
+                    + " & "
+                    + latexify_spacegroup(j.get("Space Group", "N/A"))
+                    + " & "
+                    + f"{j['Energy above Hull (eV/atom)']:.3f}"
                     + (
                         f" & {kpoints2[0]}$\\times${kpoints2[1]}$\\times${kpoints2[2]}"
                         if kpoints_col
@@ -2660,7 +2679,7 @@ class CompetingPhasesAnalyzer(MSONable):
         string += "\\end{tabular}\n"
         string += "\\end{table}"
 
-        return string
+        print(string)
 
     def plot_chempot_heatmap(
         self,
