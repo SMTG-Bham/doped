@@ -1,0 +1,14 @@
+ALGO = Normal # change to all if zhegv, fexcp/f or zbrent errors encountered, or poor electronic convergence
+EDIFF = 2e-06
+ENCUT = 350.0
+GGA = Pe
+ISMEAR = 0
+KPAR = 4  # 2 or >=4 k-points in at least two directions
+LASPH = True
+LCHARG = False
+LMAXMIX = 4
+LWAVE = False
+NCORE = 4
+NSW = 0
+PREC = Accurate
+SIGMA = 0.05
