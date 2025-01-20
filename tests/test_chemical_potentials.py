@@ -19,6 +19,7 @@ from pymatgen.core.composition import Composition
 from pymatgen.core.structure import Structure
 from test_analysis import if_present_rm
 from test_plotting import custom_mpl_image_compare
+from test_thermodynamics import _run_func_and_capture_stdout_warnings
 
 from doped import chemical_potentials
 from doped.utils.symmetry import get_primitive_structure
@@ -519,6 +520,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 class ChemPotAnalyzerTestCase(unittest.TestCase):
     def setUp(self):
         self.EXAMPLE_DIR = os.path.join(cwd, "../examples")
+        self.DATA_DIR = os.path.join(cwd, "data")
         self.stable_system = "ZrO2"
         self.unstable_system = "Zr2O"
         self.extrinsic_species = "La"
@@ -546,6 +548,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
     def tearDown(self):
         for i in ["chempot_limits.csv", "CompetingPhases.csv", "input.dat"]:
             if_present_rm(i)
+
+        if_present_rm(os.path.join(self.DATA_DIR, "ZrO2_LaTeX_Tables/text.tex"))
 
     def test_cpa_csv(self):
         stable_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
@@ -767,53 +771,34 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert "No vasprun files have been parsed," in str(e.value)
 
     def test_latex_table(self):
-        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        cpa.from_vaspruns(path=self.zro2_path, subfolder="relax", csv_path=self.zro2_csv_path)
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.zro2_path)
 
-        string = cpa.to_LaTeX_table(splits=1)
-        assert (
-            string[28:209]
-            == "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{ZrO2} and all "
-            "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
-            "are included"
-        )
-        assert len(string) == 589
-        assert string.split("hline")[1] == "\nFormula & k-mesh & $\\Delta E_f$ (eV/fu) \\\\ \\"
-        assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 \\"
+        def _test_latex_table(cpa=cpa, ref_filename="default.tex", **kwargs):
+            out, text, w = _run_func_and_capture_stdout_warnings(cpa.to_LaTeX_table, **kwargs)
+            assert not out
+            assert not w
 
-        string = cpa.to_LaTeX_table(splits=2)
-        assert (
-            string[28:209]
-            == "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{ZrO2} and all "
-            "competing phases, with k-meshes used in calculations. Only the lowest energy polymorphs "
-            "are included"
-        )
-        assert (
-            string.split("hline")[1]
-            == "\nFormula & k-mesh & $\\Delta E_f$ (eV/fu) & Formula & k-mesh & $\\Delta E_f$ ("
-            "eV/fu) \\\\ \\"
-        )
+            with open(f"{self.DATA_DIR}/ZrO2_LaTeX_Tables/test.tex", "w+") as f:
+                f.write(text)
 
-        assert string.split("hline")[2][2:45] == "\\ce{ZrO2} & 3$\\times$3$\\times$3 & -10.975 &"
-        assert len(string) == 586
+            with (
+                open(f"{self.DATA_DIR}/ZrO2_LaTeX_Tables/{ref_filename}") as reference_f,
+                open(f"{self.DATA_DIR}/ZrO2_LaTeX_Tables/test.tex") as test_f,
+            ):
+                assert reference_f.read() == test_f.read()
 
-        # test without kpoints:
-        for entry_dict in cpa.data:
-            entry_dict.pop("k-points")
-        string = cpa.to_LaTeX_table(splits=1)
-        assert (
-            string[28:173]
-            == "\\caption{Formation energies per formula unit ($\\Delta E_f$) of \\ce{ZrO2} and all "
-            "competing phases. Only the lowest energy polymorphs are included"
-        )
-        assert len(string) == 433
-        assert string.split("hline")[1] == "\nFormula & $\\Delta E_f$ (eV/fu) \\\\ \\"
-        assert string.split("hline")[2][2:23] == "\\ce{ZrO2} & -10.975 \\"
+        for kwargs, ref_filename in [
+            ({}, "default.tex"),
+            ({"splits": 2}, "splits_2.tex"),
+            ({"prune_polymorphs": False}, "no_prune.tex"),
+        ]:
+            _test_latex_table(ref_filename=ref_filename, **kwargs)
 
-        cpa_csv = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system)
-        cpa_csv.from_csv(self.zro2_csv_path)
+        la_cpa = chemical_potentials.CompetingPhasesAnalyzer(self.stable_system, self.la_zro2_path)
+        _test_latex_table(la_cpa, "la_default.tex")
+
         with pytest.raises(ValueError):
-            cpa_csv.to_LaTeX_table(splits=3)
+            cpa.to_LaTeX_table(splits=3)
 
     def test_to_csv(self):
         self.tearDown()  # clear out previous csvs
