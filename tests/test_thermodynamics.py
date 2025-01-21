@@ -3087,9 +3087,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert ("Orig gap:" in output) == kwargs.get("verbose", False)
             if kwargs.get("delta_gap") == 0.3 and kwargs.get("verbose", False):
                 if kwargs.get("tol") == 1e-1:
-                    assert "Orig gap: 2.7565, new gap:3.0565" in output
+                    assert "Orig gap: 2.7513, new gap:3.0513" in output
                 else:
-                    assert "Orig gap: 1.5178, new gap:1.8178" in output
+                    assert "Orig gap: 1.5126, new gap:1.8126" in output
                     assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
 
             assert not w
