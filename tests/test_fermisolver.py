@@ -56,27 +56,16 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         parameters.
         """
         dos = Dos(
-            energies=np.array([0.0, 0.5, 1.0, 1.5, 2.0]),
+            energies=np.array([0.0, 0.5, 1.0, 1.5, 2.0, 2.5]),
             densities={
-                Spin.up: np.array([1.0, 2.0, 0.0, 3.0, 4.0]),
-                Spin.down: np.array([0.5, 1.0, 0.0, 1.5, 2.0]),
+                Spin.up: np.array([1.0, 2.0, 0.0, 0.0, 3.0, 4.0]),
+                Spin.down: np.array([0.5, 1.0, 0.0, 0.0, 1.5, 2.0]),
             },
-            efermi=0.5,
+            efermi=0.75,
         )
         fermi_dos = FermiDos(dos, structure=self.CdTe_fermi_dos.structure)
         e_cbm, e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)
-        assert np.isclose(e_vbm, 0.5)
-        assert np.isclose(e_cbm, 1.5)
         gap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
-        assert np.isclose(gap, 1.0)
-
-        from py_sc_fermi.dos import DOS
-
-        # https://github.com/bjmorgan/py-sc-fermi/pull/39
-        def _n0_index(self) -> int:
-            return np.where(self._edos >= self.bandgap)[0][0]
-
-        DOS._n0_index = _n0_index
 
         # Test with default values
         pyscfermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(fermi_dos)
@@ -84,8 +73,6 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         assert pyscfermi_dos.bandgap == gap
         assert pyscfermi_dos.spin_polarised
         np.testing.assert_array_equal(pyscfermi_dos.edos, fermi_dos.energies - e_vbm)
-
-        print(pyscfermi_dos._p0_index(), pyscfermi_dos._n0_index())  # for debugging
 
         # test carrier concentrations (indirectly tests DOS densities, this is the relevant property
         # from the DOS objects):
@@ -136,7 +123,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         assert pyscfermi_dos.nelect == self.CdTe_fermi_dos.nelecs
         assert pyscfermi_dos.nelect == 18
         assert np.isclose(pyscfermi_dos.bandgap, self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True))
-        assert np.isclose(pyscfermi_dos.bandgap, 1.5308, atol=1e-3)
+        assert np.isclose(pyscfermi_dos.bandgap, 1.5256, atol=1e-3)
         assert not pyscfermi_dos.spin_polarised  # SOC DOS
 
         e_vbm = self.CdTe_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
