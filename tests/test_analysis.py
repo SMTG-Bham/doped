@@ -65,11 +65,36 @@ def _create_dp_and_capture_warnings(*args, **kwargs):
     return dp, w
 
 
+def _remove_metadata_keys_from_dict(d: dict) -> dict:
+    # recursively pop all keys with "@" in them (i.e. remove version/class metadata which might change)
+    for key in list(d.keys()):
+        if "@" in key:
+            d.pop(key)
+        elif isinstance(d[key], list):
+            for i, item in enumerate(d[key]):
+                if isinstance(item, dict):
+                    d[key][i] = _remove_metadata_keys_from_dict(item)
+        elif isinstance(d[key], dict):
+            d[key] = _remove_metadata_keys_from_dict(d[key])
+
+    return d
+
+
 class DefectsParsingTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module_path = os.path.dirname(os.path.abspath(__file__))
+        cls.EXAMPLE_DIR = os.path.join(cls.module_path, "../examples")
+        cls.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(cls.module_path, "../examples/CdTe"))
+        cls.v_Cd_example_dir = os.path.join(cls.CdTe_EXAMPLE_DIR, "v_Cd_example_data")
+
+        cls.moved_v_Cd_example_dirs = []
+
+        for i in os.listdir(cls.v_Cd_example_dir):
+            shutil.move(os.path.join(cls.v_Cd_example_dir, i), os.path.join(cls.CdTe_EXAMPLE_DIR, i))
+            cls.moved_v_Cd_example_dirs.append(i)
+
     def setUp(self):
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(self.module_path, "../examples/CdTe"))
         self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
         self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
         self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
@@ -98,8 +123,22 @@ class DefectsParsingTestCase(unittest.TestCase):
             [6.714217, 6.714317, 10.276149]
         )
 
+        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
+        self.prim_cdte = Structure.from_file(f"{self.CdTe_EXAMPLE_DIR}/relaxed_primitive_POSCAR")
+        self.ytos_bulk_supercell = Structure.from_file(f"{self.EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
+        self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
+        self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
+        self.Cu2SiSe3_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/Cu2SiSe3")
+        self.MgO_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/MgO")
+
+    @classmethod
+    def tearDownClass(cls):
+        for i in cls.moved_v_Cd_example_dirs:
+            shutil.move(os.path.join(cls.CdTe_EXAMPLE_DIR, i), os.path.join(cls.v_Cd_example_dir, i))
+
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "SiSbTe3_defect_dict.json.gz"))
@@ -127,10 +166,41 @@ class DefectsParsingTestCase(unittest.TestCase):
             if i.startswith(("O_a_", "O_b_")):
                 if_present_rm(f"{self.Sb2Se3_DATA_DIR}/defect/{i}")
 
-        if os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json")):
+        if_present_rm("./vasprun.xml")
+
+        for dir in ["bulk", "v_Cu_0", "Si_i_-1"]:
+            if os.path.exists(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz"):
+                shutil.move(
+                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz",
+                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/vasprun.xml.gz",
+                )
+
+        if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
+
+        if os.path.exists(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz"):
             shutil.move(
-                os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
-                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz",
+                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
+            )
+        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")  # fake LOCPOT from v_Cd_-2
+
+        if os.path.exists(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/hidden_otcr.gz"):
+            shutil.move(
+                f"{self.YTOS_EXAMPLE_DIR}/F_O_1/hidden_otcr.gz",
+                f"{self.YTOS_EXAMPLE_DIR}/F_O_1/OUTCAR.gz",
+            )
+
+        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/another_LOCPOT.gz")
+        if_present_rm(f"{self.CdTe_BULK_DATA_DIR}/another_LOCPOT.gz")
+        if_present_rm(f"{self.CdTe_BULK_DATA_DIR}/another_OUTCAR.gz")
+        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/another_vasprun.xml.gz")
+        if_present_rm(f"{self.CdTe_BULK_DATA_DIR}/another_vasprun.xml.gz")
+
+        if os.path.exists(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/hidden_lcpt.gz"):
+            shutil.move(
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/hidden_lcpt.gz",
+                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
             )
 
     def _check_DefectsParser(self, dp, skip_corrections=False):
@@ -234,9 +304,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # mismatched OUTCAR and vasprun energies warning
 
         CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
-        dumpfn(
-            CdTe_thermo, os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json")
-        )  # for test_plotting
         with warnings.catch_warnings(record=True) as w:
             CdTe_thermo.plot()
         print([warn.message for warn in w])  # for debugging
@@ -268,7 +335,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
             or os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))  # custom json name
             or os.path.exists(
-                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")  # custom json name
+                os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json")  # custom json name
             )
         )
 
@@ -356,12 +423,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         default_dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
             dielectric=9.13,
-            json_filename="CdTe_example_defect_dict.json",
-        )  # for testing in test_thermodynamics.py
-        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)  # saves CdTe_example_thermo.json
+            json_filename="CdTe_test_defect_dict.json",
+        )
+        self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
 
         # test reloading DefectsParser
-        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json"))
+        reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
 
         for defect_name, defect_entry in reloaded_defect_dict.items():
             assert defect_entry.name == default_dp.defect_dict[defect_name].name
@@ -382,10 +449,6 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_without_multiprocessing(self):
-        shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
-        )  # moved back in tearDown
         # test same behaviour without multiprocessing:
         dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
@@ -401,10 +464,6 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_DefectsParser_CdTe_filterwarnings(self):
-        shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
-        )  # moved back in tearDown
         # check using filterwarnings works as expected:
         warnings.filterwarnings("ignore", "Multiple")
         dp, w = _create_dp_and_capture_warnings(
@@ -419,10 +478,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         return default_thermo.plot(limit="CdTe-Te")
 
     def test_DefectsParser_CdTe_dist_tol(self):
-        shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
-        )  # moved back in tearDown
         # test with reduced dist_tol:
         # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
         dp, w = _create_dp_and_capture_warnings(
@@ -454,11 +509,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         return fig
 
     def test_DefectsParser_CdTe_custom_settings(self):
-        shutil.move(  # avoid overwriting
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"),
-            os.path.join(self.CdTe_EXAMPLE_DIR, "orig_CdTe_example_thermo.json"),
-        )  # moved back in tearDown
-
         # test custom settings:
         dp, w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR,
@@ -1356,53 +1406,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
 
-
-class DopedParsingTestCase(unittest.TestCase):
-    def setUp(self):
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(self.module_path, "../examples/CdTe"))
-        self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.CdTe_BULK_DATA_DIR = os.path.abspath(
-            os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
-        )
-        self.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
-
-        self.ytos_dielectric = [  # from legacy Materials Project
-            [40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
-            [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
-            [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
-        ]
-
-        self.Sb2Se3_DATA_DIR = os.path.join(self.module_path, "data/Sb2Se3")
-        self.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
-
-    def tearDown(self):
-        if os.path.exists(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz"):
-            shutil.move(
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/hidden_otcr.gz",
-                f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/OUTCAR.gz",
-            )
-        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl/LOCPOT.gz")  # fake LOCPOT from v_Cd_-2
-
-        if os.path.exists(f"{self.YTOS_EXAMPLE_DIR}/F_O_1/hidden_otcr.gz"):
-            shutil.move(
-                f"{self.YTOS_EXAMPLE_DIR}/F_O_1/hidden_otcr.gz",
-                f"{self.YTOS_EXAMPLE_DIR}/F_O_1/OUTCAR.gz",
-            )
-
-        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/another_LOCPOT.gz")
-        if_present_rm(f"{self.CdTe_BULK_DATA_DIR}/another_LOCPOT.gz")
-        if_present_rm(f"{self.CdTe_BULK_DATA_DIR}/another_OUTCAR.gz")
-        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/another_vasprun.xml.gz")
-        if_present_rm(f"{self.CdTe_BULK_DATA_DIR}/another_vasprun.xml.gz")
-
-        if os.path.exists(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/hidden_lcpt.gz"):
-            shutil.move(
-                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/hidden_lcpt.gz",
-                f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
-            )
-
     def test_auto_charge_determination(self):
         """
         Test that the defect charge is correctly auto-determined.
@@ -1947,7 +1950,7 @@ class DopedParsingTestCase(unittest.TestCase):
 
         for i in os.listdir(self.CdTe_EXAMPLE_DIR):
             # loop folders and parse those with "v_Cd" in name:
-            if os.path.isdir(f"{self.CdTe_EXAMPLE_DIR}/{i}") and "v_Cd" in i:
+            if os.path.isdir(f"{self.CdTe_EXAMPLE_DIR}/{i}") and "v_Cd" in i and "example" not in i:
                 defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
                 int(i[-2:].replace("_", ""))
                 parsed_vac_Cd_dict[i] = defect_entry_from_paths(
@@ -2450,49 +2453,6 @@ class DopedParsingTestCase(unittest.TestCase):
                 bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             )
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
-
-
-def _remove_metadata_keys_from_dict(d: dict) -> dict:
-    # recursively pop all keys with "@" in them (i.e. remove version/class metadata which might change)
-    for key in list(d.keys()):
-        if "@" in key:
-            d.pop(key)
-        elif isinstance(d[key], list):
-            for i, item in enumerate(d[key]):
-                if isinstance(item, dict):
-                    d[key][i] = _remove_metadata_keys_from_dict(item)
-        elif isinstance(d[key], dict):
-            d[key] = _remove_metadata_keys_from_dict(d[key])
-
-    return d
-
-
-class DopedParsingFunctionsTestCase(unittest.TestCase):
-    def setUp(self):
-        DopedParsingTestCase.setUp(self)  # get attributes from DopedParsingTestCase
-        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.prim_cdte = Structure.from_file(f"{self.EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
-        self.ytos_bulk_supercell = Structure.from_file(f"{self.EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
-        self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
-        self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
-        self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
-        self.Cu2SiSe3_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/Cu2SiSe3")
-        self.MgO_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/MgO")
-        self.Sb2Se3_DATA_DIR = os.path.join(self.module_path, "data/Sb2Se3")
-        self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-
-    def tearDown(self):
-        if_present_rm("./vasprun.xml")
-
-        for dir in ["bulk", "v_Cu_0", "Si_i_-1"]:
-            if os.path.exists(f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz"):
-                shutil.move(
-                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/hidden_vr.gz",
-                    f"{self.Cu2SiSe3_EXAMPLE_DIR}/{dir}/vasp_std/vasprun.xml.gz",
-                )
-
-        if_present_rm(os.path.join(self.Cu2SiSe3_EXAMPLE_DIR, "Cu2SiSe3_defect_dict.json.gz"))
-        if_present_rm(os.path.join(self.ZnS_DATA_DIR, "ZnS_defect_dict.json.gz"))
 
     def test_defect_name_from_structures(self):
         # by proxy also tests defect_from_structures
