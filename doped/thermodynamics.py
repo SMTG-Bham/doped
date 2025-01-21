@@ -3768,12 +3768,12 @@ class DefectThermodynamics(MSONable):
 
     def _get_in_gap_fermi_level_stability_window(self, defect_entry: Union[str, DefectEntry]) -> float:
         """
-        Convenience method to calculate the maximum difference between Fermi
-        levels at which ``defect_entry`` is the.
+        Convenience method to calculate the maximum difference between a Fermi
+        level at which ``defect_entry`` is the ground-state charge state, and
+        the band edges.
 
-        ground-state charge state, and the band edges (i.e. the
-        max of (CBM - lowest TL) and (highest TL - VBM) where
-        TL is any transition level involving ``defect_entry``).
+        i.e. taken from the minimum of (CBM - lowest TL) and (highest TL - VBM)
+        where TL is any transition level involving ``defect_entry``.
 
         Args:
             defect_entry (str or DefectEntry):
@@ -3946,7 +3946,7 @@ def _add_effective_dopant_concentration(
         {
             "Defect": "Dopant",
             "Charge": int(np.sign(effective_dopant_concentration)),
-            "Formation Energy (eV)": "N/A",
+            "Formation Energy (eV)": np.nan,
             "Concentration (cm^-3)": np.abs(effective_dopant_concentration),
             "Charge State Population": "100.0%",
         },
@@ -3957,7 +3957,11 @@ def _add_effective_dopant_concentration(
 
     for col in conc_df.columns:
         if col not in eff_dopant_df.columns:
-            eff_dopant_df[col] = "N/A"  # e.g. concentration per site, if per_site=True
+            # if string, set to "N/A":
+            if isinstance(conc_df[col].iloc[0], str):
+                eff_dopant_df[col] = "N/A"
+            else:
+                eff_dopant_df[col] = np.nan  # e.g. concentration per site, if per_site=True
 
     columns_to_drop = [col for col in eff_dopant_df.columns if col not in conc_df.columns]
     eff_dopant_df = eff_dopant_df.drop(columns=columns_to_drop)
@@ -3969,7 +3973,10 @@ def _group_defect_charge_state_concentrations(
     conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False, lean: bool = False
 ):
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)  # auto-reordered by groupby sum
-    summed_df = summed_df.loc[conc_df["Defect"].unique()]  # retain ordering
+    defects = (
+        conc_df["Defect"] if "Defect" in conc_df.columns else conc_df.index.get_level_values("Defect")
+    )
+    summed_df = summed_df.loc[defects.unique()]  # retain ordering
     conc_column = next(k for k in conc_df.columns if k.startswith("Concentration"))
     raw_concentrations = (
         summed_df["Raw Concentration"]
@@ -4229,7 +4236,7 @@ def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, 
     scissored_dos_dict["efermi"] -= np.float64(delta_gap / 2)
 
     if verbose:
-        print(f"Orig gap: {dos.get_gap(tol=tol)}, new gap:{dos.get_gap(tol=tol) + delta_gap}")
+        print(f"Orig gap: {dos.get_gap(tol=tol):.4f}, new gap:{dos.get_gap(tol=tol) + delta_gap:.4f}")
     scissored_dos_dict["structure"] = dos.structure.as_dict()
     if isinstance(dos, FermiDos):
         return FermiDos.from_dict(scissored_dos_dict)

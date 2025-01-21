@@ -768,7 +768,7 @@ class DefectsParser:
         if self.bulk_path is None:  # determine bulk_path to use
             if len(possible_bulk_folders) == 1:
                 self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
-            elif len([dir for dir in possible_bulk_folders if dir.endswith("_bulk")]) == 1:
+            elif len([dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk")]) == 1:
                 self.bulk_path = os.path.join(
                     self.output_path,
                     next(iter(dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk"))),

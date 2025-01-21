@@ -741,7 +741,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # warning about negative corrections when using (fake) isotropic dielectric:
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
             output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
-            bulk_path="bulk",
+            bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
             dielectric=40,  # fake isotropic dielectric
             parse_projected_eigen=False,
         )

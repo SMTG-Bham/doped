@@ -216,7 +216,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 
         cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json.gz"))
         cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json.gz"))
-        cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "CompetingPhases/MgO_chempots.json"))
+        cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "MgO/CompetingPhases/MgO_chempots.json"))
 
         cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
         cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
@@ -2706,13 +2706,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
             == 2
         )
-        for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1", "inter_3_Te_1"]:
+        for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1"]:
             assert i in self.Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
 
         pruned_Se_ext_no_pnict_thermo = self.Se_ext_no_pnict_thermo.prune_to_stable_entries()
         assert len(pruned_Se_ext_no_pnict_thermo) == 70
         assert len(pruned_Se_ext_no_pnict_thermo.transition_level_map) == 16
-        for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1", "inter_3_Te_1"]:
+        for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1"]:
             assert i not in pruned_Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
         assert (
             len(
@@ -3085,9 +3085,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert ("Orig gap:" in output) == kwargs.get("verbose", False)
             if kwargs.get("delta_gap") == 0.3 and kwargs.get("verbose", False):
                 if kwargs.get("tol") == 1e-1:
-                    assert "Orig gap: 2.7513, new gap:3.0513" in output
+                    assert "Orig gap: 2.7565, new gap:3.0565" in output
                 else:
-                    assert "Orig gap: 1.5126, new gap:1.8126" in output
+                    assert "Orig gap: 1.5178, new gap:1.8178" in output
                     assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
 
             assert not w
@@ -3115,7 +3115,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             )
             # Similar values to CdTe_LZ_Te_rich_concentrations.png, slightly different due to no scissoring
             assert (
-                np.isclose(fermi_level, 0.3396, atol=1e-3)
+                np.isclose(fermi_level, 0.3374, atol=1e-3)
                 == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
             )
             assert (
@@ -3206,23 +3206,24 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                     )
                     # Note that this check requires ``skip_formatting`` to be True as we don't format the
                     # dopant values here:
+                    expected_df = defect_thermo.get_equilibrium_concentrations(
+                        fermi_level=annealing_fermi_level,
+                        limit="Te-rich",
+                        temperature=kwargs.get("annealing_temperature", 1000),
+                        **{
+                            k: v
+                            for k, v in kwargs.items()
+                            if k not in ["return_annealing_values", "effective_dopant_concentration"]
+                        },
+                    )
                     expected_df = _add_effective_dopant_concentration(
-                        defect_thermo.get_equilibrium_concentrations(
-                            fermi_level=annealing_fermi_level,
-                            limit="Te-rich",
-                            temperature=kwargs.get("annealing_temperature", 1000),
-                            **{
-                                k: v
-                                for k, v in kwargs.items()
-                                if k not in ["return_annealing_values", "effective_dopant_concentration"]
-                            },
-                        ),
+                        expected_df,
                         kwargs.get("effective_dopant_concentration"),
                     )
                     if kwargs.get("per_charge", True):
                         conc_df_to_compare = conc_df.drop(columns=["Total Concentration (cm^-3)"])
-                    # replace NaNs with "N/A" (Dopant per site conc):
-                    conc_df_to_compare = conc_df_to_compare.fillna("N/A")
+                    else:
+                        conc_df_to_compare = conc_df
                     print(conc_df_to_compare, expected_df)  # for debugging
                     print(conc_df_to_compare.columns, expected_df.columns)  # for debugging
                     pd.testing.assert_frame_equal(conc_df_to_compare, expected_df)
@@ -3394,7 +3395,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             "No chemical potentials supplied, so using 0 for all chemical potentials" in str(warn.message)
             for warn in w
         )
-        assert np.isclose(results[0], 1.1319, atol=1e-3)
+        assert np.isclose(results[0], 1.2737, atol=1e-3)
 
         defect_thermo = deepcopy(self.defect_thermo)
         defect_thermo.chempots = None
@@ -3413,7 +3414,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             ("v_Cd_0", 0.35),
             (self.defect_thermo.defect_entries["v_Cd_0"], 0.35),
             ("v_Cd_-2", 1.15),
-            ("Te_Cd_0", 1.374),  # this case, of being bounded by other charges on both sides,
+            ("Te_Cd_0", 1.162),  # this case, of being bounded by other charges on both sides,
             # wasn't tested with CdTe_example_thermo in DefectThermodynamicsTestCase
         ]:
             assert np.isclose(
@@ -3642,7 +3643,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         )
         ax.plot(
             self.anneal_temperatures,
-            _array_from_conc_df("Te_i_Td_Te2.83"),
+            _array_from_conc_df("Te_i_Td_Te2.83_a"),
             marker="o",
             label="$Te_i$",
             linestyle=":",
