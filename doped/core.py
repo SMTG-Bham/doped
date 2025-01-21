@@ -4,9 +4,9 @@ Core functions and classes for defects in doped.
 
 import collections
 import contextlib
+import multiprocessing
 import warnings
 from dataclasses import dataclass, field
-from multiprocessing import Process, SimpleQueue, current_process
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
     from easyunfold.procar import Procar as EasyunfoldProcar
 
+mp = multiprocessing.get_context("forkserver")  # https://github.com/python/cpython/pull/100229
 
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
@@ -1549,13 +1550,13 @@ def guess_and_set_oxi_states_with_timeout(
 
     if (  # if BVAnalyzer failed and cost estimate is high, break early:
         (
-            break_early_if_expensive or current_process().daemon
+            break_early_if_expensive or mp.current_process().daemon
         )  # if in a daemon process, can't spawn new `Process`s
         and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
     ):
         return False
 
-    if current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
+    if mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
         return _guess_and_set_struct_oxi_states_icsd_prob(structure)
 
     return _guess_and_set_oxi_states_with_timeout_icsd_prob(structure, timeout_1, timeout_2)
@@ -1604,9 +1605,9 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
         Structure: The structure with oxidation states guessed and set, or ``False``
         if oxidation states could not be guessed.
     """
-    queue: SimpleQueue = SimpleQueue()
+    queue = mp.SimpleQueue()
 
-    guess_oxi_process_wout_max_sites = Process(
+    guess_oxi_process_wout_max_sites = mp.Process(
         target=_guess_and_set_struct_oxi_states_icsd_prob_process, args=(structure, queue, True)
     )  # try without max sites first, if fails, try with max sites
     guess_oxi_process_wout_max_sites.start()
@@ -1616,7 +1617,7 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
         guess_oxi_process_wout_max_sites.terminate()
         guess_oxi_process_wout_max_sites.join()
 
-        guess_oxi_process = Process(
+        guess_oxi_process = mp.Process(
             target=_guess_and_set_struct_oxi_states_icsd_prob_process,
             args=(structure, queue, False),
         )
