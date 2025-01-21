@@ -739,7 +739,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         ]:
             _test_latex_table(ref_filename=ref_filename, **kwargs)
 
-        _test_latex_table(self.la_zro2_cpa, "la_default.tex")
+        _test_latex_table(self.la_zro2_cpa, "La_default.tex")
 
         with pytest.raises(ValueError):
             cpa.to_LaTeX_table(splits=3)
