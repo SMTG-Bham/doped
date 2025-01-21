@@ -21,7 +21,7 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2024.7.18",  # requirement for spglib>=2.5.0 for SpglibDataset attribute interface
+    "pymatgen>=2024.9.10",  # needs new SymmetryUndeterminedError class
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "ase",  # required by ShakeNBreak anyway
