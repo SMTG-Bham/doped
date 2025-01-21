@@ -1,6 +1,43 @@
 Change Log
 ==========
 
+v.3.0.0
+----------
+- Major efficiency updates to most parts of the workflow, mostly implemented as helper functions in
+  ``doped.utils.efficiency`` and ``doped.utils.configurations``, including:
+    - Fast and intelligent structure matching (patching various parts of ``pymatgen``'s ``StructureMatcher`` code.
+    - Voronoi tessellation for interstitial generation
+    - Defect generation
+    - Wyckoff site detection
+    - Defect site detection and matching, including very large supercells.
+    - ``DefectThermodynamics`` initialisation (and defect grouping by distance between equivalent sites).
+- ``FermiSolver`` and ``ChemicalPotentialGrid`` classes in https://github.com/SMTG-Bham/doped/pull/46, for
+  advanced defect/carrier thermodynamics, allowing various constraints (e.g. mobile/fixed defects / charge
+  states etc), with a number of convenience functions (e.g. for scanning temperature / chemical potentials
+  etc, optimising output properties over many-dimensional chemical potential spaces etc). Usage
+  demonstrated in https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html.
+- Add ``is_shallow`` function, and ``DefectThermodynamics._get_in_gap_fermi_level_stability_window``
+  method. Shallow defect states now automatically excluded from formation energy diagram plots for cleaner
+  outputs, controllable with the ``unstable_entries`` kwarg. Large charge correction errors for
+  shallow/unstable defects (typically higher and a common indication of 'false charge state' behaviour)
+  now do not throw a warning during parsing.
+- ``CompetingPhases`` now compatible with both legacy and new Materials Project APIs, with automatic
+  handling (and appropriate warnings) for cases of unstable host materials/compositions.
+- Internal overhaul of ``CompetingPhasesAnalyzer`` code, using ``ComputedStructureEntry`` objects.
+  Initialisation now much faster and more convenient, JSON-serializable outputs, further visualisation and
+  plotting, and queryability.
+- Various robustness improvements, including:
+    - Handling mixed-valence systems
+    - Handling systems with very large inter-atomic distances.
+    - As a robustness test, defect generation for all materials on the Materials Project proceeds
+      efficiently and without issue (as performed as part of https://arxiv.org/abs/2412.19330).
+    - Improved eigenvalue parsing and comparisons (for automated shallow defect detection).
+    - Dynamic adjustment of ``symprec`` for edge cases.
+- Miscellaneous convenience updates.
+- Docs, tutorials and tests updates.
+- BETA: Add ``doped.utils.configurations`` functions to quickly generate CC diagram structures / initial
+  NEB paths for defect transformations, ensuring correct initial orientations (to give shortest path).
+
 v.2.4.7
 ----------
 - Update doping/carrier concentration functions to be more accurate and robust (following logic discussed
