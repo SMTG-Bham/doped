@@ -636,7 +636,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         with pytest.raises(FileNotFoundError) as e:
             chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries="path", subfolder="vasp_std")
-        assert "No vasprun files have been parsed, suggesting issues with parsing!" in str(e.value)
+        assert "No such file or directory" in str(e.value)
 
         with pytest.raises(TypeError) as e:
             chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries=0, subfolder="vasp_std")
@@ -916,7 +916,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
 class TestChemicalPotentialGrid(unittest.TestCase):
     def setUp(self):
-        self.chempots = loadfn("../examples/Cu2SiSe3/Cu2SiSe3_chempots.json")
+        self.EXAMPLE_DIR = os.path.join(cwd, "../examples")
+        self.chempots = loadfn(os.path.join(self.EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
         self.grid = chemical_potentials.ChemicalPotentialGrid(self.chempots)
 
     def test_init(self):

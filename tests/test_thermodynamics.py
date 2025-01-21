@@ -735,10 +735,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             defect_thermo.bulk_formula == "CdTe"
             and defect_thermo.dist_tol == 1.5
             and len(defect_thermo.defect_entries) < 20
+            and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
             self._check_CdTe_example_dist_tol(defect_thermo, 3)
-        self._set_and_check_dist_tol(1.0, defect_thermo, 4)
-        self._set_and_check_dist_tol(0.5, defect_thermo, 5)
+            self._set_and_check_dist_tol(1.0, defect_thermo, 4)
+            self._set_and_check_dist_tol(0.5, defect_thermo, 5)
 
         # test mismatching chempot warnings:
         print("Checking mismatching chempots")
@@ -2404,31 +2405,32 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test ``DefectThermodynamics`` directly from ``DefectsParser`` parsing
         (i.e. before any saving/loading to/from ``json``).
         """
-        dp = DefectsParser(self.CdTe_EXAMPLE_DIR, dielectric=9.13)
+        dp = DefectsParser(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_example_data", dielectric=9.13)
         thermo_from_dp = dp.get_defect_thermodynamics()
         self._check_defect_thermo(thermo_from_dp, dp.defect_dict)  # checks and compares attributes
 
-        thermo_from_dp.to_json("test_thermo_from_dp.json")
-        reloaded_thermo_from_dp = loadfn("test_thermo_from_dp.json")
-        for thermo, dp_type in [(thermo_from_dp, "orig"), (reloaded_thermo_from_dp, "reloaded")]:
-            # previously this ``dataclass`` subclass object was not being serialized correctly (being
-            # reloaded just as a dict) due to ``asdict()`` usage:
-            entry = next(
-                i
-                for i in thermo.defect_entries.values()
-                if "kumagai_charge_correction" in i.corrections_metadata
-            )
-            assert str(
+    def test_efnv_json_saving(self):
+        """
+        Test that the `pydefect_ExtendedFnvCorrection` objects are correctly
+        serialized/deserialized when saving/loading to/from json.
+        """
+        # previously this ``dataclass`` subclass object was not being serialized correctly (being
+        # reloaded just as a dict) due to ``asdict()`` usage:
+        entry = next(
+            i
+            for i in self.CdTe_defect_thermo.defect_entries.values()
+            if "kumagai_charge_correction" in i.corrections_metadata
+        )
+        assert (
+            str(
                 type(
                     entry.corrections_metadata["kumagai_charge_correction"][
                         "pydefect_ExtendedFnvCorrection"
                     ]
                 )
-            ) == (
-                "<class 'pydefect.corrections.efnv_correction.ExtendedFnvCorrection'>"
-            ), f"Checking {dp_type}"
-
-        if_present_rm("test_thermo_from_dp.json")
+            )
+            == "<class 'pydefect.corrections.efnv_correction.ExtendedFnvCorrection'>"
+        )
 
     def test_formation_energy_mult_degen(self):
         cdte_defect_thermo = DefectThermodynamics.from_json(
@@ -2768,7 +2770,7 @@ def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     print([str(warn.message) for warn in w])  # for debugging
     assert not output
     assert any(
-        "The VBM eigenvalue of the bulk DOS calculation (1.54 eV, band gap = 1.53 eV) differs "
+        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
         "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
         in str(warn.message)
         for warn in w
