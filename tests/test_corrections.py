@@ -166,10 +166,8 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
 
         cls.v_Cd_dict = {}  # dictionary of parsed vacancy defect entries
 
-        for i in os.listdir(cls.CdTe_example_dir):  # loops through the example directory
-            if (
-                os.path.isdir(f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}") and "v_Cd" in i
-            ):  # and parses folders that have "v_Cd" in their name
+        for i in os.listdir(f"{cls.CdTe_example_dir}/v_Cd_example_data"):
+            if os.path.isdir(f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}") and "v_Cd" in i:
                 print(f"Parsing {i}...")
                 defect_path = f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}/vasp_ncl"
                 cls.v_Cd_dict[i] = analysis.defect_entry_from_paths(

@@ -133,7 +133,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        for i in cls.moved_v_Cd_example_dirs:
+        for i in ["CdTe_bulk", "v_Cd_0", "v_Cd_-1", "v_Cd_-2"]:
             shutil.move(os.path.join(cls.CdTe_EXAMPLE_DIR, i), os.path.join(cls.v_Cd_example_dir, i))
 
     def tearDown(self):
