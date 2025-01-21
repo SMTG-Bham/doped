@@ -919,6 +919,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         self.EXAMPLE_DIR = os.path.join(cwd, "../examples")
         self.chempots = loadfn(os.path.join(self.EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
         self.grid = chemical_potentials.ChemicalPotentialGrid(self.chempots)
+        self.new_MP_api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"
 
     def test_init(self):
         assert isinstance(self.grid.vertices, pd.DataFrame)
@@ -948,7 +949,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         Test ``ChemicalPotentialGrid`` generation and plotting for a complex
         quinary system (Na2FePO4F).
         """
-        na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F")
+        na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F", api_key=self.new_MP_api_key)
         na2fepo4f_doped_chempots = chemical_potentials.get_doped_chempots_from_entries(
             na2fepo4f_cp.entries, "Na2FePO4F"
         )

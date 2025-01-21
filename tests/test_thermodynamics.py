@@ -2786,8 +2786,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         cls.defect_dict = loadfn(
             os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
         )
-        cls.defect_thermo = DefectThermodynamics(cls.defect_dict)
-        cls.defect_thermo.chempots = cls.CdTe_chempots
+        cls.orig_defect_thermo = DefectThermodynamics(cls.defect_dict)
+        cls.orig_defect_thermo.chempots = cls.CdTe_chempots
 
         cls.fermi_dos = get_fermi_dos(
             os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
@@ -2806,7 +2806,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 e_conc,
                 h_conc,
                 conc_df,
-            ) = cls.defect_thermo.get_fermi_level_and_concentrations(
+            ) = cls.orig_defect_thermo.get_fermi_level_and_concentrations(
                 # quenching to 300K (default)
                 cls.fermi_dos,
                 limit="Te-rich",
@@ -2818,7 +2818,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 annealing_fermi_level,
                 annealing_e_conc,
                 annealing_h_conc,
-            ) = cls.defect_thermo.get_equilibrium_fermi_level(
+            ) = cls.orig_defect_thermo.get_equilibrium_fermi_level(
                 scissored_dos,
                 limit="Te-rich",
                 temperature=anneal_temp,
@@ -2834,7 +2834,11 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 "conc_df": conc_df,
             }
 
-        cls.defect_thermo.bulk_dos = cls.fermi_dos  # reset FermiDos
+        cls.orig_defect_thermo.bulk_dos = cls.fermi_dos  # reset FermiDos
+
+    def setUp(self):
+        # avoid any overwriting (e.g. when using k10 DOS):
+        self.defect_thermo = deepcopy(self.orig_defect_thermo)
 
     def belas_linear_fit(self, T):  # linear fit of CdTe gap dependence with temperature
         return 1.6395 - 0.000438 * T
