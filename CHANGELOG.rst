@@ -5,7 +5,7 @@ v.3.0.0
 ----------
 - Major efficiency updates to most parts of the workflow, mostly implemented as helper functions in
   ``doped.utils.efficiency`` and ``doped.utils.configurations``, including:
-    - Fast and intelligent structure matching (patching various parts of ``pymatgen``'s ``StructureMatcher`` code.
+    - Fast and intelligent structure matching (patching various parts of ``pymatgen``'s ``StructureMatcher`` code).
     - Voronoi tessellation for interstitial generation
     - Defect generation
     - Wyckoff site detection
