@@ -377,7 +377,14 @@ def group_defects_by_distance(
                         )
                     )
 
-                defect_site_dict[name][equiv_site_tuple] = [entry]
+                if equiv_site_tuple not in defect_site_dict[name]:
+                    defect_site_dict[name][equiv_site_tuple] = [entry]
+                else:  # possibly dist_tol = 0
+                    num_matching_names = sum(
+                        1 for defect_name in defect_site_dict if defect_name.startswith(name)
+                    )
+                    defect_site_dict[f"{name}_{chr(96 + num_matching_names)}"] = {}
+                    defect_site_dict[f"{name}_{chr(96+num_matching_names)}"][equiv_site_tuple] = [entry]
 
     return defect_site_dict
 
