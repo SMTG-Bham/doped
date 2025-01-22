@@ -1835,3 +1835,31 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, 
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
     )
+
+
+def doped_entry_id(vasprun: Vasprun) -> str:
+    """
+    Generate an ``entry_id`` from a ``pymatgen`` ``Vasprun`` object, to use
+    with ``ComputedEntry``/``ComputedStructureEntry`` objects (from
+    ``Vasprun.get_computed_entry()``).
+
+    The ``entry_id`` is set to:
+    ``{reduced chemical formula}_{vr.energy}``
+
+    This is to avoid the use of parsing-time-dependent ``entry_id``
+    from ``pymatgen``, and may be replaced in the future if this issue
+    is resolved: https://github.com/materialsproject/pymatgen/issues/4259
+
+    Currently not used in ``doped`` parsing however, as
+    ``ComputedEntry.parameters`` gets randomly re-organised upon saving
+    to ``json``, so the same ``ComputedEntry`` saved to file at different
+    times still gives slightly different ``json`` files.
+
+    Args:
+        vasprun (Vasprun):
+            The ``Vasprun`` object from which to generate the ``entry_id``.
+
+    Returns:
+        str: The generated ``entry_id``.
+    """
+    return f"{vasprun.final_structure.composition.reduced_formula}_{vasprun.final_energy}"
