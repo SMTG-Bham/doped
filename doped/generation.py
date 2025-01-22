@@ -29,7 +29,7 @@ from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core import IStructure, Structure
 from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicNeighbor, PeriodicSite
+from pymatgen.core.structure import PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
@@ -207,29 +207,145 @@ def _defect_type_key_from_pmg_type(defect_type: core.DefectType) -> str:
     )
 
 
+def get_neighbour_distances_and_symbols(
+    site: PeriodicSite,
+    structure: Structure,
+    n: int = 1,
+    element_list: Optional[list[str]] = None,
+    dist_tol_prefactor: float = 3.0,
+    min_dist: float = 0.02,
+):
+    r"""
+    Get a list of sorted tuples of (distance, element) for the ``n``\th closest
+    sites to the input ``site`` in ``structure``, where each consecutive
+    neighbour in the list must be at least 0.02 Å further away than the
+    previous neighbour.
+
+    If there are multiple elements with the same distance (to within ~0.01 Å),
+    then the preference for which element to return is controlled by
+    ``element_list``. If ``element_list`` is not provided, then it is set to
+    match the order of appearance in the structure composition.
+
+    For efficiency, this function dynamically increases the radius when
+    searching for nearest neighbours as necessary, using the input
+    ``dist_tol_prefactor`` and ``n`` to estimate a reasonable starting range.
+
+    Args:
+        site (PeriodicSite):
+            Site to get neighbour info.
+        structure (Structure):
+            Structure containing the site and neighbours.
+        n (int):
+            Return the element symbol and distance tuples for the ``n``\th
+            closest neighbours. Default is 1, corresponding to only the
+            nearest neighbour.
+        element_list (list):
+            Sorted list of elements in the host structure to govern the
+            preference of elemental symbols to return, when the distance to
+            multiple neighbours with different elements is the same.
+            Default is to use the order of appearance of elements in the
+            ``Structure`` composition.
+        dist_tol_prefactor (float):
+            Initial distance tolerance prefactor to use when searching for
+            neighbours, where the initial search radius is set to
+            ``dist_tol_prefactor * sqrt(n)`` Å. This value is dynamically
+            updated as needed, and so should only be adjusted if providing
+            odd systems with very small/large bond lengths for which
+            efficiency improvements are possible. Default is 3.0.
+        min_dist (float):
+            Minimum distance in Å of neighbours from ``site``. Intended as a
+            distance tolerance to exclude the site itself from the neighbour
+            list, for which the default value (0.02 Å) should be perfectly
+            fine in most cases. Set to 0 to include the site itself in the
+            output list (in which case it counts toward ``n``).
+
+    Returns:
+        list: Sorted list of tuples of (distance, element) for the ``n``\th
+        closest neighbours to the input ``site``.
+    """
+    if element_list is None:
+        element_list = [el.symbol for el in structure.composition.elements]
+
+    neighbour_tuples: list[tuple[float, str]] = []
+    while len(neighbour_tuples) < n:
+        # for efficiency, ignore sites further than dist_tol*sqrt(n) Å away
+        # dynamic upscaling of the distance tolerance is required for weird structures (e.g. mp-674158,
+        # mp-1208561):
+        neighbours_w_site_itself = structure.get_sites_in_sphere(
+            site.coords, dist_tol_prefactor * np.sqrt(n)
+        )
+        neighbours = sorted(neighbours_w_site_itself, key=lambda x: x.nn_distance)
+
+        if not neighbours:
+            continue
+
+        dist_tol_prefactor += 0.5  # increase the distance tolerance if no other sites are found
+        if dist_tol_prefactor > 40:
+            warnings.warn(
+                "No other sites found within 40*sqrt(n) Å of the defect site, indicating a very "
+                "weird structure..."
+            )
+            break
+
+        neighbour_tuples = sorted(  # Could make this faster using caching if it was becoming a bottleneck
+            [
+                (
+                    neigh.nn_distance,
+                    neigh.specie.symbol,
+                )
+                for neigh in neighbours
+            ],
+            key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
+        )
+        neighbour_tuples = [  # prune site_distances to remove any with distances within 0.02 Å of the
+            # previous n:
+            neighbour_tuples[i]
+            for i in range(len(neighbour_tuples))
+            if neighbour_tuples[i][0] > min_dist
+            and (
+                i == 0
+                or abs(neighbour_tuples[i][0] - neighbour_tuples[i - 1][0]) > 0.02
+                or neighbour_tuples[i][1] != neighbour_tuples[i - 1][1]
+            )
+        ][:n]
+
+    return neighbour_tuples
+
+
 def closest_site_info(
     defect_entry_or_defect: Union[DefectEntry, Defect],
     n: int = 1,
     element_list: Optional[list[str]] = None,
 ):
-    """
-    Return the element and distance (rounded to 2 decimal places) of the
-    closest site to the defect in the input ``DefectEntry`` or ``Defect``
+    r"""
+    Return the element and distance (rounded to 2 decimal places) of the nth
+    closest site to the defect site in the input ``DefectEntry`` or ``Defect``
     object.
 
-    If ``DefectEntry``, uses ``defect_entry.defect_supercell_site`` if set,
-    otherwise ``defect_entry.sc_defect_frac_coords``, with
-    ``defect_entry.sc_entry.structure``.
-    If ``Defect``, uses ``defect.get_supercell_structure()`` with a 2x2x2
-    supercell to ensure none of the detected sites are periodic images of
-    the defect site.
+    If there are multiple elements with the same distance (to within ~0.01 Å),
+    then the preference for which element to return is controlled by
+    ``element_list``. If ``element_list`` is not provided, then it is set to
+    match the order of appearance in the structure composition.
 
-    Requires distances > 0.05 (i.e. so not the site itself), and if there are
-    multiple elements with the same distance, sort by order of appearance of
-    elements in the composition, then alphabetically and return the first one.
+    If ``n`` > 1, then it returns the nth closest site, where the nth site
+    must be at least 0.02 Å further away than the (n-1)th site.
 
-    If n is set, then it returns the nth closest site, where the nth site must
-    be at least 0.02 Å further away than the n-1th site.
+    Args:
+        defect_entry_or_defect (Union[DefectEntry, Defect]):
+            ``DefectEntry`` or ``Defect`` object, to get neighbour info.
+        n (int):
+            Return the element symbol and distance for the ``n``\th closest
+            site. Default is 1, corresponding to the (1st) closest neighbour.
+        element_list (list):
+            Sorted list of elements in the host structure to govern the
+            preference of elemental symbols to return, when the distance to
+            multiple neighbours with different elements is the same.
+            Default is to use ``_get_element_list()``, which follows the
+            order of appearance of elements in the ``Structure`` composition.
+
+    Returns:
+        str: Element symbol and distance (rounded to 2 decimal places) of the
+        nth closest site to the defect site.
     """
     if isinstance(defect_entry_or_defect, (DefectEntry, thermo.DefectEntry)):
         site = None
@@ -260,65 +376,9 @@ def closest_site_info(
     if element_list is None:
         element_list = _get_element_list(defect)
 
-    def _get_site_distances_and_symbols(
-        site: PeriodicSite,
-        structure: Structure,
-        n: int,
-        element_list: list[str],
-        dist_tol_prefactor: float = 3.0,
-    ):
-        """
-        Get a list of sorted tuples of (distance, element) for the closest
-        sites to the input site in the input structure, and the last used
-        ``dist_tol_prefactor``.
-
-        Dynamically increases ``dist_tol_prefactor`` until at least one other
-        site is found within the distance tolerance. Function defined and used
-        here to allow dynamic upscaling of the distance tolerance for weird
-        structures (e.g. mp-674158, mp-1208561).
-        """
-        neighbours: list[PeriodicNeighbor] = []
-        while not neighbours:  # for efficiency, ignore sites further than dist_tol*sqrt(n) Å away:
-            neighbours_w_site_itself = structure.get_sites_in_sphere(
-                site.coords, dist_tol_prefactor * np.sqrt(n)
-            )  # exclude defect site itself:
-            neighbours = sorted(neighbours_w_site_itself, key=lambda x: x.nn_distance)[1:]
-            dist_tol_prefactor += 0.5  # increase the distance tolerance if no other sites are found
-            if dist_tol_prefactor > 40:
-                warnings.warn(
-                    "No other sites found within 40*sqrt(n) Å of the defect site, indicating a very "
-                    "weird structure..."
-                )
-                break
-        if not neighbours:
-            return [], dist_tol_prefactor
-
-        site_distances = sorted(  # Could make this faster using caching if it was becoming a bottleneck
-            [
-                (
-                    neigh.nn_distance,
-                    neigh.specie.symbol,
-                )
-                for neigh in neighbours
-            ],
-            key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
-        )
-        return [  # prune site_distances to remove any with distances within 0.02 Å of the previous n:
-            site_distances[i]
-            for i in range(len(site_distances))
-            if i == 0
-            or abs(site_distances[i][0] - site_distances[i - 1][0]) > 0.02
-            or site_distances[i][1] != site_distances[i - 1][1]
-        ], dist_tol_prefactor
-
-    site_distances, dist_tol_prefactor = _get_site_distances_and_symbols(site, structure, n, element_list)
-    while len(site_distances) < n:
-        if dist_tol_prefactor > 40:
-            return ""  # already warned
-
-        site_distances, dist_tol_prefactor = _get_site_distances_and_symbols(
-            site, structure, n, element_list, dist_tol_prefactor + 2
-        )
+    site_distances = get_neighbour_distances_and_symbols(site, structure, n, element_list)
+    if not site_distances:
+        return ""  # min dist > 40, already warned in ``get_neighbour_distances_and_symbols``
 
     min_distance, closest_site = site_distances[n - 1]
     return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
@@ -2323,7 +2383,10 @@ def _get_element_list(defect: Union[Defect, DefectEntry, dict, list]) -> list[st
     """
     Given an input ``Defect`` or ``DefectEntry``, or dictionary/list of these,
     return a (non-duplicated) list of elements present in the defect
-    structures.
+    structures, following the order of appearance in the composition.
+
+    Extrinsic elements are sorted according to ``_element_sort_func``,
+    which sorts based on periodic group and atomic number.
     """
 
     def _get_single_defect_element_list(single_defect):
@@ -2482,7 +2545,7 @@ def _sort_defect_entries(
 def _sort_defects(defects_dict: dict, element_list: Optional[list[str]] = None):
     """
     Sort defect objects for deterministic behaviour (for output and when
-    reloading DefectsGenerator objects.
+    reloading ``DefectsGenerator`` objects.
 
     Sorts defects by defect type (vacancies, substitutions, interstitials),
     then by order of appearance of elements in the composition, then
