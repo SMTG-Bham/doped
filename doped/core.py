@@ -211,6 +211,20 @@ class DefectEntry(thermo.DefectEntry):
         """
         return loadfn(filename)
 
+    def as_dict(self) -> dict:
+        """
+        Return a JSON-serializable dict representation of ``DefectEntry``.
+
+        Slightly modified from the parent function to remove any hash values,
+        as these are only relevant to the current python session.
+        """
+        defect_entry_dict = super().as_dict()
+        for key in list(defect_entry_dict.keys()):
+            if "_hash" in key:
+                del defect_entry_dict[key]
+
+        return defect_entry_dict
+
     @classmethod
     def from_dict(cls, d: dict):
         """
