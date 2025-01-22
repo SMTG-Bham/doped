@@ -143,7 +143,7 @@ def get_defect_entry_from_defect(
 
     computed_structure_entry = ComputedStructureEntry(
         structure=defect_entry_structure,
-        energy=0.0,  # needs to be set, so set to 0.0
+        energy=0,  # needs to be set, so set to 0
     )
     return DefectEntry(
         defect=defect,
