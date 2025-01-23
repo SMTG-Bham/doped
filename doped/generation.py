@@ -534,10 +534,7 @@ def _get_neutral_defect_entry(
             equiv_sites=True,
         )
         conv_cell_coord_list = [
-            symmetry._vectorized_custom_round(
-                np.mod(symmetry._vectorized_custom_round(site.to_unit_cell().frac_coords), 1)
-            )
-            for site in conv_cell_sites
+            np.mod(symmetry._vectorized_custom_round(site.frac_coords), 1) for site in conv_cell_sites
         ]
 
     except Exception as e:  # (slightly) less efficient algebraic matching:
@@ -546,8 +543,8 @@ def _get_neutral_defect_entry(
                 defect_entry=neutral_defect_entry,
                 wyckoff_dict=wyckoff_label_dict,
             )
-            conv_cell_coord_list = symmetry._vectorized_custom_round(
-                np.mod(symmetry._vectorized_custom_round(conv_cell_coord_list), 1)
+            conv_cell_coord_list = np.mod(
+                symmetry._vectorized_custom_round(conv_cell_coord_list), 1
             ).tolist()
         except Exception as e2:
             warnings.warn(

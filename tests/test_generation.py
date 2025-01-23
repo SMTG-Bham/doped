@@ -3243,7 +3243,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         sb2si2te6_defect_gen, output = self._generate_and_test_no_warnings(self.sb2si2te6)
 
         # different charge states than when max_sites = -1 is used:
-        assert self.sb2si2te6_defect_gen_info in output
+        assert (
+            self.sb2si2te6_defect_gen_info in output
+            or self.sb2si2te6_defect_gen_info.replace("0.347", "0.348") in output
+        )
 
         assert sb2si2te6_defect_gen.structure == self.sb2si2te6
         self._general_defect_gen_check(sb2si2te6_defect_gen)
@@ -3288,8 +3291,12 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert sb2si2te6_defect_gen.structure == self.sb2si2te6
         assert self.sb2si2te6_defect_gen_info not in output  # changed
 
-        assert self.sb2si2te6_defect_gen_info.split("Substitutions")[1] in output  # after vacancies,
-        # the same
+        post_vacancy_info_output = self.sb2si2te6_defect_gen_info.split("Substitutions")[1]
+        # after vacancies, the same:
+        assert (
+            post_vacancy_info_output in output
+            or post_vacancy_info_output.replace("0.347", "0.348") in output
+        )
 
         assert (  # different charge states than when max_sites = -1 is used:
             (
