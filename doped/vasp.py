@@ -11,7 +11,7 @@ from functools import lru_cache
 from importlib import resources
 from multiprocessing import cpu_count
 from multiprocessing.pool import Pool
-from typing import Optional, Union, cast
+from typing import cast
 
 import numpy as np
 from monty.io import zopen
@@ -70,7 +70,7 @@ singleshot_incar_settings = {
 }
 
 
-def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: Optional[list] = None):
+def _test_potcar_functional_choice(potcar_functional: str = "PBE", symbols: list | None = None):
     """
     Check if the potcar functional choice needs to be changed to match those
     available.
@@ -150,12 +150,12 @@ class DopedDictSet(VaspInputSet):
     def __init__(
         self,
         structure: Structure,
-        user_incar_settings: Optional[dict] = None,
-        user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
+        user_incar_settings: dict | None = None,
+        user_kpoints_settings: dict | Kpoints | None = None,
         user_potcar_functional: str = "PBE",
-        user_potcar_settings: Optional[dict] = None,
+        user_potcar_settings: dict | None = None,
         auto_kpar: bool = True,
-        poscar_comment: Optional[str] = None,
+        poscar_comment: str | None = None,
         **kwargs,
     ):
         r"""
@@ -331,11 +331,11 @@ class DefectDictSet(DopedDictSet):
         self,
         structure: Structure,
         charge_state: int = 0,
-        user_incar_settings: Optional[dict] = None,
-        user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
+        user_incar_settings: dict | None = None,
+        user_kpoints_settings: dict | Kpoints | None = None,
         user_potcar_functional: str = "PBE",
-        user_potcar_settings: Optional[dict] = None,
-        poscar_comment: Optional[str] = None,
+        user_potcar_settings: dict | None = None,
+        poscar_comment: str | None = None,
         **kwargs,
     ):
         r"""
@@ -505,8 +505,8 @@ class DefectDictSet(DopedDictSet):
         potcar_spec: bool = False,
         zip_output: bool = False,
         snb: bool = False,
-        stdev: Optional[float] = None,
-        d_min: Optional[float] = None,
+        stdev: float | None = None,
+        d_min: float | None = None,
     ):
         """
         Writes out all input to a directory.
@@ -649,13 +649,13 @@ class DefectRelaxSet(MSONable):
 
     def __init__(
         self,
-        defect_entry: Union[DefectEntry, Structure],
-        charge_state: Optional[int] = None,
-        soc: Optional[bool] = None,
-        user_incar_settings: Optional[dict] = None,
-        user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
+        defect_entry: DefectEntry | Structure,
+        charge_state: int | None = None,
+        soc: bool | None = None,
+        user_incar_settings: dict | None = None,
+        user_kpoints_settings: dict | Kpoints | None = None,
         user_potcar_functional: str = "PBE",
-        user_potcar_settings: Optional[dict] = None,
+        user_potcar_settings: dict | None = None,
         **kwargs,
     ):
         r"""
@@ -896,7 +896,7 @@ class DefectRelaxSet(MSONable):
 
     def _check_vstd_kpoints(
         self, vasp_std_defect_set: DefectDictSet, warn: bool = True, info: bool = True
-    ) -> Optional[DefectDictSet]:
+    ) -> DefectDictSet | None:
         try:
             vasp_std = None if np.prod(vasp_std_defect_set.kpoints.kpts[0]) == 1 else vasp_std_defect_set
         except Exception:  # different kpoint generation scheme, not Gamma-only
@@ -922,7 +922,7 @@ class DefectRelaxSet(MSONable):
         return vasp_std
 
     @property
-    def vasp_std(self) -> Optional[DefectDictSet]:
+    def vasp_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a VASP defect supercell
         relaxation using ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh).
@@ -958,7 +958,7 @@ class DefectRelaxSet(MSONable):
         )
 
     @property
-    def vasp_nkred_std(self) -> Optional[DefectDictSet]:
+    def vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a VASP defect supercell
         relaxation using ``vasp_std`` (i.e. with a non-Γ-only kpoint mesh) and
@@ -1042,7 +1042,7 @@ class DefectRelaxSet(MSONable):
         )
 
     @property
-    def vasp_ncl(self) -> Optional[DefectDictSet]:
+    def vasp_ncl(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a VASP defect supercell
         singlepoint calculation with spin-orbit coupling (SOC) included
@@ -1096,7 +1096,7 @@ class DefectRelaxSet(MSONable):
         return self.bulk_supercell
 
     @property
-    def bulk_vasp_gam(self) -> Optional[DefectDictSet]:
+    def bulk_vasp_gam(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a VASP `bulk` Γ-point-only
         (``vasp_gam``) singlepoint (static) supercell calculation. Often not
@@ -1149,7 +1149,7 @@ class DefectRelaxSet(MSONable):
         )
 
     @property
-    def bulk_vasp_std(self) -> Optional[DefectDictSet]:
+    def bulk_vasp_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a singlepoint (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
@@ -1203,7 +1203,7 @@ class DefectRelaxSet(MSONable):
         )
 
     @property
-    def bulk_vasp_nkred_std(self) -> Optional[DefectDictSet]:
+    def bulk_vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a singlepoint (static) `bulk`
         ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
@@ -1273,7 +1273,7 @@ class DefectRelaxSet(MSONable):
         )
 
     @property
-    def bulk_vasp_ncl(self) -> Optional[DefectDictSet]:
+    def bulk_vasp_ncl(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for VASP `bulk` supercell
         singlepoint calculations with spin-orbit coupling (SOC) included
@@ -1317,9 +1317,7 @@ class DefectRelaxSet(MSONable):
             **self.dict_set_kwargs,
         )
 
-    def _get_output_path(
-        self, defect_dir: Optional[PathLike] = None, subfolder: Optional[PathLike] = None
-    ):
+    def _get_output_path(self, defect_dir: PathLike | None = None, subfolder: PathLike | None = None):
         if defect_dir is None:
             if self.defect_entry.name is None:
                 self.defect_entry.name = get_defect_name_from_entry(self.defect_entry, relaxed=False)
@@ -1359,8 +1357,8 @@ class DefectRelaxSet(MSONable):
 
     def write_gam(
         self,
-        defect_dir: Optional[PathLike] = None,
-        subfolder: Optional[PathLike] = "vasp_gam",
+        defect_dir: PathLike | None = None,
+        subfolder: PathLike | None = "vasp_gam",
         poscar: bool = True,
         rattle: bool = True,
         bulk: bool = False,
@@ -1465,8 +1463,8 @@ class DefectRelaxSet(MSONable):
 
     def write_std(
         self,
-        defect_dir: Optional[PathLike] = None,
-        subfolder: Optional[PathLike] = "vasp_std",
+        defect_dir: PathLike | None = None,
+        subfolder: PathLike | None = "vasp_std",
         poscar: bool = False,
         rattle: bool = True,
         bulk: bool = False,
@@ -1582,8 +1580,8 @@ class DefectRelaxSet(MSONable):
 
     def write_nkred_std(
         self,
-        defect_dir: Optional[PathLike] = None,
-        subfolder: Optional[PathLike] = "vasp_nkred_std",
+        defect_dir: PathLike | None = None,
+        subfolder: PathLike | None = "vasp_nkred_std",
         poscar: bool = False,
         rattle: bool = True,
         bulk: bool = False,
@@ -1707,8 +1705,8 @@ class DefectRelaxSet(MSONable):
 
     def write_ncl(
         self,
-        defect_dir: Optional[PathLike] = None,
-        subfolder: Optional[PathLike] = "vasp_ncl",
+        defect_dir: PathLike | None = None,
+        subfolder: PathLike | None = "vasp_ncl",
         poscar: bool = False,
         rattle: bool = True,
         bulk: bool = False,
@@ -1833,11 +1831,11 @@ class DefectRelaxSet(MSONable):
 
     def write_all(
         self,
-        defect_dir: Optional[PathLike] = None,
+        defect_dir: PathLike | None = None,
         poscar: bool = False,
         rattle: bool = True,
-        vasp_gam: Optional[bool] = None,
-        bulk: Union[bool, str] = False,
+        vasp_gam: bool | None = None,
+        bulk: bool | str = False,
         **kwargs,
     ):
         r"""
@@ -2047,12 +2045,12 @@ class DefectsSet(MSONable):
 
     def __init__(
         self,
-        defect_entries: Union[DefectsGenerator, dict[str, DefectEntry], list[DefectEntry], DefectEntry],
-        soc: Optional[bool] = None,
-        user_incar_settings: Optional[dict] = None,
-        user_kpoints_settings: Optional[Union[dict, Kpoints]] = None,
+        defect_entries: DefectsGenerator | dict[str, DefectEntry] | list[DefectEntry] | DefectEntry,
+        soc: bool | None = None,
+        user_incar_settings: dict | None = None,
+        user_kpoints_settings: dict | Kpoints | None = None,
         user_potcar_functional: str = "PBE",
-        user_potcar_settings: Optional[dict] = None,
+        user_potcar_settings: dict | None = None,
         **kwargs,  # to allow POTCAR testing on GH Actions
     ):
         r"""
@@ -2238,8 +2236,8 @@ class DefectsSet(MSONable):
 
     def _format_defect_entries_input(
         self,
-        defect_entries: Union[DefectsGenerator, dict[str, DefectEntry], list[DefectEntry], DefectEntry],
-    ) -> tuple[dict[str, DefectEntry], str, Union[dict[str, DefectEntry], DefectsGenerator]]:
+        defect_entries: DefectsGenerator | dict[str, DefectEntry] | list[DefectEntry] | DefectEntry,
+    ) -> tuple[dict[str, DefectEntry], str, dict[str, DefectEntry] | DefectsGenerator]:
         r"""
         Helper function to format input ``defect_entries`` into a named
         dictionary of ``DefectEntry`` objects.
@@ -2345,9 +2343,9 @@ class DefectsSet(MSONable):
         output_path: PathLike = ".",
         poscar: bool = False,
         rattle: bool = True,
-        vasp_gam: Optional[bool] = None,
-        bulk: Union[bool, str] = True,
-        processes: Optional[int] = None,
+        vasp_gam: bool | None = None,
+        bulk: bool | str = True,
+        processes: int | None = None,
         **kwargs,
     ):
         r"""

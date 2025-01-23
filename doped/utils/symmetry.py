@@ -8,7 +8,6 @@ import os
 import warnings
 from functools import lru_cache
 from itertools import permutations
-from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -97,7 +96,7 @@ def _round_floats(obj, places: int = 5):
         return _custom_round(obj, places) + 0.0
     if isinstance(obj, dict):
         return {k: _round_floats(v, places) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [_round_floats(x, places) for x in obj]
     if isinstance(obj, np.ndarray):
         return _vectorized_custom_round(obj, places) + 0.0
@@ -136,9 +135,7 @@ def _custom_round(number: float, decimals: int = 3):
 _vectorized_custom_round = np.vectorize(_custom_round)
 
 
-def _get_num_places_for_dist_precision(
-    structure: Union[Structure, Lattice], dist_precision: float = 0.001
-):
+def _get_num_places_for_dist_precision(structure: Structure | Lattice, dist_precision: float = 0.001):
     """
     Given a structure or lattice, get the number of decimal places that we need
     to keep / can round to for _fractional coordinates_ (``frac_coords``), to
@@ -282,7 +279,7 @@ def apply_symm_op_to_site(
     symm_op: SymmOp,
     site: PeriodicSite,
     fractional: bool = False,
-    rotate_lattice: Union[Lattice, bool] = True,
+    rotate_lattice: Lattice | bool = True,
     just_unit_cell_frac_coords: bool = False,
 ) -> PeriodicSite:
     """
@@ -338,7 +335,10 @@ def apply_symm_op_to_site(
     if just_unit_cell_frac_coords:
         rotated_frac_coords = rotated_lattice.get_fractional_coords(new_coords)
         return np.array(
-            [np.mod(f, 1) if p else f for p, f in zip(rotated_lattice.pbc, rotated_frac_coords)]
+            [
+                np.mod(f, 1) if p else f
+                for p, f in zip(rotated_lattice.pbc, rotated_frac_coords, strict=False)
+            ]
         )
 
     return PeriodicSite(
@@ -630,7 +630,7 @@ def translate_structure(
 
 
 def _get_supercell_matrix_and_possibly_redefine_prim(
-    prim_struct, target_struct, sga: Optional[SpacegroupAnalyzer] = None, symprec=0.01
+    prim_struct, target_struct, sga: SpacegroupAnalyzer | None = None, symprec=0.01
 ):
     """
     Determines the supercell transformation matrix to convert from the
@@ -781,7 +781,7 @@ def _get_candidate_prim_structs(structure, **kwargs):
     return candidate_prim_structs
 
 
-def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False, symprec=0.01):
+def get_wyckoff(frac_coords, struct, symm_ops: list | None = None, equiv_sites=False, symprec=0.01):
     """
     Get the Wyckoff label of the input fractional coordinates in the input
     structure. If the symmetry operations of the structure have already been
@@ -810,7 +810,7 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
     return (wyckoff_label, unique_sites) if equiv_sites else wyckoff_label
 
 
-def _struct_sort_func(struct: Union[Structure, np.ndarray]) -> tuple:
+def _struct_sort_func(struct: Structure | np.ndarray) -> tuple:
     """
     Sort by the lattice matrix sorting function, then by (minus) the number of
     high-symmetry coordinates (x=y=z, then 2 equal coordinates), then by the
@@ -1025,7 +1025,7 @@ def _get_best_pos_det_structure(structure: Structure):
 
 def get_primitive_structure(
     structure: Structure,
-    ignored_species: Optional[list] = None,
+    ignored_species: list | None = None,
     clean: bool = True,
     return_all: bool = False,
     **kwargs,
@@ -1078,10 +1078,10 @@ def get_primitive_structure(
 @lru_cache(maxsize=int(1e3))
 def _cache_ready_get_primitive_structure(
     structure: Structure,
-    ignored_species: Optional[tuple] = None,
+    ignored_species: tuple | None = None,
     clean: bool = True,
     return_all: bool = False,
-    kwargs: Optional[tuple] = None,
+    kwargs: tuple | None = None,
 ):
     """
     ``get_primitive_structure`` code, with hashable input arguments for caching
@@ -1439,10 +1439,11 @@ def get_wyckoff_label_and_equiv_coord_list(
 
             # sort zipped arrays by number of variables in sympy expression:
             coord_array, sympy_array = zip(
-                *sorted(zip(coord_array, sympy_array), key=lambda x: len(x[1].free_symbols))
+                *sorted(zip(coord_array, sympy_array, strict=False), key=lambda x: len(x[1].free_symbols)),
+                strict=False,
             )
 
-            for coord, sympy_expr in zip(coord_array, sympy_array):
+            for coord, sympy_expr in zip(coord_array, sympy_array, strict=False):
                 # Evaluate the expression with the current variable_dict
                 expr_value = cached_simplify(sympy_expr).subs(temp_dict)
 
@@ -1645,8 +1646,8 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
 
 def point_symmetry_from_defect_entry(
     defect_entry: DefectEntry,
-    symm_ops: Optional[list] = None,
-    symprec: Optional[float] = None,
+    symm_ops: list | None = None,
+    symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool = True,
     return_periodicity_breaking: bool = False,
@@ -1979,9 +1980,9 @@ def _check_relaxed_defect_symmetry_determination(
 
 def point_symmetry_from_structure(
     structure: Structure,
-    bulk_structure: Optional[Structure] = None,
-    symm_ops: Optional[list] = None,
-    symprec: Optional[float] = None,
+    bulk_structure: Structure | None = None,
+    symm_ops: list | None = None,
+    symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool = True,
     return_periodicity_breaking: bool = False,
@@ -2119,10 +2120,10 @@ def point_symmetry_from_structure(
 
 
 def point_symmetry_from_site(
-    site: Union[PeriodicSite, np.ndarray, list],
+    site: PeriodicSite | np.ndarray | list,
     structure: Structure,
     coords_are_cartesian: bool = False,
-    symm_ops: Optional[list] = None,
+    symm_ops: list | None = None,
     symprec: float = 0.01,
 ):
     r"""
@@ -2151,7 +2152,7 @@ def point_symmetry_from_site(
     Returns:
         str: Site point symmetry.
     """
-    if isinstance(site, (np.ndarray, list)):
+    if isinstance(site, np.ndarray | list):
         site = PeriodicSite(
             species="X", coords=site, lattice=structure.lattice, coords_are_cartesian=coords_are_cartesian
         )

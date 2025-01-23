@@ -5,7 +5,6 @@ Code to analyse site displacements around a defect.
 import os
 import warnings
 from copy import deepcopy
-from typing import Optional
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -39,7 +38,7 @@ def calc_site_displacements(
     defect_entry: DefectEntry,
     relaxed_distances: bool = False,
     relative_to_defect: bool = False,
-    vector_to_project_on: Optional[list] = None,
+    vector_to_project_on: list | None = None,
     threshold: float = 2.0,
 ) -> pd.DataFrame:
     """
@@ -183,9 +182,9 @@ def plot_site_displacements(
     separated_by_direction: bool = False,
     relaxed_distances: bool = False,
     relative_to_defect: bool = False,
-    vector_to_project_on: Optional[list] = None,
+    vector_to_project_on: list | None = None,
     use_plotly: bool = False,
-    style_file: Optional[PathLike] = None,
+    style_file: PathLike | None = None,
 ):
     """
     Plots site displacements around a defect.
@@ -337,7 +336,9 @@ def plot_site_displacements(
                 rows=1, cols=3, subplot_titles=("x", "y", "z"), shared_xaxes=True, shared_yaxes=True
             )
             unique_species = list(set(disp_df["Species"]))
-            color_dict = dict(zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)]))
+            color_dict = dict(
+                zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)], strict=False)
+            )
             for dir_index, _direction in enumerate(["x", "y", "z"]):
                 fig.add_trace(
                     go.Scatter(
@@ -424,6 +425,7 @@ def plot_site_displacements(
                         f"Parallel {tuple(vector_to_project_on)}",
                         f"Perpendicular {tuple(vector_to_project_on)}",
                     ],
+                    strict=False,
                 ):
                     ax[index].scatter(
                         disp_df["Distance to defect"],
@@ -616,7 +618,7 @@ def plot_displacements_ellipsoid(
     quantile: float = 0.8,
     use_plotly: bool = False,
     show_supercell: bool = True,
-    style_file: Optional[PathLike] = None,
+    style_file: PathLike | None = None,
 ) -> tuple:
     """
     Plot the displacement ellipsoid and/or anisotropy around a relaxed defect.

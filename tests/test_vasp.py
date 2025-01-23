@@ -633,7 +633,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 child_dds.user_potcar_functional[:3]
             )  # if PBE_52 set but not available, defaults to PBE
             assert parent_drs.user_potcar_settings == child_dds.user_potcar_settings
-            if isinstance(child_dds.user_kpoints_settings, (DopedKpoints, Kpoints)):
+            if isinstance(child_dds.user_kpoints_settings, DopedKpoints | Kpoints):
                 assert child_dds.user_kpoints_settings.as_dict() in [
                     DopedKpoints()
                     .from_dict(
