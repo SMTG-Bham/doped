@@ -86,8 +86,10 @@ def _compare_attributes(obj1, obj2, exclude=None):
         elif attr == "defects" and any(len(i.defect_structure) == 0 for i in val1["vacancies"]):
             continue  # StructureMatcher comparison breaks for empty structures, which we can have with
             # our 1-atom primitive Cu input
-        elif isinstance(val1, (list, tuple)) and all(isinstance(i, np.ndarray) for i in val1):
-            assert all(np.array_equal(i, j) for i, j in zip(val1, val2)), "List of arrays do not match"
+        elif isinstance(val1, list | tuple) and all(isinstance(i, np.ndarray) for i in val1):
+            assert all(
+                np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)
+            ), "List of arrays do not match"
         else:
             assert val1 == val2
 
@@ -99,10 +101,12 @@ def _compare_prim_interstitial_coords(result, expected):  # check attribute set
 
     assert len(result) == len(expected), "Lengths do not match"
 
-    for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected):
+    for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected, strict=False):
         assert np.array_equal(r_coord, e_coord), "Coordinates do not match"
         assert r_num == e_num, "Number of coordinates do not match"
-        assert all(np.array_equal(r, e) for r, e in zip(r_list, e_list)), "List of arrays do not match"
+        assert all(
+            np.array_equal(r, e) for r, e in zip(r_list, e_list, strict=False)
+        ), "List of arrays do not match"
 
 
 default_supercell_gen_kwargs = {
@@ -3372,7 +3376,9 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         sn5o6_w_oxi_defect_gen, output = self._generate_and_test_no_warnings(
             supercell_with_oxi, generate_supercell=False, min_image_distance=9.70
         )
-        for defect_gen, w_oxi in zip([sn5o6_defect_gen, sn5o6_w_oxi_defect_gen], [False, True]):
+        for defect_gen, w_oxi in zip(
+            [sn5o6_defect_gen, sn5o6_w_oxi_defect_gen], [False, True], strict=False
+        ):
             print(f"Testing Sn5O6 defect_gen with oxi states: {w_oxi}")
             self.Sn5O6_defect_gen_check(defect_gen, manual_oxi=w_oxi)
 

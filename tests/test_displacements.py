@@ -126,7 +126,7 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                 0.0002337424502264542,
             )
             for index, dist, disp_paral, disp_perp in zip(
-                indexes, distances, disp_parallel, disp_perpendicular
+                indexes, distances, disp_parallel, disp_perpendicular, strict=False
             ):
                 if relaxed_distances:
                     assert np.isclose(disp_df["Distance to defect"].iloc[index], dist, atol=1e-3)

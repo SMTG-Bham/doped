@@ -14,7 +14,7 @@ from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -257,7 +257,7 @@ def get_chempots_from_phase_diagram(bulk_computed_entry, phase_diagram):
     return phase_diagram.get_all_chempots(bulk_computed_entry.composition.reduced_composition)
 
 
-def _get_all_chemsyses(chemsys: Union[str, list[str]]):
+def _get_all_chemsyses(chemsys: str | list[str]):
     """
     Convert a chemical system (``chemsys``) string (in the old/usual "A-B-C" or
     ["A", "B", "C"] formats, used on Materials Project website) to format
@@ -313,11 +313,11 @@ def _get_property_key_dict(legacy_MP: bool):
 
 
 def get_entries_in_chemsys(
-    chemsys: Union[str, list[str]],
-    api_key: Optional[str] = None,
-    e_above_hull: Optional[float] = None,
+    chemsys: str | list[str],
+    api_key: str | None = None,
+    e_above_hull: float | None = None,
     return_all_info: bool = False,
-    bulk_composition: Optional[Union[str, Composition]] = None,
+    bulk_composition: str | Composition | None = None,
     **kwargs,
 ):
     r"""
@@ -411,9 +411,9 @@ def get_entries_in_chemsys(
 
 
 def get_entries(
-    chemsys_formula_id_criteria: Union[str, dict[str, Any]],
-    api_key: Optional[str] = None,
-    bulk_composition: Optional[Union[str, Composition]] = None,
+    chemsys_formula_id_criteria: str | dict[str, Any],
+    api_key: str | None = None,
+    bulk_composition: str | Composition | None = None,
     **kwargs,
 ):
     r"""
@@ -470,7 +470,7 @@ def get_entries(
     return entries
 
 
-def _parse_MP_API_key(api_key: Optional[str] = None, legacy_MP_info: bool = False):
+def _parse_MP_API_key(api_key: str | None = None, legacy_MP_info: bool = False):
     """
     Parse the Materials Project (MP) API key, either from the input argument or
     from the environment variable ``PMG_MAPI_KEY``, and determine if it
@@ -551,10 +551,10 @@ def _parse_MP_API_key(api_key: Optional[str] = None, legacy_MP_info: bool = Fals
 
 
 def get_MP_summary_docs(
-    entries: Optional[list[ComputedEntry]] = None,
-    chemsys: Optional[Union[str, list[str]]] = None,
-    api_key: Optional[str] = None,
-    data_fields: Optional[list[str]] = None,
+    entries: list[ComputedEntry] | None = None,
+    chemsys: str | list[str] | None = None,
+    api_key: str | None = None,
+    data_fields: list[str] | None = None,
     **kwargs,
 ):
     r"""
@@ -663,7 +663,7 @@ def get_MP_summary_docs(
 def _entries_sort_func(
     entry: ComputedEntry,
     use_e_per_atom: bool = False,
-    bulk_composition: Optional[Union[str, Composition, dict, list]] = None,
+    bulk_composition: str | Composition | dict | list | None = None,
 ):
     r"""
     Function to sort ``ComputedEntry``\s by energy above hull, then if
@@ -704,7 +704,7 @@ def _entries_sort_func(
 def prune_entries_to_border_candidates(
     entries: list[ComputedEntry],
     bulk_computed_entry: ComputedEntry,
-    phase_diagram: Optional[PhaseDiagram] = None,
+    phase_diagram: PhaseDiagram | None = None,
     e_above_hull: float = 0.05,
 ):
     """
@@ -803,7 +803,7 @@ def prune_entries_to_border_candidates(
 
 
 def get_and_set_competing_phase_name(
-    entry: Union[ComputedStructureEntry, ComputedEntry], regenerate=False, ndigits=3
+    entry: ComputedStructureEntry | ComputedEntry, regenerate=False, ndigits=3
 ) -> str:
     """
     Get the ``doped`` name for a competing phase entry from the Materials
@@ -849,7 +849,7 @@ def get_and_set_competing_phase_name(
 
 
 def _get_competing_phase_folder_name(
-    entry: Union[ComputedStructureEntry, ComputedEntry], regenerate=False, ndigits=3
+    entry: ComputedStructureEntry | ComputedEntry, regenerate=False, ndigits=3
 ) -> str:
     """
     Get the ``doped`` `folder` name for a competing phase entry from the
@@ -915,9 +915,9 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
 class CompetingPhases:
     def __init__(
         self,
-        composition: Union[str, Composition, Structure],
+        composition: str | Composition | Structure,
         e_above_hull: float = 0.05,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         full_phase_diagram: bool = False,
     ):
         """
@@ -1482,12 +1482,12 @@ class CompetingPhases:
 class ExtrinsicCompetingPhases(CompetingPhases):
     def __init__(
         self,
-        composition: Union[str, Composition, Structure],
-        extrinsic_species: Union[str, Iterable],
+        composition: str | Composition | Structure,
+        extrinsic_species: str | Iterable,
         e_above_hull: float = 0.05,
         full_sub_approach: bool = False,
         codoping: bool = False,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         full_phase_diagram: bool = False,
     ):
         """
@@ -1765,9 +1765,9 @@ class ExtrinsicCompetingPhases(CompetingPhases):
 
 
 def get_doped_chempots_from_entries(
-    entries: Sequence[Union[ComputedEntry, ComputedStructureEntry, PDEntry]],
-    composition: Union[str, Composition, ComputedEntry],
-    sort_by: Optional[str] = None,
+    entries: Sequence[ComputedEntry | ComputedStructureEntry | PDEntry],
+    composition: str | Composition | ComputedEntry,
+    sort_by: str | None = None,
     single_chempot_limit: bool = False,
 ) -> dict:
     r"""
@@ -1799,7 +1799,7 @@ def get_doped_chempots_from_entries(
         dict:
             Dictionary of chemical potential limits in the ``doped`` format.
     """
-    if isinstance(composition, (str, Composition)):
+    if isinstance(composition, str | Composition):
         composition = Composition(composition)
     else:
         composition = composition.composition
@@ -1839,13 +1839,13 @@ def get_doped_chempots_from_entries(
 class CompetingPhasesAnalyzer(MSONable):
     def __init__(
         self,
-        composition: Union[str, Composition],
-        entries: Union[
-            PathLike, list[PathLike], list[ComputedEntry], list[ComputedStructureEntry]
-        ] = "CompetingPhases",
-        subfolder: Optional[PathLike] = "vasp_std",
+        composition: str | Composition,
+        entries: (
+            PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry]
+        ) = "CompetingPhases",
+        subfolder: PathLike | None = "vasp_std",
         verbose: bool = True,
-        processes: Optional[int] = None,
+        processes: int | None = None,
     ):
         r"""
         Class for post-processing competing phases calculations, to determine
@@ -1939,7 +1939,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self.extrinsic_elements: list[str] = []
 
         # _from_vaspruns or _from_entries depending on input
-        if not isinstance(entries, (str, PathLike, list)):
+        if not isinstance(entries, str | PathLike | list):
             raise TypeError(
                 f"`entries` must be either a path to a directory containing VASP outputs, "
                 f"a list of paths, or a list of ComputedEntry/ComputedStructureEntry objects, "
@@ -1949,12 +1949,12 @@ class CompetingPhasesAnalyzer(MSONable):
         self.vasprun_paths: list[str] = []
         self.parsed_folders: list[str] = []
 
-        if isinstance(entries, (str, PathLike)) or isinstance(entries[0], (str, PathLike)):
+        if isinstance(entries, str | PathLike) or isinstance(entries[0], str | PathLike):
             self._from_vaspruns(path=entries, subfolder=subfolder, verbose=verbose, processes=processes)
         else:
             self._from_entries(entries)
 
-    def _from_entries(self, entries: list[Union[ComputedEntry, ComputedStructureEntry]]):
+    def _from_entries(self, entries: list[ComputedEntry | ComputedStructureEntry]):
         r"""
         Initialises the ``CompetingPhasesAnalyzer`` object from a list of
         ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
@@ -1966,9 +1966,9 @@ class CompetingPhasesAnalyzer(MSONable):
                 potential limits.
         """
         self.entries = entries
-        intrinsic_entries: list[Union[ComputedEntry, ComputedStructureEntry]] = []
-        extrinsic_entries: list[Union[ComputedEntry, ComputedStructureEntry]] = []
-        bulk_comp_entries: list[Union[ComputedEntry, ComputedStructureEntry]] = []
+        intrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
+        extrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
+        bulk_comp_entries: list[ComputedEntry | ComputedStructureEntry] = []
         self.elemental_energies: dict[str, float] = {}
 
         for entry in entries:
@@ -2098,10 +2098,10 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def _from_vaspruns(
         self,
-        path: Union[PathLike, list[PathLike]] = "CompetingPhases",
-        subfolder: Optional[PathLike] = "vasp_std",
+        path: PathLike | list[PathLike] = "CompetingPhases",
+        subfolder: PathLike | None = "vasp_std",
         verbose: bool = True,
-        processes: Optional[int] = None,
+        processes: int | None = None,
     ):
         r"""
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
@@ -2261,7 +2261,7 @@ class CompetingPhasesAnalyzer(MSONable):
         electronic_unconverged_vaspruns = []
         ionic_unconverged_vaspruns = []
         for result in parsing_results:
-            if isinstance(result[0], (ComputedEntry, ComputedStructureEntry)):
+            if isinstance(result[0], ComputedEntry | ComputedStructureEntry):
                 # successful parse; result is entry, parsed folder, converged electronic and ionic
                 self.entries.append(result[0])
                 self.parsed_folders.append(result[1])
@@ -2286,6 +2286,7 @@ class CompetingPhasesAnalyzer(MSONable):
         for unconverged_vaspruns, unconverged_type in zip(
             [electronic_unconverged_vaspruns, ionic_unconverged_vaspruns],
             ["Electronic", "Ionic"],
+            strict=False,
         ):
             if unconverged_vaspruns:
                 warnings.warn(
@@ -2427,8 +2428,8 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def calculate_chempots(
         self,
-        extrinsic_species: Optional[Union[str, Element, list[str], list[Element]]] = None,
-        sort_by: Optional[str] = None,
+        extrinsic_species: str | Element | list[str] | list[Element] | None = None,
+        sort_by: str | None = None,
         verbose: bool = True,
     ):
         """
@@ -2639,7 +2640,7 @@ class CompetingPhasesAnalyzer(MSONable):
             first_half = formation_energy_data[:mid]
             last_half = formation_energy_data[mid:]
 
-            for i, j in zip(first_half, last_half):
+            for i, j in zip(first_half, last_half, strict=False):
                 kpoints1 = i.get("k-points", "0x0x0").split("x")
                 fe1 = i["Formation Energy (eV/fu)"]
                 kpoints2 = j.get("k-points", "0x0x0").split("x")
@@ -2683,16 +2684,16 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def plot_chempot_heatmap(
         self,
-        dependent_element: Optional[Union[str, Element]] = None,
-        xlim: Optional[tuple[float, float]] = None,
-        ylim: Optional[tuple[float, float]] = None,
-        cbar_range: Optional[tuple[float, float]] = None,
-        colormap: Optional[Union[str, colors.Colormap]] = None,
-        padding: Optional[float] = None,
-        title: Union[str, bool] = False,
-        label_positions: Union[list[float], dict[str, float], bool] = True,
-        filename: Optional[PathLike] = None,
-        style_file: Optional[PathLike] = None,
+        dependent_element: str | Element | None = None,
+        xlim: tuple[float, float] | None = None,
+        ylim: tuple[float, float] | None = None,
+        cbar_range: tuple[float, float] | None = None,
+        colormap: str | colors.Colormap | None = None,
+        padding: float | None = None,
+        title: str | bool = False,
+        label_positions: list[float] | dict[str, float] | bool = True,
+        filename: PathLike | None = None,
+        style_file: PathLike | None = None,
     ) -> plt.Figure:
         """
         Plot a heatmap of the chemical potentials for a ternary system.
@@ -3028,7 +3029,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
 def _parse_entry_from_vasprun_and_catch_exception(
     vasprun_path: PathLike,
-) -> tuple[Union[str, Vasprun], PathLike, bool, bool]:
+) -> tuple[str | Vasprun, PathLike, bool, bool]:
     """
     Parse a VASP ``vasprun.xml`` file into a ``ComputedStructureEntry``,
     catching any exceptions and returning the error message and the path to the
@@ -3061,7 +3062,7 @@ def _parse_entry_from_vasprun_and_catch_exception(
 
 
 def _possible_label_positions_from_bbox_intersections(
-    intersections: Union[list[float], np.ndarray[float]], positions_per_line=3
+    intersections: list[float] | np.ndarray[float], positions_per_line=3
 ) -> np.ndarray[float]:
     """
     From a list or array of ``intersections``, which contains the intersections
@@ -3114,7 +3115,7 @@ def _possible_label_positions_from_bbox_intersections(
 
 def _find_best_label_positions(
     poss_label_positions, x_range=1, y_range=1, return_best_norm_dist=False
-) -> Union[np.ndarray, tuple[np.ndarray, float]]:
+) -> np.ndarray | tuple[np.ndarray, float]:
     """
     From an array of possible label positions, find the best possible
     combination of label positions which maximises the distance between labels
@@ -3253,7 +3254,9 @@ def combine_extrinsic(first, second, extrinsic_species):
     cpa1 = copy.deepcopy(first)
     cpa2 = copy.deepcopy(second)
     new_limits = {}
-    for (k1, v1), (k2, v2) in zip(list(cpa1["limits"].items()), list(cpa2["limits"].items())):
+    for (k1, v1), (k2, v2) in zip(
+        list(cpa1["limits"].items()), list(cpa2["limits"].items()), strict=False
+    ):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
         else:
@@ -3266,6 +3269,7 @@ def combine_extrinsic(first, second, extrinsic_species):
     for (k1, v1), (k2, v2) in zip(
         list(cpa1["limits_wrt_el_refs"].items()),
         list(cpa2["limits_wrt_el_refs"].items()),
+        strict=False,
     ):
         if k2.rsplit("-", 1)[0] in k1:
             new_key = k1 + "-" + k2.rsplit("-", 1)[1]
