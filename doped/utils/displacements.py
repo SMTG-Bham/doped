@@ -496,7 +496,7 @@ def calc_displacements_ellipsoid(
             Default is ``False``.
 
     Returns:
-    - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, aniostropy_df)
+    - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, aniostropy_df):
         A tuple containing the ellipsoid's center, radii, rotation matrix, and
         a dataframe of anisotropy information, or ``(None, None, None, None)`` if
         fitting was unsuccessful.

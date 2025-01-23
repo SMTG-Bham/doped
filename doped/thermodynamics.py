@@ -4670,6 +4670,7 @@ class FermiSolver(MSONable):
             pd.DataFrame:
                 A ``DataFrame`` containing the calculated defect and carrier concentrations,
                 along with the self-consistent Fermi level. The columns include:
+
                     - "Defect": The defect type.
                     - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
                     - "Temperature": The temperature at which the calculation was performed.
@@ -4881,8 +4882,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             append_chempots (bool):
                 Whether to append the chemical potentials (and effective dopant
@@ -4900,6 +4901,7 @@ class FermiSolver(MSONable):
                 under pseudo-equilibrium conditions, along with the self-consistent
                 Fermi level.
                 The columns include:
+
                     - "Defect": The defect type.
                     - "Concentration (cm^-3)": The concentration of the defect in cm^-3.
                     - "Annealing Temperature": The annealing temperature.
@@ -5193,8 +5195,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
@@ -5363,8 +5365,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
@@ -5526,8 +5528,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
@@ -5642,7 +5644,7 @@ class FermiSolver(MSONable):
         concentrations and Fermi level at each set of chemical potentials.
 
         Note that this function only solves for the Fermi level and
-        defect/carrier concentrations _at the given chemical potentials_
+        defect/carrier concentrations `at the given chemical potentials`
         (and not at any points between them), whereas
         ``scan_chemical_potential_grid``, ``interpolate_chempots`` and
         ``optimise`` scan over the grid/points between chemical potential
@@ -5750,8 +5752,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
@@ -5893,8 +5895,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
@@ -6082,8 +6084,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge states
@@ -6631,8 +6633,8 @@ class FermiSolver(MSONable):
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
                 Any defects whose names begin with a string in this list will be
-                excluded from high-temperature concentration fixing (e.g. "v_" will
-                match all vacancy defects with ``doped``\-formatted names).
+                excluded from high-temperature concentration fixing (e.g. ``"v_"``
+                will match all vacancy defects with ``doped``\-formatted names).
                 Defaults to ``None``.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge

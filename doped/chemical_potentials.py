@@ -1895,13 +1895,14 @@ class CompetingPhasesAnalyzer(MSONable):
                 faster than serial processing. Set to 1 to prevent multiprocessing.
 
         Key attributes:
-            composition (str): The bulk (host) composition.
+            composition (str):
+                The bulk (host) composition.
             chempots (dict):
                 Dictionary of the chemical potential limits for the host
-                material, in the ``doped`` format (i.e. ``{"limits": [{'limit':
-                [chempot_dict]}], ...}``). This can be directly used with the
-                ``DefectThermodynamics`` plotting & analysis methods, and saved
-                to file with ``dumpfn`` from ``monty.serialization``.
+                material, in the ``doped`` format (i.e.
+                ``{"limits": [{'limit': [chempot_dict]}], ...}``). This can be
+                directly used with the ``DefectThermodynamics`` plotting & analysis
+                methods, and saved to file with ``dumpfn`` from ``monty.serialization``.
             chempots_df (DataFrame):
                 ``DataFrame`` of the chemical potential limits for the host.
             elements (list):
