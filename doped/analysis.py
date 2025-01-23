@@ -1089,6 +1089,8 @@ class DefectsParser:
                 f"expected (see `DefectsParser` docstring)."
             )
 
+        parsed_defect_entries = sort_defect_entries(parsed_defect_entries)  # type: ignore
+
         # check if there are duplicate entries in the parsed defect entries, warn and remove:
         energy_entries_dict: dict[float, list[DefectEntry]] = {}  # {energy: [defect_entry]}
         for defect_entry in parsed_defect_entries:  # find duplicates by comparing supercell energies
@@ -1185,7 +1187,7 @@ class DefectsParser:
         self.defect_dict.update(
             {defect_entry.name: defect_entry for defect_entry in new_named_defect_entries_dict.values()}
         )
-        self.defect_dict = sort_defect_entries(self.defect_dict)  # sort defect entries
+        self.defect_dict = sort_defect_entries(self.defect_dict)  # type: ignore
 
         FNV_correction_errors = []
         eFNV_correction_errors = []
