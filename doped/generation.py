@@ -6,12 +6,13 @@ calculations.
 import contextlib
 import copy
 import logging
+import multiprocessing
 import operator
 import warnings
 from collections import defaultdict
 from functools import partial, reduce
 from itertools import chain
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 from typing import TYPE_CHECKING, Any, Optional, Union, cast
 from unittest.mock import MagicMock
 
@@ -55,6 +56,8 @@ from doped.utils.plotting import format_defect_name
 
 if TYPE_CHECKING:
     from ase.atoms import Atoms
+
+mp = multiprocessing.get_context("forkserver")  # https://github.com/python/cpython/pull/100229
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 
@@ -1822,7 +1825,7 @@ class DefectsGenerator(MSONable):
             if len(self.primitive_structure) > 8 and processes != 1:
                 # skip for small systems as communication overhead / process initialisation outweighs
                 # speedup
-                with Pool(processes=processes or cpu_count() - 1) as pool:
+                with mp.Pool(processes=processes or cpu_count() - 1) as pool:
                     for result in pool.imap_unordered(partial_func, defect_list):
                         defect_entry_list.append(result)
                         pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
