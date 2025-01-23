@@ -8,9 +8,10 @@ publication-quality outputs.
 """
 
 import contextlib
+import multiprocessing
 import os
 import warnings
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
@@ -63,6 +64,8 @@ from doped.utils.symmetry import (
 
 if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
+
+mp = multiprocessing.get_context("forkserver")  # https://github.com/python/cpython/pull/100229
 
 
 def _custom_formatwarning(
@@ -935,7 +938,7 @@ class DefectsParser:
                 ]
                 pbar.set_description("Setting up multiprocessing")
                 if self.processes > 1:
-                    with Pool(processes=self.processes) as pool:  # result is parsed_defect_entry, warnings
+                    with mp.Pool(processes=self.processes) as pool:  # -> parsed_defect_entry, warnings
                         results = pool.imap_unordered(
                             self._parse_defect_and_handle_warnings, folders_to_process
                         )
