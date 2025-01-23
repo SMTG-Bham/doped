@@ -7,10 +7,9 @@ import itertools
 import operator
 import re
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from fractions import Fraction
 from functools import lru_cache
-from typing import Callable
 
 import numpy as np
 from numpy.typing import NDArray
@@ -128,7 +127,7 @@ def _parse_site_species_str(site: Site, wout_charge: bool = False):
         return site._species.symbol
     if isinstance(site._species, str):
         species_string = site._species
-    elif isinstance(site._species, (Composition, dict)):
+    elif isinstance(site._species, Composition | dict):
         species_string = str(next(iter(site._species)))
     else:
         raise ValueError(f"Unexpected species type: {type(site._species)}")
@@ -175,7 +174,7 @@ def _periodic_site__hash__(self):
     Custom ``__hash__`` method for ``PeriodicSite`` instances.
     """
     property_dict = (
-        {k: tuple(v) if isinstance(v, (list, np.ndarray)) else v for k, v in self.properties.items()}
+        {k: tuple(v) if isinstance(v, list | np.ndarray) else v for k, v in self.properties.items()}
         if self.properties
         else {}
     )
@@ -446,7 +445,7 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     # remove nodes less than 0.5 Å from sites in the structure
     voronoi_coords = remove_collisions(voronoi_coords, structure=prim_structure, min_dist=0.5)
     # cluster nodes within 0.2 Å of each other:
-    prim_vnodes: np.array = _doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
+    prim_vnodes: np.ndarray = _doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
 
     # map back to the supercell
     sm = StructureMatcher(primitive_cell=False, attempt_supercell=True)

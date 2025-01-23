@@ -16,7 +16,7 @@ v.3.0.0
   states etc), with a number of convenience functions (e.g. for scanning temperature / chemical potentials
   etc, optimising output properties over many-dimensional chemical potential spaces etc). Usage
   demonstrated in https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html.
-- Add ``is_shallow`` function, and ``DefectThermodynamics._get_in_gap_fermi_level_stability_window``
+- Add ``is_shallow`` ``DefectEntry`` property, and ``DefectThermodynamics._get_in_gap_fermi_level_stability_window``
   method. Shallow defect states now automatically excluded from formation energy diagram plots for cleaner
   outputs, controllable with the ``unstable_entries`` kwarg. Large charge correction errors for
   shallow/unstable defects (typically higher and a common indication of 'false charge state' behaviour)

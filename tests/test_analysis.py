@@ -28,7 +28,7 @@ from doped.analysis import (
 )
 from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
-from doped.utils.eigenvalues import get_eigenvalue_analysis, is_shallow
+from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
     Vasprun,
     get_defect_type_and_composition_diff,
@@ -91,6 +91,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         cls.moved_v_Cd_example_dirs = []
 
         for i in os.listdir(cls.v_Cd_example_dir):
+            # first clear these directories from higher level CdTe example folder, in case previous test
+            # failed without clearing the directories:
+            if_present_rm(os.path.join(cls.CdTe_EXAMPLE_DIR, i))
             shutil.move(os.path.join(cls.v_Cd_example_dir, i), os.path.join(cls.CdTe_EXAMPLE_DIR, i))
             cls.moved_v_Cd_example_dirs.append(i)
 
@@ -135,6 +138,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     def tearDownClass(cls):
         for i in ["CdTe_bulk", "v_Cd_0", "v_Cd_-1", "v_Cd_-2"]:
             shutil.move(os.path.join(cls.CdTe_EXAMPLE_DIR, i), os.path.join(cls.v_Cd_example_dir, i))
+            if_present_rm(os.path.join(cls.CdTe_EXAMPLE_DIR, i))
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
@@ -1008,14 +1012,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, w = _create_dp_and_capture_warnings(
             self.SrTiO3_DATA_DIR, dielectric=6.33, parse_projected_eigen=False
         )  # wrong dielectric from Kanta
+        print(dp.defect_dict.keys())
         assert len(w) == 1
         assert all(
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                "['vac_O_1', 'vac_O_0', 'vac_O_2']:\n[('LASPH', False, True)]",
-            ]
-        )
+                "['vac_O_2', 'vac_O_1', 'vac_O_0']:\n[('LASPH', False, True)]",
+            ]  # defect entries are sorted by sort_defect_entries, which should make this ordering
+        )  # deterministic
 
         assert len(dp.defect_dict) == 3
         self._check_DefectsParser(dp)
@@ -2359,14 +2364,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         In this test case, we look at Te_i^+1 ground-state and metastable
         structures from Kavanagh et al. 2022 doi.org/10.1039/D2FD00043A.
         """
-        try:
-            from pydefect.analyzer.calc_results import CalcResults
-            from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
-        except ImportError as exc:
-            raise ImportError(
-                "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
-                "You can do this by running `pip install pydefect`."
-            ) from exc
+        with warnings.catch_warnings():
+            try:
+                from pydefect.analyzer.calc_results import CalcResults
+                from pydefect.cli.vasp.make_efnv_correction import make_efnv_correction
+            except ImportError as exc:
+                raise ImportError(
+                    "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
+                    "You can do this by running `pip install pydefect`."
+                ) from exc
 
         def _make_calc_results(directory) -> CalcResults:
             vasprun = get_vasprun(f"{directory}/vasprun.xml.gz")
@@ -2859,12 +2865,12 @@ class DefectsParsingTestCase(unittest.TestCase):
 
             cbm_orbital_diffs1 = [subdict.pop("cbm_orbital_diff") for subdict in d1["states"]]
             cbm_orbital_diffs2 = [subdict.pop("cbm_orbital_diff") for subdict in d2["states"]]
-            for i, j in zip(cbm_orbital_diffs1, cbm_orbital_diffs2):
+            for i, j in zip(cbm_orbital_diffs1, cbm_orbital_diffs2, strict=False):
                 print(f"cbm_orbital_diffs: {i:.3f} vs {j:.3f}")
                 assert np.isclose(i, j, atol=orb_diff_tol)
             vbm_orbital_diffs1 = [subdict.pop("vbm_orbital_diff") for subdict in d1["states"]]
             vbm_orbital_diffs2 = [subdict.pop("vbm_orbital_diff") for subdict in d2["states"]]
-            for i, j in zip(vbm_orbital_diffs1, vbm_orbital_diffs2):
+            for i, j in zip(vbm_orbital_diffs1, vbm_orbital_diffs2, strict=False):
                 print(f"vbm_orbital_diffs: {i:.3f} vs {j:.3f}")
                 assert np.isclose(i, j, atol=orb_diff_tol)
 
@@ -2874,7 +2880,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             orb_infos_orbitals2 = [
                 subdict["vbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]
             ] + [subdict["cbm_info"]["orbital_info"].pop("orbitals") for subdict in d2["states"]]
-            for i, j in zip(orb_infos_orbitals1, orb_infos_orbitals2):
+            for i, j in zip(orb_infos_orbitals1, orb_infos_orbitals2, strict=False):
                 print(f"orbital_info_orbitals: {i} vs {j}")
                 for k, v in i.items():
                     assert np.allclose(v, j[k], atol=orb_diff_tol)
@@ -2949,7 +2955,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not any(
             [bes.has_donor_phs, bes.has_occupied_localized_state, bes.has_unoccupied_localized_state]
         )
-        assert is_shallow(dp.defect_dict["v_Cu_0"])
+        assert dp.defect_dict["v_Cu_0"].is_shallow
 
         print("Testing v_Cu_0 with plot = False")
         bes2 = dp.defect_dict["v_Cu_0"].get_eigenvalue_analysis(

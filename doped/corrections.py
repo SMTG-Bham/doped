@@ -38,7 +38,6 @@ eFNV) were developed, they should be used here.
 import contextlib
 import os
 import warnings
-from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -101,10 +100,10 @@ def _get_and_check_metadata(entry, key, display_name):
 
 
 def _check_if_pathlike_and_get_locpot_or_core_pots(
-    locpot_or_outcar: Union[Locpot, Outcar, PathLike, dict],
+    locpot_or_outcar: Locpot | Outcar | PathLike | dict,
     obj_type: str = "locpot",
     dir_type: str = "",
-    total_energy: Optional[Union[list, float]] = None,
+    total_energy: list | float | None = None,
 ):
     if isinstance(locpot_or_outcar, PathLike):
         if obj_type == "locpot":
@@ -118,7 +117,7 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
             locpot_or_outcar, dir_type=dir_type, total_energy=total_energy
         )
 
-    if not isinstance(locpot_or_outcar, (Locpot, Outcar, dict)):
+    if not isinstance(locpot_or_outcar, Locpot | Outcar | dict):
         raise TypeError(
             f"`{obj_type}` input must be either a path to a {obj_type.upper()} file or a pymatgen "
             f"{obj_type.upper()[0]+obj_type[1:]} object, but got {type(locpot_or_outcar)} instead."
@@ -129,14 +128,14 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
 
 def get_freysoldt_correction(
     defect_entry,
-    dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-    defect_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
-    bulk_locpot: Optional[Union[PathLike, Locpot, dict]] = None,
+    dielectric: float | np.ndarray | list | None = None,
+    defect_locpot: PathLike | Locpot | dict | None = None,
+    bulk_locpot: PathLike | Locpot | dict | None = None,
     plot: bool = False,
-    filename: Optional[PathLike] = None,
-    axis: Optional[int] = None,
+    filename: PathLike | None = None,
+    axis: int | None = None,
     verbose: bool = True,
-    style_file: Optional[PathLike] = None,
+    style_file: PathLike | None = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -331,15 +330,15 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
 
 def get_kumagai_correction(
     defect_entry,
-    dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-    defect_region_radius: Optional[float] = None,
-    excluded_indices: Optional[list[int]] = None,
-    defect_outcar: Optional[Union[PathLike, Outcar]] = None,
-    bulk_outcar: Optional[Union[PathLike, Outcar]] = None,
+    dielectric: float | np.ndarray | list | None = None,
+    defect_region_radius: float | None = None,
+    excluded_indices: list[int] | None = None,
+    defect_outcar: PathLike | Outcar | None = None,
+    bulk_outcar: PathLike | Outcar | None = None,
     plot: bool = False,
-    filename: Optional[PathLike] = None,
+    filename: PathLike | None = None,
     verbose: bool = True,
-    style_file: Optional[PathLike] = None,
+    style_file: PathLike | None = None,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -419,43 +418,38 @@ def get_kumagai_correction(
         CorrectionResults (summary of the corrections applied and metadata), and
         the matplotlib figure object if ``plot`` is True.
     """
-    orig_simplefilter = warnings.simplefilter
-    warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
+    with warnings.catch_warnings():  # avoid vise warning suppression:
+        import logging
 
-    # suppress pydefect INFO messages
-    import logging
+        try:
+            from vise import user_settings
 
-    try:
-        from vise import user_settings
+            user_settings.logger.setLevel(logging.CRITICAL)  # suppress pydefect INFO messages
+            from pydefect.analyzer.calc_results import CalcResults
+            from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
+            from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+            from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+            from pydefect.corrections.ewald import Ewald
+            from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+            from pydefect.defaults import defaults
+            from pydefect.util.error_classes import SupercellError
 
-        user_settings.logger.setLevel(logging.CRITICAL)
-        from pydefect.analyzer.calc_results import CalcResults
-        from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
-        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
-        from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
-        from pydefect.corrections.ewald import Ewald
-        from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
-        from pydefect.defaults import defaults
-        from pydefect.util.error_classes import SupercellError
-
-    except ImportError as exc:
-        raise ImportError(
-            "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
-            "You can do this by running `pip install pydefect`."
-        ) from exc
-
-    warnings.simplefilter = orig_simplefilter  # reset to original
+        except ImportError as exc:
+            raise ImportError(
+                "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
+                "You can do this by running `pip install pydefect`."
+            ) from exc
 
     def doped_make_efnv_correction(
         charge: float,
         calc_results: CalcResults,
         perfect_calc_results: CalcResults,
-        dielectric_tensor: np.array,
-        defect_region_radius: Optional[float] = None,
-        defect_coords: Optional[Union[np.array, list]] = None,
+        dielectric_tensor: np.ndarray,
+        defect_region_radius: float | None = None,
+        defect_coords: np.ndarray | list | None = None,
         accuracy: float = defaults.ewald_accuracy,
         unit_conversion: float = 180.95128169876497,
-        excluded_indices: Optional[list] = None,
+        excluded_indices: list | None = None,
     ):
         """
         This is a modified version of pydefect's make_efnv_correction function
@@ -495,7 +489,7 @@ def get_kumagai_correction(
                 pot = calc_results.potentials[d] - perfect_calc_results.potentials[p]
                 sites.append(PotentialSite(specie, distance, pot, None))
                 coord = calc_results.structure[d].frac_coords
-                rel_coords.append([x - y for x, y in zip(coord, defect_coords)])
+                rel_coords.append([x - y for x, y in zip(coord, defect_coords, strict=False)])
 
         lattice = calc_results.structure.lattice
         ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
@@ -504,7 +498,7 @@ def get_kumagai_correction(
         if defect_region_radius is None:
             defect_region_radius = calc_max_sphere_radius(lattice.matrix)
 
-        for site, rel_coord in zip(sites, rel_coords):
+        for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:
                 if charge == 0:
                     site.pc_potential = 0
@@ -528,7 +522,7 @@ def get_kumagai_correction(
     dielectric = _convert_dielectric_to_tensor(dielectric)
 
     core_potentials_dict = {}
-    for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar]):
+    for key, outcar in zip(["defect", "bulk"], [defect_outcar, bulk_outcar], strict=False):
         total_energy = []
         with contextlib.suppress(Exception):
             total_energy.append(

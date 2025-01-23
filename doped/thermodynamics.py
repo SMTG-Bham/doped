@@ -8,11 +8,11 @@ import contextlib
 import importlib.util
 import os
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain, product
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, TypeAlias, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +37,7 @@ from doped.core import (
     _no_chempots_warning,
     _orientational_degeneracy_warning,
 )
-from doped.generation import _sort_defect_entries
+from doped.generation import sort_defect_entries
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -82,7 +82,7 @@ def _raise_limit_with_user_chempots_error(no_chempots=True):
     )
 
 
-def _parse_limit(chempots: dict, limit: Optional[str] = None):
+def _parse_limit(chempots: dict, limit: str | None = None):
     if limit is not None:
         if limit in chempots["limits"]:
             return limit  # direct match, just return limit name
@@ -132,7 +132,7 @@ def _get_limit_name_from_dict(limit, limit_rich_poor_dict, bracket=False):
     return limit
 
 
-def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]:
+def _update_old_chempots_dict(chempots: dict | None = None) -> dict | None:
     """
     Update a chempots dict in the old ``doped`` format (i.e. with ``facets``
     rather than ``limits``) to that of the new format.
@@ -148,8 +148,8 @@ def _update_old_chempots_dict(chempots: Optional[dict] = None) -> Optional[dict]
 
 
 def _parse_chempots(
-    chempots: Optional[dict] = None, el_refs: Optional[dict] = None, update_el_refs: bool = False
-) -> tuple[Optional[dict], Optional[dict]]:
+    chempots: dict | None = None, el_refs: dict | None = None, update_el_refs: bool = False
+) -> tuple[dict | None, dict | None]:
     """
     Parse the chemical potentials input, formatting them in the ``doped``
     format for use in analysis functions.
@@ -213,7 +213,7 @@ def _parse_chempots(
     return chempots, chempots.get("elemental_refs")
 
 
-def raw_energy_from_chempots(composition: Union[str, dict, Composition], chempots: dict) -> float:
+def raw_energy_from_chempots(composition: str | dict | Composition, chempots: dict) -> float:
     """
     Given an input composition (as a ``str``, ``dict`` or ``pymatgen``
     ``Composition`` object) and chemical potentials dictionary, get the
@@ -466,14 +466,14 @@ class DefectThermodynamics(MSONable):
 
     def __init__(
         self,
-        defect_entries: Union[dict[str, DefectEntry], list[DefectEntry]],
-        chempots: Optional[dict] = None,
-        el_refs: Optional[dict] = None,
-        vbm: Optional[float] = None,
-        band_gap: Optional[float] = None,
+        defect_entries: dict[str, DefectEntry] | list[DefectEntry],
+        chempots: dict | None = None,
+        el_refs: dict | None = None,
+        vbm: float | None = None,
+        band_gap: float | None = None,
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
-        bulk_dos: Optional[FermiDos] = None,
+        bulk_dos: FermiDos | None = None,
         skip_vbm_check: bool = False,
     ):
         r"""
@@ -699,7 +699,7 @@ class DefectThermodynamics(MSONable):
             )
             defect_entries_dict[entry_name] = entry
 
-        sorted_defect_entries_dict = _sort_defect_entries(defect_entries_dict)
+        sorted_defect_entries_dict = sort_defect_entries(defect_entries_dict)
         self._defect_entries = sorted_defect_entries_dict
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
             warnings.filterwarnings("ignore", message="No chemical potentials")
@@ -772,7 +772,7 @@ class DefectThermodynamics(MSONable):
             skip_vbm_check=d.get("skip_vbm_check"),
         )
 
-    def to_json(self, filename: Optional[PathLike] = None):
+    def to_json(self, filename: PathLike | None = None):
         """
         Save the ``DefectThermodynamics`` object as a json file, which can be
         reloaded with the ``DefectThermodynamics.from_json()`` class method.
@@ -812,8 +812,8 @@ class DefectThermodynamics(MSONable):
         return loadfn(filename)
 
     def _get_chempots(
-        self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
-    ) -> tuple[Optional[dict], Optional[dict]]:
+        self, chempots: dict | None = None, el_refs: dict | None = None
+    ) -> tuple[dict | None, dict | None]:
         """
         Parse chemical potentials, either using input values (after formatting
         them in the ``doped`` format) or using the class attributes if set.
@@ -943,7 +943,7 @@ class DefectThermodynamics(MSONable):
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding facets
-            ints_and_facets_zip = zip(hs_ints.intersections, hs_ints.dual_facets)
+            ints_and_facets_zip = zip(hs_ints.intersections, hs_ints.dual_facets, strict=False)
             # Only include the facets corresponding to entries, not the boundaries
             total_entries = len(sorted_defect_entries)
             ints_and_facets_filter = filter(
@@ -971,7 +971,7 @@ class DefectThermodynamics(MSONable):
             transition_level_map, all_entries, stable_entries, defect_charge_map = output_dicts
 
             if len(ints_and_facets_list) > 0:  # unpack into lists
-                _, facets = zip(*ints_and_facets_list)
+                _, facets = zip(*ints_and_facets_list, strict=False)
                 transition_level_map[defect_name_wout_charge] = {  # map of transition level: charge states
                     intersection[0]: sorted(
                         [sorted_defect_entries[i].charge_state for i in facet], reverse=True
@@ -1155,7 +1155,7 @@ class DefectThermodynamics(MSONable):
                     f"{defect_entry.name}: \n{concatenated_warnings}"
                 )
 
-    def _check_bulk_chempots_compatibility(self, chempots: Optional[dict] = None):
+    def _check_bulk_chempots_compatibility(self, chempots: dict | None = None):
         r"""
         Helper function to quickly check if the supplied chemical potentials
         dictionary matches the bulk supercell used for the defect calculations,
@@ -1206,7 +1206,7 @@ class DefectThermodynamics(MSONable):
 
     def add_entries(
         self,
-        defect_entries: Union[dict[str, DefectEntry], list[DefectEntry]],
+        defect_entries: dict[str, DefectEntry] | list[DefectEntry],
         check_compatibility: bool = True,
     ):
         """
@@ -1351,7 +1351,7 @@ class DefectThermodynamics(MSONable):
         return self._bulk_dos
 
     @bulk_dos.setter
-    def bulk_dos(self, input_bulk_dos: Union[FermiDos, Vasprun, PathLike]):
+    def bulk_dos(self, input_bulk_dos: FermiDos | Vasprun | PathLike):
         r"""
         Set the ``pymatgen``  ``FermiDos`` for the bulk electronic density of
         states (DOS), for calculating Fermi level positions and defect/carrier
@@ -1460,12 +1460,12 @@ class DefectThermodynamics(MSONable):
 
     def get_formation_energies(
         self,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        fermi_level: Optional[float] = None,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
+        fermi_level: float | None = None,
         skip_formatting: bool = False,
-    ) -> Union[pd.DataFrame, list[pd.DataFrame]]:
+    ) -> pd.DataFrame | list[pd.DataFrame]:
         r"""
         Generates defect formation energy tables (DataFrames) for either a
         single chemical potential limit (i.e. phase diagram ``limit``) or each
@@ -1722,11 +1722,11 @@ class DefectThermodynamics(MSONable):
 
     def get_formation_energy(
         self,
-        defect_entry: Union[str, DefectEntry],
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        fermi_level: Optional[float] = None,
+        defect_entry: str | DefectEntry,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
+        fermi_level: float | None = None,
     ) -> float:
         r"""
         Compute the formation energy for a ``DefectEntry`` at a given chemical
@@ -1855,7 +1855,7 @@ class DefectThermodynamics(MSONable):
         )
 
     def get_dopability_limits(
-        self, chempots: Optional[dict] = None, limit: Optional[str] = None, el_refs: Optional[dict] = None
+        self, chempots: dict | None = None, limit: str | None = None, el_refs: dict | None = None
     ) -> pd.DataFrame:
         r"""
         Find the dopability limits of the defect system, searching over all
@@ -2044,7 +2044,7 @@ class DefectThermodynamics(MSONable):
         )
 
     def get_doping_windows(
-        self, chempots: Optional[dict] = None, limit: Optional[str] = None, el_refs: Optional[dict] = None
+        self, chempots: dict | None = None, limit: str | None = None, el_refs: dict | None = None
     ) -> pd.DataFrame:
         r"""
         Find the doping windows of the defect system, searching over all limits
@@ -2208,8 +2208,8 @@ class DefectThermodynamics(MSONable):
 
     def prune_to_stable_entries(
         self,
-        unstable_entries: Union[bool, str] = "not shallow",
-        shallow_charge_stability_tolerance: Optional[float] = None,
+        unstable_entries: bool | str = "not shallow",
+        shallow_charge_stability_tolerance: float | None = None,
         charge_stability_tolerance: float = 0,
         **kwargs,
     ) -> "DefectThermodynamics":
@@ -2287,14 +2287,13 @@ class DefectThermodynamics(MSONable):
         stability_tol = None if unstable_entries == "not shallow" else charge_stability_tolerance
 
         pruned_defect_entries = {}
-        from doped.utils.eigenvalues import is_shallow
 
         for name, defect_entry in self.defect_entries.items():
             fermi_stability_window = self._get_in_gap_fermi_level_stability_window(defect_entry)
             if stability_tol is not None and fermi_stability_window < stability_tol:
                 continue  # skip
 
-            if is_shallow(defect_entry) and fermi_stability_window < shallow_tol:
+            if defect_entry.is_shallow and fermi_stability_window < shallow_tol:
                 continue  # skip
 
             pruned_defect_entries[name] = defect_entry
@@ -2326,23 +2325,23 @@ class DefectThermodynamics(MSONable):
 
     def plot(
         self,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        all_entries: Union[bool, str] = False,
-        unstable_entries: Union[bool, str] = "not shallow",
-        chempot_table: Optional[bool] = None,
-        style_file: Optional[PathLike] = None,
-        xlim: Optional[tuple] = None,
-        ylim: Optional[tuple] = None,
-        fermi_level: Optional[float] = None,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
+        all_entries: bool | str = False,
+        unstable_entries: bool | str = "not shallow",
+        chempot_table: bool | None = None,
+        style_file: PathLike | None = None,
+        xlim: tuple | None = None,
+        ylim: tuple | None = None,
+        fermi_level: float | None = None,
         include_site_info: bool = False,
-        colormap: Optional[Union[str, colors.Colormap]] = None,
-        linestyles: Union[str, list[str]] = "-",
+        colormap: str | colors.Colormap | None = None,
+        linestyles: str | list[str] = "-",
         auto_labels: bool = False,
-        filename: Optional[PathLike] = None,
+        filename: PathLike | None = None,
         **kwargs,
-    ) -> Union[Figure, list[Figure]]:
+    ) -> Figure | list[Figure]:
         r"""
         Produce a defect formation energy vs Fermi level plot (a.k.a. a defect
         formation energy / transition level diagram), returning the
@@ -2571,7 +2570,7 @@ class DefectThermodynamics(MSONable):
         self,
         all: bool = False,
         format_charges: bool = True,
-    ) -> Union[pd.DataFrame, None]:
+    ) -> pd.DataFrame | None:
         """
         Return a ``DataFrame`` of the charge transition levels for the defects
         in the ``DefectThermodynamics`` object (stored in the
@@ -2745,7 +2744,7 @@ class DefectThermodynamics(MSONable):
     def get_symmetries_and_degeneracies(
         self,
         skip_formatting: bool = False,
-        symprec: Optional[float] = None,
+        symprec: float | None = None,
     ) -> pd.DataFrame:
         r"""
         Generates a table of the bulk-site & relaxed defect point group
@@ -2881,7 +2880,7 @@ class DefectThermodynamics(MSONable):
 
         return symmetry_df.set_index(["Defect", "q"])
 
-    def _get_and_set_fermi_level(self, fermi_level: Optional[float] = None) -> float:
+    def _get_and_set_fermi_level(self, fermi_level: float | None = None) -> float:
         """
         Handle the input Fermi level choice.
 
@@ -2899,10 +2898,10 @@ class DefectThermodynamics(MSONable):
     def get_equilibrium_concentrations(
         self,
         temperature: float = 300,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
-        fermi_level: Optional[float] = None,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
+        fermi_level: float | None = None,
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
@@ -3122,7 +3121,7 @@ class DefectThermodynamics(MSONable):
         )
 
     def _parse_fermi_dos(
-        self, bulk_dos: Optional[Union[PathLike, Vasprun, FermiDos]] = None, skip_vbm_check: bool = False
+        self, bulk_dos: PathLike | Vasprun | FermiDos | None = None, skip_vbm_check: bool = False
     ) -> FermiDos:
         if bulk_dos is None:
             return None
@@ -3162,15 +3161,15 @@ class DefectThermodynamics(MSONable):
 
     def get_equilibrium_fermi_level(
         self,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
+        bulk_dos: FermiDos | Vasprun | PathLike | None = None,
         temperature: float = 300,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
         return_concs: bool = False,
         skip_vbm_check: bool = False,
-        effective_dopant_concentration: Optional[float] = None,
-    ) -> Union[float, tuple[float, float, float]]:
+        effective_dopant_concentration: float | None = None,
+    ) -> float | tuple[float, float, float]:
         r"""
         Calculate the self-consistent Fermi level, at a given chemical
         potential limit and temperature, assuming `equilibrium` defect
@@ -3348,23 +3347,23 @@ class DefectThermodynamics(MSONable):
 
     def get_fermi_level_and_concentrations(
         self,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, PathLike]] = None,
+        bulk_dos: FermiDos | Vasprun | PathLike | None = None,
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
         delta_gap: float = 0,
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
         return_annealing_values: bool = False,
-        effective_dopant_concentration: Optional[float] = None,
+        effective_dopant_concentration: float | None = None,
         **kwargs,
-    ) -> Union[
-        tuple[float, float, float, pd.DataFrame],
-        tuple[float, float, float, pd.DataFrame, float, float, float, pd.DataFrame],
-    ]:
+    ) -> (
+        tuple[float, float, float, pd.DataFrame]
+        | tuple[float, float, float, pd.DataFrame, float, float, float, pd.DataFrame]
+    ):
         r"""
         Calculate the self-consistent Fermi level and corresponding
         carrier/defect calculations, for a given chemical potential limit,
@@ -3617,6 +3616,7 @@ class DefectThermodynamics(MSONable):
                 zip(
                     annealing_defect_concentrations.index,  # index is Defect name, when per_charge=False
                     annealing_defect_concentrations["Concentration (cm^-3)"],
+                    strict=False,
                 )
             )
 
@@ -3683,13 +3683,13 @@ class DefectThermodynamics(MSONable):
         fermi_level: float,
         total_concentrations: dict[str, float],
         temperature: float = 300,
-        chempots: Optional[dict] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict] = None,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = True,
-        effective_dopant_concentration: Optional[float] = None,
+        effective_dopant_concentration: float | None = None,
         lean: bool = True,
     ) -> pd.DataFrame:
         """
@@ -3773,7 +3773,7 @@ class DefectThermodynamics(MSONable):
 
         return conc_df
 
-    def _get_in_gap_fermi_level_stability_window(self, defect_entry: Union[str, DefectEntry]) -> float:
+    def _get_in_gap_fermi_level_stability_window(self, defect_entry: str | DefectEntry) -> float:
         """
         Convenience method to calculate the maximum difference between a Fermi
         level at which ``defect_entry`` is the ground-state charge state, and
@@ -3904,7 +3904,7 @@ DefectThermodynamics.get_quenched_fermi_level_and_concentrations = (
 )  # for backwards compatibility, to be removed in next major release
 
 
-def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: Optional[str] = None):
+def _check_chempots_and_limit_settings(chempots: dict | None = None, limit: str | None = None):
     """
     Convenience function to check the input values of ``chempots`` and
     ``limit`` for ``doped`` thermodynamic analysis functions, and warn users
@@ -3925,7 +3925,7 @@ def _check_chempots_and_limit_settings(chempots: Optional[dict] = None, limit: O
 
 def _add_effective_dopant_concentration(
     conc_df: pd.DataFrame,
-    effective_dopant_concentration: Optional[float] = None,
+    effective_dopant_concentration: float | None = None,
 ):
     """
     Add the effective dopant concentration to the concentration ``DataFrame``.
@@ -4033,7 +4033,7 @@ def _format_per_site_concentration(raw_concentration: float):
     return f"{raw_concentration * 100:.3e} %"
 
 
-def get_fermi_dos(dos_vr: Union[PathLike, Vasprun]):
+def get_fermi_dos(dos_vr: PathLike | Vasprun):
     """
     Create a ``FermiDos`` object from the provided ``dos_vr``, which can be
     either a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
@@ -4152,7 +4152,7 @@ def get_doping(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> f
     return h_conc - e_conc
 
 
-def scissor_dos(delta_gap: float, dos: Union[Dos, FermiDos], tol: float = 1e-8, verbose: bool = True):
+def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbose: bool = True):
     """
     Given an input Dos/FermiDos object, rigidly shifts the valence and
     conduction bands of the DOS object to give a band gap that is now
@@ -4254,9 +4254,9 @@ class FermiSolver(MSONable):
     def __init__(
         self,
         defect_thermodynamics: DefectThermodynamics,
-        bulk_dos: Optional[Union[FermiDos, Vasprun, "PathLike"]] = None,
-        chempots: Optional[dict] = None,
-        el_refs: Optional[dict] = None,
+        bulk_dos: Union[FermiDos, Vasprun, "PathLike"] | None = None,
+        chempots: dict | None = None,
+        el_refs: dict | None = None,
         backend: str = "doped",
         skip_vbm_check: bool = False,
     ):
@@ -4441,7 +4441,7 @@ class FermiSolver(MSONable):
                 "DefectThermodynamics object."
             )
 
-    def _activate_py_sc_fermi_backend(self, error_message: Optional[str] = None):
+    def _activate_py_sc_fermi_backend(self, error_message: str | None = None):
         try:
             from py_sc_fermi.defect_charge_state import DefectChargeState
             from py_sc_fermi.defect_species import DefectSpecies
@@ -4502,9 +4502,9 @@ class FermiSolver(MSONable):
     def _get_fermi_level_and_carriers(
         self,
         single_chempot_dict: dict[str, float],
-        el_refs: Optional[dict[str, float]] = None,
+        el_refs: dict[str, float] | None = None,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
+        effective_dopant_concentration: float | None = None,
     ) -> tuple[float, float, float]:
         """
         Calculate the equilibrium Fermi level and carrier concentrations under
@@ -4557,7 +4557,7 @@ class FermiSolver(MSONable):
         return fermi_level, electrons, holes
 
     def _get_and_check_thermo_chempots(
-        self, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+        self, chempots: dict | None = None, el_refs: dict | None = None
     ) -> tuple[dict, dict]:
         """
         Convenience method to get the ``chempots`` and ``el_refs`` from
@@ -4575,7 +4575,7 @@ class FermiSolver(MSONable):
         return chempots, el_refs
 
     def _get_single_chempot_dict(
-        self, limit: Optional[str] = None, chempots: Optional[dict] = None, el_refs: Optional[dict] = None
+        self, limit: str | None = None, chempots: dict | None = None, el_refs: dict | None = None
     ) -> tuple[dict[str, float], Any]:
         """
         Get the chemical potentials for a single limit (``limit``) from the
@@ -4602,11 +4602,11 @@ class FermiSolver(MSONable):
     def equilibrium_solve(
         self,
         single_chempot_dict: dict[str, float],
-        el_refs: Optional[dict[str, float]] = None,
+        el_refs: dict[str, float] | None = None,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
+        effective_dopant_concentration: float | None = None,
         append_chempots: bool = True,
-        fixed_defects: Optional[dict[str, float]] = None,
+        fixed_defects: dict[str, float] | None = None,
     ) -> pd.DataFrame:
         """
         Calculate the Fermi level and defect/carrier concentrations under
@@ -4756,12 +4756,12 @@ class FermiSolver(MSONable):
     def pseudo_equilibrium_solve(
         self,
         single_chempot_dict: dict[str, float],
-        el_refs: Optional[dict[str, float]] = None,
+        el_refs: dict[str, float] | None = None,
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         append_chempots: bool = True,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
@@ -5004,9 +5004,9 @@ class FermiSolver(MSONable):
 
     def _check_temperature_settings(
         self,
-        annealing_temperature: Optional[Union[float, list[float]]] = None,
-        temperature: Union[float, list[float]] = 300,
-        quenched_temperature: Union[float, list[float]] = 300,
+        annealing_temperature: float | list[float] | None = None,
+        temperature: float | list[float] = 300,
+        quenched_temperature: float | list[float] = 300,
         range=False,
     ):
         """
@@ -5032,13 +5032,13 @@ class FermiSolver(MSONable):
     def _solve(
         self,
         single_chempot_dict: dict[str, float],
-        el_refs: Optional[dict[str, float]] = None,
-        annealing_temperature: Optional[float] = None,
+        el_refs: dict[str, float] | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         append_chempots: bool = True,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
@@ -5070,15 +5070,15 @@ class FermiSolver(MSONable):
 
     def scan_temperature(
         self,
-        annealing_temperature_range: Optional[Union[float, list[float]]] = None,
-        quenched_temperature_range: Union[float, list[float]] = 300,
-        temperature_range: Union[float, list[float]] = 300,
-        chempots: Optional[dict[str, float]] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict[str, float]] = None,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        annealing_temperature_range: float | list[float] | None = None,
+        quenched_temperature_range: float | list[float] = 300,
+        temperature_range: float | list[float] = 300,
+        chempots: dict[str, float] | None = None,
+        limit: str | None = None,
+        el_refs: dict[str, float] | None = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -5240,15 +5240,15 @@ class FermiSolver(MSONable):
 
     def scan_dopant_concentration(
         self,
-        effective_dopant_concentration_range: Union[float, list[float]],
-        annealing_temperature: Optional[float] = None,
+        effective_dopant_concentration_range: float | list[float],
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
-        chempots: Optional[dict[str, float]] = None,
-        limit: Optional[str] = None,
-        el_refs: Optional[dict[str, float]] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        chempots: dict[str, float] | None = None,
+        limit: str | None = None,
+        el_refs: dict[str, float] | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -5403,15 +5403,15 @@ class FermiSolver(MSONable):
     def interpolate_chempots(
         self,
         n_points: int = 10,
-        chempots: Optional[Union[list[dict], dict]] = None,
-        limits: Optional[list[str]] = None,
-        el_refs: Optional[dict[str, float]] = None,
-        annealing_temperature: Optional[float] = None,
+        chempots: list[dict] | dict | None = None,
+        limits: list[str] | None = None,
+        el_refs: dict[str, float] | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -5626,15 +5626,15 @@ class FermiSolver(MSONable):
 
     def scan_chempots(
         self,
-        chempots: Optional[Union[list[dict[str, float]], dict[str, dict]]] = None,
-        limits: Optional[list[str]] = None,
-        el_refs: Optional[dict[str, float]] = None,
-        annealing_temperature: Optional[float] = None,
+        chempots: list[dict[str, float]] | dict[str, dict] | None = None,
+        limits: list[str] | None = None,
+        el_refs: dict[str, float] | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -5800,14 +5800,14 @@ class FermiSolver(MSONable):
 
     def scan_chemical_potential_grid(
         self,
-        chempots: Optional[dict] = None,
+        chempots: dict | None = None,
         n_points: int = 10,
-        annealing_temperature: Optional[float] = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -5925,7 +5925,7 @@ class FermiSolver(MSONable):
             fix_charge_states=fix_charge_states,
         )
 
-    def _parse_and_check_grid_like_chempots(self, chempots: Optional[dict] = None) -> tuple[dict, dict]:
+    def _parse_and_check_grid_like_chempots(self, chempots: dict | None = None) -> tuple[dict, dict]:
         r"""
         Parse a dictionary of chemical potentials for the chemical potential
         scanning functions, checking that it is in the correct format.
@@ -5966,15 +5966,15 @@ class FermiSolver(MSONable):
         self,
         target: str,
         min_or_max: str = "max",
-        chempots: Optional[dict] = None,
-        annealing_temperature: Optional[float] = None,
+        chempots: dict | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
         n_points: int = 10,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -6128,15 +6128,15 @@ class FermiSolver(MSONable):
         self,
         target: str,
         min_or_max: str = "max",
-        chempots: Optional[dict] = None,
-        annealing_temperature: Optional[float] = None,
+        chempots: dict | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
         n_points: int = 10,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -6206,17 +6206,17 @@ class FermiSolver(MSONable):
         self,
         target: str,
         min_or_max: str,
-        previous_value: Optional[float] = None,
+        previous_value: float | None = None,
         tolerance: float = 0.01,
-        chempots: Optional[Union[list[dict[str, float]], dict[str, dict]]] = None,
-        limits: Optional[list[str]] = None,
-        el_refs: Optional[dict[str, float]] = None,
-        annealing_temperature: Optional[float] = None,
+        chempots: list[dict[str, float]] | dict[str, dict] | None = None,
+        limits: list[str] | None = None,
+        el_refs: dict[str, float] | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         verbose: bool = False,
     ):
@@ -6277,15 +6277,15 @@ class FermiSolver(MSONable):
         self,
         target: str,
         min_or_max: str = "max",
-        chempots: Optional[dict] = None,
-        annealing_temperature: Optional[float] = None,
+        chempots: dict | None = None,
+        annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
         n_points: int = 10,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> pd.DataFrame:
         r"""
@@ -6383,10 +6383,10 @@ class FermiSolver(MSONable):
     def _generate_defect_system(
         self,
         single_chempot_dict: dict[str, float],
-        el_refs: Optional[dict[str, float]] = None,
+        el_refs: dict[str, float] | None = None,
         temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
     ) -> "DefectSystem":
         """
         Generates a ``py-sc-fermi`` ``DefectSystem`` object from
@@ -6499,8 +6499,8 @@ class FermiSolver(MSONable):
     def _fix_defect_concentrations(
         self,
         defect_system: "DefectSystem",
-        fixed_defects: Optional[dict[str, float]] = None,
-        fixed_concs: Optional[dict[str, float]] = None,
+        fixed_defects: dict[str, float] | None = None,
+        fixed_concs: dict[str, float] | None = None,
     ) -> None:
         """
         Utility method to fix the concentrations of defects specified by
@@ -6560,11 +6560,11 @@ class FermiSolver(MSONable):
         self,
         annealing_temperature: float,
         single_chempot_dict: dict[str, float],
-        el_refs: Optional[dict[str, float]] = None,
+        el_refs: dict[str, float] | None = None,
         quenched_temperature: float = 300,
-        effective_dopant_concentration: Optional[float] = None,
-        fixed_defects: Optional[dict[str, float]] = None,
-        free_defects: Optional[list[str]] = None,
+        effective_dopant_concentration: float | None = None,
+        fixed_defects: dict[str, float] | None = None,
+        free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
     ) -> "DefectSystem":
         r"""
@@ -6717,9 +6717,9 @@ def _get_label_and_charge(name: str) -> tuple[str, int]:
 
 def _get_py_sc_fermi_dos_from_fermi_dos(
     fermi_dos: FermiDos,
-    vbm: Optional[float] = None,
-    nelect: Optional[int] = None,
-    bandgap: Optional[float] = None,
+    vbm: float | None = None,
+    nelect: int | None = None,
+    bandgap: float | None = None,
 ) -> "DOS":
     """
     Given an input ``pymatgen`` ``FermiDos`` object, return a corresponding
@@ -6880,8 +6880,8 @@ def _get_min_max_target_values(
 
 
 def _ensure_list(
-    var: Optional[Union[float, int, range, list, np.ndarray]] = None
-) -> Optional[Union[list[Union[float, int]], np.ndarray[Union[float, int]]]]:
+    var: float | range | list | np.ndarray | None = None,
+) -> list[float | int] | np.ndarray[float | int] | None:
     if isinstance(var, range):
         return list(var)
-    return [var] if isinstance(var, (int, float)) else var
+    return [var] if isinstance(var, int | float) else var

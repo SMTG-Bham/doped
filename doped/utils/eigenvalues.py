@@ -3,56 +3,62 @@ Helper functions for setting up PHS analysis.
 
 Contains modified versions of functions from pydefect (https://github.com/kumagai-group/pydefect)
 and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``\s).
+
+Note that this module attempts to import modules from ``pydefect`` & ``vise``, which are highly-recommended
+but not strictly required dependencies of ``doped`` (currently not available on ``conda-forge``), and so
+any imports of code from this module will attempt their import, raising an ``ImportError`` if not
+available.
 """
 
-# suppress pydefect INFO messages
 import contextlib
-import logging
 import os
 import warnings
 from collections import defaultdict
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.core.structure import PeriodicSite
-from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_from_structures
-from doped.core import DefectEntry
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, get_procar
+from doped.core import DefectEntry, _parse_procar
+from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
 from doped.utils.plotting import _get_backend
-
-orig_simplefilter = warnings.simplefilter
-warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
 
 if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
 
-try:
-    from vise import user_settings
 
-    user_settings.logger.setLevel(logging.CRITICAL)
-    import pydefect.analyzer.make_band_edge_states
-    import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
-    from pydefect.analyzer.band_edge_states import BandEdgeOrbitalInfos, OrbitalInfo, PerfectBandEdgeState
-    from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
-    from pydefect.analyzer.make_band_edge_states import make_band_edge_states
-    from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
-    from pydefect.defaults import defaults
-    from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
+with warnings.catch_warnings():  # avoid vise warning suppression:
+    import logging
 
-except ImportError as exc:
-    raise ImportError(
-        "To perform eigenvalue & orbital analysis, you need to install pydefect. "
-        "You can do this by running `pip install pydefect`."
-    ) from exc
+    try:
+        from vise import user_settings
 
-warnings.simplefilter = orig_simplefilter  # reset to original
+        user_settings.logger.setLevel(logging.CRITICAL)
+        import pydefect.analyzer.make_band_edge_states
+        import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
+        from pydefect.analyzer.band_edge_states import (
+            BandEdgeOrbitalInfos,
+            BandEdgeStates,
+            EdgeInfo,
+            OrbitalInfo,
+            PerfectBandEdgeState,
+        )
+        from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
+        from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
+        from pydefect.defaults import defaults
+        from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
+
+    except ImportError as exc:
+        raise ImportError(
+            "To perform eigenvalue & orbital analysis, you need to install pydefect. "
+            "You can do this by running `pip install pydefect`."
+        ) from exc
 
 
 def band_edge_properties_from_vasprun(
@@ -119,8 +125,8 @@ def make_band_edge_orbital_infos(
     vbm: float,
     cbm: float,
     eigval_shift: float = 0.0,
-    neighbor_indices: Optional[list[int]] = None,
-    defect_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
+    neighbor_indices: list[int] | None = None,
+    defect_procar: Union["EasyunfoldProcar", Procar] | None = None,
 ):
     r"""
     Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
@@ -185,38 +191,14 @@ def make_band_edge_orbital_infos(
     )
 
 
-def _parse_procar(procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None):
-    """
-    Parse a ``procar`` input to a ``Procar`` object in the correct format.
-
-    Args:
-        procar (PathLike, EasyunfoldProcar, Procar):
-            Either a path to the ``VASP`` ``PROCAR``` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/``pymatgen``
-            ``Procar`` object.
-    """
-    if not hasattr(procar, "data"):  # not a parsed Procar object
-        if procar and hasattr(procar, "proj_data") and not isinstance(procar, (PathLike, Procar)):
-            if procar._is_soc:
-                procar.data = {Spin.up: procar.proj_data[0]}
-            else:
-                procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
-            del procar.proj_data
-
-        elif isinstance(procar, PathLike):  # path to PROCAR file
-            procar = get_procar(procar)
-
-    return procar
-
-
 def get_band_edge_info(
     bulk_vr: Vasprun,
     defect_vr: Vasprun,
-    bulk_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
-    defect_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
-    defect_supercell_site: Optional[PeriodicSite] = None,
+    bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    defect_supercell_site: PeriodicSite | None = None,
     neighbor_cutoff_factor: float = 1.3,
-):
+) -> tuple[BandEdgeOrbitalInfos, EdgeInfo, EdgeInfo]:
     """
     Generate metadata required for performing eigenvalue & orbital analysis,
     specifically ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo``
@@ -341,7 +323,9 @@ def _add_eigenvalues(
     and allow setting custom colors for occupied, unoccupied, and
     partially occupied states.
     """
-    for _spin_idx, (eo_by_spin, ax) in enumerate(zip(self._energies_and_occupations, self.axs)):
+    for _spin_idx, (eo_by_spin, ax) in enumerate(
+        zip(self._energies_and_occupations, self.axs, strict=False)
+    ):
         kpt_indices = []
         energies = []
         color_list = []
@@ -374,25 +358,22 @@ def _add_eigenvalues(
             )
 
 
-EigenvalueMplPlotter._add_eigenvalues = _add_eigenvalues
-
-
 def get_eigenvalue_analysis(
-    defect_entry: Optional[DefectEntry] = None,
+    defect_entry: DefectEntry | None = None,
     plot: bool = True,
-    filename: Optional[str] = None,
+    filename: str | None = None,
     ks_labels: bool = False,
-    style_file: Optional[str] = None,
-    bulk_vr: Optional[Union[PathLike, Vasprun]] = None,
-    bulk_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
-    defect_vr: Optional[Union[PathLike, Vasprun]] = None,
-    defect_procar: Optional[Union[PathLike, "EasyunfoldProcar", Procar]] = None,
+    style_file: str | None = None,
+    bulk_vr: PathLike | Vasprun | None = None,
+    bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    defect_vr: PathLike | Vasprun | None = None,
+    defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
     force_reparse: bool = False,
-    ylims: Optional[tuple[float, float]] = None,
-    legend_kwargs: Optional[dict] = None,
-    similar_orb_criterion: Optional[float] = None,
-    similar_energy_criterion: Optional[float] = None,
-):
+    ylims: tuple[float, float] | None = None,
+    legend_kwargs: dict | None = None,
+    similar_orb_criterion: float | None = None,
+    similar_energy_criterion: float | None = None,
+) -> BandEdgeStates | tuple[BandEdgeStates, plt.Figure]:
     r"""
     Get eigenvalue & orbital info (with automated classification of PHS states)
     for the band edge and in-gap electronic states for the input defect entry /
@@ -516,7 +497,8 @@ def get_eigenvalue_analysis(
             of 0.5 eV.
 
     Returns:
-        ``pydefect`` ``PerfectBandEdgeState`` class
+        ``pydefect`` ``BandEdgeStates`` object, containing the band-edge and
+        defect eigenvalue information, and the eigenvalue plot (if ``plot=True``).
     """
     if defect_entry is None:
         if not all([bulk_vr, defect_vr]):
@@ -615,15 +597,16 @@ def get_eigenvalue_analysis(
     defaults._similar_energy_criterion = similar_energy_criterion or max(0.25, abs(pot_diff) + 0.1)
 
     try:
-        bes = make_band_edge_states(band_orb, perfect)
+        bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
     except ValueError:  # increase to pydefect defaults:
         defaults._similar_orb_criterion = 0.35
         defaults._similar_energy_criterion = 0.5
         try:
-            bes = make_band_edge_states(band_orb, perfect)
+            bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
         except ValueError:
             defaults._similar_orb_criterion = 0.5
-            bes = make_band_edge_states(band_orb, perfect)  # if fails, let it raise pydefect error
+            # if fails, let it raise pydefect error:
+            bes = pydefect.analyzer.make_band_edge_states.make_band_edge_states(band_orb, perfect)
 
         if dynamic_criterion_warning:  # only warn if user has set custom criteria
             warnings.warn(
@@ -647,6 +630,7 @@ def get_eigenvalue_analysis(
     style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
+    EigenvalueMplPlotter._add_eigenvalues = _add_eigenvalues  # faster monkey-patch for adding eigenvalues
     emp = EigenvalueMplPlotter(
         title="Eigenvalues",
         band_edge_orb_infos=band_orb,
@@ -736,22 +720,3 @@ def get_eigenvalue_analysis(
         emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
 
     return bes, fig
-
-
-def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
-    """
-    Return whether a ``DefectEntry`` is determined to be a shallow (perturbed
-    host) state, based on ``pydefect`` eigenvalue analysis.
-
-    Args:
-        defect_entry (DefectEntry):
-            ``doped`` ``DefectEntry`` object.
-        default (bool):
-            Default value to return if the eigenvalue analysis fails
-            (e.g. if eigenvalue data is not present).
-            Default is ``False``.
-    """
-    try:
-        return defect_entry.get_eigenvalue_analysis(plot=False).is_shallow
-    except Exception:
-        return default
