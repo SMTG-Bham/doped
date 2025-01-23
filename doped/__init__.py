@@ -9,18 +9,13 @@ defect supercell calculations, and automatically parse and analyse the results.
 
 import contextlib
 import inspect
+import multiprocessing
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
 from packaging.version import parse
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
-
-# if date.today().weekday() in [5, 6]:
-#     print("""Working on the weekend, like usual...\n""")
-# if date.today().weekday() == 5:
-#     print("Seriously though, everyone knows Saturday's for the boys/girls...\n")
-# Killed by multiprocessing, # never forget
 
 
 def _check_pmg_compatibility():
@@ -90,3 +85,13 @@ def _doped_obj_properties_methods(obj):
                 methods.add(k)
     properties = {name for name, value in inspect.getmembers(type(obj)) if isinstance(value, property)}
     return attrs | properties, methods
+
+
+def get_mp_context():
+    """
+    Get a multiprocessing context that is compatible with the current OS.
+    """
+    try:
+        return multiprocessing.get_context("forkserver")
+    except ValueError:  # forkserver not available on Windows OS
+        return multiprocessing.get_context("spawn")

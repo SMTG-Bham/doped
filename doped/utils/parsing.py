@@ -10,7 +10,6 @@ import re
 import warnings
 from collections import defaultdict
 from functools import lru_cache
-from typing import Optional, Union
 
 import numpy as np
 from monty.io import reverse_readfile
@@ -159,7 +158,7 @@ def get_outcar(outcar_path: PathLike):
 
 
 def get_core_potentials_from_outcar(
-    outcar_path: PathLike, dir_type: str = "", total_energy: Optional[Union[list, float]] = None
+    outcar_path: PathLike, dir_type: str = "", total_energy: list | float | None = None
 ):
     """
     Get the core potentials from the OUTCAR file, which are needed for the
@@ -215,7 +214,7 @@ def _get_final_energy_from_outcar(outcar_path):
 
 
 def _get_core_potentials_from_outcar_obj(
-    outcar: Outcar, dir_type: str = "", total_energy: Optional[Union[list, float]] = None
+    outcar: Outcar, dir_type: str = "", total_energy: list | float | None = None
 ):
     if outcar.electrostatic_potential is None and not outcar.read_avg_core_poten():
         _raise_incomplete_outcar_error(outcar, dir_type=dir_type)
@@ -224,9 +223,7 @@ def _get_core_potentials_from_outcar_obj(
     return -1 * np.array(outcar.electrostatic_potential) or -1 * np.array(outcar.read_avg_core_poten()[-1])
 
 
-def _check_outcar_energy(
-    outcar: Union[Outcar, PathLike], total_energy: Optional[Union[list, float]] = None
-):
+def _check_outcar_energy(outcar: Outcar | PathLike, total_energy: list | float | None = None):
     if total_energy:
         outcar_energy = (
             outcar.final_energy if isinstance(outcar, Outcar) else _get_final_energy_from_outcar(outcar)
@@ -246,7 +243,7 @@ def _check_outcar_energy(
             )
 
 
-def _raise_incomplete_outcar_error(outcar: Union[PathLike, Outcar], dir_type: str = ""):
+def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""):
     """
     Raise error about supplied ``OUTCAR`` not having atomic core potential
     info.
@@ -346,7 +343,7 @@ def _get_output_files_and_check_if_multiple(output_file: PathLike = "vasprun.xml
 
 
 def get_defect_type_and_composition_diff(
-    bulk: Union[Structure, Composition], defect: Union[Structure, Composition]
+    bulk: Structure | Composition, defect: Structure | Composition
 ) -> tuple[str, dict]:
     """
     Get the difference in composition between a bulk structure and a defect
@@ -573,11 +570,11 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
 
 
 def find_nearest_coords(
-    candidate_frac_coords: Union[list, np.ndarray],
-    target_frac_coords: Union[list, np.ndarray],
+    candidate_frac_coords: list | np.ndarray,
+    target_frac_coords: list | np.ndarray,
     lattice: Lattice,
     return_idx: bool = False,
-) -> Union[tuple[Union[list, np.ndarray], int], Union[list, np.ndarray]]:
+) -> tuple[list | np.ndarray, int] | list | np.ndarray:
     """
     Find the nearest coords in ``candidate_frac_coords`` to
     ``target_frac_coords``.
@@ -608,8 +605,8 @@ def find_nearest_coords(
 
 
 def find_missing_idx(
-    frac_coords1: Union[list, np.ndarray],
-    frac_coords2: Union[list, np.ndarray],
+    frac_coords1: list | np.ndarray,
+    frac_coords2: list | np.ndarray,
     lattice: Lattice,
 ):
     """
@@ -647,10 +644,10 @@ def find_missing_idx(
 
 def _create_unrelaxed_defect_structure(
     bulk_supercell: Structure,
-    frac_coords: Optional[Union[list, np.ndarray]] = None,
-    new_species: Optional[str] = None,
-    bulk_site_idx: Optional[int] = None,
-    defect_site_idx: Optional[int] = None,
+    frac_coords: list | np.ndarray | None = None,
+    new_species: str | None = None,
+    bulk_site_idx: int | None = None,
+    defect_site_idx: int | None = None,
 ):
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
@@ -697,7 +694,7 @@ def _create_unrelaxed_defect_structure(
     return unrelaxed_defect_structure
 
 
-def get_wigner_seitz_radius(lattice: Union[Structure, Lattice]) -> float:
+def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     """
     Calculates the Wigner-Seitz radius of the structure, which corresponds to
     the maximum radius of a sphere fitting inside the cell.
@@ -717,27 +714,22 @@ def get_wigner_seitz_radius(lattice: Union[Structure, Lattice]) -> float:
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
 
-    orig_simplefilter = warnings.simplefilter
-    warnings.simplefilter = lambda *args, **kwargs: None  # monkey-patch to avoid vise warning suppression
+    with warnings.catch_warnings():
+        import logging
 
-    # suppress pydefect INFO messages
-    import logging
+        try:
+            from vise import user_settings
 
-    try:
-        from vise import user_settings
+            user_settings.logger.setLevel(logging.CRITICAL)  # suppress pydefect INFO messages
+            from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
 
-        user_settings.logger.setLevel(logging.CRITICAL)
-        from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
-
-    except ImportError:  # vise/pydefect not installed
-        distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
-        for i in range(3):
-            a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
-            a_k = lattice_matrix[i]
-            distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
-        return max(distances) / 2.0
-
-    warnings.simplefilter = orig_simplefilter  # reset to original
+        except ImportError:  # vise/pydefect not installed
+            distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
+            for i in range(3):
+                a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
+                a_k = lattice_matrix[i]
+                distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
+            return max(distances) / 2.0
 
     return calc_max_sphere_radius(lattice_matrix)
 
@@ -748,7 +740,7 @@ def check_atom_mapping_far_from_defect(
     defect_coords: np.ndarray[float],
     coords_are_cartesian: bool = False,
     displacement_tol: float = 0.5,
-    warning: Union[bool, str] = "verbose",
+    warning: bool | str = "verbose",
 ) -> bool:
     """
     Check the displacement of atoms far from the determined defect site, and
@@ -1139,7 +1131,7 @@ def _compare_incar_tags(
     def _compare_incar_vals(val1, val2):
         if isinstance(val1, str):
             return val1.split()[0].lower() == str(val2).split()[0].lower()
-        if isinstance(val1, (int, float)) and isinstance(val2, (int, float)):
+        if isinstance(val1, int | float) and isinstance(val2, int | float):
             return np.isclose(val1, val2, rtol=1e-3)
 
         return val1 == val2
@@ -1176,7 +1168,7 @@ def _compare_incar_tags(
     return True
 
 
-def get_magnetization_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float:
     """
     Determine the magnetization (number of spin-up vs spin-down electrons) from
     a ``Vasprun`` object.
@@ -1208,7 +1200,7 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
     return n_spin_up - n_spin_down
 
 
-def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
+def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     """
     Determine the number of electrons (``NELECT``) from a ``Vasprun`` object.
 
@@ -1238,7 +1230,7 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> Union[int, float]:
     return round(nelect, 2)
 
 
-def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> Union[int, float]:
+def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int | float:
     """
     Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
     corresponding to a neutral charge state for the structure.
@@ -1365,11 +1357,11 @@ def get_interstitial_site_and_orientational_degeneracy(
 
 
 def get_orientational_degeneracy(
-    defect_entry: Optional[DefectEntry] = None,
-    relaxed_point_group: Optional[str] = None,
-    bulk_site_point_group: Optional[str] = None,
-    bulk_symm_ops: Optional[list] = None,
-    defect_symm_ops: Optional[list] = None,
+    defect_entry: DefectEntry | None = None,
+    relaxed_point_group: str | None = None,
+    bulk_site_point_group: str | None = None,
+    bulk_symm_ops: list | None = None,
+    defect_symm_ops: list | None = None,
     symprec: float = 0.1,
 ) -> float:
     r"""
@@ -1708,7 +1700,7 @@ def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int =
     return simple_spin_degeneracy_from_charge(defect_vr.final_structure, charge_state)
 
 
-def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: Optional[int]) -> int:
+def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> int:
     """
     Determine the defect charge state from the defect vasprun, and compare to
     the manually-set charge state if provided.
@@ -1798,7 +1790,7 @@ def _get_bulk_locpot_dict(bulk_path, quiet=False):
 
 
 def _get_bulk_site_potentials(
-    bulk_path: PathLike, quiet: bool = False, total_energy: Optional[Union[list, float]] = None
+    bulk_path: PathLike, quiet: bool = False, total_energy: list | float | None = None
 ):
     bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
     if multiple and not quiet:

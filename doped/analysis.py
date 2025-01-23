@@ -8,11 +8,9 @@ publication-quality outputs.
 """
 
 import contextlib
-import multiprocessing
 import os
 import warnings
-from multiprocessing import cpu_count
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -29,9 +27,14 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context
 from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
-from doped.generation import get_defect_name_from_defect, get_defect_name_from_entry, name_defect_entries
+from doped.generation import (
+    get_defect_name_from_defect,
+    get_defect_name_from_entry,
+    name_defect_entries,
+    sort_defect_entries,
+)
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.efficiency import _parse_site_species_str, get_voronoi_nodes
 from doped.utils.parsing import (
@@ -65,15 +68,13 @@ from doped.utils.symmetry import (
 if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
 
-mp = multiprocessing.get_context("forkserver")  # https://github.com/python/cpython/pull/100229
-
 
 def _custom_formatwarning(
-    message: Union[Warning, str],
+    message: Warning | str,
     category: type[Warning],
     filename: str,
     lineno: int,
-    line: Optional[str] = None,
+    line: str | None = None,
 ) -> str:
     """
     Reformat warnings to just print the warning message, and add two newlines
@@ -102,7 +103,7 @@ _aniso_dielectric_but_using_locpot_warning = (
 
 def _convert_dielectric_to_tensor(dielectric):
     # check if dielectric in required 3x3 matrix format
-    if not isinstance(dielectric, (float, int)):
+    if not isinstance(dielectric, float | int):
         dielectric = np.array(dielectric)
         if dielectric.shape == (3,):
             dielectric = np.diag(dielectric)
@@ -119,7 +120,7 @@ def _convert_dielectric_to_tensor(dielectric):
 
 
 def check_and_set_defect_entry_name(
-    defect_entry: DefectEntry, possible_defect_name: str = "", bulk_symm_ops: Optional[list] = None
+    defect_entry: DefectEntry, possible_defect_name: str = "", bulk_symm_ops: list | None = None
 ) -> None:
     """
     Check that ``possible_defect_name`` is a recognised format by doped (i.e.
@@ -172,7 +173,7 @@ def defect_from_structures(
     bulk_supercell: Structure,
     defect_supercell: Structure,
     return_all_info: bool = False,
-    bulk_voronoi_node_dict: Optional[dict] = None,
+    bulk_voronoi_node_dict: dict | None = None,
     skip_atom_mapping_check: bool = False,
     **kwargs,
 ):
@@ -421,6 +422,7 @@ def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
             defect_supercell.lattice.get_cartesian_coords(
                 np.array(list(cos_diss_frac_coords_dict.values()))
             ),
+            strict=False,
         )
     )
     return np.average(  # weighted centre of mass
@@ -455,12 +457,12 @@ def defect_name_from_structures(bulk_structure: Structure, defect_structure: Str
 def defect_entry_from_paths(
     defect_path: PathLike,
     bulk_path: PathLike,
-    dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-    charge_state: Optional[int] = None,
-    initial_defect_structure_path: Optional[PathLike] = None,
+    dielectric: float | np.ndarray | list | None = None,
+    charge_state: int | None = None,
+    initial_defect_structure_path: PathLike | None = None,
     skip_corrections: bool = False,
     error_tolerance: float = 0.05,
-    bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
+    bulk_band_gap_vr: PathLike | Vasprun | None = None,
     **kwargs,
 ):
     """
@@ -551,15 +553,15 @@ class DefectsParser:
     def __init__(
         self,
         output_path: PathLike = ".",
-        dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-        subfolder: Optional[PathLike] = None,
-        bulk_path: Optional[PathLike] = None,
+        dielectric: float | np.ndarray | list | None = None,
+        subfolder: PathLike | None = None,
+        bulk_path: PathLike | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
-        processes: Optional[int] = None,
-        json_filename: Optional[Union[PathLike, bool]] = None,
-        parse_projected_eigen: Optional[bool] = None,
+        bulk_band_gap_vr: PathLike | Vasprun | None = None,
+        processes: int | None = None,
+        json_filename: PathLike | bool | None = None,
+        parse_projected_eigen: bool | None = None,
         **kwargs,
     ):
         r"""
@@ -851,7 +853,7 @@ class DefectsParser:
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
-        self._bulk_oxi_states: Union[Structure, Composition, dict, bool] = False
+        self._bulk_oxi_states: Structure | Composition | dict | bool = False
         if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
             self.bulk_vr.final_structure, break_early_if_expensive=True
         ):
@@ -865,9 +867,10 @@ class DefectsParser:
         parsed_defect_entries = []
         parsing_warnings = []
 
+        mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
         if self.processes is None:  # multiprocessing?
-            self.processes = min(max(1, cpu_count() - 1), len(self.defect_folders) - 1)  # only
-            # multiprocess as much as makes sense, if only a handful of defect folders
+            # only multiprocess as much as makes sense, if only a handful of defect folders:
+            self.processes = min(max(1, mp.cpu_count() - 1), len(self.defect_folders) - 1)
 
         if self.processes <= 1:  # no multiprocessing
             with tqdm(self.defect_folders, desc="Parsing defect calculations") as pbar:
@@ -1182,18 +1185,17 @@ class DefectsParser:
         self.defect_dict.update(
             {defect_entry.name: defect_entry for defect_entry in new_named_defect_entries_dict.values()}
         )
+        self.defect_dict = sort_defect_entries(self.defect_dict)  # sort defect entries
 
         FNV_correction_errors = []
         eFNV_correction_errors = []
         defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_vbm_check=True)
         for name, defect_entry in self.defect_dict.items():
-            from doped.utils.eigenvalues import is_shallow
-
             # first check if it's a stable defect:
             fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
 
             if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
-                is_shallow(defect_entry)  # as this would require two ``DefectThermodynamics`` inits...
+                defect_entry.is_shallow  # as this would require two ``DefectThermodynamics`` inits...
                 and fermi_stability_window
                 < kwargs.get(
                     "shallow_charge_stability_tolerance",
@@ -1375,7 +1377,7 @@ class DefectsParser:
         self,
         defect_entry: DefectEntry,
         warnings_string: str = "",
-        defect_folder: Optional[str] = None,
+        defect_folder: str | None = None,
         pbar: tqdm = None,
     ):
         if pbar:
@@ -1477,13 +1479,13 @@ class DefectsParser:
 
     def get_defect_thermodynamics(
         self,
-        chempots: Optional[dict] = None,
-        el_refs: Optional[dict] = None,
-        vbm: Optional[float] = None,
-        band_gap: Optional[float] = None,
+        chempots: dict | None = None,
+        el_refs: dict | None = None,
+        vbm: float | None = None,
+        band_gap: float | None = None,
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
-        bulk_dos: Optional[FermiDos] = None,
+        bulk_dos: FermiDos | None = None,
         skip_vbm_check: bool = False,
     ) -> DefectThermodynamics:
         r"""
@@ -1620,8 +1622,8 @@ class DefectsParser:
 
 def _parse_vr_and_poss_procar(
     vr_path: PathLike,
-    parse_projected_eigen: Optional[bool] = None,
-    output_path: Optional[PathLike] = None,
+    parse_projected_eigen: bool | None = None,
+    output_path: PathLike | None = None,
     label: str = "bulk",
     parse_procar: bool = True,
 ):
@@ -1664,11 +1666,11 @@ class DefectParser:
     def __init__(
         self,
         defect_entry: DefectEntry,
-        defect_vr: Optional[Vasprun] = None,
-        bulk_vr: Optional[Vasprun] = None,
+        defect_vr: Vasprun | None = None,
+        bulk_vr: Vasprun | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        parse_projected_eigen: Optional[bool] = None,
+        parse_projected_eigen: bool | None = None,
         **kwargs,
     ):
         """
@@ -1725,16 +1727,16 @@ class DefectParser:
     def from_paths(
         cls,
         defect_path: PathLike,
-        bulk_path: Optional[PathLike] = None,
-        bulk_vr: Optional[Vasprun] = None,
-        bulk_procar: Optional[Union["EasyunfoldProcar", Procar]] = None,
-        dielectric: Optional[Union[float, int, np.ndarray, list]] = None,
-        charge_state: Optional[int] = None,
-        initial_defect_structure_path: Optional[PathLike] = None,
+        bulk_path: PathLike | None = None,
+        bulk_vr: Vasprun | None = None,
+        bulk_procar: Union["EasyunfoldProcar", Procar] | None = None,
+        dielectric: float | np.ndarray | list | None = None,
+        charge_state: int | None = None,
+        initial_defect_structure_path: PathLike | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
-        bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
-        parse_projected_eigen: Optional[bool] = None,
+        bulk_band_gap_vr: PathLike | Vasprun | None = None,
+        parse_projected_eigen: bool | None = None,
         **kwargs,
     ):
         """
@@ -2257,7 +2259,7 @@ class DefectParser:
 
         return skip_corrections
 
-    def load_FNV_data(self, bulk_locpot_dict: Optional[dict] = None):
+    def load_FNV_data(self, bulk_locpot_dict: dict | None = None):
         """
         Load metadata required for performing Freysoldt correction (i.e. LOCPOT
         planar-averaged potential dictionary).
@@ -2314,7 +2316,7 @@ class DefectParser:
 
         return bulk_locpot_dict
 
-    def load_eFNV_data(self, bulk_site_potentials: Optional[list] = None):
+    def load_eFNV_data(self, bulk_site_potentials: list | None = None):
         """
         Load metadata required for performing Kumagai correction (i.e. atomic
         site potentials from the OUTCAR files).
@@ -2483,10 +2485,10 @@ class DefectParser:
 
     def load_bulk_gap_data(
         self,
-        bulk_band_gap_vr: Optional[Union[PathLike, Vasprun]] = None,
+        bulk_band_gap_vr: PathLike | Vasprun | None = None,
         use_MP: bool = False,
-        mpid: Optional[str] = None,
-        api_key: Optional[str] = None,
+        mpid: str | None = None,
+        api_key: str | None = None,
     ):
         r"""
         Load the ``"gap"`` and ``"vbm"`` values for the parsed
@@ -2557,8 +2559,8 @@ class DefectParser:
 
         if use_MP and mpid is None:
             try:
-                with MPRester(api_key=api_key) as mp:
-                    tmp_mplist = mp.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
+                with MPRester(api_key=api_key) as mpr:
+                    tmp_mplist = mpr.get_entries_in_chemsys(list(bulk_sc_structure.symbol_set))
                 mplist = [
                     mp_ent.entry_id
                     for mp_ent in tmp_mplist
@@ -2573,8 +2575,8 @@ class DefectParser:
 
             mpid_fit_list = []
             for trial_mpid in mplist:
-                with MPRester(api_key=api_key) as mp:
-                    mpstruct = mp.get_structure_by_material_id(trial_mpid)
+                with MPRester(api_key=api_key) as mpr:
+                    mpstruct = mpr.get_structure_by_material_id(trial_mpid)
                 if StructureMatcher(
                     primitive_cell=True,
                     scale=False,
@@ -2587,7 +2589,7 @@ class DefectParser:
                 mpid = mpid_fit_list[0]
                 print(f"Single mp-id found for bulk structure:{mpid}.")
             elif len(mpid_fit_list) > 1:
-                num_mpid_list = [int(mp.split("-")[1]) for mp in mpid_fit_list]
+                num_mpid_list = [int(mpid.split("-")[1]) for mpid in mpid_fit_list]
                 num_mpid_list.sort()
                 mpid = f"mp-{num_mpid_list[0]!s}"
                 print(
@@ -2603,8 +2605,8 @@ class DefectParser:
 
         if mpid is not None:
             print(f"Using user-provided mp-id for bulk structure: {mpid}.")
-            with MPRester(api_key=api_key) as mp:
-                bs = mp.get_bandstructure_by_material_id(mpid)
+            with MPRester(api_key=api_key) as mpr:
+                bs = mpr.get_bandstructure_by_material_id(mpid)
             if bs:
                 cbm = bs.get_cbm()["energy"]
                 vbm = bs.get_vbm()["energy"]

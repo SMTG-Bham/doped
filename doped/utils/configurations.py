@@ -7,7 +7,6 @@ radiative recombination calculations etc.
 import contextlib
 import os
 import warnings
-from typing import Optional, Union
 
 import numpy as np
 from pymatgen.analysis.structure_matcher import ElementComparator, Structure, StructureMatcher
@@ -102,7 +101,10 @@ def orient_s2_like_s1(
     def _get_dQ(struct_a, struct_b):
         try:
             return np.sqrt(
-                sum((a.distance(b) ** 2) * a.specie.atomic_mass for a, b in zip(struct_a, struct_b))
+                sum(
+                    (a.distance(b) ** 2) * a.specie.atomic_mass
+                    for a, b in zip(struct_a, struct_b, strict=False)
+                )
             )
         except Exception:
             return "N/A"
@@ -177,8 +179,8 @@ def _get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> 
         dict: Dictionary of ``{element: (min_bond_length, max_bond_length)}``.
     """
 
-    def _get_symbol(element: Union[Element, Species]):
-        if isinstance(sm_kwargs.get("comparator"), (ElementComparator, type(None))) and isinstance(
+    def _get_symbol(element: Element | Species):
+        if isinstance(sm_kwargs.get("comparator"), ElementComparator | type(None)) and isinstance(
             element, Species
         ):
             return element.element.symbol
@@ -288,7 +290,7 @@ def _scan_sm_stol_till_match(
     struct1: Structure,
     struct2: Structure,
     func_name: str = "get_s2_like_s1",
-    min_stol: Optional[float] = None,
+    min_stol: float | None = None,
     max_stol: float = 5.0,
     stol_factor: float = 0.5,
     **sm_kwargs,
@@ -382,10 +384,10 @@ def _scan_sm_stol_till_match(
 def get_path_structures(
     struct1: Structure,
     struct2: Structure,
-    n_images: Union[int, np.ndarray, list[float]] = 7,
-    displacements: Optional[Union[np.ndarray, list[float]]] = None,
-    displacements2: Optional[Union[np.ndarray, list[float]]] = None,
-) -> Union[dict[str, Structure], tuple[dict[str, Structure], dict[str, Structure]]]:
+    n_images: int | np.ndarray | list[float] = 7,
+    displacements: np.ndarray | list[float] | None = None,
+    displacements2: np.ndarray | list[float] | None = None,
+) -> dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
     """
     Generate a series of interpolated structures along the linear path between
     ``struct1`` and ``struct2``, typically for use in NEB calculations or
@@ -448,7 +450,7 @@ def get_path_structures(
             struct2, n_images, interpolate_lattices=True, pbc=True, autosort_tol=1.2
         )
         disp_2 = None
-        if not isinstance(n_images, (int, float)):
+        if not isinstance(n_images, int | float):
             displacements = n_images  # displacement magnitudes provided instead of n_images
 
     else:
@@ -484,11 +486,11 @@ def get_path_structures(
 
 
 def _smart_round(
-    numbers: Union[float, list[float], np.ndarray[float]],
+    numbers: float | list[float] | np.ndarray[float],
     tol: float = 1e-5,
     return_decimals: bool = False,
     consistent_decimals: bool = True,
-) -> Union[float, list[float], np.ndarray[float]]:
+) -> float | list[float] | np.ndarray[float]:
     """
     Custom rounding function that rounds the input number(s) to the lowest
     number of decimals which gives the same numerical value as the input, to
@@ -558,10 +560,10 @@ def _smart_round(
 def write_path_structures(
     struct1: Structure,
     struct2: Structure,
-    output_dir: Optional[PathLike] = None,
-    n_images: Union[int, list] = 7,
-    displacements: Optional[Union[np.ndarray, list[float]]] = None,
-    displacements2: Optional[Union[np.ndarray, list[float]]] = None,
+    output_dir: PathLike | None = None,
+    n_images: int | list = 7,
+    displacements: np.ndarray | list[float] | None = None,
+    displacements2: np.ndarray | list[float] | None = None,
 ):
     """
     Generate a series of interpolated structures along the linear path between

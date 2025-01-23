@@ -29,7 +29,7 @@ from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import FermiDos
 
 from doped.analysis import DefectsParser, guess_defect_position
-from doped.generation import _sort_defect_entries
+from doped.generation import sort_defect_entries
 from doped.thermodynamics import (
     DefectThermodynamics,
     _add_effective_dopant_concentration,
@@ -125,8 +125,10 @@ def _compare_attributes(obj1, obj2, exclude=None):
             assert np.allclose(val1, val2)
         elif attr == "bulk_dos" and val1 is not None:
             assert val1.as_dict() == val2.as_dict()
-        elif isinstance(val1, (list, tuple)) and all(isinstance(i, np.ndarray) for i in val1):
-            assert all(np.array_equal(i, j) for i, j in zip(val1, val2)), "List of arrays do not match"
+        elif isinstance(val1, list | tuple) and all(isinstance(i, np.ndarray) for i in val1):
+            assert all(
+                np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)
+            ), "List of arrays do not match"
         else:
             assert val1 == val2
 
@@ -298,7 +300,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             if isinstance(df_or_list1, pd.DataFrame):
                 assert df_or_list1.equals(df_or_list2)
             else:
-                assert all(i.equals(j) for i, j in zip(df_or_list1, df_or_list2))
+                assert all(i.equals(j) for i, j in zip(df_or_list1, df_or_list2, strict=False))
             assert form_e_output1 == form_e_output2
             assert {str(warning.message for warning in form_e_w1)} == {
                 str(warning.message for warning in form_e_w2)
@@ -467,7 +469,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             df_or_list, form_e_output, form_e_w = _run_func_and_capture_stdout_warnings(
                 defect_thermo.get_formation_energies, **kwargs
             )
-            assert isinstance(df_or_list, (pd.DataFrame, list)), "Expected a DataFrame or list"
+            assert isinstance(df_or_list, pd.DataFrame | list), "Expected a DataFrame or list"
             if not kwargs.get("fermi_level"):
                 print("Checking output for fermi_level not set")
                 assert "Fermi level was not set, so using mid-gap Fermi level" in form_e_output
@@ -632,7 +634,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 assert len(w) in {0, 1}
 
         figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
-        assert isinstance(figure_or_list, (mpl.figure.Figure, list))
+        assert isinstance(figure_or_list, mpl.figure.Figure | list)
         assert not output
         if chempots is None:
             assert any(
@@ -986,18 +988,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
             for defect_entry in defect_entries_wout_metadata_or_degeneracy:
                 assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
-                assert isinstance(
-                    defect_entry.degeneracy_factors["orientational degeneracy"], (int, float)
-                )
+                assert isinstance(defect_entry.degeneracy_factors["orientational degeneracy"], int | float)
 
                 defect_entry.degeneracy_factors = {}
                 defect_entry.calculation_metadata = {}
 
                 _conc = defect_entry.equilibrium_concentration()
                 assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
-                assert isinstance(
-                    defect_entry.degeneracy_factors["orientational degeneracy"], (int, float)
-                )
+                assert isinstance(defect_entry.degeneracy_factors["orientational degeneracy"], int | float)
 
     def test_transition_levels_CdTe(self):
         """
@@ -1247,7 +1245,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         assert list(sym_degen_df.index.names) == ["Defect", "q"]
         # hardcoded tests to ensure ordering is consistent (by defect type according to
-        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # sort_defect_entries, then by charge state from left (most positive) to right (most negative),
         # as would appear on a TL diagram)
         cdte_sym_degen_lists = [
             ["v_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
@@ -1286,7 +1284,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]
         assert list(sym_degen_df.index.names) == ["Defect", "q"]
         # hardcoded tests to ensure ordering is consistent (by defect type according to
-        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # sort_defect_entries, then by charge state from left (most positive) to right (most negative),
         # as would appear on a TL diagram)
         mgo_sym_degen_lists = [
             ["Mg_O", "+4", "Oh", "C2v", 12.0, 1, 12.0, 1.0],
@@ -1368,7 +1366,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         energy in the `get_formation_energies` DataFrame.
         """
         if defect_thermo is not None:  # check defect sorting
-            sorted_defect_entries = _sort_defect_entries(
+            sorted_defect_entries = sort_defect_entries(
                 {defect_entry.name: defect_entry for defect_entry in defect_thermo.defect_entries.values()}
             )
             assert list(form_en_df.index.get_level_values("Defect").values) == [
@@ -2155,7 +2153,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(sym_degen_df.index.names) == ["Defect", "q"]
 
         # hardcoded tests to ensure ordering is consistent (by defect type according to
-        # _sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+        # sort_defect_entries, then by charge state from left (most positive) to right (most negative),
         cdte_sym_degen_lists = [  # manually checked by SK (see thesis pg. 146/7)
             ["vac_1_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
             ["vac_1_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
@@ -2687,11 +2685,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
 
     def test_is_shallow(self):
-        from doped.utils.eigenvalues import is_shallow
+        from doped.core import is_shallow
 
+        assert not self.Se_ext_no_pnict_thermo.defect_entries["sub_1_F_on_Se_-2"].is_shallow
         assert not is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_F_on_Se_-2"])  # not cut
         # by default in plots (see Se ``unstable_entries`` test plots from ``test_plotting.py``)
         assert is_shallow(self.Se_ext_no_pnict_thermo.defect_entries["sub_1_Te_on_Se_1"])  # cut
+        assert self.Se_ext_no_pnict_thermo.defect_entries["sub_1_Te_on_Se_1"].is_shallow
 
     def test_prune_to_stable_entries(self):
         # test default; "not shallow":
@@ -2873,7 +2873,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert not output
             assert not w
 
-            assert isinstance(fl_or_fl_e_h, (float, tuple))
+            assert isinstance(fl_or_fl_e_h, float | tuple)
             if isinstance(fl_or_fl_e_h, tuple):
                 assert kwargs.get("return_concs", False)
                 fl = fl_or_fl_e_h[0]
@@ -3132,7 +3132,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 np.isclose(h_conc, 2.2e13, rtol=0.05) == anneal_at_1000K_quench_at_RT_no_dopants_scissoring
             )
 
-            for conc_df, annealing in zip(expected_conc_dfs, [False, True]):
+            for conc_df, annealing in zip(expected_conc_dfs, [False, True], strict=False):
                 if kwargs.get("skip_formatting", False):
                     print("Checking `Charge` and `Concentration...` formats")
                     if kwargs.get("per_charge", True):

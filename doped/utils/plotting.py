@@ -10,7 +10,7 @@ analysing defect calculations, with publication-quality outputs.
 import contextlib
 import re
 import warnings
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING
 
 import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from doped.thermodynamics import DefectThermodynamics
 
 
-def _get_backend(save_format: str) -> Optional[str]:
+def _get_backend(save_format: str) -> str | None:
     """
     Try use pycairo as backend if installed, and save_format is pdf.
     """
@@ -56,7 +56,7 @@ def _chempot_warning(dft_chempots):
         )
 
 
-def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str = "batlow") -> Colormap:
+def get_colormap(colormap: str | Colormap | None = None, default: str = "batlow") -> Colormap:
     """
     Get a colormap from a string or a ``Colormap`` object.
 
@@ -113,7 +113,7 @@ def get_colormap(colormap: Optional[Union[str, Colormap]] = None, default: str =
     return colormap
 
 
-def get_linestyles(linestyles: Union[str, list[str]] = "-", num_lines: int = 1) -> list[str]:
+def get_linestyles(linestyles: str | list[str] = "-", num_lines: int = 1) -> list[str]:
     """
     Get a list of linestyles to use for plotting, from a string or list of
     strings (linestyles).
@@ -265,7 +265,7 @@ def format_defect_name(
     defect_species: str,
     include_site_info_in_name: bool = False,
     wout_charge: bool = False,
-) -> Optional[str]:
+) -> str | None:
     r"""
     Format defect name for plot titles.
 
@@ -743,7 +743,7 @@ def _get_legend_txt(for_legend, all_entries=False, include_site_info=False):
                 if site_info_entry_names.count(site_info_name) < legend_txt.count(non_site_info_name)
                 else non_site_info_name
             )
-            for site_info_name, non_site_info_name in zip(site_info_entry_names, legend_txt)
+            for site_info_name, non_site_info_name in zip(site_info_entry_names, legend_txt, strict=False)
         ]
 
     if len(legend_txt) == len(set(legend_txt)):
@@ -938,6 +938,9 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             )
             ymin = min(ymin, *yvals)
 
+    if not y_range_vals:
+        raise ValueError("No formation energy data available to plot.")
+
     return (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin
 
 
@@ -959,19 +962,19 @@ def _get_in_gap_yvals(x_coords, y_coords, x_range):
 
 def formation_energy_plot(
     defect_thermodynamics: "DefectThermodynamics",
-    dft_chempots: Optional[dict] = None,
-    el_refs: Optional[dict] = None,
+    dft_chempots: dict | None = None,
+    el_refs: dict | None = None,
     chempot_table: bool = True,
-    all_entries: Union[bool, str] = False,
-    xlim: Optional[tuple[float, float]] = None,
-    ylim: Optional[tuple[float, float]] = None,
-    fermi_level: Optional[float] = None,
+    all_entries: bool | str = False,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+    fermi_level: float | None = None,
     include_site_info: bool = False,
-    title: Optional[str] = None,
-    colormap: Optional[Union[str, Colormap]] = None,
-    linestyles: Union[str, list[str]] = "-",
+    title: str | None = None,
+    colormap: str | Colormap | None = None,
+    linestyles: str | list[str] = "-",
     auto_labels: bool = False,
-    filename: Optional[PathLike] = None,
+    filename: PathLike | None = None,
 ):
     """
     Produce defect formation energy vs Fermi energy plot.
@@ -1118,7 +1121,7 @@ def formation_energy_plot(
                 alpha=0.5 if all_entries is True else None,
             )
             if auto_labels:
-                for index, coords in enumerate(zip(x_trans, y_trans)):
+                for index, coords in enumerate(zip(x_trans, y_trans, strict=False)):
                     text_alignment = "right" if tl_label_type[index] == "start_positive" else "left"
                     ax.annotate(
                         tl_labels[index],  # this is the text
@@ -1169,7 +1172,7 @@ def plot_chemical_potential_table(
     ax: plt.Axes,
     dft_chempots: dict[str, float],
     cellLoc: str = "left",
-    el_refs: Optional[dict[str, float]] = None,
+    el_refs: dict[str, float] | None = None,
 ) -> plt.table:
     """
     Plot a table of chemical potentials above the plot in ``ax``.
