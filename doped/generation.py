@@ -1909,7 +1909,9 @@ class DefectsGenerator(MSONable):
 
             # sort defects and defect entries for deterministic behaviour:
             self.defects = _sort_defects(self.defects, element_list=self._element_list)
-            self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
+            self.defect_entries = sort_defect_entries(
+                self.defect_entries, element_list=self._element_list
+            )  # type:ignore
 
             if not isinstance(pbar, MagicMock) and pbar.total - pbar.n > 0:
                 pbar.update(pbar.total - pbar.n)  # 100%
@@ -2066,7 +2068,9 @@ class DefectsGenerator(MSONable):
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
-        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
+        self.defect_entries = sort_defect_entries(
+            self.defect_entries, element_list=self._element_list
+        )  # type:ignore
 
     def remove_charge_states(self, defect_entry_name: str, charge_states: list | int):
         r"""
@@ -2089,7 +2093,9 @@ class DefectsGenerator(MSONable):
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
-        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
+        self.defect_entries = sort_defect_entries(
+            self.defect_entries, element_list=self._element_list
+        )  # type:ignore
 
     def as_dict(self):
         """
@@ -2314,7 +2320,9 @@ class DefectsGenerator(MSONable):
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
-        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
+        self.defect_entries = sort_defect_entries(
+            self.defect_entries, element_list=self._element_list
+        )  # type:ignore
 
     def __delitem__(self, key):
         """
@@ -2469,7 +2477,7 @@ def _element_sort_func(element_str: str) -> tuple[int, int]:
     return (group, elt.Z)
 
 
-def sort_defect_entries(defect_entries_dict: dict, element_list: list | None = None):
+def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None) -> dict | list:
     """
     Sort defect entries for deterministic behaviour (for output and when
     reloading ``DefectsGenerator`` objects, with ``DefectThermodynamics``
@@ -2483,9 +2491,9 @@ def sort_defect_entries(defect_entries_dict: dict, element_list: list | None = N
     type) sort by charge state (from positive to negative).
 
     Args:
-        defect_entries_dict (dict):
-            Dictionary of defect entries to sort, in the format:
-            ``{defect_entry_name: defect_entry}``.
+        defect_entries (dict or list):
+            Dictionary (in the format: ``{defect_entry_name: defect_entry}``)
+            or list of defect entries to sort.
         element_list (list, optional):
             List of elements present, used to determine preferential
             ordering. If ``None``, determined by ``_get_element_list()``,
@@ -2494,13 +2502,19 @@ def sort_defect_entries(defect_entries_dict: dict, element_list: list | None = N
             then by atomic number.
 
     Returns:
-        dict: Sorted dictionary of defect entries.
+        Sorted dictionary or list of defect entries.
     """
     if element_list is None:
-        element_list = _get_element_list(defect_entries_dict)
+        element_list = _get_element_list(defect_entries)
+
+    defect_entries_dict = (
+        defect_entries
+        if isinstance(defect_entries, dict)
+        else name_defect_entries(defect_entries, element_list)
+    )
 
     try:
-        return dict(
+        sorted_defect_entries_dict = dict(
             sorted(
                 defect_entries_dict.items(),
                 key=lambda s: (
@@ -2540,7 +2554,7 @@ def sort_defect_entries(defect_entries_dict: dict, element_list: list | None = N
                     -defect_entry.charge_state,  # charge state
                 )
 
-            return dict(
+            sorted_defect_entries_dict = dict(
                 sorted(
                     defect_entries_dict.items(),
                     key=lambda s: _defect_entry_sort_func(s[1]),  # sort by defect entry object
@@ -2548,6 +2562,11 @@ def sort_defect_entries(defect_entries_dict: dict, element_list: list | None = N
             )
         except ValueError as value_err_2:
             raise value_err_2 from value_err
+
+    if isinstance(defect_entries, list):  # then return as a list
+        return list(sorted_defect_entries_dict.values())
+
+    return sorted_defect_entries_dict  # else dict
 
 
 def _sort_defects(defects_dict: dict, element_list: list[str] | None = None):

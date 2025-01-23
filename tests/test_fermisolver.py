@@ -123,7 +123,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         assert pyscfermi_dos.nelect == self.CdTe_fermi_dos.nelecs
         assert pyscfermi_dos.nelect == 18
         assert np.isclose(pyscfermi_dos.bandgap, self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True))
-        assert np.isclose(pyscfermi_dos.bandgap, 1.5256, atol=1e-3)
+        assert np.isclose(pyscfermi_dos.bandgap, 1.5308, atol=1e-3)
         assert not pyscfermi_dos.spin_polarised  # SOC DOS
 
         e_vbm = self.CdTe_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]

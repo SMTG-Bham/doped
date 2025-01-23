@@ -845,8 +845,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warn in w
         )
         assert any(
-            "O_Se_Cs_Sb2.65_+1 (O_1), O_Se_Cs_Sb2.65_+1 (O_b_1)]\n[O_Se_Cs_Sb2.65_+2 (O_2), "
-            "O_Se_Cs_Sb2.65_+2 (O_a_1), O_Se_Cs_Sb2.65_+2 (O_a_2), O_Se_Cs_Sb2.65_+2 (O_b_2)"
+            "[O_Se_Cs_Sb2.65_+2 (O_2), O_Se_Cs_Sb2.65_+2 (O_a_1), O_Se_Cs_Sb2.65_+2 (O_a_2), "
+            "O_Se_Cs_Sb2.65_+2 (O_b_2)]\n[O_Se_Cs_Sb2.65_+1 (O_1), O_Se_Cs_Sb2.65_+1 (O_b_1)]"
             in str(warn.message)
             for warn in w
         )

@@ -2770,7 +2770,7 @@ def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     print([str(warn.message) for warn in w])  # for debugging
     assert not output
     assert any(
-        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
+        "The VBM eigenvalue of the bulk DOS calculation (1.54 eV, band gap = 1.53 eV) differs "
         "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
         in str(warn.message)
         for warn in w
@@ -3092,9 +3092,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert ("Orig gap:" in output) == kwargs.get("verbose", False)
             if kwargs.get("delta_gap") == 0.3 and kwargs.get("verbose", False):
                 if kwargs.get("tol") == 1e-1:
-                    assert "Orig gap: 2.7513, new gap:3.0513" in output
+                    assert "Orig gap: 2.7565, new gap:3.0565" in output
                 else:
-                    assert "Orig gap: 1.5126, new gap:1.8126" in output
+                    assert "Orig gap: 1.5178, new gap:1.8178" in output
                     assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
 
             assert not w
