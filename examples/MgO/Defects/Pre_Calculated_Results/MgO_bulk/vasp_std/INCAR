@@ -1,0 +1,24 @@
+# May want to change NCORE, KPAR, AEXX, ENCUT, IBRION, LREAL, NUPDOWN, ISPIN, MAGMOM = Typical variable parameters
+ALGO = Normal  # change to all if zhegv, fexcp/f or zbrent errors encountered, or poor electronic convergence
+EDIFF = 1e-06
+ENCUT = 450
+GGA = Ps
+IBRION = -1
+ICHARG = 1
+ICORELEVEL = 0  # needed if using the kumagai-oba (efnv) anisotropic charge correction scheme
+ISMEAR = 0
+ISPIN = 2
+ISYM = 0  # symmetry breaking extremely likely for defects
+KPAR = 4  # 2 or >=4 k-points in at least two directions
+LASPH = True
+LHFCALC = False
+LORBIT = 11
+LREAL = Auto
+LVHAR = True
+NCORE = 8
+NEDOS = 3000
+NELECT = 864.0
+NSW = 0
+NUPDOWN = 0
+PREC = Accurate
+SIGMA = 0.05

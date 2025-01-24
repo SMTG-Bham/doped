@@ -6,19 +6,6 @@ Installation
 .. code-block:: bash
 
    pip install doped  # install doped and dependencies
-   conda install -c conda-forge spglib  # bundle C libraries with spglib
-
-Note that either ``conda install -c conda-forge spglib`` or
-``pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF``
-should be used after ``pip install doped``, which ensures that the correct C libraries are bundled with
-``spglib``, to prevent unnecessary warnings. You can check that the correct C libraries have been bundled
-by running the following in Python, and confirming that the same version numbers are printed:
-
-.. code-block:: python
-
-   import spglib
-   print(spglib.__version__)
-   print(spglib.spg_get_version_full())
 
 Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 
@@ -31,12 +18,21 @@ If you are installing ``doped`` via ``conda`` and you plan on using the eFNV (Ku
 correction, you will need to install the ``pydefect`` package with ``pip`` as shown or otherwise, as it is
 not available on ``conda``.
 
+.. NOTE::
+   Due to a recent change in the python build procedure for ``phonopy`` (an indirect dependency of
+   ``doped``), in version ``2.26``, ``pip install doped`` can fail on some older systems (with
+   older versions of ``gcc``). This can be resolved by either (1) installing ``doped`` from ``conda``
+   (as above), (2) installing ``phonopy`` from ``conda`` (see
+   `here <https://phonopy.github.io/phonopy/install.html>`__) and then ``doped`` with ``pip``,
+   (3) installing ``phonopy<=2.25``  (``pip install phonopy<=2.25``) and then ``doped`` with ``pip``,
+   or (4) upgrading your system's ``gcc`` to a more recent version if possible.
+
 It may be desirable to install ``doped`` in a virtual envionment (e.g. if you encounter package dependency
 conflict warnings during installation etc). You can do this with ``conda`` with:
 
 .. code-block:: bash
 
-   conda create -n doped python=3.11
+   conda create -n doped python=3.12
    conda activate doped
    pip install doped
 
