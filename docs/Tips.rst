@@ -24,7 +24,8 @@ charge state of the generated interstitial candidates, and then pruning some of 
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
 generation tutorial, and then run the ``ShakeNBreak`` ``vasp_gam`` relaxations for the ``Unperturbed`` and
 ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate the
-``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()``.
+``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()`` -- this
+will rattle the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
@@ -66,6 +67,35 @@ We can then compare the energies of these trial relaxations, and remove candidat
     many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
     hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
     ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
+
+
+Performance Bottlenecks
+-----------------------
+
+Generation
+^^^^^^^^^^
+For complex, low-symmetry systems, defect generation can take a little time (on the order of a couple
+minutes). The ``doped`` algorithms have been heavily-optimised to expedite this process, and will use
+multiprocessing by default to accelerate when multiple CPUs are available. The routines which are typically
+the most computationally expensive for generation are supercell generation, interstitial generation and
+Wyckoff/symmetry analysis (in order). As such, if you want to accelerate the generation process, you can
+expedite these steps by:
+
+- Providing your known desired supercell as input and setting ``generate_supercell=False``, to skip
+  supercell generation (or using tighter supercell generation constraints with ``supercell_gen_kwargs``).
+- Skipping interstitial generation with ``interstitial_gen_kwargs=False``, or using modified interstitial
+  generation constraints (with ``interstitial_gen_kwargs``), or providing a list of known interstitial
+  sites with ``interstitial_coords``.
+
+Parsing
+^^^^^^^
+For defect calculation parsing, this can be slowed down in the case of large supercells, due to the large
+sizes of the output ``vasprun.xml(.gz)`` files. Again, ``doped`` has been heavily-optimised to expedite this
+process, and will use multiprocessing by default to accelerate when multiple CPUs are available. The main
+bottleneck here is the loading and parsing of ``vasprun.xml(.gz)`` files. Parsing only has to be run once
+however, and we encourage the saving of parsed outputs to ``json.gz`` files as shown in the tutorials (and
+automatically performed by ``DefectsParser``). Future improvements in the efficiency of the ``pymatgen``
+``Vasprun`` parser for large files would be very beneficial here.
 
 
 Difficult Structural Relaxations
@@ -334,8 +364,29 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 
 .. note::
 
+    The classification of electronic states as band edges or localized orbitals is based on the similarity
+    of orbital projections and eigenvalues between the defect and bulk cell calculations (see
+    docstrings/python API for ``get_eigenvalue_analysis``). You may want to adjust the default values of
+    the ``similar_orb/energy_criterion`` keyword arguments, as the defaults may not be appropriate in all
+    cases. In particular, the P-ratio values can give useful insight, revealing the level of
+    (de)localisation of the states.
     It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
-    the defect state to confirm the identification of a PHS.
+    the defect state when possible, to confirm the identification of a PHS.
+
+.. note::
+
+   As mentioned above, the eigenvalue analysis functions use code from ``pydefect``, so please cite the
+   ``pydefect`` paper if using these analyses in your work:
+
+   "Insights into oxygen vacancies from high-throughput first-principles calculations"
+   Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
+   Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
+
+In ``doped``, this eigenvalue analysis is performed automatically, and shallow/unstable defect charge
+states can be omitted from plotting and analysis using the ``unstable_entries`` argument and/or
+``DefectThermodynamics.prune_to_stable_entries()`` method. By default, parsed defect entries which are
+detected to be shallow ('perturbed host') states and unstable for Fermi levels in the band gap are omitted
+from plotting for clarity & accuracy.
 
 Spin Polarisation
 -----------------
@@ -426,9 +477,10 @@ for multiple defects.
 .. note::
 
     For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
-    automatically set ``NUPDOWN`` according to the magnetisation output from the ``Materials Project``
-    calculation of the competing phase, but ``MAGMOM`` may also need to be set to induce a specific spin
-    configuration.
+    automatically set ``ISPIN=2`` (allowing spin polarisation) and ``NUPDOWN`` according to the
+    magnetisation output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
+    (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
+    certain cases.
 
 Symmetry Precision (``symprec``)
 --------------------------------
@@ -453,6 +505,13 @@ etc.).
     defect supercell, directly from just the relaxed structures, regardless of whether these defects were
     generated/parsed with ``doped``.
 
+.. note::
+
+    Wyckoff letters for lattice sites can depend on the ordering of elements in the conventional standard
+    structure, for which doped uses the ``spglib`` convention (e.g. in the ``DefectsGenerator`` info
+    output).
+
+
 Serialization & Data Provenance (``JSON``/``csv``)
 --------------------------------------------------
 To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
@@ -465,21 +524,21 @@ various stages in the tutorials, this can be achieved using the ``dumpfn``/``loa
 .. code-block:: python
 
     # save a DefectThermodynamics object to a JSON file
-    defect_thermo.to_json("MgO_DefectThermodynamics.json")
+    defect_thermo.to_json("MgO_DefectThermodynamics.json.gz")
 
     # then later in a different python session or notebook, we can reload the
     # DefectThermodynamics object from the JSON file, containing all the associated info
     from doped.thermodynamics import DefectThermodynamics
-    defect_thermodynamics = DefectThermodynamics.from_json("MgO_DefectThermodynamics.json")
+    defect_thermodynamics = DefectThermodynamics.from_json("MgO_DefectThermodynamics.json.gz")
 
     # alternatively, we can directly use the monty dumpfn/loadfn functions
     # directly on any doped object, e.g. with our ``DefectsSet`` object
     # containing all the info on the generated VASP input files:
     from monty.serialization import dumpfn, loadfn
-    dumpfn(obj=defects_set, fn="MgO_DefectsSet.json")
+    dumpfn(obj=defects_set, fn="MgO_DefectsSet.json.gz")
 
     # and again later reload the object from the JSON file
-    defects_set = loadfn("MgO_DefectsSet.json")
+    defects_set = loadfn("MgO_DefectsSet.json.gz")
 
 .. note::
 
@@ -500,10 +559,7 @@ In the typical defect calculation workflow with ``doped`` (exemplified in the tu
   ``DefectsParser(output_path=".")`` – written to ``output_path``. The JSON filename can be set with e.g.
   ``DefectsParser(json_filename="custom_name.json")``, but the default is
   ``{Host Chemical Formula}_defect_dict.json``.
-    - Additionally, a ``voronoi_nodes.json`` file is saved to the bulk supercell calculation directory if
-      any interstitial defects are parsed. This contains information about the Voronoi tessellation nodes
-      in the host structure, which are used for analysing interstitial positions but can be somewhat costly
-      to calculate – so are automatically saved to file once initially computed to reduce parsing times.
+
 - Additionally, if following the recommended structure-searching approach with ``ShakeNBreak`` as shown in
   the tutorials, ``distortion_metadata.json`` files will be written to the top directory (``output_path``,
   containing distortion information about all defects) and to each defect directory (containing just the
@@ -517,7 +573,7 @@ is not done automatically.
 ^^^^^^^^^^^^^^^^^^^^^
 Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as the result, such as the
 ``get_symmetries_and_degeneracies()``, ``get_formation_energies()``, ``get_equilibrium_concentrations()``,
-``get_quenched_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
+``get_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
 ``get_transition_levels()`` methods for ``DefectThermodynamics`` objects, and the ``formation_energy_df``
 attribute and ``calculate_chempots()`` method for ``CompetingPhasesAnalyzer``. As mentioned in the
 tutorials, these ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the

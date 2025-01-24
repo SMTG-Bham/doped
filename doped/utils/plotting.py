@@ -10,18 +10,25 @@ analysing defect calculations, with publication-quality outputs.
 import contextlib
 import re
 import warnings
-from typing import Optional, Union
+from typing import TYPE_CHECKING
 
+import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib import colormaps, colors, ticker
+from matplotlib import colormaps, ticker
+from matplotlib.colors import Colormap, ListedColormap
+from matplotlib.font_manager import FontProperties
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
+from pymatgen.util.typing import PathLike
 
 from doped.utils.symmetry import sch_symbols  # point group symbols
 
+if TYPE_CHECKING:
+    from doped.thermodynamics import DefectThermodynamics
 
-def _get_backend(save_format: str) -> Optional[str]:
+
+def _get_backend(save_format: str) -> str | None:
     """
     Try use pycairo as backend if installed, and save_format is pdf.
     """
@@ -49,12 +56,107 @@ def _chempot_warning(dft_chempots):
         )
 
 
-def _get_plot_setup(colormap, xy):
-    if colormap is None:  # future updated colour handling (based on defect type etc) should remove
-        # the need for this!
-        colormap = "Dark2" if len(xy) <= 8 else "tab20"
-    cmap = colormaps[colormap] if isinstance(colormap, str) else colormap
-    colors = cmap(np.linspace(0, 1, len(xy)))
+def get_colormap(colormap: str | Colormap | None = None, default: str = "batlow") -> Colormap:
+    """
+    Get a colormap from a string or a ``Colormap`` object.
+
+    If ``_alpha_X`` in the colormap name, sets the alpha value to X (0-1).
+
+    ``cmcrameri`` colour maps citation: https://zenodo.org/records/8409685
+
+    Args:
+        colormap (str, matplotlib.colors.Colormap):
+            Colormap to use, either as a string (which can be a colormap name
+            from https://www.fabiocrameri.ch/colourmaps or
+            https://matplotlib.org/stable/users/explain/colors/colormaps), or
+            a ``Colormap`` / ``ListedColormap`` object. If ``None`` (default),
+            uses ``default`` colormap (which is ``"batlow"`` by default).
+
+            Append "S" to the colormap name if using a sequential colormap
+            from https://www.fabiocrameri.ch/colourmaps.
+        default (str):
+            Default colormap to use if ``colormap`` is ``None``. Defaults to
+            ``"batlow"`` from https://www.fabiocrameri.ch/colourmaps.
+    """
+    if colormap is None:
+        colormap = default
+
+    alpha = None
+    if isinstance(colormap, str):  # get colormap from string
+        if "_alpha_" in colormap:
+            alpha = float(colormap.split("_alpha_")[-1])
+            colormap = colormap.split("_alpha_")[0]
+
+        # first check if it's a cmcrameri colormap:
+        cmap = cmc.cmaps.get(colormap, None)
+        if cmap is None:  # if not, check matplotlib colormaps
+            cmap = colormaps.get(colormap, None)
+        if cmap is None:
+            if "_alpha_" in default:
+                alpha = float(default.split("_alpha_")[-1])
+                default = default.split("_alpha_")[0]
+
+            warnings.warn(
+                f"Colormap '{colormap}' not found in `cmcrameri` "
+                f"(https://www.fabiocrameri.ch/colourmaps) or `matplotlib` "
+                f"(https://matplotlib.org/stable/users/explain/colors/colormaps) colormaps. "
+                f"Defaulting to '{default}' colormap."
+            )
+            cmap = cmc.cmaps.get(default, colormaps.get(default, cmc.batlow))
+
+        colormap = cmap
+
+    colormap.colors = (
+        colormap.colors if alpha is None else [color[:3] + (alpha,) for color in colormap.colors]
+    )
+
+    return colormap
+
+
+def get_linestyles(linestyles: str | list[str] = "-", num_lines: int = 1) -> list[str]:
+    """
+    Get a list of linestyles to use for plotting, from a string or list of
+    strings (linestyles).
+
+    If a list is provided which doesn't match the number of lines,
+    the list is repeated until it does.
+
+    Args:
+        linestyles (str, list[str]):
+            Linestyles to use for plotting. If a string, uses that linestyle
+            for all lines. If a list, uses each linestyle in the list for each
+            line. Defaults to ``"-"``.
+        num_lines (int):
+            Number of lines to plot (and thus number of linestyles
+            to output in list). Defaults to 1.
+    """
+    if isinstance(linestyles, str):
+        return [linestyles] * num_lines
+
+    # else ensure match number of lines to number of linestyles:
+    return linestyles * (num_lines // len(linestyles)) + linestyles[: num_lines % len(linestyles)]
+
+
+def _get_TLD_plot_setup(colormap, linestyles, xy):
+    # future updated colour handling (based on defect type etc) should remove the need for this:
+    num_lines = len(xy)
+    if num_lines <= 10:
+        default = "tab10_alpha_0.75"
+    elif num_lines <= 20:
+        default = "tab20"
+    else:
+        default = "batlow"  # set to colormap if not enough colours in listed colormaps
+
+    cmap = get_colormap(colormap, default=default)
+    if isinstance(cmap, ListedColormap) and len(cmap.colors) < 150:  # cmcrameri returned with 256 colors
+        # ensure number of colors matches number of lines:
+        colors = list(cmap.colors) * (num_lines // len(cmap.colors))
+        if num_lines % len(cmap.colors) != 0:
+            colors += list(cmap.colors[: num_lines % len(cmap.colors)])
+    else:
+        colors = cmap(np.linspace(0, 1, num_lines))
+
+    linestyles = get_linestyles(linestyles, num_lines)
 
     # generate plot:
     styled_fig_size = plt.rcParams["figure.figsize"]
@@ -64,12 +166,22 @@ def _get_plot_setup(colormap, xy):
     styled_linewidth = plt.rcParams["lines.linewidth"]
     styled_markersize = plt.rcParams["lines.markersize"]
 
-    return cmap, colors, fig, ax, styled_fig_size, styled_font_size, styled_linewidth, styled_markersize
+    return (
+        colors,
+        linestyles,
+        fig,
+        ax,
+        styled_fig_size,
+        styled_font_size,
+        styled_linewidth,
+        styled_markersize,
+    )
 
 
 def _plot_formation_energy_lines(
     xy,
     colors,
+    linestyles,
     ax,
     styled_linewidth,
     styled_markersize,
@@ -81,6 +193,7 @@ def _plot_formation_energy_lines(
             xy[def_name][0],
             xy[def_name][1],
             color=colors[cnt],
+            linestyle=linestyles[cnt],
             markeredgecolor=colors[cnt],
             lw=styled_linewidth * 1.2,
             markersize=styled_markersize * (4 / 6),
@@ -95,7 +208,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.imshow(
         [(0, 1), (0, 1)],
         cmap=plt.cm.Blues,
-        extent=(xlim[0], 0, ylim[0], ylim[1]),
+        extent=(xlim[0], 0, -50, 100),
         vmin=0,
         vmax=3,
         interpolation="bicubic",
@@ -107,7 +220,7 @@ def _add_band_edges_and_axis_limits(ax, band_gap, xlim, ylim, fermi_level=None):
     ax.imshow(
         [(1, 0), (1, 0)],
         cmap=plt.cm.Oranges,
-        extent=(band_gap, xlim[1], ylim[0], ylim[1]),
+        extent=(band_gap, xlim[1], -50, 100),
         vmin=0,
         vmax=3,
         interpolation="bicubic",
@@ -150,24 +263,25 @@ def _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_f
 
 def format_defect_name(
     defect_species: str,
-    include_site_info_in_name: bool,
+    include_site_info_in_name: bool = False,
     wout_charge: bool = False,
-) -> Optional[str]:
-    """
+) -> str | None:
+    r"""
     Format defect name for plot titles.
 
-    (i.e. from Cd_i_C3v_0 to $Cd_{i}^{0}$ or $Cd_{i_{C3v}}^{0}$).
-    Note this assumes "V_" means vacancy not Vanadium.
+    (i.e. from ``"Cd_i_C3v_0"`` to ``"$Cd_{i}^{0}$"`` or
+    ``"$Cd_{i_{C3v}}^{0}$"``). Note this assumes "V\_..."
+    means vacancy not Vanadium.
 
     Args:
         defect_species (:obj:`str`):
-            Name of defect including charge state (e.g. Cd_i_C3v_0)
+            Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``)
         include_site_info_in_name (:obj:`bool`):
-            Whether to include site info in name (e.g. $Cd_{i}^{0}$ or
-            $Cd_{i_{C3v}}^{0}$).
+            Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
+            or ``"$Cd_{i_{C3v}}^{0}$"``\). Defaults to ``False``.
         wout_charge (:obj:`bool`, optional):
-            Whether the charge state is included in the defect_species name.
-            Defaults to False.
+            Whether to exclude the charge state from the formatted
+            ``defect_species`` name. Defaults to ``False``.
 
     Returns:
         :obj:`str`:
@@ -265,7 +379,7 @@ def format_defect_name(
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
-            i not in defect_species.lower() for i in ["int", "vac", "sub", "as"]
+            i not in defect_species for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as"]  # no As_...
         ):
             # from 2nd underscore to last underscore (before charge state) is site info
             # convert point group symbol to formatted version (e.g. C1 -> C_1):
@@ -595,43 +709,90 @@ def format_defect_name(
     return f"{defect_name.rsplit('^', 1)[0]}$" if wout_charge else defect_name
 
 
-def _get_legends_txt(for_legend, all_entries=False):
+def _get_legend_txt(for_legend, all_entries=False, include_site_info=False):
+    # don't include site info by default, unless duplicates
     # get latex-like legend titles
-    legends_txt = []
-    for defect_entry_name in for_legend:
-        include_site_info = not all(  # all PyCDT/old-doped format, don't include site num
-            any(name.startswith(i) for i in ["Int_", "vac_", "as_", "sub_"]) for name in for_legend
-        )
+    legend_txt: list[str] = []
+
+    def _get_defect_name(defect_entry_name, site_info):
         try:
-            defect_name = format_defect_name(
+            return format_defect_name(
                 defect_species=defect_entry_name,
-                include_site_info_in_name=include_site_info,
+                include_site_info_in_name=site_info,
                 wout_charge=not all_entries,  # defect names without charge
             )
 
         except Exception:  # if formatting fails, just use the defect_species name
-            defect_name = defect_entry_name
+            return defect_entry_name
 
-        # append "a,b,c.." for different defect species with the same name
-        if any(defect_name in i for i in legends_txt):
+    legend_txt = [
+        _get_defect_name(defect_entry_name, include_site_info) for defect_entry_name in for_legend
+    ]
+
+    if len(legend_txt) == len(set(legend_txt)):  # no duplicates, good to go
+        return legend_txt
+
+    # duplicates in defect names; rename to avoid overwriting:
+    if not include_site_info:  # first see if using site info with duplicates removes duplicate names
+        site_info_entry_names = [
+            _get_defect_name(defect_entry_name, True) for defect_entry_name in for_legend
+        ]
+        legend_txt = [
+            (
+                site_info_name
+                if site_info_entry_names.count(site_info_name) < legend_txt.count(non_site_info_name)
+                else non_site_info_name
+            )
+            for site_info_name, non_site_info_name in zip(site_info_entry_names, legend_txt, strict=False)
+        ]
+
+    if len(legend_txt) == len(set(legend_txt)):
+        return legend_txt
+
+    # duplicates in entry names and site info doesn't (fully) solve it, append "a,b,c.." for different
+    # defect species with the same name:
+    def _add_name_to_list_and_rename_if_needed(defect_name, name_list):
+        if any(defect_name in i for i in name_list):
             i = 3
 
-            if defect_name in legends_txt:  # first repeat, direct match, rename previous entry
+            if defect_name in name_list:  # first repeat, direct match, rename previous entry
                 # find index of previous defect_name, and rename
-                prev_idx = legends_txt.index(defect_name)
-                legends_txt[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
+                prev_idx = name_list.index(defect_name)
+                name_list[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
                 defect_name = f"{defect_name}$_{{-{chr(96 + 2)}}}$"  # b
 
             else:
                 defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # c
 
-            while defect_name in legends_txt:
+            while defect_name in name_list:
                 i += 1
                 defect_name = f"{defect_name.rsplit('$_', 1)[0]}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
 
-        legends_txt.append(defect_name)
+        name_list.append(defect_name)
+        return name_list
 
-    return legends_txt
+    final_legend_txt: list[str] = []
+    for name in legend_txt:
+        final_legend_txt = _add_name_to_list_and_rename_if_needed(name, final_legend_txt)
+
+    return final_legend_txt
+
+
+def get_legend_font_size() -> float:
+    """
+    Convenience function to get the current ``matplotlib`` legend font size, in
+    points (pt).
+
+    Returns:
+        float: Current legend font size in points (pt).
+    """
+    font_size = plt.rcParams["legend.fontsize"]  # current legend font size from rcParams
+
+    # if the font size is a string (like 'medium'), convert it using FontProperties
+    if isinstance(font_size, str):
+        font_properties = FontProperties(size=font_size)
+        return font_properties.get_size_in_points()
+    return font_size  # otherwise numeric, return as is
 
 
 def _rename_key_and_dicts(
@@ -777,6 +938,9 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
             )
             ymin = min(ymin, *yvals)
 
+    if not y_range_vals:
+        raise ValueError("No formation energy data available to plot.")
+
     return (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin
 
 
@@ -796,38 +960,90 @@ def _get_in_gap_yvals(x_coords, y_coords, x_range):
     return np.interp(relevant_x, x_coords, y_coords)  # y values in range
 
 
-def _TLD_plot(
-    defect_thermodynamics,
-    dft_chempots=None,
-    el_refs=None,
-    chempot_table=True,
-    all_entries: Union[bool, str] = False,
-    xlim=None,
-    ylim=None,
-    fermi_level=None,
-    title=None,
-    colormap: Optional[Union[str, colors.Colormap]] = None,
-    auto_labels=False,
-    filename=None,
+def formation_energy_plot(
+    defect_thermodynamics: "DefectThermodynamics",
+    dft_chempots: dict | None = None,
+    el_refs: dict | None = None,
+    chempot_table: bool = True,
+    all_entries: bool | str = False,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+    fermi_level: float | None = None,
+    include_site_info: bool = False,
+    title: str | None = None,
+    colormap: str | Colormap | None = None,
+    linestyles: str | list[str] = "-",
+    auto_labels: bool = False,
+    filename: PathLike | None = None,
 ):
     """
-    Produce defect Formation energy vs Fermi energy plot
+    Produce defect formation energy vs Fermi energy plot.
+
     Args:
-        dft_chempots:
-            a dictionary of {Element:value} giving the chemical
-            potential of each element
+        defect_thermodynamics (DefectThermodynamics):
+            ``DefectThermodynamics`` object containing defect entries to plot.
+        dft_chempots (dict):
+            Dictionary of ``{Element: value}`` giving the chemical
+            potential of each element.
+        el_refs (dict):
+            Dictionary of ``{Element: value}`` giving the reference
+            energy of each element.
+        chempot_table (bool):
+            Whether to print the chemical potential table above the plot.
+            (Default: True)
+        all_entries (bool, str):
+            Whether to plot the formation energy lines of `all` defect entries,
+            rather than the default of showing only the equilibrium states at each
+            Fermi level position (traditional). If instead set to "faded", will plot
+            the equilibrium states in bold, and all unstable states in faded grey
+            (Default: False)
         xlim:
-            Tuple (min,max) giving the range of the x (fermi energy) axis. This may need to be
-            set manually when including transition level labels, so that they don't cross the axes.
+            Tuple (min,max) giving the range of the x-axis (Fermi level). May want
+            to set manually when including transition level labels, to avoid crossing
+            the axes. Default is to plot from -0.3 to +0.3 eV above the band gap.
         ylim:
-            Tuple (min,max) giving the range for the formation energy axis. This may need to be
-            set manually when including transition level labels, so that they don't cross the axes.
+            Tuple (min,max) giving the range for the y-axis (formation energy). May
+            want to set manually when including transition level labels, to avoid
+            crossing the axes. Default is from 0 to just above the maximum formation
+            energy value in the band gap.
+        fermi_level (float):
+            If set, plots a dashed vertical line at this Fermi level value, typically
+            used to indicate the equilibrium Fermi level position (e.g. calculated
+            with py-sc-fermi). (Default: None)
+        include_site_info (bool):
+            Whether to include site info in defect names in the plot legend (e.g.
+            $Cd_{i_{C3v}}^{0}$ rather than $Cd_{i}^{0}$). Default is ``False``, where
+            site info is not included unless we have inequivalent sites for the same
+            defect type. If, even with site info added, there are duplicate defect
+            names, then "-a", "-b", "-c" etc are appended to the names to differentiate.
+        title (str):
+            Title for the plot. (Default: None)
+        colormap (str, matplotlib.colors.Colormap):
+            Colormap to use for the formation energy lines, either as a string
+            (which can be a colormap name from
+            https://matplotlib.org/stable/users/explain/colors/colormaps or from
+            https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
+            colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
+            If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
+            lines to plot), ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more
+            than 20 lines).
+        linestyles (list):
+            Linestyles to use for the formation energy lines, either as a single
+            linestyle (``str``) or list of linestyles (``list[str]``) in the order of
+            appearance of lines in the plot legend. Default is ``"-"``; i.e. solid
+            linestyle for all entries.
+        auto_labels (bool):
+            Whether to automatically label the transition levels with their charge
+            states. If there are many transition levels, this can be quite ugly.
+            (Default: False)
+        filename (PathLike): Filename to save the plot to. (Default: None (not saved))
 
     Returns:
-        a matplotlib object.
+        ``matplotlib`` ``Figure`` object.
     """
     _chempot_warning(dft_chempots)
     if xlim is None:
+        assert isinstance(defect_thermodynamics.band_gap, float)  # typing
         xlim = (-0.3, defect_thermodynamics.band_gap + 0.3)
 
     (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin = _get_formation_energy_lines(
@@ -835,19 +1051,20 @@ def _TLD_plot(
     )
 
     (
-        cmap,
         colors,
+        linestyles,
         fig,
         ax,
         styled_fig_size,
         styled_font_size,
         styled_linewidth,
         styled_markersize,
-    ) = _get_plot_setup(colormap, all_lines_xy if all_entries is True else xy)
+    ) = _get_TLD_plot_setup(colormap, linestyles, all_lines_xy if all_entries is True else xy)
 
     defect_names_for_legend = _plot_formation_energy_lines(  # plot formation energies and get legend names
         all_lines_xy if all_entries is True else xy,
         colors=colors,
+        linestyles=linestyles,
         ax=ax,
         styled_linewidth=styled_linewidth,
         styled_markersize=styled_markersize,
@@ -857,6 +1074,10 @@ def _TLD_plot(
         _legend = _plot_formation_energy_lines(  # grey 'all_lines_xy' not included in legend
             all_lines_xy,
             colors=[(0.8, 0.8, 0.8)] * len(all_lines_xy),
+            linestyles=[
+                "-",
+            ]
+            * len(all_lines_xy),
             ax=ax,
             styled_linewidth=styled_linewidth,
             styled_markersize=styled_markersize,
@@ -891,14 +1112,16 @@ def _TLD_plot(
                 x_trans,
                 y_trans,
                 marker="o",
-                color=colors[cnt],
-                markeredgecolor=colors[cnt],
+                color="k" if all_entries is True else colors[cnt],
+                markeredgecolor="k" if all_entries is True else colors[cnt],
                 lw=styled_linewidth * 1.2,
                 markersize=styled_markersize * (4 / 6),
                 fillstyle="full",
+                linestyle="",
+                alpha=0.5 if all_entries is True else None,
             )
             if auto_labels:
-                for index, coords in enumerate(zip(x_trans, y_trans)):
+                for index, coords in enumerate(zip(x_trans, y_trans, strict=False)):
                     text_alignment = "right" if tl_label_type[index] == "start_positive" else "left"
                     ax.annotate(
                         tl_labels[index],  # this is the text
@@ -910,17 +1133,21 @@ def _TLD_plot(
                         annotation_clip=True,
                     )  # only show label if coords in current axes
 
+    legend_txt = _get_legend_txt(
+        defect_names_for_legend,
+        all_entries=all_entries is True,
+        include_site_info=include_site_info,
+    )
+    user_figsize_legend_fontsize_ratio = (plt.rcParams["figure.figsize"][1] / get_legend_font_size()) / (
+        3.5 / 9
+    )
     ax.legend(
-        _get_legends_txt(
-            (
-                [defect_entry.name for defect_entry in defect_thermodynamics.defect_entries]
-                if all_entries is True
-                else defect_names_for_legend
-            ),
-            all_entries=all_entries is True,
-        ),
-        loc=2,
-        bbox_to_anchor=(1, 1),
+        legend_txt,
+        loc="upper left",  # (of bbox)
+        bbox_to_anchor=(1.05, 1),
+        borderaxespad=0.0,  # adjust padding to move closer to the axes
+        # max 10 labels per column with default settings:
+        ncol=np.ceil(len(legend_txt) / (10 * user_figsize_legend_fontsize_ratio)),
     )
 
     if ylim is None:
@@ -934,19 +1161,39 @@ def _TLD_plot(
         ax, defect_thermodynamics.band_gap, xlim, ylim, fermi_level=fermi_level
     )  # Show colourful band edges
     if chempot_table and dft_chempots:
-        _plot_chemical_potential_table(ax, dft_chempots, loc="left", el_refs=el_refs)
+        plot_chemical_potential_table(ax, dft_chempots, el_refs=el_refs)
 
     _set_title_and_save_figure(ax, fig, title, chempot_table, filename, styled_font_size)
 
     return fig
 
 
-def _plot_chemical_potential_table(
-    ax,
-    dft_chempots,
-    loc="left",
-    el_refs=None,
-):
+def plot_chemical_potential_table(
+    ax: plt.Axes,
+    dft_chempots: dict[str, float],
+    cellLoc: str = "left",
+    el_refs: dict[str, float] | None = None,
+) -> plt.table:
+    """
+    Plot a table of chemical potentials above the plot in ``ax``.
+
+    Args:
+        ax (plt.Axes):
+            Axes object to plot the table in.
+        dft_chempots (dict):
+            Dictionary of chemical potentials of the form
+            ``{Element: value}``.
+        cellLoc (str):
+            Alignment of text in cells. Default is "left".
+        el_refs (dict):
+            Dictionary of elemental reference energies of the form
+            ``{Element: value}``. If provided, the chemical potentials
+            are given with respect to these reference energies.
+
+    Returns:
+        The ``matplotlib.table.Table`` object (which has been
+        added to the ``ax`` object).
+    """
     if el_refs is not None:
         dft_chempots = {el: energy - el_refs[el] for el, energy in dft_chempots.items()}
     labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(dft_chempots.keys())]
@@ -964,10 +1211,11 @@ def _plot_chemical_potential_table(
     else:
         text_list = ["(from calculations)", *text_list, "  [eV]"]
     widths = [0.1] + [0.9 / len(dft_chempots)] * (len(dft_chempots) + 2)
-    tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=loc)
+    tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=cellLoc)
     tab.auto_set_column_width(list(range(len(widths))))
 
     for cell in tab.get_celld().values():
         cell.set_linewidth(0)
+        cell.set_facecolor("none")  # make transparent as with rest of plot
 
     return tab

@@ -3,30 +3,51 @@ Utility code and functions for symmetry analysis of structures and defects.
 """
 
 import contextlib
+import math
 import os
 import warnings
-from typing import Optional
+from functools import lru_cache
+from itertools import permutations
 
 import numpy as np
+import pandas as pd
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import Lattice, PeriodicSite, Structure
+from pymatgen.core.structure import IStructure, Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
-from pymatgen.util.coord import pbc_diff
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
 from sympy import Eq, simplify, solve, symbols
 
 from doped.core import DefectEntry
+from doped.utils.efficiency import IStructure as doped_IStructure
+from doped.utils.efficiency import SpacegroupAnalyzer
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_bulk_site_coords,
     _get_unrelaxed_defect_structure,
+    get_site_mapping_indices,
 )
 
-warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
+
+@lru_cache(maxsize=int(1e5))
+def cached_simplify(eq):
+    """
+    Cached simplification function for ``sympy`` equations, for efficiency.
+    """
+    return simplify(eq)
+
+
+@lru_cache(maxsize=int(1e5))
+def cached_solve(equation, variable):
+    """
+    Cached solve function for ``sympy`` equations, for efficiency.
+    """
+    return solve(equation, variable)
 
 
 def _set_spglib_warnings_env_var():
@@ -50,10 +71,15 @@ def _check_spglib_version():
         warnings.warn(
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
-            f"spglib warning messages, but can be avoided by installing spglib with `conda install -c "
-            f"conda-forge spglib` or `pip install git+https://github.com/spglib/spglib "
-            f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
-            f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
+            f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
+            f"spglib`."
+            # No longer required as of spglib v2.5:
+            # f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
+            # f"(to ensure no duplicate installations).\n"
+            # f"- Then, install spglib with `conda install -c conda-forge spglib` or "
+            # f"`pip install git+https://github.com/spglib/spglib "
+            # f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
+            # f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
         )
 
 
@@ -61,16 +87,22 @@ _check_spglib_version()
 _set_spglib_warnings_env_var()
 
 
-def _round_floats(obj, places=5):
+def _round_floats(obj, places: int = 5):
     """
-    Recursively round floats in a dictionary to ``places`` decimal places.
+    Recursively round floats in a dictionary to ``places`` decimal places,
+    using the ``_custom_round`` function.
     """
     if isinstance(obj, float):
         return _custom_round(obj, places) + 0.0
     if isinstance(obj, dict):
         return {k: _round_floats(v, places) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [_round_floats(x, places) for x in obj]
+    if isinstance(obj, np.ndarray):
+        return _vectorized_custom_round(obj, places) + 0.0
+    if isinstance(obj, pd.DataFrame):  # if dataframe, convert to dict and round floats
+        return pd.DataFrame(_round_floats(obj.to_dict(), places))
+
     return obj
 
 
@@ -103,6 +135,77 @@ def _custom_round(number: float, decimals: int = 3):
 _vectorized_custom_round = np.vectorize(_custom_round)
 
 
+def _get_num_places_for_dist_precision(structure: Structure | Lattice, dist_precision: float = 0.001):
+    """
+    Given a structure or lattice, get the number of decimal places that we need
+    to keep / can round to for _fractional coordinates_ (``frac_coords``), to
+    maintain a distance precision of ``dist_precision`` in Å.
+
+    Intended for use with the ``_round_floats()`` function, to achieve cleanly
+    formatted structure outputs while ensuring no significant rounding errors are
+    introduced in site positions (e.g. for very large supercells, small differences
+    in fraction coordinates become significant).
+
+    Args:
+        structure:
+            The input structure or lattice.
+        dist_precision:
+            The desired distance precision in Å (default: 0.001).
+
+    Returns:
+        int:
+            The number of decimal places to keep for fractional
+            coordinates to maintain the desired distance precision.
+    """
+    lattice = structure if isinstance(structure, Lattice) else structure.lattice
+    frac_precision = dist_precision / max(lattice.abc)
+
+    # get corresponding number of decimal places for this precision:
+    return -1 * min(math.floor(math.log(frac_precision, 10)), 0)
+
+
+def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to_unit_cell=False):
+    """
+    Convenience method to round the lattice parameters and fractional
+    coordinates of a structure to a given distance precision, for cleanly
+    formatted structure outputs.
+
+    Does not apply this operation in-place!
+
+    Args:
+        structure:
+            The input structure.
+        dist_precision:
+            The desired distance precision in Å (default: 0.001).
+        to_unit_cell:
+            Whether to round the fractional coordinates to the unit cell
+            (default: False).
+
+    Returns:
+        Structure:
+            The structure with rounded lattice parameters and fractional
+            coordinates.
+    """
+    rounded_struct = structure.copy()
+    req_places = _get_num_places_for_dist_precision(rounded_struct, dist_precision)
+    frac_coords = _round_floats(rounded_struct.frac_coords, places=req_places)
+    lattice = Lattice(_round_floats(rounded_struct.lattice.matrix, places=req_places))
+
+    for idx in range(len(rounded_struct)):
+        orig_site = structure[idx]
+        rounded_struct._sites[idx] = PeriodicSite(
+            orig_site.species,
+            frac_coords[idx],
+            lattice,
+            properties=orig_site.properties,
+            label=orig_site.label,
+            skip_checks=True,
+            to_unit_cell=to_unit_cell,
+        )
+
+    return rounded_struct
+
+
 def _frac_coords_sort_func(coords):
     """
     Sorting function to apply on an iterable of fractional coordinates, where
@@ -110,6 +213,8 @@ def _frac_coords_sort_func(coords):
     between 0 and 3), then by the magnitude of x+y+z, then by the magnitudes of
     x, y and z.
     """
+    if coords is None:
+        return (1e10, 1e10, 1e10, 1e10, 1e10)
     coords_for_sorting = _vectorized_custom_round(
         np.mod(_vectorized_custom_round(coords), 1)
     )  # to unit cell
@@ -122,43 +227,134 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
-def _get_sga(struct, symprec=0.01):
+def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
     """
-    Get a SpacegroupAnalyzer object of the input structure, dynamically
+    Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting symprec if needs be.
-    """
-    sga = SpacegroupAnalyzer(struct, symprec)  # default symprec of 0.01
-    if sga.get_symmetry_dataset() is not None:
-        return sga
 
-    for trial_symprec in [0.1, 0.001, 1, 0.0001]:  # go one up first, then down, then criss-cross (cha cha)
-        sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)  # go one up first
-        if sga.get_symmetry_dataset() is not None:
+    Args:
+        struct (Structure): The input structure.
+        symprec (float): The symmetry precision to use (default: 0.01).
+        return_symprec (bool):
+            Whether to return the fianl ``symprec`` used (default: False).
+
+    Returns:
+        SpacegroupAnalyzer: The symmetry analyzer object.
+        If ``return_symprec`` is ``True``, returns a tuple of the symmetry
+        analyzer object and the final ``symprec`` used.
+    """
+    IStructure.__hash__ = doped_IStructure.__hash__
+
+    return _cache_ready_get_sga(struct, symprec=symprec, return_symprec=return_symprec)
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
+    """
+    ``get_sga`` code, with hashable input arguments for caching (using
+    ``Structure`` hash function from ``doped.utils.efficiency``).
+    """
+    sga = None
+    for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
+        # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
+        with contextlib.suppress(SymmetryUndeterminedError):
+            sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
+        if sga:
+            try:
+                _detected_symmetry = sga._get_symmetry()
+            except ValueError:  # symmetry determination failed
+                continue
+            if return_symprec:
+                return sga, trial_symprec
             return sga
 
-    raise ValueError("Could not get SpacegroupAnalyzer symmetry dataset of input structure!")  # well
-    # shiiii...
+    import spglib
+
+    raise SymmetryUndeterminedError(
+        f"Could not determine symmetry of input structure! Got spglib error: {spglib.get_error_message()}"
+    )
 
 
-def apply_symm_op_to_site(symm_op: SymmOp, site: PeriodicSite, lattice: Lattice) -> PeriodicSite:
+def apply_symm_op_to_site(
+    symm_op: SymmOp,
+    site: PeriodicSite,
+    fractional: bool = False,
+    rotate_lattice: Lattice | bool = True,
+    just_unit_cell_frac_coords: bool = False,
+) -> PeriodicSite:
     """
     Apply the given symmetry operation to the input site (**not in place**) and
     return the new site.
+
+    By default, also rotates the lattice accordingly. If you want to apply
+    the symmetry operation but keep the same lattice definition, set
+    ``rotate_lattice=False``.
+
+    Args:
+        symm_op (SymmOp): ``pymatgen`` ``SymmOp`` object.
+        site (PeriodicSite): ``pymatgen`` ``PeriodicSite`` object.
+        fractional (bool):
+            If the ``SymmOp`` is in fractional or Cartesian (default)
+            coordinates (i.e. to apply to ``site.frac_coords`` or
+            ``site.coords``). Default: False
+        rotate_lattice (Union[Lattice, bool]):
+            Either a ``pymatgen`` ``Lattice`` object (to use as the new
+            lattice basis of the transformed site, which can be provided
+            to reduce computation time when looping) or ``True/False``.
+            If ``True`` (default), the ``SymmOp`` rotation matrix will be
+            applied to the input site lattice, or if ``False``, the
+            original lattice will be retained.
+        just_unit_cell_frac_coords (bool):
+            If ``True``, just returns the `fractional coordinates` of the
+            transformed site (rather than the site itself), within the unit
+            cell. Default: False
+
+    Returns:
+        ``pymatgen`` ``PeriodicSite`` object with the symmetry operation
+        applied
     """
-    new_latt = np.dot(symm_op.rotation_matrix, lattice.matrix)
-    _lattice = Lattice(new_latt)
+    if isinstance(rotate_lattice, Lattice):
+        rotated_lattice = rotate_lattice
+    else:
+        if rotate_lattice:
+            if fractional:
+                rotated_lattice = Lattice(np.dot(symm_op.rotation_matrix, site.lattice.matrix))
+            else:
+                rotated_lattice = Lattice(
+                    [symm_op.apply_rotation_only(row) for row in site.lattice.matrix]
+                )
+        else:
+            rotated_lattice = site.lattice
+
+    if fractional:  # operate in **original** lattice, then convert to new lattice
+        frac_coords = symm_op.operate(site.frac_coords)
+        new_coords = site.lattice.get_cartesian_coords(frac_coords)
+    else:
+        new_coords = symm_op.operate(site.coords)
+
+    if just_unit_cell_frac_coords:
+        rotated_frac_coords = rotated_lattice.get_fractional_coords(new_coords)
+        return np.array(
+            [
+                np.mod(f, 1) if p else f
+                for p, f in zip(rotated_lattice.pbc, rotated_frac_coords, strict=False)
+            ]
+        )
 
     return PeriodicSite(
         site.species,
-        symm_op.operate(site.frac_coords),
-        _lattice,
+        new_coords,
+        rotated_lattice,
+        coords_are_cartesian=True,
         properties=site.properties,
         skip_checks=True,
         label=site.label,
     )
 
 
-def apply_symm_op_to_struct(struct: Structure, symm_op: SymmOp, fractional: bool = False) -> Structure:
+def apply_symm_op_to_struct(
+    symm_op: SymmOp, struct: Structure, fractional: bool = False, rotate_lattice: bool = True
+) -> Structure:
     """
     Apply a symmetry operation to a structure and return the new structure.
 
@@ -167,103 +363,172 @@ def apply_symm_op_to_struct(struct: Structure, symm_op: SymmOp, fractional: bool
     the input structure)**, which avoids the use of unnecessary and slow
     ``Structure.copy()`` calls, making the structure manipulation / symmetry
     analysis functions more efficient.
+    Also fixes an issue when applying fractional symmetry operations.
+
+    By default, also rotates the lattice accordingly. If you want to apply
+    the symmetry operation to the sites but keep the same lattice definition,
+    set ``rotate_lattice=False``.
+
+    Args:
+        symm_op: ``pymatgen`` ``SymmOp`` object.
+        struct: ``pymatgen`` ``Structure`` object.
+        fractional:
+            If the ``SymmOp`` is in fractional or Cartesian (default)
+            coordinates (i.e. to apply to ``site.frac_coords`` or
+            ``site.coords``). Default: False
+        rotate_lattice:
+            If the lattice of the input structure should be rotated
+            according to the symmetry operation. Default: True.
+
+    Returns:
+        ``pymatgen`` ``Structure`` object with the symmetry operation
+        applied.
     """
-    # using modified version of `pymatgen`'s `apply_operation` method:
-    _lattice = struct._lattice
-    if not fractional:
-        _lattice = Lattice([symm_op.apply_rotation_only(row) for row in _lattice.matrix])
+    # using modified version of ``pymatgen``\'s ``apply_operation`` method:
+    if rotate_lattice:
+        if not fractional:
+            rotated_lattice = Lattice([symm_op.apply_rotation_only(row) for row in struct._lattice.matrix])
 
-        def operate_site(site):
-            new_cart = symm_op.operate(site.coords)
-            new_frac = _lattice.get_fractional_coords(new_cart)
-            return PeriodicSite(
-                site.species,
-                new_frac,
-                _lattice,
-                properties=site.properties,
-                skip_checks=True,
-                label=site.label,
-            )
-
+        else:
+            rotated_lattice = Lattice(np.dot(symm_op.rotation_matrix, struct._lattice.matrix))
     else:
+        rotated_lattice = struct._lattice
 
-        def operate_site(site):
-            return apply_symm_op_to_site(symm_op, site, _lattice)
-
-    sites = [operate_site(site) for site in struct]
-
-    return Structure(
-        _lattice,
-        [site.species for site in sites],
-        [site.frac_coords for site in sites],
+    # note could also use ``SymmOp.operate_multi`` for speedup if ever necessary, but requires some more
+    # accounting of species ordering etc, and this isn't an efficiency bottleneck currently
+    return Structure.from_sites(
+        [
+            apply_symm_op_to_site(symm_op, site, fractional=fractional, rotate_lattice=rotated_lattice)
+            for site in struct
+        ]
     )
 
 
-def _get_all_equiv_sites(frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01):
+def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
+    """
+    Get the summed root-mean-square (RMS) distance between the sites of two
+    structures, in Å.
+
+    Note that this assumes the lattices of the two structures are equal!
+
+    Args:
+        struct_a: ``pymatgen`` ``Structure`` object.
+        struct_b: ``pymatgen`` ``Structure`` object.
+
+    Returns:
+        float:
+            The summed RMS distance between the sites of the two structures,
+            in Å.
+    """
+    # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
+    # (though this assumes lattices are equal)
+    # set threshold to a large number to avoid possible site-matching warnings
+    return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
+
+
+def _cluster_coords(fcoords, struct, dist_tol=0.01):
+    """
+    Cluster fractional coordinates based on their distances (using ``scipy``
+    functions) and return the cluster numbers (as an array matching the shape
+    and order of ``fcoords``).
+    """
+    if len(fcoords) == 1:  # only one input coordinates
+        return np.array([0])
+
+    dist_matrix = np.array(struct.lattice.get_all_distances(fcoords, fcoords))
+    dist_matrix = (dist_matrix + dist_matrix.T) / 2
+
+    for i in range(len(dist_matrix)):
+        dist_matrix[i, i] = 0
+    condensed_m = squareform(dist_matrix)
+    z = linkage(condensed_m)
+    return fcluster(z, dist_tol, criterion="distance")
+
+
+def _get_all_equiv_sites(
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X", just_frac_coords=False
+):
     """
     Get all equivalent sites of the input fractional coordinates in struct.
     """
     if symm_ops is None:
-        sga = _get_sga(struct, symprec=symprec)
-        symm_ops = sga.get_symmetry_operations()
+        sga = get_sga(struct, symprec=symprec)
+        symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
 
-    dummy_site = PeriodicSite("X", frac_coords, struct.lattice)
+    dummy_site = PeriodicSite(species, frac_coords, struct.lattice)
     x_sites = []
     for symm_op in symm_ops:
-        x_site = apply_symm_op_to_site(symm_op, dummy_site, struct.lattice).to_unit_cell()
-        # frac_coords = np.mod(symm_op.operate(frac_coords), 1)  # to unit cell
-        # if distance is >dist_tol for all other sites in x_sites, add x_site to x_sites:
-        if (
-            not x_sites
-            or np.linalg.norm(
-                np.dot(
-                    pbc_diff(np.array([site.frac_coords for site in x_sites]), x_site.frac_coords),
-                    struct.lattice.matrix,
-                ),
-                axis=-1,
-            ).min()
-            > dist_tol
-        ):
-            x_sites.append(x_site)
+        if just_frac_coords:
+            x_site = apply_symm_op_to_site(
+                symm_op,
+                dummy_site,
+                fractional=True,
+                rotate_lattice=struct.lattice,
+                just_unit_cell_frac_coords=True,
+            )
+        else:
+            x_site = apply_symm_op_to_site(
+                symm_op, dummy_site, fractional=True, rotate_lattice=struct.lattice
+            ).to_unit_cell()  # enforce same lattice, as we just want transformed frac coords here
 
-    return x_sites
+        x_sites.append(x_site)
+
+    all_frac_coords = [
+        tuple(i.round(_get_num_places_for_dist_precision(struct, dist_tol)) if dist_tol != 0 else i)
+        for i in (x_sites if just_frac_coords else [site.frac_coords for site in x_sites])
+    ]
+    current_x_frac_coords = list(set(all_frac_coords))
+    unique_x_sites = [
+        x_sites[all_frac_coords.index(x_frac_coords)] for x_frac_coords in current_x_frac_coords
+    ]
+
+    cn = _cluster_coords(current_x_frac_coords, struct, dist_tol=dist_tol)
+    inequivalent_x_sites = []
+    for n in set(cn):
+        inequivalent_x_sites.append(unique_x_sites[np.where(cn == n)[0][0]])  # take first of each cluster
+
+    return inequivalent_x_sites
 
 
 def _get_symm_dataset_of_struc_with_all_equiv_sites(
-    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
 ):
-    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops, dist_tol=dist_tol)
-    sga_with_all_X = _get_sga_with_all_X(struct, unique_sites, symprec=symprec)
+    unique_sites = _get_all_equiv_sites(frac_coords, struct, symm_ops, dist_tol=dist_tol, species=species)
+    struct_with_all_X = _get_struct_with_all_X(struct, unique_sites)
+    sga_with_all_X = get_sga(struct_with_all_X, symprec=symprec)
     return sga_with_all_X.get_symmetry_dataset(), unique_sites
 
 
-def _get_sga_with_all_X(struct, unique_sites, symprec=0.01):
+def _get_struct_with_all_X(struct, unique_sites):
     """
-    Add all sites in unique_sites to a ``copy`` of struct and return
-    SpacegroupAnalyzer of this new structure.
+    Add all sites in unique_sites to a ``copy`` of ``struct``, and return this
+    new ``Structure``.
     """
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
-    return _get_sga(struct_with_all_X, symprec=symprec)
+    return struct_with_all_X
 
 
 def _get_equiv_frac_coords_in_primitive(
     frac_coords, supercell, primitive, symm_ops=None, equiv_coords=True, dist_tol=0.01
 ):
     """
-    Get an equivalent fractional coordinates of frac_coords in supercell, in
-    the primitive cell.
+    Get an equivalent fractional coordinates of ``frac_coords`` from a
+    supercell, in the primitive cell.
 
     Also returns a list of equivalent fractional coords in the primitive cell
-    if equiv_coords is True.
+    if ``equiv_coords`` is ``True``.
     """
     unique_sites = _get_all_equiv_sites(frac_coords, supercell, symm_ops, dist_tol=dist_tol)
-    sga_with_all_X = _get_sga_with_all_X(supercell, unique_sites)
-
-    prim_with_all_X = get_primitive_structure(sga_with_all_X, ignored_species=["X"])
+    supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
+    prim_with_all_X = get_primitive_structure(supercell_with_all_X, ignored_species=["X"])
 
     # ensure matched to primitive structure:
     rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+    if rotated_struct is None:
+        warnings.warn("Could not find a mapping between the primitive and supercell structures!")
+        return None, None if equiv_coords else None
+
     primitive_with_all_X = rotated_struct * matrix
 
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
@@ -300,16 +565,21 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     Rotates the input prim_struct to match the target_struct orientation, and
     returns the supercell matrix to convert from the rotated prim_struct to the
     target_struct.
+
+    Returns ``(None, None)`` if no mapping is found.
     """
     possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
+    if not possible_mappings:
+        return None, None
+
     mapping = next(
         iter(  # get possible mappings, then sort by R*S, S, R, then return first
             sorted(
                 possible_mappings,
                 key=lambda x: (
-                    _lattice_matrix_sorting_func(np.dot(x[1].T, x[2])),
-                    _lattice_matrix_sorting_func(x[2]),
-                    _lattice_matrix_sorting_func(x[1]),
+                    _lattice_matrix_sort_func(np.dot(x[1].T, x[2])),
+                    _lattice_matrix_sort_func(x[2]),
+                    _lattice_matrix_sort_func(x[1]),
                 ),
             )
         )
@@ -327,53 +597,191 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     rotation_symm_op = SymmOp.from_rotation_and_translation(
         rotation_matrix=rotation_matrix.T
     )  # Transpose = inverse of rotation matrices (orthogonal matrices), better numerical stability
-    output_prim_struct = apply_symm_op_to_struct(prim_struct, rotation_symm_op)
-    clean_prim_struct_dict = _round_floats(output_prim_struct.as_dict())
-    return Structure.from_dict(clean_prim_struct_dict), supercell_matrix
+    output_prim_struct = apply_symm_op_to_struct(rotation_symm_op, prim_struct, rotate_lattice=True)
+    return _round_struct_coords(output_prim_struct), supercell_matrix
 
 
-def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
+def translate_structure(
+    structure: Structure, vector: np.ndarray, frac_coords: bool = True, to_unit_cell: bool = True
+) -> Structure:
+    """
+    Translate a structure and its sites by a given vector (**not in place**).
+
+    Args:
+        structure: ``pymatgen`` ``Structure`` object.
+        vector: Translation vector, fractional or Cartesian.
+        frac_coords:
+            Whether the input vector is in fractional coordinates.
+            (Default: True)
+        to_unit_cell:
+            Whether to translate the sites to the unit cell.
+            (Default: True)
+
+    Returns:
+        ``pymatgen`` ``Structure`` object with translated sites.
+    """
+    translated_structure = structure.copy()
+    return translated_structure.translate_sites(
+        indices=list(range(len(translated_structure))),
+        vector=vector,
+        to_unit_cell=to_unit_cell,
+        frac_coords=frac_coords,
+    )
+
+
+def _get_supercell_matrix_and_possibly_redefine_prim(
+    prim_struct, target_struct, sga: SpacegroupAnalyzer | None = None, symprec=0.01
+):
     """
     Determines the supercell transformation matrix to convert from the
-    primitive structure to the target structure. The supercell matrix is
-    defined to be T in ``T*P = S`` where P and S.
+    primitive structure to the target structure.
 
+    The supercell matrix is defined to be T in ``T*P = S`` where P and S
     are the primitive and supercell lattice matrices respectively.
     Equivalently, multiplying ``prim_struct * T`` will give the target_struct.
+    In ``pymatgen``, this requires the output transformation matrix to be
+    integer.
 
     First tries to determine a simple (integer) transformation matrix with no
     basis set rotation required. If that fails, then defaults to using
-    _rotate_and_get_supercell_matrix.
+    ``_rotate_and_get_supercell_matrix``.
+    Searches over various possible primitive cell definitions from spglib.
 
     Args:
-        prim_struct: pymatgen Structure object of the primitive cell.
-        target_struct: pymatgen Structure object of the target cell.
+        prim_struct: ``pymatgen`` ``Structure`` object of the primitive cell.
+        target_struct: ``pymatgen`` ``Structure`` object of the target cell.
+        sga:
+            ``SpacegroupAnalyzer`` object of the primitive cell. If None,
+            will be computed from prim_struct.
+        symprec:
+            Symmetry precision for ``SpacegroupAnalyzer``, if being generated.
 
     Returns:
-        prim_struct: rotated primitive structure, if needed.
-        supercell_matrix: supercell transformation matrix to convert from the
+        prim_struct:
+            Primitive structure, possibly rotated/redefined.
+        supercell_matrix:
+            Supercell transformation matrix to convert from the
             primitive structure to the target structure.
     """
-    try:
-        # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
-        transformation_matrix = np.dot(
-            target_struct.lattice.matrix, np.linalg.inv(prim_struct.lattice.matrix)
+
+    def _get_supercell_matrix_and_possibly_rotate_prim(prim_struct, target_struct):
+        try:
+            # supercell transform matrix is T in `T*P = S` (P = prim, S = super), so `T = S*P^-1`:
+            transformation_matrix = np.dot(
+                target_struct.lattice.matrix, np.linalg.inv(prim_struct.lattice.matrix)
+            )
+            if not np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
+                raise ValueError  # if non-integer transformation matrix
+
+            return prim_struct, np.rint(transformation_matrix)
+
+        except ValueError:  # if non-integer transformation matrix
+            attempt_prim_struct, attempt_transformation_matrix = _rotate_and_get_supercell_matrix(
+                prim_struct, target_struct
+            )
+            if attempt_prim_struct:  # otherwise failed, stick with original T matrix
+                prim_struct = attempt_prim_struct
+                transformation_matrix = attempt_transformation_matrix
+
+        if np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
+            return prim_struct, np.rint(transformation_matrix)
+
+        return prim_struct, transformation_matrix
+
+    sga = sga or get_sga(prim_struct, symprec=symprec)
+    rms_dists_w_candidate_prim_structs_and_T_matrices = []
+    # Could also apply possible origin shifts to other structs (refined, find_primitive) as well,
+    # if we find any structures for which this code still fails
+    candidate_prim_structs = [
+        *_get_candidate_prim_structs(prim_struct, symprec=symprec),
+        *_get_candidate_prim_structs(target_struct, symprec=symprec),
+    ]
+
+    for possible_prim_struct in candidate_prim_structs:
+        new_prim_struct, transformation_matrix = _get_supercell_matrix_and_possibly_rotate_prim(
+            possible_prim_struct, target_struct
         )
-        if not np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
-            raise ValueError  # if non-integer transformation matrix
+        if not np.allclose(
+            np.rint(transformation_matrix), transformation_matrix, atol=1e-3
+        ) or not np.allclose(
+            (new_prim_struct * transformation_matrix).lattice.matrix,
+            target_struct.lattice.matrix,
+            atol=1e-3,
+        ):
+            # not integer or doesn't exactly match bulk supercell, so bad transformation matrix, skip
+            continue
+        new_prim_struct = Structure.from_sites([site.to_unit_cell() for site in new_prim_struct])
+        rms_dist_to_target = summed_rms_dist(
+            Structure.from_sites(
+                [
+                    site.to_unit_cell()
+                    for site in (new_prim_struct * transformation_matrix).get_sorted_structure()
+                ]
+            ),
+            target_struct,
+        )
+        rms_dists_w_candidate_prim_structs_and_T_matrices.append(
+            (rms_dist_to_target, new_prim_struct, transformation_matrix)
+        )
 
-        return prim_struct, np.rint(transformation_matrix)
+    closest_match = sorted(  # sort to get ideal primitive cell definition
+        rms_dists_w_candidate_prim_structs_and_T_matrices,
+        key=lambda x: (
+            round(x[0], 3),
+            _lattice_matrix_sort_func(x[1].lattice.matrix),
+            _lattice_matrix_sort_func(x[2]),
+            _struct_sort_func(x[1]),
+        ),
+    )[0]
+    if closest_match[0] > 0.1:  # no perfect match has been found. Warn user and return the closest:
+        warnings.warn(
+            f"Found the transformation matrix from the primitive cell lattice to the supplied supercell, "
+            f"but could not determine the transformation to directly match the atomic coordinates ("
+            f"infinite possible symmetry-equivalent coordinate definitions). Closest match has RMS "
+            f"distance of {closest_match[0]:.3f} Å.\n"
+            f"The bulk and defect supercells generated will be equivalent to the input supercell, "
+            f"but with a different choice of atomic coordinates (e.g. [0.1, 0.1, 0.1] instead of [0.9, "
+            f"0.9, 0.9]). You should make sure to do the bulk supercell calculation with this "
+            f"doped-generated supercell (DefectsGenerator.bulk_supercell, which is output to the `Bulk` "
+            f"folders with the file generation functions), so that the coordinates match those of the "
+            f"defect supercells (this matters when computing finite-size corrections)."
+        )
+    # Note: Could always just get the transformation of the generated supercell to the input supercell, and
+    # then apply this transformation to each generated bulk/defect supercell at the end of defect
+    # generation, but means that self.primitive_structure * self.supercell_matrix is no longer
+    # guaranteed to match self.bulk_supercell... Not the biggest deal though
+    # Likely way more work than worth
+    return closest_match[1:]
 
-    except ValueError:  # if non-integer transformation matrix
-        prim_struct, transformation_matrix = _rotate_and_get_supercell_matrix(prim_struct, target_struct)
 
-    if np.allclose(np.rint(transformation_matrix), transformation_matrix, atol=1e-3):
-        return prim_struct, np.rint(transformation_matrix)
+def _get_candidate_prim_structs(structure, **kwargs):
+    sga = get_sga(structure, **kwargs)
 
-    return prim_struct, transformation_matrix
+    pmg_prim_struct = structure.get_primitive_structure()
+    candidate_prim_structs = (
+        [structure, pmg_prim_struct] if len(structure) == len(pmg_prim_struct) else [pmg_prim_struct]
+    )
+
+    for _i in range(4):
+        struct = sga.get_primitive_standard_structure()
+        candidate_prim_structs.append(struct)
+
+        spglib_dataset = sga.get_symmetry_dataset()
+        if not np.allclose(spglib_dataset.origin_shift, 0):
+            candidate_prim_structs.append(translate_structure(struct, spglib_dataset.origin_shift))
+
+        sga = get_sga(struct, sga._symprec)  # use same symprec
+
+    candidate_prim_structs.append(sga.find_primitive())
+    for candidate_conv_struct in [sga.get_refined_structure(), sga.get_conventional_standard_structure()]:
+        if len(candidate_conv_struct) == len(pmg_prim_struct):
+            # only also try conventional if equivalent to the primitive cell
+            candidate_prim_structs = [candidate_conv_struct, *candidate_prim_structs]
+
+    return candidate_prim_structs
 
 
-def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_sites=False, symprec=0.01):
+def get_wyckoff(frac_coords, struct, symm_ops: list | None = None, equiv_sites=False, symprec=0.01):
     """
     Get the Wyckoff label of the input fractional coordinates in the input
     structure. If the symmetry operations of the structure have already been
@@ -395,57 +803,77 @@ def get_wyckoff(frac_coords, struct, symm_ops: Optional[list] = None, equiv_site
     symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
         frac_coords, struct, symm_ops, symprec=symprec
     )
-    conv_cell_factor = len(symm_dataset["std_positions"]) / len(symm_dataset["wyckoffs"])
+    conv_cell_factor = len(symm_dataset.std_positions) / len(symm_dataset.wyckoffs)
     multiplicity = int(conv_cell_factor * len(unique_sites))
-    wyckoff_label = f"{multiplicity}{symm_dataset['wyckoffs'][-1]}"
+    wyckoff_label = f"{multiplicity}{symm_dataset.wyckoffs[-1]}"
 
     return (wyckoff_label, unique_sites) if equiv_sites else wyckoff_label
 
 
-def _struc_sorting_func(struct):
+def _struct_sort_func(struct: Structure | np.ndarray) -> tuple:
     """
-    Sort by the sum of the fractional coordinates, then by the magnitudes of
+    Sort by the lattice matrix sorting function, then by (minus) the number of
     high-symmetry coordinates (x=y=z, then 2 equal coordinates), then by the
-    summed magnitude of all x coordinates, then y coordinates, then z
-    coordinates.
+    sum of all fractional coordinates, then by the magnitudes of high-symmetry
+    coordinates (x=y=z, then 2 equal coordinates), then by the summed magnitude
+    of all x coordinates, then y coordinates, then z coordinates.
+
+    Args:
+        struct:
+            ``pymatgen`` ``Structure`` object, or an array of fractional
+            coordinates of sites in the structure (in which case the lattice
+            matrix metric is skipped).
+
+    Returns:
+        tuple: Tuple of sorting criteria values.
     """
-    struct_for_sorting = Structure.from_dict(_round_floats(struct.as_dict(), 3))
+    if isinstance(struct, Structure):
+        struct_for_sorting = _round_struct_coords(struct, to_unit_cell=True)
+        lattice_metric = _lattice_matrix_sort_func(struct_for_sorting.lattice.matrix)
+        frac_coords = struct_for_sorting.frac_coords
+    else:
+        lattice_metric = (False,)
+        frac_coords = struct
 
     # get summed magnitudes of x=y=z coords:
-    matching_coords = struct_for_sorting.frac_coords[  # Find the coordinates where x = y = z:
-        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
-        & (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
+    xyz_matching_coords = frac_coords[  # Find the coordinates where x = y = z:
+        (frac_coords[:, 0] == frac_coords[:, 1]) & (frac_coords[:, 1] == frac_coords[:, 2])
     ]
-    xyz_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+    xyz_sum_magnitudes = np.sum(np.linalg.norm(xyz_matching_coords, axis=1))
 
     # get summed magnitudes of x=y / y=z / x=z coords:
-    matching_coords = struct_for_sorting.frac_coords[
-        (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 1])
-        | (struct_for_sorting.frac_coords[:, 1] == struct_for_sorting.frac_coords[:, 2])
-        | (struct_for_sorting.frac_coords[:, 0] == struct_for_sorting.frac_coords[:, 2])
+    xy_matching_coords = frac_coords[
+        (frac_coords[:, 0] == frac_coords[:, 1])
+        | (frac_coords[:, 1] == frac_coords[:, 2])
+        | (frac_coords[:, 0] == frac_coords[:, 2])
     ]
-    xy_sum_magnitudes = np.sum(np.linalg.norm(matching_coords, axis=1))
+    xy_sum_magnitudes = np.sum(np.linalg.norm(xy_matching_coords, axis=1))
 
     return (
-        np.sum(struct_for_sorting.frac_coords),
-        xyz_sum_magnitudes,
-        xy_sum_magnitudes,
-        np.sum(struct_for_sorting.frac_coords[:, 0]),
-        np.sum(struct_for_sorting.frac_coords[:, 1]),
-        np.sum(struct_for_sorting.frac_coords[:, 2]),
+        *lattice_metric,
+        -len(xyz_matching_coords),
+        -len(xy_matching_coords),
+        round(np.sum(frac_coords), 2),
+        round(xyz_sum_magnitudes, 2),
+        round(xy_sum_magnitudes, 2),
+        round(np.sum(frac_coords[:, 0]), 2),
+        round(np.sum(frac_coords[:, 1]), 2),
+        round(np.sum(frac_coords[:, 2]), 2),
     )
 
 
-def _lattice_matrix_sorting_func(lattice_matrix: np.ndarray) -> tuple:
+def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
     """
     Sorting function to apply on an iterable of lattice matrices.
 
     Matrices are sorted by:
 
+    - lattice_matrix is diagonal
     - matrix symmetry (around diagonal)
-    - maximum sum of diagonal elements.
+    - maximum sum of diagonal element magnitudes.
     - minimum number of negative elements
     - maximum number of x, y, z that are equal
+    - maximum number of abs(x), abs(y), abs(z) that are equal
     - a, b, c magnitudes (favouring c >= b >= a)
 
     Args:
@@ -454,68 +882,87 @@ def _lattice_matrix_sorting_func(lattice_matrix: np.ndarray) -> tuple:
     Returns:
         tuple: Tuple of sorting criteria values
     """
+    is_diagonal = np.allclose(lattice_matrix, np.diag(np.diag(lattice_matrix)))
     symmetric = np.allclose(lattice_matrix, lattice_matrix.T)
     num_negs = np.sum(lattice_matrix < 0)
-    diag_sum = np.sum(np.diag(lattice_matrix))
+    diag_sum = np.round(np.sum(np.abs(np.diag(lattice_matrix))), 1)
     flat_matrix = lattice_matrix.flatten()
     num_equals = sum(
         flat_matrix[i] == flat_matrix[j]
         for i in range(len(flat_matrix))
         for j in range(i, len(flat_matrix))
     )  # double (square) counting, but doesn't matter (sorting behaviour the same)
+    num_abs_equals = sum(
+        abs(flat_matrix[i]) == abs(flat_matrix[j])
+        for i in range(len(flat_matrix))
+        for j in range(i, len(flat_matrix))
+    )  # double (square) counting, but doesn't matter (sorting behaviour the same)
     a, b, c = np.linalg.norm(lattice_matrix, axis=1)
 
     return (
+        not is_diagonal,
         not symmetric,
         -diag_sum,
         num_negs,
         -num_equals,
-        -c,
-        -b,
-        -a,
+        -num_abs_equals,
+        -round(c, 2),
+        -round(b, 2),
+        -round(a, 2),
     )
 
 
-def get_clean_structure(structure: Structure, return_T: bool = False):
+def get_clean_structure(
+    structure: Structure, return_T: bool = False, dist_precision: float = 0.001, niggli_reduce: bool = True
+):
     """
     Get a 'clean' version of the input `structure` by searching over equivalent
-    Niggli reduced cells, and finding the most optimal according to
-    `_lattice_matrix_sorting_func` (most symmetric, with mostly positive
-    diagonals and c >= b >= a), with a positive determinant (required to avoid
-    VASP bug for negative determinant cells).
+    cells, and finding the most optimal according to
+    ``_lattice_matrix_sort_func`` (most symmetric, with mostly positive
+    diagonals and c >= b >= a).
 
     Args:
         structure (Structure): Structure object.
-        return_T (bool): Whether to return the transformation matrix.
+        return_T (bool):
+            Whether to return the transformation matrix from the original
+            structure lattice to the new structure lattice (T * Orig = New).
             (Default = False)
+        dist_precision (float):
+            The desired distance precision in Å for rounding of lattice
+            parameters and fractional coordinates. (Default: 0.001)
+        niggli_reduce (bool):
+            Whether to Niggli reduce the lattice before searching for the
+            optimal lattice matrix. If this is set to ``False``, we also
+            skip the search for the best positive determinant lattice matrix.
+            (Default: True)
     """
-    reduced_lattice = structure.lattice
-    if np.linalg.det(reduced_lattice.matrix) < 0:
-        reduced_lattice = Lattice(reduced_lattice.matrix * -1)
+    lattice = structure.lattice
+    if np.all(lattice.matrix <= 0):
+        lattice = Lattice(lattice.matrix * -1)
     possible_lattice_matrices = [
-        reduced_lattice.matrix,
+        lattice.matrix,
     ]
 
     for _ in range(4):
-        reduced_lattice = reduced_lattice.get_niggli_reduced_lattice()
-        if np.linalg.det(reduced_lattice.matrix) < 0:
-            reduced_lattice = Lattice(reduced_lattice.matrix * -1)
+        lattice = lattice.get_niggli_reduced_lattice() if niggli_reduce else lattice
 
         # want to maximise the number of non-negative diagonals, and also have a positive determinant
         # can multiply two rows by -1 to get a positive determinant:
-        possible_lattice_matrices.append(reduced_lattice.matrix)
+        possible_lattice_matrices.append(lattice.matrix)
         for i in range(3):
             for j in range(i + 1, 3):
-                new_lattice_matrix = reduced_lattice.matrix.copy()
+                new_lattice_matrix = lattice.matrix.copy()
                 new_lattice_matrix[i] = new_lattice_matrix[i] * -1
                 new_lattice_matrix[j] = new_lattice_matrix[j] * -1
                 possible_lattice_matrices.append(new_lattice_matrix)
 
-    possible_lattice_matrices.sort(key=_lattice_matrix_sorting_func)
-    new_lattice = possible_lattice_matrices[0]
+    possible_lattice_matrices.sort(key=_lattice_matrix_sort_func)
+    new_lattice_matrix = possible_lattice_matrices[0]
+    if np.all(new_lattice_matrix <= 0):
+        new_lattice_matrix = new_lattice_matrix * -1
 
     new_structure = Structure(
-        new_lattice,
+        new_lattice_matrix,
         structure.species_and_occu,
         structure.cart_coords,  # type: ignore
         coords_are_cartesian=True,
@@ -524,23 +971,28 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
         labels=structure.labels,
         charge=structure._charge,
     )
-    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
-    new_structure = Structure.from_sites([site.to_unit_cell() for site in new_structure])
-    new_structure = Structure.from_dict(_round_floats(new_structure.as_dict()))
+    new_structure = _round_struct_coords(new_structure, dist_precision=dist_precision, to_unit_cell=True)
+
+    # sort structure to match a desired, deterministic format:
+    new_structure = new_structure.get_sorted_structure(
+        key=lambda x: (
+            x.species.average_electroneg,
+            x.species_string,
+            _frac_coords_sort_func(x.frac_coords),
+        )
+    )
+    if niggli_reduce:
+        new_structure = _get_best_pos_det_structure(new_structure)  # ensure positive determinant
 
     if return_T:
-        (
-            poss_rotated_structure,
-            transformation_matrix,
-        ) = _get_supercell_matrix_and_possibly_rotate_prim(structure, new_structure)
-
-        # structure shouldn't be rotated, and should be integer
-        if not np.allclose(
-            poss_rotated_structure.lattice.matrix, structure.lattice.matrix
-        ) or not np.allclose(transformation_matrix, np.rint(transformation_matrix)):
+        # T * Orig = New; T = New * Orig^-1; Orig = T^-1 * New
+        transformation_matrix = np.matmul(
+            new_structure.lattice.matrix, np.linalg.inv(structure.lattice.matrix)
+        )
+        if not np.allclose(transformation_matrix, np.rint(transformation_matrix), atol=1e-5):
             raise ValueError(
-                "Clean/reduced structure could not be found! If you are seeing this bug, "
-                "please notify the `doped` developers"
+                "Transformation matrix for clean/reduced structure could not be found! If you are seeing "
+                "this bug, please notify the `doped` developers"
             )
 
         return (new_structure, np.rint(transformation_matrix))
@@ -548,51 +1000,125 @@ def get_clean_structure(structure: Structure, return_T: bool = False):
     return new_structure
 
 
-def get_primitive_structure(sga, ignored_species: Optional[list] = None, clean: bool = True):
+def _get_best_pos_det_structure(structure: Structure):
     """
-    Get a consistent/deterministic primitive structure from a
-    SpacegroupAnalyzer object.
+    If the input structure has a negative determinant (corresponding to a left-
+    hand coordinate system), then find the best possible re-definition of the
+    lattice vectors which gives a positive determinant, according to
+    ``_struct_sort_func``.
+
+    This is to avoid an apparent VASP bug with negative triple products of the
+    lattice vectors -- not sure if this is only in old versions?
+    """
+    if np.linalg.det(structure.lattice.matrix) < 0:
+        swap_combo_score_dict = {}
+        for swap_combo in permutations([0, 1, 2]):
+            candidate_structure = swap_axes(structure, swap_combo)
+            if np.linalg.det(candidate_structure.lattice.matrix) > 0:
+                swap_combo_score_dict[swap_combo] = _struct_sort_func(candidate_structure)
+
+        best_swap_combo = min(swap_combo_score_dict, key=lambda x: swap_combo_score_dict[x])
+        structure = swap_axes(structure, best_swap_combo)
+
+    return structure
+
+
+def get_primitive_structure(
+    structure: Structure,
+    ignored_species: list | None = None,
+    clean: bool = True,
+    return_all: bool = False,
+    **kwargs,
+):
+    """
+    Get a consistent/deterministic primitive structure from a ``pymatgen``
+    ``Structure``.
 
     For some materials (e.g. zinc blende), there are multiple equivalent
-    primitive cells, so for reproducibility and in line with most structure
-    conventions/definitions, take the one with the lowest summed norm of the
-    fractional coordinates of the sites (i.e. favour Cd (0,0,0) and Te
-    (0.25,0.25,0.25) over Cd (0,0,0) and Te (0.75,0.75,0.75) for F-43m CdTe).
+    primitive cells (e.g. Cd (0,0,0) & Te (0.25,0.25,0.25); Cd (0,0,0) &
+    Te (0.75,0.75,0.75) for F-43m CdTe), so for reproducibility and in
+    line with most structure conventions/definitions, take the one with
+    the cleanest lattice and structure definition, according to
+    ``struct_sort_func``.
 
-    If ignored_species is set, then the sorting function used to determine the
-    ideal primitive structure will ignore sites with species in
-    ignored_species.
+    If ``ignored_species`` is set, then the sorting function used to determine
+    the ideal primitive structure will ignore sites with species in
+    ``ignored_species``.
+
+    Args:
+        structure:
+            ``Structure`` object to get the corresponding primitive structure of.
+        ignored_species:
+            List of species to ignore when determining the ideal primitive
+            structure. (Default: None)
+        clean:
+            Whether to return a 'clean' version of the primitive structure,
+            with the lattice matrix in a standardised form. (Default: True)
+        return_all:
+            Whether to return all possible primitive structures tested, sorted
+            by the sorting function. (Default: False)
+        **kwargs:
+            Additional keyword arguments to pass to the ``get_sga`` function
+            (e.g. ``symprec`` etc).
     """
-    possible_prim_structs = []
-    for _i in range(4):
-        struct = sga.get_primitive_standard_structure()
-        possible_prim_structs.append(struct)
-        sga = _get_sga(struct, sga._symprec)  # use same symprec
+    # make inputs hashable, then call ``_cache_ready_get_primitive_structure``:
+    IStructure.__hash__ = doped_IStructure.__hash__
+    cache_ready_ignored_species = tuple(ignored_species) if ignored_species is not None else None
+    cache_ready_kwargs = tuple(kwargs.items()) if kwargs else None
+
+    return _cache_ready_get_primitive_structure(
+        structure,
+        ignored_species=cache_ready_ignored_species,
+        clean=clean,
+        return_all=return_all,
+        kwargs=cache_ready_kwargs,
+    )
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_primitive_structure(
+    structure: Structure,
+    ignored_species: tuple | None = None,
+    clean: bool = True,
+    return_all: bool = False,
+    kwargs: tuple | None = None,
+):
+    """
+    ``get_primitive_structure`` code, with hashable input arguments for caching
+    (using ``Structure`` hash function from ``doped.utils.efficiency``).
+    """
+    kwargs_dict = dict(kwargs) if kwargs is not None else {}
+    candidate_prim_structs = _get_candidate_prim_structs(structure, **kwargs_dict)
 
     if ignored_species is not None:
         pruned_possible_prim_structs = [
             Structure.from_sites([site for site in struct if site.specie.symbol not in ignored_species])
-            for struct in possible_prim_structs
+            for struct in candidate_prim_structs
         ]
     else:
-        pruned_possible_prim_structs = possible_prim_structs
+        pruned_possible_prim_structs = candidate_prim_structs
 
     # sort and return indices:
     sorted_indices = sorted(
         range(len(pruned_possible_prim_structs)),
-        key=lambda i: _struc_sorting_func(pruned_possible_prim_structs[i]),
+        key=lambda i: _struct_sort_func(pruned_possible_prim_structs[i]),
     )
 
-    prim_struct = Structure.from_dict(_round_floats(possible_prim_structs[sorted_indices[0]].as_dict()))
+    prim_structs = [
+        _get_best_pos_det_structure(_round_struct_coords(candidate_prim_structs[i], to_unit_cell=True))
+        for i in sorted_indices
+    ]
+    if clean:
+        prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    return get_clean_structure(prim_struct) if clean else prim_struct
+    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
 
 
 def get_spglib_conv_structure(sga):
     """
     Get a consistent/deterministic conventional structure from a
-    SpacegroupAnalyzer object. Also returns the corresponding
-    SpacegroupAnalyzer (for getting Wyckoff symbols corresponding to this
+    ``SpacegroupAnalyzer`` object. Also returns the corresponding
+    ``SpacegroupAnalyzer`` (for getting Wyckoff symbols corresponding to this
     conventional structure definition).
 
     For some materials (e.g. zinc blende), there are multiple equivalent
@@ -606,13 +1132,13 @@ def get_spglib_conv_structure(sga):
     for _i in range(4):
         struct = sga.get_conventional_standard_structure()
         possible_conv_structs_and_sgas.append((struct, sga))
-        sga = _get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
+        sga = get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
 
     possible_conv_structs_and_sgas = sorted(
-        possible_conv_structs_and_sgas, key=lambda x: _struc_sorting_func(x[0])
+        possible_conv_structs_and_sgas, key=lambda x: _struct_sort_func(x[0])
     )
     return (
-        Structure.from_dict(_round_floats(possible_conv_structs_and_sgas[0][0].as_dict())),
+        _round_struct_coords(possible_conv_structs_and_sgas[0][0], to_unit_cell=True),
         possible_conv_structs_and_sgas[0][1],
     )
 
@@ -637,7 +1163,7 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
     """
     struc_wout_oxi = structure.copy()
     struc_wout_oxi.remove_oxidation_states()
-    sga = _get_sga(struc_wout_oxi)
+    sga = get_sga(struc_wout_oxi)
     conventional_structure, conv_sga = get_spglib_conv_structure(sga)
 
     wyckoff_label_dict = get_wyckoff_dict_from_sgn(conv_sga.get_space_group_number())
@@ -673,30 +1199,23 @@ def get_BCS_conventional_structure(structure, pbar=None, return_wyckoff_dict=Fal
             pbar.update(1 / 6 * 10)  # 45 up to 55% of progress bar in DefectsGenerator. This part can
             # take a little while for low-symmetry structures
 
-    if return_wyckoff_dict:
-        return (
-            Structure.from_sites(
-                [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
-            ),
-            lattice_vec_swap_array,
-            wyckoff_label_dict,
-        )
-
-    return (
-        Structure.from_sites(
-            [site.to_unit_cell() for site in swap_axes(conventional_structure, lattice_vec_swap_array)]
-        ),
-        lattice_vec_swap_array,
+    bcs_conv_structure = get_clean_structure(
+        swap_axes(conventional_structure, lattice_vec_swap_array), niggli_reduce=False
     )
+
+    if return_wyckoff_dict:
+        return bcs_conv_structure, lattice_vec_swap_array, wyckoff_label_dict
+
+    return bcs_conv_structure, lattice_vec_swap_array
 
 
 def get_conv_cell_site(defect_entry):
     """
     Gets an equivalent site of the defect entry in the conventional structure
-    of the host material. If the conventional_structure attribute is not
-    defined for defect_entry, then it is generated using SpaceGroupAnalyzer and
-    then reoriented to match the Bilbao Crystallographic Server's conventional
-    structure definition.
+    of the host material. If the ``conventional_structure`` attribute is not
+    defined for defect_entry, then it is generated using ``SpacegroupAnalyzer``
+    and then reoriented to match the Bilbao Crystallographic Server's
+    conventional structure definition.
 
     Args:
         defect_entry: ``DefectEntry`` object.
@@ -705,15 +1224,21 @@ def get_conv_cell_site(defect_entry):
     bulk_prim_structure.remove_oxidation_states()  # adding oxidation states adds the
     # # deprecated 'properties' attribute with -> {"spin": None}, giving a deprecation warning
 
-    prim_struct_with_X = defect_entry.defect.structure.copy()
-    prim_struct_with_X.remove_oxidation_states()
+    prim_struct_with_X = bulk_prim_structure.copy()
     prim_struct_with_X.append("X", defect_entry.defect.site.frac_coords, coords_are_cartesian=False)
 
-    sga = _get_sga(bulk_prim_structure)
+    sga = get_sga(bulk_prim_structure)
     # convert to match sga primitive structure first:
     sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
     s2_like_s1 = sm.get_s2_like_s1(sga_prim_struct, prim_struct_with_X)
+    if not s2_like_s1:
+        warnings.warn(
+            "The transformation from the DefectEntry primitive cell to the spglib primitive "
+            "cell could not be determined, and so the corresponding conventional cell site "
+            "cannot be identified."
+        )
+        return None
     s2_really_like_s1 = Structure.from_sites(
         [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
             PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
@@ -759,7 +1284,7 @@ def swap_axes(structure, axes):
     Swap axes of the given structure.
 
     The new order of the axes is given by the axes parameter. For example,
-    axes=(2, 1, 0) will swap the first and third axes.
+    ``axes=(2, 1, 0)`` will swap the first and third axes.
     """
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
 
@@ -793,7 +1318,7 @@ def get_wyckoff_dict_from_sgn(sgn):
     def _coord_string_to_array(coord_string):
         # Split string into substrings, parse each as a sympy expression,
         # then convert to list of sympy expressions
-        return [simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
+        return [cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
 
     for element in wyckoff["letters"]:
         label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
@@ -840,7 +1365,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                     "must be provided."
                 )
             # get sgn from primitive unit cell of bulk structure:
-            sgn = _get_sga(defect_entry.defect.structure).get_space_group_number()
+            sgn = get_sga(defect_entry.defect.structure).get_space_group_number()
 
         wyckoff_dict = get_wyckoff_dict_from_sgn(sgn)
 
@@ -864,7 +1389,7 @@ def get_wyckoff_label_and_equiv_coord_list(
                 return [
                     np.array(
                         [
-                            np.mod(float(simplify(sympy_expr).subs(variable_dict)), 1)
+                            np.mod(float(cached_simplify(sympy_expr).subs(variable_dict)), 1)
                             for sympy_expr in sympy_array
                         ]
                     )
@@ -891,14 +1416,14 @@ def get_wyckoff_label_and_equiv_coord_list(
     def evaluate_expression(sympy_expr, coord, variable_dict):
         equation = Eq(sympy_expr, coord)
         variable = next(iter(sympy_expr.free_symbols))
-        variable_dict[variable] = solve(equation, variable)[0]
+        variable_dict[variable] = cached_solve(equation, variable)[0]
 
-        return simplify(sympy_expr).subs(variable_dict)
+        return cached_simplify(sympy_expr).subs(variable_dict)
 
     def add_new_variable_dict(
         sympy_expr_prepend, sympy_expr, coord, current_variable_dict, variable_dicts
     ):
-        new_sympy_expr = simplify(sympy_expr_prepend + str(sympy_expr))
+        new_sympy_expr = cached_simplify(sympy_expr_prepend + str(sympy_expr))
         new_dict = current_variable_dict.copy()
         evaluate_expression(new_sympy_expr, coord, new_dict)  # solve for new variable
         if new_dict not in variable_dicts:
@@ -914,12 +1439,13 @@ def get_wyckoff_label_and_equiv_coord_list(
 
             # sort zipped arrays by number of variables in sympy expression:
             coord_array, sympy_array = zip(
-                *sorted(zip(coord_array, sympy_array), key=lambda x: len(x[1].free_symbols))
+                *sorted(zip(coord_array, sympy_array, strict=False), key=lambda x: len(x[1].free_symbols)),
+                strict=False,
             )
 
-            for coord, sympy_expr in zip(coord_array, sympy_array):
+            for coord, sympy_expr in zip(coord_array, sympy_array, strict=False):
                 # Evaluate the expression with the current variable_dict
-                expr_value = simplify(sympy_expr).subs(temp_dict)
+                expr_value = cached_simplify(sympy_expr).subs(temp_dict)
 
                 # If the expression cannot be evaluated to a float
                 # it means that there is a new variable in the expression
@@ -930,9 +1456,9 @@ def get_wyckoff_label_and_equiv_coord_list(
                     # Assign the expression the value of the corresponding coordinate, and solve
                     # for the new variable
                     # first, special cases with two possible solutions due to PBC:
-                    if sympy_expr == simplify("-2*x"):
+                    if sympy_expr == cached_simplify("-2*x"):
                         add_new_variable_dict("1+", sympy_expr, coord, temp_dict, variable_dicts)
-                    elif sympy_expr == simplify("2*x"):
+                    elif sympy_expr == cached_simplify("2*x"):
                         add_new_variable_dict("-1+", sympy_expr, coord, temp_dict, variable_dicts)
 
                     expr_value = evaluate_expression(
@@ -1097,11 +1623,14 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
     Returns:
         str: Defect point symmetry.
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect.site.frac_coords, defect.structure, symm_ops=symm_ops, symprec=symprec
+        defect.site.frac_coords,
+        defect.structure,
+        symm_ops=symm_ops,
+        symprec=symprec,
+        species=defect.site.species_string if defect.defect_type == DefectType.Interstitial else "X",
     )
-    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
     if spglib_point_group_symbol is not None:
         return spglib_point_group_symbol
 
@@ -1111,14 +1640,14 @@ def point_symmetry_from_defect(defect, symm_ops=None, symprec=0.01):
         dummy_species="X",
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
+    sga = get_sga(defect_diagonal_supercell, symprec=symprec)
     return schoenflies_from_hermann(sga.get_point_group_symbol())
 
 
 def point_symmetry_from_defect_entry(
     defect_entry: DefectEntry,
-    symm_ops: Optional[list] = None,
-    symprec: Optional[float] = None,
+    symm_ops: list | None = None,
+    symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool = True,
     return_periodicity_breaking: bool = False,
@@ -1197,7 +1726,6 @@ def point_symmetry_from_defect_entry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
@@ -1214,15 +1742,15 @@ def point_symmetry_from_defect_entry(
 
     if not relaxed and defect_entry.defect.defect_type != DefectType.Interstitial:
         # then easy, can just be taken from symmetry dataset of defect structure
-        symm_dataset = _get_sga(defect_entry.defect.structure, symprec=symprec).get_symmetry_dataset()
+        symm_dataset = get_sga(defect_entry.defect.structure, symprec=symprec).get_symmetry_dataset()
         return schoenflies_from_hermann(
-            symm_dataset["site_symmetry_symbols"][defect_entry.defect.defect_site_index]
+            symm_dataset.site_symmetry_symbols[defect_entry.defect.defect_site_index]
         )
 
     supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
 
     if symm_ops is None:
-        symm_ops = _get_sga(supercell).get_symmetry_operations()
+        symm_ops = get_sga(supercell).get_symmetry_operations()
 
     # For relaxed = True, often only works for relaxed defect structures if it is a scalar matrix
     # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
@@ -1259,7 +1787,7 @@ def point_symmetry_from_defect_entry(
     if relaxed:
         with contextlib.suppress(Exception):
             spglib_point_group_symbol = schoenflies_from_hermann(
-                _get_sga(supercell, symprec=symprec).get_point_group_symbol()
+                get_sga(supercell, symprec=symprec).get_point_group_symbol()
             )
 
     if not relaxed or spglib_point_group_symbol is None:
@@ -1274,6 +1802,11 @@ def point_symmetry_from_defect_entry(
                     symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
                     symprec=symprec,
                     dist_tol=symprec,
+                    species=(
+                        defect_entry.defect.site.species_string
+                        if defect_entry.defect.defect_type == DefectType.Interstitial
+                        else "X"
+                    ),
                 )
 
                 # Note:
@@ -1320,7 +1853,7 @@ def point_symmetry_from_defect_entry(
             # This issue is avoided for relaxed defect supercells as we take the symm_ops of our reduced
             # symmetry cell rather than that of the bulk (so no chance of spurious symmetry upgrade from
             # equivalent sites), and hence the max point symmetry is the point symmetry of the defect
-            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["site_symmetry_symbols"][-1])
+            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
             # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
             # determined using the point group of the unrelaxed defect structure:
@@ -1328,7 +1861,7 @@ def point_symmetry_from_defect_entry(
             #     "unrelaxed_defect_structure", defect_supercell
             # )
             # return schoenflies_from_hermann(
-            #     _get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset()["pointgroup"],
+            #     get_sga(unrelaxed_defect_supercell, symprec).get_symmetry_dataset().pointgroup,
             # )
             # But current approach works for all cases with unrelaxed defect structures
 
@@ -1337,15 +1870,15 @@ def point_symmetry_from_defect_entry(
             # the defect (e.g. for split-interstitials, split-vacancies, swapped vacancies etc),
             # so use 'pointgroup' output (in this case the reduced symmetry avoids the symmetry-upgrade
             # possibility with the equivalent sites, as when relaxed=False)
-            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset["pointgroup"])
+            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.pointgroup)
 
             # This also works (at least for non-periodicity-breaking supercells) for relaxed defects in
             # most cases, but is slightly less robust (more sensitive to ``symprec`` choice) than the
             # approach above:
             # schoenflies_from_hermann(
-            #     _get_sga(
+            #     get_sga(
             #         defect_supercell, symprec=symprec
-            #     ).get_symmetry_dataset()["pointgroup"]
+            #     ).get_symmetry_dataset().pointgroup
             # )
 
     if spglib_point_group_symbol is not None:
@@ -1368,7 +1901,7 @@ def point_symmetry_from_defect_entry(
         dummy_species="X",
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = _get_sga(defect_diagonal_supercell, symprec=symprec)
+    sga = get_sga(defect_diagonal_supercell, symprec=symprec)
     point_group = schoenflies_from_hermann(sga.get_point_group_symbol())
     return (point_group, not matching) if return_periodicity_breaking else point_group
 
@@ -1392,23 +1925,40 @@ def _check_relaxed_defect_symmetry_determination(
 
     if unrelaxed_defect_structure is not None:
         unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
-            _get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset()["pointgroup"],
+            get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset().pointgroup,
         )
 
         bulk_supercell = _get_bulk_supercell(defect_entry)
-        bulk_symm_ops = _get_sga(bulk_supercell).get_symmetry_operations()
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            defect_supercell_bulk_site_coords,
-            bulk_supercell,
-            symm_ops=bulk_symm_ops,
-            symprec=symprec,
-            dist_tol=symprec,
-        )
-        bulk_spglib_point_group_symbol = schoenflies_from_hermann(
-            symm_dataset["site_symmetry_symbols"][-1]
-        )
+        if symprec not in [0.1, None]:  # only pre-calculate bulk_symm_ops if not default symprec
+            bulk_symm_ops = get_sga(bulk_supercell).get_symmetry_operations()
+        else:
+            bulk_symm_ops = None
 
-        if bulk_spglib_point_group_symbol != unrelaxed_spglib_point_group_symbol:
+        match = False
+        # allow some variation in dist_tol as this can be a little sensitive and not always perfectly
+        # mappable to symprec:
+        for trial_dist_tol in [symprec, symprec * 0.85, symprec * 1.15]:
+            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+                defect_supercell_bulk_site_coords,
+                bulk_supercell,
+                symm_ops=bulk_symm_ops,
+                symprec=symprec,
+                dist_tol=trial_dist_tol,
+                species=(
+                    defect_entry.defect.site.species_string
+                    if defect_entry.defect.defect_type == DefectType.Interstitial
+                    else "X"
+                ),
+            )
+            bulk_spglib_point_group_symbol = schoenflies_from_hermann(
+                symm_dataset.site_symmetry_symbols[-1]
+            )
+
+            if bulk_spglib_point_group_symbol == unrelaxed_spglib_point_group_symbol:
+                match = True
+                break
+
+        if not match:
             if verbose:
                 warnings.warn(
                     "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has "
@@ -1428,11 +1978,11 @@ def _check_relaxed_defect_symmetry_determination(
     return False  # return False if symmetry couldn't be checked
 
 
-def point_symmetry(
+def point_symmetry_from_structure(
     structure: Structure,
-    bulk_structure: Optional[Structure] = None,
-    symm_ops: Optional[list] = None,
-    symprec: Optional[float] = None,
+    bulk_structure: Structure | None = None,
+    symm_ops: list | None = None,
+    symprec: float | None = None,
     relaxed: bool = True,
     verbose: bool = True,
     return_periodicity_breaking: bool = False,
@@ -1476,9 +2026,9 @@ def point_symmetry(
             is breaking the crystal periodicity (and thus preventing accurate
             determination of the relaxed defect point symmetry) and warn you if so.
         symm_ops (list):
-            List of symmetry operations of either the defect_entry.bulk_supercell
-            structure (if ``relaxed=False``) or defect_entry.defect_supercell (if
-            ``relaxed=True``), to avoid re-calculating. Default is None (recalculates).
+            List of symmetry operations of either the ``bulk_structure`` structure
+            (if ``relaxed=False``) or ``structure`` (if ``relaxed=True``), to avoid
+            re-calculating. Default is None (recalculates).
         symprec (float):
             Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed structures,
             0.1 for relaxed (to account for residual structural noise, matching that
@@ -1503,7 +2053,6 @@ def point_symmetry(
         a boolean specifying if the supercell has been detected to break the crystal
         periodicity).
     """
-    warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
 
@@ -1511,7 +2060,7 @@ def point_symmetry(
     if relaxed and bulk_structure is None:
         with contextlib.suppress(Exception):
             spglib_point_group_symbol = schoenflies_from_hermann(
-                _get_sga(structure, symprec=symprec).get_point_group_symbol()
+                get_sga(structure, symprec=symprec).get_point_group_symbol()
             )
         if spglib_point_group_symbol is not None:
             return (
@@ -1531,7 +2080,7 @@ def point_symmetry(
             bulk_site_index,
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
-            bulk_voronoi_node_dict,
+            _bulk_voronoi_node_dict,
         ) = defect_from_structures(
             bulk_structure,
             structure,
@@ -1568,6 +2117,56 @@ def point_symmetry(
         "Target site symmetry could not be determined using just the input structure. Please also supply "
         "the unrelaxed bulk structure (`bulk_structure`)."
     )
+
+
+def point_symmetry_from_site(
+    site: PeriodicSite | np.ndarray | list,
+    structure: Structure,
+    coords_are_cartesian: bool = False,
+    symm_ops: list | None = None,
+    symprec: float = 0.01,
+):
+    r"""
+    Get the point symmetry of a site in a structure.
+
+    Args:
+        site (Union[PeriodicSite, np.ndarray, list]):
+            Site for which to determine the point symmetry. Can be a
+            ``PeriodicSite`` object, or a list or numpy array of the
+            coordinates of the site (fractional coordinates by default,
+            or cartesian if ``coords_are_cartesian = True``).
+        structure (Structure):
+            ``Structure`` object for which to determine the point symmetry
+            of the site.
+        coords_are_cartesian (bool):
+            If True, the site coordinates are assumed to be in cartesian
+            coordinates. Default is False.
+        symm_ops (list):
+            List of symmetry operations of the ``structure`` to avoid
+            re-calculating. Default is None (recalculates).
+        symprec (float):
+            Symmetry tolerance for ``spglib``. Default is 0.01. You may want
+            to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.).
+
+    Returns:
+        str: Site point symmetry.
+    """
+    if isinstance(site, np.ndarray | list):
+        site = PeriodicSite(
+            species="X", coords=site, lattice=structure.lattice, coords_are_cartesian=coords_are_cartesian
+        )
+
+    try:
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species=site.species_string
+        )
+    except SymmetryUndeterminedError:
+        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
+            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species="X"
+        )
+
+    return schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)

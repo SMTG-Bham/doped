@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from test_analysis import if_present_rm
 
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
@@ -155,9 +154,6 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     F_O_1_entry: DefectEntry
     Te_i_2_ent: DefectEntry
 
-    def tearDown(self):
-        if_present_rm(os.path.join(self.CdTe_bulk_data_dir, "voronoi_nodes.json"))
-
     @classmethod
     def setUpClass(cls) -> None:
         # prepare parsed defect data (from doped parsing example)
@@ -165,17 +161,15 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         cls.example_dir = os.path.join(cls.module_path, "../examples")
         cls.CdTe_example_dir = os.path.join(cls.module_path, "../examples/CdTe")
         cls.ytos_example_dir = os.path.join(cls.module_path, "../examples/YTOS")
-        cls.CdTe_bulk_data_dir = os.path.join(cls.CdTe_example_dir, "CdTe_bulk/vasp_ncl")
+        cls.CdTe_bulk_data_dir = os.path.join(cls.CdTe_example_dir, "v_Cd_example_data/CdTe_bulk/vasp_ncl")
         cls.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 
         cls.v_Cd_dict = {}  # dictionary of parsed vacancy defect entries
 
-        for i in os.listdir(cls.CdTe_example_dir):  # loops through the example directory
-            if (
-                os.path.isdir(f"{cls.CdTe_example_dir}/{i}") and "v_Cd" in i
-            ):  # and parses folders that have "v_Cd" in their name
+        for i in os.listdir(f"{cls.CdTe_example_dir}/v_Cd_example_data"):
+            if os.path.isdir(f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}") and "v_Cd" in i:
                 print(f"Parsing {i}...")
-                defect_path = f"{cls.CdTe_example_dir}/{i}/vasp_ncl"
+                defect_path = f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}/vasp_ncl"
                 cls.v_Cd_dict[i] = analysis.defect_entry_from_paths(
                     defect_path,
                     cls.CdTe_bulk_data_dir,

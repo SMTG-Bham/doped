@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "2.4.7"
+version = "3.0.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "skavanagh@seas.harvard.edu"}]
 readme = "README.md"
@@ -16,27 +16,27 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"  # dictated by "pymatgen>=2024.9.10" requirement
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2023.11.12",  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
-    "spglib>=2.4.0",  # previously explicitly set to <=2.0.2 to avoid unnecessary warnings
-    # (https://github.com/spglib/spglib/issues/338) but causing dependency issues
-    # (https://github.com/SMTG-Bham/doped/issues/73), being worked on in
-    # https://github.com/spglib/spglib/issues/462 -- update Troubleshooting.rst and spglib warning in
-    # doped.utils.symmetry when finally resolved
+    "pymatgen>=2024.9.10",  # needs new SymmetryUndeterminedError class
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
+    "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
     "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
     "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
     # if any dependency issues arise can make easyunfold an optional dependency
+    "cmcrameri>=1.4",  # for colour-maps; >=1.4 required for cmcrameri.cm.cmaps definition
+    "matplotlib-label-lines", # for labelling lines in matplotlib plots
+    "dscribe",  # for defect site guessing using SOAP analysis
 ]
 
+# Reminder: Update docs pages when any new (sub)modules are added!
 [project.urls]
 Homepage = "https://doped.readthedocs.io/en/latest/"
 Documentation = "https://doped.readthedocs.io/en/latest/"
@@ -45,8 +45,10 @@ Repository = "https://github.com/SMTG-Bham/doped"
 
 [project.optional-dependencies]
 tests = [
-    "pytest<8.2",  # with pytest==8.2.0, seemed to cause memory issue on GH Actions mpl tests, python=3.10
-    "pytest-mpl>=0.16.1"
+    "pytest>=8.3",
+    "pytest-mpl>=0.16.1",
+    "mp-api",  # not required by default as user can use legacy API, but needed for tests
+    "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
 ]
 docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
 analysis = [
@@ -62,6 +64,7 @@ pdf = ["pycairo"]
 exclude = ["examples*", "*testing", "tests*", "docs*"]
 
 [tool.setuptools.package-data]
+"doped" = ["py.typed"]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
 
@@ -127,4 +130,4 @@ wrap-summaries = 79
 wrap-descriptions = 79
 
 [tool.codespell]
-ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise"  # lowercase!
+ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll"  # lowercase!

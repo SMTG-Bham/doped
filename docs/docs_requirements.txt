@@ -1,7 +1,8 @@
-sphinx
-myst-nb
+sphinx>=7
+myst-nb>=1.0
 recommonmark
-renku-sphinx-theme
+renku-sphinx-theme>=0.4.0  # can update to >0.5.0 when https://github.com/SwissDataScienceCenter/renku-sphinx-theme/pull/26 merged
+sphinx_rtd_theme>=1.3.0  # can update to >2.0 when https://github.com/SwissDataScienceCenter/renku-sphinx-theme/pull/26 merged
 sphinx_click
 sphinx_design
 ase
@@ -15,11 +16,10 @@ filelock
 tabulate
 matplotlib>=3.5.2
 numpy>=1.21  # needed for numpy.typing.NDArray
-pymatgen>=2023.11.12  # limiting factor: POTCAR_STATS_PATH available from pymatgen.io.vasp.inputs
+pymatgen>=2024.7.18  # requirement for spglib>=2.5.0 for SpglibDataset attribute interface
 pymatgen-analysis-defects>=2023.8.22
-monty
-shakenbreak>=3.3.1
-packaging
+shakenbreak>=3.3.4  # oxi-state functions renaming
 pandas>=1.1.0
 pydefect>=0.8.1
 vise>=0.9.0
+cmcrameri
