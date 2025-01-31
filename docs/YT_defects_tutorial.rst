@@ -1,5 +1,5 @@
-YouTube Defects Tutorial
-========================
+YouTube Defect Modelling Tutorial
+=================================
 
 .. raw:: html
 
