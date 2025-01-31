@@ -43,10 +43,10 @@ v.2.4.7
 ----------
 - Update doping/carrier concentration functions to be more accurate and robust (following logic discussed
   here: https://github.com/materialsproject/pymatgen/pull/3879).
-- Improve reverse-supercell-matrix determination for `generate_supercell=False`
-- Refactor `bulk_band_gap_path` to `bulk_band_gap_vr` in `DefectsParser`/`DefectParser`,
+- Improve reverse-supercell-matrix determination for ``generate_supercell=False``
+- Refactor ``bulk_band_gap_path`` to ``bulk_band_gap_vr`` in `DefectsParser`/`DefectParser`,
 - Update docstrings to reiterate that bulk supercell VBM is used as VBM reference point for the Fermi level
-  by default, unless alternative `bulk_band_gap_vr` provided.
+  by default, unless alternative ``bulk_band_gap_vr`` provided.
 
 v.2.4.6
 ----------
@@ -63,7 +63,7 @@ v.2.4.5
 v.2.4.4
 ----------
 - Make oxidation state guessing more efficient, semi-significant speed up in generation/parsing for tough cases.
-- Add `bulk_site_concentration` property to `DefectEntry`, giving the concentration of the corresponding lattice site of that defect in the pristine bulk.
+- Add ``bulk_site_concentration`` property to ``DefectEntry``, giving the concentration of the corresponding lattice site of that defect in the pristine bulk.
 - Minor updates to ensure compatibility with recent ``pymatgen`` and ``ASE`` releases.
 
 v.2.4.3
@@ -134,7 +134,7 @@ v.2.3.0
   (thanks to efficient optimisation algorithm) with some prudent constraints. Significantly reduces
   supercell sizes required in most cases.
 - Overhaul defect grouping as discussed, to use the distance between equivalent defect sites (with this
-  controllable via the `dist_tol` parameter).
+  controllable via the ``dist_tol`` parameter).
 - Add point symmetry and orientational/spin degeneracy parsing, automatically included in thermodynamics
   analysis (and customisable by user).
 - Many efficiency improvements (particularly in defect & input file generation, and symmetry functions).
@@ -174,14 +174,14 @@ v.2.1.0
 - Efficiency improvements in obtaining defect site info (Wyckoff positions)
 - Additional utils and functions for defect generation and manipulation.
 - (Many) updated tests.
-- Added functionality for robustly determining the point group symmetry of _relaxed_ defects 🔥
+- Added functionality for robustly determining the point group symmetry of `relaxed` defects 🔥
 
 v.2.0.5
 ----------
 - Update oxi-state handling to:
     - Use pre-assigned oxi states if present
     - Handle ``pymatgen`` oxi-state guessing failures (non-integer oxi states, inaccurate oxi states with
-      max_sites, failures for extremely large systems etc)
+      ``max_sites``, failures for extremely large systems etc)
 - Update default ``probability_threshold`` from 0.01 to 0.0075.
 - Account for rare possibility of user being on a non UTF-8 system.
 - Italicise "V" for vacancy in plotting.
@@ -191,7 +191,7 @@ v.2.0.5
 v.2.0.4
 ----------
 - Add supercell re-ordering tests for parsing
-- Ensure final _relaxed_ defect site (for interstitials and substitutions) is used for finite-size
+- Ensure final `relaxed` defect site (for interstitials and substitutions) is used for finite-size
   charge corrections
 - Consolidate functions and input sets with ``ShakeNBreak``
 - Update defect generation tests
@@ -255,7 +255,7 @@ v1.0.6
 - Major overhaul of ``vasp_input`` functions setup to be far more streamlined and customisable.
 - Major overhaul of ``chemical_potentials`` code; now with improved algorithm for selecting potential competing phases
 - Update of example notebooks
-- Add tests for parsing calculations, chemical_potentials and vasp_input
+- Add tests for parsing calculations, ``chemical_potentials`` and ``vasp_input``
 - Add GH Actions workflows (for tests, GH releases and pypi packaging)
 - Adopt recommended versioning convention based on dates
 - General tidy up, docstring padding, formatting and ``TODO`` addition/removal
