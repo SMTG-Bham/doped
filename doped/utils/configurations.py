@@ -75,7 +75,7 @@ def orient_s2_like_s1(
             "`get_s2_like_s1`."
         )
 
-    struct2_like_struct1 = _scan_sm_stol_till_match(
+    struct2_like_struct1 = StructureMatcher_scan_stol(
         struct1, struct2, func_name="get_s2_like_s1", **sm_kwargs
     )
 
@@ -286,7 +286,7 @@ def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Stru
     return None if match is None else (match[0], match[1])
 
 
-def _scan_sm_stol_till_match(
+def StructureMatcher_scan_stol(
     struct1: Structure,
     struct2: Structure,
     func_name: str = "get_s2_like_s1",
@@ -298,7 +298,7 @@ def _scan_sm_stol_till_match(
     r"""
     Utility function to scan through a range of ``stol`` values for
     ``StructureMatcher`` until a match is found between ``struct1`` and
-    ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result.
+    ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result).
 
     The ``StructureMatcher.match()`` function (used in most
     ``StructureMatcher`` methods) speed is heavily dependent on ``stol``,
@@ -319,10 +319,12 @@ def _scan_sm_stol_till_match(
             The name of the ``StructureMatcher`` method to return the result
             of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
             as:
+            
             - "get_s2_like_s1" (default)
             - "get_rms_dist"
             - "fit"
             - "fit_anonymous"
+            
             etc.
         min_stol (float):
             Minimum ``stol`` value to try. Default is to use ``doped``\s
@@ -336,6 +338,10 @@ def _scan_sm_stol_till_match(
             50% each time.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
+    
+    Returns:
+        Result of ``StructureMatcher.{func_name}(struct1, struct2)`` or
+        ``None`` if no match is found.
     """
     # use doped efficiency tools to make structure-matching as fast as possible:
     Composition.__instances__ = {}
@@ -379,6 +385,9 @@ def _scan_sm_stol_till_match(
         # close to the necessary value anyway.
 
     return None
+
+# alias for backwards compatibility, will remove in future versions:
+_scan_sm_stol_till_match = StructureMatcher_scan_stol
 
 
 def get_path_structures(

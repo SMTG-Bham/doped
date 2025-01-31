@@ -1918,9 +1918,9 @@ class Defect(core.Defect):
                         defect.structure = bulk_oxi_states
 
                     else:
-                        from doped.utils.configurations import _scan_sm_stol_till_match
+                        from doped.utils.configurations import StructureMatcher_scan_stol
 
-                        mapping_to_defect = _scan_sm_stol_till_match(
+                        mapping_to_defect = StructureMatcher_scan_stol(
                             defect.structure,
                             bulk_oxi_states,
                             func_name="get_mapping",

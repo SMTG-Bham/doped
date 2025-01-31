@@ -634,7 +634,7 @@ def find_missing_idx(
     )
     # in theory this could be made even faster using ``lll_frac_tol`` as in ``_cart_dists()`` in
     # ``pymatgen``, with smart choice of initial ``lll_frac_tol`` and scanning upwards if the match is
-    # below the threshold tolerance (as in ``_scan_sm_stol_till_match()``), but in practice this
+    # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
     # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
     site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
