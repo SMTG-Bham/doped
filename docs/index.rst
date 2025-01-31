@@ -135,7 +135,7 @@ Studies using ``doped``, so far
 Acknowledgements
 ================
 
-``doped`` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular
+``doped`` (née ``DefectsWithTheBoys``) has benefitted from feedback from many users, in particular
 members of the `Scanlon <http://davidscanlon.com/>`_ and
 `Walsh <https://wmd-group.github.io/>`_ research groups who have / are using it in their work.
 Direct contributors are listed in the GitHub ``Contributors`` sidebar; including Seán Kavanagh,
