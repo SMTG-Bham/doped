@@ -35,7 +35,7 @@ def orient_s2_like_s1(
     ``CarrierCapture.jl`` etc.).
 
     This corresponds to minimising the root-mean-square displacement from
-    the shortest _linear_ path to transform from ``struct1`` to a
+    the shortest `linear` path to transform from ``struct1`` to a
     symmetry-equivalent definition of ``struct2``)... (TODO)
     Uses the ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``,
     but extended to ensure the correct atomic indices matching and lattice
@@ -105,7 +105,7 @@ def orient_s2_like_s1(
                     (a.distance(b) ** 2) * a.specie.atomic_mass
                     for a, b in zip(struct_a, struct_b, strict=False)
                 )
-            )
+            )  # TODO: Make this a public function, with option to reorient if not matching
         except Exception:
             return "N/A"
 

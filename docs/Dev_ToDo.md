@@ -98,9 +98,9 @@
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
 - Quick run through tutorial notebooks to check code all updated and running.
-- Clean up repo, removing old unnecessary git blobs
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout?
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.
+- Also update `doped` requirement for SnB and use refactored `StructureMatcher_scan_stol`.
 - Stenciling tutorial and tests.
 
 - Tests for configuration coordinate diagram generation code
