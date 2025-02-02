@@ -824,13 +824,13 @@ def charge_state_probability(
       (e.g. Na_i^+1 has Na in the +1 oxidation state), as given by its prevalence
       in the ICSD.
     - The magnitude of the charge state; with a probability function:
-    ``1/|charge_state|^(2/3)``
-    - The magnitude of the charge state relative to the maximum host oxidation
-      state (i.e. how 'charged' the host is); with a probability function:
+      ``1/|charge_state|^(2/3)``
+    - The magnitude of the charge state relative to the max host oxidation state
+      (i.e. how 'charged' the host is); with a probability function:
       ``1/(2*|charge_state - max_host_oxi_magnitude|)^(2/3)`` if
       ``charge_state > max_host_oxi_magnitude``, otherwise 1.
-    - The magnitude of the defect element oxidation state relative to the maximum
-      host oxidation state; with a probability function:
+    - The magnitude of the defect element oxidation state relative to the max host
+      oxidation state; with a probability function:
       ``1/(2*|defect_el_oxi_state - max_host_oxi_magnitude|)^(2/3)`` if
       ``defect_el_oxi_state > max_host_oxi_magnitude``, otherwise 1.
 
