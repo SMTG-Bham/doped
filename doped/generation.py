@@ -798,7 +798,7 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
     return oxi_states
 
 
-def _charge_state_probability(
+def charge_state_probability(
     charge_state: int,
     defect_el_oxi_state: int,
     defect_el_oxi_probability: float,
@@ -813,6 +813,34 @@ def _charge_state_probability(
 
     Disfavours large (absolute) charge states, low probability oxidation
     states and greater charge/oxidation state magnitudes than that of the host.
+    This charge state probability function is primarily intended for substitutions
+    and interstitials, while the ``get_vacancy_charge_states()`` function is used
+    for vacancies.
+
+    Specifically, the overall probability is given by the product of these
+    probability factors:
+
+    - The probability of the corresponding oxidation state of the defect element
+      (e.g. Na_i^+1 has Na in the +1 oxidation state), as given by its prevalence
+      in the ICSD.
+    - The magnitude of the charge state; with a probability function:
+    ``1/|charge_state|^(2/3)``
+    - The magnitude of the charge state relative to the maximum host oxidation
+      state (i.e. how 'charged' the host is); with a probability function:
+      ``1/(2*|charge_state - max_host_oxi_magnitude|)^(2/3)`` if
+      ``charge_state > max_host_oxi_magnitude``, otherwise 1.
+    - The magnitude of the defect element oxidation state relative to the maximum
+      host oxidation state; with a probability function:
+      ``1/(2*|defect_el_oxi_state - max_host_oxi_magnitude|)^(2/3)`` if
+      ``defect_el_oxi_state > max_host_oxi_magnitude``, otherwise 1.
+
+    Note that neutral charge states are always included.
+    
+    This probability function was found to give optimal performance in terms of
+    efficiency and completeness when tested against other approaches (see the
+    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may 
+    not be perfect in all cases, so make sure to critically consider the estimated
+    charge states for your system!
 
     Args:
         charge_state (int): Charge state of defect.
@@ -874,10 +902,22 @@ def _charge_state_probability(
     return charge_state_guessing_log["probability"]
 
 
-def _get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
+def get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     """
-    Get the possible charge states for a vacancy defect, which is from +/-1 to
-    the vacancy oxidation state.
+    Get the estimated charge states for a vacancy defect, which is from +/-``padding`` 
+    to the fully-ionised vacancy charge state (a.k.a. the vacancy oxidation state).
+
+    e.g. for vacancies in Sb2O5 (https://doi.org/10.1021/acs.chemmater.3c03257), 
+    the fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2 
+    respectively (i.e. the negative of the elemental oxidation states in Sb2O5), 
+    so the estimated charge states would be from +1 to -5 for ``V_Sb`` and from 
+    +2 to -1 for ``V_O`` for the default ``padding`` of 1.
+    
+    This probability function was found to give optimal performance in terms of
+    efficiency and completeness when tested against other approaches (see the
+    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may 
+    not be perfect in all cases, so make sure to critically consider the estimated
+    charge states for your system! 
 
     Args:
         vacancy (Defect): A ``doped`` ``Vacancy`` object.
@@ -889,7 +929,7 @@ def _get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
             Default is 1.
 
     Returns:
-        list[int]: A list of possible charge states for the defect.
+        list[int]: A list of estimated charge states for the defect.
     """
     if not isinstance(vacancy.oxi_state, int | float):
         raise ValueError(
@@ -930,7 +970,7 @@ def _get_charge_states(
     return_log: bool = False,
 ) -> dict:
     return {
-        int(oxi - orig_oxi): _charge_state_probability(
+        int(oxi - orig_oxi): charge_state_probability(
             oxi - orig_oxi, oxi, oxi_prob, max_host_oxi_magnitude, return_log=return_log
         )
         for oxi, oxi_prob in possible_oxi_states.items()
@@ -941,7 +981,28 @@ def guess_defect_charge_states(
     defect: Defect, probability_threshold: float = 0.0075, padding: int = 1, return_log: bool = False
 ) -> list[int] | tuple[list[int], list[dict]]:
     """
-    Guess the possible charge states of a defect.
+    Guess the possible stable charge states of a defect.
+
+    This function estimates the probabilities of the charge states of a defect,
+    using the probability of the corresponding defect element oxidation states,
+    the magnitudes of the charge states, and the maximum magnitude of the host
+    oxidation states (i.e. how 'charged' the host is), and returns a list of
+    charge states that have an estimated probability greater than the
+    ``probability_threshold``.
+
+    Disfavours large (absolute) charge states, low probability oxidation
+    states and greater charge/oxidation state magnitudes than that of the host.
+    Note that neutral charge states are always included.
+
+    For specific details on the probability functions employed, see the
+    ``charge_state_probability`` (for substitutions and interstitials) and
+    ``get_vacancy_charge_states()`` (for vacancies) functions.
+
+    These probability functions were found to give optimal performance in terms of
+    efficiency and completeness when tested against other approaches (see the
+    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may
+    not be perfect in all cases, so make sure to critically consider the estimated
+    charge states for your system!
 
     Args:
         defect (Defect): doped Defect object.
@@ -970,7 +1031,7 @@ def guess_defect_charge_states(
     # access or not (i.e. MP access or not). Will keep in mind.
     if defect.defect_type == core.DefectType.Vacancy:
         # Set defect charge state: from +/-1 to defect oxi state
-        vacancy_charge_states = _get_vacancy_charge_states(defect, padding=padding)
+        vacancy_charge_states = get_vacancy_charge_states(defect, padding=padding)
         if return_log:
             charge_state_guessing_log = [
                 {
@@ -1026,7 +1087,7 @@ def guess_defect_charge_states(
         # probability for the oxi_state of the substitution atom in the structure
         # should really be included unless it gives an absolute charge state >= 5, so set oxi_state
         # probability to 100%
-        possible_charge_states[defect_el_oxi_in_struct - orig_oxi] = _charge_state_probability(
+        possible_charge_states[defect_el_oxi_in_struct - orig_oxi] = charge_state_probability(
             defect_el_oxi_in_struct - orig_oxi,
             defect_el_oxi_in_struct,
             1,
@@ -1040,7 +1101,7 @@ def guess_defect_charge_states(
         and defect_el_oxi_in_struct not in range(charge_state_range[0], charge_state_range[1] + 1)
     ):
         # if oxidation state of interstitial element in the host structure is not included, include it!
-        possible_charge_states[defect_el_oxi_in_struct] = _charge_state_probability(
+        possible_charge_states[defect_el_oxi_in_struct] = charge_state_probability(
             defect_el_oxi_in_struct - orig_oxi,
             defect_el_oxi_in_struct,
             1,
@@ -1312,15 +1373,20 @@ class DefectsGenerator(MSONable):
         Possible charge states for the defects are estimated using the probability of
         the corresponding defect element oxidation state, the magnitude of the charge
         state, and the maximum magnitude of the host oxidation states (i.e. how
-        'charged' the host is), with large (absolute) charge states, low probability
+        'charged' the host is). Large (absolute) charge states, low probability
         oxidation states and/or greater charge/oxidation state magnitudes than that of
-        the host being disfavoured. This can be controlled using the
+        the host are disfavoured. This can be controlled using the
         ``probability_threshold`` (default = 0.0075) or ``padding`` (default = 1) keys in
         the ``charge_state_gen_kwargs`` parameter, which are passed to the
-        ``_charge_state_probability()`` function. The input and computed values used to
+        ``guess_defect_charge_states()`` function. The input and computed values used to
         guess charge state probabilities are provided in the
         ``DefectEntry.charge_state_guessing_log`` attributes. See docs for examples of
-        modifying the generated charge states.
+        modifying the generated charge states, and the docstrings of
+        ``charge_state_probability()`` & ``get_vacancy_charge_states()`` for more details
+        on the charge state guessing algorithm. The ``doped`` algorithm was found to give
+        optimal performance in terms of efficiency and completeness (see JOSS paper), but
+        of course may not be perfect in all cases, so make sure to critically consider the
+        estimated charge states for your system!
 
         Note that Wyckoff letters can depend on the ordering of elements in the conventional
         standard structure, for which doped uses the ``spglib`` convention.
@@ -1359,7 +1425,7 @@ class DefectsGenerator(MSONable):
                 If False, then the input structure is used as the defect & bulk supercell.
                 (Note this may give a slightly different (but fully equivalent) set of coordinates).
             charge_state_gen_kwargs (dict):
-                Keyword arguments to be passed to the ``_charge_state_probability``
+                Keyword arguments to be passed to the ``guess_defect_charge_states``
                 function (such as ``probability_threshold`` (default = 0.0075, used for
                 substitutions and interstitials) and ``padding`` (default = 1, used for
                 vacancies)) to control defect charge state generation.
