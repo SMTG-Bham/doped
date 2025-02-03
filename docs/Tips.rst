@@ -149,7 +149,8 @@ Layered and low-dimensional materials introduce complications for defect analysi
 typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions
 (e.g. `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_,
 `vacancies in low-dimensional chalcogenides <https://arxiv.org/abs/2401.12127>`_ etc), as a result of
-having more complex energy landscapes.
+having more complex energy landscapes, and so use of structure-searching strategies like
+`ShakeNBreak <https://shakenbreak.readthedocs.io>`__ can be particularly important.
 
 Another is that often the application of charge correction schemes to supercell calculations with layered
 materials may require some fine-tuning for converged results. To illustrate, for Sb₂Si₂Te₆ (
@@ -229,6 +230,62 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
 .. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png
     :height: 320px
     :align: right
+
+
+2D Materials and Surface Defects
+--------------------------------
+Following on from the layered materials discussion above, there are additional complications when modelling
+defects in two-dimensional materials, or defects near surfaces in three-dimensional materials, primarily
+related to the implementation of finite-size charge corrections. For a detailed discussion, see
+`Kumagai Phys Rev B 2024 <https://doi.org/10.1103/PhysRevB.109.054106>`__.
+
+In these cases, defects can be generated using a similar workflow as for 3D materials, where now our input
+host system to ``DefectsGenerator`` should be a slab structure with a converged vacuum size. ``doped`` will
+automatically generate all symmetry-inequivalent defects in this slab, and relevant properties such as
+distance to surface can be readily calculated through the site information and ``pymatgen`` ``Structure``\s
+stored with the ``doped`` ``DefectEntry`` / ``Defect`` objects.
+The calculation inputs can then be generated as before, along with ``ShakeNBreak`` distortions
+(recommended), and then parsed with ``doped``'s ``DefectsParser`` class similar to 3D materials.
+
+For charge corrections however, it is recommended to use the advanced finite-size corrections adapted for
+2D materials (to correctly model the distance-dependent dielectric profile in vacuum). Possible approaches
+include that of `Noh et al. <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.89.205417>`__
+and `Komsa et al. <https://journals.aps.org/prx/abstract/10.1103/PhysRevX.4.031044>`__ ("NK" method),
+now implemented in `pydefect_2d <https://github.com/kumagai-group/pydefect_2d>`__; the approach of
+`Freysoldt and Neugebauer <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.97.205425>`__,
+implemented in
+`sxdefectalign2d <https://sxrepo.mpie.de/attachments/download/57/sxdefectalign2d-manual.pdf>`__; or the
+self-consistent potential correction (SCPC) method introduced by
+`da Silva et al. <https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.126.076401>`__ with
+implementation details `here <https://github.com/aradi/SCPC-Method>`__.
+
+Thus it is recommended to set ``skip_corrections = False`` when parsing defects in 2D materials / surface
+defects with ``DefectsParser`` (to avoid automatic application of 3D charge corrections), and then update
+the ``DefectEntry`` charge corrections with the externally-calculated 2D values, before continuing your
+analyses. For example, the ``DefectEntry`` charge corrections can be updated like this:
+
+.. code-block:: python
+
+    # updated charge corrections using an appropriate 2D materials scheme
+    new_corrections = {  # format: {entry_name: correction in eV}
+        "v_Cd_-1": +0.2,
+        "v_Cd_-2": +0.4,
+        "Te_Cd_+1": -0.2,
+    }  # note that these corrections are added to the un-corrected formation energies, to give the final values
+
+    for entry_name, entry in defect_thermo.defect_entries.items():
+        if entry_name in new_corrections:
+            for corr_key in list(entry.corrections.keys()):  # this inner loop is not required if ``skip_corrections`` was set to ``True``
+                if "charge_correction" in corr_key:
+                    print(f"Removing {corr_key} for {entry_name}: {entry.corrections.pop(corr_key):+.2f} eV")
+
+            entry.corrections.update({"2D Correction": new_corrections[entry_name]})
+            print(f"New correction for {entry_name}: {new_corrections[entry_name]:+.2f} eV")
+
+        else:
+            print(f"No corrections to add for {entry_name}")
+
+
 
 Eigenvalue / Electronic Structure Analysis
 ------------------------------------------

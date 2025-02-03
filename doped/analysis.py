@@ -484,7 +484,7 @@ def defect_entry_from_paths(
         bulk_path (PathLike):
             Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Total dielectric constance (ionic + static contributions), in the same xyz
+            Total dielectric constant (ionic + static contributions), in the same xyz
             Cartesian basis as the supercell calculations (likely but not necessarily
             the same as the raw output of a VASP dielectric calculation, if an
             oddly-defined primitive cell is used). If not provided, charge
@@ -599,7 +599,7 @@ class DefectsParser:
                 folders (likely the same ``output_path`` used with ``DefectsSet``
                 for file generation in ``doped.vasp``). Default = current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constance (ionic + static contributions), in the same
+                Total dielectric constant (ionic + static contributions), in the same
                 xyz Cartesian basis as the supercell calculations (likely but not
                 necessarily the same as the raw output of a VASP dielectric calculation,
                 if an oddly-defined primitive cell is used). If not provided, charge
@@ -1768,7 +1768,7 @@ class DefectParser:
                 supercell calculation if already loaded (can be supplied to expedite
                 parsing). Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constance (ionic + static contributions), in the same xyz
+                Total dielectric constant (ionic + static contributions), in the same xyz
                 Cartesian basis as the supercell calculations (likely but not necessarily
                 the same as the raw output of a VASP dielectric calculation, if an
                 oddly-defined primitive cell is used). If not provided, charge
