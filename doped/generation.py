@@ -835,10 +835,10 @@ def charge_state_probability(
       ``defect_el_oxi_state > max_host_oxi_magnitude``, otherwise 1.
 
     Note that neutral charge states are always included.
-    
+
     This probability function was found to give optimal performance in terms of
     efficiency and completeness when tested against other approaches (see the
-    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may 
+    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may
     not be perfect in all cases, so make sure to critically consider the estimated
     charge states for your system!
 
@@ -904,20 +904,20 @@ def charge_state_probability(
 
 def get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     """
-    Get the estimated charge states for a vacancy defect, which is from +/-``padding`` 
+    Get the estimated charge states for a vacancy defect, which is from +/-``padding``
     to the fully-ionised vacancy charge state (a.k.a. the vacancy oxidation state).
 
-    e.g. for vacancies in Sb2O5 (https://doi.org/10.1021/acs.chemmater.3c03257), 
-    the fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2 
-    respectively (i.e. the negative of the elemental oxidation states in Sb2O5), 
-    so the estimated charge states would be from +1 to -5 for ``V_Sb`` and from 
+    e.g. for vacancies in Sb2O5 (https://doi.org/10.1021/acs.chemmater.3c03257),
+    the fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2
+    respectively (i.e. the negative of the elemental oxidation states in Sb2O5),
+    so the estimated charge states would be from +1 to -5 for ``V_Sb`` and from
     +2 to -1 for ``V_O`` for the default ``padding`` of 1.
-    
+
     This probability function was found to give optimal performance in terms of
     efficiency and completeness when tested against other approaches (see the
-    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may 
+    ``doped`` JOSS paper: https://doi.org/10.21105/joss.06433) but of course may
     not be perfect in all cases, so make sure to critically consider the estimated
-    charge states for your system! 
+    charge states for your system!
 
     Args:
         vacancy (Defect): A ``doped`` ``Vacancy`` object.
@@ -1704,7 +1704,9 @@ class DefectsGenerator(MSONable):
 
             host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
             # if any "extrinsic" elements are actually host elements, remove them and warn user:
-            if any(el in host_element_list for el in extrinsic_elements):
+            if any(el in host_element_list for el in extrinsic_elements) and not isinstance(
+                self.extrinsic, dict  # don't warn if ``extrinsic`` was supplied as a dict
+            ):
                 warnings.warn(
                     f"\nSpecified 'extrinsic' elements "
                     f"{[el for el in extrinsic_elements if el in host_element_list]} are present in "
