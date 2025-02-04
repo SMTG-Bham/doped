@@ -709,7 +709,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         `DefectEntry`s.
         """
         if not self.heavy_tests:
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
             assert parent_drs.defect_entry == input_defect_entry
@@ -765,7 +765,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         POSCARs.
         """
         if not _potcars_available():  # need to write files without error for charged defects
-            return
+            pytest.skip()
 
         for defect_gen_name in [
             "CdTe_defect_gen",
@@ -1223,7 +1223,7 @@ class DefectsSetTest(unittest.TestCase):
 
     def test_CdTe_files(self):
         if not self.heavy_tests:
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
         defects_set = DefectsSet(

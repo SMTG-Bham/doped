@@ -2489,7 +2489,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def test_ytos_no_generate_supercell(self):
         if not self.heavy_tests:  # skip one of the YTOS tests if on GH Actions
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         # tests the case of an input structure which is >10 Å in each direction, has
         # more atoms (198) than the pmg supercell (99), but generate_supercell = False,
@@ -2612,7 +2612,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def test_lmno(self):
         if not self.heavy_tests:  # skip one of the LMNO tests if on GH Actions
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
         # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
@@ -3067,7 +3067,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
     def test_supercell_w_defect_cd_i_CdTe(self):
         if not self.heavy_tests:
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         # test inputting a defective supercell
         CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
@@ -3100,7 +3100,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # test inputting a large (216-atom) N_C diamond supercell as input, to check oxi_state handling
         # and skipping of interstitial generation:
         if not self.heavy_tests:
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
