@@ -16,8 +16,9 @@
   - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!  
   - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?
   - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this
+- Charge corrections for polarons; code there, just need to allow inputs of bare calculation outputs (and then can extend to allow polaron input file generation and parsing/plotting). Then update ``ShakeNBreak_Polaron_Workflow`` example with this too.
 - Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
-- 2D corrections; like `pydefect_2d`, or recommended to use SCPC in VASP?
+- 2D corrections?
 - Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
 
 
