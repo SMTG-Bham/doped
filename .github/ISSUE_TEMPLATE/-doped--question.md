@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Before taking time from the developers to ask questions about `doped`, I have searched the following curated resources for answers:
+Before taking developer time, I have searched the following curated resources for answers:
 - [ ] [`doped` documentation site](https://doped.readthedocs.io) – tip: use the search bar on the left.
 - [ ] [`doped` tutorials](https://doped.readthedocs.io/en/latest/Tutorials.html)
 - [ ] [`doped` Python API docs](https://doped.readthedocs.io/en/latest/doped.html)

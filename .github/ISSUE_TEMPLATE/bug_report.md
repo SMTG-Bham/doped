@@ -7,6 +7,11 @@ assignees: ''
 
 ---
 
+Before reporting this bug, I have checked the following resources for troubleshooting or previous reports/discussions:
+- [ ] `doped` [Troubleshooting](https://doped.readthedocs.io/en/latest/Troubleshooting.html) and [Installation](https://doped.readthedocs.io/en/latest/Installation.html) docs.
+- [ ] [Previous `doped` issues](https://github.com/SMTG-Bham/doped/issues?q=is%3Aissue+is%3Aclosed) – tip: use the search bar.
+- [ ] Other `doped` docs pages; such as [Tips](https://doped.readthedocs.io/en/latest/Tips.html), [Tutorials](https://doped.readthedocs.io/en/latest/Tutorials.html) or [Python API docs](https://doped.readthedocs.io/en/latest/doped.html) – tip: use the search bar on the left.
+
 **Describe the bug**
 Please provide a clear and concise description of what the bug is.
 
