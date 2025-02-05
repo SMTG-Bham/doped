@@ -27,7 +27,7 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import (
     get_defect_name_from_defect,
@@ -941,7 +941,7 @@ class DefectsParser:
                 ]
                 pbar.set_description("Setting up multiprocessing")
                 if self.processes > 1:
-                    with mp.Pool(processes=self.processes) as pool:  # -> parsed_defect_entry, warnings
+                    with pool_manager(processes=self.processes) as pool:  # parsed_defect_entry, warnings
                         results = pool.imap_unordered(
                             self._parse_defect_and_handle_warnings, folders_to_process
                         )

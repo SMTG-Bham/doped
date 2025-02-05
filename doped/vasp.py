@@ -9,8 +9,6 @@ import os
 import warnings
 from functools import lru_cache
 from importlib import resources
-from multiprocessing import cpu_count
-from multiprocessing.pool import Pool
 from typing import cast
 
 import numpy as np
@@ -24,7 +22,7 @@ from pymatgen.io.vasp.sets import VaspInputSet
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, pool_manager, get_mp_context
 from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,
@@ -2498,10 +2496,11 @@ class DefectsSet(MSONable):
             for i, (defect_species, defect_relax_set) in enumerate(self.defect_sets.items())
         ]
         if processes is None:  # best setting for number of processes, from testing
-            processes = min(round(len(args_list) / 30), cpu_count() - 1)
+            mp = get_mp_context()
+            processes = min(round(len(args_list) / 30), mp.cpu_count() - 1)
 
         if processes > 1:
-            with Pool(processes=processes or cpu_count() - 1) as pool:
+            with pool_manager(processes) as pool:
                 for _ in tqdm(
                     pool.imap(self._write_defect, args_list),
                     total=len(args_list),

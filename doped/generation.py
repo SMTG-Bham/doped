@@ -35,7 +35,7 @@ from pymatgen.util.typing import PathLike
 from tabulate import tabulate
 from tqdm import tqdm
 
-from doped import get_mp_context
+from doped import pool_manager
 from doped.core import (
     Defect,
     DefectEntry,
@@ -1885,10 +1885,8 @@ class DefectsGenerator(MSONable):
 
             defect_entry_list = []
             if len(self.primitive_structure) > 8 and processes != 1:
-                # skip for small systems as communication overhead / process initialisation outweighs
-                # speedup
-                mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
-                with mp.Pool(processes=processes or mp.cpu_count() - 1) as pool:
+                # skip for small systems as comms overhead / process init outweighs speedup
+                with pool_manager(processes=processes) as pool:
                     for result in pool.imap_unordered(partial_func, defect_list):
                         defect_entry_list.append(result)
                         pbar.update(_pbar_increment_per_defect)  # 90% of progress bar

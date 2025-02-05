@@ -1644,8 +1644,8 @@ def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_wit
 
 def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     structure,
-    timeout_1=10,
-    timeout_2=15,
+    timeout_1: int | float = 10,
+    timeout_2: int | float = 15,
 ) -> bool:
     """
     Tries to guess (and set) the oxidation states of the input structure using

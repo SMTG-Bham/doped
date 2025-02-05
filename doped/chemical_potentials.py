@@ -12,7 +12,6 @@ import os
 import warnings
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +42,7 @@ from scipy.interpolate import griddata, interp1d
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.generation import _element_sort_func
 from doped.utils.parsing import (
     _get_output_files_and_check_if_multiple,
@@ -2236,9 +2235,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 return (os.path.getsize(vasprun_path) / 1e6) * (20 if vasprun_path.endswith(".gz") else 1)
 
             vasprun_sizes_MB = [_estimate_uncompressed_vasprun_size(v) for v in self.vasprun_paths] or [0]
+            mp = get_mp_context()
             if sum(vasprun_sizes_MB) - max(vasprun_sizes_MB) > 50:
                 # only multiprocess as much as makes sense:
-                processes = min(max(1, cpu_count() - 1), sum(1 for s in vasprun_sizes_MB if s > 20) - 1)
+                processes = min(max(1, mp.cpu_count() - 1), sum(1 for s in vasprun_sizes_MB if s > 20) - 1)
             else:
                 processes = 1
 
@@ -2246,7 +2246,7 @@ class CompetingPhasesAnalyzer(MSONable):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=UnconvergedVASPWarning)  # checked and warned later
             if processes > 1:  # multiprocessing
-                with Pool(processes=processes) as pool:  # result is parsed vasprun
+                with pool_manager(processes) as pool:  # result is parsed vasprun
                     for result in tqdm(
                         pool.imap_unordered(
                             _parse_entry_from_vasprun_and_catch_exception, self.vasprun_paths

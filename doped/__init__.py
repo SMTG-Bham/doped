@@ -95,3 +95,36 @@ def get_mp_context():
         return multiprocessing.get_context("forkserver")
     except ValueError:  # forkserver not available on Windows OS
         return multiprocessing.get_context("spawn")
+
+from contextlib import contextmanager
+@contextmanager
+def pool_manager(processes: int | None = None):
+    """
+    Context manager for ``multiprocessing`` ``Pool``, to
+    throw a clearer error message when ``RuntimeError``\s are
+    raised ``multiprocessing`` within ``doped`` is used in a
+    python script.
+
+    See https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts
+
+    Args:
+        processes (int | None):
+            Number of processes to use with ``Pool``. If ``None``,
+            will use ``mp.cpu_count() - 1`` (i.e. one less than the
+            number of available CPUs).
+
+    Yields:
+        Pool:
+            A ``Pool`` object with the specified number of processes.
+    """
+    try:
+        mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
+        yield mp.Pool(processes or max(1, mp.cpu_count() - 1))
+    except RuntimeError as orig_exc:
+        if "freeze_support()" in str(orig_exc):
+            raise RuntimeError(
+                "When using doped in python scripts with multiprocessing (recommended), you must use the "
+                "`if __name__ == '__main__':` syntax, see "
+                "https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts "
+                "-- alternatively you can set processes=1 (but this will be slower)") from orig_exc
+        raise orig_exc
