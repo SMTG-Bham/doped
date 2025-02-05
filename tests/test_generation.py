@@ -1555,12 +1555,15 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             with warnings.catch_warnings(record=True) as w:
                 warnings.resetwarnings()
                 CdTe_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic=extrinsic_arg)
-                assert len(w) == 1
-                assert (
-                    "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
-                    "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
-                    in str(w[-1].message)
-                )
+                if not isinstance(extrinsic_arg, dict):
+                    assert len(w) == 1
+                    assert (
+                        "Specified 'extrinsic' elements ['Cd'] are present in the host structure, so do not "
+                        "need to be specified as 'extrinsic' in DefectsGenerator(). These will be ignored."
+                        in str(w[-1].message)
+                    )
+                else:
+                    assert not w  # no warning if dict input
                 assert CdTe_defect_gen.extrinsic == extrinsic_arg  # explicitly test extrinsic attribute
 
         self.CdTe_defect_gen_check(CdTe_defect_gen)

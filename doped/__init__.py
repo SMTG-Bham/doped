@@ -98,7 +98,7 @@ def get_mp_context():
 
 @contextlib.contextmanager
 def pool_manager(processes: int | None = None):
-    """
+    r"""
     Context manager for ``multiprocessing`` ``Pool``, to
     throw a clearer error message when ``RuntimeError``\s are
     raised ``multiprocessing`` within ``doped`` is used in a
