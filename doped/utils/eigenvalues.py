@@ -542,6 +542,8 @@ def get_eigenvalue_analysis(
             bulk_supercell=bulk_vr.final_structure,
         )
 
+    # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used
+    #  with e.g. polarons etc
     defect_entry._load_and_parse_eigenvalue_data(
         bulk_vr=bulk_vr,
         defect_vr=defect_vr,
