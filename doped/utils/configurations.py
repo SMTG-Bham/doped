@@ -9,7 +9,13 @@ import os
 import warnings
 
 import numpy as np
-from pymatgen.analysis.structure_matcher import ElementComparator, Structure, StructureMatcher
+from pymatgen.analysis.structure_matcher import (
+    ElementComparator,
+    Structure,
+    StructureMatcher,
+    FrameworkComparator,
+    AbstractComparator,
+)
 from pymatgen.core.composition import Composition, Element, Species
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import IStructure
@@ -74,6 +80,7 @@ def orient_s2_like_s1(
             "``primitive_cell=True`` is not supported for `get_transformation` (and hence "
             "`get_s2_like_s1`."
         )
+    sm_kwargs["primitive_cell"] = False
 
     struct2_like_struct1 = StructureMatcher_scan_stol(
         struct1, struct2, func_name="get_s2_like_s1", **sm_kwargs
@@ -161,7 +168,72 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     return dist / (structure.volume / len(structure)) ** (1 / 3)
 
 
-def _get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> dict:
+def _get_symbol(element: Element | Species, comparator: AbstractComparator | None = None) -> str:
+    """
+    Convenience function to get the symbol of an ``Element`` or
+    ``Species`` as a string.
+
+    By default, the returned symbol does not include any charge /
+    oxidation state information. If ``comparator`` is provided and
+    is not ``ElementComparator`` / ``FrameworkComparator``, then the
+    ``str(element)`` representation is returned (which will include
+    charge information if ``element`` is a ``Species``).
+
+    Args:
+        element (Element | Species):
+            Element or Species to get the symbol of.
+        comparator (AbstractComparator | None):
+            Comparator to check if we should return the ``str(element)``
+            or ``element.element.symbol`` (default) representation.
+            Default: None.
+
+    Returns:
+        str: Symbol of the element as a string.
+    """
+    if (
+        comparator is not None
+        and not isinstance(comparator, (ElementComparator, FrameworkComparator))
+        and isinstance(element, Species)
+    ):
+        return element.element.symbol
+    return str(element)
+
+
+def get_element_indices(
+    structure: Structure,
+    elements: list[Element | Species | str] | None = None,
+    comparator: AbstractComparator | None = None,
+) -> dict[str, list[int]]:
+    """
+    Convenience function to quickly generate a dictionary of
+    ``{element: [indices]}`` for a given ``Structure``, where
+    ``indices`` are the indices of the sites in the structure
+    corresponding to the given ``elements`` (default is all
+    elements in the structure).
+
+    Args:
+        structure (Structure):
+            ``Structure`` to get the indices from.
+        elements (list[Element | Species | str] | None):
+            List of elements to get the indices of. If ``None``,
+            all elements in the structure are used. Default: None.
+
+    Returns:
+        dict[str, list[int]]:
+            Dictionary of ``{element: [indices]}`` for the given
+            ``elements`` in the structure.
+    """
+    if elements is None:
+        from doped.utils.efficiency import _fast_get_composition_from_sites
+        elements = _fast_get_composition_from_sites(structure).elements
+
+    if not all(isinstance(element, (str)) for element in elements):
+        elements = [_get_symbol(element, comparator) for element in elements]
+    species = np.array([_get_symbol(site.specie, comparator) for site in structure])
+    return {element: np.where(species == element)[0].tolist() for element in elements}
+
+
+def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> dict:
     r"""
     Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
     given ``Structure``, where ``min_bond_length`` and ``max_bond_length`` are
@@ -172,29 +244,19 @@ def _get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> 
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``comparator`` has been set here (if
-            ``ElementComparator`` used, then we use ``Element``\s rather
-            than ``Species`` as the keys).
+            ``ElementComparator``/``FrameworkComparator`` used, then we use
+            ``Element``\s rather than ``Species`` as the keys).
 
     Returns:
         dict: Dictionary of ``{element: (min_bond_length, max_bond_length)}``.
     """
-
-    def _get_symbol(element: Element | Species):
-        if isinstance(sm_kwargs.get("comparator"), ElementComparator | type(None)) and isinstance(
-            element, Species
-        ):
-            return element.element.symbol
-        return str(element)
+    comparator = sm_kwargs.get("comparator")
 
     if len(structure) == 1:
         structure = structure * 2  # need at least two sites to calculate bond lengths
 
-    element_idx_dict = {  # distance matrix broken down by species
-        _get_symbol(element): [
-            i for i, site in enumerate(structure) if _get_symbol(site.specie) == _get_symbol(element)
-        ]
-        for element in structure.composition.elements
-    }
+    # get the distance matrix broken down by species:
+    element_idx_dict = get_element_indices(structure, comparator=comparator)
 
     distance_matrix = structure.distance_matrix
     np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
@@ -231,16 +293,16 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
             and ``struct2``. If a direct match is detected (corresponding
             to min ``stol`` = 0, then ``1e-4`` is returned).
     """
-    s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1, **sm_kwargs)
-    s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2, **sm_kwargs)
+    s1_min_max_bond_length_dict = get_element_min_max_bond_length_dict(struct1, **sm_kwargs)
+    s2_min_max_bond_length_dict = get_element_min_max_bond_length_dict(struct2, **sm_kwargs)
     common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
     if not common_elts:  # try without oxidation states
         struct1_wout_oxi = struct1.copy()
         struct2_wout_oxi = struct2.copy()
         struct1_wout_oxi.remove_oxidation_states()
         struct2_wout_oxi.remove_oxidation_states()
-        s1_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct1_wout_oxi, **sm_kwargs)
-        s2_min_max_bond_length_dict = _get_element_min_max_bond_length_dict(struct2_wout_oxi, **sm_kwargs)
+        s1_min_max_bond_length_dict = get_element_min_max_bond_length_dict(struct1_wout_oxi, **sm_kwargs)
+        s2_min_max_bond_length_dict = get_element_min_max_bond_length_dict(struct2_wout_oxi, **sm_kwargs)
         common_elts = set(s1_min_max_bond_length_dict.keys()) & set(s2_min_max_bond_length_dict.keys())
 
     min_min_dist_change = 1e-4
@@ -319,12 +381,12 @@ def StructureMatcher_scan_stol(
             The name of the ``StructureMatcher`` method to return the result
             of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
             as:
-            
+
             - "get_s2_like_s1" (default)
             - "get_rms_dist"
             - "fit"
             - "fit_anonymous"
-            
+
             etc.
         min_stol (float):
             Minimum ``stol`` value to try. Default is to use ``doped``\s
@@ -338,7 +400,7 @@ def StructureMatcher_scan_stol(
             50% each time.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
-    
+
     Returns:
         Result of ``StructureMatcher.{func_name}(struct1, struct2)`` or
         ``None`` if no match is found.
@@ -366,12 +428,12 @@ def StructureMatcher_scan_stol(
     stol = min_stol
     while stol < max_stol:
         if user_stol := sm_kwargs.pop("stol", False):  # first run, try using user-provided stol first:
-            sm_full_user_custom = StructureMatcher(primitive_cell=False, stol=user_stol, **sm_kwargs)
+            sm_full_user_custom = StructureMatcher(stol=user_stol, **sm_kwargs)
             result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
             if result is not None:
                 return result
 
-        sm = StructureMatcher(primitive_cell=False, stol=stol, **sm_kwargs)
+        sm = StructureMatcher(stol=stol, **sm_kwargs)
         result = getattr(sm, func_name)(struct1, struct2)
         if result is not None:
             return result
@@ -385,6 +447,7 @@ def StructureMatcher_scan_stol(
         # close to the necessary value anyway.
 
     return None
+
 
 # alias for backwards compatibility, will remove in future versions:
 _scan_sm_stol_till_match = StructureMatcher_scan_stol
