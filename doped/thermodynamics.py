@@ -641,13 +641,16 @@ class DefectThermodynamics(MSONable):
         self.vbm = vbm
         self.band_gap = band_gap
         if self.vbm is None or self.band_gap is None:
-            vbm_vals = []
-            band_gap_vals = []
-            for defect_entry in self.defect_entries.values():
-                if "vbm" in defect_entry.calculation_metadata:
-                    vbm_vals.append(defect_entry.calculation_metadata["vbm"])
-                if "band_gap" in defect_entry.calculation_metadata:
-                    band_gap_vals.append(defect_entry.calculation_metadata["band_gap"])
+            vbm_vals = [
+                defect_entry.calculation_metadata.get("vbm")
+                for defect_entry in self.defect_entries.values()
+            ]
+            vbm_vals = [vbm for vbm in vbm_vals if vbm is not None]
+            band_gap_vals = [
+                defect_entry.calculation_metadata.get("band_gap", defect_entry.calculation_metadata.get("gap"))
+                for defect_entry in self.defect_entries.values()
+            ]
+            band_gap_vals = [band_gap for band_gap in band_gap_vals if band_gap is not None]
 
             # get the max difference in VBM & band_gap vals:
             if vbm_vals and max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
@@ -2904,6 +2907,7 @@ class DefectThermodynamics(MSONable):
         fermi_level: float | None = None,
         per_charge: bool = True,
         per_site: bool = False,
+        site_competition: bool = True,
         skip_formatting: bool = False,
         lean: bool = False,
     ) -> pd.DataFrame:
@@ -3002,6 +3006,16 @@ class DefectThermodynamics(MSONable):
             per_site (bool):
                 Whether to return the concentrations as percent concentrations per site,
                 rather than the default of per cm^3. (default: False)
+            site_competition (bool):
+                If ``True`` (default), uses the updated Fermi-Dirac-like formula for
+                defect concentration, which accounts for defect site competition at high
+                concentrations (see Kasamatsu et al. (10.1016/j.ssi.2010.11.022)
+                appendix for derivation -- updated here to additionally account for
+                configurational degeneracies ``g`` (see https://doi.org/10.1039/D3CS00432E)),
+                which gives the following defect concentration equation:
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where ``i``
+                runs over all defects which occupy the same site as the defect of interest.
+                Otherwise, uses the standard dilute limit approximation.
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and concentrations as
                 strings (and keep as ``int``\s and ``float``\s instead). (default: False)
@@ -3038,6 +3052,7 @@ class DefectThermodynamics(MSONable):
             }
 
         # TODO: Implement Kasamatsu rescaling here, based on matched sites
+        # TODO: And check for concentration usages throughout, and quick test with/without
         for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
             for defect_entry in defect_entry_list:
                 with warnings.catch_warnings():  # already warned if necessary
