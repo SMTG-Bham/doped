@@ -36,6 +36,7 @@ from doped.generation import (
     sort_defect_entries,
 )
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.configurations import StructureMatcher_scan_stol
 from doped.utils.efficiency import _parse_site_species_str, get_voronoi_nodes
 from doped.utils.parsing import (
     _compare_incar_tags,
@@ -514,13 +515,13 @@ def defect_entry_from_paths(
             supercell calculation, then this parameter should be used to provide the
             output of a bulk bandstructure calculation so that these are correctly
             determined.
-            Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+            Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
             ``self.defect_entry.calculation_metadata`` to match the correct
             (eigen)values.
             If None, will use ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e.
             the bulk supercell calculation output).
 
-            Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+            Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
             reference for the Fermi level values output by ``doped`` (as this VBM
             eigenvalue is used as the zero reference), thus affecting the position of
             the band edges in the defect formation energy plots and doping window /
@@ -645,13 +646,13 @@ class DefectsParser:
                 in the bulk supercell calculation, then this parameter should be used
                 to provide the output of a bulk bandstructure calculation so that
                 these are correctly determined.
-                Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+                Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
                 ``self.defect_entry.calculation_metadata`` to match the correct
                 (eigen)values.
                 If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
                 (i.e. the bulk supercell calculation output).
 
-                Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+                Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
                 reference for the Fermi level values output by ``doped`` (as this VBM
                 eigenvalue is used as the zero reference), thus affecting the position
                 of the band edges in the defect formation energy plots and doping
@@ -1548,7 +1549,7 @@ class DefectsParser:
                 and the reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-                If ``None`` (default), will use "gap" from the calculation_metadata
+                If ``None`` (default), will use "band_gap" from the calculation_metadata
                 dict attributes of the parsed DefectEntry objects.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
@@ -1799,13 +1800,13 @@ class DefectParser:
                 supercell calculation, then this parameter should be used to provide the
                 output of a bulk bandstructure calculation so that these are correctly
                 determined.
-                Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+                Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
                 ``self.defect_entry.calculation_metadata`` to match the correct
                 (eigen)values.
                 If None, will use ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e.
                 the bulk supercell calculation output).
 
-                Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+                Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
                 reference for the Fermi level values output by ``doped`` (as this VBM
                 eigenvalue is used as the zero reference), thus affecting the position of
                 the band edges in the defect formation energy plots and doping window /
@@ -2493,11 +2494,14 @@ class DefectParser:
         api_key: str | None = None,
     ):
         r"""
-        Load the ``"gap"`` and ``"vbm"`` values for the parsed
+        Load the ``"band_gap"``, ``"vbm"`` and ``"cbm"`` values for the parsed
         ``DefectEntry``\s.
 
         If ``bulk_band_gap_vr`` is provided, then these values are parsed from it,
         else taken from the parsed bulk supercell calculation.
+
+        ``"band_gap"`` and ``"vbm"`` are used by default when generating
+        ``DefectThermodynamics`` objects, to be used in plotting & analysis.
 
         Alternatively, one can specify query the Materials Project (MP) database
         for the bulk gap data, using ``use_MP = True``, in which case the MP entry
@@ -2514,13 +2518,13 @@ class DefectParser:
                 in the bulk supercell calculation, then this parameter should be used
                 to provide the output of a bulk bandstructure calculation so that
                 these are correctly determined.
-                Alternatively, you can edit/add the ``"gap"`` and ``"vbm"`` entries in
+                Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
                 ``self.defect_entry.calculation_metadata`` to match the correct
                 (eigen)values.
                 If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
                 (i.e. the bulk supercell calculation output).
 
-                Note that the ``"gap"`` and ``"vbm"`` values should only affect the
+                Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
                 reference for the Fermi level values output by ``doped`` (as this VBM
                 eigenvalue is used as the zero reference), thus affecting the position
                 of the band edges in the defect formation energy plots and doping
@@ -2571,20 +2575,22 @@ class DefectParser:
                 ]
             except Exception as exc:
                 raise ValueError(
-                    f"Error with querying MPRester for"
-                    f" {bulk_sc_structure.composition.reduced_formula}:"
+                    f"Error with querying MPRester for {bulk_sc_structure.composition.reduced_formula}:"
                 ) from exc
 
             mpid_fit_list = []
             for trial_mpid in mplist:
                 with MPRester(api_key=api_key) as mpr:
                     mpstruct = mpr.get_structure_by_material_id(trial_mpid)
-                if StructureMatcher(
+                if StructureMatcher_scan_stol(
+                    bulk_sc_structure,
+                    mpstruct,
+                    func_name="fit",
                     primitive_cell=True,
                     scale=False,
                     attempt_supercell=True,
                     allow_subset=False,
-                ).fit(bulk_sc_structure, mpstruct):
+                ):
                     mpid_fit_list.append(trial_mpid)
 
             if len(mpid_fit_list) == 1:
@@ -2630,12 +2636,16 @@ class DefectParser:
 
             band_gap, cbm, vbm, _ = bulk_band_gap_vr.eigenvalue_band_properties
 
-        gap_calculation_metadata = {
-            "mpid": mpid,
-            "cbm": cbm,
-            "vbm": vbm,
-            "gap": band_gap,
-        }
+        gap_calculation_metadata.update(
+            {
+                "cbm": cbm,
+                "vbm": vbm,
+                "band_gap": band_gap,
+            }
+        )
+        if mpid is not None:
+            gap_calculation_metadata["mpid"] = mpid
+
         self.defect_entry.calculation_metadata.update(gap_calculation_metadata)
 
     def apply_corrections(self):

@@ -541,7 +541,7 @@ class DefectThermodynamics(MSONable):
                 and the reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-                If ``None`` (default), will use "gap" from the calculation_metadata
+                If ``None`` (default), will use "band_gap" from the calculation_metadata
                 dict attributes of the DefectEntry objects in ``defect_entries``.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
@@ -646,8 +646,8 @@ class DefectThermodynamics(MSONable):
             for defect_entry in self.defect_entries.values():
                 if "vbm" in defect_entry.calculation_metadata:
                     vbm_vals.append(defect_entry.calculation_metadata["vbm"])
-                if "gap" in defect_entry.calculation_metadata:
-                    band_gap_vals.append(defect_entry.calculation_metadata["gap"])
+                if "band_gap" in defect_entry.calculation_metadata:
+                    band_gap_vals.append(defect_entry.calculation_metadata["band_gap"])
 
             # get the max difference in VBM & band_gap vals:
             if vbm_vals and max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
@@ -3037,6 +3037,7 @@ class DefectThermodynamics(MSONable):
                 "elemental_refs": el_refs or empty_el_dict,
             }
 
+        # TODO: Implement Kasamatsu rescaling here, based on matched sites
         for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
             for defect_entry in defect_entry_list:
                 with warnings.catch_warnings():  # already warned if necessary
