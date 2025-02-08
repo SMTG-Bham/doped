@@ -1065,6 +1065,7 @@ class DefectEntry(thermo.DefectEntry):
         per_site: bool = False,
         symprec: float | None = None,
         formation_energy: float | None = None,
+        site_competition: bool = True,
     ) -> float:
         r"""
         Compute the `equilibrium` concentration (in cm^-3) for the
@@ -1162,6 +1163,22 @@ class DefectEntry(thermo.DefectEntry):
                 for internal ``doped`` usage. If ``None`` (default), will calculate the
                 formation energy using the input ``chempots``, ``limit``, ``el_refs``,
                 ``vbm`` and ``fermi_level`` arguments. (Default: None)
+            site_competition (bool):
+                If ``True`` (default), uses the updated Fermi-Dirac-like formula for
+                defect concentration, which accounts for defect site competition at high
+                concentrations (see Kasamatsu et al. (10.1016/j.ssi.2010.11.022)
+                appendix for derivation -- updated here to additionally account for
+                configurational degeneracies ``g`` (see https://doi.org/10.1039/D3CS00432E)),
+                which gives the following defect concentration equation:
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where ``i``
+                runs over all defects which occupy the same site as the defect of interest.
+                Otherwise, uses the standard dilute limit approximation. Note that when
+                used with ``DefectEntry.equilibrium_concentration()`` here, only this defect
+                itself is considered in the sum over ``i`` in the denominator (as it has no
+                knowledge of other defect concentrations), but if used with
+                ``DefectThermodynamics.get_equilibrium_concentrations()`` or
+                ``DefectThermodynamics.get_fermi_level_and_concentrations()`` (recommended)
+                then all defects in the system occupying the same lattice site are considered.
 
         Returns:
             Concentration in cm^-3 (or as fractional per site, if per_site = True) (float)
@@ -1209,13 +1226,17 @@ class DefectEntry(thermo.DefectEntry):
                 -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
             )
 
-            degeneracy_factor = (
-                np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
-            )
-            if per_site:
-                return exp_factor * degeneracy_factor
+        degeneracy_factor = (
+            np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
+        )
+        per_site_concentration = exp_factor * degeneracy_factor
+        if site_competition:
+            per_site_concentration /= (1 + per_site_concentration)
 
-            return self.bulk_site_concentration * degeneracy_factor * exp_factor
+        if per_site:
+            return per_site_concentration
+
+        return self.bulk_site_concentration * per_site_concentration
 
     @property
     def bulk_site_concentration(self):
