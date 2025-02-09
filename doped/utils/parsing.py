@@ -1329,14 +1329,14 @@ def get_interstitial_site_and_orientational_degeneracy(
         combined site and orientational degeneracy of the interstitial defect
         entry (int).
     """
-    from doped.utils.symmetry import _get_all_equiv_sites
+    from doped.utils.symmetry import get_all_equiv_sites
 
     if interstitial_defect_entry.bulk_entry is None:
         raise ValueError(
             "bulk_entry must be set for interstitial_defect_entry to determine the site and orientational "
             "degeneracies! (i.e. must be a parsed DefectEntry)"
         )
-    equiv_sites = _get_all_equiv_sites(
+    equiv_sites = get_all_equiv_sites(
         _get_defect_supercell_frac_coords(interstitial_defect_entry),
         _get_bulk_supercell(interstitial_defect_entry),
     )

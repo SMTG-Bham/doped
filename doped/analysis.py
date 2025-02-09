@@ -17,7 +17,6 @@ from monty.json import MontyDecoder
 from monty.serialization import dumpfn
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
-from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
@@ -61,7 +60,7 @@ from doped.utils.parsing import (
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
-    _get_all_equiv_sites,
+    get_all_equiv_sites,
     get_sga,
     point_symmetry_from_defect_entry,
 )
@@ -2041,7 +2040,7 @@ class DefectParser:
             # site multiplicity is automatically computed for vacancies and substitutions (much easier),
             # but not interstitials
             defect_entry.defect.multiplicity = len(
-                _get_all_equiv_sites(
+                get_all_equiv_sites(
                     _get_defect_supercell_frac_coords(defect_entry),
                     defect_entry.defect.structure,
                     symm_ops=bulk_supercell_symm_ops,

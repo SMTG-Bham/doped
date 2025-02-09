@@ -517,9 +517,12 @@ def _doped_cluster_frac_coords(
     lattice = structure.lattice
     sga = symmetry.get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
     symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
-    cn = symmetry._cluster_coords(fcoords, structure, dist_tol=tol)
+    cn = symmetry.cluster_coords(fcoords, structure, dist_tol=tol)
     unique_fcoords = []
 
+    # cn is an array of cluster numbers, of length ``len(fcoords)``, so we take the set of cluster numbers
+    # ``n``, use ``np.where(cn == n)[0]`` to get the indices of ``cn`` / ``fcoords`` which are in cluster
+    # ``n``, and then decide which coordinates to take as the cluster site based on symmetry and distance:
     for n in set(cn):
         frac_coords = []
         for i, j in enumerate(np.where(cn == n)[0]):
