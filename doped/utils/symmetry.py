@@ -426,6 +426,38 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
 
 
+
+def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
+    """
+    Get a matrix of the distances between the input fractional
+    coordinates in the input lattice.
+
+    Args:
+        fcoords (ArrayLike):
+            Fractional coordinates to get distances between.
+        lattice (Lattice):
+            Latttice for the fractional coordinates.
+
+    Returns:
+        np.ndarray:
+            Matrix of distances between the input fractional
+            coordinates in the input lattice.
+    """
+    return _get_distance_matrix(tuple((tuple(i) for i in fcoords)), lattice)  # tuple-ify for caching
+
+
+@lru_cache(maxsize=int(1e2))
+def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
+    """
+    Get a matrix of the distances between the input fractional
+    coordinates in the input lattice.
+
+    This function requires the input fcoords to be given as tuples,
+    to allow hashing and caching for efficiency.
+    """
+    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
+    return (dist_matrix + dist_matrix.T) / 2
+
 def _cluster_coords(fcoords, struct, dist_tol=0.01):
     """
     Cluster fractional coordinates based on their distances (using ``scipy``
