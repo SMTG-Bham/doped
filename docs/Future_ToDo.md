@@ -85,7 +85,6 @@
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
 - Implement shallow donor/acceptor binding estimation functions (via effective mass theory)
-- Kasamatsu formula for defect concentrations at high concentrations (accounts for lattice site competition), as shown in DefAP paper
 - Eigenvalue corrections for the eigenvalue plots, like shown in 10.1103/PhysRevB.109.054106?
 
 ## Docs

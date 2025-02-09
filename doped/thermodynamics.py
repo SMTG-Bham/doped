@@ -8,10 +8,12 @@ import contextlib
 import importlib.util
 import os
 import warnings
+from collections import defaultdict
 from collections.abc import Callable, Iterable
 from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain, product
+from operator import methodcaller
 from typing import TYPE_CHECKING, Any, TypeAlias, Union
 
 import matplotlib.pyplot as plt
@@ -48,7 +50,7 @@ from doped.utils.parsing import (
     get_vasprun,
 )
 from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot
-from doped.utils.symmetry import _get_all_equiv_sites, get_primitive_structure, get_sga
+from doped.utils.symmetry import cluster_coords, get_all_equiv_sites, get_primitive_structure, get_sga
 
 if TYPE_CHECKING:
     # from pymatgen.util.typing import PathLike
@@ -252,141 +254,185 @@ def raw_energy_from_chempots(composition: str | dict | Composition, chempots: di
     return sum(raw_energies_dict.get(el.symbol, 0) * stoich for el, stoich in composition.items())
 
 
-def group_defects_by_distance(
-    entry_list: list[DefectEntry], dist_tol: float = 1.5
-) -> dict[str, dict[tuple, list[DefectEntry]]]:
+def group_defects_by_type_and_distance(
+    defect_entries: list[DefectEntry] | dict[int, set[DefectEntry]], dist_tol: float = 1.5
+) -> dict[str, dict[int, set[DefectEntry]]]:
     """
-    Given an input list of DefectEntry objects, returns a dictionary of {simple
-    defect name: {(equivalent defect sites): [DefectEntry]}, where 'simple
-    defect name' is the nominal defect type (e.g. ``Te_i`` for
-    ``Te_i_Td_Cd2.83_+2``), ``(equivalent defect sites)`` is a tuple of the
-    equivalent defect sites (in the bulk supercell), and ``[DefectEntry]`` is a
-    list of DefectEntry objects with the same simple defect name and a closest
-    distance between symmetry-equivalent sites less than ``dist_tol``
-    (1.5 Å by default).
-
-    If a DefectEntry's site has a closest distance less than ``dist_tol`` to
-    multiple sets of equivalent sites, then it is matched to the one with
-    the lowest minimum distance.
+    Given an input list or pre-clustered dictionary of ``DefectEntry`` objects,
+    returns a dictionary of defect types with sub-dictionaries of defect
+    entries clustered according to the given ``dist_tol`` distance tolerance
+    (between symmetry-equivalent sites in the bulk supercell), in the format:
+    ``{simple defect name: {cluster index: {DefectEntry, ...}}``, where
+    ``simple defect name`` is the nominal defect type (e.g. ``Te_i`` for
+    ``Te_i_Td_Cd2.83_+2``) and ``{DefectEntry, ...}`` is a set of
+    ``DefectEntry`` objects which have been grouped in the same cluster.
 
     This is used to group together different defect entries (different charge
     states, and/or ground and metastable states (different spin or geometries))
     which correspond to the same defect type (e.g. interstitials at a given
-    site), which is then used in plotting, transition level analysis and defect
-    concentration calculations; e.g. in the frozen defect approximation, the
-    total concentration of a given defect type group is calculated at the
-    annealing temperature, and then the equilibrium relative population of the
-    constituent entries is recalculated at the quenched temperature.
+    site) and occupy similar sites in the host lattice, which is then used in
+    plotting, transition level analysis and defect concentration calculations;
+    e.g. in the frozen defect approximation, the total concentration of a given
+    defect type group is calculated at the annealing temperature, and then the
+    equilibrium relative population of the constituent entries is recalculated
+    at the quenched temperature.
 
     Args:
-        entry_list ([DefectEntry]):
-            A list of DefectEntry objects to group together.
+        defect_entries (list[DefectEntry] | dict[int, set[DefectEntry]]):
+            A list of ``DefectEntry`` objects to group together, or a dictionary of
+            pre-clustered ``DefectEntry`` objects in the format output by
+            ``group_defects_by_distance`` (i.e. ``{cluster index: {DefectEntry, ...}}``).
         dist_tol (float):
-            Threshold for the closest distance (in Å) between equivalent
-            defect sites, for different species of the same defect type,
-            to be grouped together (for plotting and transition level
-            analysis). If the minimum distance between equivalent defect
-            sites is less than ``dist_tol``, then they will be grouped
-            together, otherwise treated as separate defects.
+            Distance threshold (in Å) for clustering equivalent defect sites,
+            used with the ``"centroid"`` cluster linkage algorithm in ``scipy``.
             (Default: 1.5)
 
     Returns:
-        dict: {simple defect name: {(equivalent defect sites): [DefectEntry]}
+        dict: Dictionary of ``{simple defect name: {cluster index: {DefectEntry, ...}}}``.
     """
     # Note: This algorithm works well for the vast majority of cases, however because it involves
-    # clustering, the results can be sensitive to which / how many defects are parsed together. For
-    # instance, in the full parsed CdTe defect dicts in test data, when parsing with metastable states,
-    # all Te_i are combined as each entry is within `dist_tol = 1.5` of another interstitial,
-    # but without metastable states (`wout_meta`), Te_i_+2 is excluded (because it's not within
-    # `dist_tol` of any other _stable_ Te_i). However, the user can always adjust `dist_tol` as desired.
+    # clustering, the results can be a little sensitive to which / how many defects are parsed together
+    # (though use of the ``"centroid"`` linkage algorithm reduces this sensitivity significantly,
+    # and prevents long chaining within clusters etc.). The user can always adjust `dist_tol` as desired.
+    if isinstance(defect_entries, list):
+        clustered_defect_entries = group_defects_by_distance(defect_entries, dist_tol=dist_tol)
+    else:
+        clustered_defect_entries = defect_entries  # already clustered
 
-    # initial group by Defect.name (same nominal defect), then distance to equiv sites
-    # first make dictionary of nominal defect name: list of entries with that name
-    defect_name_dict = {}
-    for entry in entry_list:
-        if entry.defect.name not in defect_name_dict:
-            defect_name_dict[entry.defect.name] = [entry]
-        else:
-            defect_name_dict[entry.defect.name].append(entry)
+    clustered_defect_type_dict: dict[str, dict[int, set[DefectEntry]]] = {
+        entry.defect.name: defaultdict(set)
+        for entry in chain.from_iterable(clustered_defect_entries.values())
+    }
 
-    defect_site_dict: dict[str, dict[tuple, list[DefectEntry]]] = (
-        {}
-    )  # {defect name: {(equiv defect sites): entry list}}
+    # loop over clusters, and add each defect entry to that cluster entry in the corresponding defect
+    # type subdict:
+    for cluster_idx, clustered_entries in clustered_defect_entries.items():
+        for entry in clustered_entries:
+            clustered_defect_type_dict[entry.defect.name][cluster_idx].add(entry)
+
+    return clustered_defect_type_dict
+
+
+def group_defects_by_distance(
+    entry_list: list[DefectEntry], dist_tol: float = 1.5
+) -> dict[int, set[DefectEntry]]:
+    """
+    Given an input list of ``DefectEntry`` objects, returns a dictionary of
+    defect entries clustered according to the given ``dist_tol`` distance
+    tolerance (between symmetry-equivalent sites in the bulk supercell), in
+    the format: ``{cluster index: {DefectEntry, ...}}``.
+
+    This is used to group together different defect entries (different charge
+    states, and/or ground and metastable states (different spin or geometries))
+    which occupy similar sites in the host lattice, which is then used in
+    plotting, transition level analysis and defect concentration calculations;
+    e.g. in the frozen defect approximation, the total concentration of a given
+    defect type group is calculated at the annealing temperature, and then the
+    equilibrium relative population of the constituent entries is recalculated
+    at the quenched temperature. When ``site_competition = True`` (default) in
+    defect concentration calculations, the grouping returned by this function
+    is used to determine which defects occupy the same sites (and hence compete
+    for site occupancy).
+
+    Args:
+        entry_list ([DefectEntry, ...]):
+            A list of DefectEntry objects to group together.
+        dist_tol (float):
+            Distance threshold (in Å) for clustering equivalent defect sites,
+            used with the ``"centroid"`` cluster linkage algorithm in ``scipy``.
+            (Default: 1.5)
+
+    Returns:
+        dict: Dictionary of {cluster index: {DefectEntry, ...}}.
+    """
     bulk_supercell = _get_bulk_supercell(entry_list[0])
     bulk_lattice = bulk_supercell.lattice
     bulk_supercell_sga = get_sga(bulk_supercell)
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
     bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
-    for name, entry_list in defect_name_dict.items():
-        defect_site_dict[name] = {}
-        sorted_entry_list = sorted(
-            entry_list, key=lambda x: abs(x.charge_state)
-        )  # sort by charge, starting with closest to zero, for deterministic behaviour
-        for entry in sorted_entry_list:
-            entry_bulk_supercell = _get_bulk_supercell(entry)
-            if entry_bulk_supercell.lattice != bulk_lattice:
-                # recalculate bulk_symm_ops if bulk supercell differs
-                bulk_supercell_sga = get_sga(entry_bulk_supercell)
-                symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
-                bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
+    equiv_sites_entries_dict: dict[tuple[tuple[float, float, float], ...], list[DefectEntry]] = (
+        defaultdict(list)
+    )  # {(equiv defect sites): entry list}}
 
-            bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
-            # need to use relaxed defect site if bulk_site not in calculation_metadata
+    # Clustering Workflow:
+    # 1. Generate ``equiv_sites_entries_dict``: {(equiv defect sites): entry list}, initially joining
+    #    together any entries which are within min(0.05, dist_tol) Å of each other (i.e. (near-)exact
+    #    matches).
+    # 2. Cluster equivalent defect sites using ``cluster_coords`` with ``dist_tol``.
+    # 3. Take unique clusters (of equivalent sites) and start with the largest (i.e. accounting for the
+    #    fact that the defect entries corresponding to some clusters may be subsets of others,
+    #    if e.g. they have a lower symmetry / higher multiplicity etc., and so we favour larger rather
+    #    than smaller clusters, or equivalently less rather than more clusters), iterate through and add
+    #    a defect entry cluster of all entries corresponding to that equiv site cluster which are not
+    #    already members of an earlier defect entry cluster.
 
-            min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
-                bulk_site.lattice.get_all_distances(bulk_site.frac_coords, list(equiv_site_tuple)).min()
-                for equiv_site_tuple in defect_site_dict[entry.defect.name]
-            ]
+    for entry in entry_list:
+        entry_bulk_supercell = _get_bulk_supercell(entry)
+        if entry_bulk_supercell.lattice != bulk_lattice:
+            # recalculate bulk_symm_ops if bulk supercell differs
+            bulk_supercell_sga = get_sga(entry_bulk_supercell)
+            symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+            bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
-            if min_dist_list and min(min_dist_list) < dist_tol:  # less than dist_tol, add to corresponding
-                idxmin = np.argmin(min_dist_list)  # entry list
-                if min_dist_list[idxmin] > 0.05:  # likely interstitials, need to add equiv sites to tuple
-                    # pop old tuple, add new tuple with new equiv sites, and add entry to new tuple
-                    orig_tuple = list(defect_site_dict[name].keys())[idxmin]
-                    defect_entry_list = defect_site_dict[name].pop(orig_tuple)
-                    equiv_site_tuple = (
-                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                            tuple(frac_coords)
-                            for frac_coords in _get_all_equiv_sites(
-                                bulk_site.frac_coords,
-                                symm_bulk_struct,
-                                bulk_symm_ops,
-                                just_frac_coords=True,
-                            )
-                        )
-                        + orig_tuple
+        # need to use relaxed defect site if bulk_site not in calculation_metadata:
+        bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
+
+        # get min distances to each equiv_site_tuple for previously checked defect entries:
+        min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
+            bulk_site.lattice.get_all_distances(bulk_site.frac_coords, list(equiv_site_tuple)).min()
+            for equiv_site_tuple in equiv_sites_entries_dict
+        ]
+
+        if min_dist_list and min(min_dist_list) < min(
+            0.05, dist_tol
+        ):  # near-exact match, add to corresponding entry list
+            idxmin = np.argmin(min_dist_list)  # entry list
+            equiv_sites_entries_dict[list(equiv_sites_entries_dict.keys())[idxmin]].append(entry)
+
+        else:  # no exact match found, add new entry
+            try:
+                equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                    tuple(site.frac_coords) for site in symm_bulk_struct.find_equivalent_sites(bulk_site)
+                )
+            except ValueError:  # likely interstitials, need to add equiv sites to tuple
+                equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                    tuple(frac_coords)
+                    for frac_coords in get_all_equiv_sites(
+                        bulk_site.frac_coords,
+                        symm_bulk_struct,
+                        bulk_symm_ops,
+                        just_frac_coords=True,
                     )
-                    defect_entry_list.extend([entry])
-                    defect_site_dict[name][equiv_site_tuple] = defect_entry_list
+                )
 
-                else:  # less than dist_tol, add to corresponding entry list
-                    defect_site_dict[name][list(defect_site_dict[name].keys())[idxmin]].append(entry)
+            equiv_sites_entries_dict[equiv_site_tuple].append(entry)
 
-            else:  # no match found, add new entry
-                try:
-                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        tuple(site.frac_coords)
-                        for site in symm_bulk_struct.find_equivalent_sites(bulk_site)
-                    )
-                except ValueError:  # likely interstitials, need to add equiv sites to tuple
-                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        tuple(frac_coords)
-                        for frac_coords in _get_all_equiv_sites(
-                            bulk_site.frac_coords, symm_bulk_struct, bulk_symm_ops, just_frac_coords=True
-                        )
-                    )
+    all_frac_coords = list(chain.from_iterable(equiv_sites_entries_dict.keys()))
 
-                if equiv_site_tuple not in defect_site_dict[name]:
-                    defect_site_dict[name][equiv_site_tuple] = [entry]
-                else:  # possibly dist_tol = 0
-                    num_matching_names = sum(
-                        1 for defect_name in defect_site_dict if defect_name.startswith(name)
-                    )
-                    defect_site_dict[f"{name}_{chr(96 + num_matching_names)}"] = {}
-                    defect_site_dict[f"{name}_{chr(96+num_matching_names)}"][equiv_site_tuple] = [entry]
+    # cn is an array of cluster numbers, of length ``len(all_frac_coords)``, so we take the set of
+    # cluster numbers ``n`` to get unique cluster numbers, sort by cluster size to favour larger
+    # clusters (see workflow comment above), using ``np.where(cn == n)[0]`` to get the indices of ``cn`` /
+    # ``all_frac_coords`` which are in cluster ``n``:
+    cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol)
+    unique_clusters = sorted(set(cn), key=lambda n: len(np.where(cn == n)[0]), reverse=True)
 
-    return defect_site_dict
+    clustered_defect_entries: dict[int, set[DefectEntry]] = {}  # {cluster index: {DefectEntry, ...}}
+    for n in unique_clusters:
+        defect_entries = chain.from_iterable(  # get the corresponding defect entries:
+            equiv_sites_entries_dict.get(  # get corresponding key and thus entries
+                next(k for k in equiv_sites_entries_dict if all_frac_coords[i] in k), []
+            )
+            for i in np.where(cn == n)[0]
+        )
+        if new_entries_to_cluster := {  # reduce to unique entries which are not in any previous cluster
+            entry
+            for entry in defect_entries
+            if entry not in chain.from_iterable(clustered_defect_entries.values())
+        }:
+            clustered_defect_entries[n] = new_entries_to_cluster
+
+    return clustered_defect_entries
 
 
 def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[DefectEntry]]:
@@ -647,7 +693,9 @@ class DefectThermodynamics(MSONable):
             ]
             vbm_vals = [vbm for vbm in vbm_vals if vbm is not None]
             band_gap_vals = [
-                defect_entry.calculation_metadata.get("band_gap", defect_entry.calculation_metadata.get("gap"))
+                defect_entry.calculation_metadata.get(
+                    "band_gap", defect_entry.calculation_metadata.get("gap")
+                )
                 for defect_entry in self.defect_entries.values()
             ]
             band_gap_vals = [band_gap for band_gap in band_gap_vals if band_gap is not None]
@@ -704,9 +752,7 @@ class DefectThermodynamics(MSONable):
 
         sorted_defect_entries_dict = sort_defect_entries(defect_entries_dict)
         self._defect_entries = sorted_defect_entries_dict
-        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
-            warnings.filterwarnings("ignore", message="No chemical potentials")
-            self._parse_transition_levels()
+        self._parse_transition_levels()  # cluster defects and determine transition levels
         if self.check_compatibility:
             self._check_bulk_compatibility()
             self._check_bulk_chempots_compatibility(self._chempots)
@@ -869,7 +915,7 @@ class DefectThermodynamics(MSONable):
         """
         # determine defect charge transition levels:
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
-            warnings.filterwarnings("ignore", message="Chemical potentials not present for elements")
+            warnings.filterwarnings("ignore", message="No chemical potentials")
             midgap_formation_energies = [  # without chemical potentials
                 entry.formation_energy(
                     fermi_level=0.5 * self.band_gap, vbm=entry.calculation_metadata.get("vbm", self.vbm)
@@ -896,12 +942,16 @@ class DefectThermodynamics(MSONable):
         all_entries: dict = {}  # similar format to stable_entries, but with all (incl unstable) entries
 
         try:
-            defect_site_dict = group_defects_by_distance(
+            self._clustered_defect_entries = group_defects_by_distance(
                 list(self.defect_entries.values()), dist_tol=self.dist_tol
             )
-            grouped_entries_list = [
-                entry_list for sub_dict in defect_site_dict.values() for entry_list in sub_dict.values()
-            ]
+            self._clustered_defect_entries_by_type = group_defects_by_type_and_distance(
+                self._clustered_defect_entries,
+            )
+            grouped_entries_list = chain(
+                *map(methodcaller("values"), self._clustered_defect_entries_by_type.values())
+            )
+
         except Exception as e:
             grouped_entries = group_defects_by_name(list(self.defect_entries.values()))
             grouped_entries_list = list(grouped_entries.values())
@@ -997,12 +1047,8 @@ class DefectThermodynamics(MSONable):
             else:  # if ints_and_facets is empty, then there is likely only one defect...
                 # confirm formation energies dominant for one defect over other identical defects
                 name_set = [entry.name for entry in sorted_defect_entries]
-                with (
-                    warnings.catch_warnings()
-                ):  # ignore formation energies chempots warning when just parsing TLs
-                    warnings.filterwarnings(
-                        "ignore", message="Chemical potentials not present for elements"
-                    )
+                with warnings.catch_warnings():  # ignore chempots warning when just parsing TLs
+                    warnings.filterwarnings("ignore", message="No chemical potentials")
                     vb_list = [
                         entry.formation_energy(
                             fermi_level=limits[0][0], vbm=entry.calculation_metadata.get("vbm", self.vbm)
@@ -1457,9 +1503,7 @@ class DefectThermodynamics(MSONable):
         constituent entries is recalculated at the quenched temperature.
         """
         self._dist_tol = input_dist_tol
-        with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
-            warnings.filterwarnings("ignore", message="No chemical potentials")
-            self._parse_transition_levels()
+        self._parse_transition_levels()  # re-group and parse based on new dist_tol
 
     def get_formation_energies(
         self,
@@ -3053,6 +3097,7 @@ class DefectThermodynamics(MSONable):
 
         # TODO: Implement Kasamatsu rescaling here, based on matched sites
         # TODO: And check for concentration usages throughout, and quick test with/without
+        # TODO: Use clustered defects
         for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
             for defect_entry in defect_entry_list:
                 with warnings.catch_warnings():  # already warned if necessary
