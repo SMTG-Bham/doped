@@ -98,6 +98,7 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
+- Will be minor version bump, as new features (stenciling, site-competition etc.) and updated clustering algorithm which can give some small differences in generated interstitial sites / concentrations
 - Quick run through tutorial notebooks to check code all updated and running.
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout?
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.

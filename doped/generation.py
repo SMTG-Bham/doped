@@ -904,8 +904,9 @@ def charge_state_probability(
 
 def get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     """
-    Get the estimated charge states for a vacancy defect, which is from +/-``padding``
-    to the fully-ionised vacancy charge state (a.k.a. the vacancy oxidation state).
+    Get the estimated charge states for a vacancy defect, which is from
+    +/-``padding`` to the fully-ionised vacancy charge state (a.k.a. the
+    vacancy oxidation state).
 
     e.g. for vacancies in Sb2O5 (https://doi.org/10.1021/acs.chemmater.3c03257),
     the fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2
@@ -1437,7 +1438,7 @@ class DefectsGenerator(MSONable):
                 or ``force_diagonal`` (default = False)).
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to ``get_Voronoi_interstitial_sites``
-                (such as ``min_dist`` (0.9 Å), ``clustering_tol`` (0.55 Å),
+                (such as ``min_dist`` (0.9 Å), ``clustering_tol`` (0.8 Å),
                 ``symmetry_preference`` (0.1 Å), ``stol`` (0.32), ``tight_stol`` (0.02)
                 and ``symprec`` (0.01)  -- see its docstring, parentheses indicate
                 default values), or ``InterstitialGenerator`` if ``interstitial_coords``
@@ -1792,7 +1793,7 @@ class DefectsGenerator(MSONable):
                     self.prim_interstitial_coords = []
 
                     for interstitial_frac_coords in self.interstitial_coords:
-                        prim_inter_coords, equiv_coords = symmetry._get_equiv_frac_coords_in_primitive(
+                        equiv_prim_coords = symmetry.get_equiv_frac_coords_in_primitive(
                             interstitial_frac_coords,
                             self.structure,
                             self.primitive_structure,
@@ -1800,7 +1801,7 @@ class DefectsGenerator(MSONable):
                             equiv_coords=True,
                         )
                         self.prim_interstitial_coords.append(
-                            (prim_inter_coords, len(equiv_coords), equiv_coords)
+                            (equiv_prim_coords[0], len(equiv_prim_coords), equiv_prim_coords)
                         )
 
                     sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
@@ -2741,7 +2742,7 @@ def get_Voronoi_interstitial_sites(
                 Minimum distance from host atoms for interstitial sites.
                 Defaults to 0.9 Å.
             - clustering_tol (float):
-                Tolerance for clustering interstitial sites. Defaults to 0.55 Å.
+                Tolerance for clustering interstitial sites. Defaults to 0.8 Å.
             - symmetry_preference (float):
                 Symmetry preference for interstitial site selection. Defaults to 0.1 Å.
             - stol (float):
@@ -2793,7 +2794,7 @@ def get_Voronoi_interstitial_sites(
     site_frac_coords_array: np.ndarray = _doped_cluster_frac_coords(
         sites_array,
         host_structure,
-        tol=interstitial_gen_kwargs.get("clustering_tol", 0.55),
+        tol=interstitial_gen_kwargs.get("clustering_tol", 0.8),
         symmetry_preference=interstitial_gen_kwargs.get("symmetry_preference", 0.1),
     )
 
@@ -2804,7 +2805,7 @@ def get_Voronoi_interstitial_sites(
         interstitial_gen_kwargs.get("tight_stol", 0.02), host_structure
     )  # 0.06 Å for CdTe, Sb2Si2Te6
 
-    # this now depends on symprec in `_get_all_equiv_sites` (doesn't matter in most cases,
+    # this now depends on symprec in `get_all_equiv_sites` (doesn't matter in most cases,
     # but e.g. changes results in Ag2Se where we have some slight differences in site coordinations)
     for i, frac_coords in enumerate(site_frac_coords_array.tolist()):
         match_found = False
@@ -2816,7 +2817,7 @@ def get_Voronoi_interstitial_sites(
         if not match_found:  # try equiv sites:
             this_equiv_fpos = [
                 site.frac_coords
-                for site in symmetry._get_all_equiv_sites(
+                for site in symmetry.get_all_equiv_sites(
                     frac_coords,
                     host_structure,
                     symm_ops=symm_ops,
