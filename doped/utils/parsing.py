@@ -1337,7 +1337,7 @@ def get_interstitial_site_and_orientational_degeneracy(
             "degeneracies! (i.e. must be a parsed DefectEntry)"
         )
     equiv_sites = _get_all_equiv_sites(
-        _get_defect_supercell_bulk_site_coords(interstitial_defect_entry),
+        _get_defect_supercell_frac_coords(interstitial_defect_entry),
         _get_bulk_supercell(interstitial_defect_entry),
     )
     equiv_sites_array = np.array([site.frac_coords for site in equiv_sites])
@@ -1566,7 +1566,7 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
     return None
 
 
-def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=True):
+def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True):
     sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
     site = None
 

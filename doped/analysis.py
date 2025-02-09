@@ -45,7 +45,7 @@ from doped.utils.parsing import (
     _defect_spin_degeneracy_from_vasprun,
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
-    _get_defect_supercell_bulk_site_coords,
+    _get_defect_supercell_frac_coords,
     _get_output_files_and_check_if_multiple,
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
@@ -1162,7 +1162,7 @@ class DefectsParser:
         with contextlib.suppress(AttributeError, TypeError):  # sort by supercell frac cooords,
             # to aid deterministic naming:
             entries_to_rename.sort(
-                key=lambda x: _frac_coords_sort_func(_get_defect_supercell_bulk_site_coords(x))
+                key=lambda x: _frac_coords_sort_func(_get_defect_supercell_frac_coords(x))
             )
 
         new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
@@ -2042,7 +2042,7 @@ class DefectParser:
             # but not interstitials
             defect_entry.defect.multiplicity = len(
                 _get_all_equiv_sites(
-                    _get_defect_supercell_bulk_site_coords(defect_entry),
+                    _get_defect_supercell_frac_coords(defect_entry),
                     defect_entry.defect.structure,
                     symm_ops=bulk_supercell_symm_ops,
                     symprec=0.01,

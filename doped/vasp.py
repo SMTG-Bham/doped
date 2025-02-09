@@ -33,7 +33,7 @@ from doped.generation import (
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
-    _get_defect_supercell_bulk_site_coords,
+    _get_defect_supercell_frac_coords,
 )
 from doped.utils.symmetry import _frac_coords_sort_func
 
@@ -824,7 +824,7 @@ class DefectRelaxSet(MSONable):
                 )
 
             # get POSCAR comment:
-            sc_frac_coords = _get_defect_supercell_bulk_site_coords(self.defect_entry)
+            sc_frac_coords = _get_defect_supercell_frac_coords(self.defect_entry)
             if sc_frac_coords is None:
                 raise ValueError(
                     "Fractional coordinates of defect in the supercell must be defined in "

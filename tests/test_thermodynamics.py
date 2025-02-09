@@ -38,7 +38,7 @@ from doped.thermodynamics import (
     get_fermi_dos,
     scissor_dos,
 )
-from doped.utils.parsing import _get_defect_supercell_bulk_site_coords, get_vasprun
+from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
 from doped.utils.symmetry import get_sga, point_symmetry_from_site, point_symmetry_from_structure
 
 # for pytest-mpl:
@@ -2279,7 +2279,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
             assert (
                 point_symmetry_from_site(
-                    _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False),
+                    _get_defect_supercell_frac_coords(defect_entry, relaxed=False),
                     defect_entry.bulk_supercell,
                 )
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
@@ -2296,7 +2296,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             )
             assert (
                 point_symmetry_from_site(
-                    _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False),
+                    _get_defect_supercell_frac_coords(defect_entry, relaxed=False),
                     defect_entry.bulk_supercell,
                     symm_ops=bulk_symm_ops,
                 )
@@ -2305,7 +2305,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert (
                 point_symmetry_from_site(
                     defect_entry.bulk_supercell.lattice.get_cartesian_coords(
-                        _get_defect_supercell_bulk_site_coords(defect_entry, relaxed=False)
+                        _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
                     ),
                     defect_entry.bulk_supercell,
                     coords_are_cartesian=True,

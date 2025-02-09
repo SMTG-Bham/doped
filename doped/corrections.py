@@ -54,7 +54,7 @@ from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_core_potentials_from_outcar_obj,
     _get_defect_supercell,
-    _get_defect_supercell_bulk_site_coords,
+    _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
     get_locpot,
 )
@@ -223,7 +223,7 @@ def get_freysoldt_correction(
         defect_locpot=defect_locpot,
         bulk_locpot=bulk_locpot,
         lattice=_get_defect_supercell(defect_entry).lattice if isinstance(defect_locpot, dict) else None,
-        defect_frac_coords=_get_defect_supercell_bulk_site_coords(
+        defect_frac_coords=_get_defect_supercell_frac_coords(
             defect_entry
         ),  # _relaxed_ defect location in supercell
         **kwargs,
@@ -579,7 +579,7 @@ def get_kumagai_correction(
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
-        defect_coords=_get_defect_supercell_bulk_site_coords(
+        defect_coords=_get_defect_supercell_frac_coords(
             defect_entry
         ),  # _relaxed_ defect coords (except for vacancies)
         defect_region_radius=defect_region_radius,

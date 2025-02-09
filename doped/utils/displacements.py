@@ -18,7 +18,7 @@ from doped.generation import _get_element_list
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
-    _get_defect_supercell_bulk_site_coords,
+    _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
     get_site_mapping_indices,
 )
@@ -1009,7 +1009,7 @@ def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
     defect_type = defect_entry.defect.defect_type.name
     bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
     # Check position of relaxed defect has been parsed (it's an optional arg)
-    sc_defect_frac_coords = _get_defect_supercell_bulk_site_coords(defect_entry)
+    sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry)
     if sc_defect_frac_coords is None:
         raise ValueError(
             "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
