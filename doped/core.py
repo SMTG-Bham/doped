@@ -1231,7 +1231,7 @@ class DefectEntry(thermo.DefectEntry):
         )
         per_site_concentration = exp_factor * degeneracy_factor
         if site_competition:
-            per_site_concentration /= (1 + per_site_concentration)
+            per_site_concentration /= 1 + per_site_concentration
 
         if per_site:
             return per_site_concentration
@@ -1665,8 +1665,8 @@ def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_wit
 
 def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     structure,
-    timeout_1: int | float = 10,
-    timeout_2: int | float = 15,
+    timeout_1: float = 10,
+    timeout_2: float = 15,
 ) -> bool:
     """
     Tries to guess (and set) the oxidation states of the input structure using

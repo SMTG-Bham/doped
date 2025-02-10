@@ -10,11 +10,11 @@ import warnings
 
 import numpy as np
 from pymatgen.analysis.structure_matcher import (
+    AbstractComparator,
     ElementComparator,
+    FrameworkComparator,
     Structure,
     StructureMatcher,
-    FrameworkComparator,
-    AbstractComparator,
 )
 from pymatgen.core.composition import Composition, Element, Species
 from pymatgen.core.sites import PeriodicSite
@@ -170,8 +170,8 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
 
 def _get_symbol(element: Element | Species, comparator: AbstractComparator | None = None) -> str:
     """
-    Convenience function to get the symbol of an ``Element`` or
-    ``Species`` as a string.
+    Convenience function to get the symbol of an ``Element`` or ``Species`` as
+    a string.
 
     By default, the returned symbol does not include any charge /
     oxidation state information. If ``comparator`` is provided and
@@ -192,7 +192,7 @@ def _get_symbol(element: Element | Species, comparator: AbstractComparator | Non
     """
     if (
         comparator is not None
-        and not isinstance(comparator, (ElementComparator, FrameworkComparator))
+        and not isinstance(comparator, ElementComparator | FrameworkComparator)
         and isinstance(element, Species)
     ):
         return element.element.symbol
@@ -205,11 +205,10 @@ def get_element_indices(
     comparator: AbstractComparator | None = None,
 ) -> dict[str, list[int]]:
     """
-    Convenience function to quickly generate a dictionary of
-    ``{element: [indices]}`` for a given ``Structure``, where
-    ``indices`` are the indices of the sites in the structure
-    corresponding to the given ``elements`` (default is all
-    elements in the structure).
+    Convenience function to quickly generate a dictionary of ``{element:
+    [indices]}`` for a given ``Structure``, where ``indices`` are the indices
+    of the sites in the structure corresponding to the given ``elements``
+    (default is all elements in the structure).
 
     Args:
         structure (Structure):
@@ -217,6 +216,10 @@ def get_element_indices(
         elements (list[Element | Species | str] | None):
             List of elements to get the indices of. If ``None``,
             all elements in the structure are used. Default: None.
+        comparator (AbstractComparator | None):
+            Comparator to check if we should return the ``str(element)``
+            or ``element.element.symbol`` (default) representation.
+            Default: None.
 
     Returns:
         dict[str, list[int]]:
@@ -225,9 +228,10 @@ def get_element_indices(
     """
     if elements is None:
         from doped.utils.efficiency import _fast_get_composition_from_sites
+
         elements = _fast_get_composition_from_sites(structure).elements
 
-    if not all(isinstance(element, (str)) for element in elements):
+    if not all(isinstance(element, str) for element in elements):
         elements = [_get_symbol(element, comparator) for element in elements]
     species = np.array([_get_symbol(site.specie, comparator) for site in structure])
     return {element: np.where(species == element)[0].tolist() for element in elements}
@@ -597,7 +601,7 @@ def _smart_round(
             Default: ``True``
 
     Returns:
-        Union[float, list[float], np.ndarray[float]]:
+        float | list[float] | np.ndarray[float]]:
             The rounded number(s). If ``return_decimals=True``, then
             a tuple is returned with the rounded number(s) and the
             number of decimals used for rounding.
@@ -620,11 +624,9 @@ def _smart_round(
     ]
 
     if not consistent_decimals:
-        if isinstance(numbers, list):
-            return rounded_list
-        return np.array(rounded_list)
+        return rounded_list if isinstance(numbers, list) else np.array(rounded_list)
 
-    decimals = max([decimals for _, decimals in rounded_list])
+    decimals = max(decimals for _, decimals in rounded_list)
     rounded_list = [round(number, decimals) for number in numbers]
     return (rounded_list, decimals) if return_decimals else rounded_list
 

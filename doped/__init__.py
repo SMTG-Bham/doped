@@ -96,13 +96,13 @@ def get_mp_context():
     except ValueError:  # forkserver not available on Windows OS
         return multiprocessing.get_context("spawn")
 
+
 @contextlib.contextmanager
 def pool_manager(processes: int | None = None):
     r"""
-    Context manager for ``multiprocessing`` ``Pool``, to
-    throw a clearer error message when ``RuntimeError``\s are
-    raised ``multiprocessing`` within ``doped`` is used in a
-    python script.
+    Context manager for ``multiprocessing`` ``Pool``, to throw a clearer error
+    message when ``RuntimeError``\s are raised ``multiprocessing`` within
+    ``doped`` is used in a python script.
 
     See https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts
 
@@ -127,7 +127,8 @@ def pool_manager(processes: int | None = None):
                 "When using doped in python scripts with multiprocessing (recommended), you must use the "
                 "`if __name__ == '__main__':` syntax, see "
                 "https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts "
-                "-- alternatively you can set processes=1 (but this will be slower)") from orig_exc
+                "-- alternatively you can set processes=1 (but this will be slower)"
+            ) from orig_exc
         raise orig_exc
     finally:
         if pool is not None:

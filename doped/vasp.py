@@ -22,7 +22,7 @@ from pymatgen.io.vasp.sets import VaspInputSet
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, pool_manager, get_mp_context
+from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,

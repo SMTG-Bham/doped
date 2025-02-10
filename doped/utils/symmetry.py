@@ -10,13 +10,13 @@ from functools import lru_cache
 from itertools import permutations
 
 import numpy as np
-from numpy.typing import ArrayLike
 import pandas as pd
+from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import IStructure, Lattice, PeriodicSite, Structure, Composition
+from pymatgen.core.structure import Composition, IStructure, Lattice, PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
@@ -424,11 +424,10 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
 
 
-
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
     """
-    Get a matrix of the distances between the input fractional
-    coordinates in the input lattice.
+    Get a matrix of the distances between the input fractional coordinates in
+    the input lattice.
 
     Args:
         fcoords (ArrayLike):
@@ -441,23 +440,25 @@ def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
             Matrix of distances between the input fractional
             coordinates in the input lattice.
     """
-    return _get_distance_matrix(tuple((tuple(i) for i in fcoords)), lattice)  # tuple-ify for caching
+    return _get_distance_matrix(tuple(tuple(i) for i in fcoords), lattice)  # tuple-ify for caching
 
 
 @lru_cache(maxsize=int(1e2))
 def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     """
-    Get a matrix of the distances between the input fractional
-    coordinates in the input lattice.
+    Get a matrix of the distances between the input fractional coordinates in
+    the input lattice.
 
-    This function requires the input fcoords to be given as tuples,
-    to allow hashing and caching for efficiency.
+    This function requires the input fcoords to be given as tuples, to allow
+    hashing and caching for efficiency.
     """
     dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
     return (dist_matrix + dist_matrix.T) / 2
 
-def cluster_coords(fcoords: ArrayLike, struct: Structure, dist_tol: float = 0.01,
-                   method: str = "centroid") -> np.ndarray:
+
+def cluster_coords(
+    fcoords: ArrayLike, struct: Structure, dist_tol: float = 0.01, method: str = "centroid"
+) -> np.ndarray:
     """
     Cluster fractional coordinates based on their distances (using ``scipy``
     functions) and return the cluster numbers (as an array matching the shape
@@ -477,6 +478,9 @@ def cluster_coords(fcoords: ArrayLike, struct: Structure, dist_tol: float = 0.01
             coordinates correspond.
         dist_tol (float):
             Distance tolerance for clustering, in Å (default: 0.01).
+        method (str):
+            Clustering algorithm to use with ``linkage()`` (default:
+            ``"centroid"``).
 
     Returns:
         np.ndarray:
@@ -495,16 +499,16 @@ def cluster_coords(fcoords: ArrayLike, struct: Structure, dist_tol: float = 0.01
 def get_all_equiv_sites(
     frac_coords: ArrayLike,
     structure: Structure,
-    symm_ops: list[SymmOp]=None,
-    symprec: float=0.01,
-    dist_tol: float=0.01,
-    species: str="X",
-    just_frac_coords: bool=False,
+    symm_ops: list[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol: float = 0.01,
+    species: str = "X",
+    just_frac_coords: bool = False,
 ) -> list[PeriodicSite | np.ndarray]:
     """
-    Get a list of all equivalent sites of the input fractional coordinates 
-    in ``structure``.
-    
+    Get a list of all equivalent sites of the input fractional coordinates in
+    ``structure``.
+
     Args:
         frac_coords (ArrayLike):
             Fractional coordinates to get equivalent sites of.
@@ -513,27 +517,27 @@ def get_all_equiv_sites(
             coordinates correspond.
         symm_ops (list[SymmOp]):
             List of symmetry operations to use for the equivalent site
-            generation (can be provided to avoid re-calculation). If not 
-            provided, the symmetry operations will be determined using 
+            generation (can be provided to avoid re-calculation). If not
+            provided, the symmetry operations will be determined using
             ``get_sga`` with the chosen ``symprec``.
         symprec (float):
             Symmetry precision to use for determining symmetry operations
             (default: 0.01).
         dist_tol (float):
-            Distance tolerance for clustering generated sites (to ensure 
+            Distance tolerance for clustering generated sites (to ensure
             they are truly distinct), in Å (default: 0.01).
         species (str):
             Species to use for the equivalent sites (default: "X").
         just_frac_coords (bool):
             If ``True``, just returns the fractional coordinates of the
-            equivalent sites (rather than ``pymatgen`` ``PeriodicSite`` 
+            equivalent sites (rather than ``pymatgen`` ``PeriodicSite``
             objects). Default: False.
-    
+
     Returns:
         list[PeriodicSite | np.ndarray]:
-            List of equivalent sites of the input fractional coordinates 
+            List of equivalent sites of the input fractional coordinates
             in ``structure``, either as ``pymatgen`` ``PeriodicSite`` objects
-            or as fractional coordinates (depending on the value of 
+            or as fractional coordinates (depending on the value of
             ``just_frac_coords``).
     """
     if symm_ops is None:
@@ -546,7 +550,7 @@ def get_all_equiv_sites(
             symm_op,
             dummy_site,
             fractional=True,
-            rotate_lattice=structure.lattice,  # enforce same lattice, just want transformed frac coords here
+            rotate_lattice=structure.lattice,  # enforce same lattice, just want transformed frac coords
             just_unit_cell_frac_coords=just_frac_coords,
         )
         for symm_op in symm_ops
@@ -591,14 +595,14 @@ def _get_struct_with_all_X(struct, unique_sites):
     return struct_with_all_X
 
 
-# TODO: Make some of these public functions? Useful stuff
 def get_equiv_frac_coords_in_primitive(
-    frac_coords: ArrayLike, primitive: Structure,
-        supercell: Structure,
-    symm_ops: list[SymmOp]=None,
-    symprec: float=0.01,
-    dist_tol: float=0.01,
-    equiv_coords: bool=True
+    frac_coords: ArrayLike,
+    primitive: Structure,
+    supercell: Structure,
+    symm_ops: list[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol: float = 0.01,
+    equiv_coords: bool = True,
 ) -> list[np.ndarray] | np.ndarray:
     """
     Get an equivalent fractional coordinates of ``frac_coords`` from a
@@ -644,7 +648,9 @@ def get_equiv_frac_coords_in_primitive(
             list (sorted using ``_frac_coords_sort_func``), depending on
             the value of ``equiv_coords``.
     """
-    unique_sites = get_all_equiv_sites(frac_coords, supercell, symm_ops, dist_tol=dist_tol, symprec=symprec)
+    unique_sites = get_all_equiv_sites(
+        frac_coords, supercell, symm_ops, dist_tol=dist_tol, symprec=symprec
+    )
     supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
     prim_with_all_X = get_primitive_structure(supercell_with_all_X, ignored_species=["X"])
 
@@ -670,11 +676,14 @@ def get_equiv_frac_coords_in_primitive(
         ]
     )
 
-    prim_coord_list = sorted([
-        _vectorized_custom_round(np.mod(_vectorized_custom_round(site.frac_coords), 1))
-        for site in s2_really_like_s1.sites
-        if site.specie.symbol == "X"
-    ], key=_frac_coords_sort_func)
+    prim_coord_list = sorted(
+        [
+            _vectorized_custom_round(np.mod(_vectorized_custom_round(site.frac_coords), 1))
+            for site in s2_really_like_s1.sites
+            if site.specie.symbol == "X"
+        ],
+        key=_frac_coords_sort_func,
+    )
 
     return prim_coord_list if equiv_coords else prim_coord_list[0]
 
@@ -2405,11 +2414,11 @@ def group_order_from_schoenflies(sch_symbol):
 
 def are_equivalent_sites(s1: PeriodicSite, s2: PeriodicSite, structure: Structure, symprec: float = 0.01):
     """
-    Check if two periodic sites are symmetry-equivalent in the
-    given ``structure``.
+    Check if two periodic sites are symmetry-equivalent in the given
+    ``structure``.
 
     Symmetry-equivalency is checked using the ``SymmetrizedStructure``
-    class for vacancies and subsitutions, or using the equivalent
+    class for vacancies and substitutions, or using the equivalent
     sites for interstitials, along with ``doped`` efficiency functions
     for fast comparisons.
 
