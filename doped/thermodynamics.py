@@ -418,17 +418,28 @@ def group_defects_by_distance(
     unique_clusters = sorted(set(cn), key=lambda n: len(np.where(cn == n)[0]), reverse=True)
 
     clustered_defect_entries: dict[int, set[DefectEntry]] = {}  # {cluster index: {DefectEntry, ...}}
+
+    def map_coords_to_keys(equiv_sites_entries_dict):
+        coord_to_key_map = {}
+        for key in equiv_sites_entries_dict:
+            for coord in key:
+                coord_to_key_map[coord] = key
+        return coord_to_key_map
+
+    # Pre-compute the map for quick look-up
+    coord_to_key_map = map_coords_to_keys(equiv_sites_entries_dict)
+
     for n in unique_clusters:
         defect_entries = chain.from_iterable(  # get the corresponding defect entries:
             equiv_sites_entries_dict.get(  # get corresponding key and thus entries
-                next(k for k in equiv_sites_entries_dict if all_frac_coords[i] in k), []
+                coord_to_key_map[all_frac_coords[i]], []
             )
             for i in np.where(cn == n)[0]
         )
         if new_entries_to_cluster := {  # reduce to unique entries which are not in any previous cluster
             entry
             for entry in defect_entries
-            if entry not in chain.from_iterable(clustered_defect_entries.values())
+            if not any(entry in entry_set for entry_set in clustered_defect_entries.values())
         }:
             clustered_defect_entries[n] = new_entries_to_cluster
 

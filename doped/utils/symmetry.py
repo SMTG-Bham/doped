@@ -492,7 +492,7 @@ def cluster_coords(
     if len(fcoords) == 1:  # only one input coordinates
         return np.array([0])
 
-    condensed_m = squareform(get_distance_matrix(fcoords, struct.lattice))
+    condensed_m = squareform(get_distance_matrix(fcoords, struct.lattice), checks=False)
     z = linkage(condensed_m, method=method)
     return fcluster(z, dist_tol, criterion="distance")
 
