@@ -6,6 +6,7 @@ import contextlib
 import math
 import os
 import warnings
+from collections.abc import Sequence
 from functools import lru_cache
 from itertools import permutations
 
@@ -199,7 +200,7 @@ def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to
             frac_coords[idx],
             lattice,
             properties=orig_site.properties,
-            label=orig_site.label,
+            label=orig_site._label,
             skip_checks=True,
             to_unit_cell=to_unit_cell,
         )
@@ -346,7 +347,7 @@ def apply_symm_op_to_site(
         coords_are_cartesian=True,
         properties=site.properties,
         skip_checks=True,
-        label=site.label,
+        label=site._label,
     )
 
 
@@ -509,6 +510,8 @@ def get_all_equiv_sites(
     Get a list of all equivalent sites of the input fractional coordinates in
     ``structure``.
 
+    Tries to use hashing and caching to accelerate if possible.
+
     Args:
         frac_coords (ArrayLike):
             Fractional coordinates to get equivalent sites of.
@@ -540,6 +543,47 @@ def get_all_equiv_sites(
             or as fractional coordinates (depending on the value of
             ``just_frac_coords``).
     """
+    IStructure.__hash__ = doped_IStructure.__hash__
+    try:
+        return _cache_ready_get_all_equiv_sites(
+            tuple(frac_coords),
+            structure,
+            tuple(symm_ops) if symm_ops else None,
+            symprec,
+            dist_tol,
+            species,
+            just_frac_coords,
+        )
+    except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
+        return _raw_get_all_equiv_sites(
+            frac_coords, structure, symm_ops, symprec, dist_tol, species, just_frac_coords
+        )
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_all_equiv_sites(
+    frac_coords: tuple,
+    structure: Structure,
+    symm_ops: tuple[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol: float = 0.01,
+    species: str = "X",
+    just_frac_coords: bool = False,
+):
+    return _raw_get_all_equiv_sites(
+        frac_coords, structure, symm_ops, symprec, dist_tol, species, just_frac_coords
+    )
+
+
+def _raw_get_all_equiv_sites(
+    frac_coords: ArrayLike,
+    structure: Structure,
+    symm_ops: Sequence[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol: float = 0.01,
+    species: str = "X",
+    just_frac_coords: bool = False,
+):
     if symm_ops is None:
         sga = get_sga(structure, symprec=symprec)
         symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
@@ -556,7 +600,8 @@ def get_all_equiv_sites(
         for symm_op in symm_ops
     ]
     if not just_frac_coords:
-        x_sites = [site.to_unit_cell() for site in x_sites]
+        for site in x_sites:
+            site.to_unit_cell(in_place=True)  # faster with in_place
 
     dist_precision_num_places = _get_num_places_for_dist_precision(structure, dist_tol)
     all_frac_coords = [
@@ -579,7 +624,39 @@ def get_all_equiv_sites(
 def _get_symm_dataset_of_struc_with_all_equiv_sites(
     frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
 ):
-    unique_sites = get_all_equiv_sites(frac_coords, struct, symm_ops, dist_tol=dist_tol, species=species)
+    """
+    Get the symmetry dataset of a ``SpacegroupAnalyzer`` object of a structure
+    with all equivalent sites of the input fractional coordinates added to
+    ``struct``, and also returning the list of unique equivalent sites.
+
+    Tries to use hashing and caching to accelerate if possible.
+    """
+    IStructure.__hash__ = doped_IStructure.__hash__
+    try:
+        return _cache_ready_get_symm_dataset_of_struc_with_all_equiv_sites(
+            tuple(frac_coords), struct, tuple(symm_ops) if symm_ops else None, symprec, dist_tol, species
+        )
+    except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
+        return _raw_get_symm_dataset_of_struc_with_all_equiv_sites(
+            frac_coords, struct, symm_ops, symprec, dist_tol, species
+        )
+
+
+@lru_cache(maxsize=int(1e3))
+def _cache_ready_get_symm_dataset_of_struc_with_all_equiv_sites(
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
+):
+    return _raw_get_symm_dataset_of_struc_with_all_equiv_sites(
+        frac_coords, struct, symm_ops, symprec, dist_tol, species
+    )
+
+
+def _raw_get_symm_dataset_of_struc_with_all_equiv_sites(
+    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
+):
+    unique_sites = get_all_equiv_sites(
+        list(frac_coords), struct, symm_ops, dist_tol=dist_tol, species=species
+    )
     struct_with_all_X = _get_struct_with_all_X(struct, unique_sites)
     sga_with_all_X = get_sga(struct_with_all_X, symprec=symprec)
     return sga_with_all_X.get_symmetry_dataset(), unique_sites
@@ -1876,9 +1953,10 @@ def point_symmetry_from_defect_entry(
         )
 
     supercell = _get_defect_supercell(defect_entry) if relaxed else _get_bulk_supercell(defect_entry)
+    supercell_sga = get_sga(supercell, symprec=symprec)
 
     if symm_ops is None:
-        symm_ops = get_sga(supercell).get_symmetry_operations()
+        symm_ops = supercell_sga.get_symmetry_operations()
 
     # For relaxed = True, often only works for relaxed defect structures if it is a scalar matrix
     # supercell expansion of the primitive/conventional cell (otherwise can mess up the periodicity).
@@ -1914,9 +1992,7 @@ def point_symmetry_from_defect_entry(
     spglib_point_group_symbol = None
     if relaxed:
         with contextlib.suppress(Exception):
-            spglib_point_group_symbol = schoenflies_from_hermann(
-                get_sga(supercell, symprec=symprec).get_point_group_symbol()
-            )
+            spglib_point_group_symbol = schoenflies_from_hermann(supercell_sga.get_point_group_symbol())
 
     if not relaxed or spglib_point_group_symbol is None:
         defect_supercell_bulk_site_coords = _get_defect_supercell_frac_coords(

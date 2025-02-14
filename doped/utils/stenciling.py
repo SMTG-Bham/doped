@@ -360,7 +360,8 @@ def _scan_symm_ops_to_place_site_closest_to_frac_coords(
     symm_op_pos_dict = {}
     for i, symm_op in enumerate(symm_ops):  # should check if frac or cartesian is faster
         symm_opped_site = apply_symm_op_to_site(symm_op, site, fractional=True, rotate_lattice=False)
-        symm_op_pos_dict[i] = symm_opped_site.to_unit_cell().frac_coords
+        symm_opped_site.to_unit_cell(in_place=True)  # faster with in_place
+        symm_op_pos_dict[i] = symm_opped_site.frac_coords
 
     # get symm_op which puts defect closest to target_frac_coords:
     closest_site = min(symm_op_pos_dict.items(), key=lambda x: np.linalg.norm(x[1] - target_frac_coords))
