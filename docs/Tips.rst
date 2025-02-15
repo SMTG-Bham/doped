@@ -16,9 +16,10 @@ their specific needs/system.
 
 Interstitials
 -------------------
-As described in the `YouTube defect calculation tutorial <https://youtu.be/FWz7nm9qoNg>`_, our
-recommended workflow for calculating interstitial defects is to first generate the set of
-candidate interstitial sites for your structure using ``DefectsGenerator`` (which uses Voronoi tessellation
+As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7nm9qoNg>`__,
+`B站 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__),
+our recommended workflow for calculating interstitial defects is to first generate the set of candidate
+interstitial sites for your structure using ``DefectsGenerator`` (which uses Voronoi tessellation
 for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) for each
 charge state of the generated interstitial candidates, and then pruning some of the candidate sites based
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect

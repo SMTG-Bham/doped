@@ -147,6 +147,10 @@ Hachmioune and Savya Aggarwal.
 over time as more and more functionality was added. After breaking changes in ``pymatgen``, the package
 was entirely refactored and rewritten, to work with the new ``pymatgen-analysis-defects`` package.
 
+Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
+`YouTube tutorials <https://youtu.be/FWz7nm9qoNg>`__ with Chinese subtitles to
+`Bilibili <https://www.bilibili.com/list/6073855/?sid=4603908>`__!
+
 .. _ShakeNBreak: https://shakenbreak.readthedocs.io
 
 .. raw:: html
