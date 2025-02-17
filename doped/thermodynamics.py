@@ -4539,10 +4539,6 @@ class FermiSolver(MSONable):
                 A ``py-sc-fermi`` ``DOS`` object, generated from the input
                 ``FermiDos`` object, for use with the ``py-sc-fermi`` backend.
         """
-        # Note: In theory multiprocessing could be introduced to make thermodynamic calculations
-        # over large grids faster, but with the current code there seems to be issues with thread
-        # locking / synchronisation (which shouldn't be necessary...). Worth keeping in mind if
-        # needed in future.
         self.defect_thermodynamics = defect_thermodynamics
         self.skip_vbm_check = skip_vbm_check
         if bulk_dos is not None:
@@ -5264,6 +5260,13 @@ class FermiSolver(MSONable):
 
         return solve_func(**kwargs)
 
+    # TODO: Should have a general ``scan()`` function, which takes in all variables, determines which
+    #  are ranges/iterables to scan over, and then calls the appropriate ``scan_...`` function to scan over
+    #  each N-dimensions, concatenates and returns the result
+    # TODO: Related, can implement joblib Parallel / multiprocessing processing with smart batch size
+    #  choices to make this much faster as well, if wanted. Smartest way would be to refactor all the
+    #  internal pd.concat loops over self._solve to use a separate calc function, which internally
+    #  determines parallelisation speedup and batch size based on grid size, and acts accordingly
     def scan_temperature(
         self,
         annealing_temperature_range: float | list[float] | None = None,
