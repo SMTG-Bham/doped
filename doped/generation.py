@@ -1887,7 +1887,7 @@ class DefectsGenerator(MSONable):
             defect_entry_list = []
             if len(self.primitive_structure) > 8 and processes != 1:
                 # skip for small systems as comms overhead / process init outweighs speedup
-                with pool_manager(processes=processes) as pool:
+                with pool_manager(processes) as pool:
                     for result in pool.imap_unordered(partial_func, defect_list):
                         defect_entry_list.append(result)
                         pbar.update(_pbar_increment_per_defect)  # 90% of progress bar

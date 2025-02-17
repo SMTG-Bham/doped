@@ -941,7 +941,7 @@ class DefectsParser:
                 ]
                 pbar.set_description("Setting up multiprocessing")
                 if self.processes > 1:
-                    with pool_manager(processes=self.processes) as pool:  # parsed_defect_entry, warnings
+                    with pool_manager(self.processes) as pool:  # parsed_defect_entry, warnings
                         results = pool.imap_unordered(
                             self._parse_defect_and_handle_warnings, folders_to_process
                         )

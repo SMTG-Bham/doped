@@ -3237,9 +3237,11 @@ class DefectThermodynamics(MSONable):
 
     def _parse_fermi_dos(
         self, bulk_dos: PathLike | Vasprun | FermiDos | None = None, skip_vbm_check: bool = False
-    ) -> FermiDos:
+    ) -> FermiDos | None:
         if bulk_dos is None:
             return None
+
+        fdos = None
 
         if isinstance(bulk_dos, FermiDos):
             fdos = bulk_dos
@@ -3254,7 +3256,7 @@ class DefectThermodynamics(MSONable):
             fdos_band_gap, _cbm, fdos_vbm, _ = bulk_dos.eigenvalue_band_properties
             fdos = get_fermi_dos(bulk_dos)
 
-        if abs(fdos_vbm - self.vbm) > 0.05 and not skip_vbm_check:
+        if fdos and abs(fdos_vbm - self.vbm) > 0.05 and not skip_vbm_check:
             warnings.warn(
                 f"The VBM eigenvalue of the bulk DOS calculation ({fdos_vbm:.2f} eV, band gap = "
                 f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
