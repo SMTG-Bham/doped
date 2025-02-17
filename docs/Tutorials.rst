@@ -13,6 +13,9 @@ Literature
     - **B站 (Bilibili), 有中文字幕**: `使用VASP理解与计算半导体中的缺陷 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__
 - **ShakeNBreak Documentation**: `ShakeNBreak Documentation <https://shakenbreak.readthedocs.io/en/latest/>`__
 
+.. note that oddly, the Bilibili links don't seem to work on MacOS Chrome (but do if you click the address
+.. in the address bar and press enter, weird), and works fine on everything else...
+
 Code Tutorials
 --------------
 
