@@ -50,7 +50,15 @@ tests = [
     "mp-api",  # not required by default as user can use legacy API, but needed for tests
     "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
 ]
-docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
+docs = [
+    "sphinx>7",
+    "myst-nb>=1.0",
+    "recommonmark",
+    "renku-sphinx-theme>=0.5.0",
+    "sphinx_rtd_theme>=2.0",
+    "sphinx_design",
+    "sphinx_click"
+]
 analysis = [
     "easyunfold",
     "py-sc-fermi",
