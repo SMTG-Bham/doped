@@ -496,12 +496,15 @@ def calc_displacements_ellipsoid(
             Default is ``False``.
 
     Returns:
-    - (ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, aniostropy_df):
-        A tuple containing the ellipsoid's center, radii, rotation matrix, and
-        a dataframe of anisotropy information, or ``(None, None, None, None)`` if
-        fitting was unsuccessful.
-    - If ``return_extras=True``, also returns ``disp_df`` and the points used to
-      fit the ellipsoid, appended to the return tuple.
+        tuple:
+
+        - (``ellipsoid_center``, ``ellipsoid_radii``, ``ellipsoid_rotation``, ``anisotropy_df``):
+            A tuple containing the ellipsoid's center, radii, rotation matrix, and
+            a dataframe of anisotropy information, or ``(None, None, None, None)`` if
+            fitting was unsuccessful.
+        - (``disp_df`` and ``points``):
+            If ``return_extras=True``, also returns ``disp_df`` and the points used to
+            fit the ellipsoid, appended to the return tuple.
     """
 
     def _get_minimum_volume_ellipsoid(P):
