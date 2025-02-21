@@ -1191,7 +1191,7 @@ class DefectsParser:
 
         FNV_correction_errors = []
         eFNV_correction_errors = []
-        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_vbm_check=True)
+        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_dos_check=True)
         for name, defect_entry in self.defect_dict.items():
             # first check if it's a stable defect:
             fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
@@ -1488,7 +1488,7 @@ class DefectsParser:
         dist_tol: float = 1.5,
         check_compatibility: bool = True,
         bulk_dos: FermiDos | None = None,
-        skip_vbm_check: bool = False,
+        skip_dos_check: bool = False,
     ) -> DefectThermodynamics:
         r"""
         Generates a ``DefectThermodynamics`` object from the parsed
@@ -1580,7 +1580,7 @@ class DefectsParser:
                 convergence wrt `k`-point sampling. Consistent functional settings should be
                 used for the bulk DOS and defect supercell calculations.
                 (Default: None)
-            skip_vbm_check (bool):
+            skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
                 entries VBM by >0.05 eV. Should only be used when the reason for this
                 difference is known/acceptable. (Default: False)
@@ -1604,7 +1604,7 @@ class DefectsParser:
             dist_tol=dist_tol,
             check_compatibility=check_compatibility,
             bulk_dos=bulk_dos,
-            skip_vbm_check=skip_vbm_check,
+            skip_dos_check=skip_dos_check,
         )
 
     def __repr__(self):

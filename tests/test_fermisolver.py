@@ -1778,7 +1778,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # test error with single-chempot-limit system:
         Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
         solver = FermiSolver(
-            Se_pnict_thermo, bulk_dos=self.CdTe_fermi_dos, skip_vbm_check=True, backend=backend
+            Se_pnict_thermo, bulk_dos=self.CdTe_fermi_dos, skip_dos_check=True, backend=backend
         )
         with pytest.raises(ValueError) as exc:
             solver._parse_and_check_grid_like_chempots()
@@ -1798,10 +1798,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             solver._parse_and_check_grid_like_chempots()
 
     @parameterize_backend()
-    def test_skip_vbm_check(self, backend):
+    def test_skip_dos_check(self, backend):
         """
         Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
-        is skipped with ``skip_vbm_check``.
+        is skipped with ``skip_dos_check``.
 
         Main test code in ``test_thermodynamics.py``.
         """
@@ -1819,7 +1819,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             FermiSolver(
                 defect_thermodynamics=defect_thermo,
                 bulk_dos=fd_up_fdos,
-                skip_vbm_check=True,
+                skip_dos_check=True,
                 backend=backend,
             )
         print([str(warning.message) for warning in w])

@@ -2755,7 +2755,7 @@ def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     print([str(warn.message) for warn in w])  # for debugging
     assert not output
     assert any(
-        "The VBM eigenvalue of the bulk DOS calculation (1.54 eV, band gap = 1.53 eV) differs "
+        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
         "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
         in str(warn.message)
         for warn in w
@@ -2846,9 +2846,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 )
             },
             {"temperature": 550},
-            {"skip_vbm_check": True},
+            {"skip_dos_check": True},
             {"return_concs": True},
-            {"return_concs": True, "skip_vbm_check": True, "temperature": 550},
+            {"return_concs": True, "skip_dos_check": True, "temperature": 550},
             {"effective_dopant_concentration": -1e18},
             {"effective_dopant_concentration": -1e18, "return_concs": True},
         ]:
@@ -2962,10 +2962,10 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             for warn in w
         )
 
-    def test_skip_vbm_check(self):
+    def test_skip_dos_check(self):
         """
         Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
-        is skipped with ``skip_vbm_check``.
+        is skipped with ``skip_dos_check``.
         """
         fd_up_fdos = deepcopy(self.fermi_dos)
         fd_up_fdos.energies -= 0.1
@@ -2976,10 +2976,11 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
             (defect_thermo.get_fermi_level_and_concentrations, {"limit": "Te-rich"}),
         ]:
+            # TODO: Test a gap mismatch too
             fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             _check_CdTe_mismatch_fermi_dos_warning(output, w)
             fl, output, w = _run_func_and_capture_stdout_warnings(
-                func, bulk_dos=fd_up_fdos, skip_vbm_check=True, **kwargs
+                func, bulk_dos=fd_up_fdos, skip_dos_check=True, **kwargs
             )
             assert not output
             assert not w
@@ -3016,8 +3017,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             {"delta_gap": 0.3},
             {"annealing_temperature": 550},
             {"annealing_temperature": 550, "quenched_temperature": 200},
-            {"skip_vbm_check": True},
-            {"skip_vbm_check": True, "annealing_temperature": 550},
+            {"skip_dos_check": True},
+            {"skip_dos_check": True, "annealing_temperature": 550},
             {"effective_dopant_concentration": -1e18},
             {"skip_formatting": True},
             {"per_charge": False},
