@@ -2976,7 +2976,6 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
             (defect_thermo.get_fermi_level_and_concentrations, {"limit": "Te-rich"}),
         ]:
-            # TODO: Test a gap mismatch too
             fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             _check_CdTe_mismatch_fermi_dos_warning(output, w)
             fl, output, w = _run_func_and_capture_stdout_warnings(
@@ -2994,6 +2993,25 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             defect_thermo.get_equilibrium_fermi_level, limit="Te-rich"
         )
         assert not w
+
+        # test with a fd-up band gap (but VBM fine):
+        fd_up_fdos = deepcopy(self.fermi_dos)
+        fd_up_fdos = scissor_dos(+0.2, fd_up_fdos)
+        fd_up_fdos.energies -= 0.1  # so VBM in same place
+
+        defect_thermo = deepcopy(self.defect_thermo)
+        for func, kwargs in [
+            (DefectThermodynamics, {"defect_entries": defect_thermo.defect_entries}),
+            (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
+            (defect_thermo.get_fermi_level_and_concentrations, {"limit": "Te-rich"}),
+        ]:
+            fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
+            assert any(
+                "The band gap of the bulk DOS calculation (1.45 eV, band gap = 1.71 eV) differs by "
+                ">0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV; "
+                in str(warn.message)
+                for warn in w
+            )
 
     def test_get_fermi_level_and_concentrations(self):
         """
