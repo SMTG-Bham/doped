@@ -998,8 +998,8 @@ class DefectEntry(thermo.DefectEntry):
                 degeneracy will be re-parsed/computed even if already present
                 in the ``DefectEntry`` object ``calculation_metadata``.
         """
-        from doped.utils.parsing import get_orientational_degeneracy, simple_spin_degeneracy_from_charge
-        from doped.utils.symmetry import point_symmetry_from_defect_entry
+        from doped.utils.parsing import simple_spin_degeneracy_from_charge
+        from doped.utils.symmetry import get_orientational_degeneracy, point_symmetry_from_defect_entry
 
         if symprec is None:
             symprec = 0.1  # Materials Project default, found to be best with residual structural noise

@@ -33,7 +33,6 @@ from doped.utils.parsing import (
     Vasprun,
     get_defect_type_and_composition_diff,
     get_defect_type_site_idxs_and_unrelaxed_structure,
-    get_orientational_degeneracy,
     get_outcar,
     get_procar,
     get_vasprun,
@@ -1326,6 +1325,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "C1"
+
+        from doped.utils.symmetry import get_orientational_degeneracy
 
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.01) == 8.0

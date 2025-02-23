@@ -53,7 +53,6 @@ from doped.utils.parsing import (
     get_core_potentials_from_outcar,
     get_defect_type_site_idxs_and_unrelaxed_structure,
     get_locpot,
-    get_orientational_degeneracy,
     get_procar,
     get_vasprun,
 )
@@ -61,6 +60,7 @@ from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
     get_all_equiv_sites,
+    get_orientational_degeneracy,
     get_sga,
     point_symmetry_from_defect_entry,
 )
