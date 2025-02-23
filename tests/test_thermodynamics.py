@@ -44,8 +44,6 @@ from doped.utils.symmetry import get_sga, point_symmetry_from_site, point_symmet
 # for pytest-mpl:
 module_path = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(module_path, "data")
-
-# Define paths for baseline_dir and style as constants
 BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
 STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
 
@@ -175,13 +173,13 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
             [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
         ]
 
-        cls.Sb2Se3_DATA_DIR = os.path.join(cls.module_path, "data/Sb2Se3")
+        cls.Sb2Se3_DATA_DIR = os.path.join(data_dir, "Sb2Se3")
         cls.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         cls.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
         cls.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "Sb2Si2Te6")
 
-        cls.V2O5_DATA_DIR = os.path.join(cls.module_path, "data/V2O5")
+        cls.V2O5_DATA_DIR = os.path.join(data_dir, "V2O5")
 
         cls.MgO_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "MgO")
 
@@ -2728,6 +2726,94 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             == 1
         )  # now merged
         # other options covered by ``unstable_entries`` plotting tests where this function is used
+
+    @custom_mpl_image_compare(filename="STO_V_O_Site_Competition.png")
+    def test_site_competition(self):
+        """
+        Test ``site_competition`` flag, which implements the Kasamatsu et al.
+
+        defect concentration formula (accounting for defect site occupancies in
+        the configurational entropy).
+        """
+        STO_wo_Al_thermo = loadfn(os.path.join(data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
+        v_O = STO_wo_Al_thermo.defect_entries["vac_O_2"]  # very low energy defect here
+        assert np.isclose(
+            v_O.formation_energy(
+                limit="O-poor",
+                chempots=STO_wo_Al_thermo.chempots,
+                fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+            ),
+            0.0338,
+            atol=1e-4,
+        )
+        site_comp_conc_2000K = v_O.equilibrium_concentration(
+            temperature=2000,
+            limit="O-poor",
+            chempots=STO_wo_Al_thermo.chempots,
+            fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+        )
+        site_comp_conc_2000K_exp = v_O.equilibrium_concentration(
+            temperature=2000,
+            limit="O-poor",
+            chempots=STO_wo_Al_thermo.chempots,
+            fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+            site_competition=True,
+        )
+        assert site_comp_conc_2000K == site_comp_conc_2000K_exp
+        assert site_comp_conc_2000K < v_O.bulk_site_concentration / 2  # asymptotic limit is 50%
+        assert np.isclose(site_comp_conc_2000K, 2.286e22, rtol=1e-3)
+
+        dilute_lim_conc_2000K = v_O.equilibrium_concentration(
+            temperature=2000,
+            limit="O-poor",
+            chempots=STO_wo_Al_thermo.chempots,
+            site_competition=False,
+            fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+        )
+        assert dilute_lim_conc_2000K > site_comp_conc_2000K
+        assert dilute_lim_conc_2000K > v_O.bulk_site_concentration / 2  # asymptotic limit is 100%
+        assert dilute_lim_conc_2000K < v_O.bulk_site_concentration  # asymptotic limit is 100%
+        assert np.isclose(dilute_lim_conc_2000K, 4.166e22, rtol=1e-3)
+
+        x = np.linspace(100, 4000, 100)
+        fig, ax = plt.subplots()
+        ax.plot(
+            x,
+            v_O.equilibrium_concentration(
+                temperature=x,
+                limit="O-poor",
+                chempots=STO_wo_Al_thermo.chempots,
+                site_competition=False,
+                fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+            ),
+            label="Dilute Approx",
+        )
+        ax.plot(
+            x,
+            v_O.equilibrium_concentration(
+                temperature=x,
+                limit="O-poor",
+                chempots=STO_wo_Al_thermo.chempots,
+                site_competition=True,
+                fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+            ),
+            label="w/Site Competition",
+        )
+        ax.axhline(v_O.bulk_site_concentration, color="black", linestyle="--", label="Oxygen Sites")
+        ax.axhline(
+            v_O.bulk_site_concentration / 2,
+            color="black",
+            alpha=0.5,
+            linestyle="--",
+            label="(Oxygen Sites)/2",
+        )
+        ax.set_xlabel("T (K)")
+        ax.set_ylabel("Concentration (cm$^{-3}$)")
+        ax.semilogy()
+        ax.set_ylim(1e21, 1e23)
+        ax.legend()
+
+        return fig
 
 
 def belas_linear_fit(T):  #
