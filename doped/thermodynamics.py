@@ -314,7 +314,7 @@ def group_defects_by_type_and_distance(
 
 
 def group_defects_by_distance(
-    entry_list: list[DefectEntry], dist_tol: float = 1.5
+    entry_list: list[DefectEntry], dist_tol: float = 1.5, symprec: float = 0.1
 ) -> dict[int, set[DefectEntry]]:
     """
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
@@ -341,13 +341,17 @@ def group_defects_by_distance(
             Distance threshold (in Å) for clustering equivalent defect sites,
             used with the ``"centroid"`` cluster linkage algorithm in ``scipy``.
             (Default: 1.5)
+        symprec (float):
+            Symmetry precision for finding equivalent sites in the bulk supercell,
+            for site clustering. Default is 0.1 (matching ``doped`` default for
+            point symmetry determination for relaxed defect supercells).
 
     Returns:
-        dict: Dictionary of {cluster index: {DefectEntry, ...}}.
+        dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
     """
     bulk_supercell = _get_bulk_supercell(entry_list[0])
     bulk_lattice = bulk_supercell.lattice
-    bulk_supercell_sga = get_sga(bulk_supercell)
+    bulk_supercell_sga = get_sga(bulk_supercell, symprec=symprec)
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
     bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
@@ -371,7 +375,7 @@ def group_defects_by_distance(
         entry_bulk_supercell = _get_bulk_supercell(entry)
         if entry_bulk_supercell.lattice != bulk_lattice:
             # recalculate bulk_symm_ops if bulk supercell differs
-            bulk_supercell_sga = get_sga(entry_bulk_supercell)
+            bulk_supercell_sga = get_sga(entry_bulk_supercell, symprec=symprec)
             symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
             bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
@@ -402,6 +406,7 @@ def group_defects_by_distance(
                         bulk_site.frac_coords,
                         symm_bulk_struct,
                         bulk_symm_ops,
+                        symprec=symprec,
                         just_frac_coords=True,
                     )
                 )
