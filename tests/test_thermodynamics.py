@@ -2760,8 +2760,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             site_competition=True,
         )
         assert site_comp_conc_2000K == site_comp_conc_2000K_exp
-        assert site_comp_conc_2000K < v_O.bulk_site_concentration / 2  # asymptotic limit is 50%
-        assert np.isclose(site_comp_conc_2000K, 2.286e22, rtol=1e-3)
+        # asymptotic limit is N_sites * g/(1+g):
+        degeneracy_factor = np.prod(list(v_O.degeneracy_factors.values()))
+        assert site_comp_conc_2000K < v_O.bulk_site_concentration * (
+            degeneracy_factor / (1 + degeneracy_factor)
+        )
+        assert np.isclose(site_comp_conc_2000K, 3.886e22, rtol=1e-3)
 
         dilute_lim_conc_2000K = v_O.equilibrium_concentration(
             temperature=2000,
@@ -2771,9 +2775,22 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             fermi_level=v_O.calculation_metadata["gap"] - 0.4,
         )
         assert dilute_lim_conc_2000K > site_comp_conc_2000K
-        assert dilute_lim_conc_2000K > v_O.bulk_site_concentration / 2  # asymptotic limit is 100%
-        assert dilute_lim_conc_2000K < v_O.bulk_site_concentration  # asymptotic limit is 100%
-        assert np.isclose(dilute_lim_conc_2000K, 4.166e22, rtol=1e-3)
+        # asymptotic limit is N_sites * g/(1+g):
+        assert dilute_lim_conc_2000K > v_O.bulk_site_concentration * (
+            degeneracy_factor / (1 + degeneracy_factor)
+        )
+        # asymptotic limit for per-site defect concentration with a positive formation energy,
+        # with respect to temperature, is the degeneracy factor g:
+        assert (
+            v_O.formation_energy(
+                limit="O-poor",
+                chempots=STO_wo_Al_thermo.chempots,
+                fermi_level=v_O.calculation_metadata["gap"] - 0.4,
+            )
+            > 0
+        )
+        assert dilute_lim_conc_2000K < v_O.bulk_site_concentration * degeneracy_factor
+        assert np.isclose(dilute_lim_conc_2000K, 1.666e23, rtol=1e-3)
 
         x = np.linspace(100, 4000, 100)
         fig, ax = plt.subplots()
@@ -2800,17 +2817,24 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             label="w/Site Competition",
         )
         ax.axhline(v_O.bulk_site_concentration, color="black", linestyle="--", label="Oxygen Sites")
+        plt.axhline(
+            v_O.bulk_site_concentration * degeneracy_factor,
+            color="C0",
+            linestyle="--",
+            alpha=0.5,
+            label="Oxygen Sites * g",
+        )
         ax.axhline(
-            v_O.bulk_site_concentration / 2,
-            color="black",
+            v_O.bulk_site_concentration * (degeneracy_factor / (1 + degeneracy_factor)),
+            color="C1",
             alpha=0.5,
             linestyle="--",
-            label="(Oxygen Sites)/2",
+            label="Oxygen Sites * (g/1+g)",
         )
         ax.set_xlabel("T (K)")
         ax.set_ylabel("Concentration (cm$^{-3}$)")
         ax.semilogy()
-        ax.set_ylim(1e21, 1e23)
+        ax.set_ylim(1e21, 3e23)
         ax.legend()
 
         return fig
