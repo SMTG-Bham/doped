@@ -3020,6 +3020,75 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         return fig
 
+    @custom_mpl_image_compare(filename="STO_V_Sr_Ti_Sr_Site_Competition.png")
+    def test_site_competition_via_DefectThermodynamics_diff_defect_types(self):
+        """
+        Test ``site_competition`` with ``DefectThermodynamics`` methods, with
+        different defect types (``V_Sr`` and ``Ti_Sr`` here) competing for the
+        same site.
+        """
+        STO_wo_Al_thermo = loadfn(os.path.join(data_dir, "SrTiO3", "STO_wo_Al_thermo.json.gz"))
+        fig, ax = plt.subplots()
+        x = np.linspace(1000, 10000, 100)
+        for i, T in enumerate(x):
+            conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(
+                temperature=T, limit="O-rich", fermi_level=0.6, per_charge=False, skip_formatting=True
+            )  # fermi level = 0.6 -> roughly where Ti_Sr and V_Sr have similar formation energies
+            ax.plot(
+                T,
+                conc_df.loc["vac_Sr"]["Concentration (cm^-3)"],
+                marker="o",
+                c="C0",
+                alpha=0.4,
+                label="V$_{Sr}$" if i == len(x) - 1 else None,
+            )
+            ax.plot(
+                T,
+                conc_df.loc["as_1_Ti_on_Sr"]["Concentration (cm^-3)"],
+                marker="o",
+                c="C1",
+                alpha=0.4,
+                label="Ti$_{Sr}$" if i == len(x) - 1 else None,
+            )
+
+        v_Sr = STO_wo_Al_thermo["vac_Sr_-1"]
+        v_Sr_degeneracy_factor = np.prod(list(v_Sr.degeneracy_factors.values()))
+
+        Ti_Sr = STO_wo_Al_thermo["as_1_Ti_on_Sr_1"]
+        Ti_Sr_degeneracy_factor = np.prod(list(Ti_Sr.degeneracy_factors.values()))
+        summed_degeneracy_factor = v_Sr_degeneracy_factor + Ti_Sr_degeneracy_factor
+
+        ax.axhline(v_Sr.bulk_site_concentration, color="black", linestyle="--", label="Strontium Sites")
+        ax.axhline(
+            v_Sr.bulk_site_concentration * (v_Sr_degeneracy_factor / (1 + summed_degeneracy_factor)),
+            color="C0",
+            alpha=0.5,
+            linestyle="--",
+            label="Sr$_{Sites}$ * (g$_{V_{Sr}}$/1+∑g)",
+        )
+        ax.axhline(
+            v_Sr.bulk_site_concentration * (v_Sr_degeneracy_factor / (1 + v_Sr_degeneracy_factor)),
+            color="C2",
+            alpha=0.5,
+            linestyle="--",
+            label="Sr$_{Sites}$ * (g$_{V_{Sr}}$/1+g$_{V_{Sr}}$)",
+        )  # should exceed this line
+        ax.axhline(
+            Ti_Sr.bulk_site_concentration * (Ti_Sr_degeneracy_factor / (1 + summed_degeneracy_factor)),
+            color="C1",
+            alpha=0.5,
+            linestyle="--",
+            label="Sr$_{Sites}$ * (g$_{Ti_{Sr}}$/1+∑g)",
+        )
+
+        ax.set_xlabel("T (K)")
+        ax.set_ylabel("Concentration (cm$^{-3}$)")
+        ax.semilogy()
+        ax.set_ylim(1e21, 2e22)
+        ax.legend(fontsize=6, framealpha=0.5)
+
+        return fig
+
 
 def belas_linear_fit(T):  #
     """
