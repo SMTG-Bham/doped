@@ -3170,19 +3170,20 @@ class DefectThermodynamics(MSONable):
                 )
 
         if site_competition:
-            for cluster_number in self._clustered_defect_entries:
-                matching_concentration_dicts = [
-                    concentration_dict
-                    for concentration_dict in energy_concentration_list
-                    if concentration_dict["Lattice Site Index"] == cluster_number
-                ]
-                summed_per_site_concentration = sum(
-                    concentration_dict["Per-Site Concentration"]
-                    for concentration_dict in matching_concentration_dicts
-                )
-                for concentration_dict in matching_concentration_dicts:
-                    concentration_dict["Per-Site Concentration"] /= 1 + summed_per_site_concentration
-                    concentration_dict["Concentration (cm^-3)"] /= 1 + summed_per_site_concentration
+            with np.errstate(divide="ignore", invalid="ignore"):
+                for cluster_number in self._clustered_defect_entries:
+                    matching_concentration_dicts = [
+                        concentration_dict
+                        for concentration_dict in energy_concentration_list
+                        if concentration_dict["Lattice Site Index"] == cluster_number
+                    ]
+                    summed_per_site_concentration = sum(
+                        concentration_dict["Per-Site Concentration"]
+                        for concentration_dict in matching_concentration_dicts
+                    )
+                    for concentration_dict in matching_concentration_dicts:
+                        concentration_dict["Per-Site Concentration"] /= 1 + summed_per_site_concentration
+                        concentration_dict["Concentration (cm^-3)"] /= 1 + summed_per_site_concentration
 
         # TODO: Remove per-site option, just always return both as negligible additional cost
         for concentration_dict in energy_concentration_list:

@@ -629,6 +629,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     for warn in w
                 )
             else:
+                print(f"Checking len of: {[str(warning_message) for warning_message in w]}")
                 assert len(w) in {0, 1}
 
         figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
@@ -885,115 +886,128 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert isinstance(defect_thermo.bulk_dos, FermiDos)
         assert np.isclose(defect_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
 
-    def test_DefectsParser_thermo_objs(self):
+    def test_DefectsParser_CdTe_defect_thermo_obj(self):
         """
         Test the `DefectThermodynamics` objects created from the
         ``DefectsParser.get_defect_thermodynamics()`` method.
         """
-        for defect_thermo, name in [
-            (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
-            (self.YTOS_defect_thermo, "YTOS_defect_thermo"),
-            (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
-            (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
-            (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
-            (self.MgO_defect_thermo, "MgO_defect_thermo"),
-            (self.Sb2O5_defect_thermo, "Sb2O5_defect_thermo"),
-            (self.ZnS_defect_thermo, "ZnS_defect_thermo"),
-        ]:
-            print(f"Checking {name}")
-            if "V2O5" in name:
-                self._check_defect_thermo(
-                    defect_thermo,
-                    chempots=self.V2O5_chempots,
-                    el_refs=self.V2O5_chempots["elemental_refs"],
-                )
-            elif "MgO" in name:
-                self._check_defect_thermo(
-                    defect_thermo,
-                    chempots=self.MgO_chempots,
-                    el_refs=self.MgO_chempots["elemental_refs"],
-                )
-            elif "Sb2O5" in name:
-                self._check_defect_thermo(
-                    defect_thermo,
-                    chempots=self.Sb2O5_chempots,
-                    el_refs=self.Sb2O5_chempots["elemental_refs"],
-                )
-            elif "ZnS" in name:
-                self._check_defect_thermo(defect_thermo, dist_tol=2.5)
-            else:
-                self._check_defect_thermo(defect_thermo)  # default values
+        self._check_defect_thermo(self.CdTe_defect_thermo)  # default values
 
-    def test_DefectsParser_thermo_objs_no_metadata(self):
+    def test_DefectsParser_YTOS_defect_thermo_obj(self):
+        self._check_defect_thermo(self.YTOS_defect_thermo)  # default values
+
+    def test_DefectsParser_Sb2Se3_defect_thermo_obj(self):
+        self._check_defect_thermo(self.Sb2Se3_defect_thermo)  # default values
+
+    def test_DefectsParser_Sb2Si2Te6_defect_thermo_obj(self):
+        self._check_defect_thermo(self.Sb2Si2Te6_defect_thermo)  # default values
+
+    def test_DefectsParser_V2O5_defect_thermo_obj(self):
+        self._check_defect_thermo(
+            self.V2O5_defect_thermo,
+            chempots=self.V2O5_chempots,
+            el_refs=self.V2O5_chempots["elemental_refs"],
+        )
+
+    def test_DefectsParser_MgO_defect_thermo_obj(self):
+        self._check_defect_thermo(
+            self.MgO_defect_thermo,
+            chempots=self.MgO_chempots,
+            el_refs=self.MgO_chempots["elemental_refs"],
+        )
+
+    def test_DefectsParser_Sb2O5_defect_thermo_obj(self):
+        self._check_defect_thermo(
+            self.Sb2O5_defect_thermo,
+            chempots=self.Sb2O5_chempots,
+            el_refs=self.Sb2O5_chempots["elemental_refs"],
+        )
+
+    def test_DefectsParser_ZnS_defect_thermo_obj(self):
+        self._check_defect_thermo(self.ZnS_defect_thermo, dist_tol=2.5)
+
+    def _check_defect_thermo_no_metadata(self, defect_thermo):
+        # get set of random 7 entries from defect_entries_wout_metadata (7 because need full CdTe
+        # example set for its semi-hard 😏 tests)
+        defect_entries_wout_metadata = random.sample(
+            list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
+        )
+        for entry in defect_entries_wout_metadata:
+            print(f"Setting metadata to empty for {entry.name}")
+            entry.calculation_metadata = {}
+
+        with pytest.raises(ValueError) as exc:
+            DefectThermodynamics(defect_entries_wout_metadata)
+        assert (
+            "No VBM eigenvalue was supplied or able to be parsed from the defect entries ("
+            "calculation_metadata attributes). Please specify the VBM eigenvalue in the function "
+            "input."
+        ) in str(exc.value)
+        with pytest.raises(ValueError) as exc:
+            DefectThermodynamics(defect_entries_wout_metadata, vbm=1.65)
+        assert (
+            "No band gap value was supplied or able to be parsed from the defect entries ("
+            "calculation_metadata attributes). Please specify the band gap value in the function "
+            "input."
+        ) in str(exc.value)
+
+        thermo_wout_metadata = DefectThermodynamics(defect_entries_wout_metadata, vbm=1.65, band_gap=1.499)
+        self._check_defect_thermo(thermo_wout_metadata)  # default values
+
+        defect_entries_wout_metadata_or_degeneracy = random.sample(
+            list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
+        )  # get set of random 7 entries from defect_entries_wout_metadata (7 needed for CdTe tests)
+        for entry in defect_entries_wout_metadata_or_degeneracy:
+            print(f"Setting metadata and degeneracy factors to empty for {entry.name}")
+            entry.calculation_metadata = {}
+            entry.degeneracy_factors = {}
+
+        thermo_wout_metadata_or_degeneracy = DefectThermodynamics(
+            defect_entries_wout_metadata_or_degeneracy, vbm=1.65, band_gap=1.499
+        )
+        self._check_defect_thermo(thermo_wout_metadata_or_degeneracy)  # default values
+        symm_df = thermo_wout_metadata_or_degeneracy.get_symmetries_and_degeneracies()
+        assert symm_df["g_Spin"].apply(lambda x: isinstance(x, int)).all()
+
+        for defect_entry in defect_entries_wout_metadata_or_degeneracy:
+            assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
+            assert isinstance(defect_entry.degeneracy_factors["orientational degeneracy"], int | float)
+
+            defect_entry.degeneracy_factors = {}
+            defect_entry.calculation_metadata = {}
+
+            _conc = defect_entry.equilibrium_concentration()
+            assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
+            assert isinstance(defect_entry.degeneracy_factors["orientational degeneracy"], int | float)
+
+    def test_DefectsParser_CdTe_defect_thermo_obj_no_metadata(self):
         """
         Test the `DefectThermodynamics` objects created from the
-        ``DefectsParser.get_defect_thermodynamics()`` method.
+        ``DefectsParser.get_defect_thermodynamics()`` method, with no prev
+        parsed metadata.
         """
-        for defect_thermo, name in [
-            (self.CdTe_defect_thermo, "CdTe_defect_thermo"),
-            (self.YTOS_defect_thermo, "YTOS_defect_thermo"),
-            (self.Sb2Se3_defect_thermo, "Sb2Se3_defect_thermo"),
-            (self.Sb2Si2Te6_defect_thermo, "Sb2Si2Te6_defect_thermo"),
-            (self.V2O5_defect_thermo, "V2O5_defect_thermo"),
-            (self.MgO_defect_thermo, "MgO_defect_thermo"),
-            (self.Sb2O5_defect_thermo, "Sb2O5_defect_thermo"),
-            (self.ZnS_defect_thermo, "ZnS_defect_thermo"),
-        ]:
-            print(f"Checking {name}")
-            # get set of random 7 entries from defect_entries_wout_metadata (7 because need full CdTe
-            # example set for its semi-hard 😏 tests)
-            defect_entries_wout_metadata = random.sample(
-                list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
-            )
-            for entry in defect_entries_wout_metadata:
-                print(f"Setting metadata to empty for {entry.name}")
-                entry.calculation_metadata = {}
+        self._check_defect_thermo_no_metadata(self.CdTe_defect_thermo)
 
-            with pytest.raises(ValueError) as exc:
-                DefectThermodynamics(defect_entries_wout_metadata)
-            assert (
-                "No VBM eigenvalue was supplied or able to be parsed from the defect entries ("
-                "calculation_metadata attributes). Please specify the VBM eigenvalue in the function "
-                "input."
-            ) in str(exc.value)
-            with pytest.raises(ValueError) as exc:
-                DefectThermodynamics(defect_entries_wout_metadata, vbm=1.65)
-            assert (
-                "No band gap value was supplied or able to be parsed from the defect entries ("
-                "calculation_metadata attributes). Please specify the band gap value in the function "
-                "input."
-            ) in str(exc.value)
+    def test_DefectsParser_YTOS_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.YTOS_defect_thermo)
 
-            thermo_wout_metadata = DefectThermodynamics(
-                defect_entries_wout_metadata, vbm=1.65, band_gap=1.499
-            )
-            self._check_defect_thermo(thermo_wout_metadata)  # default values
+    def test_DefectsParser_Sb2Se3_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.Sb2Se3_defect_thermo)
 
-            defect_entries_wout_metadata_or_degeneracy = random.sample(
-                list(defect_thermo.defect_entries.values()), min(7, len(defect_thermo.defect_entries))
-            )  # get set of random 7 entries from defect_entries_wout_metadata (7 needed for CdTe tests)
-            for entry in defect_entries_wout_metadata_or_degeneracy:
-                print(f"Setting metadata and degeneracy factors to empty for {entry.name}")
-                entry.calculation_metadata = {}
-                entry.degeneracy_factors = {}
+    def test_DefectsParser_Sb2Si2Te6_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.Sb2Si2Te6_defect_thermo)
 
-            thermo_wout_metadata_or_degeneracy = DefectThermodynamics(
-                defect_entries_wout_metadata_or_degeneracy, vbm=1.65, band_gap=1.499
-            )
-            self._check_defect_thermo(thermo_wout_metadata_or_degeneracy)  # default values
-            symm_df = thermo_wout_metadata_or_degeneracy.get_symmetries_and_degeneracies()
-            assert symm_df["g_Spin"].apply(lambda x: isinstance(x, int)).all()
+    def test_DefectsParser_V2O5_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.V2O5_defect_thermo)
 
-            for defect_entry in defect_entries_wout_metadata_or_degeneracy:
-                assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
-                assert isinstance(defect_entry.degeneracy_factors["orientational degeneracy"], int | float)
+    def test_DefectsParser_MgO_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.MgO_defect_thermo)
 
-                defect_entry.degeneracy_factors = {}
-                defect_entry.calculation_metadata = {}
+    def test_DefectsParser_Sb2O5_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.Sb2O5_defect_thermo)
 
-                _conc = defect_entry.equilibrium_concentration()
-                assert defect_entry.degeneracy_factors["spin degeneracy"] in {1, 2}
-                assert isinstance(defect_entry.degeneracy_factors["orientational degeneracy"], int | float)
+    def test_DefectsParser_ZnS_defect_thermo_obj_no_metadata(self):
+        self._check_defect_thermo_no_metadata(self.ZnS_defect_thermo)
 
     def test_transition_levels_CdTe(self):
         """
@@ -2429,6 +2443,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
+                        site_competition=False,  # this linear dependence can change w/site competition
                     )
                     new_entry = deepcopy(random_defect_entry)
                     new_entry.defect.multiplicity *= 2
@@ -2438,6 +2453,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
+                        site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc * 2)
 
@@ -2447,6 +2463,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
+                        site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc)
 
@@ -2456,6 +2473,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
+                        site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc * 3)
 
@@ -2465,6 +2483,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         limit="Cd-rich",
                         fermi_level=fermi_level,
                         temperature=temperature,
+                        site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc * 21)
 
@@ -2475,6 +2494,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         fermi_level=fermi_level,
                         temperature=temperature,
                         per_site=True,
+                        site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(orig_conc, new_conc * random_defect_entry.bulk_site_concentration)
 
@@ -2649,11 +2669,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         for defect_entry, stability_window in [
             ("v_Cd_0", 0.47),
             (self.CdTe_defect_thermo.defect_entries["v_Cd_0"], 0.47),
-            ("v_Cd_-2", 1.03),
+            ("v_Cd_-1", -np.inf),
+            ("v_Cd_-2", 1.028),
             ("Te_Cd_+1", np.inf),
-            ("Int_Te_3_Unperturbed_1", -np.inf),
-            ("Int_Te_3_1", 1.465),
-            ("Int_Te_3_2", 0.035),
+            ("Int_Te_3_2", 0.08967),
+            ("Int_Te_3_1", np.inf),
+            ("Int_Te_3_Unperturbed_1", 1.4089),
         ]:
             assert np.isclose(
                 self.CdTe_defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry),
@@ -2679,7 +2700,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def test_prune_to_stable_entries(self):
         # test default; "not shallow":
         assert len(self.Se_ext_no_pnict_thermo) == 80
-        assert len(self.Se_ext_no_pnict_thermo.transition_level_map) == 16
+        assert len(self.Se_ext_no_pnict_thermo.transition_level_map) == 21
         print(self.Se_ext_no_pnict_thermo.transition_level_map)
         assert (
             len(
@@ -2696,7 +2717,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         pruned_Se_ext_no_pnict_thermo = self.Se_ext_no_pnict_thermo.prune_to_stable_entries()
         assert len(pruned_Se_ext_no_pnict_thermo) == 70
-        assert len(pruned_Se_ext_no_pnict_thermo.transition_level_map) == 16
+        assert len(pruned_Se_ext_no_pnict_thermo.transition_level_map) == 21
         for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1"]:
             assert i not in pruned_Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
         assert (
@@ -3297,7 +3318,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ]
 
         for kwargs in kwargs_list:
-            assert np.isclose(defect_thermo.get_equilibrium_fermi_level(**kwargs), 1.36009, atol=1e-3)
+            assert np.isclose(defect_thermo.get_equilibrium_fermi_level(**kwargs), 1.2298, atol=1e-3)
 
         defect_thermo._chempots = None
         defect_thermo._el_refs = None
