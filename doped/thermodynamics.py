@@ -143,8 +143,8 @@ def _update_old_chempots_dict(chempots: dict | None = None) -> dict | None:
     """
     if chempots is not None and any("facets" in key or "elt_refs" in key for key in chempots):
         chempots = deepcopy(chempots)  # don't modify original dict, only deepcopy if needed
-        for key, subdict in list(chempots.items()):
-            chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = subdict
+        for key in list(chempots.keys()):
+            chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = chempots.pop(key)
 
     return chempots
 
@@ -3118,10 +3118,6 @@ class DefectThermodynamics(MSONable):
             chempots, el_refs, limit
         )  # warns about chempots/limit choices if necessary
 
-        # TODO: Test with/without site-competition
-        # {cluster index: Set of defect names for that (cluster) site}:
-        site_cluster_dict = {k: {i.name for i in v} for k, v in self._clustered_defect_entries.items()}
-
         # Note: DataFrame initialisation from the list of dicts here actually ends up contributing a
         # non-negligible compute cost (~10%), which could be made faster by using a dict of lists/arrays
         # which is possible, but would make the code much less readable (e.g. for implementing site
@@ -3146,13 +3142,16 @@ class DefectThermodynamics(MSONable):
                     formation_energy=formation_energy,  # reduce compute times
                     site_competition=False,  # only rescale after, if site_competition = True
                 )
-
                 per_site_concentration = (
                     raw_concentration / defect_entry.bulk_site_concentration
                     if (site_competition or per_site)
                     else None
                 )  # only calculate if needed
-                cluster_number = next(k for k, v in site_cluster_dict.items() if defect_entry.name in v)
+
+                # this could be refactored if DefectEntry finding became a bottleneck (currently not)
+                cluster_number = next(
+                    k for k, v in self._clustered_defect_entries.items() if defect_entry in v
+                )
 
                 charge = (
                     defect_entry.charge_state
@@ -3232,7 +3231,9 @@ class DefectThermodynamics(MSONable):
 
         # group by defect and sum concentrations:
         return _group_defect_charge_state_concentrations(
-            conc_df, per_site=per_site, skip_formatting=skip_formatting, lean=lean
+            conc_df,
+            per_site=per_site,
+            skip_formatting=skip_formatting,
         )
 
     def _parse_fermi_dos(
@@ -3868,9 +3869,7 @@ class DefectThermodynamics(MSONable):
         ) * conc_df["Total Concentration (cm^-3)"]
 
         if not per_charge:
-            conc_df = _group_defect_charge_state_concentrations(
-                conc_df, per_site, skip_formatting=True, lean=lean
-            )
+            conc_df = _group_defect_charge_state_concentrations(conc_df, per_site, skip_formatting=True)
             # drop Total Concentration column if ``per_charge=False``, as it's a duplicate of
             # the Concentration column in this case
             conc_df = conc_df.drop(columns=["Total Concentration (cm^-3)"])
@@ -4129,7 +4128,9 @@ def _add_effective_dopant_concentration(
 
 
 def _group_defect_charge_state_concentrations(
-    conc_df: pd.DataFrame, per_site: bool = False, skip_formatting: bool = False, lean: bool = False
+    conc_df: pd.DataFrame,
+    per_site: bool = False,
+    skip_formatting: bool = False,
 ):
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)  # auto-reordered by groupby sum
     defects = (
@@ -4145,6 +4146,8 @@ def _group_defect_charge_state_concentrations(
     summed_df[conc_column] = raw_concentrations.apply(
         lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
     )
+    if "Lattice Site Index" in conc_df.columns:  # don't sum lattice site indices
+        summed_df["Lattice Site Index"] = conc_df.groupby("Defect")["Lattice Site Index"].first()
 
     return summed_df.drop(  # Defect set as index now, from groupby()
         columns=[
