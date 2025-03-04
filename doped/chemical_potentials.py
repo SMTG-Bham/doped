@@ -13,6 +13,7 @@ import warnings
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from pathlib import Path
+from re import sub
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -127,7 +128,7 @@ def make_molecule_in_a_box(element: str):
             Total magnetization of the molecule in a box
             (0 for all X2 except O2 which has a triplet ground state (S = 1)).
     """
-    element = element[0].upper()  # in case provided as X2 etc
+    element = sub(r"\d+$", "", element)  # remove digits in case provided as X2 etc
     if element not in elemental_diatomic_bond_lengths:
         raise ValueError(
             f"Element {element} is not currently supported for molecule-in-a-box structure generation."
@@ -167,7 +168,7 @@ def make_molecular_entry(computed_entry, legacy_MP=False):
     property_key_dict = MP_API_property_keys["legacy"] if legacy_MP else MP_API_property_keys["new"]
     assert len(computed_entry.composition.elements) == 1  # Elemental!
     formula = _get_pretty_formula(computed_entry.data)
-    element = formula[0].upper()
+    element = computed_entry.composition.elements[0].symbol
     struct, total_magnetization = make_molecule_in_a_box(element)
     molecular_entry = ComputedStructureEntry(
         structure=struct,
