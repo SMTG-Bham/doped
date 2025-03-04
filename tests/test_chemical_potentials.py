@@ -105,6 +105,24 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 assert np.isclose(entry.data["energy_per_atom"], -4.94795546875)
                 assert np.isclose(entry.data["energy"], -4.94795546875 * 2)
 
+    def test_make_molecule_in_a_box(self):
+        allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
+        for element in allowed_gaseous_elements:
+            structure, total_magnetization = chemical_potentials.make_molecule_in_a_box(element)
+            if element == "O2":
+                assert total_magnetization == 2
+            else:
+                assert total_magnetization == 0
+            assert structure.composition.reduced_formula == element
+            assert structure.num_sites == 2
+            assert np.isclose(structure.volume, 30**3)
+
+        with pytest.raises(ValueError) as exc:
+            chemical_potentials.make_molecule_in_a_box("Te")
+        assert "Element Te is not currently supported for molecule-in-a-box structure generation." in str(
+            exc.value
+        )
+
     @parameterized_subtest()
     def test_init(self, api_key):
         cp = chemical_potentials.CompetingPhases("ZrO2", e_above_hull=0.03, api_key=api_key)
