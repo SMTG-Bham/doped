@@ -498,7 +498,8 @@ This can arise for a number of reasons:
     - In this case, the absolute values of predictions should not be affected as the eigenvalue references
       in the calculations are consistent, just the reported Fermi levels will be referenced to
       ``DefectThermodynamics.vbm`` which may not be the exact VBM position here.
-- Small numerical inaccuracies in determining the VBM eigenvalue or band gap directly from the DOS spectrum.
+- Small numerical inaccuracies in determining the VBM eigenvalue or band gap directly from the DOS
+  spectrum.
     - Determining the VBM eigenvalue or band gap directly from a DOS spectrum is not entirely
       straightforward, due to effects of smearing, noise, finite sampling etc. If all other possible issues
       above have been ruled out and the detected mismatch is relatively small, then this may be the case

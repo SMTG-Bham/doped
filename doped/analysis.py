@@ -1576,9 +1576,11 @@ class DefectsParser:
                 Usually this is a static calculation with the `primitive` cell of the bulk
                 material, with relatively dense `k`-point sampling (especially for materials
                 with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-                convergence wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
+                level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+                are recommended for best convergence (wrt `k`-point sampling) in VASP.
+                Consistent functional settings should be used for the bulk DOS and defect
+                supercell calculations. See
+                https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
                 (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
