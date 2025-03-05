@@ -446,6 +446,69 @@ states can be omitted from plotting and analysis using the ``unstable_entries`` 
 detected to be shallow ('perturbed host') states and unstable for Fermi levels in the band gap are omitted
 from plotting for clarity & accuracy.
 
+Density of States (DOS) Calculations
+------------------------------------
+As discussed in the
+`thermodynamics & doping tutorial <https://doped.readthedocs.io/en/latest/thermodynamics_tutorial.html#doping-calculations>`__,
+the electronic density of states (DOS) of the bulk material (provided as ``bulk_dos``) is required to
+determine carrier concentrations and thus (quasi-)equilibrium Fermi levels and defect concentrations under
+various conditions, along with the defect formation energies and other inputs.
+
+The bulk DOS (``bulk_dos``) calculation should be a static calculation with the `primitive` unit cell, using:
+
+- Dense `k`-point sampling and energy grid spacing (``KPOINTS`` and ``NEDOS`` respectively with ``VASP``)
+  to give a converged DOS spectrum (see e.g.
+  `vaspup2.0 <https://github.com/kavanase/vaspup2.0?tab=readme-ov-file#density-of-states-and-absorption-spectrum-convergence>`__)
+  and an accurate band gap.
+- Ideally tetrahedron smearing (``ISMEAR = -5`` in ``VASP``) for improved DOS convergence with respect to
+  `k`-points.
+- Consistent DFT functional settings as used for the final bulk/defect supercell calculations (e.g. ``LHFCALC``,
+  ``AEXX``, ``LSORBIT`` etc).
+- The same host crystal structure used to generate the bulk/defect supercells, and same pseudopotentials
+  (``POTCAR``\s in ``VASP``) used for the supercell calculations.
+
+
+If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
+and bulk/defect supercell calculations (stored as ``DefectThermodynamics.vbm/gap``), this can lead to
+inaccuracies in the thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it
+will throw a warning like:
+``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap`...``.
+
+This can arise for a number of reasons:
+
+- Differences in DFT functional choices, pseudopotentials (``POTCAR``\s in ``VASP``) or bulk crystal
+  structure/volume.
+    - This can cause severe errors and should be rectified so that the DOS and supercell
+      calculation settings are made consistent as discussed above.
+- Effects of smearing schemes (e.g. ``ISMEAR`` in ``VASP``), such that the band edges are not
+  accurately determined in the bulk DOS calculation.
+    - If possible, use tetrahedron smearing (``ISMEAR = -5``) for improved DOS convergence with respect to
+      `k`-points as discussed above. If this is not possible, but dense `k`-point sampling and energy grid
+      spacing is being used, then this should not significantly impact accuracies and the warning can be
+      ignored (set ``skip_dos_check = True`` to silence the warning).
+- Significant differences in `k`-point sampling between the bulk DOS and supercell calculations, such that
+  the same band edges are not captured in both calculations. This can happen in cases where band edges
+  occur at `k`-points which are not high-symmetry and/or are outside of the `k`-point grid of the supercell
+  calculations.
+    - Assuming the `k`-point sampling of the DOS calculation is sufficiently dense, then the issue is just
+      that the VBM eigenvalue and band gap of the bulk supercell calculation is not accurate. This can be
+      rectified by using the ``bulk_band_gap_vr`` option during defect parsing (see
+      `DefectsParser docstring <https://doped.readthedocs.io/en/latest/doped.analysis.html#doped.analysis.DefectsParser>`__)
+      to set the bulk band gap and VBM eigenvalue to the correct values.
+    - In this case, the absolute values of predictions should not be affected as the eigenvalue references
+      in the calculations are consistent, just the reported Fermi levels will be referenced to
+      ``DefectThermodynamics.vbm`` which may not be the exact VBM position here.
+- Small numerical inaccuracies in determining the VBM eigenvalue or band gap directly from the DOS spectrum.
+    - Determining the VBM eigenvalue or band gap directly from a DOS spectrum is not entirely
+      straightforward, due to effects of smearing, noise, finite sampling etc. If all other possible issues
+      above have been ruled out and the detected mismatch is relatively small, then this may be the case
+      and can be ignored (set ``skip_dos_check = True`` to silence the warning) --- accuracies should not
+      be significantly affected.
+
+.. note::
+    The Fermi level will be always referenced to ``DefectThermodynamics.vbm``.
+
+
 Spin Polarisation
 -----------------
 Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
