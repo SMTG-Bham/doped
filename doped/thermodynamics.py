@@ -541,7 +541,7 @@ class DefectThermodynamics(MSONable):
         r"""
         Create a ``DefectThermodynamics`` object, which can be used to analyse
         the calculated thermodynamics of defects in solids (formation energies,
-        transition levels, concentrations etc).
+        transition levels, concentrations etc.).
 
         Usually initialised using ``DefectsParser.get_defect_thermodynamics()``, but
         can also be initialised with a list or dict of ``DefectEntry`` objects (e.g.
@@ -631,9 +631,10 @@ class DefectThermodynamics(MSONable):
                 Usually this is a static calculation with the `primitive` cell of the bulk
                 material, with relatively dense `k`-point sampling (especially for materials
                 with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-                convergence wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
+                level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+                are recommended for best convergence (wrt `k`-point sampling) in VASP.
+                Consistent functional settings should be used for the bulk DOS and defect
+                supercell calculations.
                 (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from the defect
@@ -915,12 +916,13 @@ class DefectThermodynamics(MSONable):
         the pyCDT (pymatgen<=2022.7.25) thermodynamics code (deleted in later
         versions).
 
-        This function uses scipy's HalfspaceIntersection
+        This function uses ``scipy``\'s ``HalfspaceIntersection``
         to construct the polygons corresponding to defect stability as
         a function of the Fermi-level. The Halfspace Intersection
         constructs N-dimensional hyperplanes, in this case N=2, based
         on the equation of defect formation energy with considering chemical
         potentials:
+
             E_form = E_0^{Corrected} + Q_{defect}*(E_{VBM} + E_{Fermi}).
 
         Extra hyperplanes are constructed to bound this space so that
@@ -1431,9 +1433,10 @@ class DefectThermodynamics(MSONable):
         Usually this is a static calculation with the `primitive` cell of the bulk
         material, with relatively dense `k`-point sampling (especially for materials
         with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-        level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-        convergence wrt `k`-point sampling. Consistent functional settings should be
-        used for the bulk DOS and defect supercell calculations.
+        level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+        are recommended for best convergence (wrt `k`-point sampling) in VASP.
+        Consistent functional settings should be used for the bulk DOS and defect
+        supercell calculations.
         """
         self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_dos_check=self.skip_dos_check)
 
@@ -3351,9 +3354,10 @@ class DefectThermodynamics(MSONable):
                 Usually this is a static calculation with the `primitive` cell of the bulk
                 material, with relatively dense `k`-point sampling (especially for materials
                 with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-                convergence wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
+                level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+                are recommended for best convergence (wrt `k`-point sampling) in VASP.
+                Consistent functional settings should be used for the bulk DOS and defect
+                supercell calculations.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
@@ -3580,9 +3584,10 @@ class DefectThermodynamics(MSONable):
                 Usually this is a static calculation with the `primitive` cell of the bulk
                 material, with relatively dense `k`-point sampling (especially for materials
                 with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-                convergence wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
+                level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+                are recommended for best convergence (wrt `k`-point sampling) in VASP.
+                Consistent functional settings should be used for the bulk DOS and defect
+                supercell calculations.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has previously
                 been provided and parsed, and thus is set as the ``self.bulk_dos`` attribute.
@@ -4231,9 +4236,10 @@ def get_e_h_concs(fermi_dos: FermiDos, fermi_level: float, temperature: float) -
             Usually this is a static calculation with the `primitive` cell of the bulk
             material, with relatively dense `k`-point sampling (especially for materials
             with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-            level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-            convergence wrt `k`-point sampling. Consistent functional settings should be
-            used for the bulk DOS and defect supercell calculations.
+            level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+            are recommended for best convergence (wrt `k`-point sampling) in VASP.
+            Consistent functional settings should be used for the bulk DOS and defect
+            supercell calculations.
         fermi_level (float):
             Value corresponding to the electron chemical potential, **not** referenced
             to the VBM! (i.e. same eigenvalue reference as the raw calculation)
@@ -4294,9 +4300,10 @@ def get_doping(fermi_dos: FermiDos, fermi_level: float, temperature: float) -> f
             Usually this is a static calculation with the `primitive` cell of the bulk
             material, with relatively dense `k`-point sampling (especially for materials
             with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-            level. ``ISMEAR = -5`` (tetrahedron smearing) is usually recommended for best
-            convergence wrt `k`-point sampling. Consistent functional settings should be
-            used for the bulk DOS and defect supercell calculations.
+            level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+            are recommended for best convergence (wrt `k`-point sampling) in VASP.
+            Consistent functional settings should be used for the bulk DOS and defect
+            supercell calculations.
         fermi_level (float):
             Value corresponding to the electron chemical potential, **not** referenced
             to the VBM! (i.e. same eigenvalue reference as the raw calculation)
@@ -4467,10 +4474,11 @@ class FermiSolver(MSONable):
                 Usually this is a static calculation with the `primitive` cell of
                 the bulk material, with relatively dense `k`-point sampling
                 (especially for materials with disperse band edges) to ensure an
-                accurately-converged DOS and thus Fermi level. ``ISMEAR = -5``
-                (tetrahedron smearing) is usually recommended for best convergence
-                wrt `k`-point sampling. Consistent functional settings should be
-                used for the bulk DOS and defect supercell calculations.
+                accurately-converged DOS and thus Fermi level. Using large ``NEDOS``
+                (>3000) and ``ISMEAR = -5`` (tetrahedron smearing) are recommended
+                for best convergence (wrt `k`-point sampling) in VASP.
+                Consistent functional settings should be used for the bulk DOS and
+                defect supercell calculations.
 
                 Note that the ``DefectThermodynamics.bulk_dos`` will be set to match
                 this input, if provided.
