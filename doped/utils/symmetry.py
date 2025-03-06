@@ -458,7 +458,11 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
 
 
 def cluster_coords(
-    fcoords: ArrayLike, struct: Structure, dist_tol: float = 0.01, method: str = "centroid"
+    fcoords: ArrayLike,
+    struct: Structure,
+    dist_tol: float = 0.01,
+    method: str = "single",
+    criterion: str = "distance",
 ) -> np.ndarray:
     """
     Cluster fractional coordinates based on their distances (using ``scipy``
@@ -466,10 +470,15 @@ def cluster_coords(
     and order of ``fcoords``).
 
     ``method`` chooses the clustering algorithm to use with ``linkage()``
-    (``"centroid"`` by default), along with a ``dist_tol`` distance tolerance
-    (in Å). ``"single"`` (which corresponds to the Nearest Point algorithm)
-    is a recommended choice for ``method`` when ``dist_tol`` is small,
-    otherwise ``"centroid"`` or ``"ward"`` are recommended.
+    (``"single"`` by default, matching the ``scipy`` default), along with a
+    ``dist_tol`` distance tolerance in Å. ``"single"`` corresponds to the
+    Nearest Point algorithm and is the recommended choice for ``method`` when
+    ``dist_tol`` is small, but can be sensitive to how many fractional
+    coordinates are included in ``fcoords`` (allowing for daisy-chaining of
+    sites to give large spaced-out clusters), while ``"centroid"`` or
+    ``"ward"`` are good choices to avoid this issue.
+
+    See the ``scipy`` API docs for more info.
 
     Args:
         fcoords (ArrayLike):
@@ -479,9 +488,16 @@ def cluster_coords(
             coordinates correspond.
         dist_tol (float):
             Distance tolerance for clustering, in Å (default: 0.01).
+            For the most part, fractional coordinates with distances less
+            than this tolerance will be clustered together (when
+            ``method = "single"``, giving the Nearest Point algorithm, as
+            is the default).
         method (str):
             Clustering algorithm to use with ``linkage()`` (default:
-            ``"centroid"``).
+            ``"single"``).
+        criterion (str):
+            Criterion to use for flattening hierarchical clusters from the
+            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
 
     Returns:
         np.ndarray:
@@ -494,7 +510,7 @@ def cluster_coords(
 
     condensed_m = squareform(get_distance_matrix(fcoords, struct.lattice), checks=False)
     z = linkage(condensed_m, method=method)
-    return fcluster(z, dist_tol, criterion="distance")
+    return fcluster(z, dist_tol, criterion=criterion)
 
 
 def get_all_equiv_sites(

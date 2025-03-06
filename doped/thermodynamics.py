@@ -255,17 +255,17 @@ def raw_energy_from_chempots(composition: str | dict | Composition, chempots: di
 
 
 def group_defects_by_type_and_distance(
-    defect_entries: list[DefectEntry] | dict[int, set[DefectEntry]], dist_tol: float = 1.5
+    defect_entries: list[DefectEntry], dist_tol: float = 1.5, symprec: float = 0.1
 ) -> dict[str, dict[int, set[DefectEntry]]]:
     """
-    Given an input list or pre-clustered dictionary of ``DefectEntry`` objects,
-    returns a dictionary of defect types with sub-dictionaries of defect
-    entries clustered according to the given ``dist_tol`` distance tolerance
-    (between symmetry-equivalent sites in the bulk supercell), in the format:
-    ``{simple defect name: {cluster index: {DefectEntry, ...}}``, where
-    ``simple defect name`` is the nominal defect type (e.g. ``Te_i`` for
-    ``Te_i_Td_Cd2.83_+2``) and ``{DefectEntry, ...}`` is a set of
-    ``DefectEntry`` objects which have been grouped in the same cluster.
+    Given an input list of ``DefectEntry`` objects, returns a dictionary of
+    defect types with sub-dictionaries of defect entries clustered according to
+    the given ``dist_tol`` distance tolerance (between symmetry-equivalent
+    sites in the bulk supercell), in the format: ``{simple defect name:
+    {cluster index: {DefectEntry, ...}}``, where ``simple defect name`` is the
+    nominal defect type (e.g. ``Te_i`` for ``Te_i_Td_Cd2.83_+2``) and
+    ``{DefectEntry, ...}`` is a set of ``DefectEntry`` objects which have been
+    grouped in the same cluster.
 
     This is used to group together different defect entries (different charge
     states, and/or ground and metastable states (different spin or geometries))
@@ -277,46 +277,45 @@ def group_defects_by_type_and_distance(
     equilibrium relative population of the constituent entries is recalculated
     at the quenched temperature.
 
+    Note: The ``get_min_dist_between_equiv_sites`` function in
+    ``doped.utils.symmetry`` can be useful for analysing the inter-defect
+    distances and resulting clustering behaviour.
+
     Args:
-        defect_entries (list[DefectEntry] | dict[int, set[DefectEntry]]):
-            A list of ``DefectEntry`` objects to group together, or a dictionary of
-            pre-clustered ``DefectEntry`` objects in the format output by
-            ``group_defects_by_distance`` (i.e. ``{cluster index: {DefectEntry, ...}}``).
+        defect_entries (list[DefectEntry]):
+            A list of ``DefectEntry`` objects to group together based on type
+            and distance between symmetry-equivalent sites.
         dist_tol (float):
-            Distance threshold (in Å) for clustering equivalent defect sites,
-            used with the ``"centroid"`` cluster linkage algorithm in ``scipy``.
+            Distance threshold (in Å) for clustering equivalent defect sites.
             (Default: 1.5)
+        symprec (float):
+            Symmetry precision for finding equivalent sites in the bulk supercell,
+            for site clustering. Default is 0.1 (matching ``doped`` default for
+            point symmetry determination for relaxed defect supercells).
 
     Returns:
         dict: Dictionary of ``{simple defect name: {cluster index: {DefectEntry, ...}}}``.
     """
     # Note: This algorithm works well for the vast majority of cases, however because it involves
     # clustering, the results can be a little sensitive to which / how many defects are parsed together
-    # (though use of the ``"centroid"`` linkage algorithm reduces this sensitivity significantly,
-    # and prevents long chaining within clusters etc.). The user can always adjust `dist_tol` as desired.
-    if isinstance(defect_entries, list):
-        clustered_defect_entries = group_defects_by_distance(defect_entries, dist_tol=dist_tol)
-    else:
-        clustered_defect_entries = defect_entries  # already clustered
-
-    clustered_defect_type_dict: dict[str, dict[int, set[DefectEntry]]] = {
-        entry.defect.name: defaultdict(set)
-        for entry in chain.from_iterable(clustered_defect_entries.values())
+    # (due to daisy-chaining effects). The user can always adjust `dist_tol` as desired.
+    defect_type_cluster_dict: dict[str, dict[int, set[DefectEntry]]] = {
+        entry.defect.name: defaultdict(set) for entry in defect_entries
     }
+    for defect_name in list(defect_type_cluster_dict.keys()):
+        defect_type_cluster_dict[defect_name] = group_defects_by_distance(
+            [entry for entry in defect_entries if entry.defect.name == defect_name],
+            dist_tol=dist_tol,
+            symprec=symprec,
+        )
 
-    # loop over clusters, and add each defect entry to that cluster entry in the corresponding defect
-    # type subdict:
-    for cluster_idx, clustered_entries in clustered_defect_entries.items():
-        for entry in clustered_entries:
-            clustered_defect_type_dict[entry.defect.name][cluster_idx].add(entry)
-
-    return clustered_defect_type_dict
+    return defect_type_cluster_dict
 
 
 def group_defects_by_distance(
     entry_list: list[DefectEntry], dist_tol: float = 1.5, symprec: float = 0.1
 ) -> dict[int, set[DefectEntry]]:
-    """
+    r"""
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
     defect entries clustered according to the given ``dist_tol`` distance
     tolerance (between symmetry-equivalent sites in the bulk supercell), in
@@ -332,14 +331,20 @@ def group_defects_by_distance(
     at the quenched temperature. When ``site_competition = True`` (default) in
     defect concentration calculations, the grouping returned by this function
     is used to determine which defects occupy the same sites (and hence compete
-    for site occupancy).
+    for site occupancy). Note that while large ``dist_tol``\s are often preferable
+    for plotting (to condense the defect formation energy lines), this is often
+    not ideal for determining site competition in concentration analyses as it
+    can lead to unrealistically-large clusters.
+
+    Note: The ``get_min_dist_between_equiv_sites`` function in
+    ``doped.utils.symmetry`` can be useful for analysing the inter-defect
+    distances and resulting clustering behaviour.
 
     Args:
         entry_list ([DefectEntry, ...]):
             A list of DefectEntry objects to group together.
         dist_tol (float):
-            Distance threshold (in Å) for clustering equivalent defect sites,
-            used with the ``"centroid"`` cluster linkage algorithm in ``scipy``.
+            Distance threshold (in Å) for clustering equivalent defect sites.
             (Default: 1.5)
         symprec (float):
             Symmetry precision for finding equivalent sites in the bulk supercell,
@@ -453,9 +458,10 @@ def group_defects_by_distance(
 
 def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[DefectEntry]]:
     """
-    Given an input list of DefectEntry objects, returns a dictionary of
+    Given an input list of ``DefectEntry`` objects, returns a dictionary of
     ``{defect name without charge: [DefectEntry]}``, where the values are lists
-    of DefectEntry objects with the same defect name (excluding charge state).
+    of ``DefectEntry`` objects with the same defect name (excluding charge
+    state).
 
     The ``DefectEntry.name`` attributes are used to get the defect names.
     These should be in the format:
@@ -609,9 +615,9 @@ class DefectThermodynamics(MSONable):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
                 to be grouped together (for plotting, transition level analysis
-                and defect concentration calculations). If the minimum distance between
-                equivalent defect sites is less than ``dist_tol``, then they will be
-                grouped together, otherwise treated as separate defects.
+                and defect concentration calculations). In most cases, if the minimum
+                distance between equivalent defect sites is less than ``dist_tol``, then
+                they will be grouped together, otherwise treated as separate defects.
                 See ``plot()`` and ``get_fermi_level_and_concentrations()`` docstrings
                 for more information.
                 (Default: 1.5)
@@ -898,20 +904,17 @@ class DefectThermodynamics(MSONable):
 
         return chempots, el_refs
 
-    def _parse_transition_levels(self):
+    def _parse_transition_levels(self, symprec: float = 0.1):
         r"""
         Parses the charge transition levels for defect entries in the
-        DefectThermodynamics object, and stores information about the stable
-        charge states, transition levels etc.
+        ``DefectThermodynamics`` object, and stores information about the
+        stable charge states, transition levels etc.
 
-        Defect entries of the same type (e.g. ``Te_i``, ``v_Cd``) are grouped together
-        (for plotting and transition level analysis) based on the minimum
-        distance between (equivalent) defect sites, to distinguish between
-        different inequivalent sites. ``DefectEntry``\s of the same type and with
-        a closest distance between equivalent defect sites less than ``dist_tol``
-        (1.5 Å by default) are grouped together. If a DefectEntry's site has a
-        closest distance less than ``dist_tol`` to multiple sets of equivalent
-        sites, then it is matched to the one with the lowest minimum distance.
+        Defect entries of the same type (e.g. ``Te_i``, ``v_Cd``) are grouped
+        together (for plotting and transition level analysis) based on the
+        minimum distance between (equivalent) defect sites, controlled by
+        ``dist_tol`` (1.5 Å by default), to distinguish between different
+        inequivalent sites.
 
         Code for parsing the transition levels was originally templated from
         the pyCDT (pymatgen<=2022.7.25) thermodynamics code (deleted in later
@@ -927,17 +930,26 @@ class DefectThermodynamics(MSONable):
             E_form = E_0^{Corrected} + Q_{defect}*(E_{VBM} + E_{Fermi}).
 
         Extra hyperplanes are constructed to bound this space so that
-        the algorithm can actually find enclosed region.
+        the algorithm can actually find enclosed region. This code was modeled
+        after the Halfspace Intersection code for the Pourbaix Diagram.
 
-        This code was modeled after the Halfspace Intersection code for
-        the Pourbaix Diagram.
+        Note: The ``get_min_dist_between_equiv_sites`` function in
+        ``doped.utils.symmetry`` can be useful for analysing the inter-defect
+        distances and resulting clustering behaviour.
+
+        Args:
+            symprec (float):
+                Symmetry precision for finding equivalent sites in the bulk supercell,
+                for site clustering. Default is 0.1 (matching ``doped`` default for
+                point symmetry determination for relaxed defect supercells).
         """
         # determine defect charge transition levels:
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
             warnings.filterwarnings("ignore", message="No chemical potentials")
             midgap_formation_energies = [  # without chemical potentials
                 entry.formation_energy(
-                    fermi_level=0.5 * self.band_gap, vbm=entry.calculation_metadata.get("vbm", self.vbm)
+                    fermi_level=0.5 * (self.band_gap if self.band_gap is not None else 0),
+                    vbm=entry.calculation_metadata.get("vbm", self.vbm),
                 )
                 for entry in self.defect_entries.values()
             ]
@@ -962,13 +974,13 @@ class DefectThermodynamics(MSONable):
 
         try:
             self._clustered_defect_entries = group_defects_by_distance(
-                list(self.defect_entries.values()), dist_tol=self.dist_tol
+                list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
             )  # {cluster index: {DefectEntry, ...}}
             self._clustered_defect_entries_by_type = group_defects_by_type_and_distance(
-                self._clustered_defect_entries,
+                list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
             )  # {simple defect name: {cluster index: {DefectEntry, ...}}}
-            grouped_entries_list = chain(
-                *map(methodcaller("values"), self._clustered_defect_entries_by_type.values())
+            grouped_entries_list = list(
+                chain(*map(methodcaller("values"), self._clustered_defect_entries_by_type.values()))
             )  # [[DefectEntry, ...], ...]
 
         except Exception as e:
@@ -1479,14 +1491,15 @@ class DefectThermodynamics(MSONable):
     @property
     def dist_tol(self):
         r"""
-        Get the distance tolerance (in Å) used for grouping (equivalent)
-        defects together (for plotting, transition level analysis and defect
-        concentration calculations).
+        Get the distance tolerance (in Å) used for grouping defects together
+        (for plotting, transition level analysis and defect concentration
+        calculations) based on the distances between their symmetry-equivalent
+        sites.
 
-        ``DefectEntry``\s of the same type and with a closest distance between
-        equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
-        grouped together. If a DefectEntry's site has a closest distance less
-        than ``dist_tol`` to multiple sets of equivalent sites, then it is
+        For the most part, ``DefectEntry``\s of the same type and with distances
+        between equivalent defect sites less than ``dist_tol`` (1.5 Å by default)
+        are grouped together. If a ``DefectEntry``\'s site has a distance less
+        than ``dist_tol`` to multiple sets of equivalent sites, then it should be
         matched to the one with the lowest minimum distance.
 
         This is used to group together different defect entries (different charge
@@ -1503,15 +1516,16 @@ class DefectThermodynamics(MSONable):
     @dist_tol.setter
     def dist_tol(self, input_dist_tol: float):
         r"""
-        Set the distance tolerance (in Å) used for grouping (equivalent)
-        defects together (for plotting, transition level analysis and defect
-        concentration calculations), and reparse the thermodynamic information
-        (transition levels etc) with this tolerance.
+        Get the distance tolerance (in Å) used for grouping defects together
+        (for plotting, transition level analysis and defect concentration
+        calculations) based on the distances between their symmetry-equivalent
+        sites, and reparse the thermodynamic information (transition levels
+        etc) with this tolerance.
 
-        ``DefectEntry``\s of the same type and with a closest distance between
-        equivalent defect sites less than ``dist_tol`` (1.5 Å by default) are
-        grouped together. If a DefectEntry's site has a closest distance less
-        than ``dist_tol`` to multiple sets of equivalent sites, then it is
+        For the most part, ``DefectEntry``\s of the same type and with distances
+        between equivalent defect sites less than ``dist_tol`` (1.5 Å by default)
+        are grouped together. If a ``DefectEntry``\'s site has a distance less
+        than ``dist_tol`` to multiple sets of equivalent sites, then it should be
         matched to the one with the lowest minimum distance.
 
         This is used to group together different defect entries (different charge
@@ -3105,6 +3119,10 @@ class DefectThermodynamics(MSONable):
                 which will give the same behaviour as ``True`` as well as including the
                 lattice site indices (used to determine which defects will compete for the
                 same sites) in the output ``DataFrame``.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
             lean (bool):
                 Whether to return a leaner ``DataFrame`` with `only` the defect name, charge
                 state, and concentration in cm^-3 (assumes ``skip_formatting=True`` and
@@ -3435,6 +3453,10 @@ class DefectThermodynamics(MSONable):
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where ``i``
                 runs over all defects which occupy the same site as the defect of interest.
                 If ``False``, uses the standard dilute limit approximation.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             Self consistent Fermi level (in eV from the VBM (``self.vbm``)), and the
@@ -3694,6 +3716,10 @@ class DefectThermodynamics(MSONable):
                 which will give the same behaviour as ``True`` as well as including the
                 lattice site indices (used to determine which defects will compete for the
                 same sites) in the output ``DataFrame``.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if ``delta_gap``
                 is not 0) or ``_parse_fermi_dos`` (``skip_dos_check``; to skip the warning about
@@ -4672,7 +4698,7 @@ class FermiSolver(MSONable):
         effective_dopant_concentration: float | None = None,
         site_competition: bool = True,
     ) -> tuple[float, float, float]:
-        """
+        r"""
         Calculate the equilibrium Fermi level and carrier concentrations under
         a given chemical potential regime and temperature.
 
@@ -4715,6 +4741,10 @@ class FermiSolver(MSONable):
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where ``i``
                 runs over all defects which occupy the same site as the defect of interest.
                 If ``False``, uses the standard dilute limit approximation.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             tuple[float, float, float]: A tuple containing:
@@ -4786,7 +4816,7 @@ class FermiSolver(MSONable):
         fixed_defects: dict[str, float] | None = None,
         site_competition: bool | str = True,
     ) -> pd.DataFrame:
-        """
+        r"""
         Calculate the Fermi level and defect/carrier concentrations under
         `thermodynamic equilibrium`, given a set of chemical potentials and a
         temperature.
@@ -4857,6 +4887,10 @@ class FermiSolver(MSONable):
                 which will give the same behaviour as ``True`` as well as including the
                 lattice site indices (used to determine which defects will compete for the
                 same sites) in the output ``DataFrame``.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame:
@@ -5104,6 +5138,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame:
@@ -5439,6 +5477,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame: DataFrame containing defect and carrier concentrations.
@@ -5627,6 +5669,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame:
@@ -5808,6 +5854,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame:
@@ -6050,6 +6100,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame:
@@ -6211,6 +6265,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame: A ``DataFrame`` containing the Fermi level solutions at the grid
@@ -6418,6 +6476,10 @@ class FermiSolver(MSONable):
                 same sites) in the output ``DataFrame``.
                 Note that this option is only used if the ``doped`` backend is being used,
                 not supported for the ``py-sc-fermi`` backend.
+                Note that while large ``dist_tol``\s are often preferable for plotting
+                (to condense the defect formation energy lines), this is often not ideal for
+                determining site competition in concentration analyses as it can lead to
+                unrealistically-large clusters.
 
         Returns:
             pd.DataFrame:

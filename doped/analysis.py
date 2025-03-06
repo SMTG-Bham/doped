@@ -1554,9 +1554,9 @@ class DefectsParser:
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
                 to be grouped together (for plotting, transition level analysis
-                and defect concentration calculations). If the minimum distance between
-                equivalent defect sites is less than ``dist_tol``, then they will be
-                grouped together, otherwise treated as separate defects.
+                and defect concentration calculations). For the most part, if the minimum
+                distance between equivalent defect sites is less than ``dist_tol``, then
+                they will be grouped together, otherwise treated as separate defects.
                 See ``plot()`` and ``get_fermi_level_and_concentrations()`` docstrings
                 for more information.
                 (Default: 1.5)
