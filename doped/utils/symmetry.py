@@ -25,13 +25,14 @@ from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
 from sympy import Eq, simplify, solve, symbols
 
-from doped.core import DefectEntry
+from doped.core import Defect, DefectEntry
 from doped.utils.efficiency import IStructure as doped_IStructure
 from doped.utils.efficiency import SpacegroupAnalyzer
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
+    _get_defect_supercell_site,
     _get_unrelaxed_defect_structure,
     get_site_mapping_indices,
 )
@@ -635,6 +636,101 @@ def _raw_get_all_equiv_sites(
     # differences due to symmetry operations, unlike when ``cluster_coords`` is used for Voronoi
     # interstitial generation, where we choose the cluster site based on symmetry/distance to host)
     return [unique_x_sites[np.where(cn == n)[0][0]] for n in set(cn)]  # take 1st of each cluster
+
+
+def get_min_dist_between_equiv_sites(
+    site_1: PeriodicSite | Sequence[float] | Defect | DefectEntry,
+    site_2: PeriodicSite | Sequence[float] | Defect | DefectEntry,
+    structure: Structure | None = None,
+    symprec: float = 0.01,
+) -> float:
+    """
+    Convenience function to get the minimum distance (in Å) between equivalent
+    sites of two input site/``Defect``/``DefectEntry`` objects in a structure.
+
+    Args:
+        site_1 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
+            First site to get equivalent sites of, to determine minimum distance
+            to equivalent sites of ``site_2``. Can be a ``PeriodicSite`` object,
+            a sequence of fractional coordinates, or a ``Defect``/``DefectEntry``
+            object.
+        site_2 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
+            Second site to get equivalent sites of, to determine minimum distance
+            to equivalent sites of ``site_1``. Can be a ``PeriodicSite`` object,
+            a sequence of fractional coordinates, or a ``Defect``/``DefectEntry``
+            object.
+        structure (Structure):
+            Structure to use for determining symmetry-equivalent sites of ``site_1``
+            and ``site_2``. Required if ``site_1`` and ``site_2`` are not ``Defect``
+            or ``DefectEntry`` objects. Default: None.
+        symprec (float):
+            Symmetry precision to use for determining symmetry-equivalent sites.
+            Default: 0.01.
+
+    Returns:
+        float:
+            The minimum distance (in Å) between equivalent sites of ``site_1``
+            and ``site_2``.
+    """
+
+    def _parse_site_to_frac_coords(site):
+        if isinstance(site, PeriodicSite):
+            return site.frac_coords
+        if isinstance(site, DefectEntry):
+            return _get_defect_supercell_frac_coords(site)
+        if isinstance(site, Defect):
+            return site.site.frac_coords
+        return site
+
+    frac_coords_1 = _parse_site_to_frac_coords(site_1)
+    frac_coords_2 = _parse_site_to_frac_coords(site_2)
+    if structure is None:
+        for site in [site_1, site_2]:
+            if isinstance(site, DefectEntry):
+                structure = _get_bulk_supercell(site)
+                break
+            if isinstance(site, Defect):
+                structure = site.structure
+                break
+    if structure is None:
+        raise ValueError(
+            "Structure must be provided if site_1 and site_2 are not DefectEntry or Defect objects."
+        )
+
+    bulk_lattice = structure.lattice
+    bulk_supercell_sga = get_sga(structure, symprec=symprec)
+    symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+    bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
+
+    def _get_equiv_frac_coords(frac_coords, site):
+        try:
+            bulk_site = site.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(site)
+        except AttributeError:  # not a DefectEntry
+            try:
+                bulk_site = site.site
+            except AttributeError:  # not a Defect
+                bulk_site = None
+
+        equiv_sites = []
+        if bulk_site is not None:
+            with contextlib.suppress(ValueError):  # faster, but will fail for interstitials
+                equiv_sites = [i.frac_coords for i in symm_bulk_struct.find_equivalent_sites(bulk_site)]
+
+        if not equiv_sites:
+            equiv_sites = get_all_equiv_sites(
+                frac_coords,
+                symm_bulk_struct,
+                bulk_symm_ops,
+                symprec=symprec,
+                just_frac_coords=True,
+            )
+
+        return equiv_sites
+
+    equiv_fcoords_1 = _get_equiv_frac_coords(frac_coords_1, site_1)
+    equiv_fcoords_2 = _get_equiv_frac_coords(frac_coords_2, site_2)
+
+    return np.min(bulk_lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
 
 
 def _get_symm_dataset_of_struc_with_all_equiv_sites(
