@@ -971,17 +971,25 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
                 defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
             )[:, 0]
-            min_dist = distance_matrix[distance_matrix > 0.01].min()
+            if distance_matrix[distance_matrix > 0.01]:
+                min_distance = distance_matrix[distance_matrix > 0.01].min()
+            else:  # only one site in conventional cell
+                min_distance = min_dist(defect_entry.conventional_structure)
+
             if defect_gen.interstitial_gen_kwargs is not False:
-                assert min_dist > defect_gen.interstitial_gen_kwargs.get(
+                assert min_distance > defect_gen.interstitial_gen_kwargs.get(
                     "min_dist", 0.9
                 )  # default min_dist = 0.9
             for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
                 distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
                     defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
                 )[:, 0]
-                equiv_min_dist = distance_matrix[distance_matrix > 0.01].min()
-                assert np.isclose(min_dist, equiv_min_dist, atol=0.01)
+                if distance_matrix[distance_matrix > 0.01]:
+                    equiv_min_distance = distance_matrix[distance_matrix > 0.01].min()
+                else:  # only one site in conventional cell
+                    equiv_min_distance = min_dist(defect_entry.conventional_structure)
+
+                assert np.isclose(min_distance, equiv_min_distance, atol=0.01)
 
             # test equivalent_sites for defects:
             if all(
@@ -1037,9 +1045,19 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 nn_distances = np.array(
                     [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
                 )
+                if not nn_distances[nn_distances > 0.01]:
+                    # no NNs within 5 Å, expand search to min lattice vector to ensure at least one NN:
+                    nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                        equiv_site.coords,
+                        min(defect_entry.defect.structure.lattice.abc) + 0.1,
+                    )
+                    nn_distances = np.array(
+                        [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                    )
+
                 nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                print(defect_entry.name, equiv_site.coords, nn_distance, min_dist)
-                assert np.isclose(min_dist, nn_distance, atol=0.01)  # same min_dist as from
+                print(defect_entry.name, equiv_site.coords, nn_distance, min_distance)
+                assert np.isclose(min_distance, nn_distance, atol=0.01)  # same min_distance as from
                 # conv_cell_frac_coords testing above
 
         assert defect_entry.bulk_entry is None
@@ -3640,3 +3658,19 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
             "Symmetry determination failed for the default symprec value of 0.01, but succeeded with "
             "symprec = 0.1, which will be used for symmetry determination functions here."
         ) in str(w[-1].message)
+
+    def test_gen_spaced_structure(self):
+        """
+        Test defect generation in an odd structure where the minimum
+        interatomic distance is very large (15 Å here).
+
+        Originally this failed due to code in ``get_neighbour_distances_and_symbols``
+        assuming interatomic distances < 5 Å. Fixed when this issue was flagged when
+        generating defects for all structures in the Materials Project in
+        https://arxiv.org/abs/2412.19330; then accidentally reverted... Now fixed
+        again and tested.
+        """
+        spaced_struct = Structure(lattice=np.eye(3) * 15, species=["Sb"], coords=[[0, 0, 0]])
+
+        defect_gen, output = self._generate_and_test_no_warnings(spaced_struct)
+        self._general_defect_gen_check(defect_gen)

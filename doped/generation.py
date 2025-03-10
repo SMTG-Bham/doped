@@ -276,9 +276,6 @@ def get_neighbour_distances_and_symbols(
         )
         neighbours = sorted(neighbours_w_site_itself, key=lambda x: x.nn_distance)
 
-        if not neighbours:
-            continue
-
         dist_tol_prefactor += 0.5  # increase the distance tolerance if no other sites are found
         if dist_tol_prefactor > 40:
             warnings.warn(
@@ -286,6 +283,9 @@ def get_neighbour_distances_and_symbols(
                 "weird structure..."
             )
             break
+
+        if not neighbours:
+            continue
 
         neighbour_tuples = sorted(  # Could make this faster using caching if it was becoming a bottleneck
             [

@@ -55,6 +55,9 @@ def min_dist(structure: Structure, ignored_species: list[str] | None = None) -> 
 
     distances = structure.distance_matrix.flatten()
     nonzero_dist = np.nonzero(distances)
+    if not nonzero_dist[0]:  # likely single-site structure
+        return get_min_image_distance(structure)
+    print(nonzero_dist)
     return (  # fast vectorised evaluation of minimum distance
         0
         if len(nonzero_dist[0]) < (len(distances) - structure.num_sites)
