@@ -1794,10 +1794,10 @@ class DefectsGenerator(MSONable):
 
                     for interstitial_frac_coords in self.interstitial_coords:
                         equiv_prim_coords = symmetry.get_equiv_frac_coords_in_primitive(
-                            interstitial_frac_coords,
-                            self.structure,
-                            self.primitive_structure,
-                            symm_ops,
+                            frac_coords=interstitial_frac_coords,
+                            primitive=self.primitive_structure,
+                            supercell=self.structure,
+                            symm_ops=symm_ops,  # 'supercell' symmetry operations
                             equiv_coords=True,
                         )
                         self.prim_interstitial_coords.append(

@@ -228,7 +228,7 @@ O_i_D4h          [0,-1,-2]              [0.000,0.000,0.500]  2b
 
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.lmno_defect_gen_string = (
-            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 167 defect "
+            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 152 defect "
             "entries created."
         )
         self.lmno_defect_gen_info = (
@@ -260,23 +260,19 @@ O_Ni             [0,-1,-2,-3,-4]        [0.625,0.625,0.625]  4b
 
 Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
-Li_i_C1_Ni1.82   [+1,0]             [0.021,0.278,0.258]  24e
-Li_i_C1_O1.78    [+1,0]             [0.233,0.492,0.492]  24e
+Li_i_C1          [+1,0]             [0.021,0.278,0.258]  24e
 Li_i_C2          [+1,0]             [0.074,0.375,0.324]  12d
 Li_i_C3          [+1,0]             [0.497,0.497,0.497]  8c
 Li_i_D3          [+1,0]             [0.125,0.125,0.125]  4a
-Mn_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
-Mn_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
+Mn_i_C1          [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
 Mn_i_C2          [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
 Mn_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
 Mn_i_D3          [+4,+3,+2,+1,0]    [0.125,0.125,0.125]  4a
-Ni_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
-Ni_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
+Ni_i_C1          [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
 Ni_i_C2          [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
 Ni_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
 Ni_i_D3          [+4,+3,+2,+1,0]    [0.125,0.125,0.125]  4a
-O_i_C1_Ni1.82    [0,-1,-2]          [0.021,0.278,0.258]  24e
-O_i_C1_O1.78     [0,-1,-2]          [0.233,0.492,0.492]  24e
+O_i_C1           [0,-1,-2]          [0.021,0.278,0.258]  24e
 O_i_C2           [0,-1,-2]          [0.074,0.375,0.324]  12d
 O_i_C3           [0,-1,-2]          [0.497,0.497,0.497]  8c
 O_i_D3           [0,-1,-2]          [0.125,0.125,0.125]  4a
@@ -692,27 +688,25 @@ Se_Ag_C2_Ag2.85  [+3,+2,+1,0,-1,-2,-3]  [0.615,0.500,0.500]  2b
 
 Interstitials                Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------------------  -----------------  -------------------  ---------
-Ag_i_C1_Ag2.05               [+2,+1,0]          [0.570,0.589,0.250]  4e
-Ag_i_C1_Ag2.09               [+2,+1,0]          [0.435,0.123,0.251]  4e
+Ag_i_C1                      [+2,+1,0]          [0.435,0.123,0.251]  4e
 Ag_i_C2_Ag1.95Se1.95Ag2.98a  [+2,+1,0]          [0.500,0.250,0.668]  2d
 Ag_i_C2_Ag1.95Se1.95Ag2.98b  [+2,+1,0]          [0.500,0.750,0.171]  2d
 Ag_i_C2_Ag2.01Se2.01Ag2.31   [+2,+1,0]          [0.341,0.500,0.500]  2b
 Ag_i_C2_Ag2.01Se2.01Ag2.33   [+2,+1,0]          [0.665,0.000,0.000]  2a
 Ag_i_C2_Ag2.02Se2.02Ag2.88   [+2,+1,0]          [0.500,0.250,0.184]  2d
 Ag_i_C2_Ag2.02Se2.02Ag2.89   [+2,+1,0]          [0.500,0.250,0.319]  2d
-Ag_i_C2_Ag2.45Ag3.05         [+2,+1,0]          [0.000,0.250,0.502]  2c
-Ag_i_C2_Ag2.45Se2.45         [+2,+1,0]          [0.899,0.000,0.000]  2a
+Ag_i_C2_Ag2.38               [+2,+1,0]          [0.000,0.750,0.002]  2c
+Ag_i_C2_Ag2.45               [+2,+1,0]          [0.899,0.000,0.000]  2a
 Ag_i_C2_Ag2.48               [+2,+1,0]          [0.091,0.500,0.500]  2b
-Se_i_C1_Ag2.05               [0,-1,-2]          [0.570,0.589,0.250]  4e
-Se_i_C1_Ag2.09               [0,-1,-2]          [0.435,0.123,0.251]  4e
+Se_i_C1                      [0,-1,-2]          [0.435,0.123,0.251]  4e
 Se_i_C2_Ag1.95Se1.95Ag2.98a  [0,-1,-2]          [0.500,0.250,0.668]  2d
 Se_i_C2_Ag1.95Se1.95Ag2.98b  [0,-1,-2]          [0.500,0.750,0.171]  2d
 Se_i_C2_Ag2.01Se2.01Ag2.31   [0,-1,-2]          [0.341,0.500,0.500]  2b
 Se_i_C2_Ag2.01Se2.01Ag2.33   [0,-1,-2]          [0.665,0.000,0.000]  2a
 Se_i_C2_Ag2.02Se2.02Ag2.88   [0,-1,-2]          [0.500,0.250,0.184]  2d
 Se_i_C2_Ag2.02Se2.02Ag2.89   [0,-1,-2]          [0.500,0.250,0.319]  2d
-Se_i_C2_Ag2.45Ag3.05         [0,-1,-2]          [0.000,0.250,0.502]  2c
-Se_i_C2_Ag2.45Se2.45         [0,-1,-2]          [0.899,0.000,0.000]  2a
+Se_i_C2_Ag2.38               [0,-1,-2]          [0.000,0.750,0.002]  2c
+Se_i_C2_Ag2.45               [0,-1,-2]          [0.899,0.000,0.000]  2a
 Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
@@ -971,7 +965,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
                 defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
             )[:, 0]
-            if distance_matrix[distance_matrix > 0.01]:
+            if len(distance_matrix[distance_matrix > 0.01]) > 0:
                 min_distance = distance_matrix[distance_matrix > 0.01].min()
             else:  # only one site in conventional cell
                 min_distance = min_dist(defect_entry.conventional_structure)
@@ -984,7 +978,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
                     defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
                 )[:, 0]
-                if distance_matrix[distance_matrix > 0.01]:
+                if len(distance_matrix[distance_matrix > 0.01]) > 0:
                     equiv_min_distance = distance_matrix[distance_matrix > 0.01].min()
                 else:  # only one site in conventional cell
                     equiv_min_distance = min_dist(defect_entry.conventional_structure)
@@ -1045,7 +1039,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 nn_distances = np.array(
                     [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
                 )
-                if not nn_distances[nn_distances > 0.01]:
+                if len(nn_distances[nn_distances > 0.01]) == 0:
                     # no NNs within 5 Å, expand search to min lattice vector to ensure at least one NN:
                     nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
                         equiv_site.coords,
@@ -1618,9 +1612,9 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 4,
                 [
                     np.array([0.625, 0.625, 0.625]),
-                    np.array([0.625, 0.625, 0.125]),
-                    np.array([0.625, 0.125, 0.625]),
                     np.array([0.125, 0.625, 0.625]),
+                    np.array([0.625, 0.125, 0.625]),
+                    np.array([0.625, 0.625, 0.125]),
                 ],
             ),
             (np.array([0.75, 0.75, 0.75]), 1, [np.array([0.75, 0.75, 0.75])]),
@@ -1659,19 +1653,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # test with YTOS conventional cell input
         ytos_interstitial_coords = [  # in conventional structure! subset of Voronoi vertices
             [0, 0.5, 0.18377232],  # C2v
-            [0, 0, 0.48467759],  # C4v_O2.68
+            # [0, 0, 0.48467759],  # C4v (O2.68) -- no longer generated by default (replaced by D4h)
             [0, 0, 0.41783323],  # C4v_Y1.92
             [0, 0.5, 0.25],  # D2d
+            [0, 0, 0.5],  # D4h
         ]
         ytos_conv_struc, _swap_array = get_BCS_conventional_structure(self.ytos_bulk_supercell)
         ytos_defect_gen, output = self._generate_and_test_no_warnings(
             ytos_conv_struc, interstitial_coords=ytos_interstitial_coords
         )
+        assert ytos_conv_struc == ytos_defect_gen.conventional_structure
 
         for line in output.splitlines():
             assert (
                 line in self.ytos_defect_gen_info.splitlines()
-                or line.replace("O1.92", "Y1.92") in self.ytos_defect_gen_info.splitlines()
                 or line.replace("0.184", "0.185") in self.ytos_defect_gen_info.splitlines()
             )
 
@@ -1686,26 +1681,26 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                     np.array([0.1838, 0.6838, 0.3675]),
                     4,
                     [
-                        np.array([0.8162, 0.3162, 0.6325]),
-                        np.array([0.3162, 0.8162, 0.6325]),
-                        np.array([0.6838, 0.1838, 0.3675]),
                         np.array([0.1838, 0.6838, 0.3675]),
+                        np.array([0.6838, 0.1838, 0.3675]),
+                        np.array([0.3162, 0.8162, 0.6325]),
+                        np.array([0.8162, 0.3162, 0.6325]),
                     ],
-                ),
-                (
-                    np.array([0.5153, 0.5153, 0.0306]),
-                    2,
-                    [np.array([0.4847, 0.4847, 0.9694]), np.array([0.5153, 0.5153, 0.0306])],
                 ),
                 (
                     np.array([0.5822, 0.5822, 0.1643]),
                     2,
-                    [np.array([0.4178, 0.4178, 0.8357]), np.array([0.5822, 0.5822, 0.1643])],
+                    [np.array([0.5822, 0.5822, 0.1643]), np.array([0.4178, 0.4178, 0.8357])],
                 ),
                 (
                     np.array([0.25, 0.75, 0.5]),
                     2,
-                    [np.array([0.75, 0.25, 0.5]), np.array([0.25, 0.75, 0.5])],
+                    [np.array([0.25, 0.75, 0.5]), np.array([0.75, 0.25, 0.5])],
+                ),
+                (
+                    np.array([0.5, 0.5, 0.0]),
+                    1,
+                    [np.array([0.5, 0.5, 0.0])],
                 ),
             ],
         )
@@ -1734,10 +1729,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                     np.array([0.375, 0.375, 0.375]),
                     4,
                     [
-                        np.array([0.875, 0.375, 0.375]),
-                        np.array([0.375, 0.875, 0.375]),
-                        np.array([0.375, 0.375, 0.875]),
                         np.array([0.375, 0.375, 0.375]),
+                        np.array([0.375, 0.375, 0.875]),
+                        np.array([0.375, 0.875, 0.375]),
+                        np.array([0.875, 0.375, 0.375]),
                     ],
                 ),
                 (np.array([0.25, 0.25, 0.25]), 1, [np.array([0.25, 0.25, 0.25])]),
@@ -2552,7 +2547,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert len(lmno_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(lmno_defect_gen.defects["vacancies"]) == 5
         assert len(lmno_defect_gen.defects["substitutions"]) == 15
-        assert len(lmno_defect_gen.defects["interstitials"]) == 20
+        assert len(lmno_defect_gen.defects["interstitials"]) == 16
 
         # explicitly test some relevant defect attributes
         assert lmno_defect_gen.defects["vacancies"][0].name == "v_Li"
@@ -2568,39 +2563,35 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # prim = conv cell in LMNO
 
         # explicitly test defect entries
-        assert len(lmno_defect_gen.defect_entries) == 167
+        assert len(lmno_defect_gen.defect_entries) == 152
         assert str(lmno_defect_gen) == self.lmno_defect_gen_string  # __str__()
         # __repr__() tested in other tests, skipped here due to slight difference in rounding behaviour
         # between local and GH Actions
 
         # explicitly test defect entry attributes
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect.defect_type == DefectType.Interstitial
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_+2"].wyckoff == "12d"
         assert (
-            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.defect_type
-            == DefectType.Interstitial
-        )
-        assert lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].wyckoff == "24e"
-        assert (
-            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.multiplicity == 24
+            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect.multiplicity == 12
         )  # prim = conv structure in LMNO
         sc_frac_coords = np.array(
-            [0.375325, 0.616475, 0.391795] if generate_supercell else [0.23288, 0.4918, 0.49173]
+            [0.3125, 0.5625, 0.61366] if generate_supercell else [0.42616, 0.625, 0.82384]
         )
         assert np.allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].sc_defect_frac_coords,
+            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].sc_defect_frac_coords,
             sc_frac_coords,  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
-        assert (
-            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect_supercell_site.specie.symbol == "Ni"
-        )
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect_supercell_site.specie.symbol == "Ni"
+        conv_cell_frac_coords = [0.074, 0.375, 0.324]
         assert np.allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].conv_cell_frac_coords,
-            np.array([0.233, 0.492, 0.492]),
+            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].conv_cell_frac_coords,
+            np.array(conv_cell_frac_coords),
             atol=1e-3,
         )
         assert np.allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C1_O1.78_+2"].defect.site.frac_coords,
-            np.array([0.233, 0.492, 0.492]),
+            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect.site.frac_coords,
+            np.array(conv_cell_frac_coords),
             atol=1e-3,
         )
 
