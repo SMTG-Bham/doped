@@ -991,6 +991,15 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
         self._general_cpa_check(cpa)
 
+        # test no warning with check_compatibility=False:
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer(
+                "ZrO2", self.zro2_path, check_compatibility=False
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
+        self._general_cpa_check(cpa)
+
         # test with extrinsic case:
         shutil.copyfile(
             f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",  # this is mismatching vr
@@ -1054,6 +1063,15 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 "'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}]]",
             ]
         )
+        self._general_cpa_check(cpa)
+
+        # test no warning with check_compatibility=False:
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer(
+                "ZrO2", self.zro2_path, check_compatibility=False
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
         self._general_cpa_check(cpa)
 
     def test_bulk_not_found(self):

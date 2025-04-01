@@ -1849,6 +1849,7 @@ class CompetingPhasesAnalyzer(MSONable):
         subfolder: PathLike | None = "vasp_std",
         verbose: bool = True,
         processes: int | None = None,
+        check_compatibility: bool = True,
     ):
         r"""
         Class for post-processing competing phases calculations, to determine
@@ -1896,6 +1897,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 parsing time with multiprocessing is estimated based on
                 ``vasprun.xml(.gz)`` file sizes, and used if predicted to be
                 faster than serial processing. Set to 1 to prevent multiprocessing.
+            check_compatibility (bool):
+                Whether to check the compatibility of the parsed entries,
+                by comparing their ``INCAR`` and ``POTCAR`` settings (if available).
+                Default is ``True``.
 
         Key attributes:
             composition (str):
@@ -1954,11 +1959,19 @@ class CompetingPhasesAnalyzer(MSONable):
         self.parsed_folders: list[str] = []
 
         if isinstance(entries, str | PathLike) or isinstance(entries[0], str | PathLike):
-            self._from_vaspruns(path=entries, subfolder=subfolder, verbose=verbose, processes=processes)
+            self._from_vaspruns(
+                path=entries,
+                subfolder=subfolder,
+                verbose=verbose,
+                processes=processes,
+                check_compatibility=check_compatibility,
+            )
         else:
-            self._from_entries(entries)
+            self._from_entries(entries, check_compatibility=check_compatibility)
 
-    def _from_entries(self, entries: list[ComputedEntry | ComputedStructureEntry]):
+    def _from_entries(
+        self, entries: list[ComputedEntry | ComputedStructureEntry], check_compatibility: bool = True
+    ):
         r"""
         Initialises the ``CompetingPhasesAnalyzer`` object from a list of
         ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
@@ -1968,6 +1981,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 List of ``ComputedEntry``\s / ``ComputedStructureEntry``\s,
                 from which to compute the phase diagram and chemical
                 potential limits.
+            check_compatibility (bool):
+                Whether to check the compatibility of the parsed entries,
+                by comparing their ``INCAR`` and ``POTCAR`` settings.
+                Default is ``True``.
         """
         self.entries = entries
         intrinsic_entries: list[ComputedEntry | ComputedStructureEntry] = []
@@ -2010,90 +2027,91 @@ class CompetingPhasesAnalyzer(MSONable):
         self.bulk_entry = sorted(bulk_comp_entries, key=lambda x: x.energy_per_atom)[0]
         self.unstable_host = False
 
-        # check entry compatibilities:
-        # TODO: Make optional
-        # take first of bulk entry, bulk comp entries, intrinsic, all entries which have INCAR/POTCAR data
-        # as template entries for compatibility checking:
-        sorted_entries_with_incar_data = [
-            entry
-            for entry in [self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries]
-            if entry.data.get("incar")
-        ]
-        sorted_entries_with_potcar_data = [
-            entry
-            for entry in [self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries]
-            if entry.data.get("potcar_symbols")
-        ]
-        if sorted_entries_with_incar_data:
-            incar_template_entry = sorted_entries_with_incar_data[0]
-            for entry in entries:
-                incar_mismatches = _compare_incar_tags(
-                    incar_template_entry.data["incar"], entry.data["incar"], warn=False
-                )  # warned collectively below if any mismatches
-                # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
-                # or bulk supercell -- assumed to be the correct volume):
-                if not isinstance(incar_mismatches, bool):
-                    incar_mismatches = [
-                        i
-                        for i in incar_mismatches
-                        if i[0] != "ISIF"
-                        or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
-                    ]
-                incar_mismatches = incar_mismatches if incar_mismatches else False
-                entry.data["mismatching_INCAR_tags"] = (
-                    incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
-                )
-
-            mismatching_INCAR_warnings = [
-                (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
-                for entry in entries
-                if entry.data.get("mismatching_INCAR_tags")
+        if check_compatibility:
+            # check entry compatibilities:
+            # take first of bulk entry, bulk comp entries, intrinsic, all entries which have INCAR/POTCAR
+            # data as template entries for compatibility checking:
+            sorted_entries_with_incar_data = [
+                entry
+                for entry in [self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries]
+                if entry.data.get("incar")
             ]
-            if mismatching_INCAR_warnings:
-                warnings.warn(
-                    f"There are mismatching INCAR tags for (some of) your competing phases calculations "
-                    f"which are likely to cause errors in the parsed results (energies & thus chemical "
-                    f"potential limits). Found the following differences:\n"
-                    f"(in the format: 'Entries: (INCAR tag, value in reference calculation, "
-                    f"value in entry calculation))':"
-                    f"\n{_format_mismatching_incar_warning(mismatching_INCAR_warnings)}\n"
-                    f"Where {incar_template_entry.name} was used as the reference entry calculation.\n"
-                    f"In general, the same INCAR settings should be used in all final calculations for "
-                    f"these tags which can affect energies!"
-                )
-
-        if sorted_entries_with_potcar_data:
-            potcar_template_entry = sorted_entries_with_potcar_data[0]
-            for entry in entries:
-                potcar_mismatches = _compare_potcar_symbols(
-                    potcar_template_entry.data["potcar_symbols"],
-                    entry.data["potcar_symbols"],
-                    warn=False,
-                    only_matching_elements=True,
-                )  # warned collectively below if any mismatches
-                entry.data["mismatching_POTCAR_symbols"] = (
-                    potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
-                )
-
-            mismatching_potcars_warnings = [
-                (entry.name, entry.data.get("mismatching_POTCAR_symbols"))
-                for entry in entries
-                if entry.data.get("mismatching_POTCAR_symbols")
+            sorted_entries_with_potcar_data = [
+                entry
+                for entry in [self.bulk_entry, *bulk_comp_entries, *intrinsic_entries, *entries]
+                if entry.data.get("potcar_symbols")
             ]
-            if mismatching_potcars_warnings:
-                joined_info_string = "\n".join(
-                    [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]
-                )
-                warnings.warn(
-                    f"There are mismatching POTCAR symbols for (some of) your competing phases "
-                    f"calculations which are likely to cause errors in the parsed results (energies & "
-                    f"thus chemical potential limits). Found the following differences:\n"
-                    f"(in the format: (reference POTCARs, entry POTCARs)):"
-                    f"\n{joined_info_string}\n"
-                    f"Where {potcar_template_entry.name} was used as the reference entry calculation.\n"
-                    f"In general, the same POTCAR settings should be used in all final calculations for "
-                    f"these tags which can affect energies!"
-                )
+            if sorted_entries_with_incar_data:
+                incar_template_entry = sorted_entries_with_incar_data[0]
+                for entry in entries:
+                    incar_mismatches = _compare_incar_tags(
+                        incar_template_entry.data["incar"], entry.data["incar"], warn=False
+                    )  # warned collectively below if any mismatches
+                    # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
+                    # or bulk supercell -- assumed to be the correct volume):
+                    if not isinstance(incar_mismatches, bool):
+                        incar_mismatches = [
+                            i
+                            for i in incar_mismatches
+                            if i[0] != "ISIF"
+                            or all(ent.structure.volume < 800 for ent in [incar_template_entry, entry])
+                        ]
+                    incar_mismatches = incar_mismatches if incar_mismatches else False
+                    entry.data["mismatching_INCAR_tags"] = (
+                        incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
+                    )
+
+                mismatching_INCAR_warnings = [
+                    (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
+                    for entry in entries
+                    if entry.data.get("mismatching_INCAR_tags")
+                ]
+                if mismatching_INCAR_warnings:
+                    warnings.warn(
+                        f"There are mismatching INCAR tags for (some of) your competing phases "
+                        f"calculations which are likely to cause errors in the parsed results (energies "
+                        f"& thus chemical potential limits). Found the following differences:\n"
+                        f"(in the format: 'Entries: (INCAR tag, value in reference calculation, "
+                        f"value in entry calculation))':"
+                        f"\n{_format_mismatching_incar_warning(mismatching_INCAR_warnings)}\n"
+                        f"Where {incar_template_entry.name} was used as the reference entry calculation.\n"
+                        f"In general, the same INCAR settings should be used in all final calculations "
+                        f"for these tags which can affect energies!"
+                    )
+
+            if sorted_entries_with_potcar_data:
+                potcar_template_entry = sorted_entries_with_potcar_data[0]
+                for entry in entries:
+                    potcar_mismatches = _compare_potcar_symbols(
+                        potcar_template_entry.data["potcar_symbols"],
+                        entry.data["potcar_symbols"],
+                        warn=False,
+                        only_matching_elements=True,
+                    )  # warned collectively below if any mismatches
+                    entry.data["mismatching_POTCAR_symbols"] = (
+                        potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
+                    )
+
+                mismatching_potcars_warnings = [
+                    (entry.name, entry.data.get("mismatching_POTCAR_symbols"))
+                    for entry in entries
+                    if entry.data.get("mismatching_POTCAR_symbols")
+                ]
+                if mismatching_potcars_warnings:
+                    joined_info_string = "\n".join(
+                        [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]
+                    )
+                    warnings.warn(
+                        f"There are mismatching POTCAR symbols for (some of) your competing phases "
+                        f"calculations which are likely to cause errors in the parsed results (energies & "
+                        f"thus chemical potential limits). Found the following differences:\n"
+                        f"(in the format: (reference POTCARs, entry POTCARs)):"
+                        f"\n{joined_info_string}\n"
+                        f"Where {potcar_template_entry.name} was used as the reference entry "
+                        f"calculation.\n"
+                        f"In general, the same POTCAR settings should be used in all final calculations "
+                        f"for these tags which can affect energies!"
+                    )
 
         # sort extrinsic elements and energies dict by periodic table positioning (deterministically),
         # and add to self.elements:
@@ -2191,6 +2209,7 @@ class CompetingPhasesAnalyzer(MSONable):
         subfolder: PathLike | None = "vasp_std",
         verbose: bool = True,
         processes: int | None = None,
+        check_compatibility: bool = True,
     ):
         r"""
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
@@ -2222,6 +2241,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 parsing time with multiprocessing is estimated based on
                 ``vasprun.xml(.gz)`` file sizes, and used if predicted to be
                 faster than serial processing. Set to 1 to prevent multiprocessing.
+            check_compatibility (bool):
+                Whether to check the compatibility of the parsed entries,
+                by comparing their ``INCAR`` and ``POTCAR`` settings.
+                Default is ``True``.
         """
         # TODO: Change this to just recursively search for vaspruns within the specified path (also
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
@@ -2389,7 +2412,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 "folders and input parameters are in the correct format (see docstrings/tutorials)."
             )
 
-        return self._from_entries(self.entries)
+        return self._from_entries(self.entries, check_compatibility=check_compatibility)
 
     def as_dict(self) -> dict:
         """
