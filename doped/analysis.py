@@ -42,6 +42,7 @@ from doped.utils.parsing import (
     _compare_kpoints,
     _compare_potcar_symbols,
     _defect_spin_degeneracy_from_vasprun,
+    _format_mismatching_incar_warning,
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
     _get_defect_supercell_frac_coords,
@@ -1280,31 +1281,16 @@ class DefectsParser:
         mismatching_INCAR_warnings = [
             (name, set(defect_entry.calculation_metadata.get("mismatching_INCAR_tags")))
             for name, defect_entry in self.defect_dict.items()
-            if defect_entry.calculation_metadata.get("mismatching_INCAR_tags", True) is not True
+            if defect_entry.calculation_metadata.get("mismatching_INCAR_tags")
         ]
         if mismatching_INCAR_warnings:
-            # group by the mismatching tags, so we can print them together:
-            mismatching_tags_name_list_dict = {
-                tuple(sorted(mismatching_set)): [
-                    name
-                    for name, other_mismatching_set in mismatching_INCAR_warnings
-                    if other_mismatching_set == mismatching_set
-                ]
-                for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
-            }
-            joined_info_string = "\n".join(
-                [
-                    f"{defect_list}:\n{list(mismatching)}"
-                    for mismatching, defect_list in mismatching_tags_name_list_dict.items()
-                ]
-            )
             warnings.warn(
                 f"There are mismatching INCAR tags for (some of) your bulk and defect calculations which "
                 f"are likely to cause errors in the parsed results (energies). Found the following "
                 f"differences:\n"
                 f"(in the format: 'Defects: (INCAR tag, value in bulk calculation, value in defect "
                 f"calculation))':"
-                f"\n{joined_info_string}\n"
+                f"\n{_format_mismatching_incar_warning(mismatching_INCAR_warnings)}\n"
                 f"In general, the same INCAR settings should be used in all final calculations for these "
                 f"tags which can affect energies!"
             )
@@ -1312,7 +1298,7 @@ class DefectsParser:
         mismatching_kpoints_warnings = [
             (name, defect_entry.calculation_metadata.get("mismatching_KPOINTS"))
             for name, defect_entry in self.defect_dict.items()
-            if defect_entry.calculation_metadata.get("mismatching_KPOINTS", True) is not True
+            if defect_entry.calculation_metadata.get("mismatching_KPOINTS")
         ]
         if mismatching_kpoints_warnings:
             joined_info_string = "\n".join(
@@ -1331,7 +1317,7 @@ class DefectsParser:
         mismatching_potcars_warnings = [
             (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))
             for name, defect_entry in self.defect_dict.items()
-            if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols", True) is not True
+            if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols")
         ]
         if mismatching_potcars_warnings:
             joined_info_string = "\n".join(
@@ -2472,19 +2458,29 @@ class DefectParser:
             "bulk_vasprun_dict": _get_vr_dict_without_proj_eigenvalues(self.bulk_vr),
         }
 
-        self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = _compare_incar_tags(
-            run_metadata["bulk_incar"], run_metadata["defect_incar"]
+        incar_mismatches = _compare_incar_tags(
+            run_metadata["bulk_incar"],
+            run_metadata["defect_incar"],
         )
-        self.defect_entry.calculation_metadata["mismatching_POTCAR_symbols"] = _compare_potcar_symbols(
-            run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"]
+        self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = (
+            incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
         )
-        self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = _compare_kpoints(
+        potcar_mismatches = _compare_potcar_symbols(
+            run_metadata["bulk_potcar_symbols"],
+            run_metadata["defect_potcar_symbols"],
+        )
+        self.defect_entry.calculation_metadata["mismatching_POTCAR_symbols"] = (
+            potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
+        )
+        kpoint_mismatches = _compare_kpoints(
             run_metadata["bulk_actual_kpoints"],
             run_metadata["defect_actual_kpoints"],
             run_metadata["bulk_kpoints"],
             run_metadata["defect_kpoints"],
         )
-
+        self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = (
+            kpoint_mismatches if not (isinstance(kpoint_mismatches, bool)) else False
+        )
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
     def load_bulk_gap_data(

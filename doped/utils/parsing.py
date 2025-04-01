@@ -1029,7 +1029,12 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
 
 def _compare_potcar_symbols(
-    bulk_potcar_symbols, defect_potcar_symbols, bulk_name="bulk", defect_name="defect"
+    bulk_potcar_symbols,
+    defect_potcar_symbols,
+    bulk_name="bulk",
+    defect_name="defect",
+    warn=True,
+    only_matching_elements=False,
 ):
     """
     Check all POTCAR symbols in the bulk are the same in the defect
@@ -1038,18 +1043,45 @@ def _compare_potcar_symbols(
     Returns True if the symbols match, otherwise returns a list of the symbols
     for the bulk and defect calculations.
     """
-    for symbol in bulk_potcar_symbols:
+    if only_matching_elements:
+        defect_elements = [symbol["titel"].split()[1].split("_")[0] for symbol in defect_potcar_symbols]
+        symbols_to_check = [
+            symbol
+            for symbol in bulk_potcar_symbols
+            if symbol["titel"].split()[1].split("_")[0] in defect_elements
+        ]
+    else:
+        symbols_to_check = bulk_potcar_symbols
+
+    bulk_mismatch_list = []
+    defect_mismatch_list = []
+    for symbol in symbols_to_check:
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
-            warnings.warn(
-                f"The POTCAR symbols for your {bulk_name} and {defect_name} calculations do not match, "
-                f"which is likely to cause severe errors in the parsed results. Found the following "
-                f"symbol in the {bulk_name} calculation:"
-                f"\n{symbol['titel']}\n"
-                f"but not in the {defect_name} calculation:"
-                f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
-                f"The same POTCAR settings should be used for all calculations for accurate results!"
+            if warn:
+                warnings.warn(
+                    f"The POTCAR symbols for your {bulk_name} and {defect_name} calculations do not "
+                    f"match, which is likely to cause severe errors in the parsed results. Found the "
+                    f"following symbol in the {bulk_name} calculation:"
+                    f"\n{symbol['titel']}\n"
+                    f"but not in the {defect_name} calculation:"
+                    f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
+                    f"The same POTCAR settings should be used for all calculations for accurate results!"
+                )
+            if not only_matching_elements:
+                return [bulk_potcar_symbols, defect_potcar_symbols]
+            bulk_mismatch_list.append(symbol)
+            defect_mismatch_list.append(
+                next(
+                    def_symbol
+                    for def_symbol in defect_potcar_symbols
+                    if def_symbol["titel"].split()[1].split("_")[0]
+                    == symbol["titel"].split()[1].split("_")[0]
+                )
             )
-            return [bulk_potcar_symbols, defect_potcar_symbols]
+
+    if bulk_mismatch_list:
+        return [bulk_mismatch_list, defect_mismatch_list]
+
     return True
 
 
@@ -1060,6 +1092,7 @@ def _compare_kpoints(
     defect_kpoints=None,
     bulk_name="bulk",
     defect_name="defect",
+    warn=True,
 ):
     """
     Check bulk and defect KPOINTS are the same, using the
@@ -1080,16 +1113,17 @@ def _compare_kpoints(
     kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
 
     if not (actual_kpoints_eq or kpoints_eq):
-        warnings.warn(
-            f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
-            f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
-            f"{bulk_name} calculation:"
-            f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"  # list more readable than array
-            f"and in the {defect_name} calculation:"
-            f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"
-            f"In general, the same KPOINTS settings should be used for all final calculations for "
-            f"accurate results!"
-        )
+        if warn:
+            warnings.warn(
+                f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
+                f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
+                f"{bulk_name} calculation:"
+                f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"  # list more readable vs array
+                f"and in the {defect_name} calculation:"
+                f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"
+                f"In general, the same KPOINTS settings should be used for all final calculations for "
+                f"accurate results!"
+            )
         return [
             [list(kpoints) for kpoints in sorted_bulk_kpoints],
             [list(kpoints) for kpoints in sorted_defect_kpoints],
@@ -1104,6 +1138,7 @@ def _compare_incar_tags(
     fatal_incar_mismatch_tags=None,
     bulk_name="bulk",
     defect_name="defect",
+    warn=True,
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
@@ -1153,19 +1188,54 @@ def _compare_incar_tags(
             mismatch_list.append((key, fatal_incar_mismatch_tags[key], defect_incar_dict[key]))
 
     if mismatch_list:
-        # compare to defaults:
-        warnings.warn(
-            f"There are mismatching INCAR tags for your {bulk_name} and {defect_name} calculations which "
-            f"are likely to cause errors in the parsed results (energies). Found the following "
-            f"differences:\n"
-            f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
-            f"calculation)):"
-            f"\n{mismatch_list}\n"
-            f"In general, the same INCAR settings should be used in all final calculations for these tags "
-            f"which can affect energies!"
-        )
+        if warn:
+            warnings.warn(
+                f"There are mismatching INCAR tags for your {bulk_name} and {defect_name} calculations "
+                f"which are likely to cause errors in the parsed results (energies). Found the following "
+                f"differences:\n"
+                f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
+                f"calculation)):"
+                f"\n{mismatch_list}\n"
+                f"In general, the same INCAR settings should be used in all final calculations for these "
+                f"tags which can affect energies!"
+            )
         return mismatch_list
     return True
+
+
+def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str, set]]) -> str:
+    """
+    Convenience function to generate a formatted warning string listing
+    mismatching INCAR tags and their values in a clean output.
+
+    Used in ``doped.analysis`` and ``doped.chemical_potentials`` when
+    checking calculation compatibilities.
+
+    Args:
+        mismatching_INCAR_warnings (list[tuple[str, set]]):
+            A list of tuples containing the INCAR tag and the set of
+            mismatching values for that tag.
+
+    Returns:
+        str:
+            A formatted string listing the mismatching INCAR tags and their
+            values.
+    """
+    # group by the mismatching tags, so we can print them together:
+    mismatching_tags_name_list_dict = {
+        tuple(sorted(mismatching_set)): [
+            name
+            for name, other_mismatching_set in mismatching_INCAR_warnings
+            if other_mismatching_set == mismatching_set
+        ]
+        for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
+    }
+    return "\n".join(
+        [
+            f"{entry_list}:\n{list(mismatching)}"
+            for mismatching, entry_list in mismatching_tags_name_list_dict.items()
+        ]
+    )
 
 
 def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float:
