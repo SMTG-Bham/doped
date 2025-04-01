@@ -3,6 +3,7 @@ Tests for the `doped.chemical_potentials` module.
 """
 
 import os
+import shutil
 import sys
 import unittest
 import warnings
@@ -542,6 +543,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         self.zro2_path = os.path.join(self.EXAMPLE_DIR, "ZrO2_CompetingPhases")
         self.la_zro2_path = os.path.join(self.EXAMPLE_DIR, "La_ZrO2_CompetingPhases")
+        self.mgo_path = os.path.join(self.EXAMPLE_DIR, "MgO/CompetingPhases")
 
         self.zro2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
         self.la_zro2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
@@ -568,7 +570,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self.la_zro2_chempots_df_dict = {
             "Zr": {"ZrO2-O2": -10.97543, "Zr3O-ZrO2": -0.19954},
             "O": {"ZrO2-O2": 0.0, "Zr3O-ZrO2": -5.38794},
-            "La": {"ZrO2-O2": -9.462985919999998, "Zr3O-ZrO2": -1.3810859199999967},
+            "La": {"ZrO2-O2": -9.463, "Zr3O-ZrO2": -1.3811},
             "La-Limiting Phase": {"ZrO2-O2": "La2Zr2O7", "Zr3O-ZrO2": "La2Zr2O7"},
         }
 
@@ -577,6 +579,27 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             if_present_rm(i)
 
         if_present_rm(os.path.join(self.DATA_DIR, "ZrO2_LaTeX_Tables/test.tex"))
+
+        if os.path.exists(f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz"):
+            if not os.path.exists(f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz"):
+                shutil.move(
+                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz",
+                )
+            if not os.path.exists(f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz"):
+                shutil.move(
+                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz",
+                )
+            shutil.move(
+                f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
+                f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            )
+
+        shutil.copyfile(
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.la_zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+        )
 
     def test_cpa_chempots(self):
         assert isinstance(next(iter(self.zro2_cpa.intrinsic_chempots["elemental_refs"].keys())), str)
@@ -925,11 +948,125 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._compare_cpas(cpa, reloaded_cpa)
 
     def test_general_cpa_reloading(self):
-        cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
         self._general_cpa_check(cpa)
 
-        la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
+        with warnings.catch_warnings(record=True) as w:
+            la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w
         self._general_cpa_check(la_cpa)
+
+    def test_mismatching_incar_warnings(self):
+        """
+        Test warnings for mismatching INCAR settings.
+
+        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        """
+        # convert to mismatching O2 calc:
+        shutil.move(
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
+        )
+        shutil.move(
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz",
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert all(
+            any(i in str(warning.message) for warning in w)
+            for i in [
+                "There are mismatching INCAR tags",
+                "['O2']:",
+                "Where ZrO2 was used as the reference entry calculation.",
+                "[('HFSCREEN', 0.2, 0.20786986), ('LREAL', False, 'Auto      ! projection operators: "
+                "autom')]",
+            ]
+        )
+        self._general_cpa_check(cpa)
+
+        # test with extrinsic case:
+        shutil.copyfile(
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",  # this is mismatching vr
+            f"{self.la_zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert all(
+            any(i in str(warning.message) for warning in w)
+            for i in [
+                "There are mismatching INCAR tags",
+                "['O2']:",
+                "Where ZrO2 was used as the reference entry calculation.",
+                "[('HFSCREEN', 0.2, 0.20786986), ('LREAL', False, 'Auto      ! projection operators: "
+                "autom')]",
+            ]
+        )
+        self._general_cpa_check(la_cpa)
+
+        with warnings.catch_warnings(record=True) as w:
+            mgo_cpa = chemical_potentials.CompetingPhasesAnalyzer("MgO", self.mgo_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert all(
+            any(i in str(warning.message) for warning in w)
+            for i in [
+                "There are mismatching INCAR tags",
+                "['Mg']:",
+                "[('ENCUT', 450.0, 585.0)]",
+                "Where MgO was used as the reference entry calculation.",
+            ]
+        )
+        self._general_cpa_check(mgo_cpa)
+
+    def test_mismatching_potcar_warnings(self):
+        """
+        Test warnings for mismatching POTCAR settings.
+
+        No warnings for ZrO2 / La_ZrO2 already checked in ``self.test_general_cpa_reloading()`` above.
+        """
+        # convert to mismatching O2 calc, with fake "O_h" POTCAR:
+        shutil.move(
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
+        )
+        shutil.move(
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz",
+            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert all(
+            any(i in str(warning.message) for warning in w)
+            for i in [
+                "There are mismatching POTCAR symbols",
+                "Where ZrO2 was used as the reference entry calculation.",
+                "O2: [[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}], [{'titel': "
+                "'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}]]",
+            ]
+        )
+        self._general_cpa_check(cpa)
+
+    def test_bulk_not_found(self):
+        """
+        Test case where bulk composition is not found in the supplied data.
+        """
+        with pytest.raises(ValueError) as exc:
+            _cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.mgo_path)
+
+        assert (
+            "Could not find bulk phase for ZrO2 in the supplied data. Found intrinsic phase diagram "
+            "entries for: {'O2'}"
+        ) in str(exc.value)
 
 
 class TestChemicalPotentialGrid(unittest.TestCase):
