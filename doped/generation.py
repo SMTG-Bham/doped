@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import numpy as np
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.adsorption import AdsorbateSiteFinder
 from pymatgen.analysis.defects import core, thermo
 from pymatgen.analysis.defects.generators import (
     AntiSiteGenerator,
@@ -1338,10 +1339,11 @@ class DefectsGenerator(MSONable):
         ``extrinsic`` argument.
 
         Interstitial sites are generated using Voronoi tessellation by default (found
-        to be the most reliable), which can be controlled using the
-        ``interstitial_gen_kwargs`` argument. Alternatively, a list of interstitial
-        sites (or single interstitial site) can be manually specified using the
-        ``interstitial_coords`` argument.
+        to be the most reliable) using the ``get_interstitial_sites`` function, which
+        also generates adsorbate sites if the structure is determined to be a
+        slab/layer/rod. This can be controlled using the ``interstitial_gen_kwargs``
+        argument. Alternatively, a list of interstitial sites (or single interstitial
+        site) can be manually specified using the ``interstitial_coords`` argument.
 
         By default, supercells are generated for each defect using the doped
         ``get_ideal_supercell_matrix()`` function (see docstring), with default settings
@@ -1437,13 +1439,13 @@ class DefectsGenerator(MSONable):
                 - which enforces a (near-)cubic supercell output (default = False),
                 or ``force_diagonal`` (default = False)).
             interstitial_gen_kwargs (dict, bool):
-                Keyword arguments to be passed to ``get_Voronoi_interstitial_sites``
+                Keyword arguments to be passed to ``get_interstitial_sites``
                 (such as ``min_dist`` (0.9 Å), ``clustering_tol`` (0.8 Å),
-                ``symmetry_preference`` (0.1 Å), ``stol`` (0.32), ``tight_stol`` (0.02)
-                and ``symprec`` (0.01)  -- see its docstring, parentheses indicate
-                default values), or ``InterstitialGenerator`` if ``interstitial_coords``
-                is specified. If set to ``False``, interstitial generation will be
-                skipped entirely.
+                ``symmetry_preference`` (0.1 Å), ``stol`` (0.32), ``tight_stol`` (0.02),
+                ``symprec`` (0.01), ``vacuum_radius`` (1.5 * bulk bond length)  -- see its
+                docstring, parentheses indicate default values), or ``InterstitialGenerator``
+                if ``interstitial_coords`` is specified. If set to ``False``, interstitial
+                generation will be skipped entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these fractional
                 coordinates in the generated supercells. Default is [0.5, 0.5, 0.5]
@@ -1808,7 +1810,7 @@ class DefectsGenerator(MSONable):
 
                 else:
                     # Generate interstitial sites using Voronoi tessellation
-                    sorted_sites_mul_and_equiv_fpos = get_Voronoi_interstitial_sites(
+                    sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
                         host_structure=self.primitive_structure,
                         interstitial_gen_kwargs=self.interstitial_gen_kwargs,
                     )
@@ -2682,7 +2684,7 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     return stol * (structure.volume / len(structure)) ** (1 / 3)
 
 
-def get_Voronoi_interstitial_sites(
+def get_interstitial_sites(
     host_structure: Structure, interstitial_gen_kwargs: dict[str, Any] | None = None
 ) -> list:
     """
@@ -2696,6 +2698,11 @@ def get_Voronoi_interstitial_sites(
     placement in order to favour sites which are higher-symmetry and
     furthest from the host lattice atoms (typically the most favourable
     interstitial sites).
+
+    If the structure is detected to have a significant vacuum volume
+    (determined using ``vacuum_radius``), thus corresponding to a
+    slab/layer/line structure, then the ``pymatgen`` adsorbate finder
+    will be used to generate further candidate interstitial sites.
 
     The logic for picking interstitial sites is as follows:
 
@@ -2752,6 +2759,12 @@ def get_Voronoi_interstitial_sites(
             - symprec (float):
                 Symmetry precision for (symmetry-)equivalent site determination. Defaults
                 to 0.01.
+            - vacuum_radius (float):
+                Tolerance radius for determining if a significant vacuum volume is present
+                in the structure (if any Voronoi node has a minimum distance to a host
+                atom greater than this value), in which case adsorbate sites will also be
+                included for interstitial generation. Defaults to 1.5 times the bulk bond
+                length.
 
     Returns:
         list: List of interstitial sites as fractional coordinates
@@ -2769,6 +2782,7 @@ def get_Voronoi_interstitial_sites(
         "stol",
         "tight_stol",
         "symprec",
+        "vacuum_radius",
     }
     if any(  # check interstitial_gen_kwargs and warn if any missing:
         i not in supported_interstitial_gen_kwargs for i in interstitial_gen_kwargs
@@ -2783,6 +2797,20 @@ def get_Voronoi_interstitial_sites(
         return []
 
     sites_list = [v.frac_coords for v in top.vnodes]
+
+    bulk_min_bond_length = supercells.min_dist(host_structure)
+    vacuum_sites = remove_collisions(
+        sites_list,
+        structure=host_structure,
+        min_dist=interstitial_gen_kwargs.get("vacuum_radius", max(bulk_min_bond_length * 1.5, 2.5)),
+    )
+    if vacuum_sites.size > 0:  # low-dimensional structure with significant vacuum, include adsorbate sites
+        asf = AdsorbateSiteFinder(host_structure)
+        adsorption_sites = asf.find_adsorption_sites()["all"]  # in cartesian coordinates
+        sites_list.extend(  # convert to frac coords and add to list
+            [host_structure.lattice.get_fractional_coords(i) for i in adsorption_sites]
+        )
+
     min_dist = interstitial_gen_kwargs.get("min_dist", 0.9)
     sites_array = remove_collisions(sites_list, structure=host_structure, min_dist=min_dist)
     if sites_array.size == 0:
