@@ -1041,10 +1041,10 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
                 )
                 if len(nn_distances[nn_distances > 0.01]) == 0:
-                    # no NNs within 5 Å, expand search to 0.5*max lattice vector to ensure at least one NN:
+                    # no NNs within 5 Å, expand search to max lattice vector to ensure at least one NN:
                     nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
                         equiv_site.coords,
-                        (max(defect_entry.defect.structure.lattice.abc) + 0.1) / 2,
+                        max(defect_entry.defect.structure.lattice.abc) + 0.1,
                     )
                     nn_distances = np.array(
                         [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
