@@ -23,6 +23,7 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.structure import PeriodicSite, Species, Structure
+from pymatgen.core.surface import SlabGenerator
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Poscar
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
@@ -1040,10 +1041,10 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
                 )
                 if len(nn_distances[nn_distances > 0.01]) == 0:
-                    # no NNs within 5 Å, expand search to min lattice vector to ensure at least one NN:
+                    # no NNs within 5 Å, expand search to 0.5*max lattice vector to ensure at least one NN:
                     nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
                         equiv_site.coords,
-                        min(defect_entry.defect.structure.lattice.abc) + 0.1,
+                        (max(defect_entry.defect.structure.lattice.abc) + 0.1) / 2,
                     )
                     nn_distances = np.array(
                         [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
@@ -3665,3 +3666,59 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
 
         defect_gen, output = self._generate_and_test_no_warnings(spaced_struct)
         self._general_defect_gen_check(defect_gen)
+
+    def test_adsorbate_interstitial_generation_in_low_dimensional_structures(self):
+        """
+        Test that the default interstitial generation algorithm now also
+        generates adsorbate interstitials in low-dimensional structures (e.g.
+        2D or 1D materials).
+        """
+        Te_layer_struct = Structure.from_file(f"{self.data_dir}/Te_Layer_POSCAR")
+        defect_gen, output = self._generate_and_test_no_warnings(
+            Te_layer_struct * [4, 4, 1], generate_supercell=False, interstitial_elements=["Na"]
+        )
+        self._general_defect_gen_check(defect_gen)
+
+        for i in [  # includes adsorbate sites now
+            "Na_i_C2h         [+1,0]             [0.000,0.500,0.500]  1f",  # normal int site
+            "Na_i_Cs_Te14.22  [+1,0]             [0.345,0.500,0.004]  2n",  # normal int site
+            "Na_i_Cs_Te2.00   [+1,0]             [0.155,0.000,0.603]  2m",  # adsorbate site
+            "Na_i_Cs_Te2.89   [+1,0]             [0.155,0.500,0.603]  2n",  # int/adsorbate site
+            "Na_i_Cs_Te3.20   [+1,0]             [0.345,0.500,0.397]  2n",  # adsorbate site
+            "Na_i_Cs_Te3.40   [+1,0]             [0.345,0.000,0.397]  2m",  # adsorbate site
+            "Na_i_Cs_Te5.75   [+1,0]             [0.345,0.500,0.310]  2n",  # normal int site
+        ]:
+            print(i)
+            assert i in output
+
+        cdte_slab = SlabGenerator(
+            self.prim_cdte,
+            (1, 0, 0),
+            min_slab_size=10,
+            min_vacuum_size=10,
+            max_normal_search=5,
+            center_slab=True,
+        ).get_slab()
+        defect_gen, output = self._generate_and_test_no_warnings(cdte_slab, interstitial_elements=["Na"])
+        self._general_defect_gen_check(defect_gen)
+
+        for i in [  # includes adsorbate sites now -- these have been manually checked
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25a  [+1,0]             [0.000,0.000,0.501]  1a",
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25b  [+1,0]             [0.333,0.667,0.335]  1a",
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25c  [+1,0]             [0.667,0.333,0.668]  1a",
+            "Na_i_C3v_Cd2.83Te3.27Cd5.42a  [+1,0]             [0.000,0.000,0.564]  1a",
+            "Na_i_C3v_Cd2.83Te3.27Cd5.42b  [+1,0]             [0.333,0.667,0.397]  1a",
+            "Na_i_C3v_Cd4.25Te4.25Cd6.28a  [+1,0]             [0.667,0.333,0.168]  1a",
+            "Na_i_C3v_Cd4.25Te4.25Cd6.28b  [+1,0]             [0.333,0.667,0.835]  1a",
+            "Na_i_C3v_Cd7.57Te7.57Cd8.02   [+1,0]             [0.667,0.333,0.001]  1a",
+            "Na_i_C3v_Cd7.57Te7.57Te8.03   [+1,0]             [0.333,0.667,0.001]  1a",
+            "Na_i_C3v_Te2.00               [+1,0]             [0.000,0.000,0.226]  1a",
+            "Na_i_C3v_Te2.83Cd3.27Te5.42a  [+1,0]             [0.000,0.000,0.439]  1a",
+            "Na_i_C3v_Te2.83Cd3.27Te5.42b  [+1,0]             [0.667,0.333,0.606]  1a",
+            "Na_i_C3v_Te3.34               [+1,0]             [0.333,0.667,0.226]  1a",
+            "Na_i_Cs_Cd2.71Te2.71Cd2.71    [+1,0]             [0.167,0.333,0.418]  3d",
+            "Na_i_Cs_Cd2.71Te2.71Cd4.25    [+1,0]             [0.333,0.167,0.585]  3d",
+            "Na_i_Cs_Te3.06                [+1,0]             [0.500,0.500,0.226]  3d",
+        ]:
+            print(i)
+            assert i in output

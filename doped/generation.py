@@ -493,78 +493,82 @@ def _get_neutral_defect_entry(
     wyckoff_label_dict,
     conv_symm_ops,
 ):
-    (
-        dummy_defect_supercell,
-        defect_supercell_site,
-        equivalent_supercell_sites,
-    ) = defect.get_supercell_structure(
-        sc_mat=supercell_matrix,
-        dummy_species=_dummy_species.symbol,  # keep track of the defect frac coords in the supercell
-        target_frac_coords=target_frac_coords,
-        return_sites=True,
-    )
-    dummy_sites = [site for site in dummy_defect_supercell if site.specie.symbol == _dummy_species.symbol]
-    if dummy_sites:  # set defect_supercell_site to exactly match coordinates,
-        # as can have very small differences in generation due to rounding
-        dummy_site = next(iter(dummy_sites))
-        defect_supercell_site._frac_coords = dummy_site.frac_coords
-
-    neutral_defect_entry = get_defect_entry_from_defect(
-        defect,
-        dummy_defect_supercell,
-        0,
-        dummy_species=_dummy_species,
-    )
-    neutral_defect_entry.defect_supercell = neutral_defect_entry.sc_entry.structure
-    neutral_defect_entry.defect_supercell_site = defect_supercell_site
-    neutral_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
-    neutral_defect_entry.bulk_supercell = bulk_supercell
-
-    neutral_defect_entry.conventional_structure = neutral_defect_entry.defect.conventional_structure = (
-        conventional_structure
-    )
-
-    try:
-        wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
-            symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
-            conventional_structure,
-            conv_symm_ops,
-            equiv_sites=True,
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Not all sites")
+        (
+            dummy_defect_supercell,
+            defect_supercell_site,
+            equivalent_supercell_sites,
+        ) = defect.get_supercell_structure(
+            sc_mat=supercell_matrix,
+            dummy_species=_dummy_species.symbol,  # keep track of the defect frac coords in the supercell
+            target_frac_coords=target_frac_coords,
+            return_sites=True,
         )
-        conv_cell_coord_list = [
-            np.mod(symmetry._vectorized_custom_round(site.frac_coords), 1) for site in conv_cell_sites
+        dummy_sites = [
+            site for site in dummy_defect_supercell if site.specie.symbol == _dummy_species.symbol
         ]
+        if dummy_sites:  # set defect_supercell_site to exactly match coordinates,
+            # as can have very small differences in generation due to rounding
+            dummy_site = next(iter(dummy_sites))
+            defect_supercell_site._frac_coords = dummy_site.frac_coords
 
-    except Exception as e:  # (slightly) less efficient algebraic matching:
+        neutral_defect_entry = get_defect_entry_from_defect(
+            defect,
+            dummy_defect_supercell,
+            0,
+            dummy_species=_dummy_species,
+        )
+        neutral_defect_entry.defect_supercell = neutral_defect_entry.sc_entry.structure
+        neutral_defect_entry.defect_supercell_site = defect_supercell_site
+        neutral_defect_entry.equivalent_supercell_sites = equivalent_supercell_sites
+        neutral_defect_entry.bulk_supercell = bulk_supercell
+
+        neutral_defect_entry.conventional_structure = (
+            neutral_defect_entry.defect.conventional_structure
+        ) = conventional_structure
+
         try:
-            wyckoff_label, conv_cell_coord_list = symmetry.get_wyckoff_label_and_equiv_coord_list(
-                defect_entry=neutral_defect_entry,
-                wyckoff_dict=wyckoff_label_dict,
+            wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
+                symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
+                conventional_structure,
+                conv_symm_ops,
+                equiv_sites=True,
             )
-            conv_cell_coord_list = np.mod(
-                symmetry._vectorized_custom_round(conv_cell_coord_list), 1
-            ).tolist()
-        except Exception as e2:
-            warnings.warn(
-                f"Conventional cell site (and thus Wyckoff label) could not be determined! Got "
-                f"errors: {e!r}\nand: {e2!r}"
-            )
-            wyckoff_label = "N/A"
-            conv_cell_coord_list = []
+            conv_cell_coord_list = [
+                np.mod(symmetry._vectorized_custom_round(site.frac_coords), 1) for site in conv_cell_sites
+            ]
 
-    # sort array with symmetry._frac_coords_sort_func:
-    conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
+        except Exception as e:  # (slightly) less efficient algebraic matching:
+            try:
+                wyckoff_label, conv_cell_coord_list = symmetry.get_wyckoff_label_and_equiv_coord_list(
+                    defect_entry=neutral_defect_entry,
+                    wyckoff_dict=wyckoff_label_dict,
+                )
+                conv_cell_coord_list = np.mod(
+                    symmetry._vectorized_custom_round(conv_cell_coord_list), 1
+                ).tolist()
+            except Exception as e2:
+                warnings.warn(
+                    f"Conventional cell site (and thus Wyckoff label) could not be determined! Got "
+                    f"errors: {e!r}\nand: {e2!r}"
+                )
+                wyckoff_label = "N/A"
+                conv_cell_coord_list = []
 
-    neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
-    neutral_defect_entry.conv_cell_frac_coords = neutral_defect_entry.defect.conv_cell_frac_coords = (
-        None if not conv_cell_coord_list else conv_cell_coord_list[0]
-    )  # ideal/cleanest coords
-    neutral_defect_entry.equiv_conv_cell_frac_coords = (
-        neutral_defect_entry.defect.equiv_conv_cell_frac_coords
-    ) = conv_cell_coord_list
-    neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
-        neutral_defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
-    ) = _BilbaoCS_conv_cell_vector_mapping
+        # sort array with symmetry._frac_coords_sort_func:
+        conv_cell_coord_list.sort(key=symmetry._frac_coords_sort_func)
+
+        neutral_defect_entry.wyckoff = neutral_defect_entry.defect.wyckoff = wyckoff_label
+        neutral_defect_entry.conv_cell_frac_coords = neutral_defect_entry.defect.conv_cell_frac_coords = (
+            None if not conv_cell_coord_list else conv_cell_coord_list[0]
+        )  # ideal/cleanest coords
+        neutral_defect_entry.equiv_conv_cell_frac_coords = (
+            neutral_defect_entry.defect.equiv_conv_cell_frac_coords
+        ) = conv_cell_coord_list
+        neutral_defect_entry._BilbaoCS_conv_cell_vector_mapping = (
+            neutral_defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+        ) = _BilbaoCS_conv_cell_vector_mapping
 
     return neutral_defect_entry
 
