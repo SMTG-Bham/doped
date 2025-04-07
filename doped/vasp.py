@@ -59,6 +59,7 @@ default_defect_relax_set = copy.deepcopy(default_relax_set)
 default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
 )  # defect set is just INCAR settings
+_ = default_defect_relax_set["INCAR"].pop("EDIFF_PER_ATOM")  # remove EDIFF_PER_ATOM and use defect EDIFF
 singleshot_incar_settings = {
     "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
     "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
@@ -192,9 +193,26 @@ class DopedDictSet(VaspInputSet):
 
         if user_incar_settings is not None:
             if "EDIFF_PER_ATOM" in user_incar_settings:
-                if "EDIFF" not in user_incar_settings:
-                    user_incar_settings["EDIFF"] = scaled_ediff(len(structure))
-                user_incar_settings.pop("EDIFF_PER_ATOM")  # pop un-used tag
+                ediff_per_atom = user_incar_settings.pop("EDIFF_PER_ATOM")  # pop un-used tag
+                ediff = scaled_ediff(
+                    len(structure),
+                    ediff_per_atom=ediff_per_atom,
+                    max_ediff=np.inf,  # use whatever user has set
+                )
+                if ediff > 1e-3:
+                    warnings.warn(
+                        f"EDIFF_PER_ATOM was set to {ediff_per_atom:.2e} eV/atom, which gives an "
+                        f"EDIFF of {ediff:.2e} eV here. This is a very large EDIFF for VASP, and "
+                        f"may cause convergence issues. Please check your INCAR settings.",
+                        BadIncarWarning,
+                    )
+                if "EDIFF" in user_incar_settings:
+                    warnings.warn(
+                        "EDIFF_PER_ATOM and EDIFF both set in user_incar_settings. "
+                        "EDIFF_PER_ATOM will be used.",
+                        BadIncarWarning,
+                    )
+                user_incar_settings["EDIFF"] = ediff
 
             # Load INCAR tag/value check reference file from pymatgen.io.vasp.inputs
             with open(f"{resources.files('pymatgen.io.vasp')}/incar_parameters.json") as json_file:
@@ -226,7 +244,7 @@ class DopedDictSet(VaspInputSet):
         super().__init__(
             structure,
             config_dict=config_dict,
-            user_kpoints_settings=user_kpoints_settings,
+            user_kpoints_settings=user_kpoints_settings or {},
             user_potcar_functional=user_potcar_functional,
             force_gamma=kwargs.pop("force_gamma", True),  # force gamma-centred k-points by default
             **kwargs,
@@ -380,7 +398,10 @@ class DefectDictSet(DopedDictSet):
         if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
             relax_set = deep_dict_update(relax_set, default_HSE_set)  # HSE set is just INCAR settings
 
-        relax_set["INCAR"].update(user_incar_settings or {})
+        input_user_incar_settings = user_incar_settings or {}
+        relax_set["INCAR"].update(input_user_incar_settings)
+        if "EDIFF_PER_ATOM" in input_user_incar_settings:
+            relax_set["INCAR"].pop("EDIFF")  # remove base EDIFF setting and use input EDIFF_PER_ATOM
 
         # if "length" in user kpoint settings then pop reciprocal_density and use length instead
         if user_kpoints_settings is not None and (
@@ -626,16 +647,22 @@ class DefectDictSet(DopedDictSet):
         )
 
 
-def scaled_ediff(natoms: int) -> float:
+def scaled_ediff(natoms: int, ediff_per_atom: float = 2e-7, max_ediff: float = 1e-4) -> float:
     """
-    Returns a scaled EDIFF value for VASP calculations, based on the number of
-    atoms in the structure.
+    Returns a scaled ``EDIFF`` value for VASP calculations, based on the number
+    of atoms in the structure.
 
-    EDIFF is set to 2e-7 per atom (-> 1e-5 per 50 atoms), with a maximum EDIFF
-    of 1e-4.
+    Args:
+        natoms (int): Number of atoms in the structure.
+        ediff_per_atom (float):
+            EDIFF value per atom, in eV. Default is 2e-7 (1e-5 per 50 atoms).
+        max_ediff (float): Maximum EDIFF value. Default is 1e-4.
+
+    Returns:
+        float: Scaled EDIFF value.
     """
-    ediff = float(f"{((natoms/50)*1e-5):.1g}")
-    return min(ediff, 1e-4)
+    ediff = float(f"{natoms*ediff_per_atom:.1g}")
+    return min(ediff, max_ediff)
 
 
 class DefectRelaxSet(MSONable):

@@ -26,11 +26,11 @@ from doped.vasp import (
     DefectDictSet,
     DefectRelaxSet,
     DefectsSet,
+    DopedDictSet,
     DopedKpoints,
     _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
-    scaled_ediff,
     singleshot_incar_settings,
 )
 
@@ -212,10 +212,9 @@ class DefectDictSetTest(unittest.TestCase):
         assert expected_incar_settings.items() <= dds.incar.items()
 
         if dds.incar.get("NSW", 0) > 0:
-            assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+            assert dds.incar["EDIFF"] == 1e-5  # default EDIFF
         else:
             assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
-        default_relax_settings.pop("EDIFF_PER_ATOM")
 
         for k, v in default_relax_settings.items():
             if k == "GGA" and dds.incar.get("LHFCALC", False):
@@ -391,6 +390,28 @@ class DefectDictSetTest(unittest.TestCase):
         self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
+
+    def test_ediff_per_atom_custom_setting(self):
+        # first with DopedDictSet:
+        with warnings.catch_warnings(record=True) as w:
+            dds = DopedDictSet(
+                self.prim_cdte.copy(),
+                user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
+                user_kpoints_settings={"reciprocal_density": 123},
+            )
+        print([warning.message for warning in w])  # for debugging
+        assert any(
+            "EDIFF_PER_ATOM was set to 1.00e-02 eV/atom, which" in str(warning.message) for warning in w
+        )
+        assert any("This is a very large EDIFF for VASP" in str(warning.message) for warning in w)
+        assert np.isclose(dds.incar["EDIFF"], 1e-2 * len(self.prim_cdte))
+
+        # now with DefectDictSet:
+        dds = DefectDictSet(
+            self.prim_cdte.copy(),
+            user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
+        )
+        assert np.isclose(dds.incar["EDIFF"], 1e-2 * len(self.prim_cdte))
 
     def test_initialisation_for_all_structs(self):
         """
