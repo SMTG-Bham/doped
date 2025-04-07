@@ -13,14 +13,17 @@ from functools import lru_cache
 
 import numpy as np
 from numpy.typing import NDArray
+from pymatgen.analysis.defects.generators import VacancyGenerator, _element_str
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Structure
+from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from scipy.spatial import Voronoi
 
+from doped.core import Vacancy
 from doped.utils import symmetry
 
 
@@ -610,3 +613,51 @@ def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> li
         label_num += 1
 
     return list_out
+
+
+class DopedVacancyGenerator(VacancyGenerator):
+    """
+    Generator for vacancy defects, subclassed from ``pymatgen-analysis-
+    defects`` to improve efficiency (particularly when handling defect
+    complexes).
+    """
+
+    def generate(
+        self,
+        structure: Structure,
+        rm_species: set[str | Species] | list[str | Species] | None = None,
+        **kwargs,
+    ) -> VacancyGenerator[Vacancy, None, None]:
+        """
+        Generate vacancy defects.
+
+        Args:
+            structure: The bulk structure the vacancies are generated from.
+            rm_species: List of species to be removed. If ``None``, considers all species.
+            **kwargs: Additional keyword arguments for the ``Vacancy`` constructor.
+
+        Returns:
+            VacancyGenerator[Vacancy, None, None]:
+                VacancyGenerator that yields a list of ``Vacancy`` objects.
+        """
+        # core difference is the removal of unnecessary `remove_oxidation_states` calls
+        structure = get_valid_magmom_struct(structure)
+        all_species = {*map(_element_str, structure.composition.elements)}
+        rm_species = all_species if rm_species is None else {*map(str, rm_species)}
+
+        if not set(rm_species).issubset(all_species):
+            raise ValueError(
+                f"rm_species ({rm_species}) must be a subset of the structure's species ({all_species})."
+            )
+
+        sga = symmetry.get_sga(structure)
+        sym_struct = sga.get_symmetrized_structure()
+        for site_group in sym_struct.equivalent_sites:
+            site = site_group[0]
+            if _element_str(site.specie) in rm_species:
+                yield Vacancy(
+                    structure=structure,  # note that we no longer remove oxi states here! or in get_sga
+                    site=site,
+                    equivalent_sites=site_group,
+                    **kwargs,
+                )
