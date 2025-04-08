@@ -66,6 +66,17 @@ def classify_vacancy_geometry(
             vacancies.
             Default is ``False``.
     """
+    # if not all sites in both structures are oxi-state decorated / neutral, then remove oxi states:
+    oxi_state_decorated = [
+        "+" in site.species_string or "-" in site.species_string or "0" in site.species_string
+        for site in [*vacancy_supercell.sites, *bulk_supercell.sites]
+    ]
+    if len(set(oxi_state_decorated)) > 1:  # not consistent with all sites, remove oxi states:
+        vacancy_supercell = vacancy_supercell.copy()
+        bulk_supercell = bulk_supercell.copy()
+        vacancy_supercell.remove_oxidation_states()
+        bulk_supercell.remove_oxidation_states()
+
     def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
     old_species = _get_species_from_composition_diff(comp_diff, -1)
     bulk_bond_length = max(min_dist(bulk_supercell), 1)
@@ -171,14 +182,17 @@ def generate_complex_from_defect_sites(
         "interstitial_sites": interstitial_sites or [],
         "substitution_sites": substitution_sites or [],
     }
-    for key, value in defect_dict.items():
+    for key, value in list(defect_dict.items()):
         if isinstance(value, PeriodicSite):
             defect_dict[key] = [value]  # convert to Iterable
 
-        if not isinstance(defect_dict[key], Iterable) and defect_dict[key] is not None:
+        if defect_dict[key] and (
+            not isinstance(defect_dict[key], Iterable)
+            or not isinstance(next(iter(defect_dict[key])), PeriodicSite)
+        ):
             raise TypeError(
                 f"Defect sites input arguments must be a list, set, or tuple of defect sites. Got "
-                f"{type(defect_dict[key])} for {key} instead!"
+                f"{type(defect_dict[key])} for {key}."
             )
 
     defect_struct = bulk_supercell.copy()
