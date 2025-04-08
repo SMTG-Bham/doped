@@ -2409,9 +2409,11 @@ class DefectsGenerator(MSONable):
                                 second_vac.site.distance(interstitial_entry.defect_supercell_site)
                                 < dist_tol
                             ):
-                                v1i_dist = vac.site.distance(interstitial_entry.defect_supercell_site)
-                                v2i_dist = second_vac.site.distance(
-                                    interstitial_entry.defect_supercell_site
+                                v1i_dist = round(
+                                    vac.site.distance(interstitial_entry.defect_supercell_site), 4
+                                )
+                                v2i_dist = round(
+                                    second_vac.site.distance(interstitial_entry.defect_supercell_site), 4
                                 )
                                 if (
                                     round(v1i_dist, 1) != 0 and round(v2i_dist, 1) != 0
