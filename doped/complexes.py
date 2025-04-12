@@ -80,6 +80,7 @@ def classify_vacancy_geometry(
     def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
     old_species = _get_species_from_composition_diff(comp_diff, -1)
     bulk_bond_length = max(min_dist(bulk_supercell), 1)
+    dist_tol = tol * bulk_bond_length if not abs_tol else tol
     num_offsite_bulk_to_defect = np.sum(
         np.array(
             get_site_mapping_indices(
@@ -91,7 +92,7 @@ def classify_vacancy_geometry(
                 threshold=np.inf,  # don't warn for large detected off-site displacements (e.g. split vacs)
             )
         )
-        > bulk_bond_length * tol
+        > dist_tol
     )
     num_offsite_defect_to_bulk = np.sum(
         np.array(
@@ -104,7 +105,7 @@ def classify_vacancy_geometry(
                 threshold=np.inf,  # don't warn for large detected off-site displacements (e.g. split vacs)
             )
         )
-        > bulk_bond_length * tol
+        > dist_tol
     )
 
     if num_offsite_bulk_to_defect == 1 and num_offsite_defect_to_bulk == 0:
