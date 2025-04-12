@@ -126,6 +126,19 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
             get_freysoldt_correction(self.defect_entry, self.dielectric, verbose=False)
         mock_print.assert_not_called()
 
+    def test_defect_frac_coords_w_get_freysoldt_correction(self):
+        defect_coords_kwarg = {"defect_frac_coords": [0.3, 0.4, 0.2]}
+        fnv_corr_list = [
+            get_freysoldt_correction(self.defect_entry, self.dielectric, **defect_coords_kwarg)
+        ]
+        fnv_corr_list.append(
+            get_freysoldt_correction(self.defect_entry, self.dielectric, plot=True, **defect_coords_kwarg)[
+                0
+            ]
+        )
+        for fnv_corr in fnv_corr_list:
+            assert np.isclose(fnv_corr.correction_energy, 7.499071576499095)
+
     def test_get_kumagai_correction(self):
         efnv_corr_list = [get_kumagai_correction(self.defect_entry, self.dielectric)]
         efnv_corr_list.append(get_kumagai_correction(self.defect_entry, self.dielectric, plot=True)[0])
@@ -140,6 +153,17 @@ class FiniteSizeChargeCorrectionTest(unittest.TestCase):
         with patch("builtins.print") as mock_print:
             get_kumagai_correction(self.defect_entry, self.dielectric, verbose=False)
         mock_print.assert_not_called()
+
+    def test_defect_coords_w_get_kumagai_correction(self):
+        defect_coords_kwarg = {"defect_coords": [0.3, 0.4, 0.2]}
+        efnv_corr_list = [
+            get_kumagai_correction(self.defect_entry, self.dielectric, **defect_coords_kwarg)
+        ]
+        efnv_corr_list.append(
+            get_kumagai_correction(self.defect_entry, self.dielectric, plot=True, **defect_coords_kwarg)[0]
+        )
+        for efnv_corr in efnv_corr_list:
+            assert np.isclose(efnv_corr.correction_energy, 1.1194286233529542)
 
 
 class CorrectionsPlottingTestCase(unittest.TestCase):

@@ -317,6 +317,10 @@ class DefectEntry(thermo.DefectEntry):
         sampling region, and multiplying by the defect charge. This is expected
         to be a lower bound estimate of the true charge correction error.
 
+        The defect coordinates are taken as the relaxed defect site by default
+        (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
+        but this can be overridden with the ``defect_frac_coords`` keyword argument.
+
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constance (ionic + static contributions), in
@@ -371,7 +375,8 @@ class DefectEntry(thermo.DefectEntry):
             **kwargs:
                 Additional kwargs to pass to
                 ``pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction``
-                (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``).
+                (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
+                ``defect_frac_coords``).
 
         Returns:
             ``utils.CorrectionResults`` (summary of the corrections applied and
@@ -468,6 +473,10 @@ class DefectEntry(thermo.DefectEntry):
         oxygen vacancies from high-throughput first-principles calculations" Yu
         Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba Phys. Rev.
         Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
+
+        The defect coordinates are taken as the relaxed defect site by default
+        (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
+        but this can be overridden with the ``defect_coords`` keyword argument.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):

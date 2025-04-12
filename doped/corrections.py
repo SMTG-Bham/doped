@@ -151,6 +151,10 @@ def get_freysoldt_correction(
     correction is used, please cite Freysoldt's original paper;
     10.1103/PhysRevLett.102.016402.
 
+    The defect coordinates are taken as the relaxed defect site by default
+    (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
+    but this can be overridden with the ``defect_frac_coords`` keyword argument.
+
     Args:
         defect_entry:
             ``DefectEntry`` object for which to compute the FNV finite-size
@@ -199,7 +203,8 @@ def get_freysoldt_correction(
         **kwargs:
             Additional kwargs to pass to
             ``pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction``
-            (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``).
+            (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
+            ``defect_frac_coords``).
 
     Returns:
         ``CorrectionResults`` (summary of the corrections applied and
@@ -228,9 +233,9 @@ def get_freysoldt_correction(
         defect_locpot=defect_locpot,
         bulk_locpot=bulk_locpot,
         lattice=_get_defect_supercell(defect_entry).lattice if isinstance(defect_locpot, dict) else None,
-        defect_frac_coords=_get_defect_supercell_frac_coords(
-            defect_entry
-        ),  # _relaxed_ defect location in supercell
+        defect_frac_coords=kwargs.pop(
+            "defect_frac_coords", _get_defect_supercell_frac_coords(defect_entry)
+        ),  # _relaxed_ defect coords (except for vacancies)
         **kwargs,
     )
 
@@ -373,6 +378,10 @@ def get_kumagai_correction(
     ``defect_region_radius`` and/or ``excluded_indices`` to ensure that only
     sites in other layers are used for the sampling region (plateau) -- see
     example on doped docs Tips page.
+
+    The defect coordinates are taken as the relaxed defect site by default
+    (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
+    but this can be overridden with the ``defect_coords`` keyword argument.
 
     Args:
         defect_entry (DefectEntry):
@@ -580,8 +589,8 @@ def get_kumagai_correction(
         calc_results=defect_calc_results_for_eFNV,
         perfect_calc_results=bulk_calc_results_for_eFNV,
         dielectric_tensor=dielectric,
-        defect_coords=_get_defect_supercell_frac_coords(
-            defect_entry
+        defect_coords=kwargs.pop(
+            "defect_coords", _get_defect_supercell_frac_coords(defect_entry)
         ),  # _relaxed_ defect coords (except for vacancies)
         defect_region_radius=defect_region_radius,
         excluded_indices=excluded_indices,
