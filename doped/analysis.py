@@ -102,7 +102,7 @@ _aniso_dielectric_but_using_locpot_warning = (
 )
 
 
-def _convert_dielectric_to_tensor(dielectric):
+def _convert_dielectric_to_tensor(dielectric: float | np.ndarray | list) -> np.ndarray:
     # check if dielectric in required 3x3 matrix format
     if not isinstance(dielectric, float | int):
         dielectric = np.array(dielectric)
@@ -118,6 +118,17 @@ def _convert_dielectric_to_tensor(dielectric):
         dielectric = np.eye(3) * dielectric
 
     return dielectric
+
+
+def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
+    aniso_dielectric: np.ndarray | list,
+) -> float:
+    """
+    Convert an anisotropic dielectric tensor to the equivalent isotropic
+    dielectric constant using the harmonic mean (closest physically reasonable
+    choice for finite-size charge corrections).
+    """
+    return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
 
 
 def check_and_set_defect_entry_name(
@@ -2239,11 +2250,6 @@ class DefectParser:
             return any(
                 filename.lower() in folder_filename.lower() for folder_filename in os.listdir(folder)
             )
-
-        def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
-            aniso_dielectric,
-        ):
-            return 3 / sum(1 / diagonal_elt for diagonal_elt in np.diag(aniso_dielectric))
 
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
         isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
