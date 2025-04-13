@@ -288,7 +288,10 @@ class DefectDictSetTest(unittest.TestCase):
         else:
             assert dds.kpoints.kpts == kpt
         if _potcars_available():
-            assert dds.incar["NELECT"] == nelect
+            if dds.charge_state != 0:
+                assert dds.incar["NELECT"] == nelect
+            else:
+                assert "NELECT" not in dds.incar
             assert dds.incar["NUPDOWN"] == nupdown
 
     def test_neutral_defect_dict_set(self):
@@ -509,11 +512,12 @@ class DefectDictSetTest(unittest.TestCase):
             ):
                 dds_incar_without_comments["KPAR"] = int(dds_incar_without_comments["KPAR"][0])
             dds_incar_without_comments.pop(next(k for k in dds.incar if k.startswith("#")))
-            assert written_incar == dds_incar_without_comments
+            assert written_incar == dds_incar_without_comments, "Written INCAR does not match dds.incar"
 
             with open(f"{output_path}/INCAR") as f:
                 incar_lines = f.readlines()
-            print(incar_lines)
+            print(f"{output_path}/INCAR:", incar_lines)
+            print("Testing comment strings")
             for comment_string in [
                 "# MAY WANT TO CHANGE NCORE, KPAR, AEXX, ENCUT",
                 "needed if using the kumagai-oba",
@@ -521,6 +525,7 @@ class DefectDictSetTest(unittest.TestCase):
             ]:
                 assert any(comment_string in line for line in incar_lines)
 
+            print("Testing ALGO")
             if dds.incar.get("ALGO", "normal").lower() == "normal":  # ALGO = Normal default, has comment
                 assert any(
                     "change to all if zhegv, fexcp/f or zbrent, or poor electronic convergence" in line

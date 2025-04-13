@@ -873,7 +873,7 @@ def get_site_mapping_indices(
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
     defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
-    warning should be thrown anyway during parsing). Currently this function
+    warning should be thrown anyway during parsing). Currently, this function
     is only used for analysing site displacements in the ``displacements`` module
     so this is fine (user will already have been warned at this point if there is a
     possible mismatch).
@@ -993,7 +993,7 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
     defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
-    warning should be thrown anyway during parsing). Currently this function
+    warning should be thrown anyway during parsing). Currently, this function
     is no longer used, but if it is reintroduced at any point, this point should
     be noted!
 
