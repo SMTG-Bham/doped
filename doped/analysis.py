@@ -283,6 +283,20 @@ def defect_from_structures(
         check_atom_mapping_far_from_defect(
             bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords
         )
+        # Note: This function checks (and warns, if necessary) for large mismatches between defect and bulk
+        # supercells, where a common case is a symmetry-equivalent bulk supercell but with a different
+        # basis/definition for the atomic positions (discussion:
+        # doped.readthedocs.io/en/latest/Troubleshooting.html#mis-matching-bulk-and-defect-supercells )
+        # In theory, we could use orient_s2_like_s1 with allow_subset to shift the defect cell to match
+        # the (different definition) bulk cell, tracking the site matches, and accounting for the site
+        # matches properly with the charge corrections. But, beyond being a lot of work to allow the
+        # unnecessary (and usually easily fixed) case of mismatching supercells, which can also lead to
+        # other issues, it would require different definitions of 'defect supercell sites' (e.g. for a
+        # vacancy with a mismatching supercell definition, the supercell site should be the exact atom site
+        # in the bulk supercell, but this is now entirely different from the defect supercell). Also, the
+        # choice of matching orientation for the bulk supercell (and thus defect site) can become arbitrary
+        # in these situations, where there are many possible defect cell translations etc which match the
+        # bulk cell...
 
     if unrelaxed_defect_structure:
         if defect_type == "interstitial":
