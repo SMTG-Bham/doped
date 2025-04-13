@@ -13,7 +13,7 @@ from functools import lru_cache
 
 import numpy as np
 from numpy.typing import NDArray
-from pymatgen.analysis.defects.generators import VacancyGenerator, _element_str
+from pymatgen.analysis.defects.generators import VacancyGenerator
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core.composition import Composition, Element, Species
@@ -642,7 +642,7 @@ class DopedVacancyGenerator(VacancyGenerator):
         """
         # core difference is the removal of unnecessary `remove_oxidation_states` calls
         structure = get_valid_magmom_struct(structure)
-        all_species = {*map(_element_str, structure.composition.elements)}
+        all_species = {elt.symbol for elt in structure.composition.elements}
         rm_species = all_species if rm_species is None else {*map(str, rm_species)}
 
         if not set(rm_species).issubset(all_species):
@@ -654,7 +654,7 @@ class DopedVacancyGenerator(VacancyGenerator):
         sym_struct = sga.get_symmetrized_structure()
         for site_group in sym_struct.equivalent_sites:
             site = site_group[0]
-            if _element_str(site.specie) in rm_species:
+            if site.specie.symbol in rm_species:
                 yield Vacancy(
                     structure=structure,  # note that we no longer remove oxi states here! or in get_sga
                     site=site,

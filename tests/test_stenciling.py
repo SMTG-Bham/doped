@@ -73,6 +73,7 @@ class DefectStencilingTest(unittest.TestCase):
         # TODO: Once tests setup, should look at using `LinearAssignment` in
         #  `_stencil_target_cell_from_big_cell`; more efficient, robust, and then easier to manage with
         #  consistency with other parts of the code
+        # TODO: Useful test case could be trying to stencil split vacancies in new supercells...
 
     def test_Se_20_Å_supercell(self):
         """

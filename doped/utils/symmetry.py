@@ -2696,7 +2696,7 @@ def get_interstitial_site_and_orientational_degeneracy(
     Get the combined site and orientational degeneracy of an interstitial
     defect entry.
 
-    The standard approach of using ``_get_equiv_sites()`` for interstitial site
+    The standard approach of using ``get_equiv_sites()`` for interstitial site
     multiplicity and then ``point_symmetry_from_defect_entry()`` &
     ``get_orientational_degeneracy`` for symmetry/orientational degeneracy is
     preferred (as used in the ``DefectParser`` code), but alternatively this
