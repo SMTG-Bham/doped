@@ -29,7 +29,9 @@ class ComplexDefectTest(unittest.TestCase):
         self.data_dir = os.path.join(os.path.dirname(__file__), "data")
         self.R3c_Ga2O3 = Structure.from_file(os.path.join(self.data_dir, "Ga2O3_R3c_POSCAR"))
         self.Ga2O3_defect_gen = DefectsGenerator(self.R3c_Ga2O3, extrinsic="Se")
-        self.Ga2O3_candidate_split_vacs = self.Ga2O3_defect_gen.get_candidate_split_vacancies("Ga")
+        self.Ga2O3_candidate_split_vacs = self.Ga2O3_defect_gen.get_candidate_split_vacancies_for_element(
+            "Ga"
+        )
         # self.Ga2O3_C3i_split_vac_dict = next(iter(  # TODO
         #     [vac_dict for vac_dict in self.Ga2O3_candidate_split_vacs.values() if
         #      vac_dict["VIV_dist_key"] == '4.63_3.60' and vac_dict["VIV_bond_angle_degrees"] == 73.627]))
@@ -72,7 +74,8 @@ class ComplexDefectTest(unittest.TestCase):
 
     # def test_Ga2O3_generate_complex_from_defect_sites(self):
     #     """
-    #     Test the ``generate_complex_from_defect_sites`` function, using
-    #     R-3c Ga2O3 as an example case.
+    #     Test the ``generate_complex_from_defect_sites`` function, using R-3c
+    #     Ga2O3 as an example case.
     #     """
+    #     # TODO
     #     self.Ga2O3_defect_gen

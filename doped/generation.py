@@ -41,6 +41,7 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
+    _get_single_valence_oxi_states,
     doped_defect_from_pmg_defect,
     guess_and_set_oxi_states_with_timeout,
 )
@@ -2323,12 +2324,143 @@ class DefectsGenerator(MSONable):
         """
         return loadfn(filename)
 
-    def get_candidate_split_vacancies(
+    # TODO: Use check like this to determine whether to call this function in default DefectsGenerator
+    #  workflow
+    # if self.kwargs.get("skip_split_vacancies", False):
+    #     print(
+    #         "Skipping split vacancies as 'skip_split_vacancies' is set to True in kwargs."
+    #     )
+    #     return False
+    # TODO: Should also allow kwarg to give in tolerance of relative electrostatic energy for including
+    #  candidate split vacancies
+    # TODO: Also allow kwarg to control anion split vacancy generation (but off by default as we expect
+    #  a lower prevalence rate?)
+    def get_split_vacancies(self, verbose: bool = True):  # TODO: Use verbose = False in DefectsGen
+        """
+        Todo:
+        Note that this function requires the bulk oxidation states to be set
+        (in the ``DefectsGenerator._bulk_oxi_states`` attribute), which is
+        done automatically in ``DefectsGenerator`` initialisation when oxidation
+        states can be successfully guessed. Additionally, this function assumes
+        single oxidation states for each element in the bulk structure (i.e.
+        does not account for any mixed valence).
+        """
+        if not self._bulk_oxi_states:
+            if verbose:
+                warnings.warn(
+                    "No oxidation states determined for bulk structure, which is required for candidate "
+                    "low-energy split vacancy identification (via electrostatic analysis)!"
+                )
+            return None
+
+        single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
+        cations = {elt for elt, oxi in single_valence_oxi_states.items() if oxi > 0}
+        if not cations:  # TODO: And no split anion vacancy allowed
+            if verbose:
+                warnings.warn(
+                    "No cations found in host structure, skipping (cation) split vacancy identification!"
+                )
+            return None
+
+        # try from database, otherwise print info message and try from electrostatics
+        split_vacancies = self.get_split_vacancies_from_database(
+            verbose="Will use electrostatic analysis to check for candidate low-energy split vacancies. "
+            "Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
+        )
+        if split_vacancies:
+            return split_vacancies
+
+        return self.get_split_vacancies_from_electrostatics()
+
+    def get_split_vacancies_from_database(self, verbose: bool | str = False):
+        """
+        TODO.
+        """
+        raise NotImplementedError("Not implemented yet.")
+
+    def get_split_vacancies_from_electrostatics(self, relative_electrostatic_energy_tol: float = 0.1):
+        """
+        Get candidate split vacancies from electrostatics analysis.
+        """
+        single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
+        bulk_supercell_w_oxi_states = self.bulk_supercell.copy()
+        bulk_supercell_w_oxi_states.add_oxidation_state_by_element(single_valence_oxi_states)
+        # bulk_supercell_es_energy = get_es_energy(bulk_supercell_w_oxi_states)
+        cations = {elt for elt in single_valence_oxi_states if single_valence_oxi_states[elt] > 0}
+
+        def estimate_ES_time(num_candidates, cell_size):
+            """
+            Estimated electrostatic estimation compute time per process.
+
+            From fitting and testing with/without multiprocessing over
+            different sizes / compositions, on a Macbook Pro 2021. Quadratic as
+            expected.
+            """
+            return 1.7e-5 * num_candidates * cell_size**2
+
+        for cation in cations:
+            candidate_split_vacancies: dict[frozenset[float], dict] = {}
+            if self.kwargs.get("dist_tol"):
+                dist_tol = self.kwargs["dist_tol"]
+            else:
+                dist_tol = 5
+                while (
+                    not candidate_split_vacancies
+                    or estimate_ES_time(len(candidate_split_vacancies), self.bulk_supercell.num_sites)
+                    / (4 * 60)
+                    > 5  # will be >5 mins with 4 processes, reduce search space (for v low symmetry cases)
+                ) and dist_tol > 0:
+                    try:
+                        candidate_split_vacancies = self.get_candidate_split_vacancies_for_element(
+                            cation, dist_tol=dist_tol
+                        )
+                    except Exception as exc:
+                        print(f"Error generating split vacancies for {cation}: {exc}")
+                        break
+                    dist_tol -= 0.5
+
+                # TODO: Here print dist_tol to be used, and that it can be set by user if wanted
+
+            # if not candidate_split_vacancies:
+            #     print(f"No candidate split vacancies found for {cation} in {formula}")
+            #     dumpfn({}, f"outputs/{formula}_skipped_{formatted_date}_{task_id}_{ntasks}.json.gz")
+            #     continue
+            # ...
+
+        #
+        #     # candidate_split_vacancies = {energy: subdict for energy, subdict in
+        #     candidate_split_vacancies.items()
+        #     # if subdict["v1i_dist"]**2 + subdict["v2i_dist"]**2 <= 36} # for efficiency
+        #     # tested, adding this constraint only speeds up by ~50%, not worth it. Can later check if our
+        #     initial screens only gave lower energy split vacancies for distances less than this.
+        #
+        #     if verbose:
+        #         print(
+        #             f"{len(candidate_split_vacancies)} candidate split vacancies found for {cation},
+        #             of which {len({v['short_name'] for v in candidate_split_vacancies.values()})} unique
+        #             short-names"
+        #         )
+        #
+        #     vacs = [
+        #         entry
+        #         for entry in defect_gen.values()
+        #         if entry.name.startswith(f"v_{cation}_")
+        #     ]
+        #     fully_ionised_charge_state = min([entry.charge_state for entry in vacs])  # most negative
+        #     fully_ionised_vacs = [
+        #         entry for entry in vacs if entry.charge_state == fully_ionised_charge_state
+        #     ]
+        #     if verbose:
+        #         print(
+        #             f"{len(fully_ionised_vacs)} fully-ionised single {cation} vacancies found"
+        #         )
+
+    def get_candidate_split_vacancies_for_element(
         self,
         element: str,
         dist_tol: float = 5.0,
         show_pbar: bool = True,
-    ) -> dict:
+    ) -> dict[frozenset[float], dict]:
         """
         Generate inequivalent split vacancy configurations for a given element,
         with a maximum vacancy-interstitial distance of ``dist_tol`` Å.
@@ -2384,7 +2516,8 @@ class DefectsGenerator(MSONable):
                 f"generation."
             )
 
-        candidate_split_vacancies = {}  # dict, using VIV dists as keys to avoid unwanted duplicates
+        # dict, using VIV dists as keys to avoid unwanted duplicates:
+        candidate_split_vacancies: dict[frozenset[float], dict] = {}
         defect_init_kwargs = {
             "oxi_state": 0,
             "multiplicity": 1,
@@ -2392,7 +2525,9 @@ class DefectsGenerator(MSONable):
         doped_vacancy_generator = DopedVacancyGenerator()
 
         if show_pbar:
-            interstitial_entries = tqdm(interstitial_entries, desc="Generating split vacancies")
+            interstitial_entries = tqdm(
+                interstitial_entries, desc=f"Generating split vacancies for {element}..."
+            )
 
         for interstitial_entry in interstitial_entries:
             assert interstitial_entry.defect_supercell_site is not None  # supercell site exists
