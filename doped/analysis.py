@@ -1511,6 +1511,7 @@ class DefectsParser:
         check_compatibility: bool = True,
         bulk_dos: FermiDos | None = None,
         skip_dos_check: bool = False,
+        **kwargs,
     ) -> DefectThermodynamics:
         r"""
         Generates a ``DefectThermodynamics`` object from the parsed
@@ -1620,9 +1621,13 @@ class DefectsParser:
                 https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
                 (Default: None)
             skip_dos_check (bool):
-                Whether to skip the warning about the DOS VBM differing from the defect
-                entries VBM by >0.05 eV. Should only be used when the reason for this
-                difference is known/acceptable. (Default: False)
+                Whether to skip the warning about the DOS VBM differing from
+                the defect entries VBM by >0.05 eV. Should only be used when
+                the reason for this difference is known/acceptable.
+                (Default: False)
+            **kwargs:
+                Additional keyword arguments to pass to the
+                ``DefectThermodynamics`` constructor.
 
         Returns:
             ``doped`` ``DefectThermodynamics`` object
@@ -1644,6 +1649,7 @@ class DefectsParser:
             check_compatibility=check_compatibility,
             bulk_dos=bulk_dos,
             skip_dos_check=skip_dos_check,
+            **kwargs,
         )
 
     def __repr__(self):
