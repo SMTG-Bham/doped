@@ -1,7 +1,7 @@
 """
-``doped`` is a python package for managing solid-state defect calculations, with
-functionality to generate defect structures and relevant competing phases (for
-chemical potentials), interface with ShakeNBreak
+``doped`` is a python package for managing solid-state defect calculations,
+with functionality to generate defect structures and relevant competing phases
+(for chemical potentials), interface with ShakeNBreak
 (https://shakenbreak.readthedocs.io) for defect structure-searching (see
 https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
@@ -104,7 +104,8 @@ def pool_manager(processes: int | None = None):
     message when ``RuntimeError``\s are raised ``multiprocessing`` within
     ``doped`` is used in a python script.
 
-    See https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts
+    See
+    https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts
 
     Args:
         processes (int | None):

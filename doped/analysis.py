@@ -1,10 +1,10 @@
 """
 Code to analyse VASP defect calculations.
 
-These functions are built from a combination of useful modules from ``pymatgen``,
-alongside substantial modification, in the efforts of making an efficient,
-user-friendly package for managing and analysing defect calculations, with
-publication-quality outputs.
+These functions are built from a combination of useful modules from
+``pymatgen``, alongside substantial modification, in the efforts of making an
+efficient, user-friendly package for managing and analysing defect
+calculations, with publication-quality outputs.
 """
 
 import contextlib
@@ -127,7 +127,7 @@ def check_and_set_defect_entry_name(
     Check that ``possible_defect_name`` is a recognised format by doped (i.e.
     in the format ``"{defect_name}_{optional_site_info}_{charge_state}"``).
 
-    If the DefectEntry.name attribute is not defined or does not end with the
+    If the ``DefectEntry.name`` attribute is not defined or does not end with
     charge state, then the entry will be renamed with the doped default name
     for the `unrelaxed` defect (i.e. using the point symmetry of the defect
     site in the bulk cell).
@@ -189,8 +189,9 @@ def defect_from_structures(
     - defect site index in the defect supercell
     - bulk site index (index of defect site in bulk supercell)
     - guessed initial defect structure (before relaxation)
-    - 'unrelaxed defect structure' (also before relaxation, but with interstitials at their
-      final `relaxed` positions, and all bulk atoms at their unrelaxed positions).
+    - 'unrelaxed defect structure' (also before relaxation, but with
+      interstitials at their final `relaxed` positions, and all bulk atoms at
+      their unrelaxed positions).
 
     Args:
         bulk_supercell (Structure):
@@ -230,11 +231,12 @@ def defect_from_structures(
         If ``return_all_info`` is True, then also:
 
         defect_site (Site):
-            pymatgen Site object of the `relaxed` defect site in the defect supercell.
+            pymatgen ``Site`` object of the `relaxed` defect site in the defect
+            supercell.
         defect_site_in_bulk (Site):
-            pymatgen Site object of the defect site in the bulk supercell
-            (i.e. unrelaxed vacancy/substitution site, or final `relaxed` interstitial
-            site for interstitials).
+            pymatgen ``Site`` object of the defect site in the bulk supercell
+            (i.e. unrelaxed vacancy/substitution site, or final `relaxed`
+            interstitial site for interstitials).
         defect_site_index (int):
             index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
@@ -373,20 +375,21 @@ def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
 
     This is achieved by computing cosine dissimilarities between site SOAP
     vectors (and the mean SOAP vectors for each species) and then determining
-    the centre of mass of sites, weighted by the squared cosine dissimilarities.
-    For accurate defect site determination, the ``defect_from_structure``
-    function (or underlying code) is preferred. These coordinates are unlikely
-    to _directly_ match the defect position (especially in the presence of random
-    noise), but should provide a pretty good estimate in most cases. If the
-    defect is an extrinsic interstitial/substitution, then this will identify
-    the exact defect site.
+    the centre of mass of sites, weighted by the squared cosine
+    dissimilarities. For accurate defect site determination, the
+    ``defect_from_structure`` function (or underlying code) is preferred. These
+    coordinates are unlikely to _directly_ match the defect position
+    (especially in the presence of random noise), but should provide a pretty
+    good estimate in most cases. If the defect is an extrinsic interstitial /
+    substitution, then this will identify the exact defect site.
 
     Args:
         defect_supercell (Structure):
             Defect supercell structure.
 
     Returns:
-        np.ndarray[float]: Guessed position of the defect in **Cartesian** coordinates.
+        np.ndarray[float]:
+            Guessed position of the defect in **Cartesian** coordinates.
     """
 
     # Note from profiling: This function is pretty fast (e.g. ~25 s for ~1000 frames of a ~100-atom
@@ -487,67 +490,74 @@ def defect_entry_from_paths(
     By default, the ``DefectEntry.name`` attribute (later used to label the
     defects in plots) is set to the defect_path folder name (if it is a
     recognised defect name), else it is set to the default ``doped`` name for
-    that defect (using the estimated `unrelaxed` defect structure, for the point
-    group and neighbour distances).
+    that defect (using the estimated `unrelaxed` defect structure, for the
+    point group and neighbour distances).
 
-    Note that the bulk and defect supercells should have the same definitions/basis
-    sets (for site-matching and finite-size charge corrections to work appropriately).
+    Note that the bulk and defect supercells should have the same definitions /
+    basis sets (for site-matching and finite-size charge corrections to work
+    appropriately).
 
     Args:
         defect_path (PathLike):
-            Path to defect supercell folder (containing at least vasprun.xml(.gz)).
+            Path to defect supercell folder (containing at least
+            ``vasprun.xml(.gz)``).
         bulk_path (PathLike):
-            Path to bulk supercell folder (containing at least vasprun.xml(.gz)).
+            Path to bulk supercell folder (containing at least
+            ``vasprun.xml(.gz)``).
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
-            Total dielectric constant (ionic + static contributions), in the same xyz
-            Cartesian basis as the supercell calculations (likely but not necessarily
-            the same as the raw output of a VASP dielectric calculation, if an
-            oddly-defined primitive cell is used). If not provided, charge
-            corrections cannot be computed and so ``skip_corrections`` will be set to
-            ``True``.
-            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-            for information on calculating and converging the dielectric constant.
+            Total dielectric constant (ionic + static contributions), in the
+            same xyz Cartesian basis as the supercell calculations (likely but
+            not necessarily the same as the raw output of a VASP dielectric
+            calculation, if an oddly-defined primitive cell is used). If not
+            provided, charge corrections cannot be computed and so
+            ``skip_corrections`` will be set to ``True``. See
+            https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
+            for information on calculating and converging the dielectric
+            constant.
         charge_state (int):
-            Charge state of defect. If not provided, will be automatically determined
-            from the defect calculation outputs.
+            Charge state of defect. If not provided, will be automatically
+            determined from the defect calculation outputs.
         initial_defect_structure_path (PathLike):
-            Path to the initial/unrelaxed defect structure. Only recommended for use
-            if structure matching with the relaxed defect structure(s) fails (rare).
-            Default is None.
+            Path to the initial/unrelaxed defect structure. Only recommended
+            for use if structure matching with the relaxed defect structure(s)
+            fails (rare). Default is ``None``.
         skip_corrections (bool):
-            Whether to skip the calculation and application of finite-size charge
-            corrections to the defect energy (not recommended in most cases).
-            Default = False.
+            Whether to skip the calculation and application of finite-size
+            charge corrections to the defect energy (not recommended in most
+            cases). Default is ``False``.
         error_tolerance (float):
-            If the estimated error in the defect charge correction, based on the
-            variance of the potential in the sampling region is greater than this
-            value (in eV), then a warning is raised. (default: 0.05 eV)
+            If the estimated error in the defect charge correction, based on
+            the variance of the potential in the sampling region is greater
+            than this value (in eV), then a warning is raised. Default is 0.05
+            eV.
         bulk_band_gap_vr (PathLike or Vasprun):
             Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
-            object, from which to determine the bulk band gap and band edge positions.
-            If the VBM/CBM occur at `k`-points which are not included in the bulk
-            supercell calculation, then this parameter should be used to provide the
-            output of a bulk bandstructure calculation so that these are correctly
-            determined.
-            Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
-            ``self.defect_entry.calculation_metadata`` to match the correct
-            (eigen)values.
-            If None, will use ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e.
-            the bulk supercell calculation output).
+            object, from which to determine the bulk band gap and band edge
+            positions. If the VBM/CBM occur at `k`-points which are not
+            included in the bulk supercell calculation, then this parameter
+            should be used to provide the output of a bulk bandstructure
+            calculation so that these are correctly determined.
+            Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"``
+            entries in ``self.defect_entry.calculation_metadata`` to match the
+            correct (eigen)values.
+            If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
+            (i.e. the bulk supercell calculation output).
 
-            Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
-            reference for the Fermi level values output by ``doped`` (as this VBM
-            eigenvalue is used as the zero reference), thus affecting the position of
-            the band edges in the defect formation energy plots and doping window /
-            dopability limit functions, and the reference of the reported Fermi levels.
+            Note that the ``"band_gap"`` and ``"vbm"`` values should only
+            affect the reference for the Fermi level values output by ``doped``
+            (as this VBM eigenvalue is used as the zero reference), thus
+            affecting the position of the band edges in the defect formation
+            energy plots and doping window / dopability limit functions, and
+            the reference of the reported Fermi levels.
         **kwargs:
             Keyword arguments to pass to ``DefectParser()`` methods
-            (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-            ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
-            including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-            ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``.
+            (``load_FNV_data()``, ``load_eFNV_data()``,
+            ``load_bulk_gap_data()``), ``point_symmetry_from_defect_entry()``
+            or ``defect_from_structures``, including ``bulk_locpot_dict``,
+            ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
+            ``symprec`` or ``oxi_state``.
 
-    Return:
+    Returns:
         Parsed ``DefectEntry`` object.
     """
     dp = DefectParser.from_paths(
@@ -585,23 +595,24 @@ class DefectsParser:
 
         Loops over calculation directories in ``output_path`` (likely the same
         ``output_path`` used with ``DefectsSet`` for file generation in
-        ``doped.vasp``) and parses the defect calculations into a dictionary of:
-        ``{defect_name: DefectEntry}``, where the ``defect_name`` is set to the
-        defect calculation folder name (`if it is a recognised defect name`),
-        else it is set to the default ``doped`` name for that defect (using the
-        estimated `unrelaxed` defect structure, for the point group and neighbour
-        distances). By default, searches for folders in ``output_path`` with
-        ``subfolder`` containing ``vasprun.xml(.gz)`` files, and tries to parse
-        them as ``DefectEntry``\s.
+        ``doped.vasp``) and parses the defect calculations into a dictionary
+        of: ``{defect_name: DefectEntry}``, where the ``defect_name`` is set to
+        the defect calculation folder name (`if it is a recognised defect
+        name`), else it is set to the default ``doped`` name for that defect
+        (using the estimated `unrelaxed` defect structure, for the point group
+        and neighbour distances). By default, searches for folders in
+        ``output_path`` with ``subfolder`` containing ``vasprun.xml(.gz)``
+        files, and tries to parse them as ``DefectEntry``\s.
 
-        By default, tries multiprocessing to speed up defect parsing, which can be
-        controlled with ``processes``. If parsing hangs, this may be due to memory
-        issues, in which case you should manually reduce ``processes`` (e.g. <=4).
+        By default, tries multiprocessing to speed up defect parsing, which can
+        be controlled with ``processes``. If parsing hangs, this may be due to
+        memory issues, in which case you should manually reduce ``processes``
+        (e.g. <=4).
 
         Defect charge states are automatically determined from the defect
-        calculation outputs if ``POTCAR``\s are set up with ``pymatgen`` (see docs
-        Installation page), or if that fails, using the defect folder name (must
-        end in "_+X" or "_-X" where +/-X is the defect charge state).
+        calculation outputs if ``POTCAR``\s are set up with ``pymatgen`` (see
+        docs Installation page), or if that fails, using the defect folder name
+        (must end in "_+X" or "_-X" where +/-X is the defect charge state).
 
         Uses the (single) ``DefectParser`` class to parse the individual defect
         calculations. Note that the bulk and defect supercells should have the
@@ -611,109 +622,120 @@ class DefectsParser:
         Args:
             output_path (PathLike):
                 Path to the output directory containing the defect calculation
-                folders (likely the same ``output_path`` used with ``DefectsSet``
-                for file generation in ``doped.vasp``). Default = current directory.
+                folders (likely the same ``output_path`` used with
+                ``DefectsSet`` for file generation in ``doped.vasp``).
+                Default is current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constant (ionic + static contributions), in the same
-                xyz Cartesian basis as the supercell calculations (likely but not
-                necessarily the same as the raw output of a VASP dielectric calculation,
-                if an oddly-defined primitive cell is used). If not provided, charge
-                corrections cannot be computed and so ``skip_corrections`` will be set
-                to ``True``.
+                Total dielectric constant (ionic + static contributions), in
+                the same xyz Cartesian basis as the supercell calculations
+                (likely but not necessarily the same as the raw output of a
+                VASP dielectric calculation, if an oddly-defined primitive cell
+                is used). If not provided, charge corrections cannot be
+                computed and so ``skip_corrections`` will be set to ``True``.
                 See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-                for information on calculating and converging the dielectric constant.
+                for information on calculating and converging the dielectric
+                constant.
             subfolder (PathLike):
-                Name of subfolder(s) within each defect calculation folder (in the
-                ``output_path`` directory) containing the VASP calculation files to
-                parse (e.g. ``vasp_ncl``, ``vasp_std``, ``vasp_gam`` etc.). If not
-                specified, ``doped`` checks first for ``vasp_ncl``, ``vasp_std``,
-                ``vasp_gam`` subfolders with calculation outputs
-                (``vasprun.xml(.gz)`` files) and uses the highest level VASP type
-                (ncl > std > gam) found as ``subfolder``, otherwise uses the defect
-                calculation folder itself with no subfolder (set
-                ``subfolder = "."`` to enforce this).
+                Name of subfolder(s) within each defect calculation folder (in
+                the ``output_path`` directory) containing the VASP calculation
+                files to parse (e.g. ``vasp_ncl``, ``vasp_std``, ``vasp_gam``
+                etc.). If not specified, ``doped`` checks first for
+                ``vasp_ncl``, ``vasp_std``, ``vasp_gam`` subfolders with
+                calculation outputs (``vasprun.xml(.gz)`` files) and uses the
+                highest level VASP type (ncl > std > gam) found as
+                ``subfolder``, otherwise uses the defect calculation folder
+                itself with no subfolder (set ``subfolder = "."`` to enforce
+                this).
             bulk_path (PathLike):
                 Path to bulk supercell reference calculation folder. If not
                 specified, searches for folder with name "X_bulk" in the
-                ``output_path`` directory (matching the default ``doped`` name for
-                the bulk supercell reference folder). Can be the full path, or the
-                relative path from the ``output_path`` directory.
+                ``output_path`` directory (matching the default ``doped`` name
+                for the bulk supercell reference folder). Can be the full path,
+                or the relative path from the ``output_path`` directory.
             skip_corrections (bool):
-                Whether to skip the calculation & application of finite-size charge
-                corrections to the defect energies (not recommended in most cases).
-                Default = False.
+                Whether to skip the calculation & application of finite-size
+                charge corrections to the defect energies (not recommended in
+                most cases). Default is ``False``.
             error_tolerance (float):
                 If the estimated error in any charge correction, based on the
-                variance of the potential in the sampling region, is greater than
-                this value (in eV), then a warning is raised. Default = 0.05 eV.
-                Note that this warning is skipped for defects which are predicted to
-                not be stable for any Fermi level in the band gap (based on all
-                parsed defects here), or are predicted to be shallow (perturbed host)
-                states according to eigenvalue analysis and only be stable for Fermi
-                levels within a small window to a band edge (taken as the smaller of
-                ``error_tolerance`` or 10% of the band gap, by default, or can be
-                set by a ``shallow_charge_stability_tolerance = X`` keyword argument).
+                variance of the potential in the sampling region, is greater
+                than this value (in eV), then a warning is raised. Default is
+                0.05 eV. Note that this warning is skipped for defects which
+                are predicted to not be stable for any Fermi level in the band
+                gap (based on all parsed defects here), or are predicted to be
+                shallow (perturbed host) states according to eigenvalue
+                analysis and only be stable for Fermi levels within a small
+                window to a band edge (taken as the smaller of
+                ``error_tolerance`` or 10% of the band gap, by default, or can
+                be set by a ``shallow_charge_stability_tolerance = X`` keyword
+                argument).
             bulk_band_gap_vr (PathLike or Vasprun):
-                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
-                object, from which to determine the bulk band gap and band edge
-                positions. If the VBM/CBM occur at `k`-points which are not included
-                in the bulk supercell calculation, then this parameter should be used
-                to provide the output of a bulk bandstructure calculation so that
-                these are correctly determined.
-                Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
-                ``self.defect_entry.calculation_metadata`` to match the correct
-                (eigen)values.
-                If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
+                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
+                ``Vasprun`` object, from which to determine the bulk band gap
+                and band edge positions. If the VBM/CBM occur at `k`-points
+                which are not included in the bulk supercell calculation, then
+                this parameter should be used to provide the output of a bulk
+                bandstructure calculation so that these are correctly
+                determined. Alternatively, you can edit the ``"band_gap"`` and
+                ``"vbm"`` entries in ``self.defect_entry.calculation_metadata``
+                to match the correct (eigen)values. If ``None``, will use
+                ``DefectEntry.calculation_metadata["bulk_path"]``
                 (i.e. the bulk supercell calculation output).
 
-                Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
-                reference for the Fermi level values output by ``doped`` (as this VBM
-                eigenvalue is used as the zero reference), thus affecting the position
-                of the band edges in the defect formation energy plots and doping
-                window / dopability limit functions, and the reference of the reported
+                Note that the ``"band_gap"`` and ``"vbm"`` values should only
+                affect the reference for the Fermi level values output by
+                ``doped`` (as this VBM eigenvalue is used as the zero
+                reference), thus affecting the position of the band edges in
+                the defect formation energy plots and doping window /
+                dopability limit functions, and the reference of the reported
                 Fermi levels.
             processes (int):
-                Number of processes to use for multiprocessing for expedited parsing.
-                If not set, defaults to one less than the number of CPUs available.
-                Set to 1 for no multiprocessing.
+                Number of processes to use for multiprocessing for expedited
+                parsing. If not set, defaults to one less than the number of
+                CPUs available. Set to 1 for no multiprocessing.
             json_filename (PathLike):
                 Filename to save the parsed defect entries dict
                 (``DefectsParser.defect_dict``) to in ``output_path``, to avoid
-                having to re-parse defects when later analysing further and aiding
-                calculation provenance. Can be reloaded using the ``loadfn`` function
-                from ``monty.serialization`` (and then input to ``DefectThermodynamics``
-                etc.). If ``None`` (default), set as
-                ``{Host Chemical Formula}_defect_dict.json.gz``.
+                having to re-parse defects when later analysing further and
+                aiding calculation provenance. Can be reloaded using the
+                ``loadfn`` function from ``monty.serialization`` (and then
+                input to ``DefectThermodynamics`` etc.). If ``None`` (default),
+                set as ``{Host Chemical Formula}_defect_dict.json.gz``.
                 If ``False``, no json file is saved.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & orbitals from the bulk and
-                defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
-                then be used with no further parsing). Will initially try to load orbital
-                projections from ``vasprun.xml(.gz)`` files (slightly slower but more
-                accurate), or failing that from ``PROCAR(.gz)`` files if present in the
-                bulk/defect directories. Parsing this data can increase total parsing time
-                by anywhere from ~5-25%, so set to ``False`` if parsing speed is crucial.
-                Default is ``None``, which will attempt to load this data but with no
-                warning if it fails (otherwise if ``True`` a warning will be printed).
+                Whether to parse the projected eigenvalues & orbitals from the
+                bulk and defect calculations (so
+                ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
+                no further parsing). Will initially try to load orbital
+                projections from ``vasprun.xml(.gz)`` files (slightly slower
+                but more accurate), or failing that from ``PROCAR(.gz)`` files
+                if present in the bulk/defect directories. Parsing this data
+                can increase total parsing time by anywhere from ~5-25%, so set
+                to ``False`` if parsing speed is crucial.
+                Default is ``None``, which will attempt to load this data but
+                with no warning if it fails (otherwise if ``True`` a warning
+                will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
-                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``;
-                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``; or for controlling
-                shallow defect charge correction error warnings (see ``error_tolerance``
-                argument description) with ``shallow_charge_stability_tolerance``.
-                Primarily used by ``DefectsParser`` to expedite parsing by avoiding
-                reloading bulk data for each defect.
+                (``load_FNV_data()``, ``load_eFNV_data()``,
+                ``load_bulk_gap_data()``),
+                ``point_symmetry_from_defect_entry()`` or
+                ``defect_from_structures``; including ``bulk_locpot_dict``,
+                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
+                ``symprec`` or ``oxi_state``; or for controlling shallow defect
+                charge correction error warnings (see ``error_tolerance``
+                description) with ``shallow_charge_stability_tolerance``.
+                Primarily used by ``DefectsParser`` to expedite parsing by
+                avoiding reloading bulk data for each defect.
 
         Attributes:
             defect_dict (dict):
                 Dictionary of parsed defect calculations in the format:
-                ``{"defect_name": DefectEntry}`` where the defect_name is set to the
-                defect calculation folder name (`if it is a recognised defect name`),
-                else it is set to the default ``doped`` name for that defect (using
-                the estimated `unrelaxed` defect structure, for the point group and
-                neighbour distances).
+                ``{"defect_name": DefectEntry}`` where the defect_name is set
+                to the defect calculation folder name (`if it is a recognised
+                defect name`), else it is set to the default ``doped`` name for
+                that defect (using the estimated `unrelaxed` defect structure,
+                for the point group and neighbour distances).
         """
         self.output_path = output_path
         self.dielectric = dielectric
@@ -1496,90 +1518,105 @@ class DefectsParser:
         used to analyse and plot the defect thermodynamics (formation energies,
         transition levels, concentrations etc).
 
-        Note that the ``DefectEntry.name`` attributes (rather than the ``defect_name``
-        key in the ``defect_dict``) are used to label the defects in plots.
+        Note that the ``DefectEntry.name`` attributes (rather than the
+        ``defect_name`` key in the ``defect_dict``) are used to label the
+        defects in plots.
 
         See the ``DefectThermodynamics`` and accompanying methods docstrings in
         ``doped.thermodynamics`` for more.
 
         Args:
             chempots (dict):
-                Dictionary of chemical potentials to use for calculating the defect
-                formation energies. This can have the form of
-                ``{"limits": [{'limit': [chempot_dict]}]}`` (the format generated by
-                ``doped``\'s chemical potential parsing functions (see tutorials)) which
-                allows easy analysis over a range of chemical potentials - where limit(s)
-                (chemical potential limit(s)) to analyse/plot can later be chosen using
-                the ``limits`` argument.
+                Dictionary of chemical potentials to use for calculating the
+                defect formation energies. This can have the form of
+                ``{"limits": [{'limit': [chempot_dict]}]}`` (the format
+                generated by ``doped``\'s chemical potential parsing functions
+                (see tutorials)) which allows easy analysis over a range of
+                chemical potentials -- where limit(s) (chemical potential
+                limit(s)) to analyse/plot can later be chosen using the
+                ``limits`` argument.
 
-                Alternatively this can be a dictionary of chemical potentials for a
-                single limit (limit), in the format: ``{element symbol: chemical potential}``.
-                If manually specifying chemical potentials this way, you can set the
-                ``el_refs`` option with the DFT reference energies of the elemental phases
-                in order to show the formal (relative) chemical potentials above the
-                formation energy plot, in which case it is the formal chemical potentials
-                (i.e. relative to the elemental references) that should be given here,
-                otherwise the absolute (DFT) chemical potentials should be given.
+                Alternatively this can be a dictionary of chemical potentials
+                for a single limit (limit), in the format:
+                ``{element symbol: chemical potential}``. If manually
+                specifying chemical potentials this way, you can set the
+                ``el_refs`` option with the DFT reference energies of the
+                elemental phases in order to show the formal (relative)
+                chemical potentials above the formation energy plot, in which
+                case it is the formal chemical potentials (i.e. relative to the
+                elemental references) that should be given here, otherwise the
+                absolute (DFT) chemical potentials should be given.
 
-                If ``None`` (default), sets all chemical potentials to zero. Chemical
-                potentials can also be supplied later in each analysis function.
-                (Default: None)
+                If ``None`` (default), sets all chemical potentials to zero.
+                Chemical potentials can also be supplied later in each analysis
+                function. (Default: None)
             el_refs (dict):
-                Dictionary of elemental reference energies for the chemical potentials
-                in the format:
-                ``{element symbol: reference energy}`` (to determine the formal chemical
-                potentials, when ``chempots`` has been manually specified as
-                ``{element symbol: chemical potential}``). Unnecessary if ``chempots`` is
-                provided in format generated by ``doped`` (see tutorials).
+                Dictionary of elemental reference energies for the chemical
+                potentials in the format:
+                ``{element symbol: reference energy}`` (to determine the formal
+                chemical potentials, when ``chempots`` has been manually
+                specified as ``{element symbol: chemical potential}``).
+                Unnecessary if ``chempots`` is provided in format generated by
+                ``doped`` (see tutorials).
 
-                If ``None`` (default), sets all elemental reference energies to zero. Reference
-                energies can also be supplied later in each analysis function, or set
-                using ``DefectThermodynamics.el_refs = ...`` (with the same input options).
+                If ``None`` (default), sets all elemental reference energies to
+                zero. Reference energies can also be supplied later in each
+                analysis function, or set using
+                ``DefectThermodynamics.el_refs = ...`` (with the same input
+                options).
             vbm (float):
-                VBM eigenvalue to use as Fermi level reference point for analysis.
-                If None (default), will use ``"vbm"`` from the ``calculation_metadata``
-                dict attributes of the parsed ``DefectEntry`` objects, which by default
-                is taken from the bulk supercell VBM (unless ``bulk_band_gap_vr`` is set
-                during parsing).
-                Note that ``vbm`` should only affect the reference for the Fermi level
-                values output by ``doped`` (as this VBM eigenvalue is used as the zero
-                reference), thus affecting the position of the band edges in the defect
-                formation energy plots and doping window / dopability limit functions,
-                and the reference of the reported Fermi levels.
+                VBM eigenvalue to use as Fermi level reference point for
+                analysis. If ``None`` (default), will use ``"vbm"`` from the
+                ``calculation_metadata`` dict attributes of the parsed
+                ``DefectEntry`` objects, which by default is taken from the
+                bulk supercell VBM (unless ``bulk_band_gap_vr`` is set during
+                parsing). Note that ``vbm`` should only affect the reference
+                for the Fermi level values output by ``doped`` (as this VBM
+                eigenvalue is used as the zero reference), thus affecting the
+                position of the band edges in the defect formation energy plots
+                and doping window / dopability limit functions, and the
+                reference of the reported Fermi levels.
             band_gap (float):
                 Band gap of the host, to use for analysis.
-                If ``None`` (default), will use "band_gap" from the calculation_metadata
-                dict attributes of the parsed DefectEntry objects.
+                If ``None`` (default), will use "band_gap" from the
+                ``calculation_metadata`` dict attributes of the parsed
+                ``DefectEntry`` objects.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
                 to be grouped together (for plotting, transition level analysis
-                and defect concentration calculations). For the most part, if the minimum
-                distance between equivalent defect sites is less than ``dist_tol``, then
-                they will be grouped together, otherwise treated as separate defects.
-                See ``plot()`` and ``get_fermi_level_and_concentrations()`` docstrings
-                for more information.
+                and defect concentration calculations). For the most part, if
+                the minimum distance between equivalent defect sites is less
+                than ``dist_tol``, then they will be grouped together,
+                otherwise treated as separate defects.
+                See ``plot()`` and ``get_fermi_level_and_concentrations()``
+                docstrings for more information.
                 (Default: 1.5)
             check_compatibility (bool):
-                Whether to check the compatibility of the bulk entry for each defect
-                entry (i.e. that all reference bulk energies are the same).
+                Whether to check the compatibility of the bulk entry for each
+                defect entry (i.e. that all reference bulk energies are the
+                same).
                 (Default: True)
             bulk_dos (FermiDos or Vasprun or PathLike):
-                ``pymatgen`` ``FermiDos`` for the bulk electronic density of states (DOS),
-                for calculating Fermi level positions and defect/carrier concentrations.
-                Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path to the
+                ``pymatgen`` ``FermiDos`` for the bulk electronic density of
+                states (DOS), for calculating Fermi level positions and
+                defect/carrier concentrations. Alternatively, can be a
+                ``pymatgen`` ``Vasprun`` object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
-                Can also be provided later when using ``get_equilibrium_fermi_level()``,
+                Can also be provided later when using
+                ``get_equilibrium_fermi_level()``,
                 ``get_fermi_level_and_concentrations`` etc, or set using
-                ``DefectThermodynamics.bulk_dos = ...`` (with the same input options).
+                ``DefectThermodynamics.bulk_dos = ...`` (with the same input
+                options).
 
-                Usually this is a static calculation with the `primitive` cell of the bulk
-                material, with relatively dense `k`-point sampling (especially for materials
-                with disperse band edges) to ensure an accurately-converged DOS and thus Fermi
-                level. Using large ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
-                are recommended for best convergence (wrt `k`-point sampling) in VASP.
-                Consistent functional settings should be used for the bulk DOS and defect
-                supercell calculations. See
+                Usually this is a static calculation with the `primitive` cell
+                of the bulk material, with relatively dense `k`-point sampling
+                (especially for materials with disperse band edges) to ensure
+                an accurately-converged DOS and thus Fermi level. Using large
+                ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
+                are recommended for best convergence (wrt `k`-point sampling)
+                in VASP. Consistent functional settings should be used for the
+                bulk DOS and defect supercell calculations. See
                 https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
                 (Default: None)
             skip_dos_check (bool):
@@ -1681,43 +1718,52 @@ class DefectParser:
         Create a ``DefectParser`` object, which has methods for parsing the
         results of defect supercell calculations.
 
-        Direct initialisation with ``DefectParser()`` is typically not recommended.
-        Rather ``DefectParser.from_paths()`` or ``defect_entry_from_paths()`` are
-        preferred as shown in the ``doped`` parsing tutorials.
+        Direct initialisation with ``DefectParser()`` is typically not
+        recommended. Rather ``DefectParser.from_paths()`` or
+        ``defect_entry_from_paths()`` are preferred as shown in the ``doped``
+        parsing tutorials.
 
         Args:
             defect_entry (DefectEntry):
                 doped ``DefectEntry``
             defect_vr (Vasprun):
-                ``pymatgen`` ``Vasprun`` object for the defect supercell calculation
+                ``pymatgen`` ``Vasprun`` object for the defect supercell
+                calculation.
             bulk_vr (Vasprun):
-                ``pymatgen`` ``Vasprun`` object for the reference bulk supercell calculation
+                ``pymatgen`` ``Vasprun`` object for the reference bulk
+                supercell calculation.
             skip_corrections (bool):
-                Whether to skip calculation and application of finite-size charge
-                corrections to the defect energy (not recommended in most cases).
-                Default = False.
+                Whether to skip calculation and application of finite-size
+                charge corrections to the defect energy (not recommended in
+                most cases). Default is ``False``.
             error_tolerance (float):
-                If the estimated error in the defect charge correction, based on the
-                variance of the potential in the sampling region is greater than this
-                value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction, based
+                on the variance of the potential in the sampling region is
+                greater than this value (in eV), then a warning is raised.
+                Default is 0.05 eV.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & orbitals from the bulk and
-                defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
-                then be used with no further parsing). Will initially try to load orbital
-                projections from ``vasprun.xml(.gz)`` files (slightly slower but more
-                accurate), or failing that from ``PROCAR(.gz)`` files if present in the
-                bulk/defect directories. Parsing this data can increase total parsing time
-                by anywhere from ~5-25%, so set to ``False`` if parsing speed is crucial.
-                Default is ``None``, which will attempt to load this data but with no
-                warning if it fails (otherwise if ``True`` a warning will be printed).
+                Whether to parse the projected eigenvalues & orbitals from the
+                bulk and defect calculations (so
+                ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
+                no further parsing). Will initially try to load orbital
+                projections from ``vasprun.xml(.gz)`` files (slightly slower
+                but more accurate), or failing that from ``PROCAR(.gz)`` files
+                if present in the bulk/defect directories. Parsing this data
+                can increase total parsing time by anywhere from ~5-25%, so set
+                to ``False`` if parsing speed is crucial.
+                Default is ``None``, which will attempt to load this data but
+                with no warning if it fails (otherwise if ``True`` a warning
+                will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
-                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
-                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
-                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
-                for each defect.
+                (``load_FNV_data()``, ``load_eFNV_data()``,
+                ``load_bulk_gap_data()``),
+                ``point_symmetry_from_defect_entry()`` or
+                ``defect_from_structures``, including ``bulk_locpot_dict``,
+                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
+                ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading
+                bulk data for each defect.
         """
         self.defect_entry: DefectEntry = defect_entry
         self.defect_vr = defect_vr
@@ -1752,84 +1798,97 @@ class DefectParser:
         that defect (using the estimated `unrelaxed` defect structure, for the
         point group and neighbour distances).
 
-        Note that the bulk and defect supercells should have the same definitions/basis
-        sets (for site-matching and finite-size charge corrections to work appropriately).
+        Note that the bulk and defect supercells should have the same
+        definitions/basis sets (for site-matching and finite-size charge
+        corrections to work appropriately).
 
         Args:
             defect_path (PathLike):
-                Path to defect supercell folder (containing at least ``vasprun.xml(.gz)``).
+                Path to defect supercell folder (containing at least
+                ``vasprun.xml(.gz)``).
             bulk_path (PathLike):
-                Path to bulk supercell folder (containing at least ``vasprun.xml(.gz)``).
-                Not required if ``bulk_vr`` is provided.
+                Path to bulk supercell folder (containing at least
+                ``vasprun.xml(.gz)``). Not required if ``bulk_vr`` is provided.
             bulk_vr (Vasprun):
-                ``pymatgen`` ``Vasprun`` object for the reference bulk supercell
-                calculation, if already loaded (can be supplied to expedite parsing).
-                Default is ``None``.
+                ``pymatgen`` ``Vasprun`` object for the reference bulk
+                supercell calculation, if already loaded (can be supplied to
+                expedite parsing). Default is ``None``.
             bulk_procar (Procar):
-                ``easyunfold``/``pymatgen`` ``Procar`` object, for the reference bulk
-                supercell calculation if already loaded (can be supplied to expedite
-                parsing). Default is ``None``.
+                ``easyunfold``/``pymatgen`` ``Procar`` object, for the
+                reference bulk supercell calculation if already loaded (can be
+                supplied to expedite parsing). Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
-                Total dielectric constant (ionic + static contributions), in the same xyz
-                Cartesian basis as the supercell calculations (likely but not necessarily
-                the same as the raw output of a VASP dielectric calculation, if an
-                oddly-defined primitive cell is used). If not provided, charge
-                corrections cannot be computed and so ``skip_corrections`` will be set to
-                ``True``.
+                Total dielectric constant (ionic + static contributions), in
+                the same xyz Cartesian basis as the supercell calculations
+                (likely but not necessarily the same as the raw output of a
+                VASP dielectric calculation, if an oddly-defined primitive cell
+                is used). If not provided, charge corrections cannot be
+                computed and so ``skip_corrections`` will be set to ``True``.
                 See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-                for information on calculating and converging the dielectric constant.
+                for information on calculating and converging the dielectric
+                constant.
             charge_state (int):
-                Charge state of defect. If not provided, will be automatically determined
-                from defect calculation outputs, or if that fails, using the defect folder
-                name (must end in "_+X" or "_-X" where +/-X is the defect charge state).
+                Charge state of defect. If not provided, will be automatically
+                determined from defect calculation outputs, or if that fails,
+                using the defect folder name (must end in "_+X" or "_-X" where
+                +/-X is the defect charge state).
             initial_defect_structure_path (PathLike):
-                Path to the initial/unrelaxed defect structure. Only recommended for use
-                if structure matching with the relaxed defect structure(s) fails (rare).
+                Path to the initial/unrelaxed defect structure. Only
+                recommended for use if structure matching with the relaxed
+                defect structure(s) fails (rare).
                 Default is ``None``.
             skip_corrections (bool):
-                Whether to skip the calculation and application of finite-size charge
-                corrections to the defect energy (not recommended in most cases).
-                Default = ``False``.
+                Whether to skip the calculation and application of finite-size
+                charge corrections to the defect energy (not recommended in
+                most cases). Default = ``False``.
             error_tolerance (float):
-                If the estimated error in the defect charge correction, based on the
-                variance of the potential in the sampling region, is greater than this
-                value (in eV), then a warning is raised. (default: 0.05 eV)
+                If the estimated error in the defect charge correction, based
+                on the variance of the potential in the sampling region, is
+                greater than this value (in eV), then a warning is raised.
+                Default is 0.05 eV.
             bulk_band_gap_vr (PathLike or Vasprun):
-                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
-                object, from which to determine the bulk band gap and band edge positions.
-                If the VBM/CBM occur at `k`-points which are not included in the bulk
-                supercell calculation, then this parameter should be used to provide the
-                output of a bulk bandstructure calculation so that these are correctly
-                determined.
-                Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
-                ``self.defect_entry.calculation_metadata`` to match the correct
-                (eigen)values.
-                If None, will use ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e.
-                the bulk supercell calculation output).
+                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
+                ``Vasprun`` object, from which to determine the bulk band gap
+                and band edge positions. If the VBM/CBM occur at `k`-points
+                which are not included in the bulk supercell calculation, then
+                this parameter should be used to provide the output of a bulk
+                bandstructure calculation so that these are correctly
+                determined. Alternatively, you can edit the ``"band_gap"`` and
+                ``"vbm"`` entries in ``self.defect_entry.calculation_metadata``
+                to match the correct (eigen)values.
+                If ``None``, will use
+                ``DefectEntry.calculation_metadata["bulk_path"]`` (i.e. the
+                bulk supercell calculation output).
 
-                Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
-                reference for the Fermi level values output by ``doped`` (as this VBM
-                eigenvalue is used as the zero reference), thus affecting the position of
-                the band edges in the defect formation energy plots and doping window /
-                dopability limit functions, and the reference of the reported Fermi levels.
+                Note that the ``"band_gap"`` and ``"vbm"`` values should only
+                affect the reference for the Fermi level values output by
+                ``doped`` (as this VBM eigenvalue is used as the zero
+                reference), thus affecting the position of the band edges in
+                the defect formation energy plots and doping window /
+                dopability limit functions, and the reference of the reported
+                Fermi levels.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & orbitals from the bulk and
-                defect calculations (so ``DefectEntry.get_eigenvalue_analysis()`` can
-                then be used with no further parsing). Will initially try to load orbital
-                projections from ``vasprun.xml(.gz)`` files (slightly slower but more
-                accurate), or failing that from ``PROCAR(.gz)`` files if present in the
-                bulk/defect directories. Parsing this data can increase total parsing time
-                by anywhere from ~5-25%, so set to ``False`` if parsing speed is crucial.
-                Default is ``None``, which will attempt to load this data but with no
-                warning if it fails (otherwise if ``True`` a warning will be printed).
+                Whether to parse the projected eigenvalues & orbitals from the
+                bulk and defect calculations (so
+                ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
+                no further parsing). Will initially try to load orbital
+                projections from ``vasprun.xml(.gz)`` files (slightly slower
+                but more accurate), or failing that from ``PROCAR(.gz)`` files
+                if present in the bulk/defect directories. Parsing this data
+                can increase total parsing time by anywhere from ~5-25%, so set
+                to ``False`` if parsing speed is crucial. Default is ``None``,
+                which will attempt to load this data but with no warning if it
+                fails (otherwise if ``True`` a warning will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
-                (``load_FNV_data()``, ``load_eFNV_data()``, ``load_bulk_gap_data()``)
-                ``point_symmetry_from_defect_entry()`` or ``defect_from_structures``,
-                including ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``symprec`` or ``oxi_state``. Primarily used by
-                ``DefectsParser`` to expedite parsing by avoiding reloading bulk data
-                for each defect.
+                (``load_FNV_data()``, ``load_eFNV_data()``,
+                ``load_bulk_gap_data()``),
+                ``point_symmetry_from_defect_entry()`` or
+                ``defect_from_structures``, including ``bulk_locpot_dict``,
+                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
+                ``symprec`` or ``oxi_state``. Primarily used by
+                ``DefectsParser`` to expedite parsing by avoiding reloading
+                bulk data for each defect.
 
         Return:
             ``DefectParser`` object.
@@ -2265,28 +2324,29 @@ class DefectParser:
 
     def load_FNV_data(self, bulk_locpot_dict: dict | None = None):
         """
-        Load metadata required for performing Freysoldt correction (i.e. LOCPOT
-        planar-averaged potential dictionary).
+        Load metadata required for performing Freysoldt correction (i.e.
+        ``LOCPOT`` planar-averaged potential dictionary).
 
         Requires "bulk_path" and "defect_path" to be present in
-        DefectEntry.calculation_metadata, and VASP LOCPOT files to be
-        present in these directories. Can read compressed "LOCPOT.gz"
-        files. The bulk_locpot_dict can be supplied if already parsed,
-        for expedited parsing of multiple defects.
+        ``DefectEntry.calculation_metadata``, and VASP ``LOCPOT`` files to be
+        present in these directories. Can read compressed "LOCPOT.gz" files.
+        The ``bulk_locpot_dict`` can be supplied if already parsed, for
+        expedited parsing of multiple defects.
 
         Saves the ``bulk_locpot_dict`` and ``defect_locpot_dict`` dictionaries
         (containing the planar-averaged electrostatic potentials along each
-        axis direction) to the DefectEntry.calculation_metadata dict, for
-        use with DefectEntry.get_freysoldt_correction().
+        axis direction) to the ``DefectEntry.calculation_metadata`` dict, for
+        use with ``DefectEntry.get_freysoldt_correction()``.
 
         Args:
-            bulk_locpot_dict (dict): Planar-averaged potential dictionary
-                for bulk supercell, if already parsed. If ``None`` (default),
-                will load from ``LOCPOT(.gz)`` file in
-                ``defect_entry.calculation_metadata["bulk_path"]``
+            bulk_locpot_dict (dict):
+                Planar-averaged potential dictionary for bulk supercell, if
+                already parsed. If ``None`` (default), will try to load from
+                the ``LOCPOT(.gz)`` file in
+                ``defect_entry.calculation_metadata["bulk_path"]``.
 
         Returns:
-            bulk_locpot_dict for reuse in parsing other defect entries
+            ``bulk_locpot_dict`` for reuse in parsing other defect entries.
         """
         if not self.defect_entry.charge_state:
             # no charge correction if charge is zero
@@ -2323,16 +2383,16 @@ class DefectParser:
     def load_eFNV_data(self, bulk_site_potentials: list | None = None):
         """
         Load metadata required for performing Kumagai correction (i.e. atomic
-        site potentials from the OUTCAR files).
+        site potentials from the ``OUTCAR`` files).
 
         Requires "bulk_path" and "defect_path" to be present in
-        ``DefectEntry.calculation_metadata``, and ``VASP`` ``OUTCAR`` files
-        to be present in these directories. Can read compressed ``OUTCAR.gz``
-        files. The bulk_site_potentials can be supplied if already
-        parsed, for expedited parsing of multiple defects.
+        ``DefectEntry.calculation_metadata``, and ``VASP`` ``OUTCAR`` files to
+        be present in these directories. Can read compressed ``OUTCAR.gz``
+        files. The bulk_site_potentials can be supplied if already parsed, for
+        expedited parsing of multiple defects.
 
-        Saves the ``bulk_site_potentials`` and ``defect_site_potentials``
-        lists (containing the atomic site electrostatic potentials, from
+        Saves the ``bulk_site_potentials`` and ``defect_site_potentials`` lists
+        (containing the atomic site electrostatic potentials, from
         ``-1*np.array(Outcar.electrostatic_potential)``) to
         ``DefectEntry.calculation_metadata``, for use with
         ``DefectEntry.get_kumagai_correction()``.
@@ -2341,10 +2401,10 @@ class DefectParser:
             bulk_site_potentials (list):
                 Atomic site potentials for the bulk supercell, if already
                 parsed. If ``None`` (default), will load from ``OUTCAR(.gz)``
-                file in ``defect_entry.calculation_metadata["bulk_path"]``
+                file in ``defect_entry.calculation_metadata["bulk_path"]``.
 
         Returns:
-            ``bulk_site_potentials`` for reuse in parsing other defect entries
+            ``bulk_site_potentials`` to reuse in parsing other defect entries.
         """
         if not self.defect_entry.charge_state:
             # don't need to load outcars if charge is zero
@@ -2508,44 +2568,47 @@ class DefectParser:
         Load the ``"band_gap"``, ``"vbm"`` and ``"cbm"`` values for the parsed
         ``DefectEntry``\s.
 
-        If ``bulk_band_gap_vr`` is provided, then these values are parsed from it,
-        else taken from the parsed bulk supercell calculation.
+        If ``bulk_band_gap_vr`` is provided, then these values are parsed from
+        it, else taken from the parsed bulk supercell calculation.
 
         ``"band_gap"`` and ``"vbm"`` are used by default when generating
         ``DefectThermodynamics`` objects, to be used in plotting & analysis.
 
-        Alternatively, one can specify query the Materials Project (MP) database
-        for the bulk gap data, using ``use_MP = True``, in which case the MP entry
-        with the lowest number ID and composition matching the bulk will be used,
-        or the MP ID (``mpid``) of the bulk material to use can be specified. This
-        is not recommended as it will correspond to a severely-underestimated GGA DFT
-        bandgap!
+        Alternatively, one can specify query the Materials Project (MP)
+        database for the bulk gap data, using ``use_MP = True``, in which case
+        the MP entry with the lowest number ID and composition matching the
+        bulk will be used, or the MP ID (``mpid``) of the bulk material to use
+        can be specified. This is not recommended as it will correspond to a
+        severely-underestimated GGA DFT bandgap!
 
         Args:
             bulk_band_gap_vr (PathLike or Vasprun):
-                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
-                object, from which to determine the bulk band gap and band edge
-                positions. If the VBM/CBM occur at `k`-points which are not included
-                in the bulk supercell calculation, then this parameter should be used
-                to provide the output of a bulk bandstructure calculation so that
-                these are correctly determined.
-                Alternatively, you can edit/add the ``"band_gap"`` and ``"vbm"`` entries in
-                ``self.defect_entry.calculation_metadata`` to match the correct
-                (eigen)values.
-                If None, will use ``DefectEntry.calculation_metadata["bulk_path"]``
+                Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
+                ``Vasprun`` object, from which to determine the bulk band gap
+                and band edge positions. If the VBM/CBM occur at `k`-points
+                which are not included in the bulk supercell calculation, then
+                this parameter should be used to provide the output of a bulk
+                bandstructure calculation so that these are correctly
+                determined. Alternatively, you can edit the ``"band_gap"`` and
+                ``"vbm"`` entries in ``self.defect_entry.calculation_metadata``
+                to match the correct (eigen)values.
+                If ``None``, will use
+                ``DefectEntry.calculation_metadata["bulk_path"]``
                 (i.e. the bulk supercell calculation output).
 
-                Note that the ``"band_gap"`` and ``"vbm"`` values should only affect the
-                reference for the Fermi level values output by ``doped`` (as this VBM
-                eigenvalue is used as the zero reference), thus affecting the position
-                of the band edges in the defect formation energy plots and doping
-                window / dopability limit functions, and the reference of the reported
+                Note that the ``"band_gap"`` and ``"vbm"`` values should only
+                affect the reference for the Fermi level values output by
+                ``doped`` (as this VBM eigenvalue is used as the zero
+                reference), thus affecting the position of the band edges in
+                the defect formation energy plots and doping window /
+                dopability limit functions, and the reference of the reported
                 Fermi levels.
             use_MP (bool):
-                If True, will query the Materials Project database for the bulk gap data.
+                If True, will query the Materials Project database for the bulk
+                gap data.
             mpid (str):
-                If provided, will query the Materials Project database for the bulk gap
-                data, using this Materials Project ID.
+                If provided, will query the Materials Project database for the
+                bulk gap data, using this Materials Project ID.
             api_key (str):
                 Materials API key to access database.
         """
@@ -2661,7 +2724,8 @@ class DefectParser:
 
     def apply_corrections(self):
         """
-        Get defect corrections and warn if likely to be inappropriate.
+        Get and apply defect corrections, and warn if likely to be
+        inappropriate.
         """
         if not self.defect_entry.charge_state:  # no charge correction if charge is zero
             return
