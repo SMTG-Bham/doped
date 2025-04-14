@@ -136,6 +136,8 @@ pre-summary-newline = true
 make-summary-multi-line = true
 wrap-summaries = 79
 wrap-descriptions = 79
+# can use force-wrap on CLI to wrap _all_ of the docstrings (not just first paragraphs), but also messes up
+# argument descriptions
 
 [tool.codespell]
 ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll"  # lowercase!
