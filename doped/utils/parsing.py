@@ -8,8 +8,8 @@ import logging
 import os
 import re
 import warnings
-from collections import defaultdict
-from functools import lru_cache
+from functools import lru_cache, partialmethod
+from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
 from monty.io import reverse_readfile
@@ -62,43 +62,57 @@ def find_archived_fname(fname, raise_error=True):
 # has to be defined as staticmethod to be consistent with usage in pymatgen, alternatively could make
 # fake custom class:
 @staticmethod  # type: ignore[misc]
-def parse_projected_eigen_no_mag(elem):
+def parse_projected_eigen(
+    elem: XML_Element, parse_mag: bool = False
+) -> tuple[dict[Spin, np.ndarray], np.ndarray | None]:
     """
     Parse the projected eigenvalues from a ``Vasprun`` object (used during
     initialisation), but excluding the projected magnetisation for efficiency.
 
-    This is a modified version of ``_parse_projected_eigen``
-    from ``pymatgen.io.vasp.outputs.Vasprun``, which skips
-    parsing of the projected magnetisation in order to expedite
-    parsing in ``doped``, as well as some small adjustments to
-    maximise efficiency.
+    Note that following SK's PRs to ``pymatgen`` (#4359, #4360), parsing of
+    projected eigenvalues adds minimal additional cost to Vasprun parsing
+    (~1-5%), while parsing of projected magnetisation can add ~30% cost.
+
+    This is a modified version of ``_parse_projected_eigen`` from
+    ``pymatgen.io.vasp.outputs.Vasprun``, which allows skipping of projected
+    magnetisation parsing in order to expedite parsing in ``doped``, as well as
+    some small adjustments to maximise efficiency.
     """
     root = elem.find("array/set")
-    proj_eigen = defaultdict(list)
-    sets = root.findall("set")
+    proj_eigen = {}
+    sets = root.findall("set")  # type: ignore[union-attr]
 
     for s in sets:
-        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])
+        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])  # type: ignore[index]
         if spin == 1 or (spin == 2 and len(sets) == 2):
             spin_key = Spin.up if spin == 1 else Spin.down
-            proj_eigen[spin_key] = np.array(
-                [[_parse_vasp_array(sss) for sss in ss.findall("set")] for ss in s.findall("set")]
-            )
+        elif parse_mag:  # parse projected magnetisation
+            spin_key = spin  # {2:"x", 3:"y", 4:"z"}
+        else:
+            continue
+
+        proj_eigen[spin_key] = np.array(
+            [[_parse_vasp_array(sss) for sss in ss.findall("set")] for ss in s.findall("set")]
+        )
+
+    if len(proj_eigen) > 2:
+        # non-collinear magnetism (spin-orbit coupling) enabled, last three "spin channels" are the
+        # projected magnetization of the orbitals in the x, y, and z Cartesian coordinates:
+        proj_mag = np.stack([proj_eigen.pop(i) for i in range(2, 5)], axis=-1)
+        proj_eigen = {Spin.up: proj_eigen[Spin.up]}
+    else:
+        proj_mag = None
 
     # here we _could_ round to 3 decimal places (and ensure rounding 0.0005 up to 0.001) to be _mostly_
     # consistent with PROCAR values (still not 100% the same as e.g. 0.00047 will be rounded to 0.0005
     # in vasprun, but 0.000 in PROCAR), but this is _reducing_ the accuracy so better not to do this,
     # and accept that PROCAR results may not be as numerically robust
     # proj_eigen = {k: np.round(v+0.00001, 3) for k, v in proj_eigen.items()}
-    proj_mag = None
     elem.clear()
     return proj_eigen, proj_mag
 
 
-Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
-
-
-def get_vasprun(vasprun_path: PathLike, **kwargs):
+def get_vasprun(vasprun_path: PathLike, parse_mag: bool = False, **kwargs):
     """
     Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
@@ -112,6 +126,10 @@ def get_vasprun(vasprun_path: PathLike, **kwargs):
     )  # `message` only needs to match start of message
     default_kwargs = {"parse_dos": False}
     default_kwargs.update(kwargs)
+
+    if not parse_mag:  # skip parsing of proj magnetisation
+        Vasprun._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=False)
+
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
     except FileNotFoundError as exc:
