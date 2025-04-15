@@ -1993,7 +1993,7 @@ def point_symmetry_from_defect_entry(
 
     And if the point symmetries match in each case, then using this function on your
     parsed `relaxed` ``DefectEntry`` objects should correctly determine the final relaxed
-    defect symmetry - otherwise periodicity-breaking prevents this.
+    defect symmetry -- otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually
     determine the relaxed defect and bulk-site point symmetries, and/or orientational
@@ -2095,7 +2095,7 @@ def point_symmetry_from_defect_entry(
                 "`calculation_metadata`/`bulk_entry.structure` attributes are not set for `DefectEntry`, "
                 "suggesting that this DefectEntry was not parsed from calculations using doped. This "
                 "means doped cannot automatically check if the supercell shape is breaking the cell "
-                "periodicity here or not (see docstring) - the point symmetry groups are not guaranteed "
+                "periodicity here or not (see docstring) -- the point symmetry groups are not guaranteed "
                 "to be correct here!"
             )
 
@@ -2325,7 +2325,7 @@ def point_symmetry_from_structure(
 
     And if the point symmetries match in each case, then using this function
     on your parsed `relaxed` ``DefectEntry`` objects should correctly determine
-    the final relaxed defect symmetry - otherwise periodicity-breaking prevents this.
+    the final relaxed defect symmetry -- otherwise periodicity-breaking prevents this.
 
     If ``bulk_structure`` is supplied and ``relaxed`` is set to ``False``,
     then returns the bulk site symmetry of the defect, which for
@@ -2708,7 +2708,7 @@ def get_orientational_degeneracy(
 
     And if the point symmetries match in each case, then using this function on your
     parsed `relaxed` ``DefectEntry`` objects should correctly determine the final relaxed
-    defect symmetry (and orientational degeneracy) - otherwise periodicity-breaking
+    defect symmetry (and orientational degeneracy) -- otherwise periodicity-breaking
     prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can manually

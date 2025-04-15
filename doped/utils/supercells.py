@@ -901,12 +901,13 @@ def find_optimal_cell_shape(
     metric (in doped), and then by some other criteria to give the cleanest
     output.
 
-    Finds the optimal supercell transformation matrix by calculating the deviation
-    of the possible supercell matrices from an ideal simple cubic (if target = "SC")
-    or face-centred cubic (if target = "FCC") matrix - and then taking that with the
-    best (lowest) score, by evaluating the root mean square (RMS) difference of the
-    vector lengths from that of the idealised values (i.e. the corresponding SC/FCC
-    lattice vector lengths for the given cell volume).
+    Finds the optimal supercell transformation matrix by calculating the
+    deviation of the possible supercell matrices from an ideal simple cubic (if
+    target = "SC") or face-centred cubic (if target = "FCC") matrix, and then
+    taking that with the best (lowest) score by evaluating the root mean square
+    (RMS) difference of the vector lengths from that of the idealised values
+    (i.e. the corresponding SC/FCC lattice vector lengths for the given cell
+    volume).
 
     For target = "SC", the idealised lattice vector length is the effective
     cubic length (i.e. the cube root of the volume), while for "FCC" it is

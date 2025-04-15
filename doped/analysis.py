@@ -249,7 +249,7 @@ def defect_from_structures(
             Dictionary of bulk supercell Voronoi node information, for
             further expedited site-matching.
     """
-    try:  # Try automatic defect site detection - this gives us the "unrelaxed" defect structure
+    try:  # Try automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
             defect_type,
             bulk_site_idx,
@@ -862,7 +862,7 @@ class DefectsParser:
             else:
                 raise FileNotFoundError(
                     f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-                    f"{self.bulk_path} or subfolder: {self.subfolder} - please ensure `vasprun.xml(.gz)` "
+                    f"{self.bulk_path} or subfolder: {self.subfolder} -- please ensure `vasprun.xml(.gz)` "
                     f"files are present and/or specify `bulk_path` manually."
                 )
 
@@ -1538,7 +1538,7 @@ class DefectsParser:
                 ``limits`` argument.
 
                 Alternatively this can be a dictionary of chemical potentials
-                for a single limit (limit), in the format:
+                for a single limit, in the format:
                 ``{element symbol: chemical potential}``. If manually
                 specifying chemical potentials this way, you can set the
                 ``el_refs`` option with the DFT reference energies of the
@@ -1958,7 +1958,7 @@ class DefectParser:
         try:
             parsed_charge_state: int = defect_charge_from_vasprun(defect_vr, charge_state)
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
-            # try to determine from folder name - must have "-" or "+" at end of name for this
+            # try to determine from folder name -- must have "-" or "+" at end of name for this
             try:
                 charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
                 if charge_state_suffix[0] not in ["-", "+"]:
@@ -2752,7 +2752,7 @@ class DefectParser:
             raise ValueError(
                 "No charge correction performed! Missing required metadata in "
                 "defect_entry.calculation_metadata ('bulk/defect_site_potentials' for Kumagai ("
-                "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) - these "
+                "eFNV) correction, or 'bulk/defect_locpot_dict' for Freysoldt (FNV) correction) -- these "
                 "are loaded with either the load_eFNV_data() or load_FNV_data() methods for "
                 "DefectParser."
             )
