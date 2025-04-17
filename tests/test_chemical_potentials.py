@@ -95,7 +95,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             eah = entry.data.get(cp.property_key_dict["energy_above_hull"])
             assert eah == 0 if i < num_stable_entries else eah > 0  # Zr4O is on hull
 
-            mag = entry.data["total_magnetization"]
+            mag = entry.data["total_magnetisation"]
             is_molecule = entry.data["molecule"]
 
             assert is_molecule if entry.name == "O2" else not is_molecule
@@ -109,11 +109,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_make_molecule_in_a_box(self):
         allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
         for element in allowed_gaseous_elements:
-            structure, total_magnetization = chemical_potentials.make_molecule_in_a_box(element)
+            structure, total_magnetisation = chemical_potentials.make_molecule_in_a_box(element)
             if element == "O2":
-                assert total_magnetization == 2
+                assert total_magnetisation == 2
             else:
-                assert total_magnetization == 0
+                assert total_magnetisation == 0
             assert structure.composition.reduced_formula == element
             assert structure.num_sites == 2
             assert np.isclose(structure.volume, 30**3)
@@ -185,7 +185,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         result = [e for e in cp.entries if e.name == "O2"]
         assert len(result) == 1
         assert result[0].name == "O2"
-        assert result[0].data["total_magnetization"] == 2
+        assert result[0].data["total_magnetisation"] == 2
         assert result[0].data[cp.property_key_dict["energy_above_hull"]] == 0
         assert result[0].data["molecule"]
         assert np.isclose(result[0].data["energy_per_atom"], -4.94795546875)
@@ -345,7 +345,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert len(cp.metallic_entries) == 6
         assert len(cp.molecular_entries) == 1
         assert cp.molecular_entries[0].name == "O2"
-        assert cp.molecular_entries[0].data["total_magnetization"] == 2
+        assert cp.molecular_entries[0].data["total_magnetisation"] == 2
         assert cp.molecular_entries[0].data["molecule"]
         assert not cp.nonmetallic_entries[0].data["molecule"]
 

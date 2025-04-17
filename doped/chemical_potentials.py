@@ -50,7 +50,7 @@ from doped.utils.parsing import (
     _compare_potcar_symbols,
     _format_mismatching_incar_warning,
     _get_output_files_and_check_if_multiple,
-    get_magnetization_from_vasprun,
+    get_magnetisation_from_vasprun,
     get_vasprun,
 )
 from doped.utils.plotting import get_colormap
@@ -77,7 +77,7 @@ old_MPRester_property_data = [  # properties to pull for Materials Project entri
     "formation_energy_per_atom",  # uncorrected with legacy MP API, corrected with new API
     "energy_per_atom",  # note that with legacy MP API this is uncorrected, but is corrected with new API
     "energy",  # note that with legacy MP API this is uncorrected, but is corrected with new API
-    "total_magnetization",
+    "total_magnetisation",
     "nelements",
     "elements",
 ]  # note that, because the energy values in the ``data`` dict are uncorrected with legacy MP API and
@@ -121,14 +121,14 @@ def make_molecule_in_a_box(element: str):
             Element symbol of the molecule to generate.
 
     Returns:
-        Structure, formula and total magnetization:
+        Structure, formula and total magnetisation:
 
         structure (Structure):
             ``pymatgen`` ``Structure`` object of the molecule in a box.
         formula (str):
             Chemical formula of the molecule in a box.
-        total_magnetization (int):
-            Total magnetization of the molecule in a box
+        total_magnetisation (int):
+            Total magnetisation of the molecule in a box
             (0 for all X2 except O2 which has a triplet ground state (S = 1)).
     """
     element = sub(r"\d+$", "", element)  # remove digits in case provided as X2 etc
@@ -145,9 +145,9 @@ def make_molecule_in_a_box(element: str):
         coords=[[15, 15, 15], [15, 15, 15 + bond_length]],
         coords_are_cartesian=True,
     )
-    total_magnetization = 0 if element != "O" else 2  # O2 has a triplet ground state (S = 1)
+    total_magnetisation = 0 if element != "O" else 2  # O2 has a triplet ground state (S = 1)
 
-    return structure, total_magnetization
+    return structure, total_magnetisation
 
 
 def make_molecular_entry(computed_entry, legacy_MP=False):
@@ -172,7 +172,7 @@ def make_molecular_entry(computed_entry, legacy_MP=False):
     assert len(computed_entry.composition.elements) == 1  # Elemental!
     formula = _get_pretty_formula(computed_entry.data)
     element = computed_entry.composition.elements[0].symbol
-    struct, total_magnetization = make_molecule_in_a_box(element)
+    struct, total_magnetisation = make_molecule_in_a_box(element)
     molecular_entry = ComputedStructureEntry(
         structure=struct,
         energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
@@ -193,7 +193,7 @@ def make_molecular_entry(computed_entry, legacy_MP=False):
     molecular_entry.data["database_IDs"] = "N/A"
     molecular_entry.data["material_id"] = "mp-0"
     molecular_entry.data["icsd_id"] = None
-    molecular_entry.data["total_magnetization"] = total_magnetization
+    molecular_entry.data["total_magnetisation"] = total_magnetisation
 
     return molecular_entry
 
@@ -580,7 +580,7 @@ def get_MP_summary_docs(
     system which match one of these entries (based on the MPIDs given in
     ``ComputedEntry.entry_id``/``ComputedEntry.data["material_id"]`` and
     ``SummaryDoc.material_id``) are returned. Moreover, all data fields listed
-    in ``data_fields`` (set to ``"band_gap"``, ``"total_magnetization"`` and
+    in ``data_fields`` (set to ``"band_gap"``, ``"total_magnetisation"`` and
     ``"database_IDs"`` by default) will be copied from the corresponding
     ``SummaryDoc`` attribute to ``ComputedEntry.data`` for the matching
     ``ComputedEntry`` in ``entries``
@@ -617,7 +617,7 @@ def get_MP_summary_docs(
             List of data fields to copy from the corresponding ``SummaryDoc``
             attributes to the ``ComputedEntry.data`` objects, if ``entries`` is
             supplied. If not set, defaults to
-            ``["band_gap", "total_magnetization", "database_IDs"]``.
+            ``["band_gap", "total_magnetisation", "database_IDs"]``.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             query, e.g. ``mpr.materials.summary.search()``.
@@ -651,7 +651,7 @@ def get_MP_summary_docs(
         return MP_docs
 
     if data_fields is None:
-        data_fields = ["band_gap", "total_magnetization", "database_IDs"]  # ICSD IDs and possibly others
+        data_fields = ["band_gap", "total_magnetisation", "database_IDs"]  # ICSD IDs and possibly others
 
     for entry in entries:
         doc = MP_docs.get(entry.data["material_id"])
@@ -670,7 +670,7 @@ def get_MP_summary_docs(
                 f"and non-magnetic compound."
             )
             entry.data["band_gap"] = None
-            entry.data["total_magnetization"] = None
+            entry.data["total_magnetisation"] = None
             entry.data["database_IDs"] = "N/A"
 
     return MP_docs
@@ -1124,7 +1124,7 @@ class CompetingPhases:
                     data={
                         self.property_key_dict["energy_above_hull"]: 0.0,
                         "band_gap": None,
-                        "total_magnetization": None,
+                        "total_magnetisation": None,
                         "database_IDs": "N/A",
                         "material_id": "mp-0",
                         "molecule": False,
@@ -1182,9 +1182,9 @@ class CompetingPhases:
         self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
 
-        if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetization info
+        if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetisation info
             self.MP_docs = get_MP_summary_docs(
-                entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
+                entries=self.entries,  # sets "band_gap", "total_magnetisation" and "database_IDs" fields
                 api_key=self.api_key,
             )
 
@@ -1417,12 +1417,12 @@ class CompetingPhases:
         See
         https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
         """
-        magnetization = entry.data.get("total_magnetization")
-        with contextlib.suppress(TypeError):  # if magnetization is None, fine, skip
-            if magnetization > 0.1:  # account for magnetic moment
+        magnetisation = entry.data.get("total_magnetisation")
+        with contextlib.suppress(TypeError):  # if magnetisation is None, fine, skip
+            if magnetisation > 0.1:  # account for magnetic moment
                 incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
-                if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
-                    incar_settings["NUPDOWN"] = int(magnetization)
+                if "NUPDOWN" not in incar_settings and int(magnetisation) > 0:
+                    incar_settings["NUPDOWN"] = int(magnetisation)
 
         # otherwise ISPIN not set, so no spin polarisation
 
@@ -2909,7 +2909,7 @@ def _parse_entry_from_vasprun_and_catch_exception(
                 "volume": entry.structure.volume,
                 "energy_per_atom": entry.energy_per_atom,
                 "energy": entry.energy,
-                "total_magnetization": get_magnetization_from_vasprun(vasprun),
+                "total_magnetisation": get_magnetisation_from_vasprun(vasprun),
                 "elements": unique_symbols,
                 "nelements": len(unique_symbols),
                 "kpoints": vasprun.kpoints.kpts,
