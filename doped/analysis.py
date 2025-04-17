@@ -41,7 +41,6 @@ from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
-    _defect_spin_degeneracy_from_vasprun,
     _format_mismatching_incar_warning,
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
@@ -50,12 +49,13 @@ from doped.utils.parsing import (
     _multiple_files_warning,
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
-    defect_charge_from_vasprun,
     get_core_potentials_from_outcar,
     get_defect_type_site_idxs_and_unrelaxed_structure,
     get_locpot,
     get_procar,
     get_vasprun,
+    spin_degeneracy_from_vasprun,
+    total_charge_from_vasprun,
 )
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
@@ -703,15 +703,17 @@ class DefectsParser:
                 set as ``{Host Chemical Formula}_defect_dict.json.gz``.
                 If ``False``, no json file is saved.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & orbitals from the
-                bulk and defect calculations (so
+                Whether to parse the projected eigenvalues & magnetisation from
+                the bulk and defect calculations (so
                 ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
-                no further parsing). Will initially try to load orbital
-                projections from ``vasprun.xml(.gz)`` files (slightly slower
-                but more accurate), or failing that from ``PROCAR(.gz)`` files
-                if present in the bulk/defect directories. Parsing this data
-                can increase total parsing time by anywhere from ~5-25%, so set
-                to ``False`` if parsing speed is crucial.
+                no further parsing, and magnetisation values can be pulled for
+                SOC / non-collinear magnetism calculations). Will initially try
+                to load orbital projections from ``vasprun.xml(.gz)`` files
+                (slightly slower but more accurate), or failing that from
+                ``PROCAR(.gz)`` files if present in the bulk/defect
+                directories. Parsing this data can increase total parsing time
+                by anywhere from ~5-25%, so set to ``False`` if parsing speed
+                is crucial.
                 Default is ``None``, which will attempt to load this data but
                 with no warning if it fails (otherwise if ``True`` a warning
                 will be printed).
@@ -1748,15 +1750,17 @@ class DefectParser:
                 greater than this value (in eV), then a warning is raised.
                 Default is 0.05 eV.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & orbitals from the
-                bulk and defect calculations (so
+                Whether to parse the projected eigenvalues & magnetisation from
+                the bulk and defect calculations (so
                 ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
-                no further parsing). Will initially try to load orbital
-                projections from ``vasprun.xml(.gz)`` files (slightly slower
-                but more accurate), or failing that from ``PROCAR(.gz)`` files
-                if present in the bulk/defect directories. Parsing this data
-                can increase total parsing time by anywhere from ~5-25%, so set
-                to ``False`` if parsing speed is crucial.
+                no further parsing, and magnetisation values can be pulled for
+                SOC / non-collinear magnetism calculations). Will initially try
+                to load orbital projections from ``vasprun.xml(.gz)`` files
+                (slightly slower but more accurate), or failing that from
+                ``PROCAR(.gz)`` files if present in the bulk/defect
+                directories. Parsing this data can increase total parsing time
+                by anywhere from ~5-25%, so set to ``False`` if parsing speed
+                is crucial.
                 Default is ``None``, which will attempt to load this data but
                 with no warning if it fails (otherwise if ``True`` a warning
                 will be printed).
@@ -1874,17 +1878,20 @@ class DefectParser:
                 dopability limit functions, and the reference of the reported
                 Fermi levels.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & orbitals from the
-                bulk and defect calculations (so
+                Whether to parse the projected eigenvalues & magnetisation from
+                the bulk and defect calculations (so
                 ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
-                no further parsing). Will initially try to load orbital
-                projections from ``vasprun.xml(.gz)`` files (slightly slower
-                but more accurate), or failing that from ``PROCAR(.gz)`` files
-                if present in the bulk/defect directories. Parsing this data
-                can increase total parsing time by anywhere from ~5-25%, so set
-                to ``False`` if parsing speed is crucial. Default is ``None``,
-                which will attempt to load this data but with no warning if it
-                fails (otherwise if ``True`` a warning will be printed).
+                no further parsing, and magnetisation values can be pulled for
+                SOC / non-collinear magnetism calculations). Will initially try
+                to load orbital projections from ``vasprun.xml(.gz)`` files
+                (slightly slower but more accurate), or failing that from
+                ``PROCAR(.gz)`` files if present in the bulk/defect
+                directories. Parsing this data can increase total parsing time
+                by anywhere from ~5-25%, so set to ``False`` if parsing speed
+                is crucial.
+                Default is ``None``, which will attempt to load this data but
+                with no warning if it fails (otherwise if ``True`` a warning
+                will be printed).
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
@@ -1956,7 +1963,7 @@ class DefectParser:
             possible_defect_name = os.path.basename(os.path.dirname(defect_path))
 
         try:
-            parsed_charge_state: int = defect_charge_from_vasprun(defect_vr, charge_state)
+            parsed_charge_state: int = total_charge_from_vasprun(defect_vr, charge_state)
         except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
             # try to determine from folder name -- must have "-" or "+" at end of name for this
             try:
@@ -1976,10 +1983,10 @@ class DefectParser:
             except Exception as next_exc:
                 raise orig_exc from next_exc
 
+        # parse spin degeneracy now, before proj eigenvalues/magnetisation are cut (for SOC/NCL calcs):
         degeneracy_factors = {
-            "spin degeneracy": _defect_spin_degeneracy_from_vasprun(
-                defect_vr, charge_state=parsed_charge_state
-            )
+            "spin degeneracy": spin_degeneracy_from_vasprun(defect_vr)
+            / spin_degeneracy_from_vasprun(bulk_vr)
         }
 
         if dielectric is None and not skip_corrections and parsed_charge_state != 0:
@@ -2165,8 +2172,13 @@ class DefectParser:
                 if parse_projected_eigen is True:  # otherwise no warning
                     warnings.warn(f"Projected eigenvalues/orbitals parsing failed with error: {exc!r}")
 
-        defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
-        defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
+                # these are removed in _load_and_parse_eigenvalue_data, but in case it fails:
+                defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
+                defect_vr.projected_magnetisation = (
+                    None  # no longer needed, delete to reduce memory demand
+                )
+                defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
+
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
         dp.load_bulk_gap_data(bulk_band_gap_vr=bulk_band_gap_vr)  # Load band gap data
 
@@ -2508,20 +2520,22 @@ class DefectParser:
             )
 
         def _get_vr_dict_without_proj_eigenvalues(vr):
-            proj_eigen = vr.projected_eigenvalues
-            vr.projected_eigenvalues = None
+            attributes_to_cut = ["projected_eigenvalues", "projected_magnetisation"]
+            orig_values = {}
+            for attribute in attributes_to_cut:
+                orig_values[attribute] = getattr(vr, attribute)
+                setattr(vr, attribute, None)
+
             vr_dict = vr.as_dict()  # only call once
             vr_dict_wout_proj = {  # projected eigenvalue data might be present, but not needed (v slow
                 # and data-heavy)
                 **{k: v for k, v in vr_dict.items() if k != "output"},
-                "output": {
-                    k: v
-                    for k, v in vr_dict["output"].items()
-                    if k != "projected_eigenvalues"  # reduce memory demand
-                },
+                "output": {k: v for k, v in vr_dict["output"].items() if k not in attributes_to_cut},
             }
-            vr_dict_wout_proj["output"]["projected_eigenvalues"] = None
-            vr.projected_eigenvalues = proj_eigen  # reset to original value
+            for attribute in attributes_to_cut:
+                vr_dict_wout_proj["output"][attribute] = None
+                setattr(vr, attribute, orig_values[attribute])  # reset to original value
+
             return vr_dict_wout_proj
 
         run_metadata = {

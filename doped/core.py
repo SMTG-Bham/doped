@@ -580,10 +580,17 @@ class DefectEntry(thermo.DefectEntry):
         defect_vr: PathLike | Vasprun | None = None,
         defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
         force_reparse: bool = False,
+        clear_attributes: bool = True,
     ):
         """
         Load and parse the eigenvalue data for the defect entry, if not already
         present in the ``calculation_metadata``.
+
+        Note that this function sets the ``eigenvalues``,
+        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
+        to ``None`` to reduce memory demand (as these properties are not
+        required in later stages of ``doped`` analysis workflows), if
+        ``clear_attributes`` is ``True`` (default).
 
         Args:
             bulk_vr (PathLike, Vasprun):
@@ -625,6 +632,12 @@ class DefectEntry(thermo.DefectEntry):
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
+            clear_attributes (bool):
+                If ``True`` (default), sets the ``eigenvalues``,
+                ``projected_eigenvalues`` and ``projected_magnetisation``
+                attributes to ``None`` to reduce memory demand (as these
+                properties are not required in later stages of ``doped``
+                analysis workflows).
         """
         if self.calculation_metadata.get("eigenvalue_data") is not None and not force_reparse:
             return
@@ -635,6 +648,7 @@ class DefectEntry(thermo.DefectEntry):
             _multiple_files_warning,
             get_procar,
             get_vasprun,
+            spin_degeneracy_from_vasprun,
         )
 
         parsed_vr_procar_dict = {}
@@ -716,9 +730,22 @@ class DefectEntry(thermo.DefectEntry):
             "cbm_info": cbm_info,
         }
 
-        # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
-        # collection and thus reduce memory:
-        defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
+        if clear_attributes:
+            # first check if spin degeneracy has been parsed (needs projected magnetisation for SOC/NCL
+            # calculations), and try parse if not:
+            if "spin degeneracy" not in self.degeneracy_factors:
+                with contextlib.suppress(Exception):
+                    self.degeneracy_factors["spin degeneracy"] = spin_degeneracy_from_vasprun(
+                        defect_vr
+                    ) / spin_degeneracy_from_vasprun(bulk_vr)
+
+            # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
+            # collection and thus reduce memory:
+            defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
+            defect_vr.projected_magnetisation = (
+                None  # but keep for bulk_vr as this is likely being re-used
+            )
+            defect_vr.eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
 
     def get_eigenvalue_analysis(
         self,
@@ -729,6 +756,7 @@ class DefectEntry(thermo.DefectEntry):
         defect_vr: PathLike | Vasprun | None = None,
         defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
         force_reparse: bool = False,
+        clear_attributes: bool = True,
         **kwargs,
     ) -> Union["BandEdgeStates", tuple["BandEdgeStates", "Figure"]]:
         r"""
@@ -753,6 +781,12 @@ class DefectEntry(thermo.DefectEntry):
 
         This function uses code from ``pydefect``, so please cite the
         ``pydefect`` paper: 10.1103/PhysRevMaterials.5.123803
+
+        Note that this function sets the ``eigenvalues``,
+        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
+        to ``None`` to reduce memory demand (as these properties are not
+        required in later stages of ``doped`` analysis workflows), if
+        ``clear_attributes`` is ``True`` (default).
 
         Args:
             plot (bool):
@@ -810,6 +844,12 @@ class DefectEntry(thermo.DefectEntry):
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
                 already present in the ``calculation_metadata``.
+            clear_attributes (bool):
+                If ``True`` (default), sets the ``eigenvalues``,
+                ``projected_eigenvalues`` and ``projected_magnetisation``
+                attributes to ``None`` to reduce memory demand (as these
+                properties are not required in later stages of ``doped``
+                analysis workflows).
             **kwargs:
                 Additional kwargs to pass to
                 ``doped.utils.eigenvalues.get_eigenvalue_analysis``,
@@ -829,6 +869,7 @@ class DefectEntry(thermo.DefectEntry):
             defect_vr=defect_vr,
             defect_procar=defect_procar,
             force_reparse=force_reparse,
+            clear_attributes=clear_attributes,
         )
 
         if self.calculation_metadata.get("eigenvalue_data") is None:
@@ -1020,7 +1061,10 @@ class DefectEntry(thermo.DefectEntry):
                 degeneracy will be re-parsed/computed even if already present
                 in the ``DefectEntry`` object ``calculation_metadata``.
         """
-        from doped.utils.parsing import simple_spin_degeneracy_from_charge
+        from doped.utils.parsing import (
+            _num_electrons_from_charge_state,
+            _simple_spin_degeneracy_from_num_electrons,
+        )
         from doped.utils.symmetry import get_orientational_degeneracy, point_symmetry_from_defect_entry
 
         if symprec is None:
@@ -1068,10 +1112,10 @@ class DefectEntry(thermo.DefectEntry):
                     f"Unable to determine orientational degeneracy for {self.name}, got error:\n{e!r}"
                 )
 
-        if "spin degeneracy" not in self.degeneracy_factors:
+        if "spin degeneracy" not in self.degeneracy_factors:  # if not set, use simple spin degeneracy
             try:
-                self.degeneracy_factors["spin degeneracy"] = simple_spin_degeneracy_from_charge(
-                    self.defect_supercell, self.charge_state
+                self.degeneracy_factors["spin degeneracy"] = _simple_spin_degeneracy_from_num_electrons(
+                    _num_electrons_from_charge_state(self.defect_supercell, self.charge_state)
                 )
             except Exception as e:
                 warnings.warn(f"Unable to determine spin degeneracy for {self.name}, got error:\n{e!r}")

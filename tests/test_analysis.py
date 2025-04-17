@@ -1429,7 +1429,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert len(w) == 1
             assert issubclass(w[-1].category, UserWarning)
             assert (
-                "Auto-determined defect charge q=-2 does not match specified charge q=-1. Will continue "
+                "Auto-determined system charge q=-2 does not match specified charge q=-1. Will continue "
                 "with specified charge_state, but beware!" in str(w[-1].message)
             )
             assert np.isclose(
