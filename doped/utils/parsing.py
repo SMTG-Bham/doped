@@ -63,7 +63,7 @@ def find_archived_fname(fname, raise_error=True):
 # fake custom class:
 @staticmethod  # type: ignore[misc]
 def parse_projected_eigen(
-    elem: XML_Element, parse_mag: bool = False
+    elem: XML_Element, parse_mag: bool = True
 ) -> tuple[dict[Spin, np.ndarray], np.ndarray | None]:
     """
     Parse the projected eigenvalues from a ``Vasprun`` object (used during
@@ -77,6 +77,17 @@ def parse_projected_eigen(
     ``pymatgen.io.vasp.outputs.Vasprun``, which allows skipping of projected
     magnetisation parsing in order to expedite parsing in ``doped``, as well as
     some small adjustments to maximise efficiency.
+
+    Args:
+        elem (Element):
+            The XML element to parse, with projected eigenvalues/magnetisation.
+        parse_mag (bool):
+            Whether to parse the projected magnetisation. Default is ``True``.
+
+    Returns:
+        Tuple[Dict[Spin, np.ndarray], Optional[np.ndarray]]:
+            A dictionary of projected eigenvalues for each spin channel
+            (up/down), and the projected magnetisation (if parsed).
     """
     root = elem.find("array/set")
     proj_eigen = {}
@@ -97,7 +108,7 @@ def parse_projected_eigen(
 
     if len(proj_eigen) > 2:
         # non-collinear magnetism (spin-orbit coupling) enabled, last three "spin channels" are the
-        # projected magnetization of the orbitals in the x, y, and z Cartesian coordinates:
+        # projected magnetisation of the orbitals in the x, y, and z Cartesian coordinates:
         proj_mag = np.stack([proj_eigen.pop(i) for i in range(2, 5)], axis=-1)
         proj_eigen = {Spin.up: proj_eigen[Spin.up]}
     else:
@@ -112,7 +123,7 @@ def parse_projected_eigen(
     return proj_eigen, proj_mag
 
 
-def get_vasprun(vasprun_path: PathLike, parse_mag: bool = False, **kwargs):
+def get_vasprun(vasprun_path: PathLike, parse_mag: bool = True, **kwargs):
     """
     Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
@@ -127,9 +138,7 @@ def get_vasprun(vasprun_path: PathLike, parse_mag: bool = False, **kwargs):
     default_kwargs = {"parse_dos": False}
     default_kwargs.update(kwargs)
 
-    if not parse_mag:  # skip parsing of proj magnetisation
-        Vasprun._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=False)
-
+    Vasprun._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag)
     try:
         vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
     except FileNotFoundError as exc:
@@ -1256,31 +1265,84 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     )
 
 
-def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float:
+def get_magnetisation_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
     """
-    Determine the magnetization (number of spin-up vs spin-down electrons) from
-    a ``Vasprun`` object.
+    Determine the total magnetisation from a ``Vasprun`` object.
+
+    For spin-polarised calculations, this is the difference between the number
+    of spin-up vs spin-down electrons. For non-spin-polarised calculations,
+    there is no magnetisation. For non-collinear (NCL) magnetisation (e.g.
+    spin-orbit coupling (SOC) calculations), the magnetisation becomes a vector
+    (spinor), in which case we take the vector norm as the total magnetisation.
+
+    VASP does not write the total magnetisation to ``vasprun.xml`` file (but
+    does to the ``OUTCAR`` file), and so here we have to reverse-engineer it
+    from the eigenvalues (for normal spin-polarised calculations) or the
+    projected magnetisation & eigenvalues (for NCL calculations). For NCL
+    calculations, we sum the projected orbital magnetisations for all occupied
+    states, weighted by the `k`-point weights and normalised by the total
+    orbital projections for each band and `k`-point. This gives the best
+    estimate of the total magnetisation from the projected magnetisation array,
+    but due to incomplete orbital projections and orbital-dependent non-uniform
+    scaling factors (i.e. completeness of orbital projects for `s` vs `p` vs
+    `d` orbitals etc.), there can be inaccuracies up to ~30% in the estimated
+    total magnetisation for tricky cases.
 
     Args:
         vasprun (Vasprun):
             The ``Vasprun`` object from which to extract the total
-            magnetization.
+            magnetisation.
 
     Returns:
-        int or float: The total magnetization of the system.
+        int or float or np.ndarray[float]:
+            The total magnetisation of the system.
     """
-    # in theory should be able to use vasprun.idos (integrated dos), but this
-    # doesn't show spin-polarisation / account for NELECT changes from neutral
-    # apparently
+    # TODO: Update spin multiplicity function to account for spinors (with rounding?). Also ignore error
+    #  for SOC calculations for the moment with it, (with a TODO to remove in later versions),
+    #   as we transition to now parsing this by default.
 
+    # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
+    # spin-polarisation / account for NELECT changes from neutral apparently
     eigenvalues_and_occs = vasprun.eigenvalues
-    kweights = vasprun.actual_kpoints_weights
+    kweights = np.array(vasprun.actual_kpoints_weights)
 
-    # first check if it's even a spin-polarised calculation:
+    # first check if it's a spin-polarised calculation:
     if len(eigenvalues_and_occs) == 1 or not vasprun.is_spin:
-        return 0  # non-spin polarised or SOC calculation
-    # (can't pull SOC magnetization this way and either way isn't needed/desired for magnetization value
-    # in ``VaspBandEdgeProperties``)
+        # non-spin-polarised or NCL calculation:
+        if not vasprun.parameters.get("LNONCOLLINEAR", False):
+            return 0  # non-spin polarised calculation
+        if getattr(vasprun, "projected_magnetisation", None) is None:
+            raise RuntimeError(
+                "Cannot determine magnetisation from non-collinear Vasprun calculation, as this requires "
+                "the `Vasprun.projected_magnetisation` attribute, which is parsed with "
+                "`Vasprun(parse_projected_eigen=True)` (default in `doped`)."
+            )
+
+        # else NCL calculation:
+        # need to scale by the summed orbital projections for each band (which should be 1):
+        # vasprun.projected_eigenvalues[Spin.up].shape -> (nkpoints, nbands, natoms, norbitals)
+        summed_orbital_projections = vasprun.projected_eigenvalues[Spin.up].sum(axis=(-2, -1))
+        summed_orbital_projections = np.where(
+            summed_orbital_projections == 0, 1, summed_orbital_projections
+        )  # avoid division by zero, by setting any zero values to 1
+        normalisation_factors = 1 / summed_orbital_projections
+
+        # vasprun.projected_magnetisation.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
+        # sum the projected magnetisation over atoms and orbitals, then multiply by per-band/kpoint
+        # normalisation factors:
+        normalised_proj_mag_per_kpoint_band_direction = (
+            vasprun.projected_magnetisation.sum(axis=(-3, -2)) * normalisation_factors[..., None]
+        )  # [..., None] adds new axis, which allows broadcasting (i.e.
+        # (nkpoints, nbands, 3) * (nkpoints, nbands, 1) -- adding the "(...,1 )" dimension)
+
+        # then multiply by occupancies, sum over bands, multiply by k-point weights, sum over k-points:
+        return (
+            (
+                normalised_proj_mag_per_kpoint_band_direction
+                * eigenvalues_and_occs[Spin.up][:, :, 1][..., None]
+            ).sum(axis=1)
+            * kweights
+        ).sum(axis=0)
 
     # product of the sum of occupations over all bands, times the k-point weights:
     n_spin_up = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
