@@ -2080,15 +2080,16 @@ class CompetingPhasesAnalyzer(MSONable):
         if processes is None:  # multiprocessing?
             # from quick tests; Pool takes about 2.75s to initialise, with negligible additional cost per
             # process, and vasprun parsing with pymatgen v2025.1.9 takes ~0.025 s/MB (uncompressed file
-            # size; with gzip compressing large vasprun.xml files by ~15-20x).
+            # size; with gzip compressing large vasprun.xml files by ~15-20x) -- (~1.5-3x faster after SK's
+            # updates to vasprun parsing in pymatgen v2025.4.16).
             # So for multiprocessing to be worth it, we need at least 2 vaspruns to parse, with a summed
-            # vasprun file size, excluding the largest one, of around >50 Mb
+            # uncompressed vasprun file size, excluding the largest one, of around >100 Mb
             def _estimate_uncompressed_vasprun_size(vasprun_path: PathLike) -> float:
                 return (os.path.getsize(vasprun_path) / 1e6) * (20 if vasprun_path.endswith(".gz") else 1)
 
             vasprun_sizes_MB = [_estimate_uncompressed_vasprun_size(v) for v in self.vasprun_paths] or [0]
             mp = get_mp_context()
-            if sum(vasprun_sizes_MB) - max(vasprun_sizes_MB) > 50:
+            if sum(vasprun_sizes_MB) - max(vasprun_sizes_MB) > 100:
                 # only multiprocess as much as makes sense:
                 processes = min(max(1, mp.cpu_count() - 1), sum(1 for s in vasprun_sizes_MB if s > 20) - 1)
             else:
