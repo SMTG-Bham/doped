@@ -26,7 +26,7 @@ from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
+from doped.utils.parsing import get_magnetisation_from_vasprun, get_nelect_from_vasprun
 from doped.utils.plotting import _get_backend
 
 if TYPE_CHECKING:
@@ -80,13 +80,14 @@ def band_edge_properties_from_vasprun(
     Returns:
         ``BandEdgeProperties`` object.
     """
+    is_ncl = vasprun.parameters.get("LNONCOLLINEAR", False)
     band_edge_prop = BandEdgeProperties(
         eigenvalues=eigenvalues_from_vasprun(vasprun),
         nelect=get_nelect_from_vasprun(vasprun),
-        magnetization=get_magnetization_from_vasprun(vasprun),
+        magnetization=0 if is_ncl else get_magnetisation_from_vasprun(vasprun),  # only needed for ISPIN=2
         kpoint_coords=vasprun.actual_kpoints,
         integer_criterion=integer_criterion,
-        is_non_collinear=vasprun.parameters.get("LNONCOLLINEAR", False),
+        is_non_collinear=is_ncl,
     )
     band_edge_prop.structure = vasprun.final_structure
     return band_edge_prop
@@ -483,7 +484,7 @@ def get_eigenvalue_analysis(
             Threshold criterion for determining if the orbitals of two eigenstates
             are similar (for identifying band-edge and defect states). If the
             summed orbital projection differences, normalised by the total orbital
-            projection coefficients,  are less than this value, then the orbitals
+            projection coefficients, are less than this value, then the orbitals
             are considered similar. Default is to try with 0.2 (``pydefect`` default),
             then if this fails increase to 0.35, and lastly 0.5.
         similar_energy_criterion (float):
