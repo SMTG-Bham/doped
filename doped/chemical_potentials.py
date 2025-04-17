@@ -10,7 +10,7 @@ import importlib.util
 import itertools
 import os
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from pathlib import Path
 from re import sub
@@ -929,13 +929,17 @@ class CompetingPhases:
         self,
         composition: str | Composition | Structure,
         e_above_hull: float = 0.05,
-        api_key: str | None = None,
+        extrinsic: str | Iterable | None = None,
         full_phase_diagram: bool = False,
+        full_sub_approach: bool = False,
+        codoping: bool = False,
+        api_key: str | None = None,
     ):
         """
         Class to generate VASP input files for competing phases on the phase
-        diagram for the host material, which determine the chemical potential
-        limits for that compound.
+        diagram for the host material (and any extrinsic (dopant/impurity)
+        elements), which determine the chemical potential limits for elements
+        in that compound.
 
         For this, the Materials Project (MP) database is queried using the
         ``MPRester`` API, and any calculated compounds which `could` border the
@@ -985,6 +989,39 @@ class CompetingPhases:
                 the number of calculations while retaining good accuracy
                 relative to the typical error of defect calculations.
                 (Default is 0.05 eV/atom).
+            extrinsic (str, Iterable):
+                Extrinsic dopant/impurity species to consider, to generate the
+                relevant competing phases to additionally determine their
+                chemical potential limits within the host. Can be a single
+                element as a string (e.g. "Mg") or an iterable of element
+                strings (list, set, tuple, dict) (e.g. ["Mg", "Na"]).
+            full_phase_diagram (bool):
+                If ``True``, include all phases on the MP phase diagram (with
+                energy above hull < ``e_above_hull`` eV/atom) for the chemical
+                system of the input composition and any extrinsic species (not
+                recommended). If ``False``, only includes phases that would
+                border the host material on the phase diagram (and thus set the
+                chemical potential limits), if their relative energy was
+                downshifted by ``e_above_hull`` eV/atom.
+                (Default is ``False``).
+            full_sub_approach (bool):
+                Generate competing phases by considering the full phase
+                diagram, including chemical potential limits with multiple
+                extrinsic phases. Only recommended when looking at high
+                (non-dilute) doping concentrations.
+                The default approach (``full_sub_approach = False``) for
+                extrinsic elements is to only consider chemical potential
+                limits where the host composition borders a maximum of 1
+                extrinsic phase (composition with extrinsic element(s)). This
+                is a valid approximation for the case of dilute dopant/impurity
+                concentrations. For high (non-dilute) concentrations of
+                extrinsic species, use ``full_sub_approach = True``.
+            codoping (bool):
+                Whether to consider extrinsic competing phases containing
+                multiple extrinsic species. Usually only relevant under high
+                (non-dilute) co-doping concentrations. If set to True, then
+                ``full_sub_approach`` is also set to ``True``. Default is
+                ``False``.
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
                 database for competing phase generation. If not supplied, will
@@ -992,18 +1029,13 @@ class CompetingPhases:
                 ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``) -- see the
                 ``doped`` Installation docs page:
                 https://doped.readthedocs.io/en/latest/Installation.html
-            full_phase_diagram (bool):
-                If ``True``, include all phases on the MP phase diagram (with energy
-                above hull < ``e_above_hull`` eV/atom) for the chemical system of
-                the input composition (not recommended). If ``False``, only includes
-                phases that would border the host material on the phase diagram (and
-                thus set the chemical potential limits), if their relative energy was
-                downshifted by ``e_above_hull`` eV/atom.
-                (Default is ``False``).
         """
         # TODO: Give quick attribute summary at end of docstring above, following chempots code overhaul
         self.e_above_hull = e_above_hull  # store parameters for reference
         self.full_phase_diagram = full_phase_diagram
+        self.extrinsic = extrinsic
+        self.codoping = codoping
+        self.full_sub_approach = full_sub_approach
         # get API key, and print info message if it corresponds to legacy MP -- remove this and legacy
         # MP API warning filter in future versions, when legacy_MP no longer supported
         self.api_key, self.legacy_MP = _parse_MP_API_key(api_key, legacy_MP_info=True)
@@ -1185,6 +1217,176 @@ class CompetingPhases:
         if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetization info
             self.MP_docs = get_MP_summary_docs(
                 entries=self.entries,  # sets "band_gap", "total_magnetization" and "database_IDs" fields
+                api_key=self.api_key,
+            )
+
+        self.intrinsic_species = [s.symbol for s in self.composition.reduced_composition.elements]
+
+        if not self.extrinsic:
+            self.intrinsic_entries: list[ComputedEntry] = self.entries
+            self.extrinsic_entries: list[ComputedEntry] = []
+            self.MP_intrinsic_full_pd_entries = self.MP_full_pd_entries  # includes molecules-in-boxes
+            return
+
+        # otherwise, we have extrinsic species present:
+        self.intrinsic_entries = copy.deepcopy(self.entries)
+
+        if not isinstance(self.extrinsic, str | Iterable):
+            raise TypeError(
+                f"`extrinsic` must be a string (i.e. the extrinsic species symbol, e.g. 'Mg') or an "
+                f"iterable object (list, set, tuple or dict; e.g. ['Mg', 'Na']), got type "
+                f"{type(self.extrinsic)} instead!"
+            )
+
+        self.extrinsic_species = (
+            [self.extrinsic] if isinstance(self.extrinsic, str) else list(self.extrinsic)
+        )
+        if extrinsic_in_intrinsic := [
+            ext for ext in self.extrinsic_species if ext in self.intrinsic_species
+        ]:
+            raise ValueError(
+                f"Extrinsic species {extrinsic_in_intrinsic} are already present in the host composition "
+                f"({self.composition}), and so cannot be considered as extrinsic species!"
+            )
+
+        if self.codoping:  # if codoping is True, should have multiple extrinsic species:
+            if len(self.extrinsic_species) < 2:
+                warnings.warn(
+                    "`codoping` is set to True, but `extrinsic_species` only contains 1 element, "
+                    "so `codoping` will be set to False."
+                )
+                self.codoping = False
+
+            elif not self.full_sub_approach:
+                self.full_sub_approach = True
+
+        if self.full_sub_approach and self.codoping:
+            # can be time-consuming if several extrinsic_species supplied
+            self.MP_full_pd_entries = get_entries_in_chemsys(
+                chemsys=self.intrinsic_species + self.extrinsic_species,
+                api_key=self.api_key,
+                e_above_hull=self.e_above_hull,
+                bulk_composition=self.composition.reduced_formula,  # for sorting
+            )
+            self.entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
+
+            if not self.full_phase_diagram:
+                self.entries = prune_entries_to_border_candidates(
+                    entries=self.entries,
+                    bulk_computed_entry=self.MP_bulk_computed_entry,
+                    e_above_hull=self.e_above_hull,
+                )  # prune using phase diagram with all extrinsic species
+
+        else:  # full_sub_approach (for now, to get self.entries) but not co-doping
+            candidate_extrinsic_entries = []
+            for sub_el in self.extrinsic_species:
+                sub_el_MP_full_pd_entries = get_entries_in_chemsys(
+                    [*self.intrinsic_species, sub_el],
+                    api_key=self.api_key,
+                    e_above_hull=self.e_above_hull,
+                    bulk_composition=self.composition.reduced_formula,  # for sorting
+                )
+                sub_el_pd_entries = self._generate_elemental_diatomic_phases(sub_el_MP_full_pd_entries)
+                self.MP_full_pd_entries.extend(
+                    [entry for entry in sub_el_MP_full_pd_entries if entry not in self.MP_full_pd_entries]
+                )
+
+                if not self.full_phase_diagram:  # default, prune to only phases that would border the host
+                    # material on the phase diagram, if their relative energy was downshifted by
+                    # `e_above_hull`; prune using phase diagrams for one extrinsic species at a time here
+                    sub_el_pd_entries = prune_entries_to_border_candidates(
+                        entries=sub_el_pd_entries,
+                        bulk_computed_entry=self.MP_bulk_computed_entry,
+                        e_above_hull=self.e_above_hull,
+                    )
+
+                candidate_extrinsic_entries += [
+                    entry for entry in sub_el_pd_entries if sub_el in entry.composition
+                ]
+
+            if self.full_sub_approach:
+                self.entries += candidate_extrinsic_entries
+
+            else:  # not full_sub_approach; recommended approach for extrinsic species (assumes dilute
+                # concentrations). Here we only retain extrinsic competing phases when they border the
+                # host composition on the phase diagram with no other extrinsic phases in equilibrium
+                # at this limit. This is essentially the assumption that the majority of elements in
+                # the total composition will be from the host composition rather than the extrinsic
+                # species (a good approximation for dilute concentrations)
+                for sub_el in self.extrinsic_species:
+                    sub_el_entries = [
+                        entry for entry in candidate_extrinsic_entries if sub_el in entry.composition
+                    ]
+
+                    if not sub_el_entries:
+                        raise ValueError(
+                            f"No Materials Project entries found for the given chemical "
+                            f"system: {[*self.intrinsic_species, sub_el]}"
+                        )
+
+                    sub_el_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *sub_el_entries])
+                    MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
+                        self.MP_bulk_computed_entry, sub_el_phase_diagram
+                    )
+                    MP_extrinsic_bordering_phases: list[str] = []
+
+                    for limit in MP_extrinsic_gga_chempots:
+                        # note that the number of phases in equilibria at each vertex (limit) is equal
+                        # to the number of elements in the chemical system (here being the host
+                        # composition plus the extrinsic species)
+                        extrinsic_bordering_phases = {
+                            phase for phase in limit.split("-") if sub_el in phase
+                        }
+                        # only add to MP_extrinsic_bordering_phases when only 1 extrinsic bordering phase
+                        # (i.e. ``full_sub_approach=False`` behaviour):
+                        if len(  # this should always give the same number of facets as the bulk PD
+                            extrinsic_bordering_phases
+                            # TODO: Explicitly test this for all cases in tests
+                        ) == 1 and not extrinsic_bordering_phases.issubset(MP_extrinsic_bordering_phases):
+                            MP_extrinsic_bordering_phases.extend(extrinsic_bordering_phases)
+
+                    single_bordering_sub_el_entries = [
+                        entry
+                        for entry in candidate_extrinsic_entries
+                        if entry.name in MP_extrinsic_bordering_phases
+                        or (entry.is_element and sub_el in entry.name)
+                    ]
+
+                    # check that extrinsic competing phases list is not empty (according to PyCDT
+                    # chemical potential handling this can happen (despite purposely neglecting these
+                    # "over-dependent" facets above), but no known cases... (apart from when `extrinsic`
+                    # actually contains an intrinsic element, which we handle above anyway)
+                    if not single_bordering_sub_el_entries:
+                        # warnings.warn(
+                        #     f"Determined chemical potentials to be over-dependent on the extrinsic "
+                        #     f"species {sub_el}, meaning we need to revert to `full_sub_approach = True` "
+                        #     f"for this species."
+                        # )  # Revert to this handling if we ever find a case of this actually happening
+                        # self.entries += sub_el_entries
+                        raise RuntimeError(
+                            f"Determined chemical potentials to be over-dependent on the extrinsic "
+                            f"species {sub_el} despite `full_sub_approach=False`, which shouldn't happen. "
+                            f"Please report this to the developers on the GitHub issues page: "
+                            f"https://github.com/SMTG-Bham/doped/issues"
+                        )
+
+                    self.entries += single_bordering_sub_el_entries
+
+        # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
+        self.MP_full_pd_entries.sort(
+            key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
+        )
+        self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
+        self.entries.sort(
+            key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
+        )
+        _name_entries_and_handle_duplicates(self.entries)  # set entry names
+
+        if not self.legacy_MP:  # need to pull ``SummaryDoc``\s to get band_gap and magnetization info
+            self.intrinsic_MP_docs = deepcopy(self.MP_docs)
+            self.MP_docs = get_MP_summary_docs(
+                entries=self.entries,
+                # sets "band_gap", "total_magnetization" and "database_IDs" fields
                 api_key=self.api_key,
             )
 
