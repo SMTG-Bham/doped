@@ -1985,8 +1985,8 @@ class DefectParser:
 
         # parse spin degeneracy now, before proj eigenvalues/magnetisation are cut (for SOC/NCL calcs):
         degeneracy_factors = {
-            "spin degeneracy": spin_degeneracy_from_vasprun(defect_vr)
-            / spin_degeneracy_from_vasprun(bulk_vr)
+            "spin degeneracy": spin_degeneracy_from_vasprun(defect_vr, charge_state=parsed_charge_state)
+            / spin_degeneracy_from_vasprun(bulk_vr, charge_state=0)
         }
 
         if dielectric is None and not skip_corrections and parsed_charge_state != 0:

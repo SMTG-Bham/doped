@@ -736,8 +736,8 @@ class DefectEntry(thermo.DefectEntry):
             if "spin degeneracy" not in self.degeneracy_factors:
                 with contextlib.suppress(Exception):
                     self.degeneracy_factors["spin degeneracy"] = spin_degeneracy_from_vasprun(
-                        defect_vr
-                    ) / spin_degeneracy_from_vasprun(bulk_vr)
+                        defect_vr, charge_state=self.charge_state
+                    ) / spin_degeneracy_from_vasprun(bulk_vr, charge_state=0)
 
             # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
             # collection and thus reduce memory:

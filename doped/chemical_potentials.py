@@ -1051,7 +1051,7 @@ class CompetingPhases:
             self.bulk_structure = None
             self.composition = Composition(composition)
 
-        self.chemsys = list(self.composition.as_dict().keys())
+        self.chemsys = list(self.composition.get_el_amt_dict().keys())
 
         # get all entries in the chemical system:
         self.MP_full_pd_entries, self.property_key_dict, self.property_data_fields = (

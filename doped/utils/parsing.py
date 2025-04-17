@@ -1628,7 +1628,9 @@ def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0
             The total number of electrons in the system, including core
             electrons.
     """
-    total_Z = int(sum(Element(elt).Z * num for elt, num in structure.composition.as_dict().items()))
+    total_Z = int(
+        sum(Element(elt).Z * num for elt, num in structure.composition.get_el_amt_dict().items())
+    )
     return int(total_Z + charge_state)
 
 
@@ -1689,8 +1691,8 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
         # i.e. number of electrons, as in VASP):
         return magnetisation + 1
 
-    except RuntimeError:  # NCL calculation without parsed projected magnetisation, guess from charge
-        return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))
+    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetisation:
+        return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))  # guess from charge
 
 
 def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:

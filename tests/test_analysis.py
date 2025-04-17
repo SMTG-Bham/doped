@@ -31,11 +31,15 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
     Vasprun,
+    _num_electrons_from_charge_state,
+    _simple_spin_degeneracy_from_num_electrons,
     get_defect_type_and_composition_diff,
     get_defect_type_site_idxs_and_unrelaxed_structure,
+    get_magnetisation_from_vasprun,
     get_outcar,
     get_procar,
     get_vasprun,
+    spin_degeneracy_from_vasprun,
 )
 from doped.utils.symmetry import point_symmetry_from_structure
 
@@ -220,11 +224,22 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert len(dp.defect_folders) >= len(dp.defect_dict)
 
         for name, defect_entry in dp.defect_dict.items():
+            print(f"Checking {name}")
             assert name == defect_entry.name
             if defect_entry.charge_state != 0 and not skip_corrections:
                 assert sum(defect_entry.corrections.values()) != 0
             assert defect_entry.get_ediff()  # can get ediff fine
             assert defect_entry.calculation_metadata  # has metadata
+
+            # spin degeneracy is simple for our normal test cases: (others tested separately)
+            if not any(x in defect_entry.name for x in ["Bipolaron", "v_Ca_+1", "v_Ca_0"]):
+                assert defect_entry.degeneracy_factors[
+                    "spin degeneracy"
+                ] == _simple_spin_degeneracy_from_num_electrons(
+                    _num_electrons_from_charge_state(
+                        defect_entry.defect_supercell, defect_entry.charge_state
+                    )
+                )
 
         # check __repr__ info:
         assert all(
@@ -457,7 +472,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             output_path=self.CdTe_EXAMPLE_DIR,
             dielectric=9.13,
             processes=1,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         self._check_default_CdTe_DefectsParser_outputs(dp, w)
 
@@ -555,8 +570,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
         assert (
             f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std - please ensure `vasprun.xml(.gz)` "
-            f"files are present and/or specify `bulk_path` manually."
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std -- please ensure "
+            f"`vasprun.xml(.gz)` files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
@@ -631,7 +646,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             output_path=self.CdTe_EXAMPLE_DIR,
             bulk_path=f"{self.module_path}/data/CdTe",  # vasp_gam bulk vr here
             dielectric=9.13,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
 
         for i in [
@@ -731,7 +746,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             output_path=self.YTOS_EXAMPLE_DIR,
             dielectric=self.ytos_dielectric,
             json_filename="YTOS_example_defect_dict.json",
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )  # for testing in test_thermodynamics.py
         assert not w  # hidden files ignored
         self._check_DefectsParser(dp)
@@ -744,7 +759,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             output_path=self.YTOS_EXAMPLE_DIR,
             bulk_path=os.path.join(self.YTOS_EXAMPLE_DIR, "Bulk"),
             dielectric=self.ytos_dielectric,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         assert not w
         self._check_DefectsParser(dp)
@@ -796,7 +811,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
             bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
             dielectric=40,  # fake isotropic dielectric
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         assert any(
             all(
@@ -857,7 +872,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             self.Sb2Si2Te6_EXAMPLE_DIR,
             dielectric=self.Sb2Si2Te6_dielectric,
             json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         assert any(
             "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
@@ -1277,6 +1292,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert len(dp.defect_dict) == 4
         self._check_DefectsParser(dp, skip_corrections=True)
 
+        # v_Ca_+1 is an odd quartet state (S = 3/2, multiplicity = 4), and v_Ca_0 is a triplet states,
+        # ISPIN = 2 calculations, manually checked. Looks like they could be band occupancies
+        assert dp.defect_dict["v_Ca_+1"].degeneracy_factors["spin degeneracy"] == 4
+        assert dp.defect_dict["v_Ca_0"].degeneracy_factors["spin degeneracy"] == 3
+
         # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
         for name, vacancy_defect_entry in dp.defect_dict.items():
             print(
@@ -1316,7 +1336,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             output_path=self.BiOI_DATA_DIR,
             skip_corrections=True,
             symprec=0.01,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         assert not w
         assert len(dp.defect_dict) == 1
@@ -1424,7 +1444,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=-1,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             assert len(w) == 1
             assert issubclass(w[-1].category, UserWarning)
@@ -1504,7 +1524,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
         print([str(warn.message) for warn in w])  # for debugging
         assert len(w) == 1
@@ -1564,7 +1584,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 charge_state=2,  # test manually specifying charge state
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             ).defect_entry
             assert (
                 f"Multiple `OUTCAR` files found in defect directory: "
@@ -1698,7 +1718,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             assert len(w) == 0
 
@@ -1742,7 +1762,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=fake_aniso_dielectric,
             charge_state=2,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         print([warn.message for warn in w])  # for debugging
         assert len(w) == num_warnings
@@ -1787,7 +1807,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=-2,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             assert len(w) == 2  # multiple LOCPOTs (both defect and bulk)
             assert all(issubclass(warning.category, UserWarning) for warning in w)
@@ -1817,7 +1837,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=-2,  # test manually specifying charge state
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             assert len(w) == 2  # multiple `vasprun.xml`s (both defect and bulk)
             assert all(issubclass(warning.category, UserWarning) for warning in w)
@@ -1846,7 +1866,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
 
         # Check that the correct Freysoldt correction is applied
@@ -1865,7 +1885,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=9.13,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -1880,7 +1900,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=9,
             charge_state=-2,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -1894,7 +1914,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=np.array([9.13, 9.13, 9.13]),
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -1909,7 +1929,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=[9.13, 9.13, 9.13],
             charge_state=-2,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -1923,7 +1943,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=self.CdTe_dielectric,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -1938,7 +1958,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=self.CdTe_dielectric.tolist(),
             charge_state=-2,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
@@ -2015,7 +2035,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=+2,  # test manually specifying charge state
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
 
         self._check_defect_entry_corrections(te_i_2_ent, -6.2009, 0.9038318161163628)
@@ -2030,7 +2050,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=+2,  # test manually specifying charge state
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
 
         mock_print.assert_not_called()
@@ -2048,7 +2068,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     bulk_path=self.CdTe_BULK_DATA_DIR,
                     dielectric=self.CdTe_dielectric,
                     charge_state=defect_charge,
-                    parse_projected_eigen=False,
+                    parse_projected_eigen=False,  # just for fast testing, not recommended in general!
                 )
 
         self._check_defect_entry_corrections(te_cd_1_ent, -2.6676, 0.23840982963691623)
@@ -2131,7 +2151,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
         bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis()
@@ -2251,7 +2271,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )  # check no correction error warning with default tolerance:
         assert len([warning for warning in w if issubclass(warning.category, UserWarning)]) == 1
         assert "An anisotropic dielectric constant was supplied, but `OUTCAR`" in str(w[0].message)
@@ -2263,7 +2283,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
                 error_tolerance=0.00001,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )  # check no correction error warning with default tolerance:
         print([str(warn.message) for warn in w])
         assert any(  # break up warning message to allow slightly difference numbers after 3.XXe-04 eV:
@@ -2328,7 +2348,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
             charge_state=1,
-            parse_projected_eigen=False,
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
 
         self._test_F_O_1_ent(F_O_1_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776)
@@ -2403,7 +2423,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/{name}/vasp_ncl",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
 
             efnv_w_doped_site = make_efnv_correction(
@@ -2442,7 +2462,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             defect_entry_from_paths(
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
         assert len([warning for warning in w if issubclass(warning.category, UserWarning)]) == 1
         assert all(
@@ -2687,7 +2707,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
                 skip_corrections=True,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
@@ -2728,7 +2748,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
                 skip_corrections=True,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
@@ -2756,7 +2776,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
                 skip_corrections=True,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 2  # now INCAR and KPOINTS warnings!
@@ -2788,7 +2808,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=9.13,
                 skip_corrections=True,
                 charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 3  # now INCAR and KPOINTS and POTCAR warnings!
@@ -2821,7 +2841,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=9.13,
                 skip_corrections=True,
                 charge_state=+1,  # manually specify charge state here, as our edited POTCAR doesn't exist
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
             print([str(warning.message) for warning in w])  # for debugging
             assert any(
@@ -2836,7 +2856,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 defect_path=f"{self.data_dir}/Doped_CdTe",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 skip_corrections=True,
-                parse_projected_eigen=False,
+                parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             )
         assert any("Detected atoms far from the defect site" in str(warning.message) for warning in w)
 
@@ -2929,6 +2949,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             skip_corrections=True,
             parse_projected_eigen=True,
         ).defect_entry
+        assert defect_entry.degeneracy_factors["spin degeneracy"] == 2
 
         print("Testing MgO eigenvalue analysis")
         bes, fig = defect_entry.get_eigenvalue_analysis()  # Test plotting KS
@@ -3299,6 +3320,73 @@ class DefectsParsingTestCase(unittest.TestCase):
     #             relaxed_point_group="Td", bulk_site_point_group="C3v", defect_type=defect_type
     #         )
     #         assert np.isclose(orientational_degeneracy, 0.25, atol=1e-2)
+
+    def test_magnetisation_parsing(self):
+        # individual checks first:
+        # bulk NCL:
+        vr = get_vasprun(f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml.gz", parse_projected_eigen=True)
+        assert np.allclose(get_magnetisation_from_vasprun(vr), 0, atol=0.02)
+        assert spin_degeneracy_from_vasprun(vr) == 1
+
+        # -1 ncl:
+        vr = get_vasprun(
+            f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-1/vasp_ncl/vasprun.xml.gz", parse_projected_eigen=True
+        )
+        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 1, atol=0.05)
+        assert spin_degeneracy_from_vasprun(vr) == 2
+
+        # S = 0 bipolaron ncl:
+        vr = get_vasprun(
+            f"{self.data_dir}/Magnetisation_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
+            parse_projected_eigen=True,
+        )
+        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 0.903, atol=0.05)
+        assert spin_degeneracy_from_vasprun(vr) == 1
+
+        # S = 1 bipolaron ncl:
+        vr = get_vasprun(
+            f"{self.data_dir}/Magnetisation_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
+            parse_projected_eigen=True,
+        )
+        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 1.6, atol=0.05)
+        assert spin_degeneracy_from_vasprun(vr) == 3
+
+        # O2 triplet calculation, vasp_std, ISPIN = 2
+        vr = get_vasprun(
+            f"{self.data_dir}/Magnetisation_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
+            parse_projected_eigen=True,
+        )
+        print(get_magnetisation_from_vasprun(vr))
+        assert get_magnetisation_from_vasprun(vr) == 2
+        assert spin_degeneracy_from_vasprun(vr) == 3
+
+        # O2 triplet calculation, vasp_ncl (near-perfect triplet)
+        vr = get_vasprun(
+            f"{self.data_dir}/Magnetisation_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
+            parse_projected_eigen=True,
+        )
+        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 2, atol=0.001)
+        assert spin_degeneracy_from_vasprun(vr) == 3
+
+        # F_i_-1, vasp_std, ISPIN = 1 (non spin polarised)
+        int_F_minus1_ent = defect_entry_from_paths(
+            defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/",
+            bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
+            dielectric=self.ytos_dielectric,
+        )
+        assert int_F_minus1_ent.degeneracy_factors["spin degeneracy"] == 1
+        vr = get_vasprun(f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/vasprun.xml.gz", parse_projected_eigen=True)
+        assert get_magnetisation_from_vasprun(vr) == 0
+
+        # test DefectsParser handling:
+        dp, w = _create_dp_and_capture_warnings(
+            output_path=f"{self.data_dir}/Magnetisation_Tests/CdTe",
+            bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
+            dielectric=9.13,
+        )
+        assert dp.defect_dict["v_Cd_C2v_Bipolaron_S0_0"].degeneracy_factors["spin degeneracy"] == 1
+        assert dp.defect_dict["v_Cd_C2v_Bipolaron_S1_0"].degeneracy_factors["spin degeneracy"] == 3
+        self._check_DefectsParser(dp)
 
 
 class ReorderedParsingTestCase(unittest.TestCase):
