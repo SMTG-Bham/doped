@@ -1297,10 +1297,6 @@ def get_magnetisation_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
         int or float or np.ndarray[float]:
             The total magnetisation of the system.
     """
-    # TODO: Update spin multiplicity function to account for spinors (with rounding?). Also ignore error
-    #  for SOC calculations for the moment with it, (with a TODO to remove in later versions),
-    #   as we transition to now parsing this by default.
-
     # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
     # spin-polarisation / account for NELECT changes from neutral apparently
     eigenvalues_and_occs = vasprun.eigenvalues
@@ -1341,7 +1337,7 @@ def get_magnetisation_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
                 normalised_proj_mag_per_kpoint_band_direction
                 * eigenvalues_and_occs[Spin.up][:, :, 1][..., None]
             ).sum(axis=1)
-            * kweights
+            * kweights[..., None]
         ).sum(axis=0)
 
     # product of the sum of occupations over all bands, times the k-point weights:
@@ -1364,9 +1360,8 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     """
     # can also obtain this (NELECT), charge and magnetisation from Outcar objects, worth keeping in mind
     # but not needed atm
-    # in theory should be able to use vasprun.idos (integrated dos), but this
-    # doesn't show spin-polarisation / account for NELECT changes from neutral
-    # apparently
+    # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
+    # spin-polarisation / account for NELECT changes from neutral apparently
 
     eigenvalues_and_occs = vasprun.eigenvalues
     kweights = vasprun.actual_kpoints_weights
@@ -1617,76 +1612,154 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
     return None
 
 
-def simple_spin_degeneracy_from_charge(structure, charge_state: int = 0) -> int:
+def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:
     """
-    Get the defect spin degeneracy from the supercell and charge state,
-    assuming either simple singlet (S=0) or doublet (S=1/2) behaviour.
-
-    Even-electron defects are assumed to have a singlet ground state, and odd-
-    electron defects are assumed to have a doublet ground state.
-    """
-    total_Z = int(sum(Element(elt).Z * num for elt, num in structure.composition.as_dict().items()))
-    return int((total_Z + charge_state) % 2 + 1)
-
-
-def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int = 0) -> int:
-    """
-    Get the defect spin degeneracy from the vasprun output, assuming either
-    singlet (S=0) or doublet (S=1/2) behaviour.
-
-    Even-electron defects are assumed to have a singlet ground state, and odd-
-    electron defects are assumed to have a doublet ground state.
-    """
-    return simple_spin_degeneracy_from_charge(defect_vr.final_structure, charge_state)
-
-
-def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> int:
-    """
-    Determine the defect charge state from the defect vasprun, and compare to
-    the manually-set charge state if provided.
+    Get the total number of electrons (including core electrons! -- so
+    different to ``NELECT`` in VASP in most cases) for a given structure and
+    charge state.
 
     Args:
-        defect_vr (Vasprun):
-            Defect ``pymatgen`` ``Vasprun`` object.
-        charge_state (int):
-            Manually-set charge state for the defect, to check if it matches
-            the auto-determined charge state.
+        structure (Structure):
+            The structure for which to get the total number of electrons.
+        charge_state (int): The charge state of the system. Default is 0.
 
     Returns:
-        int: The auto-determined defect charge state.
+        int:
+            The total number of electrons in the system, including core
+            electrons.
+    """
+    total_Z = int(sum(Element(elt).Z * num for elt, num in structure.composition.as_dict().items()))
+    return int(total_Z + charge_state)
+
+
+def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = None) -> int:
+    """
+    Get the spin degeneracy (multiplicity) of a system from a ``VASP`` vasprun
+    output.
+
+    Spin degeneracy is determined by first getting the total magnetisation and
+    thus electron spin (S = N_μB/2 -- where N_μB is the magnetization in Bohr
+    magnetons (i.e. electronic units, as used in VASP), and using the spin
+    multiplicity equation: ``g_spin = 2S + 1``. The total magnetisation
+    ``N_μB`` is determined using ``get_magnetisation_from_vasprun`` (see
+    docstring for details), and if this fails, then simple spin behaviour is
+    assumed with singlet (S = 0) behaviour for even-electron systems and
+    doublet behaviour (S = 1/2) for odd-electron systems.
+
+    For non-collinear (NCL) magnetisation (e.g. spin-orbit coupling (SOC)
+    calculations), the magnetisation ``N_μB`` becomes a vector (spinor), in
+    which case we take the vector norm as the total magnetisation. This can be
+    non-integer in these cases (e.g. due to SOC mixing of spin states, as
+    **_S_** is no longer a good quantum number). As an approximation for these
+    cases, we round ``N_μB`` to the nearest integer which would be allowed
+    under collinear magnetism (i.e. even numbers for even-electron systems, odd
+    numbers for odd-electron systems).
+
+    Args:
+        vasprun (Vasprun):
+            ``pymatgen`` ``Vasprun`` for which to determine the spin
+            degeneracy.
+        charge_state (int):
+            The charge state of the system, which can be used to determine the
+            number of electrons. If ``None`` (default), automatically
+            determines the number of electrons using
+            ``get_nelect_from_vasprun(vasprun)``.
+
+    Returns:
+        int: Spin degeneracy of the system.
+    """
+    if charge_state is None:
+        num_electrons = get_nelect_from_vasprun(vasprun)
+    else:
+        num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
+
+    try:
+        magnetisation = get_magnetisation_from_vasprun(vasprun)
+        if isinstance(magnetisation, np.ndarray):
+            # take the vector norm as the total magnetisation
+            magnetisation = np.linalg.norm(magnetisation)
+
+        # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
+        if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...
+            magnetisation = round(magnetisation / 2) * 2  # nearest even number
+        else:
+            magnetisation = round((magnetisation - 1) / 2) * 2 + 1  # nearest odd number
+
+        # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
+        # i.e. number of electrons, as in VASP):
+        return magnetisation + 1
+
+    except RuntimeError:  # NCL calculation without parsed projected magnetisation, guess from charge
+        return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))
+
+
+def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
+    """
+    Get the spin degeneracy of a system from the total number of electrons,
+    assuming simple singlet (S=0) behaviour for even-electron systems or
+    doublet (S=1/2) behaviour for odd-electron systems.
+
+    Spin multiplicity is equal to ``2S + 1``, so 1 for singlets (S = 0), 2 for
+    doublets (S = 1/2), 3 for triplets (S = 1) etc.
+
+    Args:
+        num_electrons (int): The total number of electrons.
+
+    Returns:
+        int:
+            The spin multiplicity assuming singlet or doublet behaviour.
+    """
+    return int(num_electrons % 2 + 1)
+
+
+def total_charge_from_vasprun(vasprun: Vasprun, charge_state: int | None) -> int:
+    """
+    Determine the total charge state of a system from the vasprun, and compare
+    to the expected charge state if provided.
+
+    Args:
+        vasprun (Vasprun):
+            ``pymatgen`` ``Vasprun`` object for which to determine the total
+            charge.
+        charge_state (int):
+            Expected charge state, to check if it matches the auto-determined
+            charge state.
+
+    Returns:
+        int: The auto-determined charge state.
     """
     auto_charge = None
 
     try:
-        if defect_vr.incar.get("NELECT") is None:
-            auto_charge = 0  # neutral defect if NELECT not specified
+        if vasprun.incar.get("NELECT") is None:
+            auto_charge = 0  # neutral if NELECT not specified
 
         else:
-            defect_nelect = defect_vr.parameters.get("NELECT")
-            neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
+            nelect = vasprun.parameters.get("NELECT")
+            neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
 
-            auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+            auto_charge = -1 * (nelect - neutral_nelect)
 
             if auto_charge is None or abs(auto_charge) >= 10:
-                neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr, skip_potcar_init=True)
+                neutral_nelect = get_neutral_nelect_from_vasprun(vasprun, skip_potcar_init=True)
                 try:
-                    auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+                    auto_charge = -1 * (nelect - neutral_nelect)
 
                 except Exception as e:
                     auto_charge = None
                     if charge_state is None:
                         raise RuntimeError(
-                            "Defect charge cannot be automatically determined as POTCARs have not been "
+                            "System charge cannot be automatically determined as POTCARs have not been "
                             "setup with pymatgen (see Step 2 at "
-                            "https://github.com/SMTG-Bham/doped#installation). Please specify defect "
-                            "charge manually using the `charge_state` argument, or set up POTCARs with "
+                            "https://github.com/SMTG-Bham/doped#installation). Please specify charge "
+                            "state manually using the `charge_state` argument, or set up POTCARs with "
                             "pymatgen."
                         ) from e
 
             if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
                 raise RuntimeError(
-                    f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
-                    f"Please specify defect charge manually using the `charge` argument."
+                    f"Auto-determined system charge q={int(auto_charge):+} is unreasonably large. "
+                    f"Please specify system charge manually using the `charge` argument."
                 )
 
         if (
@@ -1696,7 +1769,7 @@ def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> 
             and abs(auto_charge) < 5
         ):
             warnings.warn(
-                f"Auto-determined defect charge q={int(auto_charge):+} does not match specified charge "
+                f"Auto-determined system charge q={int(auto_charge):+} does not match specified charge "
                 f"q={int(charge_state):+}. Will continue with specified charge_state, but beware!"
             )
 
@@ -1709,8 +1782,8 @@ def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> 
 
     if charge_state is None:
         raise RuntimeError(
-            "Defect charge could not be automatically determined from the defect calculation outputs. "
-            "Please manually specify defect charge using the `charge_state` argument."
+            "System charge could not be automatically determined from the calculation outputs. "
+            "Please manually specify charge state using the `charge_state` argument."
         )
 
     return charge_state
