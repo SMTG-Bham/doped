@@ -65,7 +65,8 @@ def calc_site_displacements(
             the `Displacement wrt defect` key of the returned dictionary.
         vector_to_project_on (list):
             Direction to project the site displacements along
-            (e.g. [0, 0, 1]). Defaults to ``None``.
+            (e.g. [0, 0, 1]). Defaults to ``None`` (displacements are given
+            as vectors in Cartesian space).
         threshold (float):
             If the distance between a pair of matched sites is larger than this,
             then a warning will be thrown. Default is 2.0 Å.

@@ -1263,7 +1263,8 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float:
 
     Args:
         vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract the total magnetization.
+            The ``Vasprun`` object from which to extract the total
+            magnetization.
 
     Returns:
         int or float: The total magnetization of the system.
