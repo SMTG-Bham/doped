@@ -706,10 +706,11 @@ class DefectRelaxSet(MSONable):
 
         - ``DefectRelaxSet.vasp_gam``:
             ``DefectDictSet`` for Gamma-point only relaxation. Usually not
-            needed if ``ShakeNBreak`` structure searching has been performed
-            (recommended), unless only Γ-point `k`-point sampling is required
-            (converged) for your system, and no ``vasp_std`` calculations with
-            multiple `k`-points are required (determined from kpoint settings).
+            needed if ``ShakeNBreak`` (or other) structure searching has been
+            performed (recommended), unless only Γ-point `k`-point sampling is
+            required (converged) for your system, and no ``vasp_std``
+            calculations with multiple `k`-points are required (determined from
+            kpoint settings).
         - ``DefectRelaxSet.vasp_nkred_std``:
             ``DefectDictSet`` for relaxation with a kpoint mesh and using
             ``NKRED``. Not generated for GGA calculations (if ``LHFCALC`` is
@@ -743,7 +744,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         Args:
             defect_entry (DefectEntry, Structure):
@@ -786,11 +788,11 @@ class DefectRelaxSet(MSONable):
         Key Attributes:
             vasp_gam (DefectDictSet):
                 ``DefectDictSet`` for Gamma-point only relaxation. Usually not
-                needed if ``ShakeNBreak`` structure searching has been
-                performed (recommended), unless only Γ-point `k`-point sampling
-                is required (converged) for your system, and no ``vasp_std``
-                calculations with multiple `k`-points are required (determined
-                from kpoints settings).
+                needed if ``ShakeNBreak`` (or other) structure searching has
+                been performed (recommended), unless only Γ-point `k`-point
+                sampling is required (converged) for your system, and no
+                ``vasp_std`` calculations with multiple `k`-points are required
+                (determined from kpoints settings).
             vasp_nkred_std (DefectDictSet):
                 ``DefectDictSet`` for relaxation with a non-Γ-only kpoint mesh,
                 using ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for
@@ -916,10 +918,10 @@ class DefectRelaxSet(MSONable):
         """
         Returns a ``DefectDictSet`` object for a VASP Γ-point-only
         (``vasp_gam``) defect supercell relaxation. Typically not needed if
-        ShakeNBreak structure searching has been performed (recommended),
-        unless only Γ-point `k`-point sampling is required (converged) for your
-        system, and no vasp_std calculations with multiple `k`-points are
-        required (determined from kpoints settings).
+        ShakeNBreak (or other) structure searching has been performed
+        (recommended), unless only Γ-point `k`-point sampling is required
+        (converged) for your system, and no vasp_std calculations with multiple
+        `k`-points are required (determined from kpoints settings).
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
@@ -931,7 +933,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         return DefectDictSet(
             self.defect_supercell,
@@ -994,7 +997,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         # determine if vasp_std required or only vasp_gam:
         return self._check_vstd_kpoints(self._vasp_std)
@@ -1036,7 +1040,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         if self.user_incar_settings.get("LHFCALC", True) is False:  # GGA
             return None
@@ -1117,7 +1122,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         if not self.soc:
             return None
@@ -1179,7 +1185,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
@@ -1236,7 +1243,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
@@ -1296,7 +1304,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
@@ -1349,7 +1358,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
         """
         bulk_supercell: Structure = self._check_bulk_supercell_and_warn()
         if bulk_supercell is None:
@@ -1424,11 +1434,11 @@ class DefectRelaxSet(MSONable):
         Write the input files for VASP Γ-point-only (``vasp_gam``) defect
         supercell relaxation. Typically not recommended for use, as the
         recommended workflow is to perform ``vasp_gam`` calculations using
-        ``ShakeNBreak`` for defect structure-searching and initial relaxations,
-        but should be used if the final, converged `k`-point mesh is Γ-point-
-        only. If ``bulk`` is True, the input files for a single-point
-        calculation of the bulk supercell are also written to
-        "{formula}_bulk/{subfolder}".
+        ``ShakeNBreak`` (or other approaches) for defect structure-searching
+        and initial relaxations, but should be used if the final, converged
+        `k`-point mesh is Γ-point-only. If ``bulk`` is True, the input files
+        for a single-point calculation of the bulk supercell are also written
+        to ``"{formula}_bulk/{subfolder}"``.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
@@ -1440,7 +1450,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         The ``DefectEntry`` object is also written to a ``json.gz`` file in
         ``defect_dir`` to aid calculation provenance -- can be reloaded
@@ -1465,9 +1476,9 @@ class DefectRelaxSet(MSONable):
                 generated folder as well. Typically not recommended, as the
                 recommended workflow is to initially perform ``vasp_gam``
                 ground-state structure searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp(_nkred)_std`` relaxations from the ground-state
-                structures (e.g. using ``-d vasp_nkred_std`` with
+                (https://shakenbreak.readthedocs.io) or another approach, then
+                continue the ``vasp(_nkred)_std`` relaxations from the
+                ground-state structures (e.g. using ``-d vasp_nkred_std`` with
                 ``snb-groundstate`` (CLI) or
                 ``groundstate_folder="vasp_nkred_std"`` with
                 ``write_groundstate_structure`` (Python API)).
@@ -1537,7 +1548,7 @@ class DefectRelaxSet(MSONable):
 
         By default, does not generate ``POSCAR`` (input structure) files, as
         these should be taken from the ``CONTCAR``\s of ``vasp_std``
-        relaxations using ``NKRED(X,Y,Z)`` (originally from ``ShakeNBreak``
+        relaxations using ``NKRED(X,Y,Z)`` (originally from structure-searching
         relaxations) if using hybrid DFT, or from ``ShakeNBreak`` calculations
         (via ``snb-groundstate -d vasp_std``) if using GGA, or, if not
         following the recommended structure-searching workflow, from the
@@ -1559,7 +1570,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         The ``DefectEntry`` object is also written to a ``json.gz`` file in
         ``defect_dir`` to aid calculation provenance -- can be reloaded
@@ -1580,17 +1592,16 @@ class DefectRelaxSet(MSONable):
                 ``None`` will write the ``vasp_std`` input files directly to
                 the ``<defect_dir>`` folder, with no subfolders created.
             poscar (bool):
-                If True, writes the defect ``POSCAR`` to the generated
+                If ``True``, writes the defect ``POSCAR`` to the generated
                 folder as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
                 structure searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp(_nkred)_std`` relaxations from the ground-state
-                structures (e.g. using ``-d vasp_nkred_std`` with
+                (https://shakenbreak.readthedocs.io) or another approach, then
+                continue the ``vasp(_nkred)_std`` relaxations from the
+                ground-state structures (e.g. using ``-d vasp_nkred_std`` with
                 ``snb-groundstate`` (CLI) or
                 ``groundstate_folder="vasp_nkred_std"`` with
-                ``write_groundstate_structure`` (Python API)), first with
-                ``NKRED`` if using hybrid DFT, then without ``NKRED``.
+                ``write_groundstate_structure`` (Python API)).
                 (default: False)
             rattle (bool):
                 If writing ``POSCAR``, apply random displacements to all atomic
@@ -1663,9 +1674,9 @@ class DefectRelaxSet(MSONable):
         the k-point grid is divisible by this factor.
 
         By default, does not generate ``POSCAR`` (input structure) files, as
-        these should be taken from the ``CONTCAR``\s of ``ShakeNBreak``
-        calculations (via ``snb-groundstate -d vasp_nkred_std``) or, if not
-        following the recommended structure-searching workflow, from the
+        these should be taken from the ``CONTCAR``\s of structure-searching
+        calculations (e.g. via ``snb-groundstate -d vasp_nkred_std``) or, if
+        not following the recommended structure-searching workflow, from the
         ``CONTCAR``\s of ``vasp_gam`` calculations. If ``POSCAR`` files are
         desired, set ``poscar=True``. If ``bulk`` is ``True``, the input files
         for a single-point calculation of the bulk supercell are also written
@@ -1686,7 +1697,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         The ``DefectEntry`` object is also written to a ``json.gz`` file in
         ``defect_dir`` to aid calculation provenance -- can be reloaded
@@ -1708,13 +1720,13 @@ class DefectRelaxSet(MSONable):
                 input files directly to the ``<defect_dir>`` folder, with no
                 subfolders created.
             poscar (bool):
-                If True, writes the defect ``POSCAR`` to the generated
+                If ``True``, writes the defect ``POSCAR`` to the generated
                 folder as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
                 structure searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp(_nkred)_std`` relaxations from the ground-state
-                structures (e.g. using ``-d vasp_nkred_std`` with
+                (https://shakenbreak.readthedocs.io) or another approach, then
+                continue the ``vasp(_nkred)_std`` relaxations from the
+                ground-state structures (e.g. using ``-d vasp_nkred_std`` with
                 ``snb-groundstate`` (CLI) or
                 ``groundstate_folder="vasp_nkred_std"`` with
                 ``write_groundstate_structure`` (Python API)).
@@ -1793,8 +1805,8 @@ class DefectRelaxSet(MSONable):
 
         By default, does not generate ``POSCAR`` (input structure) files, as
         these should be taken from the ``CONTCAR``\s of ``vasp_std``
-        relaxations (originally from ``ShakeNBreak`` structure-searching
-        relaxations), or directly from ``ShakeNBreak`` calculations (via
+        relaxations (originally from structure-searching relaxations), or
+        directly from ``ShakeNBreak`` calculations (via
         ``snb-groundstate -d vasp_ncl``) if only Γ-point reciprocal space
         sampling is required. If ``POSCAR`` files are desired, set
         ``poscar=True``.
@@ -1817,7 +1829,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         The ``DefectEntry`` object is also written to a ``json.gz`` file in
         ``defect_dir`` to aid calculation provenance -- can be reloaded
@@ -1838,11 +1851,11 @@ class DefectRelaxSet(MSONable):
                 ``None`` will write the ``vasp_ncl`` input files directly to
                 the ``<defect_dir>`` folder, with no subfolders created.
             poscar (bool):
-                If True, writes the defect ``POSCAR`` to the generated
+                If ``True``, writes the defect ``POSCAR`` to the generated
                 folder as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
-                structure searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
+                structure searching (e.g. using ``ShakeNBreak``
+                (https://shakenbreak.readthedocs.io)), then continue the
                 ``vasp(_nkred)_std`` relaxations from the ground-state
                 structures (e.g. using ``-d vasp_nkred_std`` with
                 ``snb-groundstate`` (CLI) or
@@ -1943,20 +1956,20 @@ class DefectRelaxSet(MSONable):
         used), then also outputs:
 
         - ``vasp_gam``:
-            Γ-point only defect relaxation. Usually not needed if
-            ``ShakeNBreak`` structure searching has been performed
+            Γ-point only defect relaxation. Usually not needed if structure
+            searching has been performed (e.g. with ``ShakeNBreak``)
             (recommended).
 
         By default, does not generate a ``vasp_gam`` folder unless
         ``self.vasp_std`` is ``None`` (i.e. only Γ-point sampling required for
-        this system), as ``vasp_gam`` calculations should be performed using
-        ``ShakeNBreak`` for defect structure-searching and initial relaxations.
-        If ``vasp_gam`` files are desired, set ``vasp_gam=True``.
+        this system), as ``vasp_gam`` calculations should be performed with
+        defect structure-searching (e.g. with ``ShakeNBreak``) and initial
+        relaxations. If ``vasp_gam`` files are desired, set ``vasp_gam=True``.
 
         By default, ``POSCAR`` files are not generated for the
         ``vasp_(nkred_)std`` (and ``vasp_ncl`` if ``self.soc`` is True)
-        folders, as these should be taken from ``ShakeNBreak`` calculations
-        (via ``snb-groundstate -d vasp_nkred_std``) or, if not following the
+        folders, as these should be taken from structure-searching calculations
+        (e.g. ``snb-groundstate -d vasp_nkred_std``) or, if not following the
         recommended structure-searching workflow, from the ``CONTCAR``\s of
         ``vasp_gam`` calculations. If including SOC effects (i.e.
         ``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s should be
@@ -1983,7 +1996,8 @@ class DefectRelaxSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         The ``DefectEntry`` object is also written to a ``json.gz`` file in
         ``defect_dir`` to aid calculation provenance -- can be reloaded
@@ -2002,13 +2016,13 @@ class DefectRelaxSet(MSONable):
                 ``subfolder`` is the name of the corresponding VASP program to
                 run (e.g. ``vasp_std``).
             poscar (bool):
-                If True, writes the defect ``POSCAR`` to the generated
+                If ``True``, writes the defect ``POSCAR`` to the generated
                 folders as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
                 structure searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp(_nkred)_std`` relaxations from the ground-state
-                structures (e.g. using ``-d vasp_nkred_std`` with
+                (https://shakenbreak.readthedocs.io) or another approach, then
+                continue the ``vasp(_nkred)_std`` relaxations from the
+                ground-state structures (e.g. using ``-d vasp_nkred_std`` with
                 ``snb-groundstate`` (CLI) or
                 ``groundstate_folder="vasp_nkred_std"`` with
                 ``write_groundstate_structure`` (Python API)), first with
@@ -2034,11 +2048,12 @@ class DefectRelaxSet(MSONable):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``. Not recommended, as the recommended workflow is to
                 initially perform ``vasp_gam`` ground-state structure searching
-                using ShakeNBreak (https://shakenbreak.readthedocs.io), then
-                continue the ``vasp_std`` relaxations from the SnB ground-state
-                structures. Default is ``None``, where ``vasp_gam`` folders are
-                written if ``self.vasp_std`` is ``None`` (i.e. only Γ-point
-                reciprocal space sampling is required).
+                (e.g. using ShakeNBreak; https://shakenbreak.readthedocs.io),
+                then continue the ``vasp_std`` relaxations from the
+                ground-state structures. Default is ``None``, where
+                ``vasp_gam`` folders are written if ``self.vasp_std`` is
+                ``None`` (i.e. only Γ-point reciprocal space sampling is
+                required).
             bulk (bool, str):
                 If ``True``, the input files for a single-point calculation of
                 the bulk supercell are also written to
@@ -2152,10 +2167,11 @@ class DefectsSet(MSONable):
 
         - ``DefectRelaxSet.vasp_gam``:
             ``DefectDictSet`` for Gamma-point only relaxation. Usually not
-            needed if ``ShakeNBreak`` structure searching has been performed
-            (recommended), unless only Γ-point `k`-point sampling is required
-            (converged) for your system, and no ``vasp_std`` calculations with
-            multiple `k`-points are required (determined from kpoint settings).
+            needed if structure searching (e.g. ``ShakeNBreak``) has been
+            performed (recommended), unless only Γ-point `k`-point sampling is
+            required (converged) for your system, and no ``vasp_std``
+            calculations with multiple `k`-points are required (determined from
+            kpoint settings).
         - ``DefectRelaxSet.vasp_nkred_std``:
             ``DefectDictSet`` for relaxation with a kpoint mesh and using
             ``NKRED``. Not generated for GGA calculations (if ``LHFCALC`` is
@@ -2185,7 +2201,8 @@ class DefectsSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        (chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         Args:
             defect_entries (``DefectsGenerator``, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
@@ -2483,27 +2500,27 @@ class DefectsSet(MSONable):
         used), then also outputs:
 
         - ``vasp_gam``:
-            Γ-point only defect relaxation. Usually not needed if
-            ``ShakeNBreak`` structure searching has been performed
+            Γ-point only defect relaxation. Usually not needed if structure
+            searching has been performed (e.g. with ``ShakeNBreak``)
             (recommended).
 
         By default, does not generate a ``vasp_gam`` folder unless
-        ``DefectRelaxSet.vasp_std`` is None (i.e. only Γ-point sampling
+        ``DefectRelaxSet.vasp_std`` is ``None`` (i.e. only Γ-point sampling
         required for this system), as ``vasp_gam`` calculations should be
-        performed using ``ShakeNBreak`` for defect structure-searching and
-        initial relaxations. If ``vasp_gam`` files are desired, set
+        performed with defect structure-searching (e.g. with ``ShakeNBreak``)
+        and initial relaxations. If ``vasp_gam`` files are desired, set
         ``vasp_gam=True``.
 
         By default, ``POSCAR`` files are not generated for the
         ``vasp_(nkred_)std`` (and ``vasp_ncl`` if ``self.soc`` is ``True``)
-        folders, as these should be taken from ``vasp_gam`` ``ShakeNBreak``
-        calculations (via ``snb-groundstate -d vasp_nkred_std``), some other
-        structure-searching approach or, if not following the recommended
-        structure-searching workflow, from the ``CONTCAR``\s of ``vasp_gam``
-        calculations. If including SOC effects (``self.soc = True``), then the
-        ``vasp_std`` ``CONTCAR``\s should be used as the ``vasp_ncl``
-        ``POSCAR``\s. If ``POSCAR`` files are desired for the
-        ``vasp_(nkred_)std`` (and ``vasp_ncl``) folders, set ``poscar=True``.
+        folders, as these should be taken from structure-searching calculations
+        (e.g. ``snb-groundstate -d vasp_nkred_std``) or, if not following the
+        recommended structure-searching workflow, from the ``CONTCAR``\s of
+        ``vasp_gam`` calculations. If including SOC effects (i.e.
+        ``self.soc = True``), then the ``vasp_std`` ``CONTCAR``\s should be
+        used as the ``vasp_ncl`` ``POSCAR``\s. If ``POSCAR`` files are desired
+        for the ``vasp_(nkred_)std`` (and ``vasp_ncl``) folders, set
+        ``poscar=True``.
 
         Input files for the single-point (static) bulk supercell reference
         calculation are also written to ``"{formula}_bulk/{subfolder}"`` if
@@ -2532,7 +2549,8 @@ class DefectsSet(MSONable):
 
         Note that any changes to the default ``INCAR``/``POTCAR`` settings
         should be consistent with those used for all defect and competing phase
-        ( chemical potential) calculations.
+        (chemical potential) calculations -- this will be automatically checked
+        upon defect & competing phases parsing in ``doped``.
 
         Args:
             output_path (PathLike):
@@ -2544,13 +2562,13 @@ class DefectsSet(MSONable):
                 ``DefectsSet`` docstring) and ``subfolder`` is the name of the
                 corresponding VASP program to run (e.g. ``vasp_std``).
             poscar (bool):
-                If True, writes the defect ``POSCAR``\s to the generated
+                If ``True``, writes the defect ``POSCAR`` to the generated
                 folders as well. Typically not recommended, as the recommended
                 workflow is to initially perform ``vasp_gam`` ground-state
                 structure searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp(_nkred)_std`` relaxations from the ground-state
-                structures (e.g. using ``-d vasp_nkred_std`` with
+                (https://shakenbreak.readthedocs.io) or another approach, then
+                continue the ``vasp(_nkred)_std`` relaxations from the
+                ground-state structures (e.g. using ``-d vasp_nkred_std`` with
                 ``snb-groundstate`` (CLI) or
                 ``groundstate_folder="vasp_nkred_std"`` with
                 ``write_groundstate_structure`` (Python API)), first with
@@ -2576,9 +2594,9 @@ class DefectsSet(MSONable):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``\s. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure
-                searching using ``ShakeNBreak``
-                (https://shakenbreak.readthedocs.io), then continue the
-                ``vasp_std`` relaxations from the SnB ground-state structures.
+                searching (e.g. using ``ShakeNBreak``;
+                https://shakenbreak.readthedocs.io), then continue the
+                ``vasp_std`` relaxations from the ground-state structures.
                 Default is ``None``, where ``vasp_gam`` folders are written if
                 ``self.vasp_std`` is ``None`` (i.e. only Γ-point reciprocal
                 space sampling is required).
