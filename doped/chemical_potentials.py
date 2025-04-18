@@ -1414,8 +1414,7 @@ class CompetingPhases:
         Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed (as
         typically desired for non-magnetic phases, for efficiency).
 
-        See
-        https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
+        See https://doped.readthedocs.io/en/latest/Tips.html#spin
         """
         magnetisation = entry.data.get("total_magnetisation")
         with contextlib.suppress(TypeError):  # if magnetisation is None, fine, skip

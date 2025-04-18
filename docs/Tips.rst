@@ -510,14 +510,14 @@ This can arise for a number of reasons:
     The Fermi level will be always referenced to ``DefectThermodynamics.vbm``.
 
 
-Spin Polarisation
+Magnetisation
 -----------------
-Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
+Proper accounting of magnetisation and spin multiplicity is important for accurate defect calculations and
 analysis. For defect species with odd numbers of electrons (and thus being open-shell), they will adopt
 non-zero integer spin states, while defect species with even numbers of electrons can be either
 closed-shell (spin-paired) or open-shell (spin-active), depending on the defect species and its electronic
 structure. As such, defect calculations should typically be performed with spin polarisation allowed in all
-cases (i.e. with ``ISPIN = 2`` in VASP).
+cases (i.e. with ``ISPIN = 2`` or ``LSORBIT = True`` (for SOC) in VASP).
 
 .. tip::
 
@@ -555,13 +555,13 @@ cases (i.e. with ``ISPIN = 2`` in VASP).
 In most cases and particularly for `s`/`p` orbital systems, odd electron defects will adopt a doublet spin
 state (`S` = 1/2, one unpaired electron), while even electron defects will tend to adopt a closed-shell
 singlet spin state (`S` = 0, no unpaired electrons), as a consequence of the Aufbau principle and Hund's
-rule. This is the default logic assumed in ``doped`` (and ``ShakeNBreak``), where the expected spin state
-is enforced by setting ``NUPDOWN`` (number of unpaired electrons) to ``0`` for even-electron and ``1`` for
-odd-electron defect species.
+rule. For input file generation in ``VASP``, ``NUPDOWN`` is used in the ``INCAR`` to enforce the total
+magnetisation (number of unpaired electron spins), which by default is set to ``0`` for even-electron
+and ``1`` for odd-electron defect species in ``doped``.
 
-However, this is not always the case and often we can have open-shell triplet states for even-electron
-defects (with `S` = 1, two unpaired electrons) or quartet states for odd-electron defects (with `S` = 3/2,
-three unpaired electrons). Such cases are most common when the defect species adopts a
+However, this is not always the case and often we can have open-shell triplet states for
+even-electron defects (with `S` = 1, two unpaired electrons) or quartet states for odd-electron defects
+(with `S` = 3/2, three unpaired electrons). Such cases are most common when the defect species adopts a
 bipolaron/multi-polaron state (e.g. for `V`\ :sub:`Cd`\ :sup:`0*` in
 `CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__), a molecular dimer-like state (such as
 O\ :sub:`2` species in oxides, or
@@ -603,6 +603,13 @@ for multiple defects.
     magnetisation output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
     (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
     certain cases.
+
+When parsing defect calculations, ``doped`` will automatically extract the total magnetisation from the
+``VASP`` output files, in order to determine the spin multiplicity. This value is stored in
+``DefectEntry.degeneracy_factors["spin degeneracy"]`` (and printed in
+``DefectThermodynamics.get_symmetries_and_degeneracies()``) and used in thermodynamic analyses. See the
+`spin_degeneracy_from_vasprun <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.parsing.spin_degeneracy_from_vasprun>`__
+API docs for details.
 
 Symmetry Precision (``symprec``)
 --------------------------------

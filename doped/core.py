@@ -84,15 +84,15 @@ class DefectEntry(thermo.DefectEntry):
             degeneracy etc). This is an important factor in the defect
             concentration equation (see https://doi.org/10.1039/D2FD00043A and
             https://doi.org/10.1039/D3CS00432E), and so affects the output of
-            the defect concentration / Fermi level functions. This can be
-            edited by the user if the ``doped`` defaults are not appropriate
-            (e.g. ``doped`` assumes singlet (S=0) state for even-electron
-            defects and doublet (S=1/2) state for odd-electron defects, which
-            is typically the case but can have triplets (S=1) or other
-            multiplets for e.g. bipolarons, quantum / d-orbital / magnetic
-            defects etc.); see
-            https://doped.readthedocs.io/en/latest/Tips.html#spin-polarisation
-            for discussion.
+            the defect concentration / Fermi level functions. Spin and
+            configurational (geometry) degeneracy factors are automatically
+            determined by ``doped`` during parsing (for details, see the
+            ``spin_degeneracy_from_vasprun()``,
+            ``get_orientational_degeneracy`` and
+            ``point_symmetry_from_defect_entry`` functions), but can also be
+            edited in ``DefectEntry.degeneracy_factors``.
+            For discussion, see:
+            https://doped.readthedocs.io/en/latest/Tips.html#spin
 
     Generation Attributes:
         name:
