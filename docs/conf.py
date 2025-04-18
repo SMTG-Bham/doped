@@ -1,25 +1,14 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# This file only contains a selection of the most common options. For a full
-# list see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+# build with ``sphinx-build . _build`` (add ``-b linkcheck`` to check links)
 
-# -- Path setup --------------------------------------------------------------
-
-# If extensions (or modules to document with autodoc) are in another directory,
-# add these directories to sys.path here. If the directory is relative to the
-# documentation root, use os.path.abspath to make it absolute, like shown here.
-#
 import os
 import sys
 
 from recommonmark.transform import AutoStructify
-
+# -- Path setup --------------------------------------------------------------
 sys.path.insert(0, os.path.abspath(".."))
 
-
 # -- Project information -----------------------------------------------------
-
 project = "doped"
 copyright = "2023, Seán R. Kavanagh"
 author = "Seán R. Kavanagh"
@@ -29,7 +18,6 @@ release = "3.0.0"
 
 
 # -- General configuration ---------------------------------------------------
-
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
@@ -136,3 +124,6 @@ def setup(app):
             "auto_toc_tree_section": "Contents",
             }, True)
     app.add_transform(AutoStructify)
+
+# ignore non-consecutive level header warnings, and attempted image editing:
+suppress_warnings = ["myst.header", "mystnb.image"]
