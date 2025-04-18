@@ -1599,8 +1599,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 f"`defect_entry.get_kumagai_correction()` with `plot=True`). Large errors are often due "
                 f"to unstable or shallow defect charge states (which can't be accurately modelled with "
                 f"the supercell approach; see "
-                f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
-                f"If this error is not acceptable, you may need to use a larger supercell for more "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects"
+                f"). If this error is not acceptable, you may need to use a larger supercell for more "
                 f"accurate energies." in str(w[1].message)
             )
 
@@ -2194,9 +2194,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"potential differences (using `defect_entry.get_kumagai_correction()` with "
             f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
             f"which can't be accurately modelled with the supercell approach; see "
-            f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). If this error is "
-            f"not acceptable, you may need to use a larger supercell for more accurate energies."
-            in str(w[0].message)
+            f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects). If "
+            f"this error is not acceptable, you may need to use a larger supercell for more accurate "
+            f"energies." in str(w[0].message)
         )
 
         with warnings.catch_warnings(record=True) as w:
@@ -2297,7 +2297,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "`defect_entry.get_freysoldt_correction()` with `plot=True`). Large errors are often due "
             "to unstable or shallow defect charge states (which can't be accurately modelled with "
             "the supercell approach; see "
-            "https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
+            "https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects). "
             "If this error is not acceptable, you may need to use a larger supercell for more "
             "accurate energies." in str(warning.message)
             for warning in w

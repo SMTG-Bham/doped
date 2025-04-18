@@ -281,8 +281,8 @@ class DefectEntry(thermo.DefectEntry):
                 f"`defect_entry.get_{'freysoldt' if type == 'FNV' else 'kumagai'}_correction()` with "
                 f"`plot=True`). Large errors are often due to unstable or shallow defect charge states ("
                 f"which can't be accurately modelled with the supercell approach; see "
-                f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states). "
-                f"If this error is not acceptable, you may need to use a larger supercell for more "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects"
+                f"). If this error is not acceptable, you may need to use a larger supercell for more "
                 f"accurate energies."
             )
 
@@ -767,7 +767,7 @@ class DefectEntry(thermo.DefectEntry):
 
         Can be used to determine if a defect is adopting a perturbed host state
         (PHS / shallow state), see
-        https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
+        https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects.
 
         If eigenvalue data has not already been parsed for ``DefectEntry``
         (default in ``doped`` is to parse this data with ``DefectsParser``/

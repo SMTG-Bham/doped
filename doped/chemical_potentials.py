@@ -2564,7 +2564,7 @@ class CompetingPhasesAnalyzer(MSONable):
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
         formula labels (see: github.com/matplotlib/matplotlib/issues/25669).
-          This is only the case for ``png`` output, so saving to e.g. ``svg``
+        This is only the case for ``png`` output, so saving to e.g. ``svg``
         or ``pdf`` instead will avoid this issue.
 
         If using the default colour map (``batlow``) in publications, please

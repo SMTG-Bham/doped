@@ -478,18 +478,23 @@ This can arise for a number of reasons:
 
 - Differences in DFT functional choices, pseudopotentials (``POTCAR``\s in ``VASP``) or bulk crystal
   structure/volume.
+
     - This can cause severe errors and should be rectified so that the DOS and supercell
       calculation settings are made consistent as discussed above.
+
 - Effects of smearing schemes (e.g. ``ISMEAR`` in ``VASP``), such that the band edges are not
   accurately determined in the bulk DOS calculation.
+
     - If possible, use tetrahedron smearing (``ISMEAR = -5``) for improved DOS convergence with respect to
       `k`-points as discussed above. If this is not possible, but dense `k`-point sampling and energy grid
       spacing is being used, then this should not significantly impact accuracies and the warning can be
       ignored (set ``skip_dos_check = True`` to silence the warning).
+
 - Significant differences in `k`-point sampling between the bulk DOS and supercell calculations, such that
   the same band edges are not captured in both calculations. This can happen in cases where band edges
   occur at `k`-points which are not high-symmetry and/or are outside of the `k`-point grid of the supercell
   calculations.
+
     - Assuming the `k`-point sampling of the DOS calculation is sufficiently dense, then the issue is just
       that the VBM eigenvalue and band gap of the bulk supercell calculation is not accurate. This can be
       rectified by using the ``bulk_band_gap_vr`` option during defect parsing (see
@@ -498,8 +503,10 @@ This can arise for a number of reasons:
     - In this case, the absolute values of predictions should not be affected as the eigenvalue references
       in the calculations are consistent, just the reported Fermi levels will be referenced to
       ``DefectThermodynamics.vbm`` which may not be the exact VBM position here.
+
 - Small numerical inaccuracies in determining the VBM eigenvalue or band gap directly from the DOS
   spectrum.
+
     - Determining the VBM eigenvalue or band gap directly from a DOS spectrum is not entirely
       straightforward, due to effects of smearing, noise, finite sampling etc. If all other possible issues
       above have been ruled out and the detected mismatch is relatively small, then this may be the case
@@ -628,8 +635,9 @@ etc.).
 
 .. tip::
 
-    Note that you can directly use the ``point_symmetry`` function from ``doped.utils.symmetry`` (see the
-    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry>`__
+    Note that you can directly use the ``point_symmetry_from_structure`` function from
+    ``doped.utils.symmetry`` (see the
+    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry_from_structure>`__
     in the python API docs) to obtain the relaxed or unrelaxed (bulk site) point symmetries of a given
     defect supercell, directly from just the relaxed structures, regardless of whether these defects were
     generated/parsed with ``doped``.

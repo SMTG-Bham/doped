@@ -21,7 +21,7 @@ def get_min_image_distance(structure: Structure) -> float:
 
     This is also known as the Shortest Vector Problem (SVP), and has
     no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP))
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     Args:
         structure (Structure): Structure object.
@@ -96,7 +96,7 @@ def _get_min_image_distance_from_matrix(
 
     This is also known as the Shortest Vector Problem (SVP), and has
     no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP))
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     Args:
         matrix (np.ndarray): Lattice matrix.
@@ -156,7 +156,7 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
 
     This is also known as the Shortest Vector Problem (SVP), and has
     no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP))
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     As the cell angles deviate more from cubic (90°), the required
     max_ijk to get the correct converged result increases. For near-cubic
@@ -641,8 +641,7 @@ def find_ideal_supercell(
 
     This is also known as the Shortest Vector Problem (SVP), and has
     no known analytical solution, requiring enumeration type approaches.
-    (https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)),
-    so can be slow for certain cases.
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     Note that this function is used by default to generate defect supercells with
     the ``doped`` ``DefectsGenerator`` class, unless specific supercell settings
