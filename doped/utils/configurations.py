@@ -40,25 +40,25 @@ def orient_s2_like_s1(
     (e.g. configuration coordinate (CC) diagrams via ``nonrad``,
     ``CarrierCapture.jl`` etc.).
 
-    This corresponds to minimising the root-mean-square displacement from
-    the shortest `linear` path to transform from ``struct1`` to a
-    symmetry-equivalent definition of ``struct2``)... (TODO)
-    Uses the ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``,
-    but extended to ensure the correct atomic indices matching and lattice
-    vector definitions.
+    This corresponds to minimising the root-mean-square displacement from the
+    shortest `linear` path to transform from ``struct1`` to a symmetry-
+    equivalent definition of ``struct2``)... (TODO) Uses the
+    ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``, but
+    extended to ensure the correct atomic indices matching and lattice vector
+    definitions.
 
-    If ``verbose=True``, information about the mass-weighted displacement
-    (ΔQ in amu^(1/2)Å) between the input and re-oriented structures is printed.
-    This is the typical x-axis unit in configurational coordinate diagrams
-    (see e.g. 10.1103/PhysRevB.90.075202).
+    If ``verbose=True``, information about the mass-weighted displacement (ΔQ
+    in amu^(1/2)Å) between the input and re-oriented structures is printed.
+    This is the typical x-axis unit in configurational coordinate diagrams (see
+    e.g. 10.1103/PhysRevB.90.075202).
 
     Args:
-        struct1 (Structure): Initial structure
-        struct2 (Structure): Final structure
+        struct1 (Structure): Initial structure.
+        struct2 (Structure): Final structure.
         verbose (bool):
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
-            Default: False
+            Default: ``False``
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``
             (e.g. ``ignored_species``, ``comparator`` etc).
@@ -155,8 +155,8 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     in a given ``Structure``.
 
     ``stol`` is a site tolerance parameter used in ``pymatgen``
-    ``StructureMatcher`` functions, defined as the fraction of the average
-    free length per atom := ( V / Nsites ) ** (1/3).
+    ``StructureMatcher`` functions, defined as the fraction of the average free
+    length per atom := ( V / Nsites ) ** (1/3).
 
     Args:
         dist (float): Cartesian distance in Å.
@@ -173,19 +173,22 @@ def _get_symbol(element: Element | Species, comparator: AbstractComparator | Non
     Convenience function to get the symbol of an ``Element`` or ``Species`` as
     a string.
 
-    By default, the returned symbol does not include any charge /
-    oxidation state information. If ``comparator`` is provided and
-    is not ``ElementComparator`` / ``FrameworkComparator``, then the
-    ``str(element)`` representation is returned (which will include
-    charge information if ``element`` is a ``Species``).
+    By default, the returned symbol does not include any charge / oxidation
+    state information. If ``comparator`` is provided and is not
+    ``ElementComparator`` / ``FrameworkComparator``, then the ``str(element)``
+    representation is returned (which will include charge information if
+    ``element`` is a ``Species``).
 
     Args:
         element (Element | Species):
-            Element or Species to get the symbol of.
+            ``Element`` or ``Species`` to get the symbol of.
         comparator (AbstractComparator | None):
             Comparator to check if we should return the ``str(element)``
-            or ``element.element.symbol`` (default) representation.
-            Default: None.
+            representation (which includes charge information if ``element`` is
+            a ``Species``), or just the element symbol (i.e.
+            ``element.element.symbol``) -- which is the case when
+            ``comparator`` is ``None`` (default) or ``ElementComparator`` /
+            ``FrameworkComparator``.
 
     Returns:
         str: Symbol of the element as a string.
@@ -195,8 +198,8 @@ def _get_symbol(element: Element | Species, comparator: AbstractComparator | Non
         and not isinstance(comparator, ElementComparator | FrameworkComparator)
         and isinstance(element, Species)
     ):
-        return element.element.symbol
-    return str(element)
+        return str(element)
+    return element.element.symbol
 
 
 def get_element_indices(
@@ -205,26 +208,29 @@ def get_element_indices(
     comparator: AbstractComparator | None = None,
 ) -> dict[str, list[int]]:
     """
-    Convenience function to quickly generate a dictionary of ``{element:
-    [indices]}`` for a given ``Structure``, where ``indices`` are the indices
-    of the sites in the structure corresponding to the given ``elements``
-    (default is all elements in the structure).
+    Convenience function to generate a dictionary of ``{element: [indices]}``
+    for a given ``Structure``, where ``indices`` are the indices of the sites
+    in the structure corresponding to the given ``elements`` (default is all
+    elements in the structure).
 
     Args:
         structure (Structure):
             ``Structure`` to get the indices from.
         elements (list[Element | Species | str] | None):
-            List of elements to get the indices of. If ``None``,
-            all elements in the structure are used. Default: None.
+            List of elements to get the indices of. If ``None`` (default), all
+            elements in the structure are used.
         comparator (AbstractComparator | None):
             Comparator to check if we should return the ``str(element)``
-            or ``element.element.symbol`` (default) representation.
-            Default: None.
+            representation (which includes charge information if ``element`` is
+            a ``Species``), or just the element symbol (i.e.
+            ``element.element.symbol``) -- which is the case when
+            ``comparator`` is ``None`` (default) or ``ElementComparator`` /
+            ``FrameworkComparator``.
 
     Returns:
         dict[str, list[int]]:
-            Dictionary of ``{element: [indices]}`` for the given
-            ``elements`` in the structure.
+            Dictionary of ``{element: [indices]}`` for the given ``elements``
+            in the structure.
     """
     if elements is None:
         from doped.utils.efficiency import _fast_get_composition_from_sites
@@ -244,7 +250,8 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
     the minimum and maximum bond lengths for each element in the structure.
 
     Args:
-        structure (Structure): Structure to calculate bond lengths for.
+        structure (Structure):
+            Structure to calculate bond lengths for.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``comparator`` has been set here (if
@@ -293,9 +300,9 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
 
     Returns:
         float:
-            Minimum ``stol`` value for a match between ``struct1``
-            and ``struct2``. If a direct match is detected (corresponding
-            to min ``stol`` = 0, then ``1e-4`` is returned).
+            Minimum ``stol`` value for a match between ``struct1`` and
+            ``struct2``. If a direct match is detected (corresponding to min
+            ``stol`` = 0, then ``1e-4`` is returned).
     """
     s1_min_max_bond_length_dict = get_element_min_max_bond_length_dict(struct1, **sm_kwargs)
     s2_min_max_bond_length_dict = get_element_min_max_bond_length_dict(struct2, **sm_kwargs)
@@ -324,15 +331,15 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
 
 def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Structure):
     """
-    Convenience method to get the root-mean-square displacement _and atomic
-    displacements_ between two structures, normalized by the free length per
-    atom ((Vol/Nsites)^(1/3)).
+    Get the root-mean-square displacement `and atomic displacements` between
+    two structures, normalized by the mean free length per atom:
+    ``(Vol/Nsites)^(1/3)``.
 
-    These values are not directly returned by ``StructureMatcher``
-    methods. This function replicates ``StructureMatcher.get_rms_dist()``,
-    but changes the returned value from ``match[0], max(match[1])`` to
-    ``match[0], match[1]`` to allow further analysis of displacements.
-    Mainly intended for use by ``ShakeNBreak``.
+    These values are not directly returned by ``StructureMatcher`` methods.
+    This function replicates ``StructureMatcher.get_rms_dist()``, but changes
+    the return value from ``match[0], max(match[1])`` to ``match[0], match[1]``
+    to allow further analysis of displacements. Mainly intended for use by
+    ``ShakeNBreak``.
 
     Args:
         sm (StructureMatcher): ``pymatgen`` ``StructureMatcher`` object.
@@ -341,8 +348,10 @@ def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Stru
 
     Returns:
         tuple:
+
             - float: Normalised RMS displacements between the two structures.
             - np.ndarray: Normalised displacements between the two structures.
+
         or ``None`` if no match is found.
     """
     struct1, struct2 = sm._process_species([struct1, struct2])
@@ -367,15 +376,15 @@ def StructureMatcher_scan_stol(
     ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result).
 
     The ``StructureMatcher.match()`` function (used in most
-    ``StructureMatcher`` methods) speed is heavily dependent on ``stol``,
-    with smaller values being faster, so we can speed up evaluation by
-    starting with small values and increasing until a match is found
-    (especially with the ``doped`` efficiency tools which implement
-    caching (and other improvements) to ensure no redundant work here).
+    ``StructureMatcher`` methods) speed is heavily dependent on ``stol``, with
+    smaller values being faster, so we can speed up evaluation by starting with
+    small values and increasing until a match is found (especially with the
+    ``doped`` efficiency tools which implement caching (and other improvements)
+    to ensure no redundant work here).
 
-    Note that ``ElementComparator()`` is used by default here! (So sites
-    with different species but the same element (e.g. "S2-" & "S0+") will
-    be considered match-able). This can be controlled with
+    Note that ``ElementComparator()`` is used by default here! (So sites with
+    different species but the same element (e.g. "S2-" & "S0+") will be
+    considered match-able). This can be controlled with
     ``sm_kwargs['comparator']``.
 
     Args:
@@ -390,18 +399,17 @@ def StructureMatcher_scan_stol(
             - "get_rms_dist"
             - "fit"
             - "fit_anonymous"
-
-            etc.
         min_stol (float):
             Minimum ``stol`` value to try. Default is to use ``doped``\s
             ``get_min_stol_for_s1_s2()`` function to estimate the minimum
-            ``stol`` necessary, and start with 2x this value to achieve
-            fast structure-matching in most cases.
-        max_stol (float): Maximum ``stol`` value to try. Default: 5.0.
+            ``stol`` necessary, and start with 2x this value to achieve fast
+            structure-matching in most cases.
+        max_stol (float):
+            Maximum ``stol`` value to try. Default: 5.0.
         stol_factor (float):
             Fractional increment to increase ``stol`` by each time (when a
-            match is not found). Default value of 0.5 increases ``stol`` by
-            50% each time.
+            match is not found). Default value of 0.5 increases ``stol`` by 50%
+            each time.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
 
@@ -469,26 +477,26 @@ def get_path_structures(
     ``struct1`` and ``struct2``, typically for use in NEB calculations or
     configuration coordinate (CC) diagrams.
 
-    Structures are output as a dictionary with keys corresponding to either
-    the index of the interpolated structure (0-indexed; ``00``, ``01`` etc
-    as for VASP NEB calculations) or the fractional displacement along the
+    Structures are output as a dictionary with keys corresponding to either the
+    index of the interpolated structure (0-indexed; ``00``, ``01`` etc as for
+    VASP NEB calculations) or the fractional displacement along the
     interpolation path between structures, and values corresponding to the
-    interpolated structure. If ``displacements`` is set (and thus two sets
-    of structures are generated), a tuple of such dictionaries is returned.
+    interpolated structure. If ``displacements`` is set (and thus two sets of
+    structures are generated), a tuple of such dictionaries is returned.
 
-    Note that for NEB calculations, the the lattice vectors and order of
-    sites (atomic indices) must be consistent in both ``struct1`` and
-    ``struct2``. This can be ensured by using the ``orient_s2_like_s1()``
-    function in ``doped.utils.configurations``, as shown in the ``doped``
-    tutorials. This is also desirable for CC diagrams, as the atomic indices
-    are assumed to match for many parsing and plotting functions (e.g. in
-    ``nonrad`` and ``CarrierCapture.jl``), but is not strictly necessary.
-    If the input structures are detected to be different
-    (symmetry-inequivalent) geometries (e.g. not a simple defect migration
-    between two symmetry-equivalent sites), but have mis-matching orientations/
-    positions (such that they do not correspond to the shortest linear path
-    between them), a warning will be raised. See the ``doped`` configuration
-    coordinate / NEB path generation tutorial for a deeper explanation.
+    Note that for NEB calculations, the the lattice vectors and order of sites
+    (atomic indices) must be consistent in both ``struct1`` and ``struct2``.
+    This can be ensured by using the ``orient_s2_like_s1()`` function in
+    ``doped.utils.configurations``, as shown in the ``doped`` tutorials. This
+    is also desirable for CC diagrams, as the atomic indices are assumed to
+    match for many parsing and plotting functions (e.g. in ``nonrad`` and
+    ``CarrierCapture.jl``), but is not strictly necessary. If the input
+    structures are detected to be different (symmetry-inequivalent) geometries
+    (e.g. not a simple defect migration between two symmetry-equivalent sites),
+    but have mis-matching orientations/ positions (such that they do not
+    correspond to the shortest linear path between them), a warning will be
+    raised. See the ``doped`` configuration coordinate / NEB path generation
+    tutorial for a deeper explanation.
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is generated (in other words,
@@ -496,30 +504,40 @@ def get_path_structures(
     ``displacements`` (and possibly ``displacements2``) is set, then two sets
     of interpolated structures are generated (in other words, assuming a CC /
     non-radiative recombination calculation is being performed, where the two
-    sets of structures are to be calculated in separate charge/spin etc states).
+    sets of structures are to be calculated in separate charge/spin etc
+    states).
 
     Args:
         struct1 (Structure): Initial structure.
         struct2 (Structure): Final structure.
         n_images (int):
-            Number of images to interpolate between ``struct1`` and ``struct2``,
-            or a list of fractiional interpolation values (displacements) to use.
-            Note that ``n_images`` is ignored if ``displacements`` is set (in
-            which case CC / non-radiative recombination calculations are
-            assumed, otherwise a standard NEB / PES calculation is assumed).
+            Number of images to interpolate between ``struct1`` and
+            ``struct2``, or a list of fractional interpolation values
+            (displacements) to use. Note that ``n_images`` is ignored if
+            ``displacements`` is set (in which case CC / non-radiative
+            recombination calculations are assumed -- generating two sets of
+            interpolated structures -- otherwise a standard NEB / PES
+            calculation is assumed -- generating one set of structures).
             Default: 7
         displacements (np.ndarray or list):
-            Displacements to use for ``struct1`` along the linear transformation
-            path to ``struct2``. If set, then CC / non-radiative recombination
-            calculations are assumed, and two sets of interpolated structures
-            will be generated. If set and ``displacements2`` is not set,
-            then the same set of displacements is used for both sets of
-            interpolated structures. Default: ``None``
+            Displacements to use for ``struct1`` along the linear
+            transformation path to ``struct2``. If set, then CC / non-radiative
+            recombination calculations are assumed, and two sets of
+            interpolated structures will be generated. If set and
+            ``displacements2`` is not set, then the same set of displacements
+            is used for both sets of interpolated structures. Default: ``None``
         displacements2 (np.ndarray or list):
-            Displacements to use for ``struct2`` along the linear transformation
-            path to ``struct1``. If not set and ``displacements`` is not ``None``,
-            then the same set of displacements is used for both sets of
-            interpolated structures. Default: ``None``
+            Displacements to use for ``struct2`` along the linear
+            transformation path to ``struct1``. If not set and
+            ``displacements`` is not ``None``, then the same set of
+            displacements is used for both sets of interpolated structures.
+            Default: ``None``
+
+    Returns:
+        dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
+            Dictionary of structures (for NEB/PES calculations), or tuple of
+            two dictionaries of structures (for CC / non-radiative
+            calculations, when ``displacements`` is not ``None``).
     """
     if displacements is None:
         disp_1 = struct1.interpolate(
@@ -566,24 +584,23 @@ def _smart_round(
     tol: float = 1e-5,
     return_decimals: bool = False,
     consistent_decimals: bool = True,
-) -> float | list[float] | np.ndarray[float]:
+) -> float | list[float] | np.ndarray[float] | tuple[float | list[float] | np.ndarray[float], float]:
     """
     Custom rounding function that rounds the input number(s) to the lowest
     number of decimals which gives the same numerical value as the input, to
     within a specified tolerance value.
 
-    For example, 0.5000001 with tol = 1e-5 (default) would be
-    rounded to 0.5, but 0.5780001 would be rounded to 0.578.
+    For example, 0.5000001 with tol = 1e-5 (default) would be rounded to 0.5,
+    but 0.5780001 would be rounded to 0.578.
 
-    Primary use case is for rounding float values returned by
-    ``numpy`` which may be e.g. 0.50000001 instead of 0.5.
+    Primary use case is for rounding float values returned by ``numpy`` which
+    may be e.g. 0.50000001 instead of 0.5.
 
-    If a list or array of numbers is provided (rather than a single
-    float), then rounding is applied to each element in the
-    list/array. If ``consistent_decimals=True`` (default), then the
-    same number of decimals is used for rounding for all elements,
-    where this number of decimals is the minimum required for
-    rounding to satisfy the tolerance for all elements.
+    If a list or array of numbers is provided (rather than a single float),
+    then rounding is applied to each element in the list/array. If
+    ``consistent_decimals=True`` (default), then the same number of decimals is
+    used for rounding for all elements, where this number of decimals is the
+    minimum required for rounding to satisfy the tolerance for all elements.
 
     Args:
         numbers (float, list[float], np.ndarray[float]):
@@ -591,20 +608,19 @@ def _smart_round(
         tol (float): The tolerance value for rounding.
             Default: ``1e-5``
         return_decimals (bool):
-            If ``True``, also returns the identified appropriate
-            number of decimals to round to. Default: ``False``.
+            If ``True``, also returns the identified appropriate number of
+            decimals to round to. Default: ``False``
         consistent_decimals (bool):
-            If ``True``, the same number of decimals is used for
-            rounding for all elements in the input list/array,
-            where this number of decimals is the minimum required
-            for rounding to satisfy the tolerance for all elements.
-            Default: ``True``
+            If ``True``, the same number of decimals is used for rounding for
+            all elements in the input list/array, where this number of decimals
+            is the minimum required for rounding to satisfy the tolerance for
+            all elements. Default: ``True``
 
     Returns:
-        float | list[float] | np.ndarray[float]]:
-            The rounded number(s). If ``return_decimals=True``, then
-            a tuple is returned with the rounded number(s) and the
-            number of decimals used for rounding.
+        float | list[float] | np.ndarray[float] | tuple[..., float]:
+            The rounded number(s). If ``return_decimals=True``, then a tuple is
+            returned with the rounded number(s) and the number of decimals used
+            for rounding.
     """
 
     def _smart_round_number(number: float, tol: float, return_decimals: bool):
@@ -647,23 +663,22 @@ def write_path_structures(
     Folder names are labelled by the index of the interpolated structure
     (0-indexed; ``00``, ``01`` etc as for VASP NEB calculations) or the
     fractional displacement along the interpolation path between structures
-    (e.g. ``delQ_0.0``, ``delQ_0.1``, ``delQ_-0.1`` etc), depending on
-    the input ``n_images``/``displacements`` settings.
+    (e.g. ``delQ_0.0``, ``delQ_0.1``, ``delQ_-0.1`` etc), depending on the
+    input ``n_images``/``displacements`` settings.
 
-    Note that for NEB calculations, the the lattice vectors and order of
-    sites (atomic indices) must be consistent in both ``struct1`` and
-    ``struct2``. This can be ensured by using the ``orient_s2_like_s1()``
-    function in ``doped.utils.configurations``, as shown in the ``doped``
-    tutorials. This is also desirable for CC diagrams, as the atomic indices
-    are assumed to match for many parsing and plotting functions (e.g. in
-    ``nonrad`` and ``CarrierCapture.jl``), but is not strictly necessary.
-    If the input structures are detected to be different
-    (symmetry-inequivalent) geometries (e.g. not a simple defect migration
-    between two symmetry-equivalent sites), but have mis-matching orientations/
-    positions (such that they do not correspond to the shortest linear path
-    between them), a warning will be raised. See the ``doped`` configuration
-    coordinate / NEB path generation tutorial for a deeper explanation.
-    (TODO)
+    Note that for NEB calculations, the the lattice vectors and order of sites
+    (atomic indices) must be consistent in both ``struct1`` and ``struct2``.
+    This can be ensured by using the ``orient_s2_like_s1()`` function in
+    ``doped.utils.configurations``, as shown in the ``doped`` tutorials. This
+    is also desirable for CC diagrams, as the atomic indices are assumed to
+    match for many parsing and plotting functions (e.g. in ``nonrad`` and
+    ``CarrierCapture.jl``), but is not strictly necessary. If the input
+    structures are detected to be different (symmetry-inequivalent) geometries
+    (e.g. not a simple defect migration between two symmetry-equivalent sites),
+    but have mis-matching orientations/ positions (such that they do not
+    correspond to the shortest linear path between them), a warning will be
+    raised. See the ``doped`` configuration coordinate / NEB path generation
+    tutorial for a deeper explanation. (TODO)
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is written (in other words,
@@ -671,34 +686,38 @@ def write_path_structures(
     ``displacements`` (and possibly ``displacements2``) is set, then two sets
     of interpolated structures are written (in other words, assuming a CC /
     non-radiative recombination calculation is being performed, where the two
-    sets of structures are to be calculated in separate charge/spin etc states).
+    sets of structures are to be calculated in separate charge/spin etc
+    states).
 
     Args:
         struct1 (Structure): Initial structure.
         struct2 (Structure): Final structure.
         output_dir (PathLike):
-            Directory to write the interpolated structures to.
-            Defaults to "Configuration_Coordinate" if ``displacements`` is set,
-            otherwise "NEB".
+            Directory to write the interpolated structures to. Defaults to
+            "Configuration_Coordinate" if ``displacements`` is set, otherwise
+            "NEB".
         n_images (int):
-            Number of images to interpolate between ``struct1`` and ``struct2``,
-            or a list of fractiional interpolation values (displacements) to use.
-            Note that ``n_images`` is ignored if ``displacements`` is set (in
-            which case CC / non-radiative recombination calculations are
-            assumed, otherwise a standard NEB / PES calculation is assumed).
+            Number of images to interpolate between ``struct1`` and
+            ``struct2``, or a list of fractional interpolation values
+            (displacements) to use. Note that ``n_images`` is ignored if
+            ``displacements`` is set (in which case CC / non-radiative
+            recombination calculations are assumed -- generating two sets of
+            interpolated structures -- otherwise a standard NEB / PES
+            calculation is assumed -- generating one set of structures).
             Default: 7
         displacements (np.ndarray or list):
-            Displacements to use for ``struct1`` along the linear transformation
-            path to ``struct2``. If set, then CC / non-radiative recombination
-            calculations are assumed, and two sets of interpolated structures
-            will be written to file. If set and ``displacements2`` is not set,
-            then the same set of displacements is used for both sets of
-            interpolated structures. Default: ``None``
+            Displacements to use for ``struct1`` along the linear
+            transformation path to ``struct2``. If set, then CC / non-radiative
+            recombination calculations are assumed, and two sets of
+            interpolated structures will be written to file. If set and
+            ``displacements2`` is not set, then the same set of displacements
+            is used for both sets of interpolated structures. Default: ``None``
         displacements2 (np.ndarray or list):
-            Displacements to use for ``struct2`` along the linear transformation
-            path to ``struct1``. If not set and ``displacements`` is not ``None``,
-            then the same set of displacements is used for both sets of
-            interpolated structures. Default: ``None``
+            Displacements to use for ``struct2`` along the linear
+            transformation path to ``struct1``. If not set and
+            ``displacements`` is not ``None``, then the same set of
+            displacements is used for both sets of interpolated structures.
+            Default: ``None``
     """
     path_structs = get_path_structures(struct1, struct2, n_images, displacements, displacements2)
     path_struct_dicts = [path_structs] if isinstance(path_structs, dict) else list(path_structs)
