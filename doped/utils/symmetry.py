@@ -887,7 +887,15 @@ def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
     """
     possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
     if not possible_mappings:
-        return None, None
+        warnings.warn(
+            "No mapping between the primitive and target structures found with default ltol/atol, "
+            "increasing the tolerance to 0.1/2.5!"
+        )
+        possible_mappings = list(
+            prim_struct.lattice.find_all_mappings(target_struct.lattice, ltol=0.1, atol=2.5)
+        )
+        if not possible_mappings:
+            return None, None
 
     mapping = next(
         iter(  # get possible mappings, then sort by R*S, S, R, then return first
