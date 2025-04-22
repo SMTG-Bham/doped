@@ -1451,7 +1451,7 @@ class DefectEntry(thermo.DefectEntry):
                 x, y and z directions (True) or all together (False).
                 Defaults to False.
             relaxed_distances (bool):
-                Whether to use the atomic positions in the _relaxed_ defect
+                Whether to use the atomic positions in the `relaxed` defect
                 supercell for ``'Distance to defect'``,
                 ``'Vector to site from defect'`` and
                 ``'Displacement wrt defect'`` values (``True``), or unrelaxed

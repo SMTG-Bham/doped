@@ -6559,7 +6559,7 @@ class FermiSolver(MSONable):
         See ``target`` argument description below for valid choices. This
         function iterates over a grid of chemical potentials and "zooms in" on
         the chemical potential that either minimises or maximises the target
-        variable. The process continues until the _relative_ change in the
+        variable. The process continues until the `relative` change in the
         target variable is less than the specified tolerance.
 
         If ``annealing_temperature`` (and ``quenched_temperature``; 300 K by

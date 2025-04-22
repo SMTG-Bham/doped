@@ -378,7 +378,7 @@ def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
     the centre of mass of sites, weighted by the squared cosine
     dissimilarities. For accurate defect site determination, the
     ``defect_from_structure`` function (or underlying code) is preferred. These
-    coordinates are unlikely to _directly_ match the defect position
+    coordinates are unlikely to `directly` match the defect position
     (especially in the presence of random noise), but should provide a pretty
     good estimate in most cases. If the defect is an extrinsic interstitial /
     substitution, then this will identify the exact defect site.
