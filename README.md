@@ -62,6 +62,7 @@ Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_Nature Comm
 - S. R. Kavanagh et al. **_Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2024-91h02) 2025
 - J. Hu et al. **_Enabling ionic transport in Li<sub>3</sub>AlP<sub>2</sub> the roles of defects and disorder_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D4TA04347B) 2025
 - X. Jiang et al. **_Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies_** [_Journal of Materials Chemistry C_](https://doi.org/10.1039/D4TC04558K) 2025
+- R. Chinnappan **_First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN_** [_Physica Scripta_](https://doi.org/10.1088/1402-4896/adca71) 2025
 - C. Kaewmeechai, J. Strand & A. Shluger **_Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga<sub>2</sub>O<sub>3</sub>_** [_Physica Status Solidi B_](https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652) 2025 <!-- though didn't cite properly SnB or doped code papers... -->
 - X. Wang et al. **_Sulfur Vacancies Limit the Open-circuit Voltage of Sb<sub>2</sub>S<sub>3</sub> Solar Cells_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.4c02722) 2024
 - A. Zhang et al. **_Optimizing the n-type carrier concentration of an InVO<sub>4</sub> photocatalyst by codoing with donors and intrinsic defects_** [_Physical Review Applied_](https://doi.org/10.1103/PhysRevApplied.22.044047) 2024
