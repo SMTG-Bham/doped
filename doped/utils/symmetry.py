@@ -877,25 +877,36 @@ def get_equiv_frac_coords_in_primitive(
     return prim_coord_list if equiv_coords else prim_coord_list[0]
 
 
-def _rotate_and_get_supercell_matrix(prim_struct, target_struct):
+def _rotate_and_get_supercell_matrix(
+    prim_struct: Structure, target_struct: Structure, ltol: float = 1e-5, atol: float = 1
+) -> tuple[Structure, np.ndarray]:
     """
-    Rotates the input prim_struct to match the target_struct orientation, and
-    returns the supercell matrix to convert from the rotated prim_struct to the
-    target_struct.
+    Rotates the input ``prim_struct`` to match the ``target_struct``
+    orientation, and returns the supercell matrix to convert from the rotated
+    ``prim_struct`` to the ``target_struct``.
 
     Returns ``(None, None)`` if no mapping is found.
+
+    Args:
+        prim_struct (Structure):
+            The primitive structure.
+        target_struct (Structure):
+            The target structure to match.
+        ltol (float):
+            Length tolerance for matching the lattice vectors (default: 1e-5).
+        atol (float):
+            Angle tolerance for matching the angles between the lattice vectors
+            (default: 1).
+
+    Returns:
+        tuple[Structure, np.ndarray]:
+            The rotated primitive structure and the supercell matrix to convert
+            from the rotated primitive structure to the target structure.
     """
     possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
     if not possible_mappings:
-        warnings.warn(
-            "No mapping between the primitive and target structures found with default ltol/atol, "
-            "increasing the tolerance to 0.1/2.5!"
-        )
-        possible_mappings = list(
-            prim_struct.lattice.find_all_mappings(target_struct.lattice, ltol=0.1, atol=2.5)
-        )
-        if not possible_mappings:
-            return None, None
+        warnings.warn("No mapping between the primitive and target structures found!")
+        return None, None
 
     mapping = next(
         iter(  # get possible mappings, then sort by R*S, S, R, then return first
