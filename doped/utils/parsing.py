@@ -20,7 +20,7 @@ from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structur
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
-from pymatgen.util.typing import PathLike
+from pymatgen.util.typing import PathLike, SpeciesLike
 
 from doped.core import DefectEntry
 
@@ -884,10 +884,11 @@ def check_atom_mapping_far_from_defect(
 def get_site_mapping_indices(
     struct1: Structure,
     struct2: Structure,
-    species=None,
+    species: SpeciesLike = None,
     allow_duplicates: bool = False,
     threshold: float = 2.0,
     dists_only: bool = False,
+    anonymous: bool = False,
 ):
     """
     Get the site mapping indices between two structures (from ``struct1`` to
@@ -899,11 +900,11 @@ def get_site_mapping_indices(
     NOTE: This assumes that both structures have the same lattice definitions
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
-    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
-    warning should be thrown anyway during parsing). Currently, this function
-    is only used for analysing site displacements in the ``displacements`` module
-    so this is fine (user will already have been warned at this point if there is a
-    possible mismatch).
+    defect/bulk supercell (in which case the
+    ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
+    during parsing). Currently, this function is only used for analysing site
+    displacements in the ``displacements`` module so this is fine (user will
+    already have been warned at this point if there is a possible mismatch).
 
     Args:
         struct1 (Structure):
@@ -911,38 +912,50 @@ def get_site_mapping_indices(
         struct2 (Structure):
             The template structure.
         species (str):
-            If provided, only sites of this species will be considered
-            when matching sites. Default is ``None`` (all species).
+            If provided, only sites of this species will be considered when
+            matching sites. Default is ``None`` (all species).
         allow_duplicates (bool):
-            If ``True``, allow multiple sites in ``struct1`` to be matched
-            to the same site in ``struct2``. Default is ``False``.
+            If ``True``, allow multiple sites in ``struct1`` to be matched to
+            the same site in ``struct2``. Default is ``False``.
         threshold (float):
-            If the distance between a pair of matched sites is larger than this,
-            then a warning will be thrown. Default is 2.0 Å.
+            If the distance between a pair of matched sites is larger than
+            this, then a warning will be thrown. Default is 2.0 Å.
         dists_only (bool):
             Whether to return only the distances between matched sites, rather
             than a list of lists containing the distance, index in ``struct1``
             and index in ``struct2``. Default is ``False``.
+        anonymous (bool):
+            If ``True``, the species of the sites will not be considered when
+            matching sites. Default is ``False`` (only matching species can be
+            matched together).
 
     Returns:
         list:
-            A list of lists containing the distance, index in struct1 and
-            index in struct2 for each matched site. If ``dists_only`` is
-            ``True``, then only the distances between matched sites are returned.
+            A list of lists containing the distance, index in ``struct1`` and
+            index in ``struct2`` for each matched site. If ``dists_only`` is
+            ``True``, then only the distances between matched sites are
+            returned.
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
     all_input_fcoords = [list(site.frac_coords) for site in struct1]
     all_template_fcoords = [list(site.frac_coords) for site in struct2]
+    s1_species_symbols = (
+        [species.symbol for species in struct1.composition.elements] if not anonymous else [None]
+    )
 
-    for s1_species in struct1.composition.elements:
-        if species is not None and s1_species.symbol != species:
+    for s1_species_symbol in s1_species_symbols:
+        if species is not None and s1_species_symbol != species:
             continue
         input_fcoords = [
-            list(site.frac_coords) for site in struct1 if site.specie.symbol == s1_species.symbol
+            list(site.frac_coords)
+            for site in struct1
+            if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
         template_fcoords = [
-            list(site.frac_coords) for site in struct2 if site.specie.symbol == s1_species.symbol
+            list(site.frac_coords)
+            for site in struct2
+            if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
 
         dmat = struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
