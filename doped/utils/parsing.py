@@ -1,5 +1,5 @@
 """
-Helper functions for parsing VASP supercell defect calculations.
+Helper functions for parsing defect supercell calculations.
 """
 
 import contextlib
@@ -199,8 +199,8 @@ def get_core_potentials_from_outcar(
         outcar_path (PathLike):
             The path to the OUTCAR file.
         dir_type (str):
-            The type of directory the OUTCAR is in (e.g. ``bulk`` or ``defect``)
-            for informative error messages.
+            The type of directory the OUTCAR is in (e.g. ``bulk`` or
+            ``defect``) for informative error messages.
         total_energy (Optional[Union[list, float]]):
             The already-parsed total energy for the structure. If provided,
             will check that the total energy of the ``OUTCAR`` matches this
@@ -208,7 +208,7 @@ def get_core_potentials_from_outcar(
 
     Returns:
         np.ndarray:
-            The core potentials from the last ionic step in the ``OUTCAR`` file.
+            The core potentials from the last ionic step in the ``OUTCAR``.
     """
     # initialise Outcar class without running __init__ method:
     outcar = Outcar.__new__(Outcar)
@@ -227,8 +227,8 @@ def _get_final_energy_from_outcar(outcar_path):
     Get the final total energy from an ``OUTCAR`` file, even if the calculation
     was not completed.
 
-    Templated on the ``OUTCAR`` parsing code from ``pymatgen``,
-    but works even if the ``OUTCAR`` is incomplete.
+    Templated on the ``OUTCAR`` parsing code from ``pymatgen``, but works even
+    if the ``OUTCAR`` is incomplete.
     """
     e0_pattern = re.compile(r"energy\(sigma->0\)\s*=\s+([\d\-\.]+)")
     e0 = None
@@ -294,9 +294,9 @@ def get_procar(procar_path: PathLike):
     support SOC).
 
     If ``easyunfold`` installed, the ``Procar`` will be parsed with
-    ``easyunfold`` and then the ``proj_data`` attribute will be converted
-    to a ``data`` attribute (to be compatible with ``pydefect``, which uses
-    the ``pymatgen`` format).
+    ``easyunfold`` and then the ``proj_data`` attribute will be converted to a
+    ``data`` attribute (to be compatible with ``pydefect``, which uses the
+    ``pymatgen`` format).
     """
     try:
         procar_path = find_archived_fname(str(procar_path))  # convert to string if Path object
@@ -329,20 +329,24 @@ def get_procar(procar_path: PathLike):
     return procar
 
 
-def _get_output_files_and_check_if_multiple(output_file: PathLike = "vasprun.xml", path: PathLike = "."):
+def _get_output_files_and_check_if_multiple(
+    output_file: PathLike = "vasprun.xml", path: PathLike = "."
+) -> tuple[PathLike, bool]:
     """
     Search for all files with filenames matching ``output_file``, case-
     insensitive.
 
-    Returns (output file path, Multiple?) where ``Multiple`` is
-    ``True`` if multiple matching files are found.
-
     Args:
         output_file (PathLike):
-            The filename to search for (case-insensitive).
-            Should be either ``vasprun.xml``, ``OUTCAR``,
-            ``LOCPOT`` or ``PROCAR``.
-        path (PathLike): The path to the directory to search in.
+            The filename to search for (case-insensitive). Should be either
+            ``vasprun.xml``, ``OUTCAR``, ``LOCPOT`` or ``PROCAR``.
+        path (PathLike):
+            The path to the directory to search in.
+
+    Returns:
+        Tuple[PathLike, bool]:
+            The path to the identified file, and a boolean indicating whether
+            multiple files were found.
     """
     if output_file.lower() == "vasprun.xml":
         search_patterns = ["vasprun", ".xml"]
@@ -386,10 +390,10 @@ def get_defect_type_and_composition_diff(
             The defect structure or composition.
 
     Returns:
-        Tuple[str, Dict[str, int]]:
+        tuple[str, Dict[str, int]]:
             The defect type (``interstitial``, ``vacancy`` or ``substitution``)
-            and the composition difference between the bulk and defect structures
-            as a dictionary.
+            and the composition difference between the bulk and defect
+            structures as a dictionary.
     """
     bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
     defect_comp = defect.composition if isinstance(defect, Structure) else defect
@@ -421,7 +425,7 @@ def get_defect_type_and_composition_diff(
 def get_defect_type_site_idxs_and_unrelaxed_structure(
     bulk_supercell: Structure,
     defect_supercell: Structure,
-):
+) -> tuple[str, int | None, int | None, Structure]:
     """
     Get the defect type, site (indices in the bulk and defect supercells) and
     unrelaxed structure, where 'unrelaxed structure' corresponds to the
@@ -440,19 +444,19 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             The defect supercell structure.
 
     Returns:
-        defect_type:
-            The type of defect as a string (``interstitial``, ``vacancy``
-            or ``substitution``).
-        bulk_site_idx:
-            Index of the site in the bulk structure that corresponds
-            to the defect site in the defect structure
-        defect_site_idx:
-            Index of the defect site in the defect structure
-        unrelaxed_defect_structure:
+        defect_type (str):
+            The type of defect as a string (``interstitial``, ``vacancy`` or
+            ``substitution``).
+        bulk_site_idx (int):
+            Index of the site in the bulk structure that corresponds to the
+            defect site in the defect structure.
+        defect_site_idx (int):
+            Index of the defect site in the defect structure.
+        unrelaxed_defect_structure (Structure):
             Pristine defect supercell structure for vacancies/substitutions
             (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
-            pristine bulk structure with the `final` relaxed interstitial
-            site for interstitials.
+            pristine bulk structure with the `final` relaxed interstitial site
+            for interstitials.
     """
 
     def process_substitution(bulk_supercell, defect_supercell, composition_diff):
@@ -606,8 +610,8 @@ def find_nearest_coords(
     Find the nearest coords in ``candidate_frac_coords`` to
     ``target_frac_coords``.
 
-    If ``return_idx`` is ``True``, also returns the index of the nearest
-    coords in ``candidate_frac_coords`` to ``target_frac_coords``.
+    If ``return_idx`` is ``True``, also returns the index of the nearest coords
+    in ``candidate_frac_coords`` to ``target_frac_coords``.
 
     Args:
         candidate_frac_coords (Union[list, np.ndarray]):
@@ -643,8 +647,8 @@ def find_missing_idx(
     site combination that gives the minimum summed squared distances between
     paired sites.
 
-    The index returned is the index of the missing/outlier coordinate in
-    the larger set of coordinates.
+    The index returned is the index of the missing/outlier coordinate in the
+    larger set of coordinates.
 
     Args:
         frac_coords1 (Union[list, np.ndarray]):
@@ -675,32 +679,34 @@ def _create_unrelaxed_defect_structure(
     new_species: str | None = None,
     bulk_site_idx: int | None = None,
     defect_site_idx: int | None = None,
-):
+) -> Structure:
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
     supercell with the unrelaxed defect site.
 
-    The unrelaxed defect site corresponds to the vacancy/substitution site
-    in the pristine (bulk) supercell for vacancies/substitutions, and the
-    `final` relaxed interstitial site for interstitials (as the assignment
-    of their initial site is ambiguous).
+    The unrelaxed defect site corresponds to the vacancy/substitution site in
+    the pristine (bulk) supercell for vacancies/substitutions, and the `final`
+    relaxed interstitial site for interstitials (as the assignment of their
+    initial site is ambiguous).
 
     Args:
         bulk_supercell (Structure):
             The bulk supercell structure.
         frac_coords (Union[list, np.ndarray]):
-            The fractional coordinates of the defect site.
-            Unnecessary if ``bulk_site_idx`` is provided.
+            The fractional coordinates of the defect site. Unnecessary if
+            ``bulk_site_idx`` is provided.
         new_species (str):
-            The species of the defect site.
-            Unnecessary for vacancies.
+            The species of the defect site. Unnecessary for vacancies.
         bulk_site_idx (int):
-            The index of the site in the bulk structure that corresponds
-            to the defect site in the defect structure.
+            The index of the site in the bulk structure that corresponds to the
+            defect site in the defect structure.
         defect_site_idx (int):
             The index of the defect site to use in the unreleaxed defect
-            structure. Just for consistency with the relaxed defect
-            structure.
+            structure. Just for consistency with the relaxed defect structure.
+
+    Returns:
+        Structure:
+            The unrelaxed defect structure.
     """
     unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
 
@@ -726,14 +732,14 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     Calculates the Wigner-Seitz radius of the structure, which corresponds to
     the maximum radius of a sphere fitting inside the cell.
 
-    Uses the ``calc_max_sphere_radius`` function from
-    ``pydefect``, with a wrapper to avoid unnecessary logging
-    output and warning suppression from ``vise``.
+    Uses the ``calc_max_sphere_radius`` function from ``pydefect``, with a
+    wrapper to avoid unnecessary logging output and warning suppression from
+    ``vise``.
 
     Args:
         lattice (Union[Structure,Lattice]):
-            The lattice of the structure (either a ``pymatgen``
-            ``Structure`` or ``Lattice`` object).
+            The lattice of the structure (either a ``pymatgen`` ``Structure``
+            or ``Lattice`` object).
 
     Returns:
         float:
@@ -788,11 +794,11 @@ def check_atom_mapping_far_from_defect(
         defect_coords (np.ndarray[float]):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
-            Whether the defect coordinates are in Cartesian or
-            fractional coordinates. Default is ``False`` (fractional).
+            Whether the defect coordinates are in Cartesian or fractional
+            coordinates. Default is ``False`` (fractional).
         displacement_tol (float):
-            The tolerance for the displacement of atoms far from the
-            defect site, in Ångströms. Default is 0.5 Å.
+            The tolerance for the displacement of atoms far from the defect
+            site, in Ångströms. Default is 0.5 Å.
         warning (bool, str):
             Whether to throw a warning if a mismatch is detected. If
             ``warning = "verbose"`` (default), the individual atomic
@@ -1032,10 +1038,10 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     NOTE: This assumes that both structures have the same lattice definitions
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
-    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
-    warning should be thrown anyway during parsing). Currently, this function
-    is no longer used, but if it is reintroduced at any point, this point should
-    be noted!
+    defect/bulk supercell (in which case the
+    ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
+    during parsing). Currently, this function is no longer used, but if it is
+    reintroduced at any point, this point should be noted!
 
     Args:
         s1_structure (Structure):
@@ -1043,8 +1049,8 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
         s2_structure (Structure):
             The template structure.
         threshold (float):
-            If the distance between a pair of matched sites is larger than this,
-            then a warning will be thrown. Default is 5.0 Å.
+            If the distance between a pair of matched sites is larger than
+            this, then a warning will be thrown. Default is 5.0 Å.
 
     Returns:
         Structure:
@@ -1248,8 +1254,8 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     Convenience function to generate a formatted warning string listing
     mismatching INCAR tags and their values in a clean output.
 
-    Used in ``doped.analysis`` and ``doped.chemical_potentials`` when
-    checking calculation compatibilities.
+    Used in ``doped.analysis`` and ``doped.chemical_potentials`` when checking
+    calculation compatibilities.
 
     Args:
         mismatching_INCAR_warnings (list[tuple[str, set]]):
@@ -1403,8 +1409,8 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             engineer ``NELECT`` using the ``DefectDictSet``.
 
     Returns:
-        int or float: The number of electrons in the system for a neutral
-        charge state.
+        int or float:
+            The number of electrons in the system for a neutral charge state.
     """
     nelect = None
     if not skip_potcar_init:
@@ -1634,7 +1640,8 @@ def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0
     Args:
         structure (Structure):
             The structure for which to get the total number of electrons.
-        charge_state (int): The charge state of the system. Default is 0.
+        charge_state (int):
+            The charge state of the system. Default is 0.
 
     Returns:
         int:
@@ -1672,8 +1679,7 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
 
     Args:
         vasprun (Vasprun):
-            ``pymatgen`` ``Vasprun`` for which to determine the spin
-            degeneracy.
+            ``pymatgen`` ``Vasprun`` for which to determine spin degeneracy.
         charge_state (int):
             The charge state of the system, which can be used to determine the
             number of electrons. If ``None`` (default), automatically
@@ -1855,31 +1861,3 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, 
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
     )
-
-
-def doped_entry_id(vasprun: Vasprun) -> str:
-    """
-    Generate an ``entry_id`` from a ``pymatgen`` ``Vasprun`` object, to use
-    with ``ComputedEntry``/``ComputedStructureEntry`` objects (from
-    ``Vasprun.get_computed_entry()``).
-
-    The ``entry_id`` is set to:
-    ``{reduced chemical formula}_{vr.energy}``
-
-    This is to avoid the use of parsing-time-dependent ``entry_id``
-    from ``pymatgen``, and may be replaced in the future if this issue
-    is resolved: https://github.com/materialsproject/pymatgen/issues/4259
-
-    Currently not used in ``doped`` parsing however, as
-    ``ComputedEntry.parameters`` gets randomly re-organised upon saving
-    to ``json``, so the same ``ComputedEntry`` saved to file at different
-    times still gives slightly different ``json`` files.
-
-    Args:
-        vasprun (Vasprun):
-            The ``Vasprun`` object from which to generate the ``entry_id``.
-
-    Returns:
-        str: The generated ``entry_id``.
-    """
-    return f"{vasprun.final_structure.composition.reduced_formula}_{vasprun.final_energy}"
