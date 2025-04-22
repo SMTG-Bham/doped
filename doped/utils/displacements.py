@@ -1,5 +1,5 @@
 """
-Code to analyse site displacements around a defect.
+Code to analyse site displacements around defects.
 """
 
 import os
@@ -50,30 +50,31 @@ def calc_site_displacements(
 
     Args:
         defect_entry (DefectEntry):
-            ``DefectEntry`` object
+            ``DefectEntry`` object.
         relaxed_distances (bool):
-            Whether to use the atomic positions in the _relaxed_ defect supercell
-            for ``'Distance to defect'``, ``'Vector to site from defect'`` and
-            ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
-            (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
+            Whether to use the atomic positions in the `relaxed` defect
+            supercell for ``'Distance to defect'``,
+            ``'Vector to site from defect'`` and ``'Displacement wrt defect'``
+            values (``True``), or unrelaxed positions (i.e. the bulk structure
+            positions)(``False``). Defaults to ``False``.
         relative_to_defect (bool):
-            Whether to calculate the signed displacements along the line
-            from the defect site to that atom. Negative values indicate
-            the atom moves towards the defect (compressive strain),
-            positive values indicate the atom moves away from the defect.
-            Defaults to False. If True, the relative displacements are stored in
-            the `Displacement wrt defect` key of the returned dictionary.
+            Whether to calculate the signed displacements along the line from
+            the (relaxed) defect site to that atom. Negative values indicate
+            the atom moves towards the defect (compressive strain), positive
+            values indicate the atom moves away from the defect. Defaults to
+            ``False``. If ``True``, the relative displacements are stored in
+            the ``Displacement wrt defect`` key of the returned dictionary.
         vector_to_project_on (list):
-            Direction to project the site displacements along
-            (e.g. [0, 0, 1]). Defaults to ``None`` (displacements are given
-            as vectors in Cartesian space).
+            Direction to project the site displacements along (e.g. [0, 0, 1]).
+            Defaults to ``None`` (displacements are given as vectors in
+            Cartesian space).
         threshold (float):
-            If the distance between a pair of matched sites is larger than this,
-            then a warning will be thrown. Default is 2.0 Å.
+            If the distance between a pair of matched sites is larger than
+            this, then a warning will be thrown. Default is 2.0 Å.
 
     Returns:
-        ``pandas`` ``DataFrame`` with site displacements (compared to pristine supercell),
-        and other displacement-related information.
+        ``pandas`` ``DataFrame`` with site displacements (compared to pristine
+        supercell), and other displacement-related information.
     """
     bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
     defect_site = defect_sc_with_site[defect_site_index]
@@ -190,29 +191,30 @@ def plot_site_displacements(
     """
     Plots site displacements around a defect.
 
-    Set ``use_plotly = True`` to get an interactive ``plotly``
-    plot, useful for analysis!
+    Set ``use_plotly = True`` to get an interactive ``plotly`` plot, useful for
+    analysis!
 
     Args:
-        defect_entry (DefectEntry): ``DefectEntry`` object
+        defect_entry (DefectEntry): ``DefectEntry`` object.
         separated_by_direction (bool):
-            Whether to plot site displacements separated by
-            direction (x, y, z). Default is ``False``.
+            Whether to plot site displacements separated by direction
+            (x, y, z). Default is ``False``.
         relaxed_distances (bool):
-            Whether to use the atomic positions in the _relaxed_ defect supercell
-            for ``'Distance to defect'``, ``'Vector to site from defect'`` and
-            ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
-            (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
+            Whether to use the atomic positions in the `relaxed` defect
+            supercell for ``'Distance to defect'``,
+            ``'Vector to site from defect'`` and ``'Displacement wrt defect'``
+            values (``True``), or unrelaxed positions (i.e. the bulk structure
+            positions)(``False``). Defaults to ``False``.
         relative_to_defect (bool):
-            Whether to plot the signed displacements
-            along the line from the defect site to that atom. Negative values
-            indicate the atom moves towards the defect (compressive strain),
-            positive values indicate the atom moves away from the defect
-            (tensile strain). Uses the *relaxed* defect position as reference.
+            Whether to plot the signed displacements along the line from the
+            (relaxed) defect site to that atom. Negative values indicate the
+            atom moves towards the defect (compressive strain), positive values
+            indicate the atom moves away from the defect (tensile strain).
+            Default is ``False``.
         vector_to_project_on (bool):
-            Direction to project the site displacements along
-            (e.g. [0, 0, 1]). Defaults to None (e.g. the displacements
-            are calculated in the cartesian basis x, y, z).
+            Direction to project the site displacements along (e.g. [0, 0, 1]).
+            Defaults to ``None`` (e.g. the displacements are calculated in the
+            cartesian basis x, y, z).
         use_plotly (bool):
             Whether to use ``plotly`` for plotting. Default is ``False``.
             Set to ``True`` to get an interactive plot.
@@ -235,11 +237,11 @@ def plot_site_displacements(
         """
         Function to plot absolute/total displacement.
 
-        Depending on the disp_type_key specified, will plot either the
-        normalised displacement (disp_type_key="Displacement"), the
-        displacement wrt the defect (disp_type_key="Displacement wrt defect"),
-        or the displacmeent projected along a specified direction (
-        disp_type_key="Displacement projected along vector").
+        Depending on the ``disp_type_key`` specified, will plot either the
+        normalised displacement (``disp_type_key="Displacement"``), the
+        displacement wrt defect (``disp_type_key="Displacement wrt defect"``),
+        or the displacement projected along a specified direction
+        (``disp_type_key="Displacement projected along vector"``).
         """
         fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
         y_data = disp_df[disp_type_key]
@@ -478,47 +480,49 @@ def calc_displacements_ellipsoid(
     matrix and dataframe of anisotropy information.
 
     Args:
-        defect_entry (DefectEntry): ``DefectEntry`` object.
+        defect_entry (DefectEntry):
+            ``DefectEntry`` object.
         quantile (float):
             The quantile threshold for selecting significant displacements
             (between 0 and 1). Default is 0.8.
         relaxed_distances (bool):
-            Whether to use the atomic positions in the _relaxed_ defect supercell
-            for ``'Distance to defect'``, ``'Vector to site from defect'`` and
-            ``'Displacement wrt defect'`` values (``True``), or unrelaxed positions
-            (i.e. the bulk structure positions)(``False``). Defaults to ``False``.
+            Whether to use the atomic positions in the `relaxed` defect
+            supercell for ``'Distance to defect'``,
+            ``'Vector to site from defect'`` and ``'Displacement wrt defect'``
+            values (``True``), or unrelaxed positions (i.e. the bulk structure
+            positions)(``False``). Defaults to ``False``.
         return_extras (bool):
             Whether to also return the ``disp_df`` (output from
             ``calc_site_displacements(defect_entry, relative_to_defect=True)``)
             and the points used to fit the ellipsoid, corresponding to the
             Cartesian coordinates of the sites with displacements above the
-            threshold, where the structure has been shifted to place the defect at
-            the cell midpoint ([0.5, 0.5, 0.5]) in fractional coordinates.
+            threshold, where the structure has been shifted to place the defect
+            at the cell midpoint ([0.5, 0.5, 0.5]) in fractional coordinates.
             Default is ``False``.
 
     Returns:
         tuple:
 
-        - (``ellipsoid_center``, ``ellipsoid_radii``, ``ellipsoid_rotation``, ``anisotropy_df``):
-            A tuple containing the ellipsoid's center, radii, rotation matrix, and
-            a dataframe of anisotropy information, or ``(None, None, None, None)`` if
-            fitting was unsuccessful.
+        - (``ellipsoid_center``, ``ellipsoid_radii``, ``ellipsoid_rotation``,
+          ``anisotropy_df``):
+            A tuple containing the ellipsoid's center, radii, rotation matrix,
+            and a dataframe of anisotropy information, or
+            ``(None, None, None, None)`` if fitting was unsuccessful.
         - (``disp_df`` and ``points``):
-            If ``return_extras=True``, also returns ``disp_df`` and the points used to
-            fit the ellipsoid, appended to the return tuple.
+            If ``return_extras=True``, also returns ``disp_df`` and the points
+            used to fit the ellipsoid, appended to the return tuple.
     """
 
     def _get_minimum_volume_ellipsoid(P):
         """
         Find the minimum volume ellipsoid which holds all the points.
 
-        Based on work by Nima Moshtagh
+        Based on work by Nima Moshtagh:
         http://www.mathworks.com/matlabcentral/fileexchange/9542
-        and also by looking at:
+        and following work:
         http://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
-        Which is based on the first reference anyway!
 
-        Here, P is a numpy array of N dimensional points like this:
+        Here, P is a numpy array of N dimensional points like:
         P = [[x,y,z], <-- one point per line
             [x,y,z],
             ...
@@ -627,18 +631,19 @@ def plot_displacements_ellipsoid(
     """
     Plot the displacement ellipsoid and/or anisotropy around a relaxed defect.
 
-    Set ``use_plotly = True`` to get an interactive ``plotly``
-    plot, useful for analysis!
+    Set ``use_plotly = True`` to get an interactive ``plotly`` plot, useful for
+    analysis!
 
     The supercell edges are also plotted if ``show_supercell = True``
     (default).
 
     Args:
-        defect_entry (DefectEntry): ``DefectEntry`` object.
+        defect_entry (DefectEntry):
+            ``DefectEntry`` object.
         plot_ellipsoid (bool):
-            If True, plot the fitted ellipsoid in the crystal lattice.
+            If ``True``, plot the fitted ellipsoid in the crystal lattice.
         plot_anisotropy (bool):
-            If True, plot the anisotropy of the ellipsoid radii.
+            If ``True``, plot the anisotropy of the ellipsoid radii.
         quantile (float):
             The quantile threshold for selecting significant displacements
             (between 0 and 1). Default is 0.8.
@@ -653,9 +658,9 @@ def plot_displacements_ellipsoid(
             ``doped`` default displacements style.
 
     Returns:
-        Either a single ``plotly`` or ``matplotlib`` ``Figure``, if only one
-        of ``plot_ellipsoid`` or ``plot_anisotropy`` are ``True``, or a tuple
-        of plots if both are ``True``.
+        Either a single ``plotly`` or ``matplotlib`` ``Figure``, if only one of
+        ``plot_ellipsoid`` or ``plot_anisotropy`` are ``True``, or a tuple of
+        plots if both are ``True``.
     """
     if use_plotly and not plotly_installed:
         warnings.warn("Plotly not installed, using matplotlib instead")
@@ -1001,14 +1006,15 @@ def plot_displacements_ellipsoid(
 
 def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
     """
-    Returns structures for bulk and defect supercells with the same number of
+    Returns structures for bulk and defect supercells with the `same` number of
     sites and species, to be used for site matching.
 
-    If Vacancy, adds (unrelaxed) site to defect structure. If Interstitial,
-    adds relaxed site to bulk structure. If Substitution, replaces (unrelaxed)
-    defect site in bulk structure.
+    If ```Vacancy```, adds (unrelaxed) site to defect structure. If
+    ``Interstitial``, adds relaxed site to bulk structure. If ``Substitution``,
+    replaces (unrelaxed) defect site in bulk structure.
 
-    Returns tuple of ``(bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)``.
+    Returns tuple of
+    ``(bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)``.
     """
     defect_type = defect_entry.defect.defect_type.name
     bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
