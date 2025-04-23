@@ -23,26 +23,25 @@ from scipy.spatial import Voronoi
 
 from doped.utils import symmetry
 
-# Make composition comparisons faster (used in structure matching etc)
-
 
 def _composition__hash__(self):
     """
-    Custom ``__hash__`` method for ``Composition`` instances.
+    Custom ``__hash__`` method for ``Composition`` instances, to make
+    composition comparisons faster (used in structure matching etc.).
 
-    ``pymatgen`` composition has just hashes the chemical system
-    (without stoichiometry), which cannot then be used to
-    distinguish different compositions.
+    ``pymatgen`` composition has just hashes the chemical system (without
+    stoichiometry), which cannot then be used to distinguish different
+    compositions.
     """
     return hash(frozenset(self._data.items()))
 
 
 @lru_cache(maxsize=int(1e8))
 def doped_Composition_eq_func(self_hash, other_hash):
-    """
+    r"""
     Update equality function for ``Composition`` instances, which breaks early
-    for mismatches and also uses caching, making orders of magnitude faster
-    than ``pymatgen`` equality function.
+    for mismatches and also uses caching, making it orders of magnitude faster
+    than ``pymatgen``\s equality function.
     """
     self_comp = Composition.__instances__[self_hash]
     other_comp = Composition.__instances__[other_hash]
@@ -258,15 +257,15 @@ def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     """
     Get the symmetry operations associated with the structure.
 
-    Refactored from ``pymatgen`` to allow caching, to boost efficiency
-    when working with large defect supercells.
+    Refactored from ``pymatgen`` to allow caching, to boost efficiency when
+    working with large defect supercells.
 
     Returns:
-        Symmetry operations as a tuple of two equal length sequences.
-        (rotations, translations). "rotations" is the numpy integer array
-        of the rotation matrices for scaled positions
-        "translations" gives the numpy float64 array of the translation
-        vectors in scaled positions.
+        Symmetry operations as a tuple of two equal length sequences;
+        ``(rotations, translations)``. "rotations" is the numpy integer array
+        of the rotation matrices for scaled positions, while "translations"
+        gives the ``numpy`` ``float64`` array of the translation vectors in
+        scaled positions.
     """
     return _cache_ready_get_symmetry(
         cell=self._cell, symprec=self._symprec, angle_tol=self._angle_tol, formula=self._structure.formula
@@ -279,8 +278,8 @@ def _cache_ready_get_symmetry(cell, symprec, angle_tol, formula=None):
     Cached version of ``get_symmetry`` method, to speed up symmetry operations
     in ``pymatgen``.
 
-    Refactored from ``pymatgen`` to allow caching, to boost efficiency
-    when working with large defect supercells.
+    Refactored from ``pymatgen`` to allow caching, to boost efficiency when
+    working with large defect supercells.
     """
     import spglib
 
@@ -312,8 +311,8 @@ class DopedTopographyAnalyzer:
     magnitude faster).
 
     The original code was written by Danny Broberg and colleagues
-    (10.1016/j.cpc.2018.01.004), which was then added to ``pymatgen`` before being
-    cut.
+    (10.1016/j.cpc.2018.01.004), which was then added to ``pymatgen`` before
+    being cut.
     """
 
     def __init__(
@@ -326,26 +325,35 @@ class DopedTopographyAnalyzer:
     ) -> None:
         """
         Args:
-            structure (Structure): An initial structure.
-            image_tol (float): A tolerance distance for the analysis, used to
-                determine if something are actually periodic boundary images of
-                each other. Default is usually fine.
-            max_cell_range (int): This is the range of periodic images to
-                construct the Voronoi tessellation. A value of 1 means that we
-                include all points from (x +- 1, y +- 1, z+- 1) in the
-                voronoi construction. This is because the Voronoi poly
-                extends beyond the standard unit cell because of PBC.
-                Typically, the default value of 1 works fine for most
-                structures and is fast. But for very small unit
-                cells with high symmetry, this may need to be increased to 2
-                or higher. If there are < 5 atoms in the input structure and
-                max_cell_range is 1, this will automatically be increased to 2.
-            constrained_c_frac (float): Constraint the region where users want
-                to do Topology analysis the default value is 0.5, which is the
-                fractional coordinate of the cell
-            thickness (float): Along with constrained_c_frac, limit the
-                thickness of the regions where we want to explore. Default is
-                0.5, which is mapping all the site of the unit cell.
+            structure (Structure):
+                Structure to analyse.
+            image_tol (float):
+                A tolerance distance for the analysis, used to determine if
+                sites are periodic images of each other. Default (of 1e-4) is
+                usually fine.
+            max_cell_range (int):
+                This is the range of periodic images to construct the Voronoi
+                tessellation. A value of 1 means that we include all points
+                from ``(x +- 1, y +- 1, z+- 1)`` in the Voronoi construction.
+                This is because the Voronoi polyhedra extend beyond the
+                standard unit cell because of PBC. Typically, the default value
+                of 1 works fine for most structures and is fast. But for very
+                small unit cells with high symmetry, this may need to be
+                increased to 2 or higher. If there are < 5 atoms in the input
+                structure and ``max_cell_range`` is 1, this will automatically
+                be increased to 2.
+            constrained_c_frac (float):
+                Constrain the region where topology analysis is performed.
+                Only sites with ``z`` fractional coordinates between
+                ``constrained_c_frac +/- thickness`` are considered. Default of
+                0.5 (with ``thickness`` of 0.5) includes all sites in the unit
+                cell.
+            thickness (float):
+                Constrain the region where topology analysis is performed.
+                Only sites with ``z`` fractional coordinates between
+                ``constrained_c_frac +/- thickness`` are considered. Default of
+                0.5 (with ``thickness`` of 0.5) includes all sites in the unit
+                cell.
         """
         # if input cell is very small (< 5 atoms) and max cell range is 1 (default), bump to 2 for
         # accurate Voronoi tessellation:
@@ -416,18 +424,17 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     """
     Get the Voronoi nodes of a ``pymatgen`` ``Structure``.
 
-    Maximises efficiency by mapping down to the primitive cell,
-    doing Voronoi analysis (with the efficient ``DopedTopographyAnalyzer``
-    class), and then mapping back to the original structure (typically
-    a supercell).
+    Maximises efficiency by mapping down to the primitive cell, doing Voronoi
+    analysis (with the efficient ``DopedTopographyAnalyzer`` class), and then
+    mapping back to the original structure (typically a supercell).
 
     Args:
-        structure (:obj:`Structure`):
-            pymatgen `Structure` object.
+        structure (Structure):
+            ``pymatgen`` ``Structure`` object.
 
     Returns:
         list[PeriodicSite]:
-            List of `PeriodicSite` objects representing the Voronoi nodes.
+            List of ``PeriodicSite`` objects representing the Voronoi nodes.
     """
     structure.__hash__ = _structure__hash__  # make sure Structure is hashable
     return _hashable_get_voronoi_nodes(structure)
@@ -477,7 +484,7 @@ def _doped_cluster_frac_coords(
 
     Modified from the ``pymatgen-analysis-defects``` function as follows:
     For each site cluster, the possible sites to choose from are the sites
-    in the cluster _and_ the cluster midpoint (average position). Of these
+    in the cluster `and` the cluster midpoint (average position). Of these
     sites, the site with the highest symmetry, and then largest ``min_dist``
     (distance to any host lattice site), is chosen -- if its ``min_dist`` is
     no more than ``symmetry_preference`` (0.1 Å by default) smaller than
@@ -495,17 +502,19 @@ def _doped_cluster_frac_coords(
     interstitial generation functions.
 
     Args:
-        fcoords (npt.ArrayLike): Fractional coordinates of points to cluster.
-        structure (Structure): The host structure.
+        fcoords (ArrayLike):
+            Fractional coordinates of points to cluster.
+        structure (Structure):
+            The host structure.
         tol (float):
-            A distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
+            Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
         symmetry_preference (float):
-            A distance preference for symmetry over minimum distance to host atoms,
-            as detailed in docstring above.
+            Distance preference for symmetry over minimum distance to host
+            atoms, as detailed in docstring above.
             Default is 0.1 Å.
 
     Returns:
-        np.typing.NDArray: Clustered fractional coordinates
+        np.typing.NDArray: Clustered fractional coordinates.
     """
     if len(fcoords) == 0:
         return None
@@ -565,15 +574,19 @@ def _doped_cluster_frac_coords(
 
 def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:
     """
-    Group a list of unsortable objects.
+    Group a list of unsortable objects, using a given comparator function.
 
-    Templated off the ``pymatgen-analysis-defects`` function,
-    but fixed to avoid broken reassignment logic and overwriting
-    of labels (resulting in sites being incorrectly dropped).
+    Templated off the ``pymatgen-analysis-defects`` function, but fixed to
+    avoid broken reassignment logic and overwriting of labels (resulting in
+    sites being incorrectly dropped).
+
+    Previously in ``doped`` interstitial generation, but then removed after
+    updates in commit ``4699f38`` (for v3.0.0) to use faster site-matching
+    functions from ``doped``.
 
     Args:
-        list_in: A list of objects to group using ``comp``.
-        comp: Comparator function.
+        list_in (Sequence): A sequence of objects to group using ``comp``.
+        comp (Callable): A comparator function.
 
     Returns:
         list[int]: list of labels for the input list
