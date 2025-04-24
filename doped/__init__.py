@@ -9,13 +9,17 @@ defect supercell calculations, and automatically parse and analyse the results.
 
 import contextlib
 import inspect
+import logging
 import multiprocessing
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
+import vise.util.logger
 from packaging.version import parse
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
+
+vise.util.logger.get_logger = logging.getLogger  # to avoid repeated vise INFO messages with Parallel code
 
 
 def _check_pmg_compatibility():
