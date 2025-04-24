@@ -51,63 +51,65 @@ def get_defect_in_supercell(
     """
     Re-generate a relaxed defect structure in a different supercell.
 
-    This function takes the relaxed defect structure of the input ``DefectEntry``
-    (from ``DefectEntry.defect_supercell``) and re-generates it in the
-    ``target_supercell`` structure, and the closest possible position to
-    ``target_frac_coords`` (if provided, else closest to centre = [0.5, 0.5, 0.5]),
-    also providing the corresponding bulk supercell (which should be the same for
-    each generated defect supercell given the same ``target_supercell`` and base
-    supercell for ``defect_entry``, see note below).
+    This function takes the relaxed defect structure of the input
+    ``DefectEntry`` (from ``DefectEntry.defect_supercell``) and re-generates it
+    in the ``target_supercell`` structure, and the closest possible position to
+    ``target_frac_coords`` (default is the supercell centre = [0.5, 0.5, 0.5]),
+    also providing the corresponding bulk supercell (which should be the same
+    for each generated defect supercell given the same ``target_supercell`` and
+    base supercell for ``defect_entry``, see note below).
 
     ``target_supercell`` should be the same host crystal structure, just with
     different supercell dimensions, having the same lattice parameters and bond
     lengths.
 
-    Note: This function does _not_ guarantee that the generated defect supercell
-    atomic position basis exactly matches that of ``target_supercell``, which may
-    have come from a different primitive structure definition (e.g. CdTe with
+    Note: This function does `not` guarantee that the generated defect
+    supercell atomic position basis exactly matches that of
+    ``target_supercell``, which may have come from a different primitive
+    structure definition (e.g. CdTe with
     ``{"Cd": [0,0,0], "Te": [0.25,0.25,0.25]}`` vs
-    ``{"Cd": [0,0,0], "Te": [0.75,0.75,0.75]}``). The generated supercell _will_
-    have the exact same lattice/cell definition with fully symmetry-equivalent atom
-    positions, but if the actual position basis differs then this can cause issues
-    with parsing finite-size corrections (which rely on site-matched potentials).
-    This is perfectly fine if it occurs, just will require the use of a matching
-    bulk/reference supercell when parsing (rather than the input ``target_supercell``)
-    -- ``doped`` will also throw a warning about this when parsing if a non-matching
-    bulk supercell is used anyway.
-    This function will automatically check if the position basis in the generated
-    supercell differs from that of ``target_supercell``, printing a warning if so
-    (unless ``check_bulk`` is ``False``) and returning the corresponding bulk
-    supercell which should be used for parsing defect calculations with the
-    generated supercell. Of course, if generating multiple defects in the same
-    ``target_supercell``, only one such bulk supercell calculation should be required
-    (should correspond to the same bulk supercell in each case).
+    ``{"Cd": [0,0,0], "Te": [0.75,0.75,0.75]}``). The generated supercell
+    `will` have the exact same lattice/cell definition with fully
+    symmetry-equivalent atom positions, but if the actual position basis
+    differs then this can cause issues with parsing finite-size corrections
+    (which rely on site-matched potentials). This is perfectly fine if it
+    occurs, just will require the use of a matching bulk/reference supercell
+    when parsing (rather than the input ``target_supercell``) -- ``doped`` will
+    also throw a warning about this when parsing if a non-matching bulk
+    supercell is used anyway. This function will automatically check if the
+    position basis in the generated supercell differs from that of
+    ``target_supercell``, printing a warning if so (unless ``check_bulk`` is
+    ``False``) and returning the corresponding bulk supercell which should be
+    used for parsing defect calculations with the generated supercell. Of
+    course, if generating multiple defects in the same ``target_supercell``,
+    only one such bulk supercell calculation should be required (should
+    correspond to the same bulk supercell in each case).
 
     Briefly, this function works by:
 
     - Translating the defect site to the centre of the original supercell.
-    - Identifying a super-supercell which fully encompasses the target supercell
-      (regardless of orientation).
+    - Identifying a super-supercell which fully encompasses the target
+      supercell (regardless of orientation).
     - Generate this super-supercell, using one copy of the original defect
       supercell (``DefectEntry.defect_supercell``), and the rest of the sites
       (outside of the original defect supercell box, with the defect translated
       to the centre) are populated using the bulk supercell
       (``DefectEntry.bulk_supercell``).
-    - Translate the defect site in this super-supercell to the Cartesian coordinates
-      of the centre of ``target_supercell``, then stencil out all sites in the
-      ``target_supercell`` portion of the super-supercell, accounting for possible
-      site displacements in the relaxed defect supercell (e.g. if ``target_supercell``
-      has a different shape and does not fully encompass the original defect
-      supercell).
-      This is done by scanning over possible combinations of sites near the boundary
-      regions of the ``target_supercell`` portion, and identifying the combination
-      which maximises the minimum inter-atomic distance in the new supercell (i.e. the
-      most bulk-like arrangement).
+    - Translate the defect site in this super-supercell to the Cartesian
+      coordinates of the centre of ``target_supercell``, then stencil out all
+      sites in the ``target_supercell`` portion of the super-supercell,
+      accounting for possible site displacements in the relaxed defect
+      supercell (e.g. if ``target_supercell`` has a different shape and does
+      not fully encompass the original defect supercell).
+      This is done by scanning over possible combinations of sites near the
+      boundary regions of the ``target_supercell`` portion, and identifying the
+      combination which maximises the minimum inter-atomic distance in the new
+      supercell (i.e. the most bulk-like arrangement).
     - Re-orient this new stenciled supercell to match the orientation and site
       positions of ``target_supercell``.
-    - If ``target_frac_coords`` is not ``False``, scan over all symmetry operations
-      of ``target_supercell`` and apply that which places the defect site closest
-      to ``target_frac_coords``.
+    - If ``target_frac_coords`` is not ``False``, scan over all symmetry
+      operations of ``target_supercell`` and apply that which places the defect
+      site closest to ``target_frac_coords``.
 
     Args:
         defect_entry (DefectEntry):
@@ -115,36 +117,36 @@ def get_defect_in_supercell(
             structure (taken from ``DefectEntry.defect_supercell``) in the
             ``target_supercell`` lattice.
         target_supercell (Structure):
-            The supercell structure to re-generate the relaxed defect
-            structure in.
+            The supercell structure to re-generate the relaxed defect structure
+            in.
         check_bulk (bool):
             Whether to check if the generated defect/bulk supercells have
-            different atomic position bases to ``target_supercell`` (as described
-            above) -- if so, a warning will be printed (unless ``check_bulk`` is
-            ``False``). Default is ``True``.
+            different atomic position bases to ``target_supercell`` (as
+            described above) -- if so, a warning will be printed (unless
+            ``check_bulk`` is ``False``). Default is ``True``.
         target_frac_coords (Union[np.ndarray[float], list[float], bool]):
             The fractional coordinates to target for defect placement in the
             new supercell. If just set to ``True`` (default), will try to place
             the defect nearest to the centre of the superset cell (i.e.
-            ``target_frac_coords = [0.5, 0.5, 0.5]``), as is default in ``doped``
-            defect generation. Note that defect placement is harder in this
-            case than in generation with ``DefectsGenerator``, as we are not
-            starting from primitive cells and we are working with relaxed
-            geometries.
+            ``target_frac_coords = [0.5, 0.5, 0.5]``), as is default in
+            ``doped`` defect generation. Note that defect placement is harder
+            in this case than in generation with ``DefectsGenerator``, as we
+            are not starting from primitive cells and we are working with
+            relaxed geometries.
         edge_tol (float):
             A tolerance (in Angstrom) for site displacements at the edge of the
-            stenciled supercell, when determining the best match of
-            sites to stencil out in the new supercell (of ``target_supercell``
+            stenciled supercell, when determining the best match of sites to
+            stencil out in the new supercell (of ``target_supercell``
             dimension). Default is 1 Angstrom, and then this is sequentially
             increased up to 4.5 Angstrom if the initial scan fails.
 
     Returns:
         tuple[Structure, Structure]:
-            The re-generated defect supercell in the ``target_supercell`` lattice,
-            and the corresponding bulk/reference supercell for the generated defect
-            supercell (see explanations above).
+            The re-generated defect supercell in the ``target_supercell``
+            lattice, and the corresponding bulk/reference supercell for the
+            generated defect supercell (see explanations above).
     """
-    # Note to self; using Pycharm breakpoints throughout is likely easiest way to debug these functions
+    # Note to self; using Pycharm breakpoints throughout is likely easiest for debugging (TODO)
     # TODO: Tests!! (At least one of each defect, Se good test case, then at least one or two with
     #  >unary compositions and extrinsic substitution/interstitial)
     # TODO: We should now be able to use these functions (without the final re-orientation step,
@@ -211,7 +213,7 @@ def get_defect_in_supercell(
             big_defect_supercell,
             target_supercell,
             bulk_min_bond_length=bulk_min_bond_length,
-            orig_min_dist=orig_min_dist,
+            min_dist_tol=orig_min_dist,
             edge_tol=edge_tol,
             pbar=pbar,
         )
@@ -219,7 +221,7 @@ def get_defect_in_supercell(
             big_bulk_supercell,
             target_supercell,
             bulk_min_bond_length=bulk_min_bond_length,
-            orig_min_dist=bulk_min_bond_length,
+            min_dist_tol=bulk_min_bond_length,
             edge_tol=1e-3,
             pbar=None,
         )  # shouldn't need `edge_tol`, should be much faster than defect supercell stencil
@@ -341,8 +343,8 @@ def _scan_symm_ops_to_place_site_closest_to_frac_coords(
 
     Args:
         symm_ops (Union[Structure, Sequence[SymmOp]]):
-            Either a list of symmetry operations or a structure from
-            which to extract symmetry operations.
+            Either a list of symmetry operations or a structure from which to
+            extract symmetry operations.
         site (PeriodicSite):
             The site to place closest to the target fractional coordinates.
         target_frac_coords (Optional[Union[np.ndarray[float], list[float]]]):
@@ -373,7 +375,7 @@ def _stencil_target_cell_from_big_cell(
     target_supercell: Structure,
     edge_tol: float = 1.0,
     bulk_min_bond_length: float | None = None,
-    orig_min_dist: float | None = None,
+    min_dist_tol: float = 1.0,
     pbar: tqdm | None = None,
 ) -> Structure:
     """
@@ -382,40 +384,41 @@ def _stencil_target_cell_from_big_cell(
     ``big_supercell`` which correspond to the sites in ``target_supercell``
     (i.e. are within the Cartesian bounds of ``target_supercell``).
 
-    Note that this function assumes that the defect is roughly centred
-    within ``big_supercell`` (i.e. near [0.5, 0.5, 0.5])! The midpoints of
+    Note that this function assumes that the defect is roughly centred within
+    ``big_supercell`` (i.e. near [0.5, 0.5, 0.5])! The midpoints of
     ``target_supercell`` and ``big_supercell`` are then aligned within this
     function, before stenciling.
 
-    We need to ensure the appropriate number of sites (and their composition) are
-    taken, and that the sites we choose are appropriate for the new supercell (i.e.
-    that if we have e.g. an in-plane contraction, we don't take duplicate atoms
-    that then correspond to tiny inter-atomic distances in the new supercell due to
-    imperfect stenciling under PBC -- so we can't simply take the atoms that are
-    closest to the defect). So, here we scan over possible choices of atoms to
-    include, and take the combination which maximises the _minimum_ inter-atomic
-    distance in the new supercell, when accounting for PBCs.
+    We need to ensure the appropriate number of sites (and their composition)
+    are taken, and that the sites we choose are appropriate for the new
+    supercell (i.e. that if we have e.g. an in-plane contraction, we don't take
+    duplicate atoms that then correspond to tiny inter-atomic distances in the
+    new supercell due to imperfect stenciling under PBC -- so we can't simply
+    take the atoms that are closest to the defect). So, here we scan over
+    possible choices of atoms to include, and take the combination which
+    maximises the `minimum` inter-atomic distance in the new supercell, when
+    accounting for PBCs.
 
     Args:
         big_supercell (Structure):
-            The supercell structure which fully encompasses ``target_supercell``,
-            from which to stencil out the sites.
+            The supercell structure which fully encompasses
+            ``target_supercell``, from which to stencil out the sites.
         target_supercell (Structure):
             The supercell structure giving the cell dimensions to stencil out
             from ``big_supercell``.
         edge_tol (float):
             A tolerance (in Angstrom) for site displacements at the edge of the
-            stenciled supercell, when determining the best match of
-            sites to stencil out in the new supercell (of ``target_supercell``
+            stenciled supercell, when determining the best match of sites to
+            stencil out in the new supercell (of ``target_supercell``
             dimension). Default is 1 Angstrom, and then this is sequentially
             increased up to 4.5 Angstrom if the initial scan fails.
         bulk_min_bond_length (float):
             The minimum interatomic distance in the bulk supercell. Default is
             ``None``, in which case it is calculated from ``target_supercell``.
-        orig_min_dist (float):
-            The minimum interatomic distance in the original defect supercell.
-            Default is ``None``, in which case it is calculated from
-            ``big_supercell``.
+        min_dist_tol (float):
+            Used to sanity check the output; if the minimum interatomic
+            distance (ignoring any Hydrogen atoms) in the output structure is
+            smaller than this, a warning or error is raised. Default is 1.0 Å.
         pbar (tqdm):
             ``tqdm`` progress bar object to update (for internal ``doped``
             usage). Default is ``None``.
@@ -438,8 +441,6 @@ def _stencil_target_cell_from_big_cell(
 
     if bulk_min_bond_length is None:
         bulk_min_bond_length = min_dist(target_supercell)
-    if orig_min_dist is None:
-        orig_min_dist = min_dist(big_supercell.copy().remove_species(["X"]))
 
     # get target composition accounting for defect presence in big supercell:
     num_sc = big_supercell.volume / target_supercell.volume  # may be fractional
@@ -533,7 +534,7 @@ def _stencil_target_cell_from_big_cell(
             new_supercell_w_defect_comp = new_supercell.copy()
             new_supercell_w_defect_comp.remove_species("X")
             # raise RuntimeError and dynamically increase edge_tol if resulting min_dist too small:
-            _check_min_dist(new_supercell_w_defect_comp, orig_min_dist, warning=False)
+            _check_min_dist(new_supercell_w_defect_comp, min_dist_tol, warning=False)
 
             try:
                 if target_composition != target_supercell.composition:  # defect, not bulk
@@ -569,29 +570,28 @@ def _convert_defect_neighbours_to_X(
     the Wigner-Seitz radius, to have their species as "X" (storing their
     original species in the site property dict as "orig_species").
 
-    Intended to then be used to make structure-matching far more
-    efficient, by ignoring the highly-perturbed defect neighbourhood
-    (which requires larger ``stol`` values which grealy slow down
-    structure-matching).
+    Intended to then be used to make structure-matching far more efficient, by
+    ignoring the highly-perturbed defect neighbourhood (which requires larger
+    ``stol`` values which grealy slow down structure-matching).
 
     Args:
         defect_supercell (Structure):
             The defect supercell to edit.
         defect_position (np.ndarray[float]):
-            The coordinates of the defect site, either fractional
-            or cartesian depending on ``coords_are_cartesian``.
+            The coordinates of the defect site, either fractional or Cartesian
+            depending on ``coords_are_cartesian``.
         coords_are_cartesian (bool):
-            Whether the defect position is in cartesian coordinates.
-            Default is ``False`` (fractional coordinates).
+            Whether the defect position is in Cartesian coordinates. Default is
+            ``False`` (fractional coordinates).
         ws_radius_fraction (float):
-            The fraction of the Wigner-Seitz radius to use as the
-            cut-off distance for neighbouring sites to convert to
-            species "X". Default is 0.5 (50%).
+            The fraction of the Wigner-Seitz radius to use as the cut-off
+            distance for neighbouring sites to convert to species "X". Default
+            is 0.5 (50%).
 
     Returns:
         Structure:
-            The supercell structure with the defect site and all
-            neighbouring sites converted to species X.
+            The supercell structure with the defect site and all neighbouring
+            sites converted to species X.
     """
     converted_defect_supercell = defect_supercell.copy()
     ws_radius = get_wigner_seitz_radius(defect_supercell)
@@ -622,9 +622,9 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
     Convert all sites in a supercell with species "X" and "orig_species" in the
     site property dict back to their original species.
 
-    Mainly intended just for internal ``doped`` usage, to convert back
-    sites which had been converted to "X" for efficient structure-matching
-    (see ``_convert_defect_neighbours_to_X``).
+    Mainly intended just for internal ``doped`` usage, to convert back sites
+    which had been converted to "X" for efficient structure-matching (see
+    ``_convert_defect_neighbours_to_X``).
 
     Args:
         converted_defect_supercell (Structure):
@@ -632,9 +632,9 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
 
     Returns:
         Structure:
-            The supercell structure with all sites with species "X"
-            and "orig_species" in the site property dict converted back
-            to their original species.
+            The supercell structure with all sites with species "X" and
+            "orig_species" in the site property dict converted back to their
+            original species.
     """
     defect_supercell = converted_defect_supercell.copy()
 
@@ -647,38 +647,35 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
 
 def _check_min_dist(
     structure: Structure,
-    orig_min_dist: float = 5.0,
+    min_dist_tol: float = 1.0,
     warning: bool = True,
     ignored_species: list[str] | None = None,
 ) -> None:
     """
     Helper function to check if the minimum interatomic distance in the
-    provided ``structure`` are reasonable.
+    provided ``structure`` is reasonable.
 
     Args:
         structure (Structure):
             The structure to check.
-        orig_min_dist (float):
-            The minimum interatomic distance in the original structure.
-            If the minimum interatomic distance in the new structure is
-            smaller than this, and smaller than a reasonable minimum
-            distance (0.65 Å if H in structure, else 1.0 Å), a warning
-            or error is raised.
-            Default is 5.0 Å.
+        min_dist_tol (float):
+            If the minimum interatomic distance (ignoring any Hydrogen atoms)
+            in the structure is smaller than this, a warning or error is
+            raised. Default is 1.0 Å.
         warning (bool):
             Whether to raise a warning or an error if the minimum interatomic
             distance is too small. Default is ``True`` (warning).
         ignored_species (list[str]):
-            A list of species symbols to ignore when calculating
-            the minimum interatomic distance. Default is ``None``.
+            A list of species symbols to ignore when calculating the minimum
+            interatomic distance. Default is to ignore Hydrogen atoms only.
     """
-    H_in_struct = any(site for site in structure.sites if site.specie.symbol == "H")
-    reasonable_min_dist = 0.65 if H_in_struct else 1.0
+    ignored_species = ignored_species or []
+    ignored_species.append("H")
     struct_min_dist = min_dist(structure, ignored_species)
-    if struct_min_dist < min(orig_min_dist, reasonable_min_dist):
+    if struct_min_dist < min_dist_tol:
         message = (
             f"Generated structure has a minimum interatomic distance of {struct_min_dist:.2f} Å, smaller "
-            f"than the original defect supercell ({orig_min_dist:.2f} Å), which may be unreasonable. "
+            f"than the minimum distance tolerance ({min_dist_tol:.2f} Å), which may be unreasonable. "
             f"Please check if this minimum distance and structure make sense, and if not please report "
             f"this issue to the developers!"
         )
@@ -698,29 +695,28 @@ def _get_candidate_supercell_sites(
     Get all atoms in ``big_supercell`` which are within the Cartesian bounds of
     the ``target_supercell`` supercell.
 
-    We need to ensure the same number of sites, and that the sites
-    we choose are appropriate for the new supercell (i.e. that if
-    we have e.g. an in-plane contraction, we don't take duplicate atoms
-    that then correspond to tiny inter-atomic distances in the new
-    supercell due to imperfect stenciling under PBC -- so we can't just
-    take the atoms that are closest to the defect). So, this function
-    determines the possible sites to include in the new supercell,
-    the sites which are definitely in the target supercell, and the
-    sites which are near the bordering regions of the target supercell
+    We need to ensure the same number of sites, and that the sites we choose
+    are appropriate for the new supercell (i.e. that if we have e.g. an in-
+    plane contraction, we don't take duplicate atoms that then correspond to
+    tiny inter-atomic distances in the new supercell due to imperfect
+    stenciling under PBC -- so we can't just take the atoms that are closest to
+    the defect). So, this function determines the possible sites to include in
+    the new supercell, the sites which are definitely in the target supercell,
+    and the sites which are near the bordering regions of the target supercell
     and so may or may not be included (i.e. ``candidate_sites_in_target``),
     using the provided ``edge_tol``.
 
-    Note that this function assumes that the defect (or any significant
-    atomic displacements) is (are) roughly centred within ``big_supercell``
-    (i.e. near [0.5, 0.5, 0.5])!
+    Note that this function assumes that the defect (or any significant atomic
+    displacements) is (are) roughly centred within ``big_supercell`` (i.e. near
+    [0.5, 0.5, 0.5])!
 
     Args:
         big_supercell (Structure):
-            The super-supercell with a single defect supercell and
-            rest of the sites populated by the bulk supercell.
+            The super-supercell with a single defect supercell and rest of the
+            sites populated by the bulk supercell.
         target_supercell (Structure):
-            The supercell structure to re-generate the relaxed defect
-            structure in.
+            The supercell structure to re-generate the relaxed defect structure
+            in.
         target_composition (Composition):
             The composition of the target supercell.
         edge_tol (float):
@@ -731,10 +727,12 @@ def _get_candidate_supercell_sites(
     Returns:
         tuple[list[PeriodicSite], list[PeriodicSite], list[PeriodicSite], Composition, int]:
             - ``def_new_supercell_sites``: List of sites in the super-supercell
-              which are within the bounds of the target supercell (minus ``edge_tol``)
+              which are within the bounds of the target supercell (minus
+              ``edge_tol``).
             - ``def_new_supercell_sites_to_check_in_target``: List of sites
               in the super-supercell which are near the bordering regions of
-              the target supercell (within ``edge_tol*2`` of the target cell edge).
+              the target supercell (within ``edge_tol*2`` of the target cell
+              edge).
             - ``candidate_sites_in_target``: List of candidate sites in the
               target supercell to check if overlapping with each other or
               ``def_new_supercell_sites_to_check_in_target``.
@@ -802,15 +800,15 @@ def _remove_overlapping_sites(
             overlapping with each other or
             ``def_new_supercell_sites_to_check_in_target``.
         def_new_supercell_sites_to_check_in_target (list[PeriodicSite]):
-            List of sites that are in the target supercell but are near
-            the bordering regions, so are used to check for overlapping.
+            List of sites that are in the target supercell but are near the
+            bordering regions, so are used to check for overlapping.
         big_supercell_defect_coords (np.ndarray[float]):
-            *Cartesian* coordinates of the defect site in the big supercell.
+            `Cartesian` coordinates of the defect site in the big supercell.
             Used to choose between overlapping sites (favouring those which
             have a larger distance from the defect site).
         bulk_min_bond_length (float):
-            The minimum bond length in the bulk supercell, used to check
-            if inter-site distances are reasonable. If ``None`` (default),
+            The minimum bond length in the bulk supercell, used to check if
+            inter-site distances are reasonable. If ``None`` (default),
             determined automatically from ``candidate_sites_in_target``.
         pbar (tqdm):
             ``tqdm`` progress bar object to update (for internal ``doped``
@@ -904,7 +902,7 @@ def _get_matching_sites_from_s1_then_s2(
     template_struct: Structure,
     struct1_pool: Structure,
     struct2_pool: Structure,
-    orig_min_dist: float = 5.0,
+    min_dist_tol: float = 1.0,
 ) -> Structure:
     """
     Generate a stenciled structure from a template sub-set structure and two
@@ -913,16 +911,16 @@ def _get_matching_sites_from_s1_then_s2(
     Given two pools of sites/structures, returns a new structure which has (1)
     the closest site in ``struct1_pool`` to each site in ``template_struct``,
     and (2) ``struct2_pool.num_sites - struct2.num_sites`` sites from
-    ``struct2_pool``, chosen as those with the largest minimum distances
-    from sites in the first set of sites (i.e. the single defect subcell
-    matching ``template_struct``).
+    ``struct2_pool``, chosen as those with the largest minimum distances from
+    sites in the first set of sites (i.e. the single defect subcell matching
+    ``template_struct``).
 
-    The targeted use case is transforming a large periodically-repeated
-    super-supercell of a defect supercell (``struct1_pool``) into the
-    same super-supercell but with only one copy of the original defect
-    supercell (``template_struct``), and the rest of the sites populated by the
-    bulk super-supercell (``struct2_pool``; with ``struct2`` being the
-    original bulk supercell).
+    The targeted use case is transforming a large periodically-repeated super-
+    supercell of a defect supercell (``struct1_pool``) into the same super-
+    supercell but with only one copy of the original defect supercell
+    (``template_struct``), and the rest of the sites populated by the bulk
+    super-supercell (``struct2_pool``; with ``struct2`` being the original bulk
+    supercell).
 
     Args:
         template_struct (Structure):
@@ -931,13 +929,10 @@ def _get_matching_sites_from_s1_then_s2(
             The first pool of sites to match to the template structure.
         struct2_pool (Structure):
             The second pool of sites to match to the template structure.
-        orig_min_dist (float):
-            The minimum interatomic distance in the original (bulk)
-            structure. Used to sanity check the output; if the minimum
-            interatomic distance in the templated structure is smaller
-            than this, and smaller than a reasonable minimum distance
-            (0.65 Å if H in structure, else 1.0 Å), an error is raised.
-            Default is 5.0 Å.
+        min_dist_tol (float):
+            Used to sanity check the output; if the minimum interatomic
+            distance (ignoring any Hydrogen atoms) in the output structure is
+            smaller than this, a warning or error is raised. Default is 1.0 Å.
 
     Returns:
         Structure:
@@ -1006,6 +1001,9 @@ def _get_matching_sites_from_s1_then_s2(
         : int(len(struct2_pool) * (1 - 1 / num_super_supercells))
     ]
 
+    # TODO: This check was removed before (in `40f129f`), not sure if for a proper reason -- check and
+    #  remove this note
+    _check_min_dist(Structure.from_sites(bulk_outer_cell_sites), min_dist_tol, warning=False)
     return Structure.from_sites(single_defect_subcell_sites + bulk_outer_cell_sites)
 
 
@@ -1021,15 +1019,15 @@ def _get_superset_matrix_and_supercells(
 
     Args:
         structure (Structure):
-            The original structure for which to get the superset matrix
-            that fully encompasses the target supercell.
+            The original structure for which to get the superset matrix that
+            fully encompasses the target supercell.
         target_supercell (Structure):
             The target supercell.
         defect_frac_coords (Optional: Union[np.ndarray[float], list[float]]):
             The fractional coordinates of a defect site in the structure.
-            If provided, will add an "X" marker (fake species) to this site
-            in a copy of ``structure``, and additionally return the big
-            supercell with copies of "X", and the original structure with "X".
+            If provided, will add an "X" marker (fake species) to this site in
+            a copy of ``structure``, and additionally return the big supercell
+            with copies of "X", and the original structure with "X".
 
     Returns:
         Union[tuple[np.ndarray[int], Structure, Structure, Structure], tuple[np.ndarray[int]]:
@@ -1037,8 +1035,8 @@ def _get_superset_matrix_and_supercells(
               containing the superset matrix and the big supercell.
             - If ``defect_frac_coords`` is provided, returns a tuple
               containing the superset matrix, the big supercell, the big
-              supercell with _repeated_ defect sites marked by "X", and
-              a copy of the original structure with the defect site as "X".
+              supercell with `repeated` defect sites marked by "X", and a copy
+              of the original structure with the defect site as "X".
     """
     min_cell_length = _get_all_encompassing_cube_length(target_supercell.lattice)
 
@@ -1096,16 +1094,14 @@ def is_within_frac_bounds(
         cart_coords (Union[np.ndarray[float], list[float]]):
             The Cartesian coordinates to check.
         tol (float):
-            A tolerance (in Angstrom / cartesian units) for
-            coordinates to be considered within the unit cell.
-            If positive, expands the bounds of the unit cell
-            by this amount, if negative, shrinks the bounds.
+            A tolerance (in Angstrom / cartesian units) for coordinates to be
+            considered within the unit cell. If positive, expands the bounds of
+            the unit cell by this amount, if negative, shrinks the bounds.
 
     Returns:
         bool:
-            Whether the Cartesian coordinates are within the
-            fractional bounds of the unit cell, accounting for
-            ``tol``.
+            Whether the Cartesian coordinates are within the fractional bounds
+            of the unit cell, accounting for ``tol``.
     """
     frac_coords = lattice.get_fractional_coords(cart_coords)
     frac_tols = np.array([tol, tol, tol]) / lattice.abc
