@@ -27,20 +27,15 @@ from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
-from doped.utils.parsing import get_magnetisation_from_vasprun, get_nelect_from_vasprun
+from doped.utils.parsing import get_magnetisation_from_vasprun, get_nelect_from_vasprun, suppress_logging
 from doped.utils.plotting import _get_backend
 
 if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
 
 
-with warnings.catch_warnings():  # avoid vise warning suppression:
-    import logging
-
+with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
     try:
-        from vise import user_settings
-
-        user_settings.logger.setLevel(logging.CRITICAL)
         import pydefect.analyzer.make_band_edge_states
         import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
         from pydefect.analyzer.band_edge_states import (
@@ -283,25 +278,22 @@ def get_band_edge_info(
         if defect_supercell_site.distance(site) <= min_distance * neighbor_cutoff_factor
     ]
 
-    from pydefect.analyzer.band_edge_states import logger
+    with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
+        if bulk_procar is not None:
+            vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
+        else:
+            orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
+            vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
+            cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
-    logger.setLevel(logging.CRITICAL)  # quieten unnecessary eigenvalue shift INFO message
-
-    if bulk_procar is not None:
-        vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
-    else:
-        orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
-        vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
-        cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
-
-    band_orb = make_band_edge_orbital_infos(
-        defect_vr,
-        vbm_info.orbital_info.energy,
-        cbm_info.orbital_info.energy,
-        eigval_shift=-vbm_info.orbital_info.energy,
-        neighbor_indices=neighbor_indices,
-        defect_procar=_parse_procar(defect_procar),
-    )
+        band_orb = make_band_edge_orbital_infos(
+            defect_vr,
+            vbm_info.orbital_info.energy,
+            cbm_info.orbital_info.energy,
+            eigval_shift=-vbm_info.orbital_info.energy,
+            neighbor_indices=neighbor_indices,
+            defect_procar=_parse_procar(defect_procar),
+        )
 
     return band_orb, vbm_info, cbm_info
 
@@ -631,13 +623,14 @@ def get_eigenvalue_analysis(
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
     EigenvalueMplPlotter._add_eigenvalues = _add_eigenvalues  # faster monkey-patch for adding eigenvalues
-    emp = EigenvalueMplPlotter(
-        title="Eigenvalues",
-        band_edge_orb_infos=band_orb,
-        supercell_vbm=vbm,
-        supercell_cbm=cbm,
-        y_range=[vbm - 3, cbm + 3],
-    )
+    with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
+        emp = EigenvalueMplPlotter(
+            title="Eigenvalues",
+            band_edge_orb_infos=band_orb,
+            supercell_vbm=vbm,
+            supercell_cbm=cbm,
+            y_range=[vbm - 3, cbm + 3],
+        )
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12

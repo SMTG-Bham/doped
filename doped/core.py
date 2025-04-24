@@ -27,7 +27,9 @@ if TYPE_CHECKING:
     from easyunfold.procar import Procar as EasyunfoldProcar
     from matplotlib.pyplot import Figure
 
-    with warnings.catch_warnings():
+    from doped.utils.parsing import suppress_logging
+
+    with suppress_logging(), warnings.catch_warnings():  # type: ignore
         from pydefect.analyzer.band_edge_states import BandEdgeStates
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
@@ -1075,16 +1077,18 @@ class DefectEntry(thermo.DefectEntry):
 
         if "relaxed point symmetry" not in self.calculation_metadata or reparse:
             try:
-                (
-                    self.calculation_metadata["relaxed point symmetry"],
-                    self.calculation_metadata["periodicity_breaking_supercell"],
-                ) = point_symmetry_from_defect_entry(
+                point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
                     self,
                     relaxed=True,
                     return_periodicity_breaking=True,
                     verbose=False,
                     symprec=symprec,
                 )  # relaxed so defect symm_ops
+                assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
+                (
+                    self.calculation_metadata["relaxed point symmetry"],
+                    self.calculation_metadata["periodicity_breaking_supercell"],
+                ) = point_symm_and_periodicity_breaking
 
             except Exception as e:
                 warnings.warn(

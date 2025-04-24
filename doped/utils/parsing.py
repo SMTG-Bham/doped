@@ -747,14 +747,12 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
 
-    with warnings.catch_warnings():
-        import logging
-
+    # avoid vise/pydefect warning suppression and INFO messages:
+    with suppress_logging(), warnings.catch_warnings():
         try:
-            from vise import user_settings
-
-            user_settings.logger.setLevel(logging.CRITICAL)  # suppress pydefect INFO messages
             from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+
+            return calc_max_sphere_radius(lattice_matrix)
 
         except ImportError:  # vise/pydefect not installed
             distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
@@ -763,8 +761,6 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
                 a_k = lattice_matrix[i]
                 distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
             return max(distances) / 2.0
-
-    return calc_max_sphere_radius(lattice_matrix)
 
 
 def check_atom_mapping_far_from_defect(

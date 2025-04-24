@@ -429,13 +429,10 @@ def get_kumagai_correction(
         metadata), and the ``matplotlib`` ``Figure`` object if ``plot`` is
         ``True``.
     """
-    with warnings.catch_warnings():  # avoid vise warning suppression:
-        import logging
+    from doped.utils.parsing import suppress_logging
 
+    with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
         try:
-            from vise import user_settings
-
-            user_settings.logger.setLevel(logging.CRITICAL)  # suppress pydefect INFO messages
             from pydefect.analyzer.calc_results import CalcResults
             from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
             from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius

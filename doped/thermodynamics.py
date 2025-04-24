@@ -53,8 +53,6 @@ from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot
 from doped.utils.symmetry import cluster_coords, get_all_equiv_sites, get_primitive_structure, get_sga
 
 if TYPE_CHECKING:
-    # from pymatgen.util.typing import PathLike
-
     with contextlib.suppress(ImportError):
         from py_sc_fermi.defect_species import DefectSpecies
         from py_sc_fermi.defect_system import DefectSystem
