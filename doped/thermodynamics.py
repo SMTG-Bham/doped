@@ -259,11 +259,11 @@ def group_defects_by_type_and_distance(
 ) -> dict[str, dict[int, set[DefectEntry]]]:
     """
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
-    defect types with sub-dictionaries of defect entries clustered according to
-    the given ``dist_tol`` distance tolerance (between symmetry-equivalent
-    sites in the bulk supercell), in the format: ``{simple defect name:
-    {cluster index: {DefectEntry, ...}}``, where ``simple defect name`` is the
-    nominal defect type (e.g. ``Te_i`` for ``Te_i_Td_Cd2.83_+2``) and
+    format ``{simple defect name: {cluster index: {DefectEntry, ...}}``, with
+    defect types as keys, and values being sub-dictionaries of defect entries
+    clustered according to the given ``dist_tol`` distance tolerance (between
+    symmetry-equivalent sites in the bulk supercell). ``simple defect name`` is
+    the nominal defect type (e.g. ``Te_i`` for ``Te_i_Td_Cd2.83_+2``) and
     ``{DefectEntry, ...}`` is a set of ``DefectEntry`` objects which have been
     grouped in the same cluster.
 
@@ -6951,8 +6951,8 @@ class FermiSolver(MSONable):
 
     def _generate_dopant_for_py_sc_fermi(self, effective_dopant_concentration: float) -> "DefectSpecies":
         """
-        Generate a dopant defect charge state object, for use with the ``py-sc-
-        fermi`` functions.
+        Generate a dopant defect charge state object, for ``py-sc-fermi``
+        functions.
 
         This method creates a defect charge state object representing an
         arbitrary dopant or impurity in the material, used to include in the
