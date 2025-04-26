@@ -4583,12 +4583,6 @@ class FermiSolver(MSONable):
         in the scanning functions), please cite the code paper:
         Squires et al., JOSS 2023; https://doi.org/10.21105/joss.04962.
 
-        Note that the ``delta_gap`` argument used in ``DefectThermodynamics``
-        methods is not directly supported in this class. If band gap modulation
-        is desired, it is recommended to use the ``DefectThermodynamics``
-        methods directly with ``delta_gap`` as shown in the (advanced) defect
-        thermodynamics tutorials.
-
         Args:
             defect_thermodynamics (DefectThermodynamics):
                 A ``DefectThermodynamics`` object, providing access to defect
@@ -4907,8 +4901,8 @@ class FermiSolver(MSONable):
         """
         Get the chemical potentials for a single limit (``limit``) from the
         ``chempots`` (or ``self.defect_thermodynamics.chempots``) dictionary,
-        giving the chemical potentials `with respect to the elemental
-        references` (i.e. from ``"limits_wrt_el_refs"``).
+        `with respect to the elemental references` (i.e. from
+        ``"limits_wrt_el_refs"``).
 
         Returns a `single` chemical potential dictionary for the specified
         limit.
@@ -5123,11 +5117,13 @@ class FermiSolver(MSONable):
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         append_chempots: bool = True,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Calculate the self-consistent Fermi level and corresponding
@@ -5231,6 +5227,16 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature, in the format: ``{defect_name: concentration}``,
@@ -5285,6 +5291,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -5333,6 +5342,7 @@ class FermiSolver(MSONable):
             )
 
         # TODO: Add per-charge, per-site options like in ``doped`` ``DefectThermodynamics``
+        # TODO: Allow delta gap to be a function
         if self.backend == "doped" and not py_sc_fermi_required:
             (
                 fermi_level,
@@ -5348,6 +5358,8 @@ class FermiSolver(MSONable):
                 per_charge=False,
                 skip_formatting=True,  # keep concentration values as floats
                 site_competition=site_competition,
+                delta_gap=delta_gap,
+                **kwargs,
             )  # use already-set bulk dos
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
@@ -5372,9 +5384,11 @@ class FermiSolver(MSONable):
                 el_refs=el_refs,
                 quenched_temperature=quenched_temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                delta_gap=delta_gap,
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
+                **kwargs,
             )
 
             with np.errstate(all="ignore"):
@@ -5440,11 +5454,13 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         append_chempots: bool = True,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **user_kwargs,
     ) -> pd.DataFrame:
         PseudoSolveFunc: TypeAlias = Callable[..., pd.DataFrame]  # 'type aliases' for function signatures
         EquilibriumSolveFunc: TypeAlias = Callable[..., pd.DataFrame]
@@ -5455,9 +5471,11 @@ class FermiSolver(MSONable):
             "single_chempot_dict": single_chempot_dict,
             "el_refs": el_refs,
             "effective_dopant_concentration": effective_dopant_concentration,
+            "delta_gap": delta_gap,
             "fixed_defects": fixed_defects,
             "append_chempots": append_chempots,
             "site_competition": site_competition,
+            **user_kwargs,
         }
         if annealing_temperature is not None:  # pseudo_equilibrium_solve
             kwargs.update(
@@ -5493,7 +5511,7 @@ class FermiSolver(MSONable):
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
-    ) -> pd.DataFrame:
+    ) -> pd.DataFrame:  # TODO: Delta_gap needs to be a function here, with kwargs
         r"""
         Scan over a range of temperatures and solve for the defect
         concentrations, carrier concentrations, and Fermi level at each
@@ -5695,10 +5713,12 @@ class FermiSolver(MSONable):
         chempots: dict[str, float] | None = None,
         limit: str | None = None,
         el_refs: dict[str, float] | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Calculate the defect concentrations under a range of effective
@@ -5802,6 +5822,16 @@ class FermiSolver(MSONable):
                 same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -5852,6 +5882,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -5874,10 +5907,12 @@ class FermiSolver(MSONable):
                     quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    delta_gap=delta_gap,
                     fixed_defects=fixed_defects,
                     free_defects=free_defects,
                     fix_charge_states=fix_charge_states,
                     site_competition=site_competition,
+                    **kwargs,
                 )
                 for effective_dopant_concentration in tqdm(effective_dopant_concentration_list)
             ]
@@ -5893,10 +5928,12 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Interpolate between two sets of chemical potentials and solve for the
@@ -5999,6 +6036,16 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6048,6 +6095,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -6082,7 +6132,7 @@ class FermiSolver(MSONable):
             single_chempot_dict_1, el_refs = self._get_single_chempot_dict(limits[0], chempots, el_refs)
             single_chempot_dict_2, el_refs = self._get_single_chempot_dict(limits[1], chempots, el_refs)
 
-        interpolated_chempots = self._get_interpolated_chempots(
+        interpolated_chempots = get_interpolated_chempots(
             single_chempot_dict_1, single_chempot_dict_2, n_points
         )
 
@@ -6093,53 +6143,13 @@ class FermiSolver(MSONable):
             quenched_temperature=quenched_temperature,
             temperature=temperature,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_gap=delta_gap,
             fixed_defects=fixed_defects,
             free_defects=free_defects,
             fix_charge_states=fix_charge_states,
             site_competition=site_competition,
+            **kwargs,
         )
-
-    def _get_interpolated_chempots(
-        self,
-        chempot_start: dict,
-        chempot_end: dict,
-        n_points: int,
-    ) -> list:
-        """
-        Generate a list of interpolated chemical potentials between two points.
-
-        Here, these should be dictionaries of chemical potentials for `single`
-        limits, in the format: ``{element symbol: chemical potential}``. If
-        ``el_refs`` is provided (to the parent function) or set in
-        ``self.defect_thermodynamics.el_refs``, then it is the formal chemical
-        potentials (i.e. relative to the elemental reference energies) that
-        should be used here, otherwise the absolute (DFT) chemical potentials
-        should be used.
-
-        Args:
-            chempot_start (dict):
-                A dictionary representing the starting chemical potentials.
-            chempot_end (dict):
-                A dictionary representing the ending chemical potentials.
-            n_points (int):
-                The number of interpolated points to generate, `including`
-                the start and end points.
-
-        Returns:
-            list:
-                A list of dictionaries, where each dictionary contains a
-                `single` set of interpolated chemical potentials. The length of
-                the list corresponds to `n_points`, and each dictionary
-                corresponds to an interpolated state between the starting and
-                ending chemical potentials.
-        """
-        return [
-            {
-                key: chempot_start[key] + (chempot_end[key] - chempot_start[key]) * i / (n_points - 1)
-                for key in chempot_start
-            }
-            for i in range(n_points)
-        ]
 
     def scan_chempots(
         self,
@@ -6150,10 +6160,12 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Scan over a range of chemical potentials and solve for the defect
@@ -6258,6 +6270,16 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6305,6 +6327,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -6337,10 +6362,12 @@ class FermiSolver(MSONable):
                     quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    delta_gap=delta_gap,
                     fixed_defects=fixed_defects,
                     free_defects=free_defects,
                     fix_charge_states=fix_charge_states,
                     site_competition=site_competition,
+                    **kwargs,
                 )
                 for single_chempot_dict in tqdm(chempots)
             ]
@@ -6354,10 +6381,12 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Given a ``doped``-formatted chemical potential dictionary, generate a
@@ -6429,6 +6458,16 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6476,6 +6515,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -6497,10 +6539,12 @@ class FermiSolver(MSONable):
             quenched_temperature=quenched_temperature,
             temperature=temperature,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_gap=delta_gap,
             fixed_defects=fixed_defects,
             free_defects=free_defects,
             fix_charge_states=fix_charge_states,
             site_competition=site_competition,
+            **kwargs,
         )
 
     def _parse_and_check_grid_like_chempots(self, chempots: dict | None = None) -> tuple[dict, dict]:
@@ -6545,10 +6589,12 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 10,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Search for the chemical potentials that minimise or maximise a target
@@ -6643,6 +6689,16 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6690,6 +6746,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -6720,10 +6779,12 @@ class FermiSolver(MSONable):
             tolerance=tolerance,
             n_points=n_points,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_gap=delta_gap,
             fixed_defects=fixed_defects,
             free_defects=free_defects,
             fix_charge_states=fix_charge_states,
             site_competition=site_competition,
+            **kwargs,
         )
 
     def _optimise_line(
@@ -6737,10 +6798,12 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 10,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         ``optimise`` function for 1D chemical potential spaces (i.e. binary
@@ -6754,7 +6817,8 @@ class FermiSolver(MSONable):
         unformatted_chempots_labels = list(el_refs.keys())
         rich = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-rich")
         poor = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-poor")
-        starting_line = self._get_interpolated_chempots(rich[0], poor[0], n_points)
+        starting_line = get_interpolated_chempots(rich[0], poor[0], n_points)
+        delta_gap_verbose = kwargs.pop("verbose", False)  # don't interfere with other verbose option here
 
         previous_value = None
         while True:  # Calculate results based on the given temperature conditions
@@ -6773,11 +6837,14 @@ class FermiSolver(MSONable):
                 quenched_temperature=quenched_temperature,
                 temperature=temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                delta_gap=delta_gap,
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
                 verbose=previous_value is None,  # first iteration, print info on target cols/rows
                 site_competition=site_competition,
+                delta_gap_verbose=delta_gap_verbose,
+                **kwargs,
             )
             if converged:
                 break
@@ -6798,7 +6865,7 @@ class FermiSolver(MSONable):
             # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
             # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
             # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
-            starting_line = self._get_interpolated_chempots(
+            starting_line = get_interpolated_chempots(
                 chempot_start=midpoint_chempots[0],
                 chempot_end=midpoint_chempots[1],
                 n_points=n_points,
@@ -6813,17 +6880,18 @@ class FermiSolver(MSONable):
         previous_value: float | None = None,
         tolerance: float = 0.01,
         chempots: list[dict[str, float]] | dict[str, dict] | None = None,
-        limits: list[str] | None = None,
         el_refs: dict[str, float] | None = None,
         annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         verbose: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ):
         """
         Convenience method for use in the ``_optimise_...`` methods, which
@@ -6853,6 +6921,8 @@ class FermiSolver(MSONable):
             converged (bool):
                 Whether the search has converged to within ``tolerance``.
         """
+        if "delta_gap_verbose" in kwargs:
+            kwargs["verbose"] = kwargs.pop("delta_gap_verbose")
         results_df = self.scan_chempots(
             chempots=chempots,
             el_refs=el_refs,
@@ -6860,10 +6930,12 @@ class FermiSolver(MSONable):
             quenched_temperature=quenched_temperature,
             temperature=temperature,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_gap=delta_gap,
             fixed_defects=fixed_defects,
             free_defects=free_defects,
             fix_charge_states=fix_charge_states,
             site_competition=site_competition,
+            **kwargs,
         )
 
         target_df, current_value, target_chempot = _get_min_max_target_values(
@@ -6890,10 +6962,12 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 10,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         ``optimise`` function for >=2D chemical potential spaces (i.e.
@@ -6903,6 +6977,7 @@ class FermiSolver(MSONable):
         """
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         starting_grid = ChemicalPotentialGrid(chempots)
+        delta_gap_verbose = kwargs.pop("verbose", False)  # don't interfere with other verbose option here
 
         previous_value = None
         while True:
@@ -6921,11 +6996,14 @@ class FermiSolver(MSONable):
                 quenched_temperature=quenched_temperature,
                 temperature=temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                delta_gap=delta_gap,
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
                 verbose=previous_value is None,  # first iteration, print info on target cols/rows
                 site_competition=site_competition,
+                delta_gap_verbose=delta_gap_verbose,
+                **kwargs,
             )
             if converged:
                 break
@@ -7178,9 +7256,11 @@ class FermiSolver(MSONable):
         el_refs: dict[str, float] | None = None,
         quenched_temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
+        **kwargs,
     ) -> "DefectSystem":
         r"""
         Generate a ``py-sc-fermi`` ``DefectSystem`` object that has defect
@@ -7233,6 +7313,16 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. (Default: 0)
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature regardless of chemical potentials / temperature /
@@ -7258,6 +7348,9 @@ class FermiSolver(MSONable):
                 total defect concentrations fixed (``False``).
                 Not expected to be physically sensible in most cases.
                 Defaults to ``False``.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             DefectSystem:
@@ -7268,12 +7361,27 @@ class FermiSolver(MSONable):
         self._check_required_backend_and_error("py-sc-fermi")
         free_defects = free_defects or []
 
+        orig_py_sc_fermi_dos = self.py_sc_fermi_dos
+        if delta_gap != 0.0:
+            assert self.defect_thermodynamics.vbm is not None
+            assert self.defect_thermodynamics.band_gap is not None
+            self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
+                scissor_dos(
+                    delta_gap,
+                    self.defect_thermodynamics.bulk_dos,
+                    verbose=kwargs.get("verbose", False),
+                    tol=kwargs.get("tol", 1e-8),
+                ),
+                vbm=self.defect_thermodynamics.vbm + delta_gap / 2,
+                bandgap=self.defect_thermodynamics.band_gap + delta_gap,
+            )
+
         defect_system = self._generate_defect_system(
             single_chempot_dict=single_chempot_dict,  # chempots handled in _generate_defect_system()
             el_refs=el_refs,
             temperature=annealing_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
-        )
+        )  # generated with delta_gap DOS
         initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
 
         # Exclude the free_defects, carrier concentrations and Fermi level from fixing
@@ -7309,7 +7417,47 @@ class FermiSolver(MSONable):
 
         self._fix_defect_concentrations(defect_system, fixed_defects, fixed_concs)
         defect_system.temperature = quenched_temperature
+        if delta_gap != 0.0:
+            self.py_sc_fermi_dos = orig_py_sc_fermi_dos
+            defect_system.dos = orig_py_sc_fermi_dos  # set to original DOS
         return defect_system
+
+
+def get_interpolated_chempots(
+    chempot_start: dict,
+    chempot_end: dict,
+    n_points: int,
+) -> list:
+    """
+    Generate a list of interpolated chemical potentials between two points.
+
+    Here, these should be dictionaries of chemical potentials for `single`
+    limits, in the format: ``{element symbol: chemical potential}``.
+
+    Args:
+        chempot_start (dict):
+            A dictionary representing the starting chemical potentials.
+        chempot_end (dict):
+            A dictionary representing the ending chemical potentials.
+        n_points (int):
+            The number of interpolated points to generate, `including`
+            the start and end points.
+
+    Returns:
+        list:
+            A list of dictionaries, where each dictionary contains a
+            `single` set of interpolated chemical potentials. The length of
+            the list corresponds to `n_points`, and each dictionary
+            corresponds to an interpolated state between the starting and
+            ending chemical potentials.
+    """
+    return [
+        {
+            key: chempot_start[key] + (chempot_end[key] - chempot_start[key]) * i / (n_points - 1)
+            for key in chempot_start
+        }
+        for i in range(n_points)
+    ]
 
 
 def _get_label_and_charge(name: str) -> tuple[str, int]:
