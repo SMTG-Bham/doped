@@ -98,8 +98,14 @@ class Hashabledict(dict):
 
 
 @lru_cache(maxsize=int(1e5))
-def _cached_Composition_init(comp_dict):
-    return Composition(comp_dict)
+def _cached_Composition_init(comp_input):
+    return Composition(comp_input)
+
+
+def _cache_ready_Composition_init(comp_input):
+    if isinstance(comp_input, dict) and not isinstance(comp_input, Hashabledict):
+        comp_input = Hashabledict(comp_input)  # convert to hashable to make use of caching
+    return _cached_Composition_init(comp_input)
 
 
 def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
