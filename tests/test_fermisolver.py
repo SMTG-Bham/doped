@@ -23,7 +23,7 @@ import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
-from test_thermodynamics import STYLE, custom_mpl_image_compare, data_dir
+from test_thermodynamics import STYLE, belas_linear_fit, custom_mpl_image_compare, data_dir
 
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -32,6 +32,7 @@ from doped.thermodynamics import (
     get_e_h_concs,
     get_fermi_dos,
 )
+from doped.utils.plotting import format_defect_name
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
 module_path = os.path.dirname(os.path.abspath(__file__))
@@ -1824,6 +1825,84 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
         print([str(warning.message) for warning in w])
         assert not w
+
+    @parameterize_backend()
+    def test_delta_gap_calculated_fermi_level_k10(self, backend):
+        """
+        Test calculating the Fermi level using a 10x10x10 k-point mesh DOS
+        calculation for primitive CdTe; with ``delta_gap``.
+
+        Mirrors the direct functions test (``test_calculated_fermi_level_k10``)
+        in ``test_thermodynamics``, but now with ``FermiSolver`` functions.
+        """
+        solver = deepcopy(self.solver_doped if backend == "doped" else self.solver_py_sc_fermi)
+        solver.defect_thermodynamics.bulk_dos = os.path.join(
+            module_path, "data/CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
+        )
+
+        quenched_fermi_levels = []
+        for anneal_temp in np.arange(200, 1401, 100):
+            gap_shift = belas_linear_fit(anneal_temp) - 1.5
+            result = solver.pseudo_equilibrium_solve(
+                # quenching to 300K (default)
+                single_chempot_dict=self.CdTe_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"],
+                annealing_temperature=anneal_temp,
+                delta_gap=gap_shift,
+            )
+            quenched_fermi_levels += [result.iloc[0]["Fermi Level"]]
+
+        # (approx) same result as with k181818 NKRED=2 (0.31825 eV with this DOS)
+        # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
+        assert np.isclose(
+            np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3 if backend == "doped" else 1e-2
+        )
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te.png")
+    def test_delta_gap_interpolate_chempots_CdTe(self):
+        """
+        Mirrors ``test_CdTe_concentrations_vs_chempots`` in
+        ``test_thermodynamics``, but now using ``FermiSolver`` (with
+        ``delta_gap``).
+
+        Tests both backends, but only uses the ``doped`` results for plotting
+        for full consistency with ``test_thermodynamics`` test (due to site
+        competition differences etc).
+        """
+        kwargs = {
+            "limits": ["Cd-rich", "Te-rich"],
+            "annealing_temperature": 875,  # typical for CdTe
+            "delta_gap": belas_linear_fit(875) - 1.5,
+        }
+
+        doped_output_df = self.solver_doped.interpolate_chempots(**kwargs)
+        doped_output_df = doped_output_df.drop(
+            columns=[col for col in doped_output_df.columns if "Per-Site" in col]
+        )  # necessary because of per-site behaviour differences (TODO: Remove when doped per-site
+        # behaviour set!)
+        py_sc_fermi_output_df = self.solver_py_sc_fermi.interpolate_chempots(**kwargs)
+        pd.testing.assert_frame_equal(doped_output_df, py_sc_fermi_output_df, rtol=2e-2, atol=1e16)
+        pd.testing.assert_series_equal(
+            doped_output_df["Fermi Level"], py_sc_fermi_output_df["Fermi Level"], atol=2e2
+        )
+
+        f, ax = plt.subplots()
+        for defect_index in doped_output_df.index.unique():
+            matching_rows = doped_output_df[doped_output_df.index == defect_index]
+            ax.plot(
+                matching_rows["μ_Te"],
+                matching_rows["Concentration (cm^-3)"],
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+            )
+
+        ax.plot(doped_output_df["μ_Te"], doped_output_df["Electrons (cm^-3)"], label="Electrons", ls="--")
+        ax.plot(doped_output_df["μ_Te"], doped_output_df["Holes (cm^-3)"], label="Holes", ls="--")
+        ax.set_yscale("log")
+        ax.set_ylim(1e7, 1e19)
+        ax.set_ylabel("Concentration (cm$^{-3}$)")
+        ax.set_xlabel("Te Chemical Potential (eV)")
+        ax.legend()
+
+        return f
 
 
 def _check_output_concentrations(solver, result):

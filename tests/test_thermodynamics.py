@@ -36,9 +36,11 @@ from doped.thermodynamics import (
     _format_per_site_concentration,
     get_e_h_concs,
     get_fermi_dos,
+    get_interpolated_chempots,
     scissor_dos,
 )
 from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
+from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
     get_sga,
@@ -4138,5 +4140,48 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         # typical anneal range is 500 - 700, so shade in this region:
         ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC")
         ax.legend(fontsize=8)
+
+        return f
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te.png")
+    def test_CdTe_concentrations_vs_chempots(self):
+        f, ax = plt.subplots()
+        chempot_list = get_interpolated_chempots(
+            self.defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"],
+            self.defect_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"],
+            n_points=10,
+        )
+        output_dfs = []
+
+        for relative_chempots in chempot_list:
+            fl, e_conc, h_conc, conc_df = self.defect_thermo.get_fermi_level_and_concentrations(
+                annealing_temperature=875,  # typical for CdTe
+                delta_gap=belas_linear_fit(875) - 1.5,
+                chempots=relative_chempots,
+                skip_formatting=True,
+                per_charge=False,
+            )
+            conc_df["μ_Te"] = relative_chempots["Te"]
+            conc_df["Electron Concentration (cm^-3)"] = e_conc
+            conc_df["Hole Concentration (cm^-3)"] = h_conc
+            output_dfs.append(conc_df)
+
+        output_df = pd.concat(output_dfs)
+
+        for defect_index in output_df.index.unique():
+            matching_rows = output_df[output_df.index == defect_index]
+            ax.plot(
+                matching_rows["μ_Te"],
+                matching_rows["Concentration (cm^-3)"],
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+            )
+
+        ax.plot(output_df["μ_Te"], output_df["Electron Concentration (cm^-3)"], label="Electrons", ls="--")
+        ax.plot(output_df["μ_Te"], output_df["Hole Concentration (cm^-3)"], label="Holes", ls="--")
+        ax.set_yscale("log")
+        ax.set_ylim(1e7, 1e19)
+        ax.set_ylabel("Concentration (cm$^{-3}$)")
+        ax.set_xlabel("Te Chemical Potential (eV)")
+        ax.legend()
 
         return f
