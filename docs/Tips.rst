@@ -571,10 +571,11 @@ even-electron defects (with `S` = 1, two unpaired electrons) or quartet states f
 (with `S` = 3/2, three unpaired electrons). Such cases are most common when the defect species adopts a
 bipolaron/multi-polaron state (e.g. for `V`\ :sub:`Cd`\ :sup:`0*` in
 `CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__), a molecular dimer-like state (such as
-O\ :sub:`2` species in oxides, or
-`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__) or with
-orbital-degenerate/correlated defects where Hund's rule implies open-shell solutions (such as the
-highly-studied `NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
+O\ :sub:`2` species in oxides or
+`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__), defects involving
+multiple localised `d`/`f` electrons, or orbital-degenerate/correlated defects where Hund's rule implies
+open-shell solutions (such as the highly-studied
+`NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
 or `transition metal impurities in silicon <https://journals.aps.org/prmaterials/abstract/10.1103/PhysRevMaterials.6.L053201>`__).
 If you encounter defect states like these and/or suspect that alternative spin configurations may be
 possible, you should test the different possibilities by setting ``NUPDOWN`` (and possibly ``MAGMOM``,
