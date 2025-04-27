@@ -61,8 +61,7 @@ _ignore_pmg_warnings()
 
 pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_ConvergenceSet.yaml"))  # just INCAR
 
-elemental_diatomic_gases = ["H2", "O2", "N2", "F2", "Cl2"]
-elemental_diatomic_bond_lengths = {"O": 1.21, "N": 1.10, "H": 0.74, "F": 1.42, "Cl": 1.99}
+elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 
@@ -337,7 +336,7 @@ def get_entries_in_chemsys(
         # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
         # (mostly only the legacy database, so should be resolved with the new MP API database now);
         # e.g. search "F", or ZnSe2 on Zn-Se convex hull from MP PD, but EaH = 0.147 eV/atom?
-        # or Immm phases for Br, I...
+        # or Immm phases for Br, I..., Na2FePO4F...
         entry.data["energy_above_hull"] = temp_phase_diagram.get_e_above_hull(entry)
 
     if energy_above_hull is not None:
@@ -1518,19 +1517,15 @@ class CompetingPhases:
         formatted_entries: list[ComputedEntry] = []
 
         for entry in entries.copy():
-            formula = entry.data.get("formula_pretty", "N/A")
-            if (
-                formula in elemental_diatomic_gases and entry.data.get("energy_above_hull", 0) == 0.0
-            ):  # only once for each matching gaseous elemental entry
-                molecular_entry = make_molecular_entry(entry)
-                if not any(
-                    entry.data["molecule"]
-                    and formula == molecular_entry.data.get("formula_pretty", "Mol N/A")
-                    for entry in formatted_entries
-                ):  # first entry only
+            if entry.is_element and str(next(iter(entry.elements))) in elemental_diatomic_bond_lengths:
+                if entry.data.get("energy_above_hull", 0) == 0.0 and not any(
+                    other_entry.data["molecule"] and other_entry.elements == entry.elements
+                    for other_entry in formatted_entries
+                ):  # only once for each matching gaseous elemental entry
+                    molecular_entry = make_molecular_entry(entry)
                     entries.append(molecular_entry)
                     formatted_entries.append(molecular_entry)
-            elif formula not in elemental_diatomic_gases:
+            else:
                 entry.data["molecule"] = False
                 formatted_entries.append(entry)
 

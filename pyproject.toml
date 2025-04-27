@@ -21,7 +21,7 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2025.4.24",  # breaking changes to MPRester (mp-api dropped)
+    "pymatgen>=025.4.24",  # breaking changes to MPRester (mp-api dropped)
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "ase",  # required by ShakeNBreak anyway

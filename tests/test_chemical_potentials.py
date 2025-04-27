@@ -123,17 +123,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
         As noted by Savya Aggarwal, the legacy MP API code didn't return ZnSe2
         as a competing phase despite being on the hull and bordering ZnSe,
         because the legacy MP API database wrongly had the
-        ``data['energyabove_hull']`` value as 0.147 eV/atom (when it should be
+        ``data['energy_above_hull']`` value as 0.147 eV/atom (when it should be
         0 eV/atom).
 
         https://legacy.materialsproject.org/materials/mp-1102515/
         https://next-gen.materialsproject.org/materials/mp-1102515?formula=ZnSe2
 
-        Updated code which re-calculates the energy above hull avoids this issue.
+        Updated code which re-calculates the energy above hull avoids this
+        issue, though ``pymatgen`` has now updated to no longer support the
+        legacy MP database now anyway.
         """
         cp = chemical_potentials.CompetingPhases("ZnSe", api_key=self.api_key)
         assert any(e.name == "ZnSe2" for e in cp.entries)
-        assert len(cp.entries) in {11, 12}  # ZnSe2 present; 2 new Zn entries (mp-264...) with new MP API
+        assert len(cp.entries) == 12  # ZnSe2 present; 2 new Zn entries (mp-264...) with new MP API
         znse2_entry = next(e for e in cp.entries if e.name == "ZnSe2")
         assert znse2_entry.data.get("energy_above_hull") == 0
         assert not znse2_entry.data["molecule"]
@@ -143,14 +145,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_init_YTOS(self):
         # 144 phases on Y-Ti-O-S MP phase diagram
         cp = chemical_potentials.CompetingPhases("Y2Ti2S2O5", energy_above_hull=0.1, api_key=self.api_key)
-        assert len(cp.entries) in {109, 113}  # legacy and new MP APIs
+        assert len(cp.entries) == 113
         self.check_O2_entry(cp)
 
         cp = chemical_potentials.CompetingPhases(
             "Y2Ti2S2O5", energy_above_hull=0.1, full_phase_diagram=True, api_key=self.api_key
         )
-        # 144/149 phases on Y-Ti-O-S legacy/new MP phase diagram, 4 extra O2 phases removed
-        assert len(cp.entries) in {140, 145}  # legacy and new MP APIs
+        # 149 phases on Y-Ti-O-S MP full phase diagram, 4 extra O2 phases removed
+        assert len(cp.entries) == 145
         self.check_O2_entry(cp)
 
     def check_O2_entry(self, cp):
@@ -170,32 +172,21 @@ class CompetingPhasesTestCase(unittest.TestCase):
         duplicates are encountered.
         """
         cdte_cp = chemical_potentials.CompetingPhases("CdTe", api_key=self.api_key)
-        if len(self.api_key) != 32:
-            assert [entry.data["doped_name"] for entry in cdte_cp.entries] == [
-                "CdTe_F-43m_EaH_0",
-                "Cd_P6_3/mmc_EaH_0",
-                "Te_P3_121_EaH_0",
-                "Te_P3_221_EaH_0",
-                "Cd_Fm-3m_EaH_0.001",
-                "Cd_R-3m_EaH_0.001",
-                "CdTe_P6_3mc_EaH_0.003",
-                "CdTe_Cmc2_1_EaH_0.006",
-                "Cd_P6_3/mmc_EaH_0.018",
-                "Te_C2/m_EaH_0.044",
-                "Te_Pm-3m_EaH_0.047",
-                "Te_Pmma_EaH_0.047",
-                "Te_Pmc2_1_EaH_0.049",
-            ]
-        else:  # slightly different for new MP API, Te entries the same
-            for i in [
-                "Te_P3_121_EaH_0",
-                "Te_P3_221_EaH_0",
-                "Te_C2/m_EaH_0.044",
-                "Te_Pm-3m_EaH_0.047",
-                "Te_Pmma_EaH_0.047",
-                "Te_Pmc2_1_EaH_0.049",
-            ]:
-                assert i in [entry.data["doped_name"] for entry in cdte_cp.entries]
+        assert [entry.data["doped_name"] for entry in cdte_cp.entries] == [
+            "CdTe_F-43m_EaH_0",
+            "Cd_Fm-3m_EaH_0",
+            "Te_P3_121_EaH_0",
+            "Te_P3_221_EaH_0",
+            "CdTe_P6_3mc_EaH_0.006",
+            "CdTe_Cmc2_1_EaH_0.009",
+            "Cd_P6_3/mmc_EaH_0.014",
+            "Cd_R-3m_EaH_0.018",
+            "Cd_P6_3/mmc_EaH_0.034",
+            "Te_C2/m_EaH_0.044",
+            "Te_Pm-3m_EaH_0.047",
+            "Te_Pmma_EaH_0.047",
+            "Te_Pmc2_1_EaH_0.049",
+        ]
 
         # test case when the EaH rounding needs to be dynamically updated:
         # (this will be quite a rare case, as it requires two phases with the same formula, space group
@@ -205,10 +196,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
         new_entry = deepcopy(
             next(entry for entry in cds_cp.entries if entry.data["doped_name"] == "S_Pnnm_EaH_0.014")
         )  # duplicate entry to force renaming
-        # if len(self.api_key) != 32:  # TODO: Update things like this
-        # TODO: Check code for other pymatgen handling parts
-        #     new_entry.data["e_above_hull"] += 2e-4
-        # else:
         new_entry.data["energy_above_hull"] += 2e-4
         chemical_potentials._name_entries_and_handle_duplicates([*cds_cp.entries, new_entry])
         entry_names = [entry.data["doped_name"] for entry in [*cds_cp.entries, new_entry]]
@@ -234,22 +221,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
             print([str(warning.message) for warning in w])  # for debugging
-            if len(self.api_key) != 32:  # recalculated energy for Na2FePO4F on new MP API, now on hull
-                assert len([warning for warning in w if "You are using" not in str(warning.message)]) == 1
-                for sub_message in [
-                    "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable with "
-                    "respect to competing phases, having an energy above hull of 0.1701 eV/atom.",
-                    "Formally, this means that the host material is unstable and so has no chemical "
-                    "potential limits; though in reality there may be errors in the MP energies",
-                    "Here we downshift the host compound entry to the convex hull energy, and then "
-                    "determine the possible competing phases with the same approach as usual",
-                ]:
-                    print(sub_message)
-                    assert any(sub_message in str(warning.message) for warning in w)
             if cp_settings.get("full_phase_diagram"):
-                assert len(cp.entries) in {128, 172}  # legacy, new MP APIs
+                assert len(cp.entries) == 172
             else:
-                assert len(cp.entries) in {50, 68}  # legacy, new MP APIs
+                assert len(cp.entries) == 68
             self.check_O2_entry(cp)
 
     def test_unknown_host(self):
@@ -400,12 +375,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrinsic=False):
     print([str(warning.message) for warning in w])  # for debugging
     user_warnings = [warning for warning in w if warning.category is UserWarning]
-    if "Na2FePO4F" in name and len(api_key) != 32:  # stable in new MP
-        assert len(user_warnings) == 2
-        assert "Note that the Materials Project (MP) database entry for Na2FePO4F is not stable" in str(
-            user_warnings[0].message
-        )
-    elif "Cu2SiSe4" in name:
+    if "Cu2SiSe4" in name:
         assert len(user_warnings) == 2
         assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4" in str(
             user_warnings[0].message
@@ -419,7 +389,7 @@ def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrin
         if entry.name != "Cu2SiSe4":  # differs in this case due to doubled formula in unit cell
             assert entry in cp_entries  # structure not compared with ``__eq__`` for entries
         if entry.name == struct.composition.reduced_formula:
-            if "Na2FePO4F" not in name or len(api_key) != 32:
+            if "Na2FePO4F" not in name:
                 assert entry.data["doped_name"] == name
             else:
                 assert entry.data["doped_name"] == "Na2FePO4F_Pbcn_EaH_0"  # stable in new MP
