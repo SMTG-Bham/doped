@@ -517,9 +517,9 @@ This can arise for a number of reasons:
     The Fermi level will be always referenced to ``DefectThermodynamics.vbm``.
 
 
-Magnetisation
+Magnetization
 -----------------
-Proper accounting of magnetisation and spin multiplicity is important for accurate defect calculations and
+Proper accounting of magnetization and spin multiplicity is important for accurate defect calculations and
 analysis. For defect species with odd numbers of electrons (and thus being open-shell), they will adopt
 non-zero integer spin states, while defect species with even numbers of electrons can be either
 closed-shell (spin-paired) or open-shell (spin-active), depending on the defect species and its electronic
@@ -534,7 +534,7 @@ cases (i.e. with ``ISPIN = 2`` or ``LSORBIT = True`` (for SOC) in VASP).
     spin polarisation) for subsequent calculations to reduce the computational cost.
 
     The ``snb-mag --verbose`` CLI command from ``ShakeNBreak`` can be used to automatically check the
-    magnetisation of a VASP defect calculation in this way (and is automatically used by ``snb-run`` to
+    magnetization of a VASP defect calculation in this way (and is automatically used by ``snb-run`` to
     set ``ISPIN = 1`` for continued ``ShakeNBreak`` relaxations of any closed-shell defect calculations,
     if it is being used to manage the structure-searching calculations).
 
@@ -543,18 +543,18 @@ cases (i.e. with ``ISPIN = 2`` or ``LSORBIT = True`` (for SOC) in VASP).
         ❯ snb-mag -h
         Usage: snb-mag [OPTIONS]
 
-          Checks if the magnetisation (spin polarisation) values of all atoms in the
+          Checks if the magnetization (spin polarisation) values of all atoms in the
           VASP calculation are below a certain threshold, by pulling this data from
-          the OUTCAR. Returns a shell exit status of 0 if magnetisation is below the
+          the OUTCAR. Returns a shell exit status of 0 if magnetization is below the
           threshold and 1 if above.
 
         Options:
           -o, --outcar FILE      Path to OUTCAR(.gz) file
-          -t, --threshold FLOAT  Atoms with absolute magnetisation below this value
+          -t, --threshold FLOAT  Atoms with absolute magnetization below this value
                                  are considered un-magnetised / non-spin-polarised.
-                                 The threshold for total magnetisation is 10x this
+                                 The threshold for total magnetization is 10x this
                                  value.  [default: 0.01]
-          -v, --verbose          Print information about the magnetisation of the
+          -v, --verbose          Print information about the magnetization of the
                                  system.
           -h, --help             Show this message and exit.
 
@@ -563,7 +563,7 @@ In most cases and particularly for `s`/`p` orbital systems, odd electron defects
 state (`S` = 1/2, one unpaired electron), while even electron defects will tend to adopt a closed-shell
 singlet spin state (`S` = 0, no unpaired electrons), as a consequence of the Aufbau principle and Hund's
 rule. For input file generation in ``VASP``, ``NUPDOWN`` is used in the ``INCAR`` to enforce the total
-magnetisation (number of unpaired electron spins), which by default is set to ``0`` for even-electron
+magnetization (number of unpaired electron spins), which by default is set to ``0`` for even-electron
 and ``1`` for odd-electron defect species in ``doped``.
 
 However, this is not always the case and often we can have open-shell triplet states for
@@ -607,11 +607,11 @@ for multiple defects.
 
     For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
     automatically set ``ISPIN=2`` (allowing spin polarisation) and ``NUPDOWN`` according to the
-    magnetisation output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
+    magnetization output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
     (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
     certain cases.
 
-When parsing defect calculations, ``doped`` will automatically extract the total magnetisation from the
+When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
 ``VASP`` output files, in order to determine the spin multiplicity. This value is stored in
 ``DefectEntry.degeneracy_factors["spin degeneracy"]`` (and printed in
 ``DefectThermodynamics.get_symmetries_and_degeneracies()``) and used in thermodynamic analyses. See the

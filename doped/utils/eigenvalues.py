@@ -27,7 +27,7 @@ from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
-from doped.utils.parsing import get_magnetisation_from_vasprun, get_nelect_from_vasprun, suppress_logging
+from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, suppress_logging
 from doped.utils.plotting import _get_backend
 
 if TYPE_CHECKING:
@@ -79,7 +79,7 @@ def band_edge_properties_from_vasprun(
     band_edge_prop = BandEdgeProperties(
         eigenvalues=eigenvalues_from_vasprun(vasprun),
         nelect=get_nelect_from_vasprun(vasprun),
-        magnetization=0 if is_ncl else get_magnetisation_from_vasprun(vasprun),  # only needed for ISPIN=2
+        magnetization=0 if is_ncl else get_magnetization_from_vasprun(vasprun),  # only needed for ISPIN=2
         kpoint_coords=vasprun.actual_kpoints,
         integer_criterion=integer_criterion,
         is_non_collinear=is_ncl,

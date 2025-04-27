@@ -49,7 +49,7 @@ from doped.utils.parsing import (
     _compare_potcar_symbols,
     _format_mismatching_incar_warning,
     _get_output_files_and_check_if_multiple,
-    get_magnetisation_from_vasprun,
+    get_magnetization_from_vasprun,
     get_vasprun,
 )
 from doped.utils.plotting import get_colormap
@@ -103,14 +103,14 @@ def make_molecule_in_a_box(element: str):
             Element symbol of the molecule to generate.
 
     Returns:
-        Structure, formula and total magnetisation:
+        Structure, formula and total magnetization:
 
         structure (Structure):
             ``pymatgen`` ``Structure`` object of the molecule in a box.
         formula (str):
             Chemical formula of the molecule in a box.
-        total_magnetisation (int):
-            Total magnetisation of the molecule in a box
+        total_magnetization (int):
+            Total magnetization of the molecule in a box
             (0 for all X2 except O2 which has a triplet ground state (S = 1)).
     """
     element = sub(r"\d+$", "", element)  # remove digits in case provided as X2 etc
@@ -127,9 +127,9 @@ def make_molecule_in_a_box(element: str):
         coords=[[15, 15, 15], [15, 15, 15 + bond_length]],
         coords_are_cartesian=True,
     )
-    total_magnetisation = 0 if element != "O" else 2  # O2 has a triplet ground state (S = 1)
+    total_magnetization = 0 if element != "O" else 2  # O2 has a triplet ground state (S = 1)
 
-    return structure, total_magnetisation
+    return structure, total_magnetization
 
 
 def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntry:
@@ -151,7 +151,7 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     assert len(computed_entry.composition.elements) == 1  # Elemental!
     formula = computed_entry.data.get("formula_pretty", "N/A")
     element = computed_entry.composition.elements[0].symbol
-    struct, total_magnetisation = make_molecule_in_a_box(element)
+    struct, total_magnetization = make_molecule_in_a_box(element)
     molecular_entry = ComputedStructureEntry(
         structure=struct,
         energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
@@ -170,7 +170,7 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     molecular_entry.data["material_id"] = "mp-0"
     molecular_entry.data["summary"] = {
         "band_gap": None,
-        "total_magnetization": total_magnetisation,
+        "total_magnetization": total_magnetization,
         "theoretical": False,
         "database_IDs": {},
     }
@@ -1458,22 +1458,22 @@ class CompetingPhases:
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """
-        If the entry has a non-zero total magnetisation (greater than the
+        If the entry has a non-zero total magnetization (greater than the
         default tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin
         polarisation) and ``NUPDOWN`` equal to the integer-rounded total
-        magnetisation.
+        magnetization.
 
         Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed (as
         typically desired for non-magnetic phases, for efficiency).
 
         See https://doped.readthedocs.io/en/latest/Tips.html#spin
         """
-        magnetisation = entry.data.get("summary", {}).get("total_magnetization")
-        with contextlib.suppress(TypeError):  # if magnetisation is None, fine, skip
-            if magnetisation > 0.1:  # account for magnetic moment
+        magnetization = entry.data.get("summary", {}).get("total_magnetization")
+        with contextlib.suppress(TypeError):  # if magnetization is None, fine, skip
+            if magnetization > 0.1:  # account for magnetic moment
                 incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
-                if "NUPDOWN" not in incar_settings and int(magnetisation) > 0:
-                    incar_settings["NUPDOWN"] = int(magnetisation)
+                if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
+                    incar_settings["NUPDOWN"] = int(magnetization)
 
         # otherwise ISPIN not set, so no spin polarisation
 
@@ -2964,7 +2964,7 @@ def _parse_entry_from_vasprun_and_catch_exception(
                 "potcar_symbols": vasprun.potcar_spec,
                 "summary": {
                     "band_gap": vasprun.eigenvalue_band_properties[0],
-                    "total_magnetization": get_magnetisation_from_vasprun(vasprun),
+                    "total_magnetization": get_magnetization_from_vasprun(vasprun),
                 },
             }
         )

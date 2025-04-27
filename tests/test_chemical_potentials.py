@@ -84,11 +84,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_make_molecule_in_a_box(self):
         allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
         for element in allowed_gaseous_elements:
-            structure, total_magnetisation = chemical_potentials.make_molecule_in_a_box(element)
+            structure, total_magnetization = chemical_potentials.make_molecule_in_a_box(element)
             if element == "O2":
-                assert total_magnetisation == 2
+                assert total_magnetization == 2
             else:
-                assert total_magnetisation == 0
+                assert total_magnetization == 0
             assert structure.composition.reduced_formula == element
             assert structure.num_sites == 2
             assert np.isclose(structure.volume, 30**3)

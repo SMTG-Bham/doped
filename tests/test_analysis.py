@@ -35,7 +35,7 @@ from doped.utils.parsing import (
     _simple_spin_degeneracy_from_num_electrons,
     get_defect_type_and_composition_diff,
     get_defect_type_site_idxs_and_unrelaxed_structure,
-    get_magnetisation_from_vasprun,
+    get_magnetization_from_vasprun,
     get_outcar,
     get_procar,
     get_vasprun,
@@ -3321,51 +3321,51 @@ class DefectsParsingTestCase(unittest.TestCase):
     #         )
     #         assert np.isclose(orientational_degeneracy, 0.25, atol=1e-2)
 
-    def test_magnetisation_parsing(self):
+    def test_magnetization_parsing(self):
         # individual checks first:
         # bulk NCL:
         vr = get_vasprun(f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml.gz", parse_projected_eigen=True)
-        assert np.allclose(get_magnetisation_from_vasprun(vr), 0, atol=0.02)
+        assert np.allclose(get_magnetization_from_vasprun(vr), 0, atol=0.02)
         assert spin_degeneracy_from_vasprun(vr) == 1
 
         # -1 ncl:
         vr = get_vasprun(
             f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-1/vasp_ncl/vasprun.xml.gz", parse_projected_eigen=True
         )
-        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 1, atol=0.05)
+        assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 1, atol=0.05)
         assert spin_degeneracy_from_vasprun(vr) == 2
 
         # S = 0 bipolaron ncl:
         vr = get_vasprun(
-            f"{self.data_dir}/Magnetisation_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
+            f"{self.data_dir}/magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
-        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 0.903, atol=0.05)
+        assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 0.903, atol=0.05)
         assert spin_degeneracy_from_vasprun(vr) == 1
 
         # S = 1 bipolaron ncl:
         vr = get_vasprun(
-            f"{self.data_dir}/Magnetisation_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
+            f"{self.data_dir}/magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
-        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 1.6, atol=0.05)
+        assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 1.6, atol=0.05)
         assert spin_degeneracy_from_vasprun(vr) == 3
 
         # O2 triplet calculation, vasp_std, ISPIN = 2
         vr = get_vasprun(
-            f"{self.data_dir}/Magnetisation_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
+            f"{self.data_dir}/magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
-        print(get_magnetisation_from_vasprun(vr))
-        assert get_magnetisation_from_vasprun(vr) == 2
+        print(get_magnetization_from_vasprun(vr))
+        assert get_magnetization_from_vasprun(vr) == 2
         assert spin_degeneracy_from_vasprun(vr) == 3
 
         # O2 triplet calculation, vasp_ncl (near-perfect triplet)
         vr = get_vasprun(
-            f"{self.data_dir}/Magnetisation_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
+            f"{self.data_dir}/magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
-        assert np.isclose(np.linalg.norm(get_magnetisation_from_vasprun(vr)), 2, atol=0.001)
+        assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 2, atol=0.001)
         assert spin_degeneracy_from_vasprun(vr) == 3
 
         # F_i_-1, vasp_std, ISPIN = 1 (non spin polarised)
@@ -3376,11 +3376,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert int_F_minus1_ent.degeneracy_factors["spin degeneracy"] == 1
         vr = get_vasprun(f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/vasprun.xml.gz", parse_projected_eigen=True)
-        assert get_magnetisation_from_vasprun(vr) == 0
+        assert get_magnetization_from_vasprun(vr) == 0
 
         # test DefectsParser handling:
         dp, w = _create_dp_and_capture_warnings(
-            output_path=f"{self.data_dir}/Magnetisation_Tests/CdTe",
+            output_path=f"{self.data_dir}/magnetization_Tests/CdTe",
             bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             dielectric=9.13,
         )

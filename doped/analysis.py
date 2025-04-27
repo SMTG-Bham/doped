@@ -703,10 +703,10 @@ class DefectsParser:
                 set as ``{Host Chemical Formula}_defect_dict.json.gz``.
                 If ``False``, no json file is saved.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & magnetisation from
+                Whether to parse the projected eigenvalues & magnetization from
                 the bulk and defect calculations (so
                 ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
-                no further parsing, and magnetisation values can be pulled for
+                no further parsing, and magnetization values can be pulled for
                 SOC / non-collinear magnetism calculations). Will initially try
                 to load orbital projections from ``vasprun.xml(.gz)`` files
                 (slightly slower but more accurate), or failing that from
@@ -1750,10 +1750,10 @@ class DefectParser:
                 greater than this value (in eV), then a warning is raised.
                 Default is 0.05 eV.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & magnetisation from
+                Whether to parse the projected eigenvalues & magnetization from
                 the bulk and defect calculations (so
                 ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
-                no further parsing, and magnetisation values can be pulled for
+                no further parsing, and magnetization values can be pulled for
                 SOC / non-collinear magnetism calculations). Will initially try
                 to load orbital projections from ``vasprun.xml(.gz)`` files
                 (slightly slower but more accurate), or failing that from
@@ -1878,10 +1878,10 @@ class DefectParser:
                 dopability limit functions, and the reference of the reported
                 Fermi levels.
             parse_projected_eigen (bool):
-                Whether to parse the projected eigenvalues & magnetisation from
+                Whether to parse the projected eigenvalues & magnetization from
                 the bulk and defect calculations (so
                 ``DefectEntry.get_eigenvalue_analysis()`` can then be used with
-                no further parsing, and magnetisation values can be pulled for
+                no further parsing, and magnetization values can be pulled for
                 SOC / non-collinear magnetism calculations). Will initially try
                 to load orbital projections from ``vasprun.xml(.gz)`` files
                 (slightly slower but more accurate), or failing that from
@@ -1983,7 +1983,7 @@ class DefectParser:
             except Exception as next_exc:
                 raise orig_exc from next_exc
 
-        # parse spin degeneracy now, before proj eigenvalues/magnetisation are cut (for SOC/NCL calcs):
+        # parse spin degeneracy now, before proj eigenvalues/magnetization are cut (for SOC/NCL calcs):
         degeneracy_factors = {
             "spin degeneracy": spin_degeneracy_from_vasprun(defect_vr, charge_state=parsed_charge_state)
             / spin_degeneracy_from_vasprun(bulk_vr, charge_state=0)
@@ -2124,19 +2124,22 @@ class DefectParser:
             )
 
         # get orientational degeneracy
-        relaxed_point_group, periodicity_breaking = point_symmetry_from_defect_entry(
+        point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
             defect_entry,
             relaxed=True,
             verbose=False,
             return_periodicity_breaking=True,
             symprec=kwargs.get("symprec"),
         )  # relaxed so defect symm_ops
+        assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
+        relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
         bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,
             symm_ops=bulk_supercell_symm_ops,  # unrelaxed so bulk symm_ops
             relaxed=False,
             symprec=0.01,  # same symprec used w/interstitial multiplicity for consistency
         )
+        assert isinstance(bulk_site_point_group, str)  # typing (str returned)
         with contextlib.suppress(ValueError):
             defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
                 relaxed_point_group=relaxed_point_group,

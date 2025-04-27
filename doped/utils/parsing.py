@@ -67,27 +67,27 @@ def parse_projected_eigen(
 ) -> tuple[dict[Spin, np.ndarray], np.ndarray | None]:
     """
     Parse the projected eigenvalues from a ``Vasprun`` object (used during
-    initialisation), but excluding the projected magnetisation for efficiency.
+    initialisation), but excluding the projected magnetization for efficiency.
 
     Note that following SK's PRs to ``pymatgen`` (#4359, #4360), parsing of
     projected eigenvalues adds minimal additional cost to Vasprun parsing
-    (~1-5%), while parsing of projected magnetisation can add ~30% cost.
+    (~1-5%), while parsing of projected magnetization can add ~30% cost.
 
     This is a modified version of ``_parse_projected_eigen`` from
     ``pymatgen.io.vasp.outputs.Vasprun``, which allows skipping of projected
-    magnetisation parsing in order to expedite parsing in ``doped``, as well as
+    magnetization parsing in order to expedite parsing in ``doped``, as well as
     some small adjustments to maximise efficiency.
 
     Args:
         elem (Element):
-            The XML element to parse, with projected eigenvalues/magnetisation.
+            The XML element to parse, with projected eigenvalues/magnetization.
         parse_mag (bool):
-            Whether to parse the projected magnetisation. Default is ``True``.
+            Whether to parse the projected magnetization. Default is ``True``.
 
     Returns:
         Tuple[Dict[Spin, np.ndarray], Optional[np.ndarray]]:
             A dictionary of projected eigenvalues for each spin channel
-            (up/down), and the projected magnetisation (if parsed).
+            (up/down), and the projected magnetization (if parsed).
     """
     root = elem.find("array/set")
     proj_eigen = {}
@@ -97,7 +97,7 @@ def parse_projected_eigen(
         spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])  # type: ignore[index]
         if spin == 1 or (spin == 2 and len(sets) == 2):
             spin_key = Spin.up if spin == 1 else Spin.down
-        elif parse_mag:  # parse projected magnetisation
+        elif parse_mag:  # parse projected magnetization
             spin_key = spin  # {2:"x", 3:"y", 4:"z"}
         else:
             continue
@@ -108,7 +108,7 @@ def parse_projected_eigen(
 
     if len(proj_eigen) > 2:
         # non-collinear magnetism (spin-orbit coupling) enabled, last three "spin channels" are the
-        # projected magnetisation of the orbitals in the x, y, and z Cartesian coordinates:
+        # projected magnetization of the orbitals in the x, y, and z Cartesian coordinates:
         proj_mag = np.stack([proj_eigen.pop(i) for i in range(2, 5)], axis=-1)
         proj_eigen = {Spin.up: proj_eigen[Spin.up]}
     else:
@@ -1280,37 +1280,37 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     )
 
 
-def get_magnetisation_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
     """
-    Determine the total magnetisation from a ``Vasprun`` object.
+    Determine the total magnetization from a ``Vasprun`` object.
 
     For spin-polarised calculations, this is the difference between the number
     of spin-up vs spin-down electrons. For non-spin-polarised calculations,
-    there is no magnetisation. For non-collinear (NCL) magnetisation (e.g.
-    spin-orbit coupling (SOC) calculations), the magnetisation becomes a vector
-    (spinor), in which case we take the vector norm as the total magnetisation.
+    there is no magnetization. For non-collinear (NCL) magnetization (e.g.
+    spin-orbit coupling (SOC) calculations), the magnetization becomes a vector
+    (spinor), in which case we take the vector norm as the total magnetization.
 
-    VASP does not write the total magnetisation to ``vasprun.xml`` file (but
+    VASP does not write the total magnetization to ``vasprun.xml`` file (but
     does to the ``OUTCAR`` file), and so here we have to reverse-engineer it
     from the eigenvalues (for normal spin-polarised calculations) or the
-    projected magnetisation & eigenvalues (for NCL calculations). For NCL
-    calculations, we sum the projected orbital magnetisations for all occupied
+    projected magnetization & eigenvalues (for NCL calculations). For NCL
+    calculations, we sum the projected orbital magnetizations for all occupied
     states, weighted by the `k`-point weights and normalised by the total
     orbital projections for each band and `k`-point. This gives the best
-    estimate of the total magnetisation from the projected magnetisation array,
+    estimate of the total magnetization from the projected magnetization array,
     but due to incomplete orbital projections and orbital-dependent non-uniform
     scaling factors (i.e. completeness of orbital projects for `s` vs `p` vs
     `d` orbitals etc.), there can be inaccuracies up to ~30% in the estimated
-    total magnetisation for tricky cases.
+    total magnetization for tricky cases.
 
     Args:
         vasprun (Vasprun):
             The ``Vasprun`` object from which to extract the total
-            magnetisation.
+            magnetization.
 
     Returns:
         int or float or np.ndarray[float]:
-            The total magnetisation of the system.
+            The total magnetization of the system.
     """
     # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
     # spin-polarisation / account for NELECT changes from neutral apparently
@@ -1324,7 +1324,7 @@ def get_magnetisation_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
             return 0  # non-spin polarised calculation
         if getattr(vasprun, "projected_magnetisation", None) is None:
             raise RuntimeError(
-                "Cannot determine magnetisation from non-collinear Vasprun calculation, as this requires "
+                "Cannot determine magnetization from non-collinear Vasprun calculation, as this requires "
                 "the `Vasprun.projected_magnetisation` attribute, which is parsed with "
                 "`Vasprun(parse_projected_eigen=True)` (default in `doped`)."
             )
@@ -1339,7 +1339,7 @@ def get_magnetisation_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
         normalisation_factors = 1 / summed_orbital_projections
 
         # vasprun.projected_magnetisation.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
-        # sum the projected magnetisation over atoms and orbitals, then multiply by per-band/kpoint
+        # sum the projected magnetization over atoms and orbitals, then multiply by per-band/kpoint
         # normalisation factors:
         normalised_proj_mag_per_kpoint_band_direction = (
             vasprun.projected_magnetisation.sum(axis=(-3, -2)) * normalisation_factors[..., None]
@@ -1373,7 +1373,7 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     Returns:
         int or float: The number of electrons in the system.
     """
-    # can also obtain this (NELECT), charge and magnetisation from Outcar objects, worth keeping in mind
+    # can also obtain this (NELECT), charge and magnetization from Outcar objects, worth keeping in mind
     # but not needed atm
     # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
     # spin-polarisation / account for NELECT changes from neutral apparently
@@ -1655,18 +1655,18 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
     Get the spin degeneracy (multiplicity) of a system from a ``VASP`` vasprun
     output.
 
-    Spin degeneracy is determined by first getting the total magnetisation and
+    Spin degeneracy is determined by first getting the total magnetization and
     thus electron spin (S = N_μB/2 -- where N_μB is the magnetization in Bohr
     magnetons (i.e. electronic units, as used in VASP), and using the spin
-    multiplicity equation: ``g_spin = 2S + 1``. The total magnetisation
-    ``N_μB`` is determined using ``get_magnetisation_from_vasprun`` (see
+    multiplicity equation: ``g_spin = 2S + 1``. The total magnetization
+    ``N_μB`` is determined using ``get_magnetization_from_vasprun`` (see
     docstring for details), and if this fails, then simple spin behaviour is
     assumed with singlet (S = 0) behaviour for even-electron systems and
     doublet behaviour (S = 1/2) for odd-electron systems.
 
-    For non-collinear (NCL) magnetisation (e.g. spin-orbit coupling (SOC)
-    calculations), the magnetisation ``N_μB`` becomes a vector (spinor), in
-    which case we take the vector norm as the total magnetisation. This can be
+    For non-collinear (NCL) magnetization (e.g. spin-orbit coupling (SOC)
+    calculations), the magnetization ``N_μB`` becomes a vector (spinor), in
+    which case we take the vector norm as the total magnetization. This can be
     non-integer in these cases (e.g. due to SOC mixing of spin states, as
     **_S_** is no longer a good quantum number). As an approximation for these
     cases, we round ``N_μB`` to the nearest integer which would be allowed
@@ -1691,22 +1691,22 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
         num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
 
     try:
-        magnetisation = get_magnetisation_from_vasprun(vasprun)
-        if isinstance(magnetisation, np.ndarray):
-            # take the vector norm as the total magnetisation
-            magnetisation = np.linalg.norm(magnetisation)
+        magnetization = get_magnetization_from_vasprun(vasprun)
+        if isinstance(magnetization, np.ndarray):
+            # take the vector norm as the total magnetization
+            magnetization = np.linalg.norm(magnetization)
 
         # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
         if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...
-            magnetisation = round(magnetisation / 2) * 2  # nearest even number
+            magnetization = round(magnetization / 2) * 2  # nearest even number
         else:
-            magnetisation = round((magnetisation - 1) / 2) * 2 + 1  # nearest odd number
+            magnetization = round((magnetization - 1) / 2) * 2 + 1  # nearest odd number
 
         # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
         # i.e. number of electrons, as in VASP):
-        return magnetisation + 1
+        return magnetization + 1
 
-    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetisation:
+    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization:
         return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))  # guess from charge
 
 

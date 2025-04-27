@@ -733,7 +733,7 @@ class DefectEntry(thermo.DefectEntry):
         }
 
         if clear_attributes:
-            # first check if spin degeneracy has been parsed (needs projected magnetisation for SOC/NCL
+            # first check if spin degeneracy has been parsed (needs projected magnetization for SOC/NCL
             # calculations), and try parse if not:
             if "spin degeneracy" not in self.degeneracy_factors:
                 with contextlib.suppress(Exception):
