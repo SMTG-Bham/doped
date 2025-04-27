@@ -16,12 +16,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.10"  # dictated by "pymatgen>=2024.9.10" requirement
+requires-python = ">=3.10"  # dictated by "pymatgen>=2025" requirement
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2024.9.10",  # needs new SymmetryUndeterminedError class
+    "pymatgen>=2025.4.24",  # breaking changes to MPRester (mp-api dropped)
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "ase",  # required by ShakeNBreak anyway
@@ -47,7 +47,6 @@ Repository = "https://github.com/SMTG-Bham/doped"
 tests = [
     "pytest>=8.3",
     "pytest-mpl>=0.16.1",
-    "mp-api",  # not required by default as user can use legacy API, but needed for tests
     "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
 ]
 docs = [
