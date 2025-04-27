@@ -447,29 +447,27 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         CompetingPhasesTestCase.tearDown(self)
 
     def test_init(self):
-        ex_cp = chemical_potentials.ExtrinsicCompetingPhases(
-            "ZrO2", extrinsic_species="La", energy_above_hull=0, api_key=self.api_key
+        ex_cp = chemical_potentials.CompetingPhases(
+            "ZrO2", extrinsic="La", energy_above_hull=0, api_key=self.api_key
         )
-        assert len(ex_cp.entries) == 2
-        assert ex_cp.entries[0].name == "La"  # definite ordering
-        assert ex_cp.entries[1].name == "La2Zr2O7"  # definite ordering
-        assert all(chemical_potentials._get_energy_above_hull(entry.data) == 0 for entry in ex_cp.entries)
+        assert len(ex_cp.extrinsic_entries) == 2
+        assert len(ex_cp.entries) == 6
+        assert ex_cp.extrinsic_entries[0].name == "La"  # definite ordering
+        assert ex_cp.extrinsic_entries[1].name == "La2Zr2O7"  # definite ordering
+        assert all(entry.data["energy_above_hull"] == 0 for entry in ex_cp.entries)
 
         # names of intrinsic entries: ['Zr', 'O2', 'Zr3O', 'ZrO2']
         assert len(ex_cp.intrinsic_entries) == 4
         assert [entry.name for entry in ex_cp.intrinsic_entries] == self.zro2_entry_list[:4]
-        assert all(
-            chemical_potentials._get_energy_above_hull(entry.data) == 0
-            for entry in ex_cp.intrinsic_entries
-        )
 
-        cp = chemical_potentials.ExtrinsicCompetingPhases(
-            "ZrO2", extrinsic_species="La", api_key=self.api_key
+        cp = chemical_potentials.CompetingPhases(
+            "ZrO2", extrinsic="La", api_key=self.api_key
         )  # default energy_above_hull=0.05
-        assert len(cp.entries) == 3
-        assert cp.entries[2].name == "La"  # definite ordering, same 1st & 2nd as before
-        assert all(chemical_potentials._get_energy_above_hull(entry.data) == 0 for entry in cp.entries[:2])
-        assert all(chemical_potentials._get_energy_above_hull(entry.data) != 0 for entry in cp.entries[2:])
+        assert len(cp.extrinsic_entries) == 3
+        assert len(cp.entries) == 21
+        assert cp.extrinsic_entries[2].name == "La"  # definite ordering, same 1st & 2nd as before
+        assert all(entry.data["energy_above_hull"] == 0 for entry in ex_cp.extrinsic_entries[:2])
+        assert all(entry.data["energy_above_hull"] != 0 for entry in cp.extrinsic_entries[2:])
         assert len(cp.intrinsic_entries) == 18
 
     def test_structure_input(self):
@@ -480,16 +478,16 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             (self.cu2sise4, "Cu2SiSe4_P1_EaH_0"),
         ]:
             with warnings.catch_warnings(record=True) as w:
-                cp = chemical_potentials.ExtrinsicCompetingPhases(
-                    struct.composition.reduced_formula, api_key=self.api_key, extrinsic_species={"K"}
+                cp = chemical_potentials.CompetingPhases(
+                    struct.composition.reduced_formula, api_key=self.api_key, extrinsic={"K"}
                 )
-                cp_struct_input = chemical_potentials.ExtrinsicCompetingPhases(
-                    struct, api_key=self.api_key, extrinsic_species={"K"}
+                cp_struct_input = chemical_potentials.CompetingPhases(
+                    struct, api_key=self.api_key, extrinsic={"K"}
                 )
 
             _check_structure_input(cp, cp_struct_input, struct, name, w, self.api_key, extrinsic=True)
 
-            for entries_list in [cp_struct_input.entries, cp.entries]:
+            for entries_list in [cp_struct_input.extrinsic_entries, cp.extrinsic_entries]:
                 assert len(entries_list) >= 1
                 for extrinsic_entry in entries_list:
                     assert "K" in extrinsic_entry.data["doped_name"]
