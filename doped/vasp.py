@@ -448,14 +448,16 @@ class DefectDictSet(DopedDictSet):
         incar_obj = super(self.__class__, self).incar
 
         try:
-            if self.nelect % 2 != 0:  # odd number of electrons
+            # getting NELECT can take time with many file IO calls, so only call once
+            nelect = incar_obj.get("NELECT", self.nelect)
+            if nelect % 2 != 0:  # odd number of electrons
                 incar_obj["NUPDOWN"] = 1
             else:
                 nup_0_str = "0  # see https://doped.readthedocs.io/en/latest/Tips.html#spin"
                 incar_obj["NUPDOWN"] = nup_0_str  # just set to 0 upon file writing by pymatgen anyway
 
             if self.charge_state != 0:  # only set NELECT in the INCAR if non-neutral (easier copying of
-                incar_obj["NELECT"] = self.nelect  # INCARs for different supercell sizes etc)
+                incar_obj["NELECT"] = nelect  # INCARs for different supercell sizes etc)
 
         except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
             # if it's a neutral defect, then this is ok (warn the user and write files), otherwise break
