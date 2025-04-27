@@ -784,7 +784,7 @@ class CompetingPhases:
         energy_above_hull: float = 0.05,
         api_key: str | None = None,
         full_phase_diagram: bool = False,
-        MP_doc_dicts: bool = True,
+        MP_doc_dicts: bool = False,
     ):
         """
         Class to generate VASP input files for competing phases on the phase
@@ -859,7 +859,7 @@ class CompetingPhases:
                 If ``True``, also queries the Materials Project (MP) for
                 summary doc dicts with ``MPRester.summary_search()`` for the
                 competing phase entries, and stores them in
-                ``CompetingPhases.MP_doc_dicts``.
+                ``CompetingPhases.MP_doc_dicts``. Default is ``False``.
         """
         # TODO: Give quick attribute summary at end of docstring above, following chempots code overhaul
         self.energy_above_hull = energy_above_hull  # store parameters for reference
