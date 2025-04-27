@@ -1570,8 +1570,8 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     assert len(w) == 1
                     assert (
                         "Specified 'extrinsic' elements ['Cd'] are present in the host structure, "
-                        "so do not need to be specified as 'extrinsic' in DefectsGenerator(). These will "
-                        "be ignored." in str(w[-1].message)
+                        "so should not need to be specified as 'extrinsic' in DefectsGenerator(). These "
+                        "will be ignored. You can input `extrinsic` as a dictionary" in str(w[-1].message)
                     )
                 else:
                     assert not w  # no warning if dict input

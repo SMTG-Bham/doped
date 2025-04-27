@@ -1748,8 +1748,10 @@ class DefectsGenerator(MSONable):
                 warnings.warn(
                     f"\nSpecified 'extrinsic' elements "
                     f"{[el for el in extrinsic_elements if el in host_element_list]} are present in "
-                    f"the host structure, so do not need to be specified as 'extrinsic' in "
-                    f"DefectsGenerator(). These will be ignored."
+                    f"the host structure, so should not need to be specified as 'extrinsic' in "
+                    f"DefectsGenerator(). These will be ignored. You can input `extrinsic` as a "
+                    f"dictionary e.g. {{'Cd': ['Zn', 'Mg']}} to override this behaviour and force "
+                    f"treatment as 'extrinsic species'."
                 )
 
             # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
@@ -1891,13 +1893,15 @@ class DefectsGenerator(MSONable):
             num_defects = len(defect_list)
 
             # get BCS conventional structure and lattice vector swap array:
+            conv_struct_results = symmetry.get_BCS_conventional_structure(
+                self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
+            )
+            assert len(conv_struct_results) == 3  # with return_wyckoff_dict=True, for typing
             (
                 self.conventional_structure,
                 self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict,
-            ) = symmetry.get_BCS_conventional_structure(
-                self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
-            )
+            ) = conv_struct_results
 
             conv_sga = symmetry.get_sga(self.conventional_structure)
             conv_symm_ops = conv_sga.get_symmetry_operations(cartesian=False)
