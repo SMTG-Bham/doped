@@ -3594,7 +3594,7 @@ class DefectThermodynamics(MSONable):
         chempots: dict | None = None,
         limit: str | None = None,
         el_refs: dict | None = None,
-        delta_gap: float = 0,
+        delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
         skip_formatting: bool = False,
@@ -3757,7 +3757,7 @@ class DefectThermodynamics(MSONable):
                 the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of the ``FermiDos`` object
@@ -3766,7 +3766,9 @@ class DefectThermodynamics(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
@@ -3858,7 +3860,7 @@ class DefectThermodynamics(MSONable):
             self.bulk_dos
             if delta_gap == 0
             else scissor_dos(
-                delta_gap,
+                delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature),
                 self.bulk_dos,
                 verbose=kwargs.get("verbose", False),
                 tol=kwargs.get("tol", 1e-8),
@@ -4452,7 +4454,7 @@ def get_doping(fermi_dos: FermiDos, fermi_level: float, temperature: float = 300
 
 def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbose: bool = True):
     """
-    Given an input Dos/FermiDos object, rigidly shifts the valence and
+    Given an input ``Dos``/``FermiDos`` object, rigidly shifts the valence and
     conduction bands of the DOS object to give a band gap that is now
     increased/decreased by ``delta_gap`` eV, where this rigid scissor shift is
     applied symmetrically around the original gap (i.e. the VBM is downshifted
@@ -5117,7 +5119,7 @@ class FermiSolver(MSONable):
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         append_chempots: bool = True,
@@ -5227,7 +5229,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -5236,7 +5238,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature, in the format: ``{defect_name: concentration}``,
@@ -5342,7 +5346,6 @@ class FermiSolver(MSONable):
             )
 
         # TODO: Add per-charge, per-site options like in ``doped`` ``DefectThermodynamics``
-        # TODO: Allow delta gap to be a function
         if self.backend == "doped" and not py_sc_fermi_required:
             (
                 fermi_level,
@@ -5454,7 +5457,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         append_chempots: bool = True,
@@ -5471,7 +5474,6 @@ class FermiSolver(MSONable):
             "single_chempot_dict": single_chempot_dict,
             "el_refs": el_refs,
             "effective_dopant_concentration": effective_dopant_concentration,
-            "delta_gap": delta_gap,
             "fixed_defects": fixed_defects,
             "append_chempots": append_chempots,
             "site_competition": site_competition,
@@ -5482,6 +5484,7 @@ class FermiSolver(MSONable):
                 {
                     "annealing_temperature": annealing_temperature,
                     "quenched_temperature": quenched_temperature,
+                    "delta_gap": delta_gap,
                     "free_defects": free_defects,  # type: ignore
                     "fix_charge_states": fix_charge_states,
                 }
@@ -5492,7 +5495,8 @@ class FermiSolver(MSONable):
         return solve_func(**kwargs)
 
     # TODO: Should have a general ``scan()`` function, which takes in all variables, determines which
-    #  are ranges/iterables to scan over, and then calls the appropriate ``scan_...`` function to scan over
+    #  are ranges/iterables to scan over (i.e. multi-dimension), and then calls the appropriate
+    #  ``scan_...``  function(s) to scan over
     #  each N-dimensions, concatenates and returns the result
     # TODO: Related, can implement joblib Parallel / multiprocessing processing with smart batch size
     #  choices to make this much faster as well, if wanted. Smartest way would be to refactor all the
@@ -5507,11 +5511,13 @@ class FermiSolver(MSONable):
         limit: str | None = None,
         el_refs: dict[str, float] | None = None,
         effective_dopant_concentration: float | None = None,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
-    ) -> pd.DataFrame:  # TODO: Delta_gap needs to be a function here, with kwargs
+        **kwargs,
+    ) -> pd.DataFrame:
         r"""
         Scan over a range of temperatures and solve for the defect
         concentrations, carrier concentrations, and Fermi level at each
@@ -5615,6 +5621,18 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_gap (float | Callable):
+                Change in band gap (in eV) of the host material at the
+                annealing temperature (e.g. due to thermal renormalisation),
+                relative to the original band gap of ``FermiSolver.bulk_dos``
+                (assumed to correspond to the quenched temperature). If set,
+                applies a scissor correction to ``bulk_dos`` which
+                re-normalises the band gap symmetrically about the VBM and CBM
+                (i.e. assuming equal up/downshifts of the band-edges around
+                their original eigenvalues) while the defect levels remain
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -5665,6 +5683,9 @@ class FermiSolver(MSONable):
                 energy lines), this is often not ideal for determining site
                 competition in concentration analyses as it can lead to
                 unrealistically-large clusters.
+            **kwargs:
+                Additional keyword arguments to pass to ``scissor_dos`` (if
+                ``delta_gap`` is not 0).
 
         Returns:
             pd.DataFrame:
@@ -5695,10 +5716,12 @@ class FermiSolver(MSONable):
                     quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    delta_gap=delta_gap,
                     fixed_defects=fixed_defects,
                     free_defects=free_defects,
                     fix_charge_states=fix_charge_states,
                     site_competition=site_competition,
+                    **kwargs,
                 )
                 for annealing_temperature, quenched_temperature, temperature in tqdm(list(temp_args))
             ]
@@ -5713,7 +5736,7 @@ class FermiSolver(MSONable):
         chempots: dict[str, float] | None = None,
         limit: str | None = None,
         el_refs: dict[str, float] | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -5822,7 +5845,7 @@ class FermiSolver(MSONable):
                 same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -5831,7 +5854,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -5928,7 +5953,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -6036,7 +6061,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -6045,7 +6070,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6160,7 +6187,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -6270,7 +6297,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -6279,7 +6306,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6381,7 +6410,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -6458,7 +6487,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -6467,7 +6496,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6589,7 +6620,7 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 10,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -6689,7 +6720,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -6698,7 +6729,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6798,7 +6831,7 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 10,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -6885,7 +6918,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -6962,7 +6995,7 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 10,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -7256,7 +7289,7 @@ class FermiSolver(MSONable):
         el_refs: dict[str, float] | None = None,
         quenched_temperature: float = 300,
         effective_dopant_concentration: float | None = None,
-        delta_gap: float = 0.0,
+        delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
@@ -7313,7 +7346,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            delta_gap (float):
+            delta_gap (float | Callable):
                 Change in band gap (in eV) of the host material at the
                 annealing temperature (e.g. due to thermal renormalisation),
                 relative to the original band gap of ``FermiSolver.bulk_dos``
@@ -7322,7 +7355,9 @@ class FermiSolver(MSONable):
                 re-normalises the band gap symmetrically about the VBM and CBM
                 (i.e. assuming equal up/downshifts of the band-edges around
                 their original eigenvalues) while the defect levels remain
-                fixed. (Default: 0)
+                fixed. Can be a value (in eV), or a function with annealing
+                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
+                Default is 0 (no gap shifting).
             fixed_defects (Optional[dict[str, float]]):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature regardless of chemical potentials / temperature /
@@ -7363,6 +7398,7 @@ class FermiSolver(MSONable):
 
         orig_py_sc_fermi_dos = self.py_sc_fermi_dos
         if delta_gap != 0.0:
+            delta_gap = delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature)
             assert self.defect_thermodynamics.vbm is not None
             assert self.defect_thermodynamics.band_gap is not None
             self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(

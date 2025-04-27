@@ -23,7 +23,14 @@ import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
-from test_thermodynamics import STYLE, belas_linear_fit, custom_mpl_image_compare, data_dir
+from test_thermodynamics import (
+    STYLE,
+    anneal_temperatures,
+    belas_linear_fit,
+    custom_mpl_image_compare,
+    data_dir,
+    reduced_anneal_temperatures,
+)
 
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -1841,7 +1848,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         quenched_fermi_levels = []
-        for anneal_temp in np.arange(200, 1401, 100):
+        for anneal_temp in reduced_anneal_temperatures:
             gap_shift = belas_linear_fit(anneal_temp) - 1.5
             result = solver.pseudo_equilibrium_solve(
                 # quenching to 300K (default)
@@ -1901,6 +1908,121 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ax.set_ylabel("Concentration (cm$^{-3}$)")
         ax.set_xlabel("Te Chemical Potential (eV)")
         ax.legend()
+
+        return f
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
+    def test_delta_gap_scan_temperature(self):
+        """
+        Mirrors ``test_calculated_fermi_levels`` in ``test_thermodynamics``,
+        but now using ``FermiSolver`` (with ``delta_gap`` as a function!).
+
+        Tests both backends, but only uses the ``doped`` results for plotting
+        for full consistency with ``test_thermodynamics`` test (due to site
+        competition differences etc).
+        """
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
+
+        kwargs = {
+            "limit": "Te-rich",
+            "annealing_temperature_range": anneal_temperatures,
+            "delta_gap": lambda T: belas_linear_fit(T) - 1.5,
+        }
+
+        doped_output_df = self.solver_doped.scan_temperature(**kwargs)
+        doped_output_df = doped_output_df.drop(
+            columns=[col for col in doped_output_df.columns if "Per-Site" in col]
+        )  # necessary because of per-site behaviour differences (TODO: Remove when doped per-site
+        # behaviour set!)
+        py_sc_fermi_output_df = self.solver_py_sc_fermi.scan_temperature(**kwargs)
+        pd.testing.assert_frame_equal(doped_output_df, py_sc_fermi_output_df, rtol=0.2, atol=2e17)
+        pd.testing.assert_series_equal(
+            doped_output_df["Fermi Level"], py_sc_fermi_output_df["Fermi Level"], atol=2e2
+        )
+        kwargs["temperature_range"] = kwargs.pop("annealing_temperature_range")
+
+        # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
+        assert np.isclose(
+            np.mean(
+                doped_output_df["Fermi Level"][
+                    (doped_output_df["Annealing Temperature"] >= 800)
+                    & (doped_output_df["Annealing Temperature"] <= 950)
+                ]
+            ),
+            0.318674,
+            atol=1e-3,
+        )
+
+        # ax.plot(  # cut because requires using scissored DOS to get correct annealing Fermi level
+        #     doped_output_df["Annealing Temperature"].unique(),
+        #     doped_annealing_output_df["Fermi Level"].unique(),
+        #     marker="o",
+        #     label="$E_F$ during annealing (@ $T_{anneal}$)",
+        #     color="k",
+        #     alpha=0.25,
+        # )
+        ax.plot(
+            doped_output_df["Annealing Temperature"].unique(),
+            doped_output_df["Fermi Level"].unique(),
+            marker="o",
+            label="$E_F$ upon cooling (@ $T$ = 300K)",
+            color="k",
+            alpha=0.9,
+        )
+        ax.set_xlabel("Anneal Temperature (K)")
+        ax.set_ylabel("Fermi Level wrt VBM (eV)")
+        ax.set_xlim(300, 1400)
+        ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC", label="Typical Anneal Range")
+        ax.fill_between(
+            doped_output_df["Annealing Temperature"],
+            (1.5 - belas_linear_fit(doped_output_df["Annealing Temperature"])) / 2,
+            0,
+            alpha=0.2,
+            color="C0",
+            label="VBM (T @ $T_{anneal}$)",
+            linewidth=0.25,
+        )
+        ax.fill_between(
+            doped_output_df["Annealing Temperature"],
+            1.5 - (1.5 - belas_linear_fit(doped_output_df["Annealing Temperature"])) / 2,
+            1.5,
+            alpha=0.2,
+            color="C1",
+            label="CBM (T @ $T_{anneal}$)",
+            linewidth=0.25,
+        )
+
+        ax.legend(fontsize=8)
+
+        ax.imshow(  # show VB in blue from -0.3 to 0 eV:
+            [(1, 1), (0, 0)],
+            cmap=plt.cm.Blues,
+            extent=(ax.get_xlim()[0], ax.get_xlim()[1], -0.3, 0),
+            vmin=0,
+            vmax=3,
+            interpolation="bicubic",
+            rasterized=True,
+            aspect="auto",
+        )
+
+        ax.imshow(
+            [
+                (
+                    0,
+                    0,
+                ),
+                (1, 1),
+            ],
+            cmap=plt.cm.Oranges,
+            extent=(ax.get_xlim()[0], ax.get_xlim()[1], 1.5, 1.8),
+            vmin=0,
+            vmax=3,
+            interpolation="bicubic",
+            rasterized=True,
+            aspect="auto",
+        )
+        ax.set_ylim(-0.2, 1.7)
 
         return f
 

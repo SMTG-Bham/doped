@@ -3200,6 +3200,10 @@ def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     )
 
 
+anneal_temperatures = np.arange(200, 1401, 50)
+reduced_anneal_temperatures = np.arange(200, 1401, 100)  # for quicker testing
+
+
 class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -3215,12 +3219,10 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         cls.fermi_dos = get_fermi_dos(
             os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz")
         )
-        cls.anneal_temperatures = np.arange(200, 1401, 50)
-        cls.reduced_anneal_temperatures = np.arange(200, 1401, 100)  # for quicker testing
 
         cls.annealing_dict = {}
 
-        for anneal_temp in cls.anneal_temperatures:
+        for anneal_temp in anneal_temperatures:
             gap_shift = belas_linear_fit(anneal_temp) - 1.5
             scissored_dos = scissor_dos(gap_shift, cls.fermi_dos, verbose=True)
 
@@ -3884,20 +3886,21 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             [v["annealing_fermi_level"] for k, v in self.annealing_dict.items()]
         )
         quenched_fermi_levels = np.array([v["fermi_level"] for k, v in self.annealing_dict.items()])
-        assert np.isclose(np.mean(self.anneal_temperatures[12:16]), 875)
+        assert np.isclose(np.mean(anneal_temperatures[12:16]), 875)
         # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
         assert np.isclose(np.mean(quenched_fermi_levels[12:16]), 0.318674, atol=1e-3)
+        assert np.isclose(np.mean(anneal_fermi_levels[12:16]), 0.75, atol=1e-2)
 
+        # ax.plot(  # cut for consistency with ``test_delta_gap_scan_temperature`` in ``test_fermisolver``
+        #     anneal_temperatures,
+        #     anneal_fermi_levels,
+        #     marker="o",
+        #     label="$E_F$ during annealing (@ $T_{anneal}$)",
+        #     color="k",
+        #     alpha=0.25,
+        # )
         ax.plot(
-            self.anneal_temperatures,
-            anneal_fermi_levels,
-            marker="o",
-            label="$E_F$ during annealing (@ $T_{anneal}$)",
-            color="k",
-            alpha=0.25,
-        )
-        ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             quenched_fermi_levels,
             marker="o",
             label="$E_F$ upon cooling (@ $T$ = 300K)",
@@ -3909,8 +3912,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ax.set_xlim(300, 1400)
         ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC", label="Typical Anneal Range")
         ax.fill_between(
-            self.anneal_temperatures,
-            (1.5 - belas_linear_fit(self.anneal_temperatures)) / 2,
+            anneal_temperatures,
+            (1.5 - belas_linear_fit(anneal_temperatures)) / 2,
             0,
             alpha=0.2,
             color="C0",
@@ -3918,8 +3921,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             linewidth=0.25,
         )
         ax.fill_between(
-            self.anneal_temperatures,
-            1.5 - (1.5 - belas_linear_fit(self.anneal_temperatures)) / 2,
+            anneal_temperatures,
+            1.5 - (1.5 - belas_linear_fit(anneal_temperatures)) / 2,
             1.5,
             alpha=0.2,
             color="C1",
@@ -3971,7 +3974,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         for i, bulk_dos in enumerate([k10_dos_vr_path, get_vasprun(k10_dos_vr_path, parse_dos=True)]):
             print(f"Testing k10 DOS with thermo for {'str input' if i == 0 else 'DOS object input'}")
             quenched_fermi_levels = []
-            for anneal_temp in self.reduced_anneal_temperatures:
+            for anneal_temp in reduced_anneal_temperatures:
                 gap_shift = belas_linear_fit(anneal_temp) - 1.5
                 (
                     fermi_level,
@@ -4016,20 +4019,16 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations.png")
     def test_calculated_concentrations(self):
-        annealing_n = np.array(
-            [self.annealing_dict[k]["annealing_e_conc"] for k in self.anneal_temperatures]
-        )
-        annealing_p = np.array(
-            [self.annealing_dict[k]["annealing_h_conc"] for k in self.anneal_temperatures]
-        )
-        quenched_n = np.array([self.annealing_dict[k]["e_conc"] for k in self.anneal_temperatures])
-        quenched_p = np.array([self.annealing_dict[k]["h_conc"] for k in self.anneal_temperatures])
+        annealing_n = np.array([self.annealing_dict[k]["annealing_e_conc"] for k in anneal_temperatures])
+        annealing_p = np.array([self.annealing_dict[k]["annealing_h_conc"] for k in anneal_temperatures])
+        quenched_n = np.array([self.annealing_dict[k]["e_conc"] for k in anneal_temperatures])
+        quenched_p = np.array([self.annealing_dict[k]["h_conc"] for k in anneal_temperatures])
 
         def array_from_conc_df(name):
             return np.array(
                 [
                     self.annealing_dict[temp]["conc_df"].loc[(name, 0), "Total Concentration (cm^-3)"]
-                    for temp in self.anneal_temperatures
+                    for temp in anneal_temperatures
                 ]
             )
 
@@ -4054,11 +4053,11 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         emanuelsson_data = np.array([[750 + 273.15, np.log10(1.2e17)]])
         expt_data = np.append(wienecke_data, emanuelsson_data, axis=0)
 
-        ax.plot(self.anneal_temperatures, quenched_p, label="p", alpha=0.85, linestyle="--")
-        ax.plot(self.anneal_temperatures, quenched_n, label="n", alpha=0.85, linestyle="--")
+        ax.plot(anneal_temperatures, quenched_p, label="p", alpha=0.85, linestyle="--")
+        ax.plot(anneal_temperatures, quenched_n, label="n", alpha=0.85, linestyle="--")
 
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             annealing_p,
             label="p ($T_{anneal}$)",
             alpha=0.5,
@@ -4066,7 +4065,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             linestyle="--",
         )
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             annealing_n,
             label="n ($T_{anneal}$)",
             alpha=0.5,
@@ -4077,7 +4076,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ax.scatter(expt_data[:, 0], 10 ** (expt_data[:, 1]), marker="x", label="Expt", c="C0", alpha=0.5)
 
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             array_from_conc_df("v_Cd"),
             marker="o",
             label=r"$V_{Cd}$",
@@ -4086,7 +4085,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             alpha=0.7,
         )
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             array_from_conc_df("Te_Cd"),
             marker="o",
             label=r"$Te_{Cd}$",
@@ -4094,7 +4093,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             alpha=0.7,
         )
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             array_from_conc_df("Te_i_Td_Te2.83_a"),
             marker="o",
             label="$Te_i$",
@@ -4103,7 +4102,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             alpha=0.7,
         )
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             array_from_conc_df("Cd_i_Td_Te2.83"),
             marker="o",
             label="$Cd_i(Te)$",
@@ -4112,7 +4111,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             alpha=0.7,
         )
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             array_from_conc_df("v_Te"),
             marker="o",
             label=r"$V_{Te}$",
@@ -4121,7 +4120,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             alpha=0.7,
         )
         ax.plot(
-            self.anneal_temperatures,
+            anneal_temperatures,
             array_from_conc_df("Cd_i_Td_Cd2.83"),
             marker="o",
             label="$Cd_i(Cd)$",

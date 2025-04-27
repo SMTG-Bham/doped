@@ -1310,17 +1310,17 @@ class DefectEntry(thermo.DefectEntry):
                 -formation_energy / (constants_value("Boltzmann constant in eV/K") * temperature)
             )
 
-        degeneracy_factor = (
-            np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
-        )
-        per_site_concentration = exp_factor * degeneracy_factor
-        if site_competition:
-            per_site_concentration /= 1 + per_site_concentration
+            degeneracy_factor = (
+                np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
+            )
+            per_site_concentration = exp_factor * degeneracy_factor
+            if site_competition:
+                per_site_concentration /= 1 + per_site_concentration
 
-        if per_site:
-            return per_site_concentration
+            if per_site:
+                return per_site_concentration
 
-        return self.bulk_site_concentration * per_site_concentration
+            return self.bulk_site_concentration * per_site_concentration
 
     @property
     def bulk_site_concentration(self):
