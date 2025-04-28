@@ -554,7 +554,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 defect_thermo.get_equilibrium_concentrations, **kwargs
             )
             assert isinstance(df, pd.DataFrame)
-            assert "Raw Concentrations" not in df.columns
+            assert "Raw Concentration" not in df.columns
             if chempots is not None:
                 print("Checking output for chempots set")
                 assert any(
@@ -630,7 +630,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
             if kwargs.get("per_site", False) and not kwargs.get("lean"):
                 assert "Concentration (per site)" in df.columns
-                assert "Concentration (cm^-3)" not in df.columns
+                assert "Concentration (cm^-3)" in df.columns  # both now given
 
         for w in [symm_w, conc_w]:  # the dub
             print("Checking expected warnings")
@@ -3538,9 +3538,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert ("Orig gap:" in output) == kwargs.get("verbose", False)
             if kwargs.get("delta_gap") == 0.3 and kwargs.get("verbose", False):
                 if kwargs.get("tol") == 1e-1:
-                    assert "Orig gap: 2.7565, new gap:3.0565" in output
+                    assert "Orig gap: 2.7555, new gap:3.0555" in output
                 else:
-                    assert "Orig gap: 1.5178, new gap:1.8178" in output
+                    assert "Orig gap: 1.5126, new gap:1.8126" in output
                     assert np.isclose(fermi_level, 0.35124, atol=1e-3)  # different
 
             assert not w
@@ -3602,7 +3602,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
                 if kwargs.get("per_site", False):
                     assert "Concentration (per site)" in conc_df.columns
-                    assert "Concentration (cm^-3)" not in conc_df.columns
+                    assert "Concentration (cm^-3)" in conc_df.columns  # both now given
 
                 if kwargs.get("effective_dopant_concentration"):
                     assert "Dopant" in conc_df.index.get_level_values("Defect")
@@ -3819,10 +3819,15 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             assert np.isclose(results[4], 1.0269, atol=1e-3)
 
         kwargs_list = [
-            {"chempots": {k: (v + 0.25) for k, v in defect_thermo.chempots["limits"]["Cd-CdTe"].items()}},
             {
-                "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
-                "el_refs": {k: (v - 0.25) for k, v in defect_thermo.chempots["elemental_refs"].items()},
+                "chempots": {
+                    k: (v + 0.25)
+                    for k, v in defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"].items()
+                }
+            },
+            {
+                "chempots": defect_thermo.chempots["limits_wrt_el_refs"]["Cd-CdTe"],
+                "el_refs": {k: (v + 0.25) for k, v in defect_thermo.chempots["elemental_refs"].items()},
             },
         ]
 
@@ -3831,8 +3836,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             results = defect_thermo.get_fermi_level_and_concentrations(
                 return_annealing_values=True, **kwargs
             )
-            assert np.isclose(results[0], 1.3601, atol=1e-3)
-            assert np.isclose(results[4], 1.3115, atol=1e-3)
+            assert np.isclose(results[0], 1.46939, atol=1e-3)
+            assert np.isclose(results[4], 1.1052029, atol=1e-3)
             assert np.isclose(
                 results[4],  # annealing fermi level
                 defect_thermo.get_equilibrium_fermi_level(temperature=1000, **kwargs),
@@ -3849,7 +3854,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             "No chemical potentials supplied, so using 0 for all chemical potentials" in str(warn.message)
             for warn in w
         )
-        assert np.isclose(results[0], 1.2737, atol=1e-3)
+        assert np.isclose(results[0], 1.34875, atol=1e-3)
 
         defect_thermo = deepcopy(self.defect_thermo)
         defect_thermo.chempots = None
