@@ -3250,7 +3250,7 @@ class ChemicalPotentialGrid:
         test_elt = Element("H")
         formatted_chempots_dict = {
             limit: {
-                f"μ_{k}" if test_elt.is_valid_symbol(k) else k: v
+                f"μ_{k} (eV)" if test_elt.is_valid_symbol(k) else k: v
                 for (k, v) in unformatted_chempots_subdict.items()
             }
             for limit, unformatted_chempots_subdict in unformatted_chempots_dict.items()

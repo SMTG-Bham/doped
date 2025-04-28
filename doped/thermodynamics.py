@@ -4984,19 +4984,22 @@ class FermiSolver(MSONable):
                         The defect type.
                     - "Concentration (cm^-3)":
                         The concentration of the defect in cm^-3.
-                    - "Temperature":
-                        The temperature at which the calculation was performed.
-                    - "Fermi Level":
-                        The self-consistent Fermi level in eV.
+                    - "Temperature (K)":
+                        The temperature at which the calculation was performed,
+                        in Kelvin.
+                    - "Fermi Level (eV wrt VBM)":
+                        The self-consistent Fermi level in eV, relative to the
+                        VBM of the bulk DOS.
                     - "Electrons (cm^-3)":
-                        The electron concentration.
+                        The electron concentration in cm^-3.
                     - "Holes (cm^-3)":
-                        The hole concentration.
-                    - "μ_X":
+                        The hole concentration in cm^-3.
+                    - "μ_X (eV)":
                         Chemical potentials in eV, if ``append_chempots`` is
                         ``True``.
                     - "Dopant (cm^-3)":
-                        The effective arbitrary dopant concentration, if set.
+                        The effective arbitrary dopant concentration in cm^-3,
+                        if set.
         """
         py_sc_fermi_required = fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
@@ -5025,8 +5028,8 @@ class FermiSolver(MSONable):
             )
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
-                "Temperature": temperature,
-                "Fermi Level": fermi_level,
+                "Temperature (K)": temperature,
+                "Fermi Level (eV wrt VBM)": fermi_level,
                 "Electrons (cm^-3)": electrons,
                 "Holes (cm^-3)": holes,
             }
@@ -5053,8 +5056,8 @@ class FermiSolver(MSONable):
                 {
                     "Defect": k,
                     "Concentration (cm^-3)": v,
-                    "Temperature": defect_system.temperature,
-                    "Fermi Level": conc_dict["Fermi Energy"],
+                    "Temperature (K)": defect_system.temperature,
+                    "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
                     "Electrons (cm^-3)": conc_dict["n0"],
                     "Holes (cm^-3)": conc_dict["p0"],
                 }
@@ -5067,7 +5070,7 @@ class FermiSolver(MSONable):
 
         if append_chempots:
             for key, value in single_chempot_dict.items():
-                concentrations[f"μ_{key}"] = value
+                concentrations[f"μ_{key} (eV)"] = value
         if effective_dopant_concentration is not None:
             concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
@@ -5271,21 +5274,23 @@ class FermiSolver(MSONable):
                         The defect type.
                     - "Concentration (cm^-3)":
                         The concentration of the defect in cm^-3.
-                    - "Annealing Temperature":
-                        The annealing temperature.
-                    - "Quenched Temperature":
-                        The quenched temperature.
-                    - "Fermi Level":
-                        The self-consistent Fermi level in eV.
+                    - "Annealing Temperature (K)":
+                        The annealing temperature in Kelvin.
+                    - "Quenched Temperature (K)":
+                        The quenched temperature in Kelvin.
+                    - "Fermi Level (eV wrt VBM)":
+                        The self-consistent Fermi level in eV, relative to the
+                        VBM of the bulk DOS.
                     - "Electrons (cm^-3)":
-                        The electron concentration.
+                        The electron concentration in cm^-3.
                     - "Holes (cm^-3)":
-                        The hole concentration.
-                    - "μ_X":
+                        The hole concentration in cm^-3.
+                    - "μ_X (eV)":
                         Chemical potentials in eV, if ``append_chempots``
                         is ``True``.
                     - "Dopant (cm^-3)":
-                        The effective arbitrary dopant concentration, if set.
+                        The effective arbitrary dopant concentration in cm^-3,
+                        if set.
 
                 Additional columns may include concentrations for specific
                 defects and other relevant data.
@@ -5328,9 +5333,9 @@ class FermiSolver(MSONable):
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
-                "Annealing Temperature": annealing_temperature,
-                "Quenched Temperature": quenched_temperature,
-                "Fermi Level": fermi_level,
+                "Annealing Temperature (K)": annealing_temperature,
+                "Quenched Temperature (K)": quenched_temperature,
+                "Fermi Level (eV wrt VBM)": fermi_level,
                 "Electrons (cm^-3)": electrons,
                 "Holes (cm^-3)": holes,
             }
@@ -5363,9 +5368,9 @@ class FermiSolver(MSONable):
                 {
                     "Defect": k,
                     "Concentration (cm^-3)": v,
-                    "Annealing Temperature": annealing_temperature,
-                    "Quenched Temperature": quenched_temperature,
-                    "Fermi Level": conc_dict["Fermi Energy"],
+                    "Annealing Temperature (K)": annealing_temperature,
+                    "Quenched Temperature (K)": quenched_temperature,
+                    "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
                     "Electrons (cm^-3)": conc_dict["n0"],
                     "Holes (cm^-3)": conc_dict["p0"],
                 }
@@ -5377,7 +5382,7 @@ class FermiSolver(MSONable):
 
         if append_chempots:
             for key, value in single_chempot_dict.items():
-                concentrations[f"μ_{key}"] = value
+                concentrations[f"μ_{key} (eV)"] = value
         if effective_dopant_concentration is not None:
             concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
@@ -6522,7 +6527,7 @@ class FermiSolver(MSONable):
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         grid = ChemicalPotentialGrid(chempots).get_grid(n_points)
         chempot_dict_list = [
-            {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
+            {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
             for _idx, chempot_series in grid.iterrows()
         ]
         return self.scan_chempots(
@@ -6613,11 +6618,12 @@ class FermiSolver(MSONable):
 
         Args:
             target (str):
-                The target variable to minimise or maximise, e.g., "Electrons",
-                "Te_i", "Fermi Level" etc. Valid ``target`` values are column
-                names (or substrings), such as 'Electrons', 'Holes',
-                'Fermi Level', 'μ_X', etc., or defect names (without charge
-                states), such as 'v_O', 'Te_i', etc.
+                The target variable to minimise or maximise, e.g., "Electrons
+                (cm^-3)", "Te_i", "Fermi Level (eV wrt VBM)" etc. Valid
+                ``target`` values are column names (or substrings), such as
+                "Electrons (cm^-3)", "Holes (cm^-3)",
+                "Fermi Level (eV wrt VBM)", "μ_X (eV)", etc., or defect names
+                (without charge states), such as "v_O", "Te_i", etc.
                 If a full defect name is given (e.g. ``Te_i_Td_Te2.83``) then
                 the concentration of that defect will be used as the target
                 variable. If a defect name substring is given instead (e.g.
@@ -6812,15 +6818,11 @@ class FermiSolver(MSONable):
         unformatted_chempots_labels = list(el_refs.keys())
         rich = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-rich")
         poor = self._get_single_chempot_dict(f"{unformatted_chempots_labels[0]}-poor")
-        starting_line = get_interpolated_chempots(rich[0], poor[0], n_points)
+        chempots_dict_list = get_interpolated_chempots(rich[0], poor[0], n_points)
         delta_gap_verbose = kwargs.pop("verbose", False)  # don't interfere with other verbose option here
 
         previous_value = None
         while True:  # Calculate results based on the given temperature conditions
-            chempots_dict_list = [
-                {k.replace("μ_", ""): v for k, v in chempot_series.items()}
-                for chempot_series in starting_line
-            ]
             target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
                 target=target,
                 min_or_max=min_or_max,
@@ -6846,13 +6848,13 @@ class FermiSolver(MSONable):
 
             previous_value = current_value  # otherwise update
 
-            # get midpoints of starting_line and target_chempot, and use these:
+            # get midpoints of chempots_dict_list and target_chempot, and use these:
             midpoint_chempots = [
                 {
-                    k.replace("μ_", ""): (starting_line_chempot_dict[k.replace("μ_", "")] + v) / 2
+                    k.split("_")[1].split()[0]: (chempot_dict[k.split("_")[1].split()[0]] + v) / 2
                     for k, v in target_chempot.iloc[0].items()
                 }
-                for starting_line_chempot_dict in [starting_line[0], starting_line[-1]]
+                for chempot_dict in [chempots_dict_list[0], chempots_dict_list[-1]]
             ]
             # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
             # function, then we could just take the closest vertices around ``target_chempot`` and use
@@ -6860,7 +6862,7 @@ class FermiSolver(MSONable):
             # can be highly non-linear (e.g. CdTe concentrations in SK thesis, 10.1016/j.joule.2024.05.004,
             # 10.1002/smll.202102429, 10.1021/acsenergylett.4c02722), so best to use this safe (but slower)
             # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
-            starting_line = get_interpolated_chempots(
+            chempots_dict_list = get_interpolated_chempots(
                 chempot_start=midpoint_chempots[0],
                 chempot_end=midpoint_chempots[1],
                 n_points=n_points,
@@ -6971,14 +6973,14 @@ class FermiSolver(MSONable):
         See the main ``optimise`` docstring for more details.
         """
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        starting_grid = ChemicalPotentialGrid(chempots)
+        chempots_grid = ChemicalPotentialGrid(chempots)
         delta_gap_verbose = kwargs.pop("verbose", False)  # don't interfere with other verbose option here
 
         previous_value = None
         while True:
             chempots_dict_list = [
-                {k.replace("μ_", ""): v for k, v in chempot_series.to_dict().items()}
-                for _idx, chempot_series in starting_grid.get_grid(n_points).iterrows()
+                {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
+                for _idx, chempot_series in chempots_grid.get_grid(n_points).iterrows()
             ]
             target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
                 target=target,
@@ -7006,7 +7008,7 @@ class FermiSolver(MSONable):
             previous_value = current_value  # otherwise update
 
             new_vertices_df = (
-                starting_grid.vertices + target_chempot.iloc[0]
+                chempots_grid.vertices + target_chempot.iloc[0]
             ) / 2  # 1 row - target_chempot
             # Note that this is a 'safe' option for zooming in the search grid. If it was a linear
             # function, then we could just take the closest vertices around ``target_chempot`` and use
@@ -7016,7 +7018,7 @@ class FermiSolver(MSONable):
             # approach to ensure we don't miss the true minimum/maximum. Same in both min_max functions.
 
             # Generate a new grid around target_chempot which doesn't go outside the starting grid bounds:
-            starting_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
+            chempots_grid = ChemicalPotentialGrid(new_vertices_df.to_dict("index"))
 
         return target_df
 
@@ -7561,11 +7563,12 @@ def _get_min_max_target_values(
             ``(pseudo_)equilibrium_solve`` ``DataFrame`` outputs, appended
             together for multiple chemical potentials).
         target (str):
-            The target variable to minimise or maximise, e.g., "Electrons",
-            "Te_i", "Fermi Level" etc. Valid ``target`` values are column names
-            (or substrings), such as 'Electrons', 'Holes', 'Fermi Level',
-            'μ_X', etc., or defect names (without charge states), such as
-            'v_O', 'Te_i', etc.
+            The target variable to minimise or maximise, e.g., "Electrons
+            (cm^-3)", "Te_i", "Fermi Level (eV wrt VBM)" etc. Valid ``target``
+            values are column names (or substrings), such as
+            "Electrons (cm^-3)", "Holes (cm^-3)", "Fermi Level (eV wrt VBM)",
+            "μ_X (eV)", etc., or defect names (without charge states), such as
+            "v_O", "Te_i", etc.
             If a full defect name is given (e.g. ``Te_i_Td_Te2.83``) then the
             concentration of that defect will be used as the target variable.
             If a defect name substring is given instead (e.g. ``Te_i``), then
