@@ -145,6 +145,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
+        if_present_rm(os.path.join(self.data_dir, "Magnetization_Tests/CdTe/CdTe_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))
         if_present_rm(os.path.join(self.YTOS_EXAMPLE_DIR, "Y2Ti2S2O5_defect_dict.json.gz"))
@@ -1055,60 +1056,52 @@ class DefectsParsingTestCase(unittest.TestCase):
         conc_df = thermo.get_equilibrium_concentrations()  # no chempots or Fermi level
         print("conc_df", conc_df)  # for debugging
         srtio3_V_O_conc_lists = [  # with no chempots or Fermi level (so using Eg/2)
-            [9.742, "4.456e-141", "100.00%"],  # +2
-            [11.043, "2.497e-162", "0.00%"],  # +1
-            [12.635, "1.109e-189", "0.00%"],  # 0
+            ["4.456e-141", 9.742, "N/A", "100.00%"],  # +2  # "N/A" is placeholder here for per-site concs
+            ["2.497e-162", 11.043, "N/A", "0.00%"],  # +1
+            ["1.109e-189", 12.635, "N/A", "0.00%"],  # 0
         ]  # (in order of positive to negative, left to right on formation energy diagram)
         for i, (index, row) in enumerate(conc_df.iterrows()):
             print(i, index, row)
-            assert list(row) == srtio3_V_O_conc_lists[i]
+            assert list(row) == [srtio3_V_O_conc_lists[i][j] for j in [0, 1, 3]]  # skip "N/A" for per-site
 
-        per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True)
-        print("per_site_conc_df", per_site_conc_df)  # for debugging
-        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
-            print(i, index, row)
-            for j, (col_name, val) in enumerate(row.items()):
-                if col_name != "Concentration (per site)":  # per-site concentration
-                    assert val == srtio3_V_O_conc_lists[i][j]
-                else:
-                    assert np.isclose(
-                        float(val[:-2]), 100 * float(srtio3_V_O_conc_lists[i][j]) / sto_O_site_conc
-                    )
-
-        per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, skip_formatting=True)
-        print("per_site_conc_df", per_site_conc_df)  # for debugging
-        for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
-            print(i, index, row)
-            assert isinstance(index[-1], int)  # charge now int, not formatted
-
-            for j, (col_name, val) in enumerate(row.items()):
-                if col_name != "Concentration (per site)":  # per-site concentration
-                    assert val == srtio3_V_O_conc_lists[i][j]
-                else:
-                    assert np.isclose(val, float(srtio3_V_O_conc_lists[i][j]) / sto_O_site_conc)
+        for kwargs in [{"per_site": True}, {"per_site": True, "skip_formatting": True}]:
+            per_site_conc_df = thermo.get_equilibrium_concentrations(**kwargs)
+            print("per_site_conc_df", per_site_conc_df)  # for debugging
+            for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
+                print(i, index, row)
+                assert isinstance(index[-1], int if kwargs.get("skip_formatting") else str)  # charge type?
+                for j, (col_name, val) in enumerate(row.items()):
+                    if col_name != "Concentration (per site)":  # per-site concentration
+                        if isinstance(val, str):
+                            assert val == srtio3_V_O_conc_lists[i][j]
+                        else:
+                            assert np.isclose(val, float(srtio3_V_O_conc_lists[i][j]))
+                    elif kwargs.get("skip_formatting"):
+                        assert np.isclose(val, float(srtio3_V_O_conc_lists[i][0]) / sto_O_site_conc)
+                    else:
+                        assert np.isclose(
+                            float(val[:-2]), 100 * float(srtio3_V_O_conc_lists[i][0]) / sto_O_site_conc
+                        )
 
         assert thermo.get_equilibrium_concentrations(per_charge=False).to_numpy().tolist() == [
             ["4.456e-141"]
         ]
-        assert np.isclose(
-            float(
+        print(  # for debugging
+            "per_charge_F conc_df:", thermo.get_equilibrium_concentrations(per_charge=False, per_site=True)
+        )
+        for skip_formatting in [True, False]:
+            per_site_conc = (
                 thermo.get_equilibrium_concentrations(
-                    per_charge=False, per_site=True, skip_formatting=True
-                )
+                    per_charge=False, per_site=True, skip_formatting=skip_formatting
+                )["Concentration (per site)"]
                 .to_numpy()
-                .tolist()[0][0]
-            ),
-            4.456e-141 / sto_O_site_conc,
-        )
-        assert np.isclose(
-            float(
-                thermo.get_equilibrium_concentrations(per_charge=False, per_site=True)
-                .to_numpy()
-                .tolist()[0][0][:-2]
-            ),
-            100 * 4.456e-141 / sto_O_site_conc,
-            rtol=1e-3,
-        )
+                .tolist()[0]
+            )
+            assert np.isclose(
+                per_site_conc if skip_formatting else float(per_site_conc[:-2]),
+                4.456e-141 / sto_O_site_conc * (1 if skip_formatting else 100),
+                rtol=1e-3,
+            )
 
         assert next(
             iter(
@@ -1151,9 +1144,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_conc_df_lists = [
-            [9.822, 2.003657892864856e-142, "100.00%", 2.003657892864856e-142],  # +2
-            [11.083, 5.294723640442009e-163, "0.00%", 2.003657892864856e-142],  # +1
-            [12.635, 1.109212262059047e-189, "0.00%", 2.003657892864856e-142],  # 0
+            [2.003657892864856e-142, 9.822, "100.00%", 2.003657892864856e-142],  # +2
+            [5.294723640442009e-163, 11.083, "0.00%", 2.003657892864856e-142],  # +1
+            [1.109212262059047e-189, 12.635, "0.00%", 2.003657892864856e-142],  # 0
         ]
         for i, row in enumerate(quenched_conc_df_lists):
             print(i, row)
@@ -1170,9 +1163,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_per_site_conc_df_lists = [
-            [9.822, "3.954e-163 %", "100.00%", "2.004e-142"],  # +2
-            [11.083, "1.045e-183 %", "0.00%", "2.004e-142"],  # +1
-            [12.635, "2.189e-210 %", "0.00%", "2.004e-142"],  # 0
+            ["2.004e-142", 9.822, "3.954e-163 %", "100.00%", "2.004e-142"],  # +2
+            ["5.295e-163", 11.083, "1.045e-183 %", "0.00%", "2.004e-142"],  # +1
+            ["1.109e-189", 12.635, "2.189e-210 %", "0.00%", "2.004e-142"],  # 0
         ]
         for i, row in enumerate(quenched_per_site_conc_df_lists):
             print(i, row)
@@ -1190,7 +1183,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist() == [[3.9539214688363133e-165]]
+        assert conc_df.to_numpy().tolist()[0][-1] == 3.9539214688363133e-165
         assert conc_df.index.to_numpy()[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 

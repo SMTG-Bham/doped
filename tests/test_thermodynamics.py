@@ -239,6 +239,10 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 
 
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
+    def tearDown(self):
+        super().tearDown()
+        if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_example_data/CdTe_defect_dict.json.gz")
+
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
         assert len(defect_thermo.defect_entries) == len(defect_dict)
         assert set(defect_thermo.defect_entries.keys()) == set(defect_dict.keys())
