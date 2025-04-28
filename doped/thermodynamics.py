@@ -3159,8 +3159,9 @@ class DefectThermodynamics(MSONable):
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
                 instead of ``v_Cd``). Default is ``True``.
             per_site (bool):
-                Whether to return the concentrations as percent concentrations
-                per site, rather than the default of per cm^3. (default: False)
+                Whether to also return the concentrations as per-site
+                concentrations in percent (i.e. concentration divided by
+                ``DefectEntry.bulk_site_concentration``). (default: False)
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and
                 concentrations as strings (and keep as ``int``\s and
@@ -3189,7 +3190,7 @@ class DefectThermodynamics(MSONable):
             lean (bool):
                 Whether to return a leaner ``DataFrame`` with `only` the defect
                 name, charge state, and concentration in cm^-3 (assumes
-                ``skip_formatting=True`` and ``per_site=False``). Only really
+                ``skip_formatting=True`` and ``per_site=False``). Mostly
                 intended for internal ``doped`` usage, to reduce compute times
                 when calculating defect concentrations repeatedly.
                 (default: False)
@@ -3204,6 +3205,7 @@ class DefectThermodynamics(MSONable):
             chempots, el_refs
         )  # returns self.chempots/self.el_refs if chempots is None
         skip_formatting = skip_formatting or lean
+        per_site = per_site and not lean
 
         energy_concentration_list = []
 
@@ -3257,7 +3259,7 @@ class DefectThermodynamics(MSONable):
                         "Charge": charge,
                         "Concentration (cm^-3)": raw_concentration,
                         "Formation Energy (eV)": round(formation_energy, 3),
-                        "Per-Site Concentration": per_site_concentration,
+                        "Concentration (per site)": per_site_concentration,
                         "Lattice Site Index": cluster_number,
                     }
                 )
@@ -3271,64 +3273,54 @@ class DefectThermodynamics(MSONable):
                         if concentration_dict["Lattice Site Index"] == cluster_number
                     ]
                     summed_per_site_concentration = sum(
-                        concentration_dict["Per-Site Concentration"]
+                        concentration_dict["Concentration (per site)"]
                         for concentration_dict in matching_concentration_dicts
                     )
                     for concentration_dict in matching_concentration_dicts:
-                        concentration_dict["Per-Site Concentration"] /= 1 + summed_per_site_concentration
+                        concentration_dict["Concentration (per site)"] /= 1 + summed_per_site_concentration
                         concentration_dict["Concentration (cm^-3)"] /= 1 + summed_per_site_concentration
 
-        # TODO: Remove per-site option, just always return both as negligible additional cost
         for concentration_dict in energy_concentration_list:
-            if not lean:
-                raw_concentration = concentration_dict["Concentration (cm^-3)"]
-                per_site_concentration = concentration_dict["Per-Site Concentration"]
-                concentration_dict["Raw Concentration"] = (
-                    per_site_concentration
-                    if (per_site and not per_charge)
-                    else raw_concentration  # if per_site but per_charge, keep as cm^-3 to
-                    # avoid rounding differences in charge state population
-                )
-                concentration_dict[  # TODO: Return both instead
-                    ("Concentration (per site)" if per_site else "Concentration (cm^-3)")
-                ] = _format_concentration(
-                    (per_site_concentration if per_site else raw_concentration),
-                    per_site=per_site,
-                    skip_formatting=skip_formatting,
-                )
-                if per_site:
-                    concentration_dict.pop("Concentration (cm^-3)")
+            if not per_site:
+                concentration_dict.pop("Concentration (per site)")
 
-            else:  # pop formation energy & per-site concentration for pd.DataFrame initialisation speed
+            if lean:  # pop formation energy (& per-site conc, site idx) for pd.DataFrame init speed
                 concentration_dict.pop("Formation Energy (eV)")
-                concentration_dict.pop("Per-Site Concentration")
 
-            if lean or not isinstance(site_competition, str):  # pop site idx for pd.DataFrame init speed
+            if lean or not isinstance(site_competition, str):
                 concentration_dict.pop("Lattice Site Index")
 
         conc_df = pd.DataFrame(energy_concentration_list)
         # Note that in concentration / FermiSolver functions, we avoid altering the output ordering and
         # try to just use the DefectThermodynamics entry ordering (which is already controlled) as is
 
+        conc_columns = [col for col in conc_df.columns if "Concentration" in col]
         if per_charge:
             if lean:
                 return conc_df  # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
 
-            conc_df["Charge State Population"] = conc_df["Raw Concentration"] / conc_df.groupby("Defect")[
-                "Raw Concentration"  # here Raw Concentration is in cm^-3
+            conc_col = next(iter(conc_columns))  # either conc col can be used, this is cm^-3 as it's 1st
+            conc_df["Charge State Population"] = conc_df[conc_col] / conc_df.groupby("Defect")[
+                conc_col
             ].transform("sum")
             conc_df["Charge State Population"] = conc_df["Charge State Population"].apply(
                 lambda x: f"{x:.2%}"
             )
-            conc_df = conc_df.drop(columns=["Raw Concentration"])
-            return conc_df.set_index(["Defect", "Charge"])
+            conc_df = conc_df.set_index(["Defect", "Charge"])
 
-        # group by defect and sum concentrations:
-        return _group_defect_charge_state_concentrations(
-            conc_df,
-            per_site=per_site,
-            skip_formatting=skip_formatting,
-        )
+        else:  # group by defect and sum concentrations:
+            conc_df = _group_defect_charge_state_concentrations(conc_df)
+
+        for conc_col in conc_columns:
+            conc_df[conc_col] = conc_df[conc_col].apply(
+                lambda x, conc_col=conc_col: _format_concentration(
+                    x,
+                    per_site=("per site" in conc_col),
+                    skip_formatting=skip_formatting,
+                )
+            )
+
+        return conc_df
 
     def _parse_fermi_dos(
         self, bulk_dos: PathLike | Vasprun | FermiDos | None = None, skip_dos_check: bool = False
@@ -3774,8 +3766,9 @@ class DefectThermodynamics(MSONable):
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
                 instead of ``v_Cd``). Default is ``True``.
             per_site (bool):
-                Whether to return the concentrations as percent concentrations
-                per site, rather than the default of per cm^3. (default: False)
+                Whether to also return the concentrations as per-site
+                concentrations in percent (i.e. concentration divided by
+                ``DefectEntry.bulk_site_concentration``). (default: False)
             skip_formatting (bool):
                 Whether to skip formatting the defect charge states and
                 concentrations as strings (and keep as ``int``\s and
@@ -3989,61 +3982,41 @@ class DefectThermodynamics(MSONable):
             el_refs=el_refs,
             temperature=temperature,
             fermi_level=fermi_level,
+            per_charge=per_charge,
+            per_site=per_site,
             skip_formatting=True,
             site_competition=site_competition,
             lean=lean,
         )
-        conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
         defects = conc_df["Defect"] if lean else conc_df.index.get_level_values("Defect")
+        unconstrained_total_concentrations = conc_df.groupby("Defect")["Concentration (cm^-3)"].transform(
+            "sum"
+        )
+        # set total concentration to match annealing concentrations but with same relative concentrations
+        conc_columns = [col for col in conc_df.columns if "Concentration" in col]
         conc_df["Total Concentration (cm^-3)"] = defects.map(total_concentrations)
-        conc_df["Concentration (cm^-3)"] = (  # set total concentration to match annealing conc
-            conc_df["Concentration (cm^-3)"]  # but with same relative concentrations
-            / conc_df.groupby("Defect")["Concentration (cm^-3)"].transform("sum")
-        ) * conc_df["Total Concentration (cm^-3)"]
+        for conc_col in conc_columns:  # doesn't include Total Concentration
+            conc_df[conc_col] *= (
+                conc_df["Total Concentration (cm^-3)"] / unconstrained_total_concentrations
+            )
 
         if not per_charge:
-            conc_df = _group_defect_charge_state_concentrations(conc_df, per_site, skip_formatting=True)
-            # drop Total Concentration column if ``per_charge=False``, as it's a duplicate of
-            # the Concentration column in this case
+            conc_df = _group_defect_charge_state_concentrations(conc_df)
+            # drop "Total Concentration" as it's a duplicate of "Concentration" ``per_charge=False``:
             conc_df = conc_df.drop(columns=["Total Concentration (cm^-3)"])
 
-        if per_site:
-            cm3_conc_df = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                temperature=temperature,
-                fermi_level=fermi_level,
-                skip_formatting=True,
-                per_charge=per_charge,
-                site_competition=site_competition,
-            )
-            per_site_conc_df = self.get_equilibrium_concentrations(
-                chempots=chempots,
-                limit=limit,
-                el_refs=el_refs,
-                temperature=temperature,
-                fermi_level=fermi_level,
-                skip_formatting=True,
-                per_site=True,
-                per_charge=per_charge,
-                site_competition=site_competition,
-            )
-            per_site_factors = (
-                per_site_conc_df["Concentration (per site)"] / cm3_conc_df["Concentration (cm^-3)"]
-            )
-            conc_df["Concentration (cm^-3)"] *= per_site_factors  # convert to per site & keep column order
-            conc_df = conc_df.rename(columns={"Concentration (cm^-3)": "Concentration (per site)"})
-
-            if not skip_formatting:
-                conc_df["Concentration (per site)"] = conc_df["Concentration (per site)"].apply(
-                    _format_per_site_concentration
-                )
+        conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
 
         if not skip_formatting:
-            for conc_column_name in conc_df.columns:
-                if "(cm^-3)" in conc_column_name:
-                    conc_df[conc_column_name] = conc_df[conc_column_name].apply(lambda x: f"{x:.3e}")
+            conc_columns = [col for col in conc_df.columns if "Concentration" in col]
+            for conc_col in conc_columns:  # Now includes Total Concentration (if present)
+                conc_df[conc_col] = conc_df[conc_col].apply(
+                    lambda x, conc_col=conc_col: _format_concentration(
+                        x,
+                        per_site=("per site" in conc_col),
+                        skip_formatting=skip_formatting,
+                    )
+                )
 
             if per_charge:  # format charge states
                 conc_df.index = conc_df.index.set_levels(
@@ -4262,23 +4235,12 @@ def _add_effective_dopant_concentration(
 
 def _group_defect_charge_state_concentrations(
     conc_df: pd.DataFrame,
-    per_site: bool = False,
-    skip_formatting: bool = False,
 ):
     summed_df = conc_df.groupby("Defect").sum(numeric_only=True)  # auto-reordered by groupby sum
     defects = (
         conc_df["Defect"] if "Defect" in conc_df.columns else conc_df.index.get_level_values("Defect")
     )
     summed_df = summed_df.loc[defects.unique()]  # retain ordering
-    conc_column = next(k for k in conc_df.columns if k.startswith("Concentration"))
-    raw_concentrations = (
-        summed_df["Raw Concentration"]
-        if "Raw Concentration" in summed_df.columns
-        else summed_df[conc_column]
-    )
-    summed_df[conc_column] = raw_concentrations.apply(
-        lambda x: _format_concentration(x, per_site=per_site, skip_formatting=skip_formatting)
-    )
     if "Lattice Site Index" in conc_df.columns:  # don't sum lattice site indices
         summed_df["Lattice Site Index"] = conc_df.groupby("Defect")["Lattice Site Index"].first()
 
@@ -4288,7 +4250,6 @@ def _group_defect_charge_state_concentrations(
             for i in [
                 "Charge",
                 "Formation Energy (eV)",
-                "Raw Concentration",
                 "Charge State Population",
             ]
             if i in summed_df.columns
@@ -5491,6 +5452,7 @@ class FermiSolver(MSONable):
             )
         else:  # equilibrium_solve
             kwargs["temperature"] = temperature
+            _ = kwargs.pop("verbose", None)  # not relevant for equilibrium solve
 
         return solve_func(**kwargs)
 
