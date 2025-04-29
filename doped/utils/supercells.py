@@ -285,6 +285,8 @@ def cell_metric(
     Returns:
         float: Cell metric (0 is perfect score).
     """
+    # TODO: Update to use ``eval_length_deviation`` and ``eval_shape_deviation`` from
+    #  https://gitlab.com/ase/ase/-/merge_requests/3616, when merged.
     if eff_cubic_length is None:
         eff_cubic_length = np.abs(np.linalg.det(cell_matrix)) ** (1 / 3)
     norms = np.linalg.norm(cell_matrix, axis=1)
@@ -892,6 +894,10 @@ def find_optimal_cell_shape(
     having significant efficiency improvements, and then secondarily sorted by
     the (fixed) cell metric (in ``doped``), and then by some other criteria to
     give the cleanest output.
+
+    Note: This function will be deprecated by the updates in
+    https://gitlab.com/ase/ase/-/merge_requests/3616, which improves
+    performance, and will be removed once that MR is merged. (TODO)
 
     Finds the optimal supercell transformation matrix by calculating the
     deviation of the possible supercell matrices from an ideal simple cubic (if
