@@ -90,6 +90,7 @@ the
 Studies using ``doped``, so far
 ===============================
 
+- J\. Tu et al. **Giant switchable ferroelectric photovoltage in double-perovskite epitaxial films through chemical negative strain** `Science Advances <https://doi.org/10.1126/sciadv.ads4925>`__ 2025
 - Y\. Fu & H. Lohan et al. **Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe₂** `Nature Communications <https://doi.org/10.1038/s41467-024-55254-2>`__ 2025
 - S\. R. Kavanagh **Identifying Split Vacancies with Foundation Models and Electrostatics** `arXiv <https://doi.org/10.48550/arXiv.2412.19330>`__ 2025
 - S\. R. Kavanagh et al. **Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics** `Energy & Environmental Science <https://doi.org/10.1039/D4EE04647A>`__ 2025
