@@ -10,7 +10,6 @@ calculations, with publication-quality outputs.
 import contextlib
 import os
 import warnings
-from typing import TYPE_CHECKING, Union
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -65,9 +64,6 @@ from doped.utils.symmetry import (
     get_sga,
     point_symmetry_from_defect_entry,
 )
-
-if TYPE_CHECKING:
-    from easyunfold.procar import Procar as EasyunfoldProcar
 
 
 def _custom_formatwarning(
@@ -1800,7 +1796,7 @@ class DefectParser:
         defect_path: PathLike,
         bulk_path: PathLike | None = None,
         bulk_vr: Vasprun | None = None,
-        bulk_procar: Union["EasyunfoldProcar", Procar] | None = None,
+        bulk_procar: Procar | None = None,
         dielectric: float | np.ndarray | list | None = None,
         charge_state: int | None = None,
         initial_defect_structure_path: PathLike | None = None,
@@ -1835,9 +1831,9 @@ class DefectParser:
                 supercell calculation, if already loaded (can be supplied to
                 expedite parsing). Default is ``None``.
             bulk_procar (Procar):
-                ``easyunfold``/``pymatgen`` ``Procar`` object, for the
-                reference bulk supercell calculation if already loaded (can be
-                supplied to expedite parsing). Default is ``None``.
+                ``pymatgen`` ``Procar`` object, for the reference bulk
+                supercell calculation if already loaded (can be supplied to
+                expedite parsing). Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant (ionic + static contributions), in
                 the same xyz Cartesian basis as the supercell calculations

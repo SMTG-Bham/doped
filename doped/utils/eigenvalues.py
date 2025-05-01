@@ -16,7 +16,7 @@ import os
 import warnings
 from collections import defaultdict
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -29,10 +29,6 @@ from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
 from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, suppress_logging
 from doped.utils.plotting import _get_backend
-
-if TYPE_CHECKING:
-    from easyunfold.procar import Procar as EasyunfoldProcar
-
 
 with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
     try:
@@ -121,7 +117,7 @@ def make_band_edge_orbital_infos(
     cbm: float,
     eigval_shift: float = 0.0,
     neighbor_indices: list[int] | None = None,
-    defect_procar: Union["EasyunfoldProcar", Procar] | None = None,
+    defect_procar: Procar | None = None,
 ):
     r"""
     Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
@@ -139,9 +135,9 @@ def make_band_edge_orbital_infos(
         neighbor_indices (list[int]):
             Indices of neighboring atoms to the defect site, for localisation
             analysis. Default is ``None``.
-        defect_procar (EasyunfoldProcar, Procar):
-            ``EasyunfoldProcar`` or ``Procar`` object, for the defect
-            supercell, if projected eigenvalue/orbitals data is not provided in
+        defect_procar (Procar):
+            ``pymatgen`` ``Procar`` object, for the defect supercell, if
+            projected eigenvalue/orbitals data is not provided in
             ``defect_vr``.
 
     Returns:
@@ -190,8 +186,8 @@ def make_band_edge_orbital_infos(
 def get_band_edge_info(
     bulk_vr: Vasprun,
     defect_vr: Vasprun,
-    bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
-    defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    bulk_procar: PathLike | Procar | None = None,
+    defect_procar: PathLike | Procar | None = None,
     defect_supercell_site: PeriodicSite | None = None,
     neighbor_cutoff_factor: float = 1.3,
 ) -> tuple[BandEdgeOrbitalInfos, EdgeInfo, EdgeInfo]:
@@ -216,17 +212,17 @@ def get_band_edge_info(
             ``projected_eigenvalues`` attribute (i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
             ``parse_projected_eigen = True`` (default)).
-        bulk_procar (PathLike, EasyunfoldProcar, Procar):
-            Either a path to the ``VASP`` ``PROCAR`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/``pymatgen``
-            ``Procar`` object, for the bulk supercell calculation. Not required
+        bulk_procar (PathLike, Procar):
+            Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+            object, for the reference bulk supercell calculation. Not required
             if the supplied ``bulk_vr`` was parsed with
             ``parse_projected_eigen = True`` (default). Default is ``None``.
-        defect_procar (PathLike, EasyunfoldProcar, Procar):
-            Either a path to the ``VASP`` ``PROCAR`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/``pymatgen``
-            ``Procar`` object, for the defect supercell calculation. Not
-            required if the supplied ``defect_vr`` was parsed with
+        defect_procar (PathLike, Procar):
+            Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+            object, for the defect supercell calculation. Not required if the
+            supplied ``defect_vr`` was parsed with
             ``parse_projected_eigen = True`` (default). Default is ``None``.
         defect_supercell_site (PeriodicSite):
             ``PeriodicSite`` object of the defect site in the defect supercell,
@@ -354,9 +350,9 @@ def get_eigenvalue_analysis(
     ks_labels: bool = False,
     style_file: str | None = None,
     bulk_vr: PathLike | Vasprun | None = None,
-    bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    bulk_procar: PathLike | Procar | None = None,
     defect_vr: PathLike | Vasprun | None = None,
-    defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    defect_procar: PathLike | Procar | None = None,
     force_reparse: bool = False,
     ylims: tuple[float, float] | None = None,
     legend_kwargs: dict | None = None,
@@ -423,16 +419,15 @@ def get_eigenvalue_analysis(
             ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
-        bulk_procar (PathLike, EasyunfoldProcar, Procar):
+        bulk_procar (PathLike, Procar):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
             ``bulk_vr`` was parsed with ``parse_projected_eigen = True``
             (default). Either a path to the ``VASP`` ``PROCAR`` output file
-            (with ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-            ``pymatgen`` ``Procar`` object, for the reference bulk supercell
-            calculation. If ``None`` (default), tries to load from a
-            ``PROCAR(.gz)`` file at
+            (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
+            ``Procar`` object, for the reference bulk supercell calculation. If
+            ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
         defect_vr (PathLike, Vasprun):
             Not required if ``defect_entry`` provided and eigenvalue data
@@ -445,16 +440,15 @@ def get_eigenvalue_analysis(
             ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
-        defect_procar (PathLike, EasyunfoldProcar, Procar):
+        defect_procar (PathLike, Procar):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
             ``defect_vr`` was parsed with ``parse_projected_eigen = True``
             (default). Either a path to the ``VASP`` ``PROCAR`` output file
-            (with ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-            ``pymatgen`` ``Procar`` object, for the defect supercell
-            calculation. If ``None`` (default), tries to load from a
-            ``PROCAR(.gz)`` file at
+            (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
+            ``Procar`` object, for the defect supercell calculation. If
+            ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
         force_reparse (bool):
             Whether to force re-parsing of the eigenvalue data, even if already

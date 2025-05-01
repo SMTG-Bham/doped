@@ -24,7 +24,6 @@ from scipy.stats import sem
 from doped import _doped_obj_properties_methods, get_mp_context
 
 if TYPE_CHECKING:
-    from easyunfold.procar import Procar as EasyunfoldProcar
     from matplotlib.pyplot import Figure
 
     from doped.utils.parsing import suppress_logging
@@ -587,9 +586,9 @@ class DefectEntry(thermo.DefectEntry):
     def _load_and_parse_eigenvalue_data(
         self,
         bulk_vr: PathLike | Vasprun | None = None,
-        bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+        bulk_procar: PathLike | Procar | None = None,
         defect_vr: PathLike | Vasprun | None = None,
-        defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+        defect_procar: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
     ):
@@ -612,16 +611,15 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (PathLike, EasyunfoldProcar, Procar):
+            bulk_procar (PathLike, Procar):
                 Not required if projected eigenvalue data available from
                 ``bulk_vr`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-                ``pymatgen`` ``Procar`` object, for the reference bulk
-                supercell calculation. If ``None`` (default), tries to load
-                from a ``PROCAR(.gz)`` file at
-                ``self.calculation_metadata["bulk_path"]``.
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                object, for the reference bulk supercell calculation. If
+                ``None`` (default), tries to load from a ``PROCAR(.gz)`` file
+                at ``self.calculation_metadata["bulk_path"]``.
             defect_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
@@ -630,15 +628,14 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (PathLike, EasyunfoldProcar, Procar):
+            defect_procar (PathLike, Procar):
                 Not required if projected eigenvalue data available from
                 ``defect_vr`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-                ``pymatgen`` ``Procar`` object, for the defect supercell
-                calculation. If ``None``(default), tries to load from a
-                ``PROCAR(.gz)`` file at
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                object, for the defect supercell calculation. If ``None``
+                (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
@@ -763,9 +760,9 @@ class DefectEntry(thermo.DefectEntry):
         plot: bool = True,
         filename: PathLike | None = None,
         bulk_vr: PathLike | Vasprun | None = None,
-        bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+        bulk_procar: PathLike | Procar | None = None,
         defect_vr: PathLike | Vasprun | None = None,
-        defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+        defect_procar: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
         **kwargs,
@@ -817,18 +814,17 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (PathLike, EasyunfoldProcar, Procar):
+            bulk_procar (PathLike, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
                 and/or if ``bulk_vr`` was parsed with
                 ``parse_projected_eigen = True``.
-                Either a path to the ``VASP`` ``PROCAR`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-                ``pymatgen`` ``Procar`` object, for the reference bulk
-                supercell calculation. If ``None`` (default), tries to load
-                from a ``PROCAR(.gz)`` file at
-                ``self.calculation_metadata["bulk_path"]``.
+                Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                object, for the reference bulk supercell calculation. If
+                ``None`` (default), tries to load from a ``PROCAR(.gz)`` file
+                at ``self.calculation_metadata["bulk_path"]``.
             defect_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing, with data in
@@ -840,17 +836,16 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (PathLike, EasyunfoldProcar, Procar):
+            defect_procar (PathLike, Procar):
                 Not required if eigenvalue data has already been parsed for
                 ``DefectEntry`` (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
                 and/or if ``defect_vr`` was parsed with
                 ``parse_projected_eigen = True``.
-                Either a path to the ``VASP`` ``PROCAR`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-                ``pymatgen`` ``Procar`` object, for the defect supercell
-                calculation. If ``None`` (default), tries to load from a
-                ``PROCAR(.gz)`` file at
+                Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                object, for the defect supercell calculation. If ``None``
+                (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             force_reparse (bool):
                 Whether to force re-parsing of the eigenvalue data, even if
@@ -1520,16 +1515,15 @@ def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
         return default
 
 
-def _parse_procar(procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None):
+def _parse_procar(procar: PathLike | Procar | None = None):
     """
-    Parse the input path / ``easyunfold`` ``Procar`` or ``pymatgen`` ``Procar``
-    to a ``Procar`` object in the correct format, for eigenvalue analysis.
+    Parse the input path or ``pymatgen`` ``Procar`` to a ``Procar`` object in
+    the correct format, for eigenvalue analysis.
 
     Args:
-        procar (PathLike, EasyunfoldProcar, Procar):
+        procar (PathLike, Procar):
             Either a path to the ``VASP`` ``PROCAR``` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/``pymatgen``
-            ``Procar`` object.
+            ``LORBIT > 10`` in the ``INCAR``) or a``pymatgen`` ``Procar``.
 
     Returns:
         Procar: The parsed ``Procar`` object in ``pymatgen`` format.

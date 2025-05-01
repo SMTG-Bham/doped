@@ -287,46 +287,23 @@ def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""
     )
 
 
-def get_procar(procar_path: PathLike):
+def get_procar(procar_path: PathLike) -> Procar:
     """
-    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar`` object (if
-    ``easyunfold`` installed), else a ``pymatgen`` ``Procar`` object (doesn't
-    support SOC).
+    Read the ``PROCAR(.gz)`` file as a ``pymatgen`` ``Procar`` object.
 
-    If ``easyunfold`` installed, the ``Procar`` will be parsed with
-    ``easyunfold`` and then the ``proj_data`` attribute will be converted to a
-    ``data`` attribute (to be compatible with ``pydefect``, which uses the
-    ``pymatgen`` format).
+    Previously, ``pymatgen`` ``Procar`` parsing did not support SOC
+    calculations, however this was updated in
+    https://github.com/materialsproject/pymatgen/pull/3890 to use code from
+    ``easyunfold`` (https://smtg-bham.github.io/easyunfold -- a package for
+    unfolding electronic band structures for symmetry-broken / defect /
+    dopant systems, with many plotting & analysis tools).
     """
     try:
         procar_path = find_archived_fname(str(procar_path))  # convert to string if Path object
     except FileNotFoundError:
         raise FileNotFoundError(f"PROCAR file not found at {procar_path}(.gz/.xz/.bz/.lzma)!") from None
 
-    easyunfold_installed = True  # first try loading with easyunfold
-    try:
-        from easyunfold.procar import Procar as EasyunfoldProcar
-    except ImportError:
-        easyunfold_installed = False
-
-    if easyunfold_installed:
-        procar = EasyunfoldProcar(procar_path, normalise=False)
-        if procar._is_soc:
-            procar.data = {Spin.up: procar.proj_data[0]}
-        else:
-            procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
-        del procar.proj_data  # reduce space
-    else:
-        try:  # try parsing with ``pymatgen`` instead, but doesn't support SOC!
-            procar = Procar(procar_path)
-        except IndexError as exc:  # SOC error
-            raise ValueError(
-                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and "
-                "`pymatgen` does not support SOC PROCAR parsing! Please install `easyunfold` with `pip "
-                "install easyunfold`."
-            ) from exc
-
-    return procar
+    return Procar(procar_path)
 
 
 def _get_output_files_and_check_if_multiple(
