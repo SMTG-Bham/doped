@@ -608,11 +608,25 @@ def _raw_get_all_equiv_sites(
     species: str = "X",
     just_frac_coords: bool = False,
 ):
+    # ensure sites have the same property keys, otherwise can cause issues with pymatgen primitive
+    # structure determination:
+    if (
+        "magmom" in structure.site_properties
+    ):  # if species matches those in structure, and all the same, then use the
+        # same magmom, otherwise remove magmom from properties
+        matching_sites = [site for site in structure if site.species_string == str(species)]
+        if matching_sites and np.std([site.properties["magmom"] for site in matching_sites]) < 0.1:
+            properties = {"magmom": next(site.properties.get("magmom", 0) for site in matching_sites)}
+        else:
+            properties = {"magmom": 0}
+    else:
+        properties = {}
+
     if symm_ops is None:
         sga = get_sga(structure, symprec=symprec)
         symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
 
-    dummy_site = PeriodicSite(species, frac_coords, structure.lattice)
+    dummy_site = PeriodicSite(species, frac_coords, structure.lattice, properties=properties)
     x_sites = [
         apply_symm_op_to_site(
             symm_op,
