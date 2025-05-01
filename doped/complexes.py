@@ -151,7 +151,7 @@ def get_matching_site(
     Returns:
         PeriodicSite: The closest matching site in ``structure`` to the input ``site``.
     """
-    if not anonymous:  # skip to
+    if not anonymous:  # try directly match first
         if site in structure:
             return site
 
