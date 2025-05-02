@@ -350,7 +350,7 @@ def _get_symbol(element: Element | Species, comparator: AbstractComparator | Non
         and isinstance(element, Species)
     ):
         return str(element)
-    return element.element.symbol
+    return element.symbol if isinstance(element, Element) else element.element.symbol
 
 
 def get_element_indices(
