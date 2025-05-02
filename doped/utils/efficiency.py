@@ -16,6 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pymatgen.analysis.defects.generators import VacancyGenerator
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
+from pymatgen.analysis.molecule_matcher import KabschMatcher
 from pymatgen.analysis.structure_matcher import (
     AbstractComparator,
     ElementComparator,
@@ -24,7 +25,7 @@ from pymatgen.analysis.structure_matcher import (
 )
 from pymatgen.core.composition import Composition, DummySpecies, Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
-from pymatgen.core.structure import IStructure, Structure
+from pymatgen.core.structure import IStructure, Molecule, Structure
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from scipy.spatial import Voronoi
@@ -279,7 +280,7 @@ def doped_Structure__eq__(self, other: IStructure) -> bool:
 @lru_cache(maxsize=int(1e4))
 def cached_Structure_eq_func(self_hash, other_hash):
     """
-    Cached equality function for ``Composition`` instances.
+    Cached equality function for ``Structure`` instances.
     """
     return doped_Structure__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
 
@@ -307,6 +308,62 @@ def _Structure__eq__(self, other):
 IStructure.__instances__ = {}
 IStructure.__eq__ = _Structure__eq__
 Structure.__eq__ = _Structure__eq__
+
+
+class DopedEquivMolecule(Molecule):
+    r"""
+    Subclass of ``pymatgen``\'s ``Molecule`` to allow for efficient comparison
+    molecules by symmetry equivalence.
+    """
+
+    def __init__(self, *args, tol: float = 0.1, **kwargs):
+        """
+        Initialize the ``DopedEquivMolecule`` object.
+
+        Args:
+            *args: Arguments to be passed to the parent ``Molecule`` class.
+            tol (float):
+                Tolerance for the Kabsch molecule-matching algorithm. Defaults
+                to 0.1.
+            **kwargs:
+                Keyword arguments to be passed to the parent ``Molecule``
+                class.
+        """
+        super().__init__(*args, **kwargs)
+        self.tol = tol
+
+    def __hash__(self):
+        """
+        Hash the ``DopedEquivMolecule`` object using the z-matrix (which
+        reflects the lengths, angles, and atom types of the molecule).
+
+        Implemented to allow caching in determining the equivalency of
+        different ``DopedEquivMolecule`` objects.
+        """
+        z_list = self.get_zmatrix().split("\n")
+        rounded_z_list = tuple([round(float(i.split("=")[-1]), 2) if "=" in i else i for i in z_list])
+        return hash(rounded_z_list)
+
+
+def Kabsch_equiv(molecule_1, molecule_2, tol: float = 0.1) -> bool:
+    """
+    Determine if two ``Molecule`` objects are equivalent, using the Kabsch
+    algorithm (which minimizes the root-mean-square-deviation (RMSD) of two
+    molecules which are topologically (atom types, geometry) similar).
+
+    Uses caching to speed up the comparison.
+    """
+    for molecule in [molecule_1, molecule_2]:
+        if not isinstance(molecule, DopedEquivMolecule):
+            molecule.__hash__ = DopedEquivMolecule.__hash__
+            # otherwise molecule hash is composition which will give erroneous results with caching
+
+    return _cached_Kabsch_equiv(molecule_1, molecule_2, tol)
+
+
+@lru_cache(maxsize=int(1e4))
+def _cached_Kabsch_equiv(molecule_1, molecule_2, tol: float = 0.1) -> bool:
+    return KabschMatcher(molecule_1).fit(molecule_2)[-1] < tol
 
 
 def _get_symmetry(self) -> tuple[NDArray, NDArray]:
