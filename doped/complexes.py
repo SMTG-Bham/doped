@@ -35,16 +35,18 @@ def classify_vacancy_geometry(
     distance tolerance (``tol``), such that the absence of any site of
     matching species within the distance tolerance to the original bulk site
     is considered a vacancy, and vice versa in comparing the bulk to the defect
-    structure is an interstitial. This corresponds to the 2 V_X + X_i definition
-    of split vacancies discussed in https://doi.org/10.48550/arXiv.2412.19330
+    structure is an interstitial. This corresponds to the 2 V_X + X_i
+    definition of split vacancies discussed in
+    https://doi.org/10.48550/arXiv.2412.19330
 
     A simple vacancy corresponds to cases where 1 site from the bulk structure
-    cannot be matched to the defect structure while all defect structure sites can
-    be matched to bulk sites, and 'non-trivial' vacancies refer to all other cases.
+    cannot be matched to the defect structure while all defect structure sites
+    can be matched to bulk sites, and 'non-trivial' vacancies refer to all
+    other cases.
 
     Inspired by the vacancy geometry classification used in Kumagai et al.
-    _Phys Rev Mater_ 2021. See https://doi.org/10.48550/arXiv.2412.19330 for further
-    details.
+    `Phys Rev Mater` 2021. See https://doi.org/10.48550/arXiv.2412.19330 for
+    further details.
 
     Args:
         vacancy_supercell (Structure):
@@ -52,18 +54,20 @@ def classify_vacancy_geometry(
         bulk_supercell (Structure):
             The bulk supercell structure to compare against for site-matching.
         tol (float):
-            The (fractional) tolerance for matching sites between the defect and bulk
-            structures. If ``abs_tol`` is ``False`` (default), then this value multiplied
-            by the shortest bond length in the bulk structure will be used as the distance
-            threshold for matching, otherwise the value is used directly (as a length in Å).
+            The (fractional) tolerance for matching sites between the defect
+            and bulk structures. If ``abs_tol`` is ``False`` (default), then
+            this value multiplied by the shortest bond length in the bulk
+            structure will be used as the distance threshold for matching,
+            otherwise the value is used directly (as a length in Å).
             Default is 0.5.
         abs_tol (bool):
-            Whether to use ``tol`` as an absolute distance tolerance (in Å) instead of a
-            fractional tolerance (in terms of the shortest bond length in the structure).
+            Whether to use ``tol`` as an absolute distance tolerance (in Å)
+            instead of a fractional tolerance (in terms of the shortest bond
+            length in the structure).
             Default is ``False``.
         verbose (bool):
-            Whether to print additional information about the classification for non-trivial
-            vacancies.
+            Whether to print additional information about the classification
+            for non-trivial vacancies.
             Default is ``False``.
     """
     # if not all sites in both structures are oxi-state decorated / neutral, then remove oxi states:
@@ -128,28 +132,30 @@ def get_matching_site(
     Get the (closest) matching ``PeriodicSite`` in ``structure`` for the input
     ``site``.
 
-    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by default)
-    away from the input ``site`` coordinates, an error is raised.
+    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
+    default) away from the input ``site`` coordinates, an error is raised.
 
-    Automatically accounts for possible differences in assigned oxidation states,
-    site property dicts etc.
+    Automatically accounts for possible differences in assigned oxidation
+    states, site property dicts etc.
 
     Args:
         site (PeriodicSite):
-            The site for which to find the closest matching site in ``structure``.
+            The site for which to find the closest matching site in
+            ``structure``.
         structure (Structure):
             The structure in which to search for matching sites to ``site``.
         anonymous (bool):
-            Whether to use anonymous matching, allowing different species/elements
-            to match each other (i.e. just matching based on coordinates).
-            Default is ``False``.
+            Whether to use anonymous matching, allowing different
+            species/elements to match each other (i.e. just matching based on
+            coordinates). Default is ``False``.
         tol (float):
-            A distance tolerance (in Å), where an error will be thrown if the closest
-            matching site is > ``tol`` Å away from the input ``site``.
+            A distance tolerance (in Å), where an error will be thrown if the
+            closest matching site is > ``tol`` Å away from the input ``site``.
             Default is 0.5 Å.
 
     Returns:
-        PeriodicSite: The closest matching site in ``structure`` to the input ``site``.
+        PeriodicSite:
+            The closest matching site in ``structure`` to the input ``site``.
     """
     if not anonymous:  # try directly match first
         if site in structure:
@@ -202,9 +208,9 @@ def get_es_energy(structure: Structure, oxi_states: dict | None = None) -> float
             Structure object for which to calculate the energy.
         oxi_states (dict, optional):
             Dictionary of oxidation states for the input structure.
-            If ``None`` (default), the oxidation states of the structure
-            are used. An error will be raised if the oxidation states are
-            not set and are not provided.
+            If ``None`` (default), the oxidation states of the structure are
+            used. An error will be raised if the oxidation states are not set
+            and are not provided.
 
     Returns:
         float: The electrostatic energy of the structure.
@@ -225,23 +231,24 @@ def generate_complex_from_defect_sites(
     Generate the supercell containing a defect complex, given the bulk
     supercell and the sites of the defects to be included in the complex.
 
-    The coordinates of the input defect sites should correspond to the
-    input bulk supercell. For substitutions, the closest site in the bulk
-    supercell to the supplied site(s) will be removed, and replaced with
-    the input ``substitution_sites``.
+    The coordinates of the input defect sites should correspond to the input
+    bulk supercell. For substitutions, the closest site in the bulk supercell
+    to the supplied site(s) will be removed, and replaced with the input
+    ``substitution_sites``.
 
     Args:
         bulk_supercell (Structure):
-            The bulk supercell structure in which to generate the defect complex.
+            The bulk supercell structure in which to generate the defect
+            complex.
         vacancy_sites (Iterable | PeriodicSite | None):
-            The site(s) of vacancies to include in the defect complex supercell.
-            Default is None.
+            The site(s) of vacancies to include in the defect complex
+            supercell. Default is None.
         interstitial_sites (Iterable | PeriodicSite | None):
-            The site(s) of interstitials to include in the defect complex supercell.
-            Default is None.
+            The site(s) of interstitials to include in the defect complex
+            supercell. Default is None.
         substitution_sites (Iterable | PeriodicSite | None):
-            The site(s) of substitutions to include in the defect complex supercell.
-            Default is None.
+            The site(s) of substitutions to include in the defect complex
+            supercell. Default is None.
 
     Returns:
         Structure: The defect complex supercell structure.
@@ -286,4 +293,4 @@ def generate_complex_from_defect_sites(
 
 
 # TODO: Update DOIs here and throughout when published
-# TODO: Add some quick tests when done too
+# TODO: Add some quick tests when done
