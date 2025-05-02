@@ -7,7 +7,7 @@ import itertools
 import operator
 import re
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from fractions import Fraction
 from functools import lru_cache
 
@@ -617,9 +617,8 @@ def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> li
 
 class DopedVacancyGenerator(VacancyGenerator):
     """
-    Generator for vacancy defects, subclassed from ``pymatgen-analysis-
-    defects`` to improve efficiency (particularly when handling defect
-    complexes).
+    Vacancy defects generator, subclassed from ``pymatgen-analysis-defects`` to
+    improve efficiency (particularly when handling defect complexes).
     """
 
     def generate(
@@ -627,18 +626,22 @@ class DopedVacancyGenerator(VacancyGenerator):
         structure: Structure,
         rm_species: set[str | Species] | list[str | Species] | None = None,
         **kwargs,
-    ) -> VacancyGenerator[Vacancy, None, None]:
+    ) -> Generator[Vacancy, None, None]:
         """
         Generate vacancy defects.
 
         Args:
-            structure: The bulk structure the vacancies are generated from.
-            rm_species: List of species to be removed. If ``None``, considers all species.
-            **kwargs: Additional keyword arguments for the ``Vacancy`` constructor.
+            structure (Structure):
+                The structure to generate vacancy defects in.
+            rm_species (set[str | Species] | list[str | Species] | None):
+                List/set of species to be removed (i.e. to consider for vacancy
+                generation). If ``None``, considers all species.
+            **kwargs:
+                Additional keyword arguments for the ``Vacancy`` constructor.
 
         Returns:
-            VacancyGenerator[Vacancy, None, None]:
-                VacancyGenerator that yields a list of ``Vacancy`` objects.
+            Generator[Vacancy, None, None]:
+                Generator that yields a list of ``Vacancy`` objects.
         """
         # core difference is the removal of unnecessary `remove_oxidation_states` calls
         structure = get_valid_magmom_struct(structure)
