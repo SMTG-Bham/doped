@@ -21,7 +21,7 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>2025.4.24",  # breaking changes to MPRester (mp-api dropped)
+    "pymatgen>=2025.5.2",  # breaking changes to MPRester (mp-api dropped)
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.3.4",  # oxi-state functions renaming
     "ase",  # required by ShakeNBreak anyway
@@ -29,8 +29,6 @@ dependencies = [
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
     "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
-    "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
-    # if any dependency issues arise can make easyunfold an optional dependency
     "cmcrameri>=1.4",  # for colour-maps; >=1.4 required for cmcrameri.cm.cmaps definition
     "matplotlib-label-lines", # for labelling lines in matplotlib plots
     "dscribe",  # for defect site guessing using SOAP analysis
