@@ -34,8 +34,7 @@ from doped.generation import (
     sort_defect_entries,
 )
 from doped.thermodynamics import DefectThermodynamics
-from doped.utils.configurations import StructureMatcher_scan_stol
-from doped.utils.efficiency import _parse_site_species_str, get_voronoi_nodes
+from doped.utils.efficiency import StructureMatcher_scan_stol, _parse_site_species_str, get_voronoi_nodes
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,

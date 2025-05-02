@@ -2050,7 +2050,7 @@ class Defect(core.Defect):
                         defect.structure = bulk_oxi_states
 
                     else:
-                        from doped.utils.configurations import StructureMatcher_scan_stol
+                        from doped.utils.efficiency import StructureMatcher_scan_stol
 
                         mapping_to_defect = StructureMatcher_scan_stol(
                             defect.structure,
