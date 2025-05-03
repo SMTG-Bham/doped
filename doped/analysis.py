@@ -10,6 +10,7 @@ calculations, with publication-quality outputs.
 import contextlib
 import os
 import warnings
+from copy import deepcopy
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -50,6 +51,7 @@ from doped.utils.parsing import (
     get_core_potentials_from_outcar,
     get_defect_type_site_idxs_and_unrelaxed_structure,
     get_locpot,
+    get_matching_site,
     get_procar,
     get_vasprun,
     spin_degeneracy_from_vasprun,
@@ -58,8 +60,11 @@ from doped.utils.parsing import (
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
+    cluster_sites_by_dist_tol,
     get_all_equiv_sites,
+    get_equiv_frac_coords_in_primitive,
     get_orientational_degeneracy,
+    get_primitive_structure,
     get_sga,
     point_symmetry_from_defect_entry,
 )
@@ -80,8 +85,6 @@ def _custom_formatwarning(
 
 
 warnings.formatwarning = _custom_formatwarning
-
-_ANGSTROM = "\u212B"  # unicode symbol for angstrom to print in strings
 _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
 _aniso_dielectric_but_outcar_problem_warning = (
@@ -186,7 +189,8 @@ def defect_from_structures(
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
-    defect structures, and returns a corresponding ``Defect`` object.
+    defect structures, and returns a corresponding ``Defect`` object with the
+    defect site in the primitive structure.
 
     If ``return_all_info`` is set to true, then also returns:
 
@@ -205,7 +209,7 @@ def defect_from_structures(
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site and type.
         return_all_info (bool):
-            If True, returns additional python objects related to the
+            If ``True``, returns additional python objects related to the
             site-matching, listed above. (Default = False)
         bulk_voronoi_node_dict (dict):
             Dictionary of bulk supercell Voronoi node information, for
@@ -232,28 +236,30 @@ def defect_from_structures(
 
     Returns:
         defect (Defect):
-            doped Defect object.
+            ``doped`` ``Defect`` object.
 
         If ``return_all_info`` is True, then also:
 
         defect_site (Site):
-            pymatgen ``Site`` object of the `relaxed` defect site in the defect
-            supercell.
+            ``pymatgen`` ``Site`` object of the `relaxed` defect site in the
+            defect supercell.
         defect_site_in_bulk (Site):
-            pymatgen ``Site`` object of the defect site in the bulk supercell
-            (i.e. unrelaxed vacancy/substitution site, or final `relaxed`
-            interstitial site for interstitials).
+            ``pymatgen`` ``Site`` object of the defect site in the bulk
+            supercell (i.e. unrelaxed vacancy/substitution site, or final
+            `relaxed` interstitial site for interstitials).
         defect_site_index (int):
-            index of defect site in defect supercell (None for vacancies)
+            Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
-            index of defect site in bulk supercell (None for interstitials)
+            Index of defect site in bulk supercell (None for interstitials)
         guessed_initial_defect_structure (Structure):
-            pymatgen Structure object of the guessed initial defect structure.
+            ``pymatgen`` ``Structure`` object of the guessed initial defect
+            structure.
         unrelaxed_defect_structure (Structure):
-            pymatgen Structure object of the unrelaxed defect structure.
+            ``pymatgen`` ``Structure`` object of the unrelaxed defect
+            structure.
         bulk_voronoi_node_dict (dict):
-            Dictionary of bulk supercell Voronoi node information, for
-            further expedited site-matching.
+            Dictionary of bulk supercell Voronoi node information, for further
+            expedited site-matching.
     """
     try:  # Try automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
@@ -277,15 +283,15 @@ def defect_from_structures(
         ) from exc
 
     if defect_type == "vacancy":
-        defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
+        site_in_bulk = defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
     elif defect_type == "substitution":
         defect_site = defect_supercell[defect_site_idx]
         site_in_bulk = bulk_supercell[bulk_site_idx]  # this is with orig (substituted) element
         defect_site_in_bulk = PeriodicSite(
             defect_site.species, site_in_bulk.frac_coords, site_in_bulk.lattice
         )
-    else:
-        defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
+    else:  # interstitial
+        site_in_bulk = defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
 
     if not skip_atom_mapping_check:
         check_atom_mapping_far_from_defect(
@@ -333,6 +339,10 @@ def defect_from_structures(
                 coords_are_cartesian=False,
                 validate_proximity=True,
             )
+            # if guessed initial site is sufficiently close to the relaxed site, then use it as
+            # "defect_site_in_bulk", otherwise use the relaxed site:
+            if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_node_frac_coords)[0] < 1:
+                defect_site_in_bulk = guessed_initial_defect_structure[defect_site_idx]
 
         else:
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
@@ -343,20 +353,49 @@ def defect_from_structures(
             "`initial_defect_structure` is indeed unrelaxed."
         )
 
+    # get defect site in primitive structure, for Defect generation:
+    # TODO: Update so that defect sites are chosen from equiv sites in same way as for interstitials?
+    # Which will help make this consistent? or consistent already??
+    primitive_structure = get_primitive_structure(bulk_supercell)
+    equiv_frac_coords_in_prim = cluster_sites_by_dist_tol(
+        [
+            equiv_frac_coords
+            for equiv_site_in_prim in get_equiv_frac_coords_in_primitive(
+                defect_site_in_bulk.frac_coords,
+                primitive_structure,
+                bulk_supercell,
+            )
+            for equiv_frac_coords in get_all_equiv_sites(
+                equiv_site_in_prim,
+                primitive_structure,
+                just_frac_coords=True,
+            )
+        ],
+        primitive_structure,
+    )
+    equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
+    defect_site_in_prim = PeriodicSite(
+        defect_site_in_bulk.species,
+        equiv_frac_coords_in_prim[0],
+        primitive_structure.lattice,
+        to_unit_cell=True,
+        coords_are_cartesian=False,
+    )
+    bulk_site_in_prim = deepcopy(defect_site_in_prim)
+    bulk_site_in_prim.species = site_in_bulk.species
+    if defect_type != "interstitial":
+        bulk_site_in_prim = get_matching_site(bulk_site_in_prim, primitive_structure)
+        defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
+
     for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
         # substitutions differs from defect_site)
         "@module": "doped.core",
         "@class": defect_type.capitalize(),
-        "structure": bulk_supercell,
-        "site": defect_site_in_bulk,
+        "structure": primitive_structure,
+        "site": defect_site_in_prim,
+        # equivalent_sites=site_group,  # TODO
         **kwargs,
-    }  # note that we now define the Defect in the bulk supercell, rather than the primitive structure
-    # as done during generation. Future work could try mapping the relaxed defect site back to the
-    # primitive cell, however interstitials will be very tricky for this...
-    if defect_type == "interstitial":
-        for_monty_defect["multiplicity"] = 1  # multiplicity needed for interstitial initialisation with
-        # pymatgen-analysis-defects, so set to 1 here. Set later for interstitials during parsing anyway
-        # (see below)
+    }  # define the Defect object in the primitive structure, matching the approach for generation
     defect = MontyDecoder().process_decoded(for_monty_defect)
 
     if not return_all_info:
@@ -2113,22 +2152,7 @@ class DefectParser:
             degeneracy_factors=degeneracy_factors,
         )
 
-        bulk_supercell_symm_ops = get_sga(
-            defect_entry.defect.structure, symprec=0.01
-        ).get_symmetry_operations()
-        if defect.defect_type == core.DefectType.Interstitial:
-            # site multiplicity is automatically computed for vacancies and substitutions (much easier),
-            # but not interstitials
-            defect_entry.defect.multiplicity = len(
-                get_all_equiv_sites(
-                    _get_defect_supercell_frac_coords(defect_entry),
-                    defect_entry.defect.structure,
-                    symm_ops=bulk_supercell_symm_ops,
-                    symprec=0.01,
-                    dist_tol=0.01,
-                )
-            )
-
+        bulk_supercell_symm_ops = get_sga(bulk_vr.final_structure, symprec=0.01).get_symmetry_operations()
         # get orientational degeneracy
         point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
             defect_entry,

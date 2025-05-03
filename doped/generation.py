@@ -1589,7 +1589,7 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga, symprec = symmetry.get_sga(self.structure, return_symprec=True)
+            sga, symprec = symmetry.get_sga_and_symprec(self.structure)
             if sga.get_space_group_number() == 1:  # print sanity check message
                 print(
                     "Note that the detected symmetry of the input structure is P1 (i.e. only "
@@ -1743,7 +1743,8 @@ class DefectsGenerator(MSONable):
             host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
             # if any "extrinsic" elements are actually host elements, remove them and warn user:
             if any(el in host_element_list for el in extrinsic_elements) and not isinstance(
-                self.extrinsic, dict  # don't warn if ``extrinsic`` was supplied as a dict
+                self.extrinsic,
+                dict,  # don't warn if ``extrinsic`` was supplied as a dict
             ):
                 warnings.warn(
                     f"\nSpecified 'extrinsic' elements "

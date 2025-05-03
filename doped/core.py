@@ -2247,21 +2247,8 @@ class Defect(core.Defect):
         sc_defect_struct.remove_oxidation_states()
 
         # also remove oxidation states from sites:
-        def _remove_site_oxi_state(site):
-            """
-            Remove site oxidation state in-place.
-
-            Same method as Structure.remove_oxidation_states().
-            """
-            new_sp: dict[Element, float] = collections.defaultdict(float)
-            for el, occu in site.species.items():
-                sym = el.symbol
-                new_sp[Element(sym)] += occu
-            site.species = Composition(new_sp)
-
-        _remove_site_oxi_state(sc_site)
-        for site in equiv_sites:
-            _remove_site_oxi_state(site)
+        for site in [sc_site, *equiv_sites]:
+            remove_site_oxi_state(site)
 
         if dummy_species is not None:
             sc_defect_struct.insert(len(self.structure * sc_mat), dummy_species, sc_site.frac_coords)
@@ -2465,6 +2452,24 @@ class Defect(core.Defect):
         return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
 
 
+def remove_site_oxi_state(site: PeriodicSite):
+    """
+    Remove site oxidation state in-place.
+
+    Same method as ``Structure.remove_oxidation_states()``,
+    but applied to an individual site.
+
+    Args:
+        site (PeriodicSite):
+            The site to remove oxidation states from.
+    """
+    new_sp: dict[Element, float] = collections.defaultdict(float)
+    for el, occu in site.species.items():
+        sym = el.symbol
+        new_sp[Element(sym)] += occu
+    site.species = Composition(new_sp)
+
+
 def doped_defect_from_pmg_defect(
     defect: core.Defect, bulk_oxi_states: Structure | Composition | dict | bool = False, **doped_kwargs
 ):
@@ -2556,9 +2561,10 @@ class Interstitial(Defect, core.Interstitial):
         Subclass of ``pymatgen.analysis.defects.core.Interstitial`` with
         additional attributes and methods used by ``doped``.
         """
-        if "multiplicity" not in kwargs:  # will break for Interstitials if not set
-            kwargs["multiplicity"] = 1
+        kwargs.setdefault("multiplicity", 1)  # will break for Interstitials if not set
         super().__init__(*args, **kwargs)
+        if "multiplicity" not in kwargs:
+            self.multiplicity = self.get_multiplicity()
 
     def __repr__(self) -> str:
         """
@@ -2566,3 +2572,96 @@ class Interstitial(Defect, core.Interstitial):
         """
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} interstitial defect at site [{frac_coords_string}] in structure"
+
+    def get_multiplicity(
+        self,
+        primitive_structure: Structure | None = None,
+        structure_symm_ops: list | None = None,
+        primitive_symm_ops: list | None = None,
+        symprec: float = 0.01,
+        dist_tol: float = 0.01,
+    ) -> int:
+        """
+        Calculate the multiplicity of the interstitial site (``self.site``) in
+        the host structure (``self.structure``).
+
+        This function determines all equivalent sites of ``self.site`` in
+        ``self.structure``, by first folding down to the primitive unit cell
+        (which may be the same as ``self.structure``) and getting all
+        equivalent primitive cell sites (which avoids issues with
+        periodicity-breaking supercells, and boosts efficiency), then
+        multiplying by ``len(self.structure)/len(primitive_structure)``, giving
+        the site multiplicity in ``self.structure``.
+
+        Args:
+            primitive_structure (Structure | None):
+                Structure to use for the primitive unit cell. Can be provided
+                to avoid recalculation of the primitive cell.
+            structure_symm_ops (list | None):
+                List of symmetry operations for ``self.structure``. Can be
+                provided to avoid recalculation.
+            primitive_symm_ops (list | None):
+                List of symmetry operations for ``primitive_structure``. Can be
+                provided to avoid recalculation.
+            symprec (float):
+                Symmetry precision to use for determining primitive structure
+                and symmetry operations for equivalent site generation.
+                Defaults to 0.01.
+            dist_tol (float):
+                Distance tolerance for clustering generated sites (to ensure
+                they are truly distinct), in Å (default: 0.01).
+
+        Returns:
+            int: The multiplicity of ``self.site`` in ``self.structure``.
+        """
+        # TODO: Add for vacancy and substitution too? Same function can be used
+        from doped.utils.symmetry import (
+            cluster_sites_by_dist_tol,
+            get_all_equiv_sites,
+            get_equiv_frac_coords_in_primitive,
+            get_primitive_structure,
+        )
+
+        assert isinstance(self.structure, Structure)
+        primitive_structure = primitive_structure or get_primitive_structure(
+            self.structure, symprec=symprec
+        )
+        if primitive_structure != self.structure:
+            # accounts for potential periodicity breaking in Defect.structure (which may be a supercell):
+            with contextlib.suppress(Exception):
+                return len(
+                    cluster_sites_by_dist_tol(
+                        [
+                            equiv_frac_coords
+                            for equiv_site_in_prim in get_equiv_frac_coords_in_primitive(
+                                self.site.frac_coords,
+                                primitive_structure,
+                                self.structure,
+                                symm_ops=structure_symm_ops,
+                                symprec=symprec,
+                                dist_tol=dist_tol,
+                            )
+                            for equiv_frac_coords in get_all_equiv_sites(
+                                equiv_site_in_prim,
+                                primitive_structure,
+                                symm_ops=primitive_symm_ops,
+                                just_frac_coords=True,
+                                symprec=symprec,
+                                dist_tol=dist_tol,
+                            )
+                        ],
+                        primitive_structure,
+                        dist_tol=dist_tol,
+                    )
+                ) * round(len(self.structure) / len(primitive_structure))
+
+        return len(
+            get_all_equiv_sites(
+                self.site.frac_coords,
+                self.structure,
+                symm_ops=structure_symm_ops,
+                just_frac_coords=True,
+                symprec=symprec,
+                dist_tol=dist_tol,
+            )
+        )

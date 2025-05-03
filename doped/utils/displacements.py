@@ -20,6 +20,7 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
+    get_matching_site,
     get_site_mapping_indices,
 )
 from doped.utils.symmetry import _round_floats
@@ -985,7 +986,7 @@ def plot_displacements_ellipsoid(
     if plot_ellipsoid:
         bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
         lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
-        func = _mpl_plot_ellipsoid if not use_plotly else _plotly_plot_ellipsoid
+        func = _plotly_plot_ellipsoid if use_plotly else _mpl_plot_ellipsoid
         args = [ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix]
         if not use_plotly:
             args.append(style_file)
@@ -994,7 +995,7 @@ def plot_displacements_ellipsoid(
 
     # If anisotropy plotting is enabled, plot the ellipsoid's radii anisotropy
     if plot_anisotropy:
-        func = _mpl_plot_anisotropy if not use_plotly else _plotly_plot_anisotropy
+        func = _plotly_plot_anisotropy if use_plotly else _mpl_plot_anisotropy
         args = [disp_df, anisotropy_df]
         if not use_plotly:
             args.append(style_file)
@@ -1011,61 +1012,63 @@ def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
 
     If ```Vacancy```, adds (unrelaxed) site to defect structure. If
     ``Interstitial``, adds relaxed site to bulk structure. If ``Substitution``,
-    replaces (unrelaxed) defect site in bulk structure.
+    replaces (unrelaxed) defect site in bulk structure with the relaxed site.
 
     Returns tuple of
     ``(bulk_sc_with_defect, defect_sc_with_defect, defect_site_index)``.
     """
     defect_type = defect_entry.defect.defect_type.name
     bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
-    # Check position of relaxed defect has been parsed (it's an optional arg)
-    sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry)
-    if sc_defect_frac_coords is None:
-        raise ValueError(
-            "The relaxed defect position (`DefectEntry.sc_defect_frac_coords`) has not been parsed. "
-            "Please use `DefectsParser`/`DefectParser` to parse relaxed defect positions before "
-            "calculating site displacements."
-        )
+    relaxed_sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=True)
 
     defect_sc_with_defect = _get_defect_supercell(defect_entry).copy()
-    if defect_type == "Vacancy":
-        # Add Vacancy atom to defect structure
+    if defect_type == "Vacancy":  # Add Vacancy atom to defect structure
         defect_sc_with_defect.append(
             defect_entry.defect.site.specie,
-            defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
+            relaxed_sc_defect_frac_coords,  # unrelaxed = relaxed site for vacancies
             coords_are_cartesian=False,
         )
-        defect_site_index = len(defect_sc_with_defect) - 1
-    elif defect_type == "Interstitial":
-        # If Interstitial, add interstitial site to bulk structure
+        defect_site_index: int | None = len(defect_sc_with_defect) - 1
+    elif defect_type == "Interstitial":  # If Interstitial, add interstitial site to bulk structure
         bulk_sc_with_defect.append(
             defect_entry.defect.site.specie,
-            defect_entry.defect.site.frac_coords,  # _relaxed_ defect site for interstitials
+            relaxed_sc_defect_frac_coords,  # _relaxed_ defect site for interstitials
             coords_are_cartesian=False,
         )
-        # Ensure last site of defect structure is defect site. Needed to then calculate site
-        # distances to defect
-        # Get index of defect site in defect supercell
-        if not np.allclose(
-            defect_sc_with_defect[-1].frac_coords,
-            sc_defect_frac_coords,  # _relaxed_ defect site
-        ):
-            # Get index of defect site in defect structure
-            defect_site_index = defect_sc_with_defect.index(_get_defect_supercell_site(defect_entry))
-        else:
-            defect_site_index = len(defect_sc_with_defect) - 1
-    elif defect_type == "Substitution":
-        # If Substitution, replace site in bulk supercell
+        # Get index of defect site in defect supercell; typically the last or first, so check these
+        # first for speed
+        defect_site_index = next(
+            (
+                trial_idx
+                for trial_idx in [len(defect_sc_with_defect) - 1, 0]
+                if np.allclose(
+                    defect_sc_with_defect[trial_idx].frac_coords,
+                    relaxed_sc_defect_frac_coords,  # _relaxed_ defect site
+                    atol=1e-2,
+                )
+            ),
+            None,
+        )
+        defect_site_index = defect_site_index or defect_sc_with_defect.index(
+            _get_defect_supercell_site(defect_entry, relaxed=True)
+        )
+
+    elif defect_type == "Substitution":  # If Substitution, replace site in bulk supercell
+        unrelaxed_sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
         bulk_sc_with_defect.replace(
-            defect_entry.defect.defect_site_index,
+            bulk_sc_with_defect.index(
+                get_matching_site(
+                    unrelaxed_sc_defect_frac_coords,
+                    bulk_sc_with_defect,
+                )
+            ),
             defect_entry.defect.site.specie,
-            defect_entry.defect.site.frac_coords,  # _unrelaxed_ defect site
+            unrelaxed_sc_defect_frac_coords,  # _unrelaxed_ defect site for bulk_sc_with_defect
             coords_are_cartesian=False,
         )
-        # Move defect site to last position of defect supercell
-        # Get index of defect site in defect supercell
+        # Get index of defect site in defect supercell (may differ from bulk site index)
         defect_site_index = defect_sc_with_defect.index(
-            _get_defect_supercell_site(defect_entry)  # _relaxed_ defect site
+            _get_defect_supercell_site(defect_entry, relaxed=True)
         )
     else:
         raise ValueError(f"Defect type {defect_type} not supported")

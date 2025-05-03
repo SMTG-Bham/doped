@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import warnings
+from copy import deepcopy
 from functools import lru_cache, partialmethod
 from xml.etree.ElementTree import Element as XML_Element
 
@@ -22,7 +23,7 @@ from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike, SpeciesLike
 
-from doped.core import DefectEntry
+from doped.core import DefectEntry, remove_site_oxi_state
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
@@ -575,6 +576,86 @@ def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
             idx.append(i)
 
     return np.array(coords), np.array(idx)
+
+
+def get_matching_site(
+    site: PeriodicSite | np.ndarray[float], structure: Structure, anonymous: bool = False, tol: float = 0.5
+) -> PeriodicSite:
+    """
+    Get the (closest) matching ``PeriodicSite`` in ``structure`` for the input
+    ``site``, which can be a ``PeriodicSite`` or fractional coordinates.
+
+    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
+    default) away from the input ``site`` coordinates, an error is raised.
+
+    Automatically accounts for possible differences in assigned oxidation
+    states, site property dicts etc.
+
+    Args:
+        site (PeriodicSite | np.ndarray[float]):
+            The site for which to find the closest matching site in
+            ``structure``, either as a ``PeriodicSite`` or fractional
+            coordinates array. If fractional coordinates, then ``anonymous``
+            is set to ``True``.
+        structure (Structure):
+            The structure in which to search for matching sites to ``site``.
+        anonymous (bool):
+            Whether to use anonymous matching, allowing different
+            species/elements to match each other (i.e. just matching based on
+            coordinates). Default is ``False`` if ``site`` is a
+            ``PeriodicSite``, and ``True`` if ``site`` is fractional
+            coordinates.
+        tol (float):
+            A distance tolerance (in Å), where an error will be thrown if the
+            closest matching site is > ``tol`` Å away from the input ``site``.
+            Default is 0.5 Å.
+
+    Returns:
+        PeriodicSite:
+            The closest matching site in ``structure`` to the input ``site``.
+    """
+    if not hasattr(site, "frac_coords"):
+        anonymous = True
+        site_cart_coords = structure.lattice.get_cartesian_coords(site)
+    else:
+        site_cart_coords = site.coords
+
+    if not anonymous:  # try directly match first
+        if site in structure:
+            return site
+
+        site_w_no_ox_state = deepcopy(site)
+        remove_site_oxi_state(site_w_no_ox_state)
+        site_w_no_ox_state.properties = {}
+
+        bulk_sites_w_no_ox_state = structure.copy().sites
+        for bulk_site in bulk_sites_w_no_ox_state:
+            remove_site_oxi_state(bulk_site)
+            bulk_site.properties = {}
+
+        if site_w_no_ox_state in bulk_sites_w_no_ox_state:
+            return structure.sites[bulk_sites_w_no_ox_state.index(site_w_no_ox_state)]
+
+    # else get closest site in structure, raising error if not within tol Å:
+    closest_site_idx = np.argmin(np.linalg.norm(structure.cart_coords - site_cart_coords, axis=1))
+    closest_site = structure.sites[closest_site_idx]
+
+    closest_site_dist = closest_site.distance_from_point(site_cart_coords)
+    if closest_site_dist > tol:
+        raise ValueError(
+            f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
+            f"with distance {closest_site_dist:.2f} Å (greater than {tol} Å and suggesting a likely "
+            f"mismatch in sites/structures here!)."
+        )
+
+    if not anonymous and site.specie.symbol != closest_site.specie.symbol:
+        raise ValueError(
+            f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
+            f"with distance {closest_site_dist:.2f} Å which is a different element! Set `anonymous=True` "
+            f"to allow matching of different elements/species if this is desired."
+        )
+
+    return closest_site
 
 
 def find_nearest_coords(

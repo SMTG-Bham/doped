@@ -27,6 +27,7 @@ from sympy import Eq, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
+from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import IStructure as doped_IStructure
 from doped.utils.efficiency import SpacegroupAnalyzer
 from doped.utils.parsing import (
@@ -234,7 +235,7 @@ def _frac_coords_sort_func(coords):
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
-def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
+def get_sga(struct: Structure, symprec: float = 0.01) -> SpacegroupAnalyzer:
     """
     Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting ``symprec`` if needs be.
@@ -244,21 +245,45 @@ def get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = Fal
             The input structure.
         symprec (float):
             The symmetry precision to use (default: 0.01).
-        return_symprec (bool):
-            Whether to return the fianl ``symprec`` used (default: False).
 
     Returns:
-        SpacegroupAnalyzer: The symmetry analyzer object. If ``return_symprec``
-        is ``True``, returns a tuple of the symmetry analyzer object and the
-        final ``symprec`` used.
+        SpacegroupAnalyzer: The symmetry analyzer object.
     """
+    return _get_sga(struct, symprec=symprec, return_symprec=False)
+
+
+def get_sga_and_symprec(struct: Structure, symprec: float = 0.01) -> tuple[SpacegroupAnalyzer, float]:
+    """
+    Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
+    adjusting ``symprec`` if needs be, and the final successful ``symprec``
+    used for ``SpacegroupAnalyzer`` initialisation.
+
+    Args:
+        struct (Structure):
+            The input structure.
+        symprec (float):
+            The symmetry precision to use (default: 0.01).
+
+    Returns:
+        tuple[SpacegroupAnalyzer, float]:
+            Tuple of the ``SpacegroupAnalyzer`` object and the final
+            ``symprec`` used.
+    """
+    return _get_sga(struct, symprec=symprec, return_symprec=True)
+
+
+def _get_sga(
+    struct: Structure, symprec: float = 0.01, return_symprec: bool = False
+) -> SpacegroupAnalyzer | tuple[SpacegroupAnalyzer, float]:
     IStructure.__hash__ = doped_IStructure.__hash__
 
     return _cache_ready_get_sga(struct, symprec=symprec, return_symprec=return_symprec)
 
 
 @lru_cache(maxsize=int(1e3))
-def _cache_ready_get_sga(struct: Structure, symprec: float = 0.01, return_symprec: bool = False):
+def _cache_ready_get_sga(
+    struct: Structure, symprec: float = 0.01, return_symprec: bool = False
+) -> SpacegroupAnalyzer | tuple[SpacegroupAnalyzer, float]:
     """
     ``get_sga`` code, with hashable input arguments for caching (using
     ``Structure`` hash function from ``doped.utils.efficiency``).
@@ -644,10 +669,10 @@ def _raw_get_all_equiv_sites(
         for site in x_sites:
             site.to_unit_cell(in_place=True)  # faster with in_place
 
-    return _cluster_sites_by_dist_tol(x_sites, structure, dist_tol, method="single", criterion="distance")
+    return cluster_sites_by_dist_tol(x_sites, structure, dist_tol, method="single", criterion="distance")
 
 
-def _cluster_sites_by_dist_tol(
+def cluster_sites_by_dist_tol(
     sites: Iterable[PeriodicSite | np.ndarray[float]],
     structure: Structure | Lattice,
     dist_tol: float = 0.01,
@@ -855,8 +880,8 @@ def get_equiv_frac_coords_in_primitive(
     equiv_coords: bool = True,
 ) -> list[np.ndarray] | np.ndarray:
     """
-    Get equivalent fractional coordinates of ``supercell`` ``frac_coords`` , in
-    the given ``primitive`` cell.
+    Get equivalent fractional coordinates of ``frac_coords`` (in ``supercell``)
+    in the given ``primitive`` cell.
 
     Returns a list of equivalent fractional coords in the primitive cell if
     ``equiv_coords`` is ``True`` (default).
@@ -912,24 +937,17 @@ def get_equiv_frac_coords_in_primitive(
 
     primitive_with_all_X = rotated_struct * matrix
 
-    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
-    s2_like_s1 = sm.get_s2_like_s1(primitive, primitive_with_all_X)
-    s2_really_like_s1 = Structure.from_sites(
-        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
-            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
-                site.specie,
-                site.frac_coords,
-                primitive.lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
+    primitive_with_all_X = orient_s2_like_s1(
+        primitive,
+        primitive_with_all_X,
+        primitive_cell=False,
+        ignored_species=["X"],
+        comparator=ElementComparator(),
     )
-
     prim_coord_list = sorted(
         [
             _vectorized_custom_round(np.mod(_vectorized_custom_round(site.frac_coords), 1))
-            for site in s2_really_like_s1.sites
+            for site in primitive_with_all_X.sites
             if site.specie.symbol == "X"
         ],
         key=_frac_coords_sort_func,

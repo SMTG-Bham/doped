@@ -2981,7 +2981,8 @@ class DefectThermodynamics(MSONable):
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
                     len(get_primitive_structure(defect_entry.defect.structure))  # spglib primitive
                     / len(defect_entry.defect.structure)
-                )
+                )  # ensure multiplicity corresponds to unit cell (which it should by default anyway,
+                # now that parsed ``Defect``s are defined in the primitive unit cell)
 
             except Exception:
                 multiplicity_per_unit_cell = "N/A"
@@ -4734,7 +4735,7 @@ class FermiSolver(MSONable):
             )
 
         ms = (
-            next(iter(self.defect_thermodynamics.defect_entries.values())).sc_entry.structure.volume
+            next(iter(self.defect_thermodynamics.defect_entries.values())).defect.structure.volume
             / self.volume
         )
         if not np.isclose(ms, round(ms), atol=3e-2):  # check multiplicity scaling is almost an integer

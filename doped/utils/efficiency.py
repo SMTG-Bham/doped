@@ -22,7 +22,7 @@ from pymatgen.analysis.structure_matcher import (
     FrameworkComparator,
     StructureMatcher,
 )
-from pymatgen.core.composition import Composition, Element, Species
+from pymatgen.core.composition import Composition, DummySpecies, Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Structure
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
@@ -337,8 +337,9 @@ def _get_symbol(element: Element | Species, comparator: AbstractComparator | Non
             Comparator to check if we should return the ``str(element)``
             representation (which includes charge information if ``element`` is
             a ``Species``), or just the element symbol (i.e.
-            ``element.element.symbol``) -- which is the case when
-            ``comparator`` is ``None`` (default) or ``ElementComparator`` /
+            ``element.symbol``, or ``element.element.symbol`` if ``element`` is
+            a ``Species`` object) -- which is the case when ``comparator`` is
+            ``None`` (default) or ``ElementComparator`` /
             ``FrameworkComparator``.
 
     Returns:
@@ -350,7 +351,7 @@ def _get_symbol(element: Element | Species, comparator: AbstractComparator | Non
         and isinstance(element, Species)
     ):
         return str(element)
-    return element.symbol if isinstance(element, Element) else element.element.symbol
+    return element.symbol if isinstance(element, Element | DummySpecies) else element.element.symbol
 
 
 def get_element_indices(
