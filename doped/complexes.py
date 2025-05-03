@@ -3,16 +3,15 @@ Code for generating and analysing defect complexes.
 """
 
 from collections.abc import Iterable
-from copy import deepcopy
 
 import numpy as np
 from pymatgen.analysis.ewald import EwaldSummation
 from pymatgen.core.structure import PeriodicSite, Structure
 
-from doped.core import remove_site_oxi_state
 from doped.utils.parsing import (
     _get_species_from_composition_diff,
     get_defect_type_and_composition_diff,
+    get_matching_site,
     get_site_mapping_indices,
 )
 from doped.utils.supercells import min_dist
@@ -123,76 +122,6 @@ def classify_vacancy_geometry(
         print(f"{num_offsite_defect_to_bulk} offsite atoms in defect compared to bulk")
         print(f"{num_offsite_bulk_to_defect} offsite atoms in bulk compared to defect")
     return "Non-Trivial"
-
-
-def get_matching_site(
-    site: PeriodicSite, structure: Structure, anonymous: bool = False, tol: float = 0.5
-) -> PeriodicSite:
-    """
-    Get the (closest) matching ``PeriodicSite`` in ``structure`` for the input
-    ``site``.
-
-    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
-    default) away from the input ``site`` coordinates, an error is raised.
-
-    Automatically accounts for possible differences in assigned oxidation
-    states, site property dicts etc.
-
-    Args:
-        site (PeriodicSite):
-            The site for which to find the closest matching site in
-            ``structure``.
-        structure (Structure):
-            The structure in which to search for matching sites to ``site``.
-        anonymous (bool):
-            Whether to use anonymous matching, allowing different
-            species/elements to match each other (i.e. just matching based on
-            coordinates). Default is ``False``.
-        tol (float):
-            A distance tolerance (in Å), where an error will be thrown if the
-            closest matching site is > ``tol`` Å away from the input ``site``.
-            Default is 0.5 Å.
-
-    Returns:
-        PeriodicSite:
-            The closest matching site in ``structure`` to the input ``site``.
-    """
-    if not anonymous:  # try directly match first
-        if site in structure:
-            return site
-
-        site_w_no_ox_state = deepcopy(site)
-        remove_site_oxi_state(site_w_no_ox_state)
-        site_w_no_ox_state.properties = {}
-
-        bulk_sites_w_no_ox_state = structure.copy().sites
-        for bulk_site in bulk_sites_w_no_ox_state:
-            remove_site_oxi_state(bulk_site)
-            bulk_site.properties = {}
-
-        if site_w_no_ox_state in bulk_sites_w_no_ox_state:
-            return structure.sites[bulk_sites_w_no_ox_state.index(site_w_no_ox_state)]
-
-    # else get closest site in structure, raising error if not within tol Å:
-    closest_site_idx = np.argmin(np.linalg.norm(structure.cart_coords - site.coords, axis=1))
-    closest_site = structure.sites[closest_site_idx]
-
-    closest_site_dist = closest_site.distance(site)
-    if closest_site_dist > tol:
-        raise ValueError(
-            f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
-            f"with distance {closest_site_dist:.2f} Å (greater than {tol} Å and suggesting a likely "
-            f"mismatch in sites/structures here!)."
-        )
-
-    if not anonymous and site.specie.symbol != closest_site.specie.symbol:
-        raise ValueError(
-            f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
-            f"with distance {closest_site_dist:.2f} Å which is a different element! Set `anonymous=True` "
-            f"to allow matching of different elements/species if this is desired."
-        )
-
-    return closest_site
 
 
 def get_es_energy(structure: Structure, oxi_states: dict | None = None) -> float:

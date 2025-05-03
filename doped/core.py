@@ -2745,3 +2745,96 @@ class Interstitial(Defect, core.Interstitial):
         """
         frac_coords_string = ",".join(f"{x:.3f}" for x in self.site.frac_coords)
         return f"{self.name} interstitial defect at site [{frac_coords_string}] in structure"
+
+    def get_multiplicity(
+        self,
+        primitive_structure: Structure | None = None,
+        structure_symm_ops: list | None = None,
+        primitive_symm_ops: list | None = None,
+        symprec: float = 0.01,
+        dist_tol: float = 0.01,
+    ) -> int:
+        """
+        Calculate the multiplicity of the interstitial site (``self.site``) in
+        the host structure (``self.structure``).
+
+        This function determines all equivalent sites of ``self.site`` in
+        ``self.structure``, by first folding down to the primitive unit cell
+        (which may be the same as ``self.structure``) and getting all
+        equivalent primitive cell sites (which avoids issues with
+        periodicity-breaking supercells, and boosts efficiency), then
+        multiplying by ``len(self.structure)/len(primitive_structure)``, giving
+        the site multiplicity in ``self.structure``.
+
+        Args:
+            primitive_structure (Structure | None):
+                Structure to use for the primitive unit cell. Can be provided
+                to avoid recalculation of the primitive cell.
+            structure_symm_ops (list | None):
+                List of symmetry operations for ``self.structure``. Can be
+                provided to avoid recalculation.
+            primitive_symm_ops (list | None):
+                List of symmetry operations for ``primitive_structure``. Can be
+                provided to avoid recalculation.
+            symprec (float):
+                Symmetry precision to use for determining primitive structure
+                and symmetry operations for equivalent site generation.
+                Defaults to 0.01.
+            dist_tol (float):
+                Distance tolerance for clustering generated sites (to ensure
+                they are truly distinct), in Å (default: 0.01).
+
+        Returns:
+            int: The multiplicity of ``self.site`` in ``self.structure``.
+        """
+        # TODO: Add for vacancy and substitution too? Same function can be used
+        from doped.utils.symmetry import (
+            cluster_sites_by_dist_tol,
+            get_all_equiv_sites,
+            get_equiv_frac_coords_in_primitive,
+            get_primitive_structure,
+        )
+
+        assert isinstance(self.structure, Structure)
+        primitive_structure = primitive_structure or get_primitive_structure(
+            self.structure, symprec=symprec
+        )
+        if primitive_structure != self.structure:
+            # accounts for potential periodicity breaking in Defect.structure (which may be a supercell):
+            with contextlib.suppress(Exception):
+                return len(
+                    cluster_sites_by_dist_tol(
+                        [
+                            equiv_frac_coords
+                            for equiv_site_in_prim in get_equiv_frac_coords_in_primitive(
+                                self.site.frac_coords,
+                                primitive_structure,
+                                self.structure,
+                                symm_ops=structure_symm_ops,
+                                symprec=symprec,
+                                dist_tol=dist_tol,
+                            )
+                            for equiv_frac_coords in get_all_equiv_sites(
+                                equiv_site_in_prim,
+                                primitive_structure,
+                                symm_ops=primitive_symm_ops,
+                                just_frac_coords=True,
+                                symprec=symprec,
+                                dist_tol=dist_tol,
+                            )
+                        ],
+                        primitive_structure,
+                        dist_tol=dist_tol,
+                    )
+                ) * round(len(self.structure) / len(primitive_structure))
+
+        return len(
+            get_all_equiv_sites(
+                self.site.frac_coords,
+                self.structure,
+                symm_ops=structure_symm_ops,
+                just_frac_coords=True,
+                symprec=symprec,
+                dist_tol=dist_tol,
+            )
+        )
