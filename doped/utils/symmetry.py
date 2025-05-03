@@ -6,7 +6,7 @@ import contextlib
 import math
 import os
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from functools import lru_cache
 from itertools import permutations
 
@@ -140,7 +140,9 @@ def _custom_round(number: float, decimals: int = 3):
 _vectorized_custom_round = np.vectorize(_custom_round)
 
 
-def _get_num_places_for_dist_precision(structure: Structure | Lattice, dist_precision: float = 0.001):
+def _get_num_places_for_dist_precision(
+    structure: Structure | Lattice, dist_precision: float = 0.001
+) -> int:
     """
     Given a structure or lattice, get the number of decimal places that we need
     to keep / can round to for `fractional coordinates` (``frac_coords``), to
@@ -152,9 +154,9 @@ def _get_num_places_for_dist_precision(structure: Structure | Lattice, dist_prec
     differences in fraction coordinates become significant).
 
     Args:
-        structure:
+        structure (Structure | Lattice):
             The input structure or lattice.
-        dist_precision:
+        dist_precision (float):
             The desired distance precision in Å (default: 0.001).
 
     Returns:
@@ -166,7 +168,7 @@ def _get_num_places_for_dist_precision(structure: Structure | Lattice, dist_prec
     frac_precision = dist_precision / max(lattice.abc)
 
     # get corresponding number of decimal places for this precision:
-    return -1 * min(math.floor(math.log(frac_precision, 10)), 0)
+    return -1 * min(math.floor(math.log(frac_precision, 10)), -8)  # use 8 dp as max precision
 
 
 def _round_struct_coords(structure: Structure, dist_precision: float = 0.001, to_unit_cell=False):
@@ -468,7 +470,7 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
 
 def cluster_coords(
     fcoords: ArrayLike,
-    struct: Structure,
+    structure: Structure | Lattice,
     dist_tol: float = 0.01,
     method: str = "single",
     criterion: str = "distance",
@@ -492,9 +494,9 @@ def cluster_coords(
     Args:
         fcoords (ArrayLike):
             Fractional coordinates to cluster.
-        struct (Structure):
-            Structure to use for the lattice, to which the fractional
-            coordinates correspond.
+        structure (Structure | Lattice):
+            Structure or lattice to which the fractional coordinates
+            correspond.
         dist_tol (float):
             Distance tolerance for clustering, in Å (default: 0.01). For the
             most part, fractional coordinates with distances less than this
@@ -516,7 +518,8 @@ def cluster_coords(
     if len(fcoords) == 1:  # only one input coordinates
         return np.array([0])
 
-    condensed_m = squareform(get_distance_matrix(fcoords, struct.lattice), checks=False)
+    lattice = structure if isinstance(structure, Lattice) else structure.lattice
+    condensed_m = squareform(get_distance_matrix(fcoords, lattice), checks=False)
     z = linkage(condensed_m, method=method)
     return fcluster(z, dist_tol, criterion=criterion)
 
@@ -641,22 +644,59 @@ def _raw_get_all_equiv_sites(
         for site in x_sites:
             site.to_unit_cell(in_place=True)  # faster with in_place
 
+    return _cluster_sites_by_dist_tol(x_sites, structure, dist_tol, method="single", criterion="distance")
+
+
+def _cluster_sites_by_dist_tol(
+    sites: Iterable[PeriodicSite | np.ndarray[float]],
+    structure: Structure | Lattice,
+    dist_tol: float = 0.01,
+    method: str = "single",
+    criterion: str = "distance",
+) -> list[PeriodicSite | np.ndarray[float]]:
+    r"""
+    Cluster sites based on their distances (using ``cluster_coords``).
+
+    Args:
+        sites (Iterable[PeriodicSite | np.ndarray[float]]):
+            Sites to cluster, as an iterable of ``PeriodicSite`` objects or
+            fractional coordinates.
+        structure (Structure | Lattice):
+            Structure or lattice to which the sites correspond.
+        dist_tol (float):
+            Distance tolerance for clustering, in Å (default: 0.01).
+        method (str):
+            Clustering algorithm to use with ``scipy``\'s ``linkage()``
+            clustering function in ``cluster_coords`` (default: ``"single"``).
+        criterion (str):
+            Criterion to use for flattening hierarchical clusters from the
+            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+
+    Returns:
+        list[PeriodicSite | np.ndarray[float]]:
+            List of clustered sites, as ``PeriodicSite`` objects or fractional
+            coordinates depending on the input ``sites`` type.
+    """
     dist_precision_num_places = _get_num_places_for_dist_precision(structure, dist_tol)
+    just_frac_coords = not hasattr(next(iter(sites)), "frac_coords")
+    sites = list(sites)  # needs to be indexable for reducing to unique sites below
     all_frac_coords = [
-        tuple(i.round(dist_precision_num_places) if dist_tol != 0 else i)
-        for i in (x_sites if just_frac_coords else [site.frac_coords for site in x_sites])
+        tuple(np.round(i, dist_precision_num_places))
+        for i in (sites if just_frac_coords else [site.frac_coords for site in sites])
     ]
     unique_frac_coords, unique_indices = np.unique(all_frac_coords, axis=0, return_index=True)
-    unique_x_sites = [x_sites[i] for i in unique_indices]
+    unique_sites = [sites[i] for i in unique_indices]
 
-    cn = cluster_coords(unique_frac_coords, structure, dist_tol=dist_tol, method="single")
+    cn = cluster_coords(
+        unique_frac_coords, structure, dist_tol=dist_tol, method=method, criterion=criterion
+    )
     # cn is an array of cluster numbers, of length ``len(unique_frac_coords)``, so we take the set of
     # cluster numbers ``n``, use ``np.where(cn == n)[0]`` to get the indices of ``cn`` /
     # ``unique_frac_coords`` which are in cluster ``n``, and then take the first of each cluster
     # (because here these should be basically the same sites just with possibly small numerical
     # differences due to symmetry operations, unlike when ``cluster_coords`` is used for Voronoi
     # interstitial generation, where we choose the cluster site based on symmetry/distance to host)
-    return [unique_x_sites[np.where(cn == n)[0][0]] for n in set(cn)]  # take 1st of each cluster
+    return [unique_sites[np.where(cn == n)[0][0]] for n in set(cn)]  # take 1st of each cluster
 
 
 def get_min_dist_between_equiv_sites(
@@ -815,11 +855,11 @@ def get_equiv_frac_coords_in_primitive(
     equiv_coords: bool = True,
 ) -> list[np.ndarray] | np.ndarray:
     """
-    Get an equivalent fractional coordinates of ``frac_coords`` from a
-    supercell, in the primitive cell.
+    Get equivalent fractional coordinates of ``supercell`` ``frac_coords`` , in
+    the given ``primitive`` cell.
 
     Returns a list of equivalent fractional coords in the primitive cell if
-    ``equiv_coords`` is ``True``.
+    ``equiv_coords`` is ``True`` (default).
 
     Note that there may be multiple possible symmetry-equivalent sites, all of
     which are returned if ``equiv_coords`` is ``True``, otherwise the first
@@ -834,10 +874,11 @@ def get_equiv_frac_coords_in_primitive(
         supercell (Structure):
             Supercell structure.
         symm_ops (list[SymmOp]):
-            List of symmetry operations to use for the equivalent site
-            generation (can be provided to avoid re-calculation). If not
-            provided, the symmetry operations will be determined using
-            ``get_sga`` with the chosen ``symprec``.
+            List of symmetry operations `for the supercell structure`, to use
+            for equivalent site generation, before reduction to the primitive
+            cell (can be provided to avoid re-calculation). If not provided,
+            the symmetry operations will be determined using ``get_sga`` with
+            the chosen ``symprec``.
         symprec (float):
             Symmetry precision to use for determining symmetry operations
             (default: 0.01).
@@ -848,7 +889,7 @@ def get_equiv_frac_coords_in_primitive(
             If ``True``, returns a list of equivalent fractional coords in the
             primitive cell. If ``False``, returns the first equivalent
             fractional coordinates in the list, sorted using
-            ``_frac_coords_sort_func``.
+            ``_frac_coords_sort_func``. Default: ``True``.
 
     Returns:
         list[np.ndarray] | np.ndarray:
