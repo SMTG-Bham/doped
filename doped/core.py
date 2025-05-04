@@ -2388,7 +2388,6 @@ class Defect(core.Defect):
             int: The multiplicity of ``self.site`` in ``self.structure``.
         """
         from doped.utils.symmetry import (
-            cluster_sites_by_dist_tol,
             get_all_equiv_sites,
             get_equiv_frac_coords_in_primitive,
             get_primitive_structure,
@@ -2402,27 +2401,12 @@ class Defect(core.Defect):
             # accounts for potential periodicity breaking in Defect.structure (which may be a supercell):
             with contextlib.suppress(Exception):
                 return len(
-                    cluster_sites_by_dist_tol(
-                        [
-                            equiv_frac_coords
-                            for equiv_site_in_prim in get_equiv_frac_coords_in_primitive(
-                                self.site.frac_coords,
-                                primitive_structure,
-                                self.structure,
-                                symm_ops=structure_symm_ops,
-                                symprec=symprec,
-                                dist_tol=dist_tol,
-                            )
-                            for equiv_frac_coords in get_all_equiv_sites(
-                                equiv_site_in_prim,
-                                primitive_structure,
-                                symm_ops=primitive_symm_ops,
-                                just_frac_coords=True,
-                                symprec=symprec,
-                                dist_tol=dist_tol,
-                            )
-                        ],
+                    get_equiv_frac_coords_in_primitive(
+                        self.site.frac_coords,
                         primitive_structure,
+                        self.structure,
+                        symm_ops=structure_symm_ops,
+                        symprec=symprec,
                         dist_tol=dist_tol,
                     )
                 ) * round(len(self.structure) / len(primitive_structure))

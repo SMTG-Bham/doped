@@ -569,7 +569,8 @@ def get_all_equiv_sites(
             Fractional coordinates to get equivalent sites of.
         structure (Structure):
             Structure to use for the lattice, to which the fractional
-            coordinates correspond.
+            coordinates correspond, and for determining symmetry operations
+            if not provided.
         symm_ops (list[SymmOp]):
             List of symmetry operations to use for the equivalent site
             generation (can be provided to avoid re-calculation). If not
@@ -936,7 +937,6 @@ def get_equiv_frac_coords_in_primitive(
         return None
 
     primitive_with_all_X = rotated_struct * matrix
-
     primitive_with_all_X = orient_s2_like_s1(
         primitive,
         primitive_with_all_X,
@@ -944,11 +944,31 @@ def get_equiv_frac_coords_in_primitive(
         ignored_species=["X"],
         comparator=ElementComparator(),
     )
-    prim_coord_list = sorted(
+
+    # now re-apply ``get_all_equiv_sites`` to each site primitive cell X site, to account for possible
+    # periodicity-breaking in the supercell, which would then only give a subset of the actual equivalent
+    # sites in the primitive cell:
+    all_equiv_prim_frac_coords = cluster_sites_by_dist_tol(
         [
-            _vectorized_custom_round(np.mod(_vectorized_custom_round(site.frac_coords), 1))
+            equiv_frac_coords
             for site in primitive_with_all_X.sites
             if site.specie.symbol == "X"
+            for equiv_frac_coords in get_all_equiv_sites(
+                site.frac_coords,
+                primitive,
+                just_frac_coords=True,
+                symprec=symprec,
+                dist_tol=dist_tol,
+            )
+        ],
+        primitive.lattice,
+        dist_tol=dist_tol,
+    )
+
+    prim_coord_list = sorted(
+        [
+            _vectorized_custom_round(np.mod(_vectorized_custom_round(frac_coords), 1))
+            for frac_coords in all_equiv_prim_frac_coords
         ],
         key=_frac_coords_sort_func,
     )
@@ -2300,9 +2320,9 @@ def point_symmetry_from_defect_entry(
                 # supercell, but only when the defect has not yet been relaxed. Still has the issue that
                 # once we have relaxation around the defect site in a periodicity-breaking supercell,
                 # then the (local) point symmetry cannot be easily determined as the whole supercell
-                # symmetry is broken.
-                # Future work could try a local structure analysis to determine the local point symmetry to
-                # counteract this.
+                # symmetry is broken. In future will try use stenciling to regenerate the structure in a
+                # non-periodicity-breaking cell, and then determine symmetry. Alternatively, could try some
+                # local structure analysis approach, but hacky...
                 # unique_sites = get_all_equiv_sites(  # defect site but bulk supercell & symm_ops
                 #     site.frac_coords, bulk_supercell, symm_ops
                 # )
@@ -2776,71 +2796,6 @@ def group_order_from_schoenflies(sch_symbol):
     Useful for symmetry and orientational degeneracy analysis.
     """
     return _point_group_order[sch_symbol]
-
-
-def get_interstitial_site_and_orientational_degeneracy(
-    interstitial_defect_entry: DefectEntry, dist_tol: float = 0.15
-) -> int:
-    """
-    Get the combined site and orientational degeneracy of an interstitial
-    defect entry.
-
-    The standard approach of using ``get_equiv_sites()`` for interstitial site
-    multiplicity and then ``point_symmetry_from_defect_entry()`` &
-    ``get_orientational_degeneracy`` for symmetry/orientational degeneracy is
-    preferred (as used in the ``DefectParser`` code), but alternatively this
-    function can be used to compute the product of the site and orientational
-    degeneracies.
-
-    This is done by determining the number of equivalent sites in the bulk
-    supercell for the given interstitial site (from defect_supercell_site),
-    which gives the combined site and orientational degeneracy `if` there was
-    no relaxation of the bulk lattice atoms. This matches the true combined
-    degeneracy in most cases, except for split-interstitial type defects etc.,
-    where this would give an artificially high degeneracy (as, for example, the
-    interstitial site is automatically assigned to one of the split-
-    interstitial atoms and not the midpoint, giving a doubled degeneracy as it
-    considers the two split-interstitial sites as two separate (degenerate)
-    interstitial sites, instead of one). This is counteracted by dividing by
-    the number of sites which are present in the defect supercell (within a
-    distance tolerance of dist_tol in Å) with the same species, ensuring none
-    of the predicted `different` equivalent sites are actually `included` in
-    the defect structure.
-
-    Args:
-        interstitial_defect_entry:
-            ``DefectEntry`` object for the interstitial defect.
-        dist_tol:
-            Distance tolerance in Å for determining equivalent sites.
-
-    Returns:
-        int:
-            Combined site and orientational degeneracy of the interstitial
-            defect entry.
-    """
-    if interstitial_defect_entry.bulk_entry is None:
-        raise ValueError(
-            "bulk_entry must be set for interstitial_defect_entry to determine the site and orientational "
-            "degeneracies! (i.e. must be a parsed DefectEntry)"
-        )
-    equiv_sites = get_all_equiv_sites(
-        _get_defect_supercell_frac_coords(interstitial_defect_entry),
-        _get_bulk_supercell(interstitial_defect_entry),
-    )
-    equiv_sites_array = np.array([site.frac_coords for site in equiv_sites])
-    defect_supercell_sites_of_same_species_array = np.array(
-        [
-            site.frac_coords
-            for site in _get_defect_supercell(interstitial_defect_entry)
-            if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
-        ]
-    )
-
-    distance_matrix = _get_bulk_supercell(interstitial_defect_entry).lattice.get_all_distances(
-        defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array
-    )[:, 0]
-
-    return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
 
 
 def get_orientational_degeneracy(

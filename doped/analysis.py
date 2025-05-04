@@ -60,8 +60,6 @@ from doped.utils.parsing import (
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
-    cluster_sites_by_dist_tol,
-    get_all_equiv_sites,
     get_equiv_frac_coords_in_primitive,
     get_orientational_degeneracy,
     get_primitive_structure,
@@ -355,21 +353,10 @@ def defect_from_structures(
 
     # get defect site in primitive structure, for Defect generation:
     primitive_structure = get_primitive_structure(bulk_supercell)
-    equiv_frac_coords_in_prim = cluster_sites_by_dist_tol(
-        [
-            equiv_frac_coords
-            for equiv_site_in_prim in get_equiv_frac_coords_in_primitive(
-                defect_site_in_bulk.frac_coords,
-                primitive_structure,
-                bulk_supercell,
-            )
-            for equiv_frac_coords in get_all_equiv_sites(
-                equiv_site_in_prim,
-                primitive_structure,
-                just_frac_coords=True,
-            )
-        ],
+    equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
+        defect_site_in_bulk.frac_coords,
         primitive_structure,
+        bulk_supercell,
     )
     equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
     equiv_defect_sites_in_prim = [
