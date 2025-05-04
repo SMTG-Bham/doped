@@ -19,6 +19,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
+from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
@@ -523,10 +524,10 @@ v_C_C1_C1.54C2.52C2.95l   [+1,0,-1]          [0.389,0.111,0.000]  18c
 v_C_C1_C1.54C2.52C2.95m   [+1,0,-1]          [0.111,0.389,0.139]  18c
 v_C_C1_C1.54C2.52C2.95n   [+1,0,-1]          [0.056,0.278,0.333]  18c
 v_C_C1_C1.54C2.52C2.95o   [+1,0,-1]          [0.111,0.389,0.222]  18c
-v_C_C1_C1.54C2.52C2.95p   [+1,0,-1]          [0.444,0.055,0.139]  18c
+v_C_C1_C1.54C2.52C2.95p   [+1,0,-1]          [0.445,0.056,0.139]  18c
 v_C_C1_C1.54C2.52C2.95q   [+1,0,-1]          [0.389,0.111,0.250]  18c
-v_C_C1_C1.54C2.52C2.95r   [+1,0,-1]          [0.444,0.055,0.222]  18c
-v_C_C1_C1.54C2.52C2.95s   [+1,0,-1]          [0.055,0.444,0.250]  18c
+v_C_C1_C1.54C2.52C2.95r   [+1,0,-1]          [0.445,0.056,0.222]  18c
+v_C_C1_C1.54C2.52C2.95s   [+1,0,-1]          [0.056,0.445,0.250]  18c
 v_C_C1_C1.54C2.52N2.52    [+1,0,-1]          [0.167,0.167,0.361]  18c
 v_C_C3v_C1.54C2.52C2.95a  [+1,0,-1]          [0.000,0.000,0.028]  3a
 v_C_C3v_C1.54C2.52C2.95b  [+1,0,-1]          [0.000,0.000,0.111]  3a
@@ -539,30 +540,30 @@ v_C_Cs_C1.54C2.52C2.95c   [+1,0,-1]          [0.611,0.222,0.222]  9b
 v_C_Cs_C1.54C2.52C2.95d   [+1,0,-1]          [0.500,0.500,0.028]  9b
 v_C_Cs_C1.54C2.52C2.95e   [+1,0,-1]          [0.500,0.500,0.111]  9b
 v_C_Cs_C1.54C2.52C2.95f   [+1,0,-1]          [0.500,0.500,0.361]  9b
-v_C_Cs_C1.54C2.52C2.95g   [+1,0,-1]          [0.500,0.500,0.444]  9b
-v_C_Cs_C1.54C2.52C2.95h   [+1,0,-1]          [0.500,0.500,0.695]  9b
+v_C_Cs_C1.54C2.52C2.95g   [+1,0,-1]          [0.500,0.500,0.445]  9b
+v_C_Cs_C1.54C2.52C2.95h   [+1,0,-1]          [0.500,0.500,0.694]  9b
 v_C_Cs_C1.54C2.52C2.95i   [+1,0,-1]          [0.500,0.500,0.778]  9b
 v_C_Cs_C1.54C2.52C2.95j   [+1,0,-1]          [0.056,0.111,0.000]  9b
-v_C_Cs_C1.54C2.52C2.95k   [+1,0,-1]          [0.111,0.056,0.139]  9b
+v_C_Cs_C1.54C2.52C2.95k   [+1,0,-1]          [0.111,0.055,0.139]  9b
 v_C_Cs_C1.54C2.52C2.95l   [+1,0,-1]          [0.222,0.111,0.000]  9b
-v_C_Cs_C1.54C2.52C2.95m   [+1,0,-1]          [0.111,0.056,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95m   [+1,0,-1]          [0.111,0.055,0.222]  9b
 v_C_Cs_C1.54C2.52C2.95n   [+1,0,-1]          [0.111,0.222,0.139]  9b
 v_C_Cs_C1.54C2.52C2.95o   [+1,0,-1]          [0.222,0.111,0.250]  9b
 v_C_Cs_C1.54C2.52C2.95p   [+1,0,-1]          [0.222,0.111,0.333]  9b
-v_C_Cs_C1.54C2.52C2.95q   [+1,0,-1]          [0.444,0.222,0.139]  9b
+v_C_Cs_C1.54C2.52C2.95q   [+1,0,-1]          [0.445,0.222,0.139]  9b
 v_C_Cs_C1.54C2.52C2.95r   [+1,0,-1]          [0.111,0.222,0.472]  9b
-v_C_Cs_C1.54C2.52C2.95s   [+1,0,-1]          [0.222,0.444,0.250]  9b
+v_C_Cs_C1.54C2.52C2.95s   [+1,0,-1]          [0.222,0.445,0.250]  9b
 v_C_Cs_C1.54C2.52C2.95t   [+1,0,-1]          [0.555,0.111,0.000]  9b
-v_C_Cs_C1.54C2.52C2.95u   [+1,0,-1]          [0.111,0.056,0.555]  9b
-v_C_Cs_C1.54C2.52C2.95v   [+1,0,-1]          [0.056,0.111,0.583]  9b
-v_C_Cs_C1.54C2.52C2.95w   [+1,0,-1]          [0.111,0.222,0.555]  9b
-v_C_Cs_C1.54C2.52C2.95x   [+1,0,-1]          [0.556,0.111,0.250]  9b
-v_C_Cs_C1.54C2.52C2.95y   [+1,0,-1]          [0.555,0.278,0.000]  9b
+v_C_Cs_C1.54C2.52C2.95u   [+1,0,-1]          [0.111,0.055,0.556]  9b
+v_C_Cs_C1.54C2.52C2.95v   [+1,0,-1]          [0.055,0.111,0.583]  9b
+v_C_Cs_C1.54C2.52C2.95w   [+1,0,-1]          [0.111,0.555,0.222]  9b
+v_C_Cs_C1.54C2.52C2.95x   [+1,0,-1]          [0.555,0.111,0.250]  9b
+v_C_Cs_C1.54C2.52C2.95y   [+1,0,-1]          [0.556,0.278,0.000]  9b
 v_C_Cs_C1.54C2.52C2.95z   [+1,0,-1]          [0.611,0.222,0.139]  9b
-v_C_Cs_C1.54C2.52C2.95{   [+1,0,-1]          [0.555,0.278,0.250]  9b
-v_C_Cs_C1.54C2.52N2.52a   [+1,0,-1]          [0.056,0.111,0.250]  9b
-v_C_Cs_C1.54C2.52N2.52b   [+1,0,-1]          [0.111,0.056,0.472]  9b
-v_C_Cs_C1.54N1.54         [+1,0,-1]          [0.056,0.111,0.333]  9b
+v_C_Cs_C1.54C2.52C2.95{   [+1,0,-1]          [0.556,0.278,0.250]  9b
+v_C_Cs_C1.54C2.52N2.52a   [+1,0,-1]          [0.055,0.111,0.250]  9b
+v_C_Cs_C1.54C2.52N2.52b   [+1,0,-1]          [0.111,0.055,0.472]  9b
+v_C_Cs_C1.54N1.54         [+1,0,-1]          [0.055,0.111,0.333]  9b
 v_N                       [+1,0,-1]          [0.000,0.000,0.361]  3a
 
 Substitutions             Guessed Charges    Conv. Cell Coords    Wyckoff
@@ -583,10 +584,10 @@ N_C_C1_C1.54C2.52C2.95l   [+1,0,-1]          [0.389,0.111,0.000]  18c
 N_C_C1_C1.54C2.52C2.95m   [+1,0,-1]          [0.111,0.389,0.139]  18c
 N_C_C1_C1.54C2.52C2.95n   [+1,0,-1]          [0.056,0.278,0.333]  18c
 N_C_C1_C1.54C2.52C2.95o   [+1,0,-1]          [0.111,0.389,0.222]  18c
-N_C_C1_C1.54C2.52C2.95p   [+1,0,-1]          [0.444,0.055,0.139]  18c
+N_C_C1_C1.54C2.52C2.95p   [+1,0,-1]          [0.445,0.056,0.139]  18c
 N_C_C1_C1.54C2.52C2.95q   [+1,0,-1]          [0.389,0.111,0.250]  18c
-N_C_C1_C1.54C2.52C2.95r   [+1,0,-1]          [0.444,0.055,0.222]  18c
-N_C_C1_C1.54C2.52C2.95s   [+1,0,-1]          [0.055,0.444,0.250]  18c
+N_C_C1_C1.54C2.52C2.95r   [+1,0,-1]          [0.445,0.056,0.222]  18c
+N_C_C1_C1.54C2.52C2.95s   [+1,0,-1]          [0.056,0.445,0.250]  18c
 N_C_C1_C1.54C2.52N2.52    [+1,0,-1]          [0.167,0.167,0.361]  18c
 N_C_C3v_C1.54C2.52C2.95a  [+1,0,-1]          [0.000,0.000,0.028]  3a
 N_C_C3v_C1.54C2.52C2.95b  [+1,0,-1]          [0.000,0.000,0.111]  3a
@@ -599,30 +600,30 @@ N_C_Cs_C1.54C2.52C2.95c   [+1,0,-1]          [0.611,0.222,0.222]  9b
 N_C_Cs_C1.54C2.52C2.95d   [+1,0,-1]          [0.500,0.500,0.028]  9b
 N_C_Cs_C1.54C2.52C2.95e   [+1,0,-1]          [0.500,0.500,0.111]  9b
 N_C_Cs_C1.54C2.52C2.95f   [+1,0,-1]          [0.500,0.500,0.361]  9b
-N_C_Cs_C1.54C2.52C2.95g   [+1,0,-1]          [0.500,0.500,0.444]  9b
-N_C_Cs_C1.54C2.52C2.95h   [+1,0,-1]          [0.500,0.500,0.695]  9b
+N_C_Cs_C1.54C2.52C2.95g   [+1,0,-1]          [0.500,0.500,0.445]  9b
+N_C_Cs_C1.54C2.52C2.95h   [+1,0,-1]          [0.500,0.500,0.694]  9b
 N_C_Cs_C1.54C2.52C2.95i   [+1,0,-1]          [0.500,0.500,0.778]  9b
 N_C_Cs_C1.54C2.52C2.95j   [+1,0,-1]          [0.056,0.111,0.000]  9b
-N_C_Cs_C1.54C2.52C2.95k   [+1,0,-1]          [0.111,0.056,0.139]  9b
+N_C_Cs_C1.54C2.52C2.95k   [+1,0,-1]          [0.111,0.055,0.139]  9b
 N_C_Cs_C1.54C2.52C2.95l   [+1,0,-1]          [0.222,0.111,0.000]  9b
-N_C_Cs_C1.54C2.52C2.95m   [+1,0,-1]          [0.111,0.056,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95m   [+1,0,-1]          [0.111,0.055,0.222]  9b
 N_C_Cs_C1.54C2.52C2.95n   [+1,0,-1]          [0.111,0.222,0.139]  9b
 N_C_Cs_C1.54C2.52C2.95o   [+1,0,-1]          [0.222,0.111,0.250]  9b
 N_C_Cs_C1.54C2.52C2.95p   [+1,0,-1]          [0.222,0.111,0.333]  9b
-N_C_Cs_C1.54C2.52C2.95q   [+1,0,-1]          [0.444,0.222,0.139]  9b
+N_C_Cs_C1.54C2.52C2.95q   [+1,0,-1]          [0.445,0.222,0.139]  9b
 N_C_Cs_C1.54C2.52C2.95r   [+1,0,-1]          [0.111,0.222,0.472]  9b
-N_C_Cs_C1.54C2.52C2.95s   [+1,0,-1]          [0.222,0.444,0.250]  9b
+N_C_Cs_C1.54C2.52C2.95s   [+1,0,-1]          [0.222,0.445,0.250]  9b
 N_C_Cs_C1.54C2.52C2.95t   [+1,0,-1]          [0.555,0.111,0.000]  9b
-N_C_Cs_C1.54C2.52C2.95u   [+1,0,-1]          [0.111,0.056,0.555]  9b
-N_C_Cs_C1.54C2.52C2.95v   [+1,0,-1]          [0.056,0.111,0.583]  9b
-N_C_Cs_C1.54C2.52C2.95w   [+1,0,-1]          [0.111,0.222,0.555]  9b
-N_C_Cs_C1.54C2.52C2.95x   [+1,0,-1]          [0.556,0.111,0.250]  9b
-N_C_Cs_C1.54C2.52C2.95y   [+1,0,-1]          [0.555,0.278,0.000]  9b
+N_C_Cs_C1.54C2.52C2.95u   [+1,0,-1]          [0.111,0.055,0.556]  9b
+N_C_Cs_C1.54C2.52C2.95v   [+1,0,-1]          [0.055,0.111,0.583]  9b
+N_C_Cs_C1.54C2.52C2.95w   [+1,0,-1]          [0.111,0.555,0.222]  9b
+N_C_Cs_C1.54C2.52C2.95x   [+1,0,-1]          [0.555,0.111,0.250]  9b
+N_C_Cs_C1.54C2.52C2.95y   [+1,0,-1]          [0.556,0.278,0.000]  9b
 N_C_Cs_C1.54C2.52C2.95z   [+1,0,-1]          [0.611,0.222,0.139]  9b
-N_C_Cs_C1.54C2.52C2.95{   [+1,0,-1]          [0.555,0.278,0.250]  9b
-N_C_Cs_C1.54C2.52N2.52a   [+1,0,-1]          [0.056,0.111,0.250]  9b
-N_C_Cs_C1.54C2.52N2.52b   [+1,0,-1]          [0.111,0.056,0.472]  9b
-N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.056,0.111,0.333]  9b
+N_C_Cs_C1.54C2.52C2.95{   [+1,0,-1]          [0.556,0.278,0.250]  9b
+N_C_Cs_C1.54C2.52N2.52a   [+1,0,-1]          [0.055,0.111,0.250]  9b
+N_C_Cs_C1.54C2.52N2.52b   [+1,0,-1]          [0.111,0.055,0.472]  9b
+N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.055,0.111,0.333]  9b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of C215N.\n"
@@ -720,34 +721,34 @@ Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
 -----------  -----------------  -------------------  ---------
 v_Si         [+1,0,-1,-2,-3]    [0.000,0.000,0.445]  6c
 v_Sb         [+1,0,-1,-2,-3]    [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1]       [0.335,0.003,0.073]  18f
+v_Te         [+2,+1,0,-1]       [0.332,0.001,0.260]  18f
 
 Substitutions    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
 Si_Sb            [+1,0,-1]                    [0.000,0.000,0.166]  6c
-Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.335,0.003,0.073]  18f
+Si_Te            [+6,+5,+4,+3,+2,+1,0,-1,-2]  [0.332,0.001,0.260]  18f
 Sb_Si            [+2,+1,0,-1,-2,-3,-4,-5,-6]  [0.000,0.000,0.445]  6c
-Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.335,0.003,0.073]  18f
+Sb_Te            [+7,+6,+5,+4,+3,+2,+1,0,-1]  [0.332,0.001,0.260]  18f
 Te_Si            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.445]  6c
 Te_Sb            [+3,+2,+1,0,-1,-2,-3,-4,-5]  [0.000,0.000,0.166]  6c
 
 Interstitials    Guessed Charges              Conv. Cell Coords    Wyckoff
 ---------------  ---------------------------  -------------------  ---------
-Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.158,0.359,0.167]  18f
-Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.347,0.348,0.457]  18f
-Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.001,0.336,0.289]  18f
+Si_i_C1_Si2.21   [+4,+3,+2,+1,0]              [0.201,0.359,0.167]  18f
+Si_i_C1_Si2.48   [+4,+3,+2,+1,0]              [0.348,0.347,0.543]  18f
+Si_i_C1_Te2.44   [+4,+3,+2,+1,0]              [0.003,0.335,0.044]  18f
 Si_i_C3_Sb2.41   [+4,+3,+2,+1,0]              [0.000,0.000,0.050]  6c
 Si_i_C3_Si2.64   [+4,+3,+2,+1,0]              [0.000,0.000,0.318]  6c
 Si_i_C3i         [+4,+3,+2,+1,0]              [0.000,0.000,0.000]  3a
-Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.158,0.359,0.167]  18f
-Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.347,0.348,0.457]  18f
-Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.001,0.336,0.289]  18f
+Sb_i_C1_Si2.21   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.201,0.359,0.167]  18f
+Sb_i_C1_Si2.48   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.348,0.347,0.543]  18f
+Sb_i_C1_Te2.44   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.003,0.335,0.044]  18f
 Sb_i_C3_Sb2.41   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.050]  6c
 Sb_i_C3_Si2.64   [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.318]  6c
 Sb_i_C3i         [+5,+4,+3,+2,+1,0,-1,-2,-3]  [0.000,0.000,0.000]  3a
-Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.158,0.359,0.167]  18f
-Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.347,0.348,0.457]  18f
-Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.001,0.336,0.289]  18f
+Te_i_C1_Si2.21   [+4,+3,+2,+1,0,-1,-2]        [0.201,0.359,0.167]  18f
+Te_i_C1_Si2.48   [+4,+3,+2,+1,0,-1,-2]        [0.348,0.347,0.543]  18f
+Te_i_C1_Te2.44   [+4,+3,+2,+1,0,-1,-2]        [0.003,0.335,0.044]  18f
 Te_i_C3_Sb2.41   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.050]  6c
 Te_i_C3_Si2.64   [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.318]  6c
 Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
@@ -987,17 +988,41 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 assert np.isclose(min_distance, equiv_min_distance, atol=0.01)
 
             # test equivalent_sites for defects:
-            if all(
-                hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements
-            ) and len(
-                {sp.symbol: sp.oxi_state for sp in defect_entry.defect.structure.composition.elements}
-            ) == len(
-                defect_entry.defect.structure.composition.elements
+            if (
+                all(hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements)
+                and len(
+                    {sp.symbol: sp.oxi_state for sp in defect_entry.defect.structure.composition.elements}
+                )
+                == len(defect_entry.defect.structure.composition.elements)
+            ) or all(
+                not hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements
             ):
                 # single-valence, otherwise skip equiv sites / multiplicity checks (due to pymatgen
                 # defects issues in determining equiv sites / multiplicities in these cases)
+                # test multiplicity functions:
                 print(len(defect_entry.defect.equivalent_sites), defect_entry.defect.multiplicity)
                 assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+                assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
+                    primitive_structure=defect_gen.primitive_structure,
+                )
+
+                # now we fold down to primitive to calculate the multiplicity, which avoids issues with
+                # periodicity breaking etc. -- test here:
+                supercell_defect = MontyDecoder().process_decoded(
+                    {
+                        "@module": "doped.core",
+                        "@class": str(type(defect_entry.defect)).split(".")[-1].strip("'>"),
+                        "structure": defect_entry.bulk_supercell,
+                        "site": defect_entry.defect_supercell_site,
+                    }
+                )
+                print(supercell_defect.multiplicity, defect_entry.defect.multiplicity)
+                assert supercell_defect.multiplicity == defect_entry.defect.multiplicity * round(
+                    len(defect_entry.bulk_supercell) / len(defect_entry.defect.structure)
+                )
+                assert supercell_defect.multiplicity == supercell_defect.get_multiplicity(
+                    primitive_structure=defect_gen.primitive_structure,
+                )
                 assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
                 assert np.allclose(
                     defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
@@ -1006,9 +1031,9 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     defect_entry.defect.structure
                 )
                 print(defect_entry.defect.multiplicity, num_prim_cells_in_conv_cell, defect_entry.wyckoff)
-                # assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
-                #     defect_entry.wyckoff[:-1]
-                # )
+                assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
+                    defect_entry.wyckoff[:-1]
+                )
                 assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
                 assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(
                     defect_entry.wyckoff[:-1]
@@ -3319,7 +3344,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 -----------  ------------------  -------------------  ---------
 v_Si         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.445]  6c
 v_Sb         [+2,+1,0,-1,-2,-3]  [0.000,0.000,0.166]  6c
-v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
+v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
 \n"""
             )
             in output
@@ -3373,7 +3398,11 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         here (should be ``{"Sn4+":1, "Sn2+":4, "O2-":6}``), but it gets
         Sn3+ and Sn2+, but at least it's closer, and the point of this
         test is to check the ``doped`` functions at least behave as
-        expected with mixed valence systems).
+        expected with mixed valence systems). Note that for determining
+        inequivalent sites for defect generation, oxidation states are not
+        considered (as implemented in ``pymatgen-analysis-defects``), but the
+        charge states will reflect the assigned oxidation states for the
+        corresponding sites.
         """
         # it's a low-symmetry system so don't bother auto-generating supercell, this functionality is
         # sufficiently tested:
@@ -3397,14 +3426,14 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
         self._general_defect_gen_check(defect_gen)
         if not manual_oxi:
             test_lines = [
-                "v_Sn_C1_O2.08O2.11         [+1,0,-1,-2]       [0.101,0.502,0.319]  4e",
-                "v_Sn_C1_O2.08Sn3.28        [+1,0,-1,-2,-3]    [0.500,0.500,0.500]  2b",
-                "v_Sn_C1_O2.09              [+1,0,-1,-2]       [0.301,0.002,0.350]  4e",
-                "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]       [0.441,0.198,0.292]  4e",
-                "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]       [0.045,0.178,0.130]  4e",
-                "v_O_C1_Sn2.09              [+2,+1,0,-1]       [0.642,0.323,0.461]  4e",
-                "Sn_i_C1_Sn2.33O2.33O2.39d   [+4,+3,+2,+1,0]    [0.273,0.460,0.248]  4e",
-                "O_i_C1_O1.83Sn1.99Sn2.09a   [0,-1,-2]          [0.567,0.320,0.205]  4e",
+                "v_Sn_C1_O2.08              [+1,0,-1,-2]       [0.101,0.497,0.319]  4e",
+                "v_Sn_C1_O2.09              [+1,0,-1,-2,-3]    [0.699,0.498,0.150]  4e",
+                "v_Sn_Ci                    [+1,0,-1,-2,-3]    [0.500,0.500,0.500]  2b",
+                "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]       [0.559,0.302,0.208]  4e",
+                "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]       [0.045,0.822,0.130]  4e",
+                "v_O_C1_Sn2.09              [+2,+1,0,-1]       [0.358,0.177,0.039]  4e",
+                "Sn_i_C1_Sn2.33O2.33O2.39d   [+4,+3,+2,+1,0]    [0.273,0.540,0.248]  4e",
+                "O_i_C1_O1.83Sn1.99Sn2.09a   [0,-1,-2]          [0.433,0.180,0.295]  4e",
             ]
             assert set(defect_gen._bulk_oxi_states.composition.elements) == {
                 Species("Sn3+"),
@@ -3414,12 +3443,12 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
 
         else:
             test_lines = [
-                "v_Sn_C1_O2.08              [+1,0,-1,-2,-3,-4]  [0.101,0.502,0.319]  4e",
-                "v_Sn_C1_O2.09              [+1,0,-1,-2,-3,-4]  [0.301,0.002,0.350]  4e",
+                "v_Sn_C1_O2.08              [+1,0,-1,-2,-3,-4]  [0.101,0.497,0.319]  4e",
+                "v_Sn_C1_O2.09              [+1,0,-1,-2,-3,-4]  [0.699,0.498,0.150]  4e",
                 "v_Sn_Ci                    [+1,0,-1,-2,-3,-4]  [0.500,0.500,0.500]  2b",
-                "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]        [0.441,0.198,0.292]  4e",
-                "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]        [0.045,0.178,0.130]  4e",
-                "v_O_C1_Sn2.09              [+2,+1,0,-1]        [0.642,0.323,0.461]  4e",
+                "v_O_C1_Sn2.08Sn2.11O2.62   [+2,+1,0,-1]        [0.559,0.302,0.208]  4e",
+                "v_O_C1_Sn2.08Sn2.11Sn2.14  [+2,+1,0,-1]        [0.045,0.822,0.130]  4e",
+                "v_O_C1_Sn2.09              [+2,+1,0,-1]        [0.358,0.177,0.039]  4e",
             ]
             assert set(defect_gen._bulk_oxi_states.composition.elements) == {
                 Species("Sn4+"),
@@ -3704,20 +3733,20 @@ v_Te         [+2,+1,0,-1,-2]     [0.335,0.003,0.073]  18f
 
         for i in [  # includes adsorbate sites now -- these have been manually checked
             "Na_i_C3v_Cd2.71Te2.71Cd4.25a  [+1,0]             [0.000,0.000,0.501]  1a",
-            "Na_i_C3v_Cd2.71Te2.71Cd4.25b  [+1,0]             [0.333,0.667,0.335]  1a",
-            "Na_i_C3v_Cd2.71Te2.71Cd4.25c  [+1,0]             [0.667,0.333,0.668]  1a",
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25b  [+1,0]             [0.667,0.333,0.335]  1a",
+            "Na_i_C3v_Cd2.71Te2.71Cd4.25c  [+1,0]             [0.333,0.667,0.668]  1a",
             "Na_i_C3v_Cd2.83Te3.27Cd5.42a  [+1,0]             [0.000,0.000,0.564]  1a",
-            "Na_i_C3v_Cd2.83Te3.27Cd5.42b  [+1,0]             [0.333,0.667,0.397]  1a",
-            "Na_i_C3v_Cd4.25Te4.25Cd6.28a  [+1,0]             [0.667,0.333,0.168]  1a",
-            "Na_i_C3v_Cd4.25Te4.25Cd6.28b  [+1,0]             [0.333,0.667,0.835]  1a",
-            "Na_i_C3v_Cd7.57Te7.57Cd8.02   [+1,0]             [0.667,0.333,0.001]  1a",
-            "Na_i_C3v_Cd7.57Te7.57Te8.03   [+1,0]             [0.333,0.667,0.001]  1a",
+            "Na_i_C3v_Cd2.83Te3.27Cd5.42b  [+1,0]             [0.667,0.333,0.397]  1a",
+            "Na_i_C3v_Cd4.25Te4.25Cd6.28a  [+1,0]             [0.333,0.667,0.168]  1a",
+            "Na_i_C3v_Cd4.25Te4.25Cd6.28b  [+1,0]             [0.667,0.333,0.835]  1a",
+            "Na_i_C3v_Cd7.57Te7.57Cd8.02   [+1,0]             [0.333,0.667,0.001]  1a",
+            "Na_i_C3v_Cd7.57Te7.57Te8.03   [+1,0]             [0.667,0.333,0.001]  1a",
             "Na_i_C3v_Te2.00               [+1,0]             [0.000,0.000,0.226]  1a",
             "Na_i_C3v_Te2.83Cd3.27Te5.42a  [+1,0]             [0.000,0.000,0.439]  1a",
-            "Na_i_C3v_Te2.83Cd3.27Te5.42b  [+1,0]             [0.667,0.333,0.606]  1a",
-            "Na_i_C3v_Te3.34               [+1,0]             [0.333,0.667,0.226]  1a",
-            "Na_i_Cs_Cd2.71Te2.71Cd2.71    [+1,0]             [0.167,0.333,0.418]  3d",
-            "Na_i_Cs_Cd2.71Te2.71Cd4.25    [+1,0]             [0.333,0.167,0.585]  3d",
+            "Na_i_C3v_Te2.83Cd3.27Te5.42b  [+1,0]             [0.333,0.667,0.606]  1a",
+            "Na_i_C3v_Te3.34               [+1,0]             [0.667,0.333,0.226]  1a",
+            "Na_i_Cs_Cd2.71Te2.71Cd2.71    [+1,0]             [0.333,0.167,0.418]  3d",
+            "Na_i_Cs_Cd2.71Te2.71Cd4.25    [+1,0]             [0.167,0.333,0.585]  3d",
             "Na_i_Cs_Te3.06                [+1,0]             [0.500,0.500,0.226]  3d",
         ]:
             print(i)

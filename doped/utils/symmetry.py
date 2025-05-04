@@ -927,7 +927,7 @@ def get_equiv_frac_coords_in_primitive(
         frac_coords, supercell, symm_ops, dist_tol=dist_tol, symprec=symprec
     )
     supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
-    prim_with_all_X = get_primitive_structure(supercell_with_all_X, ignored_species=["X"])
+    prim_with_all_X = get_primitive_structure(supercell_with_all_X, ignored_species=["X"], symprec=symprec)
 
     # ensure matched to primitive structure:
     rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
@@ -1191,7 +1191,14 @@ def _get_candidate_prim_structs(structure, **kwargs):
             # only also try conventional if equivalent to the primitive cell
             candidate_prim_structs = [candidate_conv_struct, *candidate_prim_structs]
 
-    return candidate_prim_structs
+    # sometimes Structure.get_primitive_structure() can fail to identify the primitive structure, returning
+    # the same input structure, so if the number of atoms differs in different candidate primitive
+    # structures, then just take those with the minimum number of atoms:
+    return [
+        candidate_prim_struct
+        for candidate_prim_struct in candidate_prim_structs
+        if len(candidate_prim_struct) == min(len(i) for i in candidate_prim_structs)
+    ]
 
 
 def get_wyckoff(
@@ -1524,6 +1531,15 @@ def _cache_ready_get_primitive_structure(
     ``get_primitive_structure`` code, with hashable input arguments for caching
     (using ``Structure`` hash function from ``doped.utils.efficiency``).
     """
+    # clean structure site_properties (if mismatching ``None`` values present, can mess with primitive
+    # structure determination) -- this can happen if e.g. a slab structure is input with "bulk_wyckoff"
+    # etc site properties:
+    for key, val in list(structure.site_properties.items()):
+        if any(i is not None for i in val) and any(i is None for i in val):
+            structure.site_properties.pop(key, None)
+            for site in structure:
+                site.properties.pop(key, None)
+
     kwargs_dict = dict(kwargs) if kwargs is not None else {}
     candidate_prim_structs = _get_candidate_prim_structs(structure, **kwargs_dict)
 
