@@ -120,6 +120,260 @@ default_supercell_gen_kwargs = {
 }
 
 
+def _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed=False):
+    print(f"Checking DefectEntry {defect_name} attributes")
+    assert defect_entry.name == defect_name
+    assert defect_entry.charge_state == int(defect_name.split("_")[-1])
+    assert defect_entry.wyckoff
+    assert defect_entry.defect
+    assert defect_entry.defect.wyckoff == defect_entry.wyckoff
+    # Commenting out as confirmed works but slows down tests (tested elsewhere):
+    # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
+    # defect_entry.defect)
+    assert np.array_equal(defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords)
+    assert np.allclose(
+        defect_entry.sc_entry.structure.lattice.matrix,
+        defect_gen.bulk_supercell.lattice.matrix,
+    )
+
+    # only run more intensive checks on neutral entries, as charged entries are just copies of this
+    if defect_entry.charge_state == 0 and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula:
+        sga = SpacegroupAnalyzer(defect_gen.primitive_structure)
+        reoriented_conv_structure = swap_axes(
+            sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
+        )
+        assert np.allclose(
+            defect_entry.conventional_structure.lattice.matrix,
+            defect_entry.defect.conventional_structure.lattice.matrix,
+            atol=1e-3,
+        )
+        assert np.allclose(
+            np.abs(defect_entry.conventional_structure.lattice.matrix),
+            np.abs(reoriented_conv_structure.lattice.matrix),
+            atol=1e-3,
+        )  # may also have multiplied axes by -1 to get a positive determinant
+        # test no unwanted structure reordering
+        for structure in [
+            defect_entry.defect_supercell,
+            defect_entry.bulk_supercell,
+            defect_entry.sc_entry.structure,
+            defect_entry.conventional_structure,
+        ]:
+            assert len(Poscar(structure).site_symbols) == len(
+                set(Poscar(structure).site_symbols)
+            )  # no duplicates
+
+        # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
+        # defect_entry.conventional_structure
+        distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
+            defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
+        )[:, 0]
+        if len(distance_matrix[distance_matrix > 0.01]) > 0:
+            min_distance = distance_matrix[distance_matrix > 0.01].min()
+        else:  # only one site in conventional cell
+            min_distance = min_dist(defect_entry.conventional_structure)
+
+        if defect_gen.interstitial_gen_kwargs is not False:
+            assert min_distance > defect_gen.interstitial_gen_kwargs.get(
+                "min_dist", 0.9
+            )  # default min_dist = 0.9
+        for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+            distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
+                defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
+            )[:, 0]
+            if len(distance_matrix[distance_matrix > 0.01]) > 0:
+                equiv_min_distance = distance_matrix[distance_matrix > 0.01].min()
+            else:  # only one site in conventional cell
+                equiv_min_distance = min_dist(defect_entry.conventional_structure)
+
+            assert np.isclose(min_distance, equiv_min_distance, atol=0.01)
+
+        # test equivalent_sites for defects:
+        if (
+            all(hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements)
+            and len({sp.symbol: sp.oxi_state for sp in defect_entry.defect.structure.composition.elements})
+            == len(defect_entry.defect.structure.composition.elements)
+        ) or all(
+            not hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements
+        ):
+            # single-valence, otherwise skip equiv sites / multiplicity checks (due to pymatgen
+            # defects issues in determining equiv sites / multiplicities in these cases)
+            # test multiplicity functions:
+            print(len(defect_entry.defect.equivalent_sites), defect_entry.defect.multiplicity)
+            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+            assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
+                primitive_structure=defect_gen.primitive_structure,
+            )
+            from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
+            from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
+
+            defect_type_dict = {
+                DefectType.Vacancy: pmg_Vacancy,
+                DefectType.Substitution: pmg_Substitution,
+            }
+            # test that custom doped multiplicity function matches pymatgen function (which is only
+            # defined for Vacancies/Substitutions, and fails with periodicity-breaking cells (but
+            # don't have them here with _generated_ defects)
+            if defect_entry.defect.defect_type in defect_type_dict:
+                assert defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(
+                    defect_entry.defect
+                ) == defect_entry.defect.get_multiplicity(
+                    primitive_structure=defect_gen.primitive_structure,
+                )
+
+            # now we fold down to primitive to calculate the multiplicity, which avoids issues with
+            # periodicity breaking etc. -- test here:
+            supercell_defect = MontyDecoder().process_decoded(
+                {
+                    "@module": "doped.core",
+                    "@class": str(type(defect_entry.defect)).split(".")[-1].strip("'>"),
+                    "structure": defect_entry.bulk_supercell,
+                    "site": defect_entry.defect_supercell_site,
+                }
+            )
+            print(supercell_defect.multiplicity, defect_entry.defect.multiplicity)
+            assert supercell_defect.multiplicity == defect_entry.defect.multiplicity * round(
+                len(defect_entry.bulk_supercell) / len(defect_entry.defect.structure)
+            )
+            assert supercell_defect.multiplicity == supercell_defect.get_multiplicity(
+                primitive_structure=defect_gen.primitive_structure,
+            )
+            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+
+            if (
+                supercell_defect.defect_type in defect_type_dict
+                and defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
+                    iupac_ordering=True
+                )[0]
+                not in [
+                    "SiSbTe3",
+                    "Ag2Se",
+                    "Ga2O3",  # used in test_complexes.py
+                ]
+            ):  # periodicity-breaking cases
+                assert defect_type_dict[supercell_defect.defect_type].get_multiplicity(
+                    supercell_defect
+                ) == supercell_defect.get_multiplicity(
+                    primitive_structure=defect_gen.primitive_structure,
+                )
+
+            assert np.allclose(
+                defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
+            )
+            num_prim_cells_in_conv_cell = len(defect_entry.conventional_structure) / len(
+                defect_entry.defect.structure
+            )
+            print(defect_entry.defect.multiplicity, num_prim_cells_in_conv_cell, defect_entry.wyckoff)
+            assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
+                defect_entry.wyckoff[:-1]
+            )
+            assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
+            assert any(
+                np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
+                for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
+            )
+            for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
+                assert any(
+                    np.array_equal(equiv_conv_cell_frac_coords, x)
+                    for x in defect_entry.defect.equiv_conv_cell_frac_coords
+                )
+            assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
+                len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
+            )
+        assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
+        assert np.isclose(
+            defect_entry.defect_supercell_site.frac_coords,
+            defect_entry.sc_defect_frac_coords,
+            atol=1e-5,
+        ).all()
+
+        for equiv_site in defect_entry.defect.equivalent_sites:
+            nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                equiv_site.coords,
+                5,
+            )
+            nn_distances = np.array([nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms])
+            if len(nn_distances[nn_distances > 0.01]) == 0:
+                # no NNs within 5 Å, expand search to max lattice vector to ensure at least one NN:
+                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
+                    equiv_site.coords,
+                    max(defect_entry.defect.structure.lattice.abc) + 0.1,
+                )
+                nn_distances = np.array(
+                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
+                )
+
+            nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
+            print(defect_entry.name, equiv_site.coords, nn_distance, min_distance)
+            assert np.isclose(min_distance, nn_distance, atol=0.01)  # same min_distance as from
+            # conv_cell_frac_coords testing above
+
+    assert defect_entry.bulk_entry is None
+
+    # Sb2Se3, Ag2Se and Sn5O6 are the 3 test cases included so far where the lattice vectors swap,
+    # first 2 with [1, 0, 2] mapping, Sn5O6 with [2, 1, 0]
+    assert defect_entry._BilbaoCS_conv_cell_vector_mapping in [[0, 1, 2], [1, 0, 2], [2, 1, 0]]
+
+    assert (
+        defect_entry._BilbaoCS_conv_cell_vector_mapping
+        == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
+    )
+    assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
+    assert not defect_entry.corrections
+    assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
+
+    # test charge state guessing:
+    if not charge_states_removed:
+        for charge_state_dict in defect_entry.charge_state_guessing_log:
+            charge_state = charge_state_dict["input_parameters"]["charge_state"]
+            try:
+                assert np.isclose(
+                    np.prod(list(charge_state_dict["probability_factors"].values())),
+                    charge_state_dict["probability"],
+                )
+            except AssertionError as e:
+                if charge_state not in [-1, 0, 1]:
+                    raise e
+
+            if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
+                assert any(
+                    defect_name in defect_gen.defect_entries
+                    for defect_name in defect_gen.defect_entries
+                    if int(defect_name.split("_")[-1]) == charge_state
+                    and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                )
+            else:
+                try:
+                    assert all(
+                        defect_name not in defect_gen.defect_entries
+                        for defect_name in defect_gen.defect_entries
+                        if int(defect_name.split("_")[-1]) == charge_state
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    )
+                except AssertionError as e:
+                    # check if intermediate charge state:
+                    if all(
+                        defect_name not in defect_gen.defect_entries
+                        for defect_name in defect_gen.defect_entries
+                        if abs(int(defect_name.split("_")[-1])) > abs(charge_state)
+                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
+                    ):
+                        raise e
+
+    # check __repr__ info:
+    assert all(
+        i in defect_entry.__repr__()
+        for i in [
+            f"doped DefectEntry: {defect_entry.name}, with bulk composition:",
+            f"and defect: {defect_entry.defect.name}. Available attributes:\n",
+            "corrected_energy",
+            "Available methods",
+            "equilibrium_concentration",
+        ]
+    )
+
+
 class DefectsGeneratorTest(unittest.TestCase):
     def setUp(self):
         # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
@@ -901,7 +1155,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                         )  # no duplicates
 
         for defect_name, defect_entry in defect_gen.defect_entries.items():
-            self._check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed)
+            _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed)
 
         random_name, random_defect_entry = random.choice(list(defect_gen.defect_entries.items()))
         self._random_equiv_supercell_sites_check(random_defect_entry)
@@ -913,269 +1167,6 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 atol=1e-3,
             )
         print("Finished general DefectsGenerator check")
-
-    def _check_defect_entry(self, defect_entry, defect_name, defect_gen, charge_states_removed=False):
-        print(f"Checking DefectEntry {defect_name} attributes")
-        assert defect_entry.name == defect_name
-        assert defect_entry.charge_state == int(defect_name.split("_")[-1])
-        assert defect_entry.wyckoff
-        assert defect_entry.defect
-        assert defect_entry.defect.wyckoff == defect_entry.wyckoff
-        # Commenting out as confirmed works but slows down tests (tested elsewhere):
-        # assert get_defect_name_from_entry(defect_entry) == get_defect_name_from_defect(
-        # defect_entry.defect)
-        assert np.array_equal(
-            defect_entry.defect.conv_cell_frac_coords, defect_entry.conv_cell_frac_coords
-        )
-        assert np.allclose(
-            defect_entry.sc_entry.structure.lattice.matrix,
-            defect_gen.bulk_supercell.lattice.matrix,
-        )
-
-        # only run more intensive checks on neutral entries, as charged entries are just copies of this
-        if (
-            defect_entry.charge_state == 0
-            and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula
-        ):
-            sga = SpacegroupAnalyzer(defect_gen.primitive_structure)
-            reoriented_conv_structure = swap_axes(
-                sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
-            )
-            assert np.allclose(
-                defect_entry.conventional_structure.lattice.matrix,
-                defect_entry.defect.conventional_structure.lattice.matrix,
-                atol=1e-3,
-            )
-            assert np.allclose(
-                np.abs(defect_entry.conventional_structure.lattice.matrix),
-                np.abs(reoriented_conv_structure.lattice.matrix),
-                atol=1e-3,
-            )  # may also have multiplied axes by -1 to get a positive determinant
-            # test no unwanted structure reordering
-            for structure in [
-                defect_entry.defect_supercell,
-                defect_entry.bulk_supercell,
-                defect_entry.sc_entry.structure,
-                defect_entry.conventional_structure,
-            ]:
-                assert len(Poscar(structure).site_symbols) == len(
-                    set(Poscar(structure).site_symbols)
-                )  # no duplicates
-
-            # get minimum distance of defect_entry.conv_cell_frac_coords to any site in
-            # defect_entry.conventional_structure
-            distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
-                defect_entry.conventional_structure.frac_coords, defect_entry.conv_cell_frac_coords
-            )[:, 0]
-            if len(distance_matrix[distance_matrix > 0.01]) > 0:
-                min_distance = distance_matrix[distance_matrix > 0.01].min()
-            else:  # only one site in conventional cell
-                min_distance = min_dist(defect_entry.conventional_structure)
-
-            if defect_gen.interstitial_gen_kwargs is not False:
-                assert min_distance > defect_gen.interstitial_gen_kwargs.get(
-                    "min_dist", 0.9
-                )  # default min_dist = 0.9
-            for conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                distance_matrix = defect_entry.conventional_structure.lattice.get_all_distances(
-                    defect_entry.conventional_structure.frac_coords, conv_cell_frac_coords
-                )[:, 0]
-                if len(distance_matrix[distance_matrix > 0.01]) > 0:
-                    equiv_min_distance = distance_matrix[distance_matrix > 0.01].min()
-                else:  # only one site in conventional cell
-                    equiv_min_distance = min_dist(defect_entry.conventional_structure)
-
-                assert np.isclose(min_distance, equiv_min_distance, atol=0.01)
-
-            # test equivalent_sites for defects:
-            if (
-                all(hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements)
-                and len(
-                    {sp.symbol: sp.oxi_state for sp in defect_entry.defect.structure.composition.elements}
-                )
-                == len(defect_entry.defect.structure.composition.elements)
-            ) or all(
-                not hasattr(sp, "oxi_state") for sp in defect_entry.defect.structure.composition.elements
-            ):
-                # single-valence, otherwise skip equiv sites / multiplicity checks (due to pymatgen
-                # defects issues in determining equiv sites / multiplicities in these cases)
-                # test multiplicity functions:
-                print(len(defect_entry.defect.equivalent_sites), defect_entry.defect.multiplicity)
-                assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
-                assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
-                    primitive_structure=defect_gen.primitive_structure,
-                )
-                from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
-                from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
-
-                defect_type_dict = {
-                    DefectType.Vacancy: pmg_Vacancy,
-                    DefectType.Substitution: pmg_Substitution,
-                }
-                # test that custom doped multiplicity function matches pymatgen function (which is only
-                # defined for Vacancies/Substitutions, and fails with periodicity-breaking cells (but
-                # don't have them here with _generated_ defects)
-                if defect_entry.defect.defect_type in defect_type_dict:
-                    assert defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(
-                        defect_entry.defect
-                    ) == defect_entry.defect.get_multiplicity(
-                        primitive_structure=defect_gen.primitive_structure,
-                    )
-
-                # now we fold down to primitive to calculate the multiplicity, which avoids issues with
-                # periodicity breaking etc. -- test here:
-                supercell_defect = MontyDecoder().process_decoded(
-                    {
-                        "@module": "doped.core",
-                        "@class": str(type(defect_entry.defect)).split(".")[-1].strip("'>"),
-                        "structure": defect_entry.bulk_supercell,
-                        "site": defect_entry.defect_supercell_site,
-                    }
-                )
-                print(supercell_defect.multiplicity, defect_entry.defect.multiplicity)
-                assert supercell_defect.multiplicity == defect_entry.defect.multiplicity * round(
-                    len(defect_entry.bulk_supercell) / len(defect_entry.defect.structure)
-                )
-                assert supercell_defect.multiplicity == supercell_defect.get_multiplicity(
-                    primitive_structure=defect_gen.primitive_structure,
-                )
-                assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
-
-                if (
-                    supercell_defect.defect_type in defect_type_dict
-                    and defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
-                        iupac_ordering=True
-                    )[0]
-                    not in [
-                        "SiSbTe3",
-                        "Ag2Se",
-                    ]
-                ):  # periodicity-breaking cases
-                    assert defect_type_dict[supercell_defect.defect_type].get_multiplicity(
-                        supercell_defect
-                    ) == supercell_defect.get_multiplicity(
-                        primitive_structure=defect_gen.primitive_structure,
-                    )
-
-                assert np.allclose(
-                    defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
-                )
-                num_prim_cells_in_conv_cell = len(defect_entry.conventional_structure) / len(
-                    defect_entry.defect.structure
-                )
-                print(defect_entry.defect.multiplicity, num_prim_cells_in_conv_cell, defect_entry.wyckoff)
-                assert defect_entry.defect.multiplicity * num_prim_cells_in_conv_cell == int(
-                    defect_entry.wyckoff[:-1]
-                )
-                assert len(defect_entry.equiv_conv_cell_frac_coords) == int(defect_entry.wyckoff[:-1])
-                assert len(defect_entry.defect.equiv_conv_cell_frac_coords) == int(
-                    defect_entry.wyckoff[:-1]
-                )
-                assert any(
-                    np.array_equal(conv_coords_array, defect_entry.conv_cell_frac_coords)
-                    for conv_coords_array in defect_entry.equiv_conv_cell_frac_coords
-                )
-                for equiv_conv_cell_frac_coords in defect_entry.equiv_conv_cell_frac_coords:
-                    assert any(
-                        np.array_equal(equiv_conv_cell_frac_coords, x)
-                        for x in defect_entry.defect.equiv_conv_cell_frac_coords
-                    )
-                assert len(defect_entry.equivalent_supercell_sites) == int(defect_entry.wyckoff[:-1]) * (
-                    len(defect_entry.bulk_supercell) / len(defect_entry.conventional_structure)
-                )
-            assert defect_entry.defect_supercell_site in defect_entry.equivalent_supercell_sites
-            assert np.isclose(
-                defect_entry.defect_supercell_site.frac_coords,
-                defect_entry.sc_defect_frac_coords,
-                atol=1e-5,
-            ).all()
-
-            for equiv_site in defect_entry.defect.equivalent_sites:
-                nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
-                    equiv_site.coords,
-                    5,
-                )
-                nn_distances = np.array(
-                    [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
-                )
-                if len(nn_distances[nn_distances > 0.01]) == 0:
-                    # no NNs within 5 Å, expand search to max lattice vector to ensure at least one NN:
-                    nearest_atoms = defect_entry.defect.structure.get_sites_in_sphere(
-                        equiv_site.coords,
-                        max(defect_entry.defect.structure.lattice.abc) + 0.1,
-                    )
-                    nn_distances = np.array(
-                        [nn.distance_from_point(equiv_site.coords) for nn in nearest_atoms]
-                    )
-
-                nn_distance = min(nn_distances[nn_distances > 0.01])  # minimum nonzero distance
-                print(defect_entry.name, equiv_site.coords, nn_distance, min_distance)
-                assert np.isclose(min_distance, nn_distance, atol=0.01)  # same min_distance as from
-                # conv_cell_frac_coords testing above
-
-        assert defect_entry.bulk_entry is None
-
-        # Sb2Se3, Ag2Se and Sn5O6 are the 3 test cases included so far where the lattice vectors swap,
-        # first 2 with [1, 0, 2] mapping, Sn5O6 with [2, 1, 0]
-        assert defect_entry._BilbaoCS_conv_cell_vector_mapping in [[0, 1, 2], [1, 0, 2], [2, 1, 0]]
-
-        assert (
-            defect_entry._BilbaoCS_conv_cell_vector_mapping
-            == defect_entry.defect._BilbaoCS_conv_cell_vector_mapping
-        )
-        assert defect_entry.defect_supercell == defect_entry.sc_entry.structure
-        assert not defect_entry.corrections
-        assert defect_entry.corrected_energy == 0  # check doesn't raise error (with bugfix from SK)
-
-        # test charge state guessing:
-        if not charge_states_removed:
-            for charge_state_dict in defect_entry.charge_state_guessing_log:
-                charge_state = charge_state_dict["input_parameters"]["charge_state"]
-                try:
-                    assert np.isclose(
-                        np.prod(list(charge_state_dict["probability_factors"].values())),
-                        charge_state_dict["probability"],
-                    )
-                except AssertionError as e:
-                    if charge_state not in [-1, 0, 1]:
-                        raise e
-
-                if charge_state_dict["probability"] > charge_state_dict["probability_threshold"]:
-                    assert any(
-                        defect_name in defect_gen.defect_entries
-                        for defect_name in defect_gen.defect_entries
-                        if int(defect_name.split("_")[-1]) == charge_state
-                        and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
-                    )
-                else:
-                    try:
-                        assert all(
-                            defect_name not in defect_gen.defect_entries
-                            for defect_name in defect_gen.defect_entries
-                            if int(defect_name.split("_")[-1]) == charge_state
-                            and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
-                        )
-                    except AssertionError as e:
-                        # check if intermediate charge state:
-                        if all(
-                            defect_name not in defect_gen.defect_entries
-                            for defect_name in defect_gen.defect_entries
-                            if abs(int(defect_name.split("_")[-1])) > abs(charge_state)
-                            and defect_name.startswith(defect_entry.name.rsplit("_", 1)[0])
-                        ):
-                            raise e
-
-        # check __repr__ info:
-        assert all(
-            i in defect_entry.__repr__()
-            for i in [
-                f"doped DefectEntry: {defect_entry.name}, with bulk composition:",
-                f"and defect: {defect_entry.defect.name}. Available attributes:\n",
-                "corrected_energy",
-                "Available methods",
-                "equilibrium_concentration",
-            ]
-        )
 
     def _random_equiv_supercell_sites_check(self, defect_entry):
         print(f"Randomly testing the equivalent supercell sites for {defect_entry.name}...")
