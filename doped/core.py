@@ -724,13 +724,16 @@ class DefectEntry(thermo.DefectEntry):
         bulk_vr, bulk_procar = parsed_vr_procar_dict["bulk"]
         defect_vr, defect_procar = parsed_vr_procar_dict["defect"]
 
-        band_orb, vbm_info, cbm_info = get_band_edge_info(
-            bulk_vr=bulk_vr,
-            defect_vr=defect_vr,
-            bulk_procar=bulk_procar,  # may be None, in which case Vasprun.projected_eigenvalues used
-            defect_procar=defect_procar,  # may be None, in which case Vasprun.projected_eigenvalues used
-            defect_supercell_site=self.defect_supercell_site,
-        )
+        from doped.utils.efficiency import cache_species
+
+        with cache_species(Structure):
+            band_orb, vbm_info, cbm_info = get_band_edge_info(
+                bulk_vr=bulk_vr,
+                defect_vr=defect_vr,
+                bulk_procar=bulk_procar,  # if None, Vasprun.projected_eigenvalues used
+                defect_procar=defect_procar,  # if None, Vasprun.projected_eigenvalues used
+                defect_supercell_site=self.defect_supercell_site,
+            )
 
         self.calculation_metadata["eigenvalue_data"] = {
             "band_orb": band_orb,

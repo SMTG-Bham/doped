@@ -10,7 +10,7 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
 from fractions import Fraction
-from functools import lru_cache
+from functools import cached_property, lru_cache
 
 import numpy as np
 from numpy.typing import NDArray
@@ -213,6 +213,23 @@ def _structure__hash__(self):
 Structure.__hash__ = _structure__hash__
 Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shallow copy fine for structures
 IStructure.__hash__ = _structure__hash__
+
+
+@contextlib.contextmanager
+def cache_species(structure_cls):
+    """
+    Context manager that makes ``Structure.species`` a cached property, which
+    significantly speeds up ``pydefect`` eigenvalue parsing in large structures
+    (due to repeated use of ``Structure.indices_from_symbol``.
+    """
+    original_species = structure_cls.species
+    try:
+        cached = cached_property(original_species.fget)
+        cached.__set_name__(structure_cls, "species")  # Explicit initialization
+        structure_cls.species = cached
+        yield
+    finally:
+        structure_cls.species = original_species
 
 
 def doped_Structure__eq__(self, other: IStructure) -> bool:
