@@ -42,6 +42,8 @@ def _composition__hash__(self):
     stoichiometry), which cannot then be used to distinguish different
     compositions.
     """
+    Species.__hash__ = _species_hash__  # ensure we are using efficient Species/Element hash
+    Element.__hash__ = _species_hash__  # ensure we are using efficient Species/Element hash
     return hash(frozenset(self._data.items()))
 
 
@@ -103,7 +105,7 @@ class Hashabledict(dict):
         Make the dictionary hashable by converting it to a tuple of key-value
         pairs.
         """
-        return hash(tuple(sorted(self.items())))
+        return hash(frozenset(self.items()))
 
 
 @lru_cache(maxsize=int(1e5))
@@ -182,27 +184,49 @@ def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08
 PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 
 
-# make PeriodicSites hashable:
+def _hashable_single_species_info(single_species):
+    return single_species.Z, getattr(single_species, "oxi_state", None)
+
+
 def _periodic_site__hash__(self):
     """
     Custom ``__hash__`` method for ``PeriodicSite`` instances.
     """
-    property_dict = (
+    property_dict = (  # Convert properties to a hashable form
         {k: tuple(v) if isinstance(v, list | np.ndarray) else v for k, v in self.properties.items()}
         if self.properties
         else {}
     )
+
+    species_info = tuple(_hashable_single_species_info(el) for el in self.species)
     try:
-        site_hash = hash((self.species, tuple(self.coords), frozenset(property_dict.items())))
+        return hash(
+            (
+                species_info,
+                tuple(self.coords),
+                frozenset(property_dict.items()),
+            )
+        )
     except Exception:  # hash without the property dict
-        site_hash = hash((self.species, tuple(self.coords)))
-    return site_hash  # who robbed the hash from the gaff
+        return hash(
+            (
+                species_info,
+                tuple(self.coords),
+            )
+        )
 
 
 PeriodicSite.__hash__ = _periodic_site__hash__
 
 
-# make Structure objects hashable, using lattice and sites:
+def _species_hash__(self):
+    return hash(_hashable_single_species_info(self))
+
+
+Species.__hash__ = _species_hash__
+Element.__hash__ = _species_hash__
+
+
 def _structure__hash__(self):
     """
     Custom ``__hash__`` method for ``Structure`` instances.
