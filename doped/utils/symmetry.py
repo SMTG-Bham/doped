@@ -1170,7 +1170,7 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
 def _get_candidate_prim_structs(structure, **kwargs):
     sga = get_sga(structure, **kwargs)
 
-    pmg_prim_struct = structure.get_primitive_structure()
+    pmg_prim_struct = structure.get_primitive_structure(tolerance=kwargs.get("symprec", 0.01))
     candidate_prim_structs = (
         [structure, pmg_prim_struct] if len(structure) == len(pmg_prim_struct) else [pmg_prim_struct]
     )

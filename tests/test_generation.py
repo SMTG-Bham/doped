@@ -937,7 +937,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect_entry.charge_state == 0
             and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula
         ):
-            sga = SpacegroupAnalyzer(defect_gen.structure)
+            sga = SpacegroupAnalyzer(defect_gen.primitive_structure)
             reoriented_conv_structure = swap_axes(
                 sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
             )
@@ -1005,6 +1005,22 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
                     primitive_structure=defect_gen.primitive_structure,
                 )
+                from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
+                from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
+
+                defect_type_dict = {
+                    DefectType.Vacancy: pmg_Vacancy,
+                    DefectType.Substitution: pmg_Substitution,
+                }
+                # test that custom doped multiplicity function matches pymatgen function (which is only
+                # defined for Vacancies/Substitutions, and fails with periodicity-breaking cells (but
+                # don't have them here with _generated_ defects)
+                if defect_entry.defect.defect_type in defect_type_dict:
+                    assert defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(
+                        defect_entry.defect
+                    ) == defect_entry.defect.get_multiplicity(
+                        primitive_structure=defect_gen.primitive_structure,
+                    )
 
                 # now we fold down to primitive to calculate the multiplicity, which avoids issues with
                 # periodicity breaking etc. -- test here:
@@ -1024,6 +1040,23 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                     primitive_structure=defect_gen.primitive_structure,
                 )
                 assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+
+                if (
+                    supercell_defect.defect_type in defect_type_dict
+                    and defect_gen.primitive_structure.composition.get_reduced_formula_and_factor(
+                        iupac_ordering=True
+                    )[0]
+                    not in [
+                        "SiSbTe3",
+                        "Ag2Se",
+                    ]
+                ):  # periodicity-breaking cases
+                    assert defect_type_dict[supercell_defect.defect_type].get_multiplicity(
+                        supercell_defect
+                    ) == supercell_defect.get_multiplicity(
+                        primitive_structure=defect_gen.primitive_structure,
+                    )
+
                 assert np.allclose(
                     defect_entry.bulk_supercell.lattice.matrix, defect_gen.bulk_supercell.lattice.matrix
                 )

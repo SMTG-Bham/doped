@@ -15,6 +15,7 @@ import matplotlib as mpl
 import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.dos import FermiDos
 from test_thermodynamics import custom_mpl_image_compare
@@ -245,6 +246,23 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
             assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity()
             assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+
+            from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
+            from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
+
+            defect_type_dict = {
+                DefectType.Vacancy: pmg_Vacancy,
+                DefectType.Substitution: pmg_Substitution,
+            }
+            # test that custom doped multiplicity function matches pymatgen function (which is only
+            # defined for Vacancies/Substitutions, and fails with periodicity-breaking cells (but
+            # don't have them here with defects now defined in primitive cells, but periodicity breaking
+            # supercells tested in test_generation.py)
+            if defect_entry.defect.defect_type in defect_type_dict:
+                assert (
+                    defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(defect_entry.defect)
+                    == defect_entry.defect.get_multiplicity()
+                )
 
         # check __repr__ info:
         assert all(

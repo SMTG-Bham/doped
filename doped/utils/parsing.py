@@ -561,16 +561,16 @@ def _get_species_from_composition_diff(composition_diff, el_change):
     return next(el for el, amt in composition_diff.items() if amt == el_change)
 
 
-def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
+def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=True):
     """
     Get arrays of the coordinates and indices of the given species in the
-    structure.
+    structure/list of sites.
     """
     from doped.utils.efficiency import _parse_site_species_str
 
     coords = []
     idx = []
-    for i, site in enumerate(structure):
+    for i, site in enumerate(structure_or_sites):
         if _parse_site_species_str(site, wout_charge=True) == species_name:
             coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
