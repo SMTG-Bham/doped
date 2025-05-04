@@ -354,8 +354,6 @@ def defect_from_structures(
         )
 
     # get defect site in primitive structure, for Defect generation:
-    # TODO: Update so that defect sites are chosen from equiv sites in same way as for interstitials?
-    # Which will help make this consistent? or consistent already??
     primitive_structure = get_primitive_structure(bulk_supercell)
     equiv_frac_coords_in_prim = cluster_sites_by_dist_tol(
         [
@@ -374,26 +372,30 @@ def defect_from_structures(
         primitive_structure,
     )
     equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
-    defect_site_in_prim = PeriodicSite(
-        defect_site_in_bulk.species,
-        equiv_frac_coords_in_prim[0],
-        primitive_structure.lattice,
-        to_unit_cell=True,
-        coords_are_cartesian=False,
-    )
-    bulk_site_in_prim = deepcopy(defect_site_in_prim)
-    bulk_site_in_prim.species = site_in_bulk.species
-    if defect_type != "interstitial":
-        bulk_site_in_prim = get_matching_site(bulk_site_in_prim, primitive_structure)
-        defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
+    equiv_defect_sites_in_prim = [
+        PeriodicSite(
+            defect_site_in_bulk.species,
+            frac_coords_in_prim,
+            primitive_structure.lattice,
+            coords_are_cartesian=False,
+        )
+        for frac_coords_in_prim in equiv_frac_coords_in_prim
+    ]
+
+    if defect_type != "interstitial":  # ensure exact matches to Defect.structure (primitive) sites:
+        for defect_site_in_prim in equiv_defect_sites_in_prim:
+            bulk_site_in_prim = deepcopy(defect_site_in_prim)
+            bulk_site_in_prim.species = site_in_bulk.species
+            bulk_site_in_prim = get_matching_site(bulk_site_in_prim, primitive_structure)
+            defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
 
     for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
         # substitutions differs from defect_site)
         "@module": "doped.core",
         "@class": defect_type.capitalize(),
         "structure": primitive_structure,
-        "site": defect_site_in_prim,
-        # equivalent_sites=site_group,  # TODO
+        "site": equiv_defect_sites_in_prim[0],
+        "equivalent_sites": equiv_defect_sites_in_prim,
         **kwargs,
     }  # define the Defect object in the primitive structure, matching the approach for generation
     defect = MontyDecoder().process_decoded(for_monty_defect)
@@ -1849,9 +1851,9 @@ class DefectParser:
         ``DefectParser`` object. By default, the
         ``DefectParser.defect_entry.name`` attribute (later used to label
         defects in plots) is set to the defect_path folder name (if it is a
-        recognised defect name), else it is set to the default doped name for
-        that defect (using the estimated `unrelaxed` defect structure, for the
-        point group and neighbour distances).
+        recognised defect name), else it is set to the default `doped`` name
+        for that defect (using the estimated `unrelaxed` defect structure, for
+        the point group and neighbour distances).
 
         Note that the bulk and defect supercells should have the same
         definitions/basis sets (for site-matching and finite-size charge
