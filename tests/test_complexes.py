@@ -8,9 +8,12 @@ import shutil
 import unittest
 
 from pymatgen.core.structure import Structure
+from test_generation import _check_defect_entry
 
 from doped.complexes import classify_vacancy_geometry, generate_complex_from_defect_sites
 from doped.generation import DefectsGenerator
+from doped.utils.parsing import get_matching_site
+from doped.utils.symmetry import get_all_equiv_sites, get_sga
 
 
 def if_present_rm(path):
@@ -35,6 +38,61 @@ class ComplexDefectTest(unittest.TestCase):
         # self.Ga2O3_C3i_split_vac_dict = next(iter(  # TODO
         #     [vac_dict for vac_dict in self.Ga2O3_candidate_split_vacs.values() if
         #      vac_dict["VIV_dist_key"] == '4.63_3.60' and vac_dict["VIV_bond_angle_degrees"] == 73.627]))
+
+    def test_Ga2O3_periodicity_breaking_supercell_multiplicities(self):
+        """
+        Test that the correct multiplicities of interstitials, vacancies and
+        substitutions are returned, despite the periodicity-breaking supercell
+        here for R-3c Ga2O3.
+
+        Previously, incorrect multiplicities were returned with this
+        periodicity-breaking supercell.
+        """
+        # incorrect symmetrized structure with periodicity-breaking cell:
+        bulk_supercell_symm_struct = get_sga(
+            self.Ga2O3_defect_gen.bulk_supercell
+        ).get_symmetrized_structure()
+        assert len(bulk_supercell_symm_struct.equivalent_sites) == 5
+        # correct symmetrized structure with primitive cell:
+        assert (
+            len(
+                get_sga(self.Ga2O3_defect_gen.primitive_structure)
+                .get_symmetrized_structure()
+                .equivalent_sites
+            )
+            == 2
+        )
+
+        # this tests that defect multiplicities are as expected
+        for defect_name, defect_entry in self.Ga2O3_defect_gen.defect_entries.items():
+            _check_defect_entry(defect_entry, defect_name, self.Ga2O3_defect_gen)
+
+        # check that the wrong result is obtained with the standard pymatgen-analysis-defects approach:
+        for defect_entry_name in ["v_Ga_0", "Ga_O_0"]:
+            assert len(
+                bulk_supercell_symm_struct.find_equivalent_sites(
+                    get_matching_site(
+                        self.Ga2O3_defect_gen[defect_entry_name].defect_supercell_site,
+                        self.Ga2O3_defect_gen.bulk_supercell,
+                        anonymous=True,
+                    )
+                )
+            ) != (
+                self.Ga2O3_defect_gen[defect_entry_name].defect.multiplicity
+                * (
+                    len(self.Ga2O3_defect_gen.primitive_structure)
+                    / len(self.Ga2O3_defect_gen.bulk_supercell)
+                )
+            )
+        assert len(
+            get_all_equiv_sites(
+                self.Ga2O3_defect_gen["Ga_i_C2_0"].defect_supercell_site.frac_coords,
+                self.Ga2O3_defect_gen.bulk_supercell,
+            )
+        ) != (
+            self.Ga2O3_defect_gen["Ga_i_C2_0"].defect.multiplicity
+            * (len(self.Ga2O3_defect_gen.primitive_structure) / len(self.Ga2O3_defect_gen.bulk_supercell))
+        )
 
     def test_Ga2O3_candidate_split_vac_generation(self):
         """
