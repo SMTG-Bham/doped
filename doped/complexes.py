@@ -243,7 +243,14 @@ def get_equivalent_complex_defect_sites_in_primitive(
     dist_tol: float = 0.01,
     symprec: float = 0.01,
     return_molecules: bool = False,
-) -> list[list[PeriodicSite]] | list[DopedEquivMolecule]:
+    per_anchor_site: bool = False,
+) -> (
+    list[list[PeriodicSite]]
+    | list[DopedEquivMolecule]
+    | tuple[
+        list[list[PeriodicSite]] | list[DopedEquivMolecule], set[tuple[float, float, float]], PeriodicSite
+    ]
+):
     r"""
     Generate all equivalent complex defect site configurations in the primitive
     unit cell, for the input constituent point defect sites of the complex.
@@ -338,12 +345,24 @@ def get_equivalent_complex_defect_sites_in_primitive(
             Whether to return the equivalent complex defect molecules as
             ``DopedEquivMolecule`` objects, or as lists of ``PeriodicSite``
             objects. Default is ``False`` (return lists of ``PeriodicSite``\s).
+        per_anchor_site (bool):
+            If ``True``, just returns the symmetry-equivalent complex defect
+            configurations for one 'anchor' site (one symmetry-equivalent point
+            defect site in the primitive cell), along with the set of symmetry-
+            equivalent primitive cell fractional coordinates for the anchor
+            site, and the anchor site itself. Mostly intended for internal
+            usage with ``get_complex_defect_multiplicity()``, for efficiency.
+            Default is ``False``.
 
     Returns:
-        list[list[PeriodicSite]] | list[DopedEquivMolecule]:
+        list[list[PeriodicSite]] | list[DopedEquivMolecule] |
+        tuple[list[list[PeriodicSite]] | list[DopedEquivMolecule],
+        set[tuple[float, float, float]], PeriodicSite]:
             List of equivalent complex defect sites as ``DopedEquivMolecule``\s
             or lists of ``PeriodicSite``\s, depending on the value of
-            ``return_molecules``.
+            ``return_molecules``. If ``per_anchor_site`` is ``True``, also
+            returns the set of symmetry-equivalent primitive cell fractional
+            coordinates for the anchor site, and the anchor site itself.
     """
     # TODO: Tests!!
     # TODO: Should check how much the symm_ops helps
@@ -441,6 +460,24 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # the molecular representation is more intuitive, queryable, physically guided, and is sufficiently
     # efficient in this implementation
 
+    def sites_lists_from_molecules(molecules: list[DopedEquivMolecule]) -> list[list[PeriodicSite]]:
+        """
+        Convert list of ``DopedEquivMolecule`` to list of lists of
+        ``PeriodicSite``.
+        """
+        return [
+            [
+                PeriodicSite(
+                    species=site.species,
+                    coords=site.coords,
+                    lattice=primitive_structure.lattice,
+                    coords_are_cartesian=True,
+                )
+                for site in molecule.sites
+            ]
+            for molecule in molecules
+        ]
+
     other_complex_equiv_prim_frac_coords_dict = {
         k: v for k, v in complex_equiv_prim_frac_coords_dict.items() if k != anchor_site
     }  # dict of sets of equivalent frac coords in primitive unit cell, for each point defect (exc anchor)
@@ -511,22 +548,22 @@ def get_equivalent_complex_defect_sites_in_primitive(
             ]
         )
 
-    if return_molecules:
-        return equiv_complex_molecules
-
-    sites_list: list[list[PeriodicSite]] = [
-        [  # otherwise convert to list of lists of PeriodicSite
-            PeriodicSite(
-                species=site.species,
-                coords=site.coords,
-                lattice=primitive_structure.lattice,
-                coords_are_cartesian=True,
+        if per_anchor_site:  # only take first anchor site
+            return (
+                (
+                    equiv_complex_molecules
+                    if return_molecules
+                    else sites_lists_from_molecules(equiv_complex_molecules)
+                ),
+                complex_equiv_prim_frac_coords_dict[anchor_site],
+                anchor_site,
             )
-            for site in molecule.sites
-        ]
-        for molecule in equiv_complex_molecules
-    ]
-    return sites_list
+
+    return (
+        equiv_complex_molecules
+        if return_molecules
+        else sites_lists_from_molecules(equiv_complex_molecules)
+    )
 
 
 def get_complex_defect_multiplicity(
@@ -605,20 +642,22 @@ def get_complex_defect_multiplicity(
             (default), or in the bulk supercell if
             ``primitive_cell_multiplicity = False``.
     """
-    return (
-        len(
-            get_equivalent_complex_defect_sites_in_primitive(
-                bulk_supercell,
-                vacancy_sites=vacancy_sites,
-                interstitial_sites=interstitial_sites,
-                substitution_sites=substitution_sites,
-                primitive_structure=primitive_structure,
-                supercell_symm_ops=supercell_symm_ops,
-                dist_tol=dist_tol,
-                return_molecules=True,  # for speed
-            )
+    per_anchor_equiv_complex_molecules, anchor_equiv_frac_coords, _anchor_site = (
+        get_equivalent_complex_defect_sites_in_primitive(
+            bulk_supercell,
+            vacancy_sites=vacancy_sites,
+            interstitial_sites=interstitial_sites,
+            substitution_sites=substitution_sites,
+            primitive_structure=primitive_structure,
+            supercell_symm_ops=supercell_symm_ops,
+            dist_tol=dist_tol,
+            return_molecules=True,  # for speed
+            per_anchor_site=True,  # 10-20% more efficient
         )
-        * 1
+    )  # total multiplicity is the number of symmetry-equivalent complex defects per point defect site,
+    # times the multiplicity of that point defect site (in this case, the anchor site)
+    return (
+        len(per_anchor_equiv_complex_molecules) * len(anchor_equiv_frac_coords) * 1
         if primitive_cell_multiplicity
         else round(
             len(bulk_supercell) / len(primitive_structure or get_primitive_structure(bulk_supercell))
