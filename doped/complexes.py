@@ -300,7 +300,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
     sites could give a distinct complex defect configuration -> upper limit:
     ``product(X_mult, ...)``. This function automatically checks that the
     number of generated equivalent complex defects matches these theoretical
-    limits, and raises an error if not. TODO
+    limits, and raises an error if not.
 
     Args:
         bulk_supercell (Structure):
@@ -364,16 +364,10 @@ def get_equivalent_complex_defect_sites_in_primitive(
             returns the set of symmetry-equivalent primitive cell fractional
             coordinates for the anchor site, and the anchor site itself.
     """
-    # TODO: Tests!!
-    # TODO: Should check how much the symm_ops helps
-    # TODO: Do some quick speed tests to see how useful caching etc acc is in Doped Molecules
-    # TODO: Consider using `are_equivalent_sites` from `doped.utils.symmetry`? (For determining theoretical
-    # multiplicity limits (though may be more efficient to use generated frac coords acc))
-
     primitive_structure = primitive_structure or get_primitive_structure(bulk_supercell, symprec=symprec)
     supercell_symm_ops = (
         supercell_symm_ops or get_sga(bulk_supercell, symprec=symprec).get_symmetry_operations()
-    )
+    )  # inputting bulk supercell symm ops is typically only a small speed up (due to caching)
 
     input_vacancy_sites = vacancy_sites or []
     vacancy_sites = []  # mark vacancy sites with X species, to distinguish from occupied sites
@@ -396,13 +390,35 @@ def get_equivalent_complex_defect_sites_in_primitive(
                 site.frac_coords,
                 primitive_structure,
                 bulk_supercell,
-                symm_ops=supercell_symm_ops,
+                symm_ops=supercell_symm_ops,  # only small speed up (due to caching)
                 symprec=symprec,
                 dist_tol=dist_tol,
             )
         }
         for site in complex_defect_sites
     }
+    frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
+    theoretical_max_multiplicity = np.prod(
+        [len(equiv_coords_set) for equiv_coords_set in complex_equiv_prim_frac_coords_dict.values()]
+    )
+    theoretical_min_multiplicity = int(
+        max(
+            len(equiv_coords_set)
+            / (
+                1
+                + sum(
+                    any(
+                        np.allclose(next(iter(equiv_coords_set)), frac_coords, atol=frac_tol)
+                        for frac_coords in other_equiv_coords_set
+                    )
+                    for other_equiv_coords_set in complex_equiv_prim_frac_coords_dict.values()
+                    if equiv_coords_set != other_equiv_coords_set
+                )  # multiplicity divided by number of symmetry-equivalent point defects in complex
+            )
+            for equiv_coords_set in complex_equiv_prim_frac_coords_dict.values()
+        )
+    )
+
     complex_defect_defect_dist_dict = {  # dict of inter-defect distances for each pair of point defects
         frozenset((site1, site2)): site1.distance(site2)
         for site1, site2 in combinations(complex_defect_sites, 2)
@@ -510,7 +526,6 @@ def get_equivalent_complex_defect_sites_in_primitive(
         # generate all candidate complex defect molecules from these frac coords / site combinations, with
         # the order matching the template complex defect molecule (anchor site, *complex_defect_sites --
         # with the latter having been the order of the dict generation, retained by itertools.product):
-        frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
         candidate_equiv_molecules = {  # set of candidate complex defect molecules
             DopedEquivMolecule(
                 [site.species for site in [anchor_site, *candidate_site_combinations]],
@@ -527,26 +542,39 @@ def get_equivalent_complex_defect_sites_in_primitive(
 
         # now reduce to only those which are symmetry-equivalent to the template complex defect molecule,
         # but are distinct (i.e. not identical or periodic images; to only count those per unit cell)
-        equiv_complex_molecules.extend(
-            [
-                candidate_equiv_mol
-                for candidate_equiv_mol in candidate_equiv_molecules
-                if Kabsch_equiv(complex_mol, candidate_equiv_mol, tol=dist_tol * 2)  # symmetry-equivalent
-                and not any(  # not identical or periodic images
-                    is_periodic_image(
-                        [
-                            primitive_structure.lattice.get_fractional_coords(site.coords)
-                            for site in other_equiv_mol.sites
-                        ],
-                        [
-                            primitive_structure.lattice.get_fractional_coords(site.coords)
-                            for site in candidate_equiv_mol.sites
-                        ],
-                    )
-                    for other_equiv_mol in equiv_complex_molecules
+        distinct_candidate_equiv_molecules = [
+            candidate_equiv_mol
+            for candidate_equiv_mol in candidate_equiv_molecules
+            if Kabsch_equiv(complex_mol, candidate_equiv_mol, tol=dist_tol * 2)  # symmetry-equivalent
+            and not any(  # not identical or periodic images
+                is_periodic_image(
+                    [
+                        primitive_structure.lattice.get_fractional_coords(site.coords)
+                        for site in other_equiv_mol.sites
+                    ],
+                    [
+                        primitive_structure.lattice.get_fractional_coords(site.coords)
+                        for site in candidate_equiv_mol.sites
+                    ],
                 )
-            ]
+                for other_equiv_mol in equiv_complex_molecules
+            )
+        ]
+        equiv_complex_molecules.extend(distinct_candidate_equiv_molecules)
+
+        calculated_multiplicity = len(distinct_candidate_equiv_molecules) * len(
+            complex_equiv_prim_frac_coords_dict[anchor_site]
         )
+        if not (
+            calculated_multiplicity >= theoretical_min_multiplicity
+            and calculated_multiplicity <= theoretical_max_multiplicity
+        ):
+            raise RuntimeError(
+                f"Calculated complex defect site multiplicity {calculated_multiplicity} (in the primitive "
+                f"cell) does not conform to the theoretical min/max range: {theoretical_min_multiplicity} "
+                f"- {theoretical_max_multiplicity}, indicating an error in the analysis. Please report "
+                f"this bug to the developers!"
+            )
 
         if per_anchor_site:  # only take first anchor site
             return (
@@ -668,4 +696,4 @@ def get_complex_defect_multiplicity(
 # TODO: In future, should be able to use similar code to generate all possible complexes in a given
 # supercell
 # TODO: Update DOIs here and throughout when published
-# TODO: Add some quick tests when done
+# TODO: Tests!!
