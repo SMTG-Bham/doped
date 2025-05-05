@@ -3013,3 +3013,42 @@ def are_equivalent_sites(
             species=s1.species_string,
         )
         return s2 in s1_equiv_sites
+
+
+def is_periodic_image(
+    sites_1: Iterable[PeriodicSite | np.ndarray],
+    sites_2: Iterable[PeriodicSite | np.ndarray],
+    frac_tol: float = 0.01,
+) -> bool:
+    r"""
+    Determine if the ``PeriodicSite``/``frac_coords`` in ``sites_1`` are a
+    periodic image of those in ``sites_2``.
+
+    This function determines if the set of fractional coordinates in
+    ``sites_1`` can be `rigidly` translated by any combination of lattice
+    vectors to match the set of fractional coordinates in ``sites_2``. Note
+    that the rigid translation test means that we are testing if the full set
+    of sites is a periodic image of the other, and not just that `each` site
+    in ``sites_1`` is a periodic image of a site in ``sites_2`` (for which the
+    ``PeriodicSite.is_periodic_image`` method can be used).
+
+    Args:
+        sites_1 (list): List of ``PeriodicSite``\s or ``frac_coords`` arrays.
+        sites_2 (list): List of ``PeriodicSite``\s or ``frac_coords`` arrays.
+        frac_tol (float): Fractional coordinate tolerance for comparing sites.
+
+    Returns:
+        bool:
+            ``True`` if ``sites_1`` is a periodic image of ``sites_2``,
+            ``False`` otherwise.
+    """
+    sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
+    sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
+
+    pbc_frac_dist = np.subtract(sites_1_frac_coords, sites_2_frac_coords)
+    pbc_frac_diff = pbc_frac_dist - np.round(pbc_frac_dist)
+    return np.allclose(  # all sites are periodic images
+        pbc_frac_diff, np.zeros(pbc_frac_diff.shape), atol=frac_tol
+    ) and (  # all sites are _the same_ translation (periodic image)
+        np.allclose(pbc_frac_dist, pbc_frac_dist[0], atol=frac_tol)
+    )
