@@ -14,7 +14,12 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
+from pymatgen.analysis.structure_matcher import (
+    ElementComparator,
+    LinearAssignment,
+    StructureMatcher,
+    pbc_shortest_vectors,
+)
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, IStructure, Lattice, PeriodicSite, Structure
@@ -3019,23 +3024,35 @@ def is_periodic_image(
     sites_1: Iterable[PeriodicSite | np.ndarray],
     sites_2: Iterable[PeriodicSite | np.ndarray],
     frac_tol: float = 0.01,
+    same_image: bool = False,
 ) -> bool:
     r"""
     Determine if the ``PeriodicSite``/``frac_coords`` in ``sites_1`` are a
     periodic image of those in ``sites_2``.
 
     This function determines if the set of fractional coordinates in
-    ``sites_1`` can be `rigidly` translated by any combination of lattice
-    vectors to match the set of fractional coordinates in ``sites_2``. Note
-    that the rigid translation test means that we are testing if the full set
-    of sites is a periodic image of the other, and not just that `each` site
-    in ``sites_1`` is a periodic image of a site in ``sites_2`` (for which the
-    ``PeriodicSite.is_periodic_image`` method can be used).
+    ``sites_1`` are periodic images of those in ``sites_2``, with only unique
+    site matches permitted (i.e. no repeat matches; each site can only have
+    one match).
+
+    If ``same_image`` is ``True``, then the sites must all be of the same
+    periodic image translation (i.e. the same rigid translation vector), such
+    that ``sites_1`` can be `rigidly` translated by any combination of lattice
+    vectors to match the set of fractional coordinates in ``sites_2``.
+
+    Note that the this function tests if the `full` set of sites is a periodic
+    image of the other, and not just that `each` site in ``sites_1`` is
+    (individually) a periodic image of a site in ``sites_2`` (for which the
+    ``PeriodicSite.is_periodic_image`` method could be used).
 
     Args:
         sites_1 (list): List of ``PeriodicSite``\s or ``frac_coords`` arrays.
         sites_2 (list): List of ``PeriodicSite``\s or ``frac_coords`` arrays.
         frac_tol (float): Fractional coordinate tolerance for comparing sites.
+        same_image (bool):
+            If ``True``, also check that the sites are the `same` periodic
+            image translation (i.e. the same rigid translation vector).
+            Default is ``False``.
 
     Returns:
         bool:
@@ -3045,10 +3062,21 @@ def is_periodic_image(
     sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
     sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
 
-    pbc_frac_dist = np.subtract(sites_1_frac_coords, sites_2_frac_coords)
+    lattice = Lattice(np.eye(3))  # if fractional coords
+    for sites in [sites_1, sites_2]:
+        if isinstance(next(iter(sites)), PeriodicSite):
+            lattice = next(iter(sites)).lattice
+
+    # first need to match sites with their closest (individual) periodic images, to account for order /
+    # permutation invariance:
+    vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
+    site_matches = LinearAssignment(d_2).solution  # closest individual periodic image matches
+    reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
+
+    pbc_frac_dist = np.subtract(sites_1_frac_coords, reordered_sites_2_frac_coords)
     pbc_frac_diff = pbc_frac_dist - np.round(pbc_frac_dist)
     return np.allclose(  # all sites are periodic images
         pbc_frac_diff, np.zeros(pbc_frac_diff.shape), atol=frac_tol
     ) and (  # all sites are _the same_ translation (periodic image)
-        np.allclose(pbc_frac_dist, pbc_frac_dist[0], atol=frac_tol)
+        same_image is False or np.allclose(pbc_frac_dist, pbc_frac_dist[0], atol=frac_tol)
     )
