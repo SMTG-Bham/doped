@@ -642,7 +642,15 @@ def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: fl
 
 @lru_cache(maxsize=int(1e4))
 def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.1) -> bool:
-    return BruteForceOrderMatcher(molecule_1).fit(molecule_2)[-1] < tol
+    # Note that in most cases with the ``get_equivalent_complex_defect_sites_in_primitive`` implementation,
+    # brute-force permutation matching should not be required, due to our controlled ordering and
+    # comparisons of equivalent sites, but current implementation is super-fast (particularly for small
+    # molecules, like complexes), so worth being safe
+    try:
+        rmsd = BruteForceOrderMatcher(molecule_1).fit(molecule_2, break_on_tol=tol)[-1]
+    except TypeError:  # older pymatgen without SK efficient `break_on_tol`; PR #4392
+        rmsd = BruteForceOrderMatcher(molecule_1).fit(molecule_2)[-1]
+    return rmsd < tol
 
 
 # TODO: In future, should be able to use similar code to generate all possible complexes in a given
