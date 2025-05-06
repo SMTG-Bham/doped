@@ -16,7 +16,6 @@ import numpy as np
 from numpy.typing import NDArray
 from pymatgen.analysis.defects.generators import VacancyGenerator
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
-from pymatgen.analysis.molecule_matcher import KabschMatcher
 from pymatgen.analysis.structure_matcher import (
     AbstractComparator,
     ElementComparator,
@@ -310,60 +309,23 @@ IStructure.__eq__ = _Structure__eq__
 Structure.__eq__ = _Structure__eq__
 
 
-class DopedEquivMolecule(Molecule):
-    r"""
-    Subclass of ``pymatgen``\'s ``Molecule`` to allow for efficient comparison
-    molecules by symmetry equivalence.
+def _DopedMolecule__hash__(self):
     """
+    Hash ``pymatgen`` ``Molecule`` objects using the z-matrix (which reflects
+    the lengths, angles, and atom types of the molecule).
 
-    def __init__(self, *args, tol: float = 0.1, **kwargs):
-        """
-        Initialize the ``DopedEquivMolecule`` object.
-
-        Args:
-            *args: Arguments to be passed to the parent ``Molecule`` class.
-            tol (float):
-                Tolerance for the Kabsch molecule-matching algorithm. Defaults
-                to 0.1.
-            **kwargs:
-                Keyword arguments to be passed to the parent ``Molecule``
-                class.
-        """
-        super().__init__(*args, **kwargs)
-        self.tol = tol
-
-    def __hash__(self):
-        """
-        Hash the ``DopedEquivMolecule`` object using the z-matrix (which
-        reflects the lengths, angles, and atom types of the molecule).
-
-        Implemented to allow caching in determining the equivalency of
-        different ``DopedEquivMolecule`` objects.
-        """
-        z_list = self.get_zmatrix().split("\n")
-        rounded_z_list = tuple([round(float(i.split("=")[-1]), 2) if "=" in i else i for i in z_list])
-        return hash(rounded_z_list)
-
-
-def Kabsch_equiv(molecule_1, molecule_2, tol: float = 0.1) -> bool:
+    Implemented to allow caching for efficient determination of symmetry
+    equivalent ``Molecule`` objects. The z-matrix functions as a unique
+    identifier for the molecule, while the ``__hash__`` method for the parent
+    ``Molecule`` class is based solely on the composition of the molecule and
+    thus not unique.
     """
-    Determine if two ``Molecule`` objects are equivalent, using the Kabsch
-    algorithm (which minimizes the root-mean-square-deviation (RMSD) of two
-    molecules which are topologically (atom types, geometry) similar).
-
-    Uses caching to speed up the comparison.
-    """
-    for molecule in [molecule_1, molecule_2]:
-        if not isinstance(molecule, DopedEquivMolecule):
-            molecule.__hash__ = DopedEquivMolecule.__hash__
-            # otherwise molecule hash is composition which will give erroneous results with caching
-
-    return _cached_Kabsch_equiv(molecule_1, molecule_2, tol)
+    z_list = self.get_zmatrix().split("\n")
+    rounded_z_list = tuple([round(float(i.split("=")[-1]), 2) if "=" in i else i for i in z_list])
+    return hash(rounded_z_list)
 
 
-@lru_cache(maxsize=int(1e4))
-def _cached_Kabsch_equiv(molecule_1, molecule_2, tol: float = 0.1) -> bool:
-    return KabschMatcher(molecule_1).fit(molecule_2)[-1] < tol
+Molecule.__hash__ = _DopedMolecule__hash__
 
 
 def _get_symmetry(self) -> tuple[NDArray, NDArray]:
