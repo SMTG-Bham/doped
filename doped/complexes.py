@@ -325,6 +325,8 @@ def get_equivalent_complex_defect_sites_in_primitive(
             or lists of ``PeriodicSite``\s, depending on the value of
             ``return_molecules``.
     """
+    # Note: An alternative approach here would be to use the intersection of host crystal symmetry
+    # operations and those of the complex defect (molecule), though unlikely to be any more efficient
     primitive_structure = primitive_structure or get_primitive_structure(bulk_supercell, symprec=symprec)
     supercell_symm_ops = (
         supercell_symm_ops or get_sga(bulk_supercell, symprec=symprec).get_symmetry_operations()
