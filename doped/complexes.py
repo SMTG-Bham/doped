@@ -5,14 +5,16 @@ Code for generating and analysing defect complexes.
 import contextlib
 from collections.abc import Iterable
 from copy import deepcopy
+from functools import lru_cache
 from itertools import combinations, product
 
 import numpy as np
 from pymatgen.analysis.ewald import EwaldSummation
+from pymatgen.analysis.molecule_matcher import BruteForceOrderMatcher
 from pymatgen.core.sites import PeriodicSite, Site
-from pymatgen.core.structure import Structure
+from pymatgen.core.structure import Molecule, Structure
 
-from doped.utils.efficiency import DopedEquivMolecule, Kabsch_equiv, _periodic_site__hash__
+from doped.utils.efficiency import _periodic_site__hash__
 from doped.utils.parsing import (
     _get_species_from_composition_diff,
     get_defect_type_and_composition_diff,
@@ -243,14 +245,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
     dist_tol: float = 0.01,
     symprec: float = 0.01,
     return_molecules: bool = False,
-    per_anchor_site: bool = False,
-) -> (
-    list[list[PeriodicSite]]
-    | list[DopedEquivMolecule]
-    | tuple[
-        list[list[PeriodicSite]] | list[DopedEquivMolecule], set[tuple[float, float, float]], PeriodicSite
-    ]
-):
+) -> list[list[PeriodicSite]] | list[Molecule]:
     r"""
     Generate all equivalent complex defect site configurations in the primitive
     unit cell, for the input constituent point defect sites of the complex.
@@ -265,42 +260,18 @@ def get_equivalent_complex_defect_sites_in_primitive(
     2. Choose one constituent point defect as the 'anchor' site, based on
     estimated computational efficiency.
 
-    3. Generate a 'template' complex defect molecule, using the
-    ``DopedEquivMolecule`` class.
+    3. Generate a 'template' complex defect molecule, using the ``pymatgen``
+    ``Molecule`` class.
 
     4. From the sets of symmetry-equivalent defect sites in the primitive unit
     cell, generate all possible combinations of candidate point defect sites
     that have inter-defect distances matching the input complex defect sites
-    (+/- 2*``dist_tol``).
+    (+/- 2 :math:`\times` ``dist_tol``).
 
     5. From these candidate site combinations, generate complex defect
-    molecules (as ``DopedEquivMolecule``\s), and reduce to only those which
+    molecules (as ``pymatgen`` ``Molecule``\s), and reduce to only those which
     are symmetry-equivalent to the input complex defect, and are distinct (i.e.
     not identical or periodic images; to avoid potential double counting).
-
-
-    The theoretical minimum and maximum limits of the number of distinct
-    complex defect site configurations in the primitive unit cell (i.e. the
-    primitive cell multiplicity) are:
-
-    - Minimum:
-        Maximum of point defect multiplicity, divided by the number of
-        equivalent sites of `that` point defect in the complex, for point
-        defects in the complex. i.e. ``max(X_mult/N_equiv_X_in complex, ...)``
-        for constituent point defects ``X``, with ``X_mult`` multiplicities.
-
-    - Maximum:
-        Product of the multiplicities of the individual point defects. i.e.
-        ``product(X_mult, ...)`` for each constituent point defect ``X``.
-
-    Each symmetry-equivalent point defect site must be part of a possible
-    complex defect configuration, but the complex may involve multiple of those
-    equivalent sites -> lower limit: ``max(X_mult/N_equiv_X_in complex, ...)``.
-    For the upper limit, each possible combination of point defect equivalent
-    sites could give a distinct complex defect configuration -> upper limit:
-    ``product(X_mult, ...)``. This function automatically checks that the
-    number of generated equivalent complex defects matches these theoretical
-    limits, and raises an error if not.
 
     Args:
         bulk_supercell (Structure):
@@ -326,7 +297,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
             Distance tolerance for clustering generated equivalent sites (to
             ensure they are truly distinct), searching for equivalent sites
             (by inter-defect distances) and matching equivalent complex defect
-            geometries (as ``DopedEquivMolecule``\s, in Å. Default is 0.01 Å.
+            geometries (as ``Molecule``\s), in Å. Default is 0.01 Å.
             Note that this should match the value used for determining the
             point defect multiplicities (e.g. with the
             ``Defect.get_multiplicity()`` methods) for appropriate comparisons
@@ -343,27 +314,19 @@ def get_equivalent_complex_defect_sites_in_primitive(
             functions.
         return_molecules (bool):
             Whether to return the equivalent complex defect molecules as
-            ``DopedEquivMolecule`` objects, or as lists of ``PeriodicSite``
+            ``Molecule`` objects, or as lists of ``PeriodicSite``
             objects. Default is ``False`` (return lists of ``PeriodicSite``\s).
-        per_anchor_site (bool):
-            If ``True``, just returns the symmetry-equivalent complex defect
-            configurations for one 'anchor' site (one symmetry-equivalent point
-            defect site in the primitive cell), along with the set of symmetry-
-            equivalent primitive cell fractional coordinates for the anchor
-            site, and the anchor site itself. Mostly intended for internal
-            usage with ``get_complex_defect_multiplicity()``, for efficiency.
-            Default is ``False``.
 
     Returns:
-        list[list[PeriodicSite]] | list[DopedEquivMolecule] |
-        tuple[list[list[PeriodicSite]] | list[DopedEquivMolecule],
-        set[tuple[float, float, float]], PeriodicSite]:
-            List of equivalent complex defect sites as ``DopedEquivMolecule``\s
+        list[list[PeriodicSite]] | list[Molecule]:
+            List of equivalent complex defect sites as ``Molecule``\s
             or lists of ``PeriodicSite``\s, depending on the value of
-            ``return_molecules``. If ``per_anchor_site`` is ``True``, also
-            returns the set of symmetry-equivalent primitive cell fractional
-            coordinates for the anchor site, and the anchor site itself.
+            ``return_molecules``.
     """
+    # TODO: Can just get from point group symmetry ops then? No because it needs to account for crystal
+    # structure. Could get from point symmetries (with defect entry function), but would break with
+    # periodicity-breaking cases...
+
     primitive_structure = primitive_structure or get_primitive_structure(bulk_supercell, symprec=symprec)
     supercell_symm_ops = (
         supercell_symm_ops or get_sga(bulk_supercell, symprec=symprec).get_symmetry_operations()
@@ -378,6 +341,20 @@ def get_equivalent_complex_defect_sites_in_primitive(
     interstitial_sites = interstitial_sites or []
     substitution_sites = substitution_sites or []
     complex_defect_sites = [*vacancy_sites, *interstitial_sites, *substitution_sites]
+
+    # generate our template complex defect molecule:
+    complex_mol = Molecule(
+        [site.species for site in complex_defect_sites],
+        bulk_supercell.lattice.get_cartesian_coords(
+            [
+                site.frac_coords + complex_defect_sites[0].distance_and_image(site)[1]
+                for site in complex_defect_sites
+            ]
+        ),
+    )
+    # later, if the complex is composed of >=3 defects, we use the centre of mass to determine the 'anchor'
+    # site, and so here we ensure that the coordinates used in our template molecule are the closest
+    # periodic image site to the first site, to ensure we obtain a correct center of mass
 
     # set efficient and unique hash for Site and PeriodicSite, to allow use as dict keys
     Site.__hash__ = _periodic_site__hash__
@@ -397,27 +374,9 @@ def get_equivalent_complex_defect_sites_in_primitive(
         }
         for site in complex_defect_sites
     }
-    frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
-    theoretical_max_multiplicity = np.prod(
-        [len(equiv_coords_set) for equiv_coords_set in complex_equiv_prim_frac_coords_dict.values()]
-    )
-    theoretical_min_multiplicity = int(
-        max(
-            len(equiv_coords_set)
-            / (
-                1
-                + sum(
-                    any(
-                        np.allclose(next(iter(equiv_coords_set)), frac_coords, atol=frac_tol)
-                        for frac_coords in other_equiv_coords_set
-                    )
-                    for other_equiv_coords_set in complex_equiv_prim_frac_coords_dict.values()
-                    if equiv_coords_set != other_equiv_coords_set
-                )  # multiplicity divided by number of symmetry-equivalent point defects in complex
-            )
-            for equiv_coords_set in complex_equiv_prim_frac_coords_dict.values()
-        )
-    )
+    # Note: In original drafts, we used ``get_matching_site`` and ``SymmetrizedStructure.equivalent_sites``
+    # to get the symmetry-equivalent sites of vacancies/substitutions in the primitive unit cell at this
+    # step, but _should_ be fully redundant/equivalent to ``get_equiv_frac_coords_in_primitive``
 
     complex_defect_defect_dist_dict = {  # dict of inter-defect distances for each pair of point defects
         frozenset((site1, site2)): site1.distance(site2)
@@ -428,25 +387,12 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # computational efficiency will be optimised by minimising the points_in_sphere search space and
     # candidate complexes scanned over:
     anchor_site: PeriodicSite | None = None
-
     with contextlib.suppress(AttributeError):
         if len(complex_defect_sites) > 2:  # for complexes with 3+ defects, choose the most central site:
-            # need center of mass, so generate a draft complex defect molecule, and ensuring that the
-            # coordinates used are the closest periodic image site to the first site, to ensure we obtain
-            # the correct center of mass:
-            draft_complex_mol = DopedEquivMolecule(
-                [site.species for site in complex_defect_sites],
-                bulk_supercell.lattice.get_cartesian_coords(
-                    [
-                        site.frac_coords + complex_defect_sites[0].distance_and_image(site)[1]
-                        for site in complex_defect_sites
-                    ]
-                ),
-            )
             anchor_site = min(
                 complex_defect_sites,
                 key=lambda site: site.distance_and_image_from_frac_coords(
-                    bulk_supercell.lattice.get_fractional_coords(draft_complex_mol.center_of_mass)
+                    bulk_supercell.lattice.get_fractional_coords(complex_mol.center_of_mass)
                 )[0],
             )
     if anchor_site is None:
@@ -456,9 +402,11 @@ def get_equivalent_complex_defect_sites_in_primitive(
         )  # choose that with the highest multiplicity, for 2-defect complexes, or if COM approach fails
 
     # generate our template complex defect molecule, with the anchor site first in the sites list, followed
-    # by the order of ``complex_defect_sites`` (without the anchor site), because different site ordering
-    # breaks the KabschMatcher annoyingly:
-    complex_mol = DopedEquivMolecule(
+    # by the order of ``complex_defect_sites`` (without the anchor site):
+    # technically this is not required due to the use of (efficient) permutation-invariant
+    # BruteForceOrderMatcher in molecule matching, but it should aid efficiency for early breaking in the
+    # permutation searches
+    complex_mol = Molecule(
         [
             site.species
             for site in [anchor_site, *[site for site in complex_defect_sites if site != anchor_site]]
@@ -476,10 +424,9 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # the molecular representation is more intuitive, queryable, physically guided, and is sufficiently
     # efficient in this implementation
 
-    def sites_lists_from_molecules(molecules: list[DopedEquivMolecule]) -> list[list[PeriodicSite]]:
+    def sites_lists_from_molecules(molecules: list[Molecule]) -> list[list[PeriodicSite]]:
         """
-        Convert list of ``DopedEquivMolecule`` to list of lists of
-        ``PeriodicSite``.
+        Convert list of ``Molecule`` to list of lists of ``PeriodicSite``.
         """
         return [
             [
@@ -498,7 +445,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
         k: v for k, v in complex_equiv_prim_frac_coords_dict.items() if k != anchor_site
     }  # dict of sets of equivalent frac coords in primitive unit cell, for each point defect (exc anchor)
 
-    equiv_complex_molecules: list[DopedEquivMolecule] = []
+    equiv_complex_molecules: list[Molecule] = []
     for equiv_anchor_frac_coords in complex_equiv_prim_frac_coords_dict[anchor_site]:
         # for each anchor site, generate a dict of (other) candidate point defect sites, with the other
         # site as the key, and the set of its equivalent frac coords (wrt primitive unit cell) with
@@ -526,8 +473,9 @@ def get_equivalent_complex_defect_sites_in_primitive(
         # generate all candidate complex defect molecules from these frac coords / site combinations, with
         # the order matching the template complex defect molecule (anchor site, *complex_defect_sites --
         # with the latter having been the order of the dict generation, retained by itertools.product):
+        frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
         candidate_equiv_molecules = {  # set of candidate complex defect molecules
-            DopedEquivMolecule(
+            Molecule(
                 [site.species for site in [anchor_site, *candidate_site_combinations]],
                 primitive_structure.lattice.get_cartesian_coords(
                     [list(i) for i in [equiv_anchor_frac_coords, *candidate_frac_coords_combo]]
@@ -536,17 +484,26 @@ def get_equivalent_complex_defect_sites_in_primitive(
             for candidate_frac_coords_combo in candidate_frac_coords_sets_combinations
             if not any(  # avoid potential duplicate sites
                 np.allclose(cand_frac_coords_1, cand_frac_coords_2, atol=frac_tol * 2)
-                for cand_frac_coords_1, cand_frac_coords_2 in combinations(candidate_frac_coords_combo, 2)
+                for cand_frac_coords_1, cand_frac_coords_2 in combinations(
+                    [anchor_site.frac_coords, *candidate_frac_coords_combo], 2
+                )
             )
         }
 
         # now reduce to only those which are symmetry-equivalent to the template complex defect molecule,
         # but are distinct (i.e. not identical or periodic images; to only count those per unit cell)
-        distinct_candidate_equiv_molecules = [
-            candidate_equiv_mol
+
+        matching_candidate_equiv_molecules: list[Molecule] = [
+            candidate_equiv_mol  # complex defect molecules which are symmetry-equivalent to the template
             for candidate_equiv_mol in candidate_equiv_molecules
-            if Kabsch_equiv(complex_mol, candidate_equiv_mol, tol=dist_tol * 2)  # symmetry-equivalent
-            and not any(  # not identical or periodic images
+            if are_equivalent_molecules(complex_mol, candidate_equiv_mol, tol=dist_tol * 2)
+        ]
+        unique_candidate_equiv_molecules: list[Molecule] = []
+        # note that we don't use a list comprehension here, so we can compare each matching candidate
+        # molecule to those in ``equiv_complex_molecules`` _and_ to all others in the _current_
+        # ``unique_candidate_equiv_molecules`` list
+        for candidate_equiv_mol in matching_candidate_equiv_molecules:
+            if not any(  # complex defect molecules which are not not identical or periodic images
                 is_periodic_image(
                     [
                         primitive_structure.lattice.get_fractional_coords(site.coords)
@@ -556,36 +513,13 @@ def get_equivalent_complex_defect_sites_in_primitive(
                         primitive_structure.lattice.get_fractional_coords(site.coords)
                         for site in candidate_equiv_mol.sites
                     ],
+                    frac_tol=frac_tol,
                 )
-                for other_equiv_mol in equiv_complex_molecules
-            )
-        ]
-        equiv_complex_molecules.extend(distinct_candidate_equiv_molecules)
+                for other_equiv_mol in [*equiv_complex_molecules, *unique_candidate_equiv_molecules]
+            ):
+                unique_candidate_equiv_molecules.append(candidate_equiv_mol)
 
-        calculated_multiplicity = len(distinct_candidate_equiv_molecules) * len(
-            complex_equiv_prim_frac_coords_dict[anchor_site]
-        )
-        if not (
-            calculated_multiplicity >= theoretical_min_multiplicity
-            and calculated_multiplicity <= theoretical_max_multiplicity
-        ):
-            raise RuntimeError(
-                f"Calculated complex defect site multiplicity {calculated_multiplicity} (in the primitive "
-                f"cell) does not conform to the theoretical min/max range: {theoretical_min_multiplicity} "
-                f"- {theoretical_max_multiplicity}, indicating an error in the analysis. Please report "
-                f"this bug to the developers!"
-            )
-
-        if per_anchor_site:  # only take first anchor site
-            return (
-                (
-                    equiv_complex_molecules
-                    if return_molecules
-                    else sites_lists_from_molecules(equiv_complex_molecules)
-                ),
-                complex_equiv_prim_frac_coords_dict[anchor_site],
-                anchor_site,
-            )
+        equiv_complex_molecules.extend(unique_candidate_equiv_molecules)
 
     return (
         equiv_complex_molecules
@@ -644,7 +578,7 @@ def get_complex_defect_multiplicity(
             Distance tolerance for clustering generated equivalent sites (to
             ensure they are truly distinct), searching for equivalent sites
             (by inter-defect distances) and matching equivalent complex defect
-            geometries (as ``DopedEquivMolecule``\s, in Å. Default is 0.01 Å.
+            geometries (as ``Molecule``\s), in Å. Default is 0.01 Å.
             Note that this should match the value used for determining the
             point defect multiplicities (e.g. with the
             ``Defect.get_multiplicity()`` methods) for appropriate comparisons
@@ -670,27 +604,45 @@ def get_complex_defect_multiplicity(
             (default), or in the bulk supercell if
             ``primitive_cell_multiplicity = False``.
     """
-    per_anchor_equiv_complex_molecules, anchor_equiv_frac_coords, _anchor_site = (
-        get_equivalent_complex_defect_sites_in_primitive(
-            bulk_supercell,
-            vacancy_sites=vacancy_sites,
-            interstitial_sites=interstitial_sites,
-            substitution_sites=substitution_sites,
-            primitive_structure=primitive_structure,
-            supercell_symm_ops=supercell_symm_ops,
-            dist_tol=dist_tol,
-            return_molecules=True,  # for speed
-            per_anchor_site=True,  # 10-20% more efficient
-        )
-    )  # total multiplicity is the number of symmetry-equivalent complex defects per point defect site,
-    # times the multiplicity of that point defect site (in this case, the anchor site)
+    equiv_complex_molecules = get_equivalent_complex_defect_sites_in_primitive(
+        bulk_supercell,
+        vacancy_sites=vacancy_sites,
+        interstitial_sites=interstitial_sites,
+        substitution_sites=substitution_sites,
+        primitive_structure=primitive_structure,
+        supercell_symm_ops=supercell_symm_ops,
+        dist_tol=dist_tol,
+        return_molecules=True,  # for speed
+    )
     return (
-        len(per_anchor_equiv_complex_molecules) * len(anchor_equiv_frac_coords) * 1
+        len(equiv_complex_molecules) * 1
         if primitive_cell_multiplicity
         else round(
             len(bulk_supercell) / len(primitive_structure or get_primitive_structure(bulk_supercell))
         )
     )
+
+
+def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.1) -> bool:
+    """
+    Determine if two ``Molecule`` objects are equivalent, using the Kabsch
+    algorithm (which minimizes the root-mean-square-deviation (RMSD) of two
+    molecules which are topologically (atom types, geometry) similar) as
+    implemented in the ``BruteForceOrderMatcher`` class, which allows
+    permutation invariance in the molecule definitions.
+
+    Uses caching to speed up the comparison.
+    """
+    from doped.utils.efficiency import Molecule as DopedMolecule
+
+    Molecule.__hash__ = DopedMolecule.__hash__  # ensure appropriate hash usage
+
+    return _cached_equivalent_molecules(molecule_1, molecule_2, tol)
+
+
+@lru_cache(maxsize=int(1e4))
+def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.1) -> bool:
+    return BruteForceOrderMatcher(molecule_1).fit(molecule_2)[-1] < tol
 
 
 # TODO: In future, should be able to use similar code to generate all possible complexes in a given
