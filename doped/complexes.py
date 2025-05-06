@@ -3,10 +3,12 @@ Code for generating and analysing defect complexes.
 """
 
 import contextlib
+import math
 from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache
 from itertools import combinations, product
+from typing import Any
 
 import numpy as np
 from pymatgen.analysis.ewald import EwaldSummation
@@ -323,38 +325,39 @@ def get_equivalent_complex_defect_sites_in_primitive(
             or lists of ``PeriodicSite``\s, depending on the value of
             ``return_molecules``.
     """
-    # TODO: Can just get from point group symmetry ops then? No because it needs to account for crystal
-    # structure. Could get from point symmetries (with defect entry function), but would break with
-    # periodicity-breaking cases...
-
     primitive_structure = primitive_structure or get_primitive_structure(bulk_supercell, symprec=symprec)
     supercell_symm_ops = (
         supercell_symm_ops or get_sga(bulk_supercell, symprec=symprec).get_symmetry_operations()
     )  # inputting bulk supercell symm ops is typically only a small speed up (due to caching)
 
-    input_vacancy_sites = vacancy_sites or []
-    vacancy_sites = []  # mark vacancy sites with X species, to distinguish from occupied sites
-    for site in input_vacancy_sites:
-        X_site = deepcopy(site)
-        X_site.species = "X"
-        vacancy_sites.append(X_site)
+    vacancy_sites = vacancy_sites or []
     interstitial_sites = interstitial_sites or []
     substitution_sites = substitution_sites or []
-    complex_defect_sites = [*vacancy_sites, *interstitial_sites, *substitution_sites]
+    raw_complex_defect_sites = [*vacancy_sites, *interstitial_sites, *substitution_sites]
 
     # generate our template complex defect molecule:
-    complex_mol = Molecule(
-        [site.species for site in complex_defect_sites],
-        bulk_supercell.lattice.get_cartesian_coords(
-            [
-                site.frac_coords + complex_defect_sites[0].distance_and_image(site)[1]
-                for site in complex_defect_sites
-            ]
-        ),
-    )
     # later, if the complex is composed of >=3 defects, we use the centre of mass to determine the 'anchor'
     # site, and so here we ensure that the coordinates used in our template molecule are the closest
     # periodic image site to the first site, to ensure we obtain a correct center of mass
+    complex_mol = Molecule(
+        [site.species for site in raw_complex_defect_sites],
+        bulk_supercell.lattice.get_cartesian_coords(
+            [
+                site.frac_coords + raw_complex_defect_sites[0].distance_and_image(site)[1]
+                for site in raw_complex_defect_sites
+            ]
+        ),
+    )
+    complex_com = complex_mol.center_of_mass
+
+    # now we set the species of vacancy sites to X, to distinguish from occupied sites (we didn't do this
+    # earlier as this breaks the ``center_of_mass`` attribute of ``Molecule``\s)
+    X_vacancy_sites = []
+    for site in vacancy_sites:
+        X_site = deepcopy(site)
+        X_site.species = "X"
+        X_vacancy_sites.append(X_site)
+    complex_defect_sites = [*X_vacancy_sites, *interstitial_sites, *substitution_sites]
 
     # set efficient and unique hash for Site and PeriodicSite, to allow use as dict keys
     Site.__hash__ = _periodic_site__hash__
@@ -378,6 +381,36 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # to get the symmetry-equivalent sites of vacancies/substitutions in the primitive unit cell at this
     # step, but _should_ be fully redundant/equivalent to ``get_equiv_frac_coords_in_primitive``
 
+    # min multiplicity is the maximum of m_i - choose - n_i, where m_i is the multiplicity of the i-th
+    # point defect in the complex, and n_i is the number of symmetry-equivalent i-th point defects in the
+    # complex:
+    frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
+
+    unique_complex_site_m_n_equiv_prim_frac_dict: dict[PeriodicSite, dict[str, Any]] = {}
+    for site, equiv_coords_set in complex_equiv_prim_frac_coords_dict.items():
+        m_i = len(equiv_coords_set)  # (try to) find matching site configuration
+        for site_data in unique_complex_site_m_n_equiv_prim_frac_dict.values():
+            if site_data["m_i"] == m_i and any(
+                np.allclose(next(iter(equiv_coords_set)), frac_coords, atol=frac_tol)
+                for frac_coords in site_data["equiv_prim_frac_coords"]
+            ):
+                site_data["n_i"] += 1
+                break
+        else:  # No match found
+            unique_complex_site_m_n_equiv_prim_frac_dict[site] = {
+                "m_i": m_i,
+                "n_i": 1,
+                "equiv_prim_frac_coords": equiv_coords_set,
+            }
+
+    min_multiplicity = max(
+        min(  # minimum m-choose-n for each inequivalent constituent point defect
+            math.comb(site_data["m_i"], site_data["n_i"])
+            for site_data in unique_complex_site_m_n_equiv_prim_frac_dict.values()
+        ),
+        1,  # at least 1
+    )
+
     complex_defect_defect_dist_dict = {  # dict of inter-defect distances for each pair of point defects
         frozenset((site1, site2)): site1.distance(site2)
         for site1, site2 in combinations(complex_defect_sites, 2)
@@ -392,7 +425,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
             anchor_site = min(
                 complex_defect_sites,
                 key=lambda site: site.distance_and_image_from_frac_coords(
-                    bulk_supercell.lattice.get_fractional_coords(complex_mol.center_of_mass)
+                    bulk_supercell.lattice.get_fractional_coords(complex_com)
                 )[0],
             )
     if anchor_site is None:
@@ -473,7 +506,6 @@ def get_equivalent_complex_defect_sites_in_primitive(
         # generate all candidate complex defect molecules from these frac coords / site combinations, with
         # the order matching the template complex defect molecule (anchor site, *complex_defect_sites --
         # with the latter having been the order of the dict generation, retained by itertools.product):
-        frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
         candidate_equiv_molecules = {  # set of candidate complex defect molecules
             Molecule(
                 [site.species for site in [anchor_site, *candidate_site_combinations]],
@@ -520,6 +552,13 @@ def get_equivalent_complex_defect_sites_in_primitive(
                 unique_candidate_equiv_molecules.append(candidate_equiv_mol)
 
         equiv_complex_molecules.extend(unique_candidate_equiv_molecules)
+
+    if len(equiv_complex_molecules) < min_multiplicity:
+        raise RuntimeError(
+            f"Calculated complex defect site multiplicity {len(equiv_complex_molecules)} (in the "
+            f"primitive cell) is lower than the theoretical minimum multiplicity {min_multiplicity}, "
+            f"indicating an error in the analysis. Please report this bug to the developers!"
+        )
 
     return (
         equiv_complex_molecules
