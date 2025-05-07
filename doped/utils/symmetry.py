@@ -2521,6 +2521,7 @@ def point_symmetry_from_structure(
     relaxed: bool = True,
     verbose: bool = True,
     return_periodicity_breaking: bool = False,
+    skip_atom_mapping_check: bool = False,
 ) -> str | tuple[str, bool]:
     r"""
     Get the point symmetry of a given structure.
@@ -2589,6 +2590,13 @@ def point_symmetry_from_structure(
             been detected to break the crystal periodicity (and hence not be
             able to return a reliable `relaxed` point symmetry) or not. Default
             is False.
+        skip_atom_mapping_check (bool):
+            If ``True``, skips the atom mapping check which ensures that the
+            bulk and defect supercell lattice definitions are matched
+            (important for accurate defect site determination and charge
+            corrections). Can be used to speed up parsing when you are sure
+            the cell definitions match (e.g. both supercells were generated
+            with ``doped``). Default is ``False``.
 
     Returns:
         str:
@@ -2629,6 +2637,7 @@ def point_symmetry_from_structure(
             structure,
             oxi_state="Undetermined",
             return_all_info=True,
+            skip_atom_mapping_check=skip_atom_mapping_check,
         )
         defect_entry = DefectEntry(
             # pmg attributes:
