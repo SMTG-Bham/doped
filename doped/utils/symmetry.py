@@ -929,16 +929,40 @@ def get_equiv_frac_coords_in_primitive(
             using ``_frac_coords_sort_func``), depending on the value of
             ``equiv_coords``.
     """
-    unique_sites = get_all_equiv_sites(
-        frac_coords, supercell, symm_ops, dist_tol=dist_tol, symprec=symprec
-    )
-    supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
-    prim_with_all_X = get_primitive_structure(supercell_with_all_X, ignored_species=["X"], symprec=symprec)
+    found_match = False
+    for trial_symprec_factor in [1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1]:
+        for trial_dist_tol_factor in [1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1]:
+            # sometimes we can have edge cases where slight numerical differences cause issues with
+            # dist_tol/symprec choices, and then primitive cell determination as a result, so scan over
+            # some values if necessary:
+            unique_sites = get_all_equiv_sites(
+                frac_coords,
+                supercell,
+                symm_ops,
+                dist_tol=dist_tol * trial_dist_tol_factor,
+                symprec=symprec * trial_symprec_factor,
+            )
+            supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
+            prim_with_all_X = get_primitive_structure(
+                supercell_with_all_X, ignored_species=["X"], symprec=symprec * trial_symprec_factor
+            )
 
-    # ensure matched to primitive structure:
-    rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+            if rotated_struct is not None:
+                found_match = True
+                break
+        if found_match:
+            dist_tol = dist_tol * trial_dist_tol_factor
+            symprec = symprec * trial_symprec_factor
+            break
+
     if rotated_struct is None:
-        warnings.warn("Could not find a mapping between the primitive and supercell structures!")
+        warnings.warn(
+            "Could not find a mapping between the primitive and supercell structures! You may need to "
+            "tune the symprec/dist_tol parameters for this system."
+        )
         return None
 
     primitive_with_all_X = rotated_struct * matrix
