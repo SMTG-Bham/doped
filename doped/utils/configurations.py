@@ -13,6 +13,9 @@ from pymatgen.util.typing import PathLike
 
 from doped.utils.efficiency import StructureMatcher_scan_stol
 
+# backwards compatibility for SnB, remove after next release (TODO):
+_scan_sm_stol_till_match = StructureMatcher_scan_stol
+
 
 def orient_s2_like_s1(
     struct1: Structure,
