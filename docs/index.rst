@@ -99,6 +99,7 @@ Studies using ``doped``, so far
 - R\. Chinnappan **First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN** `Physica Scripta <https://doi.org/10.1088/1402-4896/adca71>`__ 2025
 - R\. Desai et al. **Exploring the Defect Landscape and Dopability of Chalcogenide Perovskite BaZrS₃** `Journal of Physical Chemistry C <https://doi.org/10.1021/acs.jpcc.5c01597>`__ 2025
 - C\. Kaewmeechai, J. Strand & A. Shluger **Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga₂O₃** `Physica Status Solidi B <https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652>`__ 2025
+- W\. Gierlotka et al. **Thermodynamics of point defects in the AlSb phase and its influence on phase equilibrium** `Computational Materials Science <https://doi.org/10.1016/j.commatsci.2025.113934>`__ 2025
 - X\. Wang et al. **Sulfur vacancies limit the open-circuit voltage of Sb₂S₃ solar cells** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.4c02722>`__ 2024
 - A\. Zhang et al. **Optimizing the n-type carrier concentration of an InVO₄ photocatalyst by codoping with donors and intrinsic defects** `Physical Review Applied <https://doi.org/10.1103/PhysRevApplied.22.044047>`__ 2024
 - M-L\. Wang et al. **Impact of sulfur doping on copper-substituted lead apatite** `Physical Review B <https://doi.org/10.1103/PhysRevB.110.104109>`__ 2024
