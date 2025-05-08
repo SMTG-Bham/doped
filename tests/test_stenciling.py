@@ -7,25 +7,14 @@ import shutil
 import unittest
 import warnings
 
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core.structure import Composition, IStructure, PeriodicSite, Structure
+from pymatgen.analysis.structure_matcher import ElementComparator
 
 from doped.thermodynamics import DefectThermodynamics
 
 # use doped efficiency functions for speed in structure-matching testing
-from doped.utils.efficiency import Composition as doped_Composition
-from doped.utils.efficiency import IStructure as doped_IStructure
-from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
+from doped.utils.efficiency import Structure, StructureMatcher
 from doped.utils.stenciling import _check_min_dist, get_defect_in_supercell
 from doped.utils.supercells import min_dist
-
-Composition.__instances__ = {}
-Composition.__eq__ = doped_Composition.__eq__
-Composition.__hash__ = doped_Composition.__hash__
-PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
-PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
-IStructure.__instances__ = {}
-IStructure.__eq__ = doped_IStructure.__eq__
 
 
 def if_present_rm(path):

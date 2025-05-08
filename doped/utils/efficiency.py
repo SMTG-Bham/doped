@@ -11,6 +11,7 @@ from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
 from fractions import Fraction
 from functools import cached_property, lru_cache
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,15 +23,47 @@ from pymatgen.analysis.structure_matcher import (
     FrameworkComparator,
     StructureMatcher,
 )
-from pymatgen.core.composition import Composition, DummySpecies, Element, Species
+from pymatgen.core.composition import Composition, DummySpecies
+from pymatgen.core.periodic_table import Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Molecule, Structure
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from scipy.spatial import Voronoi
 
-from doped.core import Vacancy
-from doped.utils import symmetry
+if TYPE_CHECKING:
+    from doped.core import Vacancy
+
+# Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
+
+
+# Species/Element overrides:
+def _hashable_single_species_info(single_species):
+    return single_species.Z, getattr(single_species, "oxi_state", None)
+
+
+def _species_hash__(self):
+    """
+    Custom ``__hash__`` method for ``Species`` instances.
+    """
+    return hash(_hashable_single_species_info(self))
+
+
+def _species_eq__(self, other):
+    """
+    Custom ``__eq__`` method for ``Species`` instances.
+    """
+    if not isinstance(other, Species):
+        return NotImplemented
+    return _hashable_single_species_info(self) == _hashable_single_species_info(other)
+
+
+Species.__eq__ = _species_eq__
+Species.__hash__ = _species_hash__
+Element.__eq__ = _species_eq__
+Element.__hash__ = _species_hash__
+
+# Composition overrides:
 
 
 def _composition__hash__(self):
@@ -42,8 +75,6 @@ def _composition__hash__(self):
     stoichiometry), which cannot then be used to distinguish different
     compositions.
     """
-    Species.__hash__ = _species_hash__  # ensure we are using efficient Species/Element hash
-    Element.__hash__ = _species_hash__  # ensure we are using efficient Species/Element hash
     return hash(frozenset(self._data.items()))
 
 
@@ -86,17 +117,12 @@ def _Composition__eq__(self, other):
 
     # use object hash with instances to avoid recursion issues (for class method)
     self_hash = _composition__hash__(self)
-    other_hash = _composition__hash__(other)
-
     Composition.__instances__[self_hash] = self  # Ensure instances are stored for caching
+
+    other_hash = _composition__hash__(other)
     Composition.__instances__[other_hash] = other
 
     return doped_Composition_eq_func(self_hash, other_hash)
-
-
-Composition.__instances__ = {}
-Composition.__eq__ = _Composition__eq__
-Composition.__hash__ = _composition__hash__
 
 
 class Hashabledict(dict):
@@ -137,6 +163,11 @@ def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
     return Composition(elem_map)
 
 
+Composition.__instances__ = {}
+Composition.__eq__ = _Composition__eq__
+Composition.__hash__ = _composition__hash__
+
+
 @lru_cache(maxsize=int(1e5))
 def _parse_site_species_str(site: Site, wout_charge: bool = False):
     if isinstance(site._species, Element):
@@ -153,41 +184,7 @@ def _parse_site_species_str(site: Site, wout_charge: bool = False):
     return species_string
 
 
-# similar for PeriodicSite:
-def cache_ready_PeriodicSite__eq__(self, other):
-    """
-    Custom ``__eq__`` method for ``PeriodicSite`` instances, using a cached
-    equality function to speed up comparisons.
-    """
-    needed_attrs = ("_species", "coords", "properties")
-
-    if not all(hasattr(other, attr) for attr in needed_attrs):
-        return NotImplemented
-
-    return (
-        self._species == other._species  # should always work fine (and is faster) if Site initialised
-        # without ``skip_checks`` (default)
-        and cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
-        and self.properties == other.properties
-    )
-
-
-@lru_cache(maxsize=int(1e8))
-def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08):
-    """
-    Cached version of ``np.allclose``, taking tuples as inputs (so that they
-    are hashable and thus cacheable).
-    """
-    return np.allclose(np.array(a), np.array(b), rtol=rtol, atol=atol)
-
-
-PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
-
-
-def _hashable_single_species_info(single_species):
-    return single_species.Z, getattr(single_species, "oxi_state", None)
-
-
+# PeriodicSite overrides:
 def _periodic_site__hash__(self):
     """
     Custom ``__hash__`` method for ``PeriodicSite`` instances.
@@ -216,15 +213,37 @@ def _periodic_site__hash__(self):
         )
 
 
+def cache_ready_PeriodicSite__eq__(self, other):
+    """
+    Custom ``__eq__`` method for ``PeriodicSite`` instances, using a cached
+    equality function to speed up comparisons.
+    """
+    needed_attrs = ("_species", "coords", "properties")
+
+    if not all(hasattr(other, attr) for attr in needed_attrs):
+        return NotImplemented
+
+    return (
+        self._species == other._species  # should always work fine (and is faster) if Site initialised
+        # without ``skip_checks`` (default)
+        and cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
+        and self.properties == other.properties
+    )
+
+
+@lru_cache(maxsize=int(1e8))
+def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08):
+    """
+    Cached version of ``np.allclose``, taking tuples as inputs (so that they
+    are hashable and thus cacheable).
+    """
+    return np.allclose(np.array(a), np.array(b), rtol=rtol, atol=atol)
+
+
+PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 PeriodicSite.__hash__ = _periodic_site__hash__
 
-
-def _species_hash__(self):
-    return hash(_hashable_single_species_info(self))
-
-
-Species.__hash__ = _species_hash__
-Element.__hash__ = _species_hash__
+# Structure overrides:
 
 
 def _structure__hash__(self):
@@ -234,11 +253,6 @@ def _structure__hash__(self):
     return hash((self.lattice, frozenset(self.sites)))
 
 
-Structure.__hash__ = _structure__hash__
-Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shallow copy fine for structures
-IStructure.__hash__ = _structure__hash__
-
-
 @contextlib.contextmanager
 def cache_species(structure_cls):
     """
@@ -246,6 +260,10 @@ def cache_species(structure_cls):
     significantly speeds up ``pydefect`` eigenvalue parsing in large structures
     (due to repeated use of ``Structure.indices_from_symbol``.
     """
+    Species.__eq__ = _species_eq__
+    Species.__hash__ = _species_hash__  # use efficient hash for species
+    Composition.__eq__ = _Composition__eq__
+    Composition.__hash__ = _composition__hash__  # use efficient hash for composition
     original_species = structure_cls.species
     try:
         cached = cached_property(original_species.fget)
@@ -304,11 +322,15 @@ def _Structure__eq__(self, other):
     return cached_Structure_eq_func(self_hash, other_hash)
 
 
-IStructure.__instances__ = {}
 IStructure.__eq__ = _Structure__eq__
+IStructure.__hash__ = _structure__hash__
+IStructure.__instances__ = {}
 Structure.__eq__ = _Structure__eq__
+Structure.__hash__ = _structure__hash__
+Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shallow copy fine for structures
 
 
+# Molecule overrides:
 def _DopedMolecule__hash__(self):
     """
     Hash ``pymatgen`` ``Molecule`` objects using the z-matrix (which reflects
@@ -325,9 +347,21 @@ def _DopedMolecule__hash__(self):
     return hash(rounded_z_list)
 
 
+def _DopedMolecule__eq__(self, other):
+    """
+    Custom ``__eq__`` method for ``Molecule`` instances, using a cached
+    equality function to speed up comparisons.
+    """
+    if not isinstance(other, type(self)):
+        return NotImplemented
+    return _DopedMolecule__hash__(self) == _DopedMolecule__hash__(other)
+
+
+Molecule.__eq__ = _DopedMolecule__eq__
 Molecule.__hash__ = _DopedMolecule__hash__
 
 
+# SpacegroupAnalyzer overrides:
 def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     """
     Get the symmetry operations associated with the structure.
@@ -445,8 +479,6 @@ def get_element_indices(
             in the structure.
     """
     if elements is None:
-        from doped.utils.efficiency import _fast_get_composition_from_sites
-
         elements = _fast_get_composition_from_sites(structure).elements
 
     if not all(isinstance(element, str) for element in elements):
@@ -831,6 +863,8 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
 
 @lru_cache(maxsize=int(1e2))
 def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
+    from doped.utils.symmetry import _doped_cluster_frac_coords
+
     # map all sites to the unit cell; 0 ≤ xyz < 1.
     structure = Structure.from_sites(structure, to_unit_cell=True)
     # get Voronoi nodes in primitive structure and then map back to the supercell:
@@ -859,106 +893,6 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
         voronoi_struct.translate_sites(range(len(voronoi_struct)), fractional_shift, frac_coords=True)
 
     return voronoi_struct.sites
-
-
-def _doped_cluster_frac_coords(
-    fcoords: np.typing.ArrayLike,
-    structure: Structure,
-    tol: float = 0.55,
-    symmetry_preference: float = 0.1,
-) -> np.typing.NDArray:
-    """
-    Cluster fractional coordinates that are within a certain distance tolerance
-    of each other, and return the cluster site.
-
-    Modified from the ``pymatgen-analysis-defects``` function as follows:
-    For each site cluster, the possible sites to choose from are the sites
-    in the cluster `and` the cluster midpoint (average position). Of these
-    sites, the site with the highest symmetry, and then largest ``min_dist``
-    (distance to any host lattice site), is chosen -- if its ``min_dist`` is
-    no more than ``symmetry_preference`` (0.1 Å by default) smaller than
-    the site with the largest ``min_dist``. This is because we want to favour
-    the higher symmetry interstitial sites (as these are typically the more
-    intuitive sites for placement, cleaner, easier for analysis etc, and work
-    well when combined with ``ShakeNBreak`` or other structure-searching
-    techniques to account for symmetry-breaking), but also interstitials are
-    often lowest-energy when furthest from host atoms (i.e. in the largest
-    interstitial voids -- particularly for fully-ionised charge states), and
-    so this approach tries to strike a balance between these two goals.
-
-    In ``pymatgen-analysis-defects``, the average cluster position is used,
-    which breaks symmetries and is less easy to manipulate in the following
-    interstitial generation functions.
-
-    Args:
-        fcoords (ArrayLike):
-            Fractional coordinates of points to cluster.
-        structure (Structure):
-            The host structure.
-        tol (float):
-            Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
-        symmetry_preference (float):
-            Distance preference for symmetry over minimum distance to host
-            atoms, as detailed in docstring above.
-            Default is 0.1 Å.
-
-    Returns:
-        np.typing.NDArray: Clustered fractional coordinates.
-    """
-    if len(fcoords) == 0:
-        return None
-    if len(fcoords) == 1:
-        return symmetry._vectorized_custom_round(
-            np.mod(symmetry._vectorized_custom_round(fcoords, 5), 1), 4
-        )  # to unit cell
-
-    lattice = structure.lattice
-    sga = symmetry.get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
-    symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
-    cn = symmetry.cluster_coords(fcoords, structure, dist_tol=tol)
-    unique_fcoords = []
-
-    # cn is an array of cluster numbers, of length ``len(fcoords)``, so we take the set of cluster numbers
-    # ``n``, use ``np.where(cn == n)[0]`` to get the indices of ``cn`` / ``fcoords`` which are in cluster
-    # ``n``, and then decide which coordinates to take as the cluster site based on symmetry and distance:
-    for n in set(cn):
-        frac_coords = []
-        for i, j in enumerate(np.where(cn == n)[0]):
-            if i == 0:
-                frac_coords.append(fcoords[j])
-            else:
-                fcoord = fcoords[j]  # We need the image to combine the frac_coords properly:
-                d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
-                frac_coords.append(fcoord + image)
-
-        frac_coords.append(np.average(frac_coords, axis=0))  # midpoint of cluster
-        frac_coords_scores = {
-            tuple(x): (
-                -symmetry.group_order_from_schoenflies(
-                    symmetry.point_symmetry_from_site(x, structure, symm_ops=symm_ops)
-                ),  # higher order = higher symmetry
-                -np.min(lattice.get_all_distances(x, structure.frac_coords), axis=1),
-                *symmetry._frac_coords_sort_func(x),
-            )
-            for x in frac_coords
-        }
-        symmetry_favoured_site = sorted(frac_coords_scores.items(), key=lambda x: x[1])[0][0]
-        dist_favoured_site = sorted(
-            frac_coords_scores.items(), key=lambda x: (x[1][1], x[1][0], *x[1][2:])
-        )[0][0]
-
-        if (
-            np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
-            < np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
-            - symmetry_preference
-        ):
-            unique_fcoords.append(dist_favoured_site)
-        else:  # prefer symmetry over distance if difference is sufficiently small
-            unique_fcoords.append(symmetry_favoured_site)
-
-    return symmetry._vectorized_custom_round(
-        np.mod(symmetry._vectorized_custom_round(unique_fcoords, 5), 1), 4
-    )  # to unit cell
 
 
 def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:
@@ -1006,7 +940,7 @@ class DopedVacancyGenerator(VacancyGenerator):
         structure: Structure,
         rm_species: set[str | Species] | list[str | Species] | None = None,
         **kwargs,
-    ) -> Generator[Vacancy, None, None]:
+    ) -> Generator["Vacancy", None, None]:
         """
         Generate vacancy defects.
 
@@ -1023,6 +957,9 @@ class DopedVacancyGenerator(VacancyGenerator):
             Generator[Vacancy, None, None]:
                 Generator that yields a list of ``Vacancy`` objects.
         """
+        from doped.core import Vacancy
+        from doped.utils.symmetry import get_sga
+
         # core difference is the removal of unnecessary `remove_oxidation_states` calls
         structure = get_valid_magmom_struct(structure)
         all_species = {elt.symbol for elt in structure.composition.elements}
@@ -1033,7 +970,7 @@ class DopedVacancyGenerator(VacancyGenerator):
                 f"rm_species ({rm_species}) must be a subset of the structure's species ({all_species})."
             )
 
-        sga = symmetry.get_sga(structure)
+        sga = get_sga(structure)
         sym_struct = sga.get_symmetrized_structure()
         for site_group in sym_struct.equivalent_sites:
             site = site_group[0]

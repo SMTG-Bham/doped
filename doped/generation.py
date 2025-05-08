@@ -26,10 +26,7 @@ from pymatgen.analysis.defects.generators import (
     VacancyGenerator,
 )
 from pymatgen.analysis.defects.utils import remove_collisions
-from pymatgen.core import IStructure, Structure
-from pymatgen.core.composition import Composition, Element
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.core.structure import PeriodicSite
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
@@ -47,10 +44,7 @@ from doped.core import (
     guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
-from doped.utils.efficiency import Composition as doped_Composition
-from doped.utils.efficiency import DopedTopographyAnalyzer, _doped_cluster_frac_coords
-from doped.utils.efficiency import IStructure as doped_IStructure
-from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
+from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
 
@@ -1570,16 +1564,6 @@ class DefectsGenerator(MSONable):
                 "with generate_supercell=False)! Vacancy defect will give empty cell!"
             )
 
-        # use lru_cache for Composition and PeriodicSite comparisons (speeds up structure matching
-        # dramatically), and for Structure as well as fast ``doped`` ``__eq__`` function
-        Composition.__instances__ = {}
-        Composition.__eq__ = doped_Composition.__eq__
-        Composition.__hash__ = doped_Composition.__hash__
-        PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
-        PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
-        IStructure.__instances__ = {}
-        IStructure.__eq__ = doped_IStructure.__eq__
-
         pbar = tqdm(
             total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
         )  # tqdm progress
@@ -2861,7 +2845,7 @@ def get_interstitial_sites(
         )
         return []
 
-    site_frac_coords_array: np.ndarray = _doped_cluster_frac_coords(
+    site_frac_coords_array: np.ndarray = symmetry._doped_cluster_frac_coords(
         sites_array,
         host_structure,
         tol=interstitial_gen_kwargs.get("clustering_tol", 0.8),

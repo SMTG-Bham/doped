@@ -21,8 +21,7 @@ from pymatgen.analysis.structure_matcher import (
     pbc_shortest_vectors,
 )
 from pymatgen.core.operations import SymmOp
-from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import Composition, IStructure, Lattice, PeriodicSite, Structure
+from pymatgen.core.structure import Lattice
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
@@ -32,9 +31,7 @@ from sympy import Eq, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
-from doped.utils.configurations import orient_s2_like_s1
-from doped.utils.efficiency import IStructure as doped_IStructure
-from doped.utils.efficiency import SpacegroupAnalyzer
+from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
@@ -280,8 +277,6 @@ def get_sga_and_symprec(struct: Structure, symprec: float = 0.01) -> tuple[Space
 def _get_sga(
     struct: Structure, symprec: float = 0.01, return_symprec: bool = False
 ) -> SpacegroupAnalyzer | tuple[SpacegroupAnalyzer, float]:
-    IStructure.__hash__ = doped_IStructure.__hash__
-
     return _cache_ready_get_sga(struct, symprec=symprec, return_symprec=return_symprec)
 
 
@@ -554,6 +549,104 @@ def cluster_coords(
     return fcluster(z, dist_tol, criterion=criterion)
 
 
+def _doped_cluster_frac_coords(
+    fcoords: np.typing.ArrayLike,
+    structure: Structure,
+    tol: float = 0.55,
+    symmetry_preference: float = 0.1,
+) -> np.typing.NDArray:
+    """
+    Cluster fractional coordinates that are within a certain distance tolerance
+    of each other, and return the cluster site.
+
+    Modified from the ``pymatgen-analysis-defects``` function as follows:
+    For each site cluster, the possible sites to choose from are the sites
+    in the cluster `and` the cluster midpoint (average position). Of these
+    sites, the site with the highest symmetry, and then largest ``min_dist``
+    (distance to any host lattice site), is chosen -- if its ``min_dist`` is
+    no more than ``symmetry_preference`` (0.1 Å by default) smaller than
+    the site with the largest ``min_dist``. This is because we want to favour
+    the higher symmetry interstitial sites (as these are typically the more
+    intuitive sites for placement, cleaner, easier for analysis etc, and work
+    well when combined with ``ShakeNBreak`` or other structure-searching
+    techniques to account for symmetry-breaking), but also interstitials are
+    often lowest-energy when furthest from host atoms (i.e. in the largest
+    interstitial voids -- particularly for fully-ionised charge states), and
+    so this approach tries to strike a balance between these two goals.
+
+    In ``pymatgen-analysis-defects``, the average cluster position is used,
+    which breaks symmetries and is less easy to manipulate in the following
+    interstitial generation functions.
+
+    Args:
+        fcoords (ArrayLike):
+            Fractional coordinates of points to cluster.
+        structure (Structure):
+            The host structure.
+        tol (float):
+            Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
+        symmetry_preference (float):
+            Distance preference for symmetry over minimum distance to host
+            atoms, as detailed in docstring above.
+            Default is 0.1 Å.
+
+    Returns:
+        np.typing.NDArray: Clustered fractional coordinates.
+    """
+    if len(fcoords) == 0:
+        return None
+    if len(fcoords) == 1:
+        return _vectorized_custom_round(np.mod(_vectorized_custom_round(fcoords, 5), 1), 4)  # to unit cell
+
+    lattice = structure.lattice
+    sga = get_sga(structure, symprec=0.1)  # for getting symmetries of different sites
+    symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
+    cn = cluster_coords(fcoords, structure, dist_tol=tol)
+    unique_fcoords = []
+
+    # cn is an array of cluster numbers, of length ``len(fcoords)``, so we take the set of cluster numbers
+    # ``n``, use ``np.where(cn == n)[0]`` to get the indices of ``cn`` / ``fcoords`` which are in cluster
+    # ``n``, and then decide which coordinates to take as the cluster site based on symmetry and distance:
+    for n in set(cn):
+        frac_coords = []
+        for i, j in enumerate(np.where(cn == n)[0]):
+            if i == 0:
+                frac_coords.append(fcoords[j])
+            else:
+                fcoord = fcoords[j]  # We need the image to combine the frac_coords properly:
+                d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
+                frac_coords.append(fcoord + image)
+
+        frac_coords.append(np.average(frac_coords, axis=0))  # midpoint of cluster
+        frac_coords_scores = {
+            tuple(x): (
+                -group_order_from_schoenflies(
+                    point_symmetry_from_site(x, structure, symm_ops=symm_ops)
+                ),  # higher order = higher symmetry
+                -np.min(lattice.get_all_distances(x, structure.frac_coords), axis=1),
+                *_frac_coords_sort_func(x),
+            )
+            for x in frac_coords
+        }
+        symmetry_favoured_site = sorted(frac_coords_scores.items(), key=lambda x: x[1])[0][0]
+        dist_favoured_site = sorted(
+            frac_coords_scores.items(), key=lambda x: (x[1][1], x[1][0], *x[1][2:])
+        )[0][0]
+
+        if (
+            np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
+            < np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
+            - symmetry_preference
+        ):
+            unique_fcoords.append(dist_favoured_site)
+        else:  # prefer symmetry over distance if difference is sufficiently small
+            unique_fcoords.append(symmetry_favoured_site)
+
+    return _vectorized_custom_round(
+        np.mod(_vectorized_custom_round(unique_fcoords, 5), 1), 4
+    )  # to unit cell
+
+
 def get_all_equiv_sites(
     frac_coords: ArrayLike,
     structure: Structure,
@@ -601,7 +694,6 @@ def get_all_equiv_sites(
             as fractional coordinates (depending on the value of
             ``just_frac_coords``).
     """
-    IStructure.__hash__ = doped_IStructure.__hash__
     try:
         return _cache_ready_get_all_equiv_sites(
             tuple(frac_coords),
@@ -835,7 +927,6 @@ def _get_symm_dataset_of_struc_with_all_equiv_sites(
 
     Tries to use hashing and caching to accelerate if possible.
     """
-    IStructure.__hash__ = doped_IStructure.__hash__
     try:
         return _cache_ready_get_symm_dataset_of_struc_with_all_equiv_sites(
             tuple(frac_coords), struct, tuple(symm_ops) if symm_ops else None, symprec, dist_tol, species
@@ -953,6 +1044,7 @@ def get_equiv_frac_coords_in_primitive(
             if rotated_struct is not None:
                 found_match = True
                 break
+
         if found_match:
             dist_tol = dist_tol * trial_dist_tol_factor
             symprec = symprec * trial_symprec_factor
@@ -966,6 +1058,8 @@ def get_equiv_frac_coords_in_primitive(
         return None
 
     primitive_with_all_X = rotated_struct * matrix
+    from doped.utils.configurations import orient_s2_like_s1
+
     primitive_with_all_X = orient_s2_like_s1(
         primitive,
         primitive_with_all_X,
@@ -1555,7 +1649,6 @@ def get_primitive_structure(
             function.
     """
     # make inputs hashable, then call ``_cache_ready_get_primitive_structure``:
-    IStructure.__hash__ = doped_IStructure.__hash__
     cache_ready_ignored_species = tuple(ignored_species) if ignored_species is not None else None
     cache_ready_kwargs = tuple(kwargs.items()) if kwargs else None
 
@@ -3017,16 +3110,6 @@ def are_equivalent_sites(
         bool:
             ``True`` if the sites are symmetry-equivalent, ``False`` otherwise.
     """
-    from doped.utils.efficiency import Composition as doped_Composition
-    from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
-
-    # use doped efficiency tools to make structure-matching as fast as possible:
-    Composition.__instances__ = {}
-    Composition.__eq__ = doped_Composition.__eq__
-    Composition.__hash__ = doped_Composition.__hash__
-    PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
-    PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
-
     host_struct = structure.copy()
     if isinstance(s1.specie, Element) or isinstance(s2.specie, Element):
         s1._specie = Element(s1.specie)

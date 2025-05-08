@@ -12,9 +12,7 @@ import numpy as np
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.defects import core, thermo, utils
-from pymatgen.analysis.structure_matcher import ElementComparator, SpeciesComparator, StructureMatcher
-from pymatgen.core.composition import Composition, Element
-from pymatgen.core.structure import IStructure, PeriodicSite, Structure
+from pymatgen.analysis.structure_matcher import ElementComparator, SpeciesComparator
 from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
@@ -22,6 +20,7 @@ from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 from doped import _doped_obj_properties_methods, get_mp_context
+from doped.utils.efficiency import Composition, Element, PeriodicSite, Structure, StructureMatcher
 
 if TYPE_CHECKING:
     from matplotlib.pyplot import Figure
@@ -2449,19 +2448,6 @@ class Defect(core.Defect):
 
         if self.defect_type != other.defect_type:
             return False
-
-        # use doped efficiency functions for speed:
-        from doped.utils.efficiency import Composition as doped_Composition
-        from doped.utils.efficiency import IStructure as doped_IStructure
-        from doped.utils.efficiency import PeriodicSite as doped_PeriodicSite
-
-        Composition.__instances__ = {}
-        Composition.__eq__ = doped_Composition.__eq__
-        Composition.__hash__ = doped_Composition.__hash__
-        PeriodicSite.__eq__ = doped_PeriodicSite.__eq__
-        PeriodicSite.__hash__ = doped_PeriodicSite.__hash__
-        IStructure.__instances__ = {}
-        IStructure.__eq__ = doped_IStructure.__eq__
 
         sm = StructureMatcher(stol=0.2, comparator=ElementComparator())
 
