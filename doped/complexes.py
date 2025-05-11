@@ -514,7 +514,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
             if not any(  # avoid potential duplicate sites
                 np.allclose(cand_frac_coords_1, cand_frac_coords_2, atol=frac_tol * 2)
                 for cand_frac_coords_1, cand_frac_coords_2 in combinations(
-                    [anchor_site.frac_coords, *candidate_frac_coords_combo], 2
+                    [equiv_anchor_frac_coords, *candidate_frac_coords_combo], 2
                 )
             )
         }
@@ -650,8 +650,8 @@ def get_complex_defect_multiplicity(
         dist_tol=dist_tol,
         return_molecules=True,  # for speed
     )
-    return (
-        len(equiv_complex_molecules) * 1
+    return len(equiv_complex_molecules) * (
+        1
         if primitive_cell_multiplicity
         else round(
             len(bulk_supercell) / len(primitive_structure or get_primitive_structure(bulk_supercell))
@@ -659,7 +659,7 @@ def get_complex_defect_multiplicity(
     )
 
 
-def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.1) -> bool:
+def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.02) -> bool:
     """
     Determine if two ``Molecule`` objects are equivalent, using the Kabsch
     algorithm (which minimizes the root-mean-square-deviation (RMSD) of two
