@@ -7,13 +7,22 @@ import os
 import shutil
 import unittest
 
-from pymatgen.core.structure import Structure
+import numpy as np
+from pymatgen.analysis.molecule_matcher import KabschMatcher
+from pymatgen.core.structure import Molecule, Structure
+from pymatgen.util.coord import is_coord_subset_pbc
 from test_generation import _check_defect_entry
 
-from doped.complexes import classify_vacancy_geometry, generate_complex_from_defect_sites
+from doped.complexes import (
+    are_equivalent_molecules,
+    classify_vacancy_geometry,
+    generate_complex_from_defect_sites,
+)
 from doped.generation import DefectsGenerator
 from doped.utils.parsing import get_matching_site
-from doped.utils.symmetry import get_all_equiv_sites, get_sga
+from doped.utils.symmetry import get_all_equiv_sites, get_sga, is_periodic_image
+
+data_dir = os.path.join(os.path.dirname(__file__), "data")
 
 
 def if_present_rm(path):
@@ -29,8 +38,7 @@ def if_present_rm(path):
 
 class ComplexDefectTest(unittest.TestCase):
     def setUp(self):
-        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.R3c_Ga2O3 = Structure.from_file(os.path.join(self.data_dir, "Ga2O3_R3c_POSCAR"))
+        self.R3c_Ga2O3 = Structure.from_file(os.path.join(data_dir, "Ga2O3_R3c_POSCAR"))
         self.Ga2O3_defect_gen = DefectsGenerator(self.R3c_Ga2O3, extrinsic="Se")
         self.Ga2O3_candidate_split_vacs = self.Ga2O3_defect_gen.get_candidate_split_vacancies_for_element(
             "Ga"
@@ -137,3 +145,104 @@ class ComplexDefectTest(unittest.TestCase):
     #     """
     #     # TODO
     #     self.Ga2O3_defect_gen
+
+
+class MoleculeMatcherTest(unittest.TestCase):
+    def setUp(self):
+        self.mol = Molecule(["X", "Ga", "X"], [[0.1, 0.1, 0.1], [0.1, 0.4, 0.1], [0.2, 0.2, 0.2]])
+        self.primitive_structure = Structure.from_file(os.path.join(data_dir, "Ga2O3_R3c_POSCAR"))
+
+    def test_translation_invariance(self):
+        """
+        Test molecule matching with translation invariance.
+
+        Standard KabschMatcher works fine here.
+        """
+        translated_mol = Molecule(
+            self.mol.species,
+            _get_molecule_coords(self.mol) + np.array([0.15, -0.5, 10]),
+        )
+        assert are_equivalent_molecules(self.mol, translated_mol)
+        assert np.isclose(KabschMatcher(self.mol).fit(translated_mol)[-1], 0)
+        assert not is_periodic_image(_get_molecule_coords(self.mol), _get_molecule_coords(translated_mol))
+
+    def test_rotation_invariance(self):
+        """
+        Test molecule matching with rotation invariance.
+
+        Standard KabschMatcher works fine here.
+        """
+        rotated_mol = Molecule(
+            self.mol.species, [rotate_45_degrees_x(coords) for coords in _get_molecule_coords(self.mol)]
+        )
+        assert are_equivalent_molecules(self.mol, rotated_mol)
+        assert np.isclose(KabschMatcher(self.mol).fit(rotated_mol)[-1], 0)
+        assert not is_periodic_image(_get_molecule_coords(self.mol), _get_molecule_coords(rotated_mol))
+
+    def test_permutation_invariance(self):
+        """
+        Test molecule matching with permutation invariance.
+
+        Standard KabschMatcher does not work here.
+        """
+        permuted_mol = Molecule(self.mol.species, [self.mol.sites[i].coords for i in [1, 2, 0]])
+        assert are_equivalent_molecules(self.mol, permuted_mol)
+        assert not np.isclose(KabschMatcher(self.mol).fit(permuted_mol)[-1], 0)
+
+        # now it is counted as a periodic image as it's the same coordinates, just in a different order:
+        assert is_periodic_image(_get_molecule_coords(self.mol), _get_molecule_coords(permuted_mol))
+
+    def test_is_periodic_image(self):
+        """
+        Test the ``is_periodic_image`` function.
+        """
+        orig_frac_coords = [
+            self.primitive_structure.lattice.get_fractional_coords(coords)
+            for coords in _get_molecule_coords(self.mol)
+        ]
+        # test all shifted with the _same_ periodic image:
+        periodically_shifted_frac_coords = orig_frac_coords + np.array([1, 0, -1])
+
+        assert is_coord_subset_pbc(orig_frac_coords, periodically_shifted_frac_coords)
+        assert is_periodic_image(orig_frac_coords, periodically_shifted_frac_coords)
+        assert is_periodic_image(orig_frac_coords, periodically_shifted_frac_coords, same_image=True)
+
+        # now test shifted with _different_ periodic images:
+        periodically_shifted_frac_coords[0] = periodically_shifted_frac_coords[0] + np.array([3, -2, 1])
+        assert is_coord_subset_pbc(orig_frac_coords, periodically_shifted_frac_coords)
+        assert is_periodic_image(orig_frac_coords, periodically_shifted_frac_coords)
+        assert not is_periodic_image(orig_frac_coords, periodically_shifted_frac_coords, same_image=True)
+
+        # test permutation invariance:
+        permuted_frac_coords = np.array([orig_frac_coords[i] for i in [1, 2, 0]])
+        assert is_coord_subset_pbc(orig_frac_coords, permuted_frac_coords)
+        assert is_periodic_image(orig_frac_coords, permuted_frac_coords)
+        assert is_periodic_image(orig_frac_coords, permuted_frac_coords, same_image=True)
+
+        # test unique matching (no duplicate matches allowed):
+        duplicate_frac_coords = np.array([orig_frac_coords[i] for i in [0, 0, 2]])
+        assert not is_coord_subset_pbc(orig_frac_coords, duplicate_frac_coords)
+        assert not is_periodic_image(orig_frac_coords, duplicate_frac_coords)
+        assert not is_periodic_image(orig_frac_coords, duplicate_frac_coords, same_image=True)
+
+        duplicate_frac_coords[0] += np.array([1, 0, -1])
+        assert not is_coord_subset_pbc(orig_frac_coords, duplicate_frac_coords)
+        assert not is_periodic_image(orig_frac_coords, duplicate_frac_coords)
+        assert not is_periodic_image(orig_frac_coords, duplicate_frac_coords, same_image=True)
+
+
+def _get_molecule_coords(mol):
+    return np.array([site.coords for site in mol.sites])
+
+
+def rotate_45_degrees_x(coords):
+    """
+    Rotate the input coords by 45 degrees around the x-axis.
+    """
+    theta = np.pi / 4  # 45 degrees in radians
+    cos_theta = np.cos(theta)
+    sin_theta = np.sin(theta)
+
+    rotation_matrix_x = np.array([[1, 0, 0], [0, cos_theta, -sin_theta], [0, sin_theta, cos_theta]])
+
+    return np.dot(np.array(coords), rotation_matrix_x.T)
