@@ -681,13 +681,6 @@ def StructureMatcher_scan_stol(
         ``None`` if no match is found.
     """
     # use doped efficiency tools to make structure-matching as fast as possible:
-    Composition.__instances__ = {}
-    Composition.__eq__ = _Composition__eq__
-    Composition.__hash__ = _composition__hash__
-    PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
-    PeriodicSite.__hash__ = _periodic_site__hash__
-    IStructure.__instances__ = {}
-    IStructure.__eq__ = _Structure__eq__
     StructureMatcher._get_atomic_disps = _sm_get_atomic_disps  # monkey-patch ``StructureMatcher`` for SnB
 
     if "comparator" not in sm_kwargs:
@@ -722,6 +715,9 @@ def StructureMatcher_scan_stol(
         # close to the necessary value anyway.
 
     return None
+
+
+StructureMatcher._get_atomic_disps = _sm_get_atomic_disps  # monkey-patch ``StructureMatcher`` for SnB
 
 
 class DopedTopographyAnalyzer:
@@ -857,8 +853,11 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
         list[PeriodicSite]:
             List of ``PeriodicSite`` objects representing the Voronoi nodes.
     """
-    structure.__hash__ = _structure__hash__  # make sure Structure is hashable
-    return _hashable_get_voronoi_nodes(structure)
+    try:
+        return _hashable_get_voronoi_nodes(structure)
+    except TypeError:
+        structure.__hash__ = _structure__hash__  # make sure Structure is hashable
+        return _hashable_get_voronoi_nodes(structure)
 
 
 @lru_cache(maxsize=int(1e2))
