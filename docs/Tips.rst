@@ -649,6 +649,13 @@ etc.).
     structure, for which doped uses the ``spglib`` convention (e.g. in the ``DefectsGenerator`` info
     output).
 
+.. note::
+
+    By default, magnetic symmetry (i.e. MAGMOMs) are not used in symmetry analysis in ``doped``, as noise 
+    in these values (particularly in structures from the Materials Project) often leads to incorrect 
+    symmetry determinations. To use magnetic moments in symmetry analyses, set the environment variable 
+    ``USE_MAGNETIC_SYMMETRY=1`` (i.e. ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
+
 
 Serialization & Data Provenance (``JSON``/``csv``)
 --------------------------------------------------

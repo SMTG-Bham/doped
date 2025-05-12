@@ -7,24 +7,8 @@
   https://github.com/skw32/DefectCorrectionsNotebook for AIMs...),
   and give example(s) of how to manually generate a `DefectPhaseDiagram` and chempots from the parsed
   energies of these calculations, so the `doped` analysis tools can then be used.
-- Add defect expansion code functionality to regenerate defect structures from a smaller supercell in a
-  larger one. Useful for supercell size convergence tests, and accelerating `ShakeNBreak` etc. If/when
-  adding, make sure to link in `SnB` docs as well.
-  - Related point, using our `doped` site-matching functions, could write some quick functions to plot
-    the exponential tailing off of strain / site displacements as we move away from the defect site.
-    Could be useful as a validation / check of supercell size convergence, and for quantifying the
-    strain / distortion introduced by a certain defect (though I guess the `SnB` tools already do a
-    good job of that) – could possibly give a good rule-of-thumb to aim for with a sufficiently large cell?
-  - For defect complexes, after electrostatics, the next biggest factor in binding energies is the stress field (right)? Then orbital effects after that.
-   This means that if we have the distortion field implemented in doped, we should be able to fairly accurately and easily predict if defect complexes are likely? (Via concentrations/formation energies, charges and stress fields?) Nice use case, could mention in JOSS as possible screening application if someone wanted to use it. Deak & Gali Nature Comms (10.1038/s41467-023-36090-2) C-C in Si could be used as a nice test case (neutral so no charge effects)
-- CLI Functionality for core functions.
-  - Could also use some of the `snb` functions to add some convenience commands which `cp CONTCAR
-    POSCAR` for unconverged `vasp_gam`/`vasp_nkred_std`/`vasp_std` calculations, and copies `CONTCAR`s
-    to next VASP folder when converged and submits job.
-- Just something to keep in mind; new defect generation code can apparently use oxidation states from
-  `defect.defect_structure` and map to defect supercell. Not in our current subclass implementation of
-  `Defect`. Is this useful info?
-- Ideally, one should be able to input just defect objects somewhere -> an alternative input to `DefectsGenerator`? Can input to both `DefectsGenerator` or `DefectsSet` (but it'll just send it to `DefectsGenerator` with `kwargs`).
+- For defect complexes, after electrostatics, the next biggest factor in binding energies is the stress field (right)? Then orbital effects after that.
+  This means that if we have the distortion field implemented in doped, we should be able to fairly accurately and easily predict if defect complexes are likely? (Via concentrations/formation energies, charges and stress fields?) Nice use case, could mention in JOSS as possible screening application if someone wanted to use it. Deak & Gali Nature Comms (10.1038/s41467-023-36090-2) C-C in Si could be used as a nice test case (neutral so no charge effects)
 - **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
   plotting the results (i.e. configuration coordinate diagrams) of optical calculations. Needs to be at
   this point because we need relaxed structures. Sensible naming scheme. Would be useful as this is a
@@ -44,9 +28,6 @@
 
 ## Post-Processing
 - Symmetry determination in arbitrary (periodicity-breaking) supercells. Should be doable, with defect-expander (stenciling) type code to regenerate the structure in an appropriate larger non-periodicity-breaking cell.
-- For complex defects, auto symmetry determination is future work, and should be done manually (note in docs and give
-  warning when parsing).
-  - Previously had ideas (in `Dev_ToDo.md`) about split-interstitials/vacancies, but think these are now handled fine with current tools.
 - Parsing capability for (non-defect) polarons, so they can then be plotted alongside defects on
   formation energy diagrams. Main things for this are:
   - Input file generation
@@ -90,5 +71,5 @@
 
 ## Docs
 - Add LDOS plotting, big selling point for defects and disorder!
-- Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454). SK has the code for this in local example notebooks ready to go.
+- Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454).
 

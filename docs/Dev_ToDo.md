@@ -1,7 +1,9 @@
 # `doped` Development To-Do List
 ## Chemical potential
 - Need to recheck validity of approximations used for extrinsic competing phases (and code for this)(see `full_sub_approach_understanding` folder). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
-- Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe competing phases, and notes below.
+- Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe
+  competing phases, and notes below.
+- See `Future_ToDo.md`.
 
 ## Defect Complexes
 - Generation (see https://github.com/SMTG-Bham/doped/issues/91, SK split vacancies additions and `Future_ToDo.md`)
