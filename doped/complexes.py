@@ -13,10 +13,8 @@ from typing import Any
 import numpy as np
 from pymatgen.analysis.ewald import EwaldSummation
 from pymatgen.analysis.molecule_matcher import BruteForceOrderMatcher
-from pymatgen.core.sites import PeriodicSite, Site
-from pymatgen.core.structure import Molecule, Structure
 
-from doped.utils.efficiency import _periodic_site__hash__
+from doped.utils.efficiency import Molecule, PeriodicSite, Structure
 from doped.utils.parsing import (
     _get_species_from_composition_diff,
     get_defect_type_and_composition_diff,
@@ -362,9 +360,6 @@ def get_equivalent_complex_defect_sites_in_primitive(
     complex_defect_sites = [*X_vacancy_sites, *interstitial_sites, *substitution_sites]
 
     # set efficient and unique hash for Site and PeriodicSite, to allow use as dict keys
-    Site.__hash__ = _periodic_site__hash__
-    PeriodicSite.__hash__ = _periodic_site__hash__
-
     complex_equiv_prim_frac_coords_dict = {
         site: {  # dict of sets of equivalent frac coords in primitive unit cell, for each point defect
             tuple(frac_coords.round(4))
@@ -674,10 +669,6 @@ def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: fl
 
     Uses caching to speed up the comparison.
     """
-    from doped.utils.efficiency import Molecule as DopedMolecule
-
-    Molecule.__hash__ = DopedMolecule.__hash__  # ensure appropriate hash usage
-
     return _cached_equivalent_molecules(molecule_1, molecule_2, tol)
 
 
