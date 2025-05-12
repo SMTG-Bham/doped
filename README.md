@@ -56,6 +56,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- M. S. Islam et al. **_Diffusion Characteristics of Ru and Oxygen Vacancies in Ta<sub>2</sub>O<sub>5</sub> for Resistive Random Access Memory Devices: A Density Functional Theory Investigation_** [_Advanced Electronic Materials_](https://doi.org/10.1002/aelm.202500128) 2025
 - J. Tu et al. **_Giant switchable ferroelectric photovoltage in double-perovskite epitaxial films through chemical negative strain_** [_Science Advances_](https://doi.org/10.1126/sciadv.ads4925) 2025
 - Y. Fu & H. Lohan et al. **_Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based
 Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_Nature Communications_](https://doi.org/10.1038/s41467-024-55254-2) 2025
