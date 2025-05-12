@@ -8,6 +8,7 @@ import shutil
 import unittest
 
 import numpy as np
+import pytest
 from monty.serialization import loadfn
 from pymatgen.analysis.molecule_matcher import KabschMatcher
 from pymatgen.core.structure import Molecule, Structure
@@ -193,11 +194,19 @@ class MoleculeMatcherTest(unittest.TestCase):
         """
         Test molecule matching with permutation invariance.
 
-        Standard KabschMatcher does not work here.
+        Standard ``KabschMatcher`` does not work here.
         """
-        permuted_mol = Molecule(self.mol.species, [self.mol.sites[i].coords for i in [1, 2, 0]])
+        permuted_mol = Molecule(
+            [self.mol.species[i] for i in [1, 2, 0]], [self.mol.sites[i].coords for i in [1, 2, 0]]
+        )
         assert are_equivalent_molecules(self.mol, permuted_mol)
-        assert not np.isclose(KabschMatcher(self.mol).fit(permuted_mol)[-1], 0)
+        with pytest.raises(ValueError) as e:
+            KabschMatcher(self.mol).fit(permuted_mol)
+        assert "The order of the species aren't matching!" in str(e.value)
+
+        # check it doesn't match if the species are mismatching:
+        permuted_mol = Molecule(self.mol.species, [self.mol.sites[i].coords for i in [1, 2, 0]])
+        assert not are_equivalent_molecules(self.mol, permuted_mol)
 
         # now it is counted as a periodic image as it's the same coordinates, just in a different order:
         assert is_periodic_image(_get_molecule_coords(self.mol), _get_molecule_coords(permuted_mol))
