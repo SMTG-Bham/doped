@@ -334,17 +334,19 @@ Structure.__deepcopy__ = lambda x, y: x.copy()  # make deepcopying faster, shall
 def _DopedMolecule__hash__(self):
     """
     Hash ``pymatgen`` ``Molecule`` objects using the z-matrix (which reflects
-    the lengths, angles, and atom types of the molecule).
+    the lengths, angles, and atom types of the molecule) and the site
+    coordinates.
 
     Implemented to allow caching for efficient determination of symmetry
     equivalent ``Molecule`` objects. The z-matrix functions as a unique
-    identifier for the molecule, while the ``__hash__`` method for the parent
-    ``Molecule`` class is based solely on the composition of the molecule and
-    thus not unique.
+    identifier for a molecule (with translation/rotation invariance -- which is
+    then removed by including the actual coordinates), while the ``__hash__``
+    method for the parent ``Molecule`` class is based solely on the composition
+    of the molecule and thus not unique.
     """
     z_list = self.get_zmatrix().split("\n")
     rounded_z_list = tuple([round(float(i.split("=")[-1]), 2) if "=" in i else i for i in z_list])
-    return hash(rounded_z_list)
+    return hash((rounded_z_list, tuple(tuple(np.round(site.coords, 3)) for site in self)))
 
 
 def _DopedMolecule__eq__(self, other):
@@ -862,12 +864,12 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
 
 @lru_cache(maxsize=int(1e2))
 def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
-    from doped.utils.symmetry import _doped_cluster_frac_coords
+    from doped.utils.symmetry import _doped_cluster_frac_coords, get_primitive_structure
 
     # map all sites to the unit cell; 0 ≤ xyz < 1.
     structure = Structure.from_sites(structure, to_unit_cell=True)
     # get Voronoi nodes in primitive structure and then map back to the supercell:
-    prim_structure = structure.get_primitive_structure()
+    prim_structure = get_primitive_structure(structure)
 
     top_analyzer = DopedTopographyAnalyzer(prim_structure)
     voronoi_coords = [v.frac_coords for v in top_analyzer.vnodes]

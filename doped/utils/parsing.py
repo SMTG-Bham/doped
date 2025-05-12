@@ -614,12 +614,6 @@ def get_matching_site(
         PeriodicSite:
             The closest matching site in ``structure`` to the input ``site``.
     """
-    if not hasattr(site, "frac_coords"):
-        anonymous = True
-        site_cart_coords = structure.lattice.get_cartesian_coords(site)
-    else:
-        site_cart_coords = site.coords
-
     if not anonymous:  # try directly match first
         if site in structure:
             return site
@@ -637,10 +631,26 @@ def get_matching_site(
             return structure.sites[bulk_sites_w_no_ox_state.index(site_w_no_ox_state)]
 
     # else get closest site in structure, raising error if not within tol Å:
-    closest_site_idx = np.argmin(np.linalg.norm(structure.cart_coords - site_cart_coords, axis=1))
+    if not anonymous:
+        candidate_frac_coords, candidate_indices = get_coords_and_idx_of_species(
+            structure, site.specie.symbol, frac_coords=True
+        )
+    else:
+        candidate_frac_coords = structure.frac_coords
+        candidate_indices = np.arange(len(structure))
+
+    closest_site_idx = candidate_indices[
+        np.argmin(
+            structure.lattice.get_all_distances(
+                site.frac_coords if hasattr(site, "frac_coords") else site, candidate_frac_coords
+            ).ravel()
+        )
+    ]
     closest_site = structure.sites[closest_site_idx]
 
-    closest_site_dist = closest_site.distance_from_point(site_cart_coords)
+    closest_site_dist = closest_site.distance_and_image_from_frac_coords(
+        site.frac_coords if hasattr(site, "frac_coords") else site
+    )[0]
     if closest_site_dist > tol:
         raise ValueError(
             f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
@@ -944,7 +954,7 @@ def check_atom_mapping_far_from_defect(
 def get_site_mapping_indices(
     struct1: Structure,
     struct2: Structure,
-    species: SpeciesLike = None,
+    species: SpeciesLike | None = None,
     allow_duplicates: bool = False,
     threshold: float = 2.0,
     dists_only: bool = False,

@@ -153,6 +153,11 @@ def get_defect_in_supercell(
     #  for speed) to determine the point symmetries of relaxed defects in non-symmetry-conserving
     #  supercells, by stenciling into a small symmetry-conserving cell and getting the point symmetry
     #  for that -- will do!
+    # TODO: When releasing, note that this code is useful for supercell size convergence tests, and
+    # accelerating `ShakeNBreak` etc. If/when adding, make sure to link in `SnB` docs as well. Should have
+    # some notes in docs/tutorials about this functionality, maybe with a quick example (e.g. Se results).
+    # Likewise, the displacements functions are useful as a validation / check of supercell size
+    # convergence, and for quantifying the strain / distortion introduced by a certain defect
 
     pbar = tqdm(
         total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"

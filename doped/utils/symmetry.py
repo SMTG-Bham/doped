@@ -7,6 +7,7 @@ import math
 import os
 import warnings
 from collections.abc import Iterable, Sequence
+from copy import deepcopy
 from functools import lru_cache
 from itertools import permutations
 
@@ -25,6 +26,7 @@ from pymatgen.core.structure import Lattice
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
+from pymatgen.util.coord import is_coord_subset_pbc
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
 from sympy import Eq, simplify, solve, symbols
@@ -242,6 +244,13 @@ def get_sga(struct: Structure, symprec: float = 0.01) -> SpacegroupAnalyzer:
     Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting ``symprec`` if needs be.
 
+    Note that by default, magnetic symmetry (i.e. MAGMOMs) are not used in
+    symmetry analysis in ``doped``, as noise in these values (particularly in
+    structures from the Materials Project) often leads to incorrect symmetry
+    determinations. To use magnetic moments in symmetry analyses, set the
+    environment variable ``USE_MAGNETIC_SYMMETRY=1`` (i.e.
+    ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
+
     Args:
         struct (Structure):
             The input structure.
@@ -259,6 +268,13 @@ def get_sga_and_symprec(struct: Structure, symprec: float = 0.01) -> tuple[Space
     Get a ``SpacegroupAnalyzer`` object of the input structure, dynamically
     adjusting ``symprec`` if needs be, and the final successful ``symprec``
     used for ``SpacegroupAnalyzer`` initialisation.
+
+    Note that by default, magnetic symmetry (i.e. MAGMOMs) are not used in
+    symmetry analysis in ``doped``, as noise in these values (particularly in
+    structures from the Materials Project) often leads to incorrect symmetry
+    determinations. To use magnetic moments in symmetry analyses, set the
+    environment variable ``USE_MAGNETIC_SYMMETRY=1`` (i.e.
+    ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
     Args:
         struct (Structure):
@@ -288,6 +304,11 @@ def _cache_ready_get_sga(
     ``get_sga`` code, with hashable input arguments for caching (using
     ``Structure`` hash function from ``doped.utils.efficiency``).
     """
+    if os.environ.get("USE_MAGNETIC_SYMMETRY", "0") == "0":  # don't use magnetic symmetry
+        struct = deepcopy(struct)
+        for site in struct:
+            site.properties = {}
+
     sga = None
     for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
         # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
@@ -1040,7 +1061,12 @@ def get_equiv_frac_coords_in_primitive(
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=UserWarning)
-                rotated_struct, matrix = _rotate_and_get_supercell_matrix(prim_with_all_X, primitive)
+                rotated_struct, matrix = _rotate_and_get_supercell_matrix(
+                    prim_with_all_X,
+                    primitive,
+                    ltol=symprec * trial_symprec_factor,
+                    atol=dist_tol * trial_dist_tol_factor,
+                )
             if rotated_struct is not None:
                 found_match = True
                 break
@@ -1125,7 +1151,9 @@ def _rotate_and_get_supercell_matrix(
             The rotated primitive structure and the supercell matrix to convert
             from the rotated primitive structure to the target structure.
     """
-    possible_mappings = list(prim_struct.lattice.find_all_mappings(target_struct.lattice))
+    possible_mappings = list(
+        prim_struct.lattice.find_all_mappings(target_struct.lattice, ltol=ltol, atol=atol)
+    )
     if not possible_mappings:
         warnings.warn("No mapping between the primitive and target structures found!")
         return None, None
@@ -1234,7 +1262,9 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
 
         except ValueError:  # if non-integer transformation matrix
             attempt_prim_struct, attempt_transformation_matrix = _rotate_and_get_supercell_matrix(
-                prim_struct, target_struct
+                prim_struct,
+                target_struct,
+                ltol=symprec,
             )
             if attempt_prim_struct:  # otherwise failed, stick with original T matrix
                 prim_struct = attempt_prim_struct
@@ -3178,6 +3208,11 @@ def is_periodic_image(
     sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
     sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
 
+    if not same_image:
+        return len(sites_1_frac_coords) == len(sites_2_frac_coords) and is_coord_subset_pbc(
+            sites_1_frac_coords, sites_2_frac_coords
+        )
+
     lattice = Lattice(np.eye(3))  # if fractional coords
     for sites in [sites_1, sites_2]:
         if isinstance(next(iter(sites)), PeriodicSite):
@@ -3194,5 +3229,5 @@ def is_periodic_image(
     return np.allclose(  # all sites are periodic images
         pbc_frac_diff, np.zeros(pbc_frac_diff.shape), atol=frac_tol
     ) and (  # all sites are _the same_ translation (periodic image)
-        same_image is False or np.allclose(pbc_frac_dist, pbc_frac_dist[0], atol=frac_tol)
+        np.allclose(pbc_frac_dist, pbc_frac_dist[0], atol=frac_tol)
     )
