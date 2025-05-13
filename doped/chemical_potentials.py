@@ -2946,6 +2946,11 @@ def _parse_entry_from_vasprun_and_catch_exception(
         vasprun = get_vasprun(vasprun_path)
         entry = vasprun.get_computed_entry()
         unique_symbols = sorted(set(vasprun.atomic_symbols))
+        summary_dict = {}
+        with contextlib.suppress(Exception):  # non-essential properties, can fail with incomplete vasprun
+            summary_dict["band_gap"] = vasprun.eigenvalue_band_properties[0]
+            summary_dict["total_magnetization"] = get_magnetization_from_vasprun(vasprun)
+
         entry.data.update(
             {
                 "formula_pretty": entry.composition.reduced_formula,
@@ -2957,10 +2962,7 @@ def _parse_entry_from_vasprun_and_catch_exception(
                 "kpoints": vasprun.kpoints.kpts,
                 "incar": {k: v for k, v in vasprun.incar.as_dict().items() if "@" not in k},
                 "potcar_symbols": vasprun.potcar_spec,
-                "summary": {
-                    "band_gap": vasprun.eigenvalue_band_properties[0],
-                    "total_magnetization": get_magnetization_from_vasprun(vasprun),
-                },
+                "summary": summary_dict,
             }
         )
         electronic_converged = vasprun.converged_electronic

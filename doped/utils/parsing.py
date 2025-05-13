@@ -136,12 +136,22 @@ def get_vasprun(vasprun_path: PathLike, parse_mag: bool = True, **kwargs):
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
     )  # `message` only needs to match start of message
-    default_kwargs = {"parse_dos": False}
+    default_kwargs = {"parse_dos": False, "exception_on_bad_xml": False}
     default_kwargs.update(kwargs)
 
     Vasprun._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag)
     try:
-        vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
+        with warnings.catch_warnings(record=True) as w:
+            vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
+        for warning in w:
+            if "XML is malformed" in str(warning.message):
+                warnings.warn(
+                    f"vasprun.xml file at {vasprun_path} is corrupted/incomplete. Attempting to "
+                    f"continue parsing but may fail!"
+                )
+            else:  # show warning, preserving original category:
+                warnings.warn(warning.message, category=warning.category)
+
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"vasprun.xml not found at {vasprun_path}(.gz/.xz/.bz/.lzma). Needed for parsing calculation "

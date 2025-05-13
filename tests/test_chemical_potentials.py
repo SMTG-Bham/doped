@@ -529,8 +529,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             f"{self.la_zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
         )
 
+        if_present_rm(
+            os.path.join(
+                self.DATA_DIR,
+                "Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
+            )
+        )
+
     def test_cpa_chempots(self):
-        assert isinstance(next(iter(self.zro2_cpa.intrinsic_chempots["elemental_refs"].keys())), str)
         for chempots_df in [self.zro2_cpa.chempots_df, self.zro2_cpa.calculate_chempots()]:
             assert next(iter(chempots_df["O"])) == 0
 
@@ -713,14 +719,6 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with pytest.raises(ValueError):
             cpa.to_LaTeX_table(splits=3)
 
-    def test_elements(self):
-        struct, mag = chemical_potentials.make_molecule_in_a_box("O2")
-        assert mag == 2
-        assert type(struct) == Structure
-
-        with pytest.raises(ValueError):
-            chemical_potentials.make_molecule_in_a_box("R2")
-
     def test_combine_extrinsic(self):
         d = chemical_potentials.combine_extrinsic(
             self.la_zro2_parsed_chempots, self.y_zro2_parsed_chempots, "Y"
@@ -748,13 +746,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         def _check_zro2_form_e_df(
             form_e_df, skip_rounding=False, include_dft_energies=False, prune_polymorphs=False
         ):
-            if not prune_polymorphs:
-                assert len(form_e_df) == len(cpa.entries)  # all entries
-            else:
+            if prune_polymorphs:
                 assert (
                     len(form_e_df) == 5
                 )  # only ground states of each phase (including Zr2O with EaH > 0)
-                assert len(set(form_e_df.index.to_numpy())) == len(form_e_df)  # no duplicates
 
             assert form_e_df.index.to_numpy().tolist() == (
                 self.zro2_entry_list if not prune_polymorphs else self.zro2_entry_list[:4] + ["Zr2O"]
@@ -765,25 +760,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
             assert np.allclose(form_e_df["Energy above Hull (eV/atom)"].to_numpy()[:4], 0)  # stable phases
 
-            for formula, series in form_e_df.iterrows():
-                comp = Composition(formula)
-                assert np.isclose(
-                    series["Formation Energy (eV/fu)"],
-                    series["Formation Energy (eV/atom)"] * comp.num_atoms,
-                    atol=2e-3,
-                )
-                if include_dft_energies:
-                    assert np.isclose(
-                        series["DFT Energy (eV/fu)"],
-                        series["DFT Energy (eV/atom)"] * comp.num_atoms,
-                        atol=2e-3,
-                    )
-
-            assert ("DFT Energy (eV/fu)" in form_e_df.columns) == include_dft_energies
-            assert ("DFT Energy (eV/atom)" in form_e_df.columns) == include_dft_energies
-
-            # assert values are all rounded to 3 dp:
-            assert form_e_df.round(3).equals(form_e_df) == (not skip_rounding)
+            _check_form_e_df(cpa, form_e_df, skip_rounding, include_dft_energies, prune_polymorphs)
 
         for kwargs in [
             {},
@@ -867,6 +844,35 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 assert getattr(cpa_a, attr) == getattr(cpa_b, attr)
 
     def _general_cpa_check(self, cpa):
+        intrinsic_el_refs = cpa.intrinsic_chempots["elemental_refs"]
+        assert isinstance(next(iter(intrinsic_el_refs.keys())), str)
+        for chempots_df in [cpa.chempots_df, cpa.calculate_chempots()]:
+            for el_ref in intrinsic_el_refs:
+                assert el_ref in chempots_df.columns
+
+        # test formation energy df:
+        for kwargs in [
+            {},
+            {"skip_rounding": True},
+            {"include_dft_energies": True},
+            {"skip_rounding": True, "include_dft_energies": True},
+            {"prune_polymorphs": True},
+            {"prune_polymorphs": True, "skip_rounding": True, "include_dft_energies": True},
+        ]:
+            _check_form_e_df(cpa, cpa.get_formation_energy_df(**kwargs), **kwargs)
+
+        # test chempots dict:
+        assert isinstance(cpa.chempots, dict)
+        # limits is equal to limits_wrt_el_refs + elemental_refs:
+        for limit_name, limit_dict in cpa.chempots["limits"].items():
+            for elt_name, elt_value in limit_dict.items():
+                assert np.isclose(
+                    elt_value,
+                    cpa.chempots["limits_wrt_el_refs"][limit_name][elt_name]
+                    + cpa.chempots["elemental_refs"][elt_name],
+                )
+
+        # test to/from dict:
         cpa_dict = cpa.as_dict()
         cpa_from_dict = chemical_potentials.CompetingPhasesAnalyzer.from_dict(cpa_dict)
         self._compare_cpas(cpa, cpa_from_dict)
@@ -1014,6 +1020,107 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "entries for: {'O2'}"
         ) in str(exc.value)
 
+    def test_Sn_in_Cs2AgBiBr6(self):
+        r"""
+        Test parsing competing phases calculations for Sn:Cs2AgBiBr6, where we
+        have mismatching ``INCAR`` settings, mismatching ``POTCAR``\s, an
+        incomplete ``vasprun.xml.gz`` and an unstable host (so a good test case
+        for many warnings/issues to be handled).
+        """
+        shutil.copyfile(
+            f"{self.DATA_DIR}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/vasprun.xml.gz",
+            f"{self.DATA_DIR}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0/duplicate_for_testing_vasprun.xml.gz",
+        )
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer(
+                "Cs2AgBiBr6", f"{self.DATA_DIR}/Sn_in_Cs2AgBiBr6_CompetingPhases"
+            )
+        print([str(warning.message) for warning in w])  # for debugging
+        for expected_warning in [
+            f"Multiple `vasprun.xml` files found in directory: "
+            f"{self.DATA_DIR}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
+            f"vasprun.xml file at {self.DATA_DIR}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
+            f" is corrupted/incomplete. Attempting to continue parsing but may fail!",
+            "There are mismatching INCAR tags for (some of) your competing phases calculations which are "
+            "likely to cause errors in the parsed results (energies & thus chemical potential limits). "
+            "Found the following differences:\n"
+            "(in the format: 'Entries: (INCAR tag, value in reference calculation, value in entry "
+            "calculation))':\n",
+            "['Ag', 'Sn']:\n[('ADDGRID', False, True), ('HFSCREEN', 0.207, 0.2), ('LASPH', False, True), "
+            "('NKRED', 1, 2)]",
+            "['Cs2AgBr3', 'Br', 'Cs3Bi2Br9', 'CsAgBr3', 'Cs', 'AgBr']:\n[('ADDGRID', False, True), "
+            "('HFSCREEN', 0.207, 0.2), ('LASPH', False, True)]",
+            "['Bi']:\n[('ADDGRID', False, True), ('HFSCREEN', 0.207, 0.2), ('LASPH', False, True), "
+            "('NKRED', 1, 3)]",
+            "Where Cs2AgBiBr6 was used as the reference entry calculation.",
+            "In general, the same INCAR settings should be used in all final calculations for these tags "
+            "which can affect energies!",
+            "There are mismatching POTCAR symbols for (some of) your competing phases calculations which "
+            "are likely to cause errors in the parsed results (energies & thus chemical potential "
+            "limits). Found the following differences:",
+            "(in the format: (reference POTCARs, entry POTCARs)):",
+            "Bi: [[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}], [{'titel': "
+            "'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}]]",
+            "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}], "
+            "[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}]]",
+            "Where Cs2AgBiBr6 was used as the reference entry calculation.",
+            "In general, the same POTCAR settings should be used in all final calculations for these tags "
+            "which can affect energies!",
+            "Cs2AgBiBr6 is not stable with respect to competing phases, having an energy above hull of "
+            "0.0171 eV/atom.",
+            "Formally, this means that (based on the supplied athermal calculation data) the host "
+            "material is unstable and so has no chemical potential limits; though in reality the host may "
+            "be stabilised by temperature effects etc, or just a metastable phase.",
+            "Here we will determine a single chemical potential 'limit' corresponding to the least "
+            "unstable (i.e. closest) point on the convex hull for the host material, as an approximation "
+            "for the true chemical potentials.",
+        ]:
+            print(expected_warning)
+            assert any(expected_warning in str(warning.message) for warning in w)
+        self._general_cpa_check(cpa)
+
+        assert cpa.chempots["elemental_refs"] == {
+            "Cs": -0.9413,
+            "Ag": -2.84693,
+            "Sn": -4.54148,
+            "Bi": -4.5954,
+            "Br": -2.28653,
+        }
+
+
+def _check_form_e_df(
+    cpa, form_e_df, skip_rounding=False, include_dft_energies=False, prune_polymorphs=False
+):
+    if not prune_polymorphs:
+        assert len(form_e_df) == len(cpa.entries)  # all entries
+    else:
+        assert len(set(form_e_df.index.to_numpy())) == len(form_e_df)  # no duplicates
+
+    assert set(form_e_df.index.to_numpy()) == {entry.name for entry in cpa.entries}
+    assert np.allclose(form_e_df["Energy above Hull (eV/atom)"].to_numpy()[0], 0)  # at least one stable
+
+    for formula, series in form_e_df.iterrows():
+        comp = Composition(formula)
+        assert np.isclose(
+            series["Formation Energy (eV/fu)"],
+            series["Formation Energy (eV/atom)"] * comp.num_atoms,
+            atol=2e-3,
+            rtol=1e-3,
+        )
+        if include_dft_energies:
+            assert np.isclose(
+                series["DFT Energy (eV/fu)"],
+                series["DFT Energy (eV/atom)"] * comp.num_atoms,
+                atol=2e-3,
+                rtol=1e-3,
+            )
+
+    assert ("DFT Energy (eV/fu)" in form_e_df.columns) == include_dft_energies
+    assert ("DFT Energy (eV/atom)" in form_e_df.columns) == include_dft_energies
+
+    # assert values are all rounded to 3 dp:
+    assert form_e_df.round(3).equals(form_e_df) == (not skip_rounding)
+
 
 class TestChemicalPotentialGrid(unittest.TestCase):
     def setUp(self):
@@ -1025,23 +1132,23 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     def test_init(self):
         assert isinstance(self.grid.vertices, pd.DataFrame)
         assert len(self.grid.vertices) == 7
-        assert np.isclose(max(self.grid.vertices["μ_Cu"]), 0.0)
-        assert np.isclose(max(self.grid.vertices["μ_Si"]), -0.077858, rtol=1e-5)
-        assert np.isclose(max(self.grid.vertices["μ_Se"]), 0.0)
-        assert np.isclose(min(self.grid.vertices["μ_Cu"]), -0.463558, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["μ_Si"]), -1.708951, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["μ_Se"]), -0.758105, rtol=1e-5)
+        assert np.isclose(max(self.grid.vertices["μ_Cu (eV)"]), 0.0)
+        assert np.isclose(max(self.grid.vertices["μ_Si (eV)"]), -0.077858, rtol=1e-5)
+        assert np.isclose(max(self.grid.vertices["μ_Se (eV)"]), 0.0)
+        assert np.isclose(min(self.grid.vertices["μ_Cu (eV)"]), -0.463558, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Si (eV)"]), -1.708951, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Se (eV)"]), -0.758105, rtol=1e-5)
 
     def test_get_grid(self):
         grid_df = self.grid.get_grid(100)
         assert isinstance(grid_df, pd.DataFrame)
         assert len(self.grid.vertices) == 7
-        assert np.isclose(max(self.grid.vertices["μ_Cu"]), 0.0)
-        assert np.isclose(max(self.grid.vertices["μ_Si"]), -0.077858, rtol=1e-5)
-        assert np.isclose(max(self.grid.vertices["μ_Se"]), 0.0)
-        assert np.isclose(min(self.grid.vertices["μ_Cu"]), -0.463558, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["μ_Si"]), -1.708951, rtol=1e-5)
-        assert np.isclose(min(self.grid.vertices["μ_Se"]), -0.758105, rtol=1e-5)
+        assert np.isclose(max(self.grid.vertices["μ_Cu (eV)"]), 0.0)
+        assert np.isclose(max(self.grid.vertices["μ_Si (eV)"]), -0.077858, rtol=1e-5)
+        assert np.isclose(max(self.grid.vertices["μ_Se (eV)"]), 0.0)
+        assert np.isclose(min(self.grid.vertices["μ_Cu (eV)"]), -0.463558, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Si (eV)"]), -1.708951, rtol=1e-5)
+        assert np.isclose(min(self.grid.vertices["μ_Se (eV)"]), -0.758105, rtol=1e-5)
         assert len(grid_df) == 3886
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
@@ -1058,21 +1165,24 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         grid_df = chempot_grid.get_grid(100)
 
         # get the average Fe and P chempots, then plot a heatmap plot of the others at these fixed values:
-        mean_mu_Fe = grid_df["μ_Fe"].mean()
-        mean_mu_P = grid_df["μ_P"].mean()
+        mean_mu_Fe = grid_df["μ_Fe (eV)"].mean()
+        mean_mu_P = grid_df["μ_P (eV)"].mean()
 
         fixed_chempot_df = grid_df[
-            (np.isclose(grid_df["μ_Fe"], mean_mu_Fe, atol=0.05))
-            & (np.isclose(grid_df["μ_P"], mean_mu_P, atol=0.05))
+            (np.isclose(grid_df["μ_Fe (eV)"], mean_mu_Fe, atol=0.05))
+            & (np.isclose(grid_df["μ_P (eV)"], mean_mu_P, atol=0.05))
         ]
 
         fig, ax = plt.subplots()
         sc = ax.scatter(
-            fixed_chempot_df["μ_Na"], fixed_chempot_df["μ_O"], c=fixed_chempot_df["μ_F"], cmap="viridis"
+            fixed_chempot_df["μ_Na (eV)"],
+            fixed_chempot_df["μ_O (eV)"],
+            c=fixed_chempot_df["μ_F (eV)"],
+            cmap="viridis",
         )
-        fig.colorbar(sc, ax=ax, label="μ$_F$")
-        ax.set_xlabel("μ$_{Na}$")
-        ax.set_ylabel("μ$_{O}$")
+        fig.colorbar(sc, ax=ax, label="μ$_F$ (eV)")
+        ax.set_xlabel("μ$_{Na}$ (eV)")
+        ax.set_ylabel("μ$_{O}$ (eV)")
         return fig
 
         # TODO: Use this as a plotting example in chemical potentials tutorial
