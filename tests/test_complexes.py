@@ -674,3 +674,5 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 assert eq_mol_count == 8
             elif "Li3Ti4O8" in formula_mpid_file:
                 assert eq_mol_count == 80
+            # Note that a lot of these have matching equivalent relaxed complexes, so would make good test
+            # cases for future functionality for this (TODO)
