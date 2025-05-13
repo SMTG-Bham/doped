@@ -159,6 +159,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         if_present_rm(os.path.join(self.BiOI_DATA_DIR, "BiOI_defect_dict.json.gz"))
         if_present_rm(os.path.join(self.shallow_O_Se_DATA_DIR, "Se_defect_dict.json.gz"))
 
+        for backup_file in ["OUTCAR.gz", "vasprun.xml.gz"]:
+            if os.path.exists(f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/{backup_file}.bak"):
+                shutil.move(
+                    f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/{backup_file}.bak",
+                    f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/{backup_file}",
+                )
+        if_present_rm(f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/OUTCAR")
+        if_present_rm(f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/vasprun.xml")
+
         for i in os.listdir(self.SOLID_SOLUTION_DATA_DIR):
             if "json" in i:
                 if_present_rm(os.path.join(self.SOLID_SOLUTION_DATA_DIR, i))
@@ -1400,23 +1409,18 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         This function tests the latter case.
         """
-        # Note that we have artificially modified the energy of ``sub_1_O_on_Se_1`` to be 0.17 eV lower,
-        # so that it is found to be (just about) stable in the band gap for the purposes of this test
-        dp, w = _create_dp_and_capture_warnings(
-            output_path=self.shallow_O_Se_DATA_DIR, dielectric=self.Se_dielectric
-        )
 
-        def _check_shallow_O_Se_dp_w(dp, w, correction_warning=False):
+        def _check_shallow_O_Se_dp_w(dp, w, correction_warning=False, outcar_vr_mismatch=True):
             assert any("There are mismatching INCAR tags" in str(warn.message) for warn in w)
             assert any("('NKRED', 1, 2)" in str(warn.message) for warn in w)
-            # warning about our artificially shifted vasprun energy:
-            assert any(
-                "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` (-381.559 "
-                "eV), used to obtain the atomic core potentials for the eFNV correction, "
-                "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
-                "energy), used for" in str(warn.message)
-                for warn in w
-            )
+            if outcar_vr_mismatch:  # warning about our artificially shifted vasprun energy:
+                assert any(
+                    "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` "
+                    "(-381.559 eV), used to obtain the atomic core potentials for the eFNV correction, "
+                    "and the `vasprun.xml` (-381.729eV, -363.622 eV; final energy & last electronic step "
+                    "energy), used for" in str(warn.message)
+                    for warn in w
+                )
             # no charge correction warning by default, as charge correction error is only 6.36 meV here:
             assert any("Estimated error" in str(warn.message) for warn in w) == correction_warning
             assert (
@@ -1425,6 +1429,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             assert len(dp.defect_dict) == 2
             self._check_DefectsParser(dp)
+
+        # Note that we have artificially modified the energy of ``sub_1_O_on_Se_1`` to be 0.17 eV lower,
+        # so that it is found to be (just about) stable in the band gap for the purposes of this test
+        dp, w = _create_dp_and_capture_warnings(
+            output_path=self.shallow_O_Se_DATA_DIR, dielectric=self.Se_dielectric
+        )
 
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
         thermo = dp.get_defect_thermodynamics()
@@ -1468,6 +1478,28 @@ class DefectsParsingTestCase(unittest.TestCase):
             shallow_charge_stability_tolerance=0.01,
         )
         _check_shallow_O_Se_dp_w(dp, w, correction_warning=False)
+
+        # test parsing an incomplete vasprun and OUTCAR:
+        vr_path = f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/vasprun.xml.gz"
+        outcar_path = f"{self.shallow_O_Se_DATA_DIR}/sub_1_O_on_Se_1/vasp_std/OUTCAR.gz"
+        with gzip.open(vr_path, "rt") as f:
+            vr_lines = f.readlines()
+        with gzip.open(outcar_path, "rt") as f:
+            outcar_lines = f.readlines()
+
+        shutil.move(vr_path, f"{vr_path}.bak")
+        shutil.move(outcar_path, f"{outcar_path}.bak")
+        with open(vr_path.strip(".gz"), "w") as out_file:
+            out_file.writelines(vr_lines[:-2000])  # remove last 2000 lines
+        with open(outcar_path.strip(".gz"), "w") as out_file:
+            out_file.writelines(outcar_lines[:-500])
+
+        dp, w = _create_dp_and_capture_warnings(
+            output_path=self.shallow_O_Se_DATA_DIR,
+            dielectric=self.Se_dielectric,
+        )  # here the deletion of the last ionic step energy (which was artificially modified) means we
+        # no longer have OUTCAR/vasprun.xml energy mismatch:
+        _check_shallow_O_Se_dp_w(dp, w, correction_warning=False, outcar_vr_mismatch=False)
 
     def test_auto_charge_determination(self):
         """
