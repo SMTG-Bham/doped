@@ -49,6 +49,15 @@ See the docs [Installation](https://doped.readthedocs.io/en/latest/Installation.
 If you use `doped` in your research, please cite:
 - S. R. Kavanagh et al. [doped: Python toolkit for robust and repeatable charged defect supercell calculations](https://doi.org/10.21105/joss.06433). _Journal of Open Source Software_ 9 (96), 6433, **2024**
 
+## Literature
+The following literature contain useful discussions of various aspects of defect calculations:
+- [Quick-Start Guide on Defect Calculations – Kim et al.](doi.org/10.1088/2515-7655/aba081)
+- [Large Review on Defect Calculations – Freysoldt et al.](doi.org/10.1103/RevModPhys.86.253)
+- [Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai](https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams)
+- [Defect Structure Searching – Mosquera-Lois et al.](doi.org/10.1038/s41524-023-00973-1)
+- [Free Energies of Defects – Mosquera-Lois et al.](https://doi.org/10.1039/D3CS00432E)
+<!--- TODO: Squires perspective when ready --->
+
 ## `ShakeNBreak`
 As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://doi.org/10.1038/s41524-023-00973-1), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped defect generation tutorial](https://doped.readthedocs.io/en/latest/generation_tutorial.html), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
 
