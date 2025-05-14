@@ -479,17 +479,17 @@ def get_equivalent_complex_defect_sites_in_primitive(
     for equiv_anchor_frac_coords in complex_equiv_prim_frac_coords_dict[anchor_site]:
         # for each anchor site, generate a dict of (other) candidate point defect sites, with the other
         # site as the key, and the set of its equivalent frac coords (wrt primitive unit cell) with
-        # inter-defect distances matching the input/template defect complex (+/- 2*dist_tol) as the value
+        # inter-defect distances matching the input/template defect complex (+/-5%) as the value
         candidate_point_defect_frac_coords = {
             other_site: {
                 tuple(i[0].round(4))  # rounded frac coords for efficiency
                 for i in primitive_structure.lattice.get_points_in_sphere(
                     [list(i) for i in other_equiv_frac_coords],  # equivalent frac coords in primitive
                     primitive_structure.lattice.get_cartesian_coords(equiv_anchor_frac_coords),  # center
-                    r=complex_defect_defect_dist_dict[frozenset((anchor_site, other_site))] + dist_tol * 2,
+                    r=complex_defect_defect_dist_dict[frozenset((anchor_site, other_site))] * 1.05,
                 )
                 if i[1]  # i[1] is the distance, compare to the stored inter-defect distance:
-                > complex_defect_defect_dist_dict[frozenset((anchor_site, other_site))] - dist_tol * 2
+                > complex_defect_defect_dist_dict[frozenset((anchor_site, other_site))] * 0.95
             }
             for other_site, other_equiv_frac_coords in other_complex_equiv_prim_frac_coords_dict.items()
         }  # dict of sets of candidate point defect sites
