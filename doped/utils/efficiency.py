@@ -502,7 +502,9 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``comparator`` has been set here (if
             ``ElementComparator``/``FrameworkComparator`` used, then we use
-            ``Element``\s rather than ``Species`` as the keys).
+            ``Element``\s rather than ``Species`` as the keys), or if
+            ``ignored_species`` is set (in which case these species are
+            ignored when calculating bond lengths).
 
     Returns:
         dict: Dictionary of ``{element: (min_bond_length, max_bond_length)}``.
@@ -514,9 +516,14 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
 
     # get the distance matrix broken down by species:
     element_idx_dict = get_element_indices(structure, comparator=comparator)
+    ignored_indices = [
+        idx for elt in sm_kwargs.get("ignored_species", []) for idx in element_idx_dict.get(elt, [])
+    ]
 
     distance_matrix = structure.distance_matrix
     np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+    distance_matrix[:, ignored_indices] = np.inf  # set ignored indices to np.inf to ignore these distances
+    distance_matrix[ignored_indices, :] = np.inf  # set ignored indices to np.inf to ignore these distances
     element_min_max_bond_length_dict = {elt: np.array([0, 0]) for elt in element_idx_dict}
 
     for elt, site_indices in element_idx_dict.items():
@@ -614,7 +621,7 @@ def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Stru
     Returns:
         tuple:
 
-            - float: Normalised RMS displacements between the two structures.
+            - float: Normalised RMS displacement between the two structures.
             - np.ndarray: Normalised displacements between the two structures.
 
         or ``None`` if no match is found.

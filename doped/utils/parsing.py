@@ -969,6 +969,7 @@ def get_site_mapping_indices(
     threshold: float = 2.0,
     dists_only: bool = False,
     anonymous: bool = False,
+    ignored_species: list[str] | None = None,
 ):
     """
     Get the site mapping indices between two structures (from ``struct1`` to
@@ -1008,6 +1009,9 @@ def get_site_mapping_indices(
             If ``True``, the species of the sites will not be considered when
             matching sites. Default is ``False`` (only matching species can be
             matched together).
+        ignored_species (list[str]):
+            A list of species to ignore when matching sites. Default is no
+            species ignored.
 
     Returns:
         list:
@@ -1021,7 +1025,13 @@ def get_site_mapping_indices(
     all_input_fcoords = [list(site.frac_coords) for site in struct1]
     all_template_fcoords = [list(site.frac_coords) for site in struct2]
     s1_species_symbols = (
-        [species.symbol for species in struct1.composition.elements] if not anonymous else [None]
+        [
+            species.symbol
+            for species in struct1.composition.elements
+            if species.symbol not in (ignored_species or [])
+        ]
+        if not anonymous
+        else [None]
     )
 
     for s1_species_symbol in s1_species_symbols:

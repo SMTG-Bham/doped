@@ -460,7 +460,9 @@ def apply_symm_op_to_struct(
     )
 
 
-def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
+def summed_rms_dist(
+    struct_a: Structure, struct_b: Structure, ignored_species: list[str] | None = None
+) -> float:
     """
     Get the summed root-mean-square (RMS) distance between the sites of two
     structures, in Å.
@@ -470,6 +472,9 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     Args:
         struct_a: ``pymatgen`` ``Structure`` object.
         struct_b: ``pymatgen`` ``Structure`` object.
+        ignored_species:
+            List of species to ignore when calculating the RMS distance
+            (default: None).
 
     Returns:
         float:
@@ -479,7 +484,11 @@ def summed_rms_dist(struct_a: Structure, struct_b: Structure) -> float:
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
     # set threshold to a large number to avoid possible site-matching warnings
-    return sum(get_site_mapping_indices(struct_a, struct_b, threshold=1e10, dists_only=True))
+    return sum(
+        get_site_mapping_indices(
+            struct_a, struct_b, threshold=1e10, dists_only=True, ignored_species=ignored_species
+        )
+    )
 
 
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
