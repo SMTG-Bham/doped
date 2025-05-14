@@ -76,12 +76,12 @@ Literature
 ==========
 The following literature contain useful discussions of various aspects of defect calculations:
 
-- `Quick-Start Guide on Defect Calculations – Kim et al. <doi.org/10.1088/2515-7655/aba081>`__
-- `Large Review on Defect Calculations – Freysoldt et al. <doi.org/10.1103/RevModPhys.86.253>`__
+- `Quick-Start Guide on Defect Calculations – Kim et al. <https://doi.org/10.1088/2515-7655/aba081>`__
+- `Large Review on Defect Calculations – Freysoldt et al. <https://doi.org/10.1103/RevModPhys.86.253>`__
 - `Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai <https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams>`__
-- `Defect Structure Searching – Mosquera-Lois et al. <doi.org/10.1038/s41524-023-00973-1>`__
+- `Defect Structure Searching – Mosquera-Lois et al. <https://doi.org/10.1038/s41524-023-00973-1>`__
 - `Free Energies of Defects – Mosquera-Lois et al. <https://doi.org/10.1039/D3CS00432E>`__
-<!--- TODO: Squires perspective when ready --->
+.. TODO: Squires perspective when ready
 
 ``ShakeNBreak``
 ================
