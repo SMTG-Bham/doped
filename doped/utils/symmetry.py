@@ -1093,15 +1093,29 @@ def get_equiv_frac_coords_in_primitive(
         return None
 
     primitive_with_all_X = rotated_struct * matrix
-    from doped.utils.configurations import orient_s2_like_s1
 
-    primitive_with_all_X = orient_s2_like_s1(
-        primitive,
-        primitive_with_all_X,
-        primitive_cell=False,
-        ignored_species=["X"],
-        comparator=ElementComparator(),
-    )
+    orig_rms_dist = summed_rms_dist(primitive, primitive_with_all_X, ignored_species=["X"])
+    if orig_rms_dist != 0:
+        # may have different primitive cell definitions, try re-orienting
+        from doped.utils.configurations import orient_s2_like_s1
+        from doped.utils.supercells import min_dist
+
+        orig_min_dist = min_dist(primitive_with_all_X, ignored_species=["X"])
+        reoriented_primitive_with_all_X = orient_s2_like_s1(
+            primitive,
+            primitive_with_all_X,
+            primitive_cell=False,
+            ignored_species=["X"],
+            comparator=ElementComparator(),
+        )
+        new_min_dist = min_dist(reoriented_primitive_with_all_X, ignored_species=["X"])
+        new_rms_dist = summed_rms_dist(primitive, reoriented_primitive_with_all_X, ignored_species=["X"])
+        if (
+            abs(new_rms_dist - orig_rms_dist) > abs(orig_min_dist - new_min_dist)
+            and abs(orig_min_dist - new_min_dist) < dist_tol * 2
+        ):  # only take re-oriented cell if it improves RMS diff and doesn't significantly change min_dist
+            primitive_with_all_X = reoriented_primitive_with_all_X
+            dist_tol = max(dist_tol, abs(orig_min_dist - new_min_dist))
 
     # now re-apply ``get_all_equiv_sites`` to each site primitive cell X site, to account for possible
     # periodicity-breaking in the supercell, which would then only give a subset of the actual equivalent
