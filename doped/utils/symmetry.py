@@ -1059,7 +1059,7 @@ def get_equiv_frac_coords_in_primitive(
             unique_sites = get_all_equiv_sites(
                 frac_coords,
                 supercell,
-                symm_ops,
+                symm_ops if trial_symprec_factor == 1 else None,  # otherwise regenerate with same symprec
                 dist_tol=dist_tol * trial_dist_tol_factor,
                 symprec=symprec * trial_symprec_factor,
             )
@@ -1074,7 +1074,7 @@ def get_equiv_frac_coords_in_primitive(
                     prim_with_all_X,
                     primitive,
                     ltol=symprec * trial_symprec_factor,
-                    atol=dist_tol * trial_dist_tol_factor,
+                    atol=1 * trial_symprec_factor,  # default is 1
                 )
             if rotated_struct is not None:
                 found_match = True
@@ -1093,7 +1093,6 @@ def get_equiv_frac_coords_in_primitive(
         return None
 
     primitive_with_all_X = rotated_struct * matrix
-
     orig_rms_dist = summed_rms_dist(primitive, primitive_with_all_X, ignored_species=["X"])
     if orig_rms_dist != 0:
         # may have different primitive cell definitions, try re-orienting
@@ -1288,6 +1287,7 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
                 prim_struct,
                 target_struct,
                 ltol=symprec,
+                atol=100 * symprec,
             )
             if attempt_prim_struct:  # otherwise failed, stick with original T matrix
                 prim_struct = attempt_prim_struct
