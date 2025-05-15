@@ -1167,10 +1167,9 @@ class DefectThermodynamics(MSONable):
         """
         for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
             split_name = name_wout_charge.rsplit("_", i)[0]
-            indices = [  # find first occurrence of name_wout_charge in defect_entries
+            if indices := [  # find first occurrence of name_wout_charge in defect_entries
                 i for i, name in enumerate(self._defect_entries.keys()) if name.startswith(split_name)
-            ]
-            if indices:
+            ]:
                 return min(indices), split_name
 
         return 100, split_name  # if name not in defect_entries, put at end

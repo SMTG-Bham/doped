@@ -1791,7 +1791,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "match"
         ) in str(w[-1].message)
 
-    def test_get_interpolated_chempots(self, backend):
+    def test_get_interpolated_chempots(self):
         """
         Test ``get_interpolated_chempots`` function.
         """
