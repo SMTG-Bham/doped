@@ -3616,7 +3616,7 @@ class DefectThermodynamics(MSONable):
         defect concentrations to reach equilibrium during annealing/crystal
         growth (at elevated temperatures), but `not` upon quenching (i.e. at
         room/operating temperature) where we expect kinetic inhibition of
-        defect annhiliation and hence non-equilibrium defect concentrations /
+        defect annihilation and hence non-equilibrium defect concentrations /
         Fermi level. Typically, this is approximated by computing the
         equilibrium Fermi level and defect concentrations at the annealing
         temperature, and then assuming the total concentration of each defect
@@ -5109,7 +5109,7 @@ class FermiSolver(MSONable):
         approximation, we typically expect defect concentrations to reach
         equilibrium during annealing/crystal growth (at elevated temperatures),
         but `not` upon quenching (i.e. at room/operating temperature) where we
-        expect kinetic inhibition of defect annhiliation and hence non-
+        expect kinetic inhibition of defect annihilation and hence non-
         equilibrium defect concentrations / Fermi level. Typically, this is
         approximated by computing the equilibrium Fermi level and defect
         concentrations at the annealing temperature, and then assuming the
