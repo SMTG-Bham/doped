@@ -316,8 +316,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 i in str(warn.message)
                 for i in [
                     "There are mismatching INCAR tags for (some of)",
-                    "in the format: 'Defects: (INCAR tag, value in bulk calculation, value in defect",
-                    "['Int_Te_3_Unperturbed_1']:\n[('ADDGRID', True, False)]",
+                    "in the format: 'Defects: (INCAR tag, value in defect calculation, value in bulk",
+                    "['Int_Te_3_Unperturbed_1']:\n[('ADDGRID', False, True)]",
                     "In general, the same INCAR settings should be used",
                 ]
             )
@@ -707,14 +707,14 @@ class DefectsParsingTestCase(unittest.TestCase):
             "each encountered the same warning:",
             "`LOCPOT` or `OUTCAR` files are missing from the defect or bulk folder. These are needed to",
             "and vasp_ncl defect subfolders)",
-            "There are mismatching INCAR tags for (some of) your bulk and defect calculations",
-            "There are mismatching KPOINTS for (some of) your bulk and defect calculations ",
+            "There are mismatching INCAR tags for (some of) your defect and bulk calculations",
+            "There are mismatching KPOINTS for (some of) your defect and bulk calculations ",
             "Found the following differences:",
-            "(in the format: (bulk kpoints, defect kpoints)):",
-            "Int_Te_3_1: [[[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], "
-            "[0.0, 0.5, 0.5], [0.5, 0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]]]",
-            "v_Cd_0: [[[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
-            "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0]], [[0.0, 0.0, 0.0], ",
+            "(in the format: (defect kpoints, bulk kpoints)):",
+            "Int_Te_3_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5], [0.0, 0.5, 0.0], [0.0, 0.5, 0.5], [0.5, "
+            "0.0, 0.0], [0.5, 0.0, 0.5], [0.5, 0.5, 0.0], [0.5, 0.5, 0.5]], [[0.0, 0.0, 0.0]]]",
+            "v_Cd_0: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
+            "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "In general, the same KPOINTS settings should be used",
         ]:
             assert any(i in str(warn.message) for warn in w)
@@ -1072,7 +1072,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                "[('LASPH', False, True)]",
+                "[('LASPH', True, False)]",
             ]
         )
 
@@ -1085,7 +1085,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                "['vac_O_2', 'vac_O_1', 'vac_O_0']:\n[('LASPH', False, True)]",
+                "['vac_O_2', 'vac_O_1', 'vac_O_0']:\n[('LASPH', True, False)]",
             ]  # defect entries are sorted by sort_defect_entries, which should make this ordering
         )  # deterministic
 
@@ -1254,10 +1254,10 @@ class DefectsParsingTestCase(unittest.TestCase):
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                ":\n[('NKRED', 2, 1)]\nIn",
+                ":\n[('NKRED', 1, 2)]\nIn",
             ]
         )
-        assert str(w[0].message).count(":\n[('NKRED', 2, 1)]\nIn") == 1  # only once
+        assert str(w[0].message).count(":\n[('NKRED', 1, 2)]\nIn") == 1  # only once
 
         assert len(dp.defect_dict) == 17
         self._check_DefectsParser(dp)
@@ -1412,7 +1412,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         def _check_shallow_O_Se_dp_w(dp, w, correction_warning=False, outcar_vr_mismatch=True):
             assert any("There are mismatching INCAR tags" in str(warn.message) for warn in w)
-            assert any("('NKRED', 1, 2)" in str(warn.message) for warn in w)
+            assert any("('NKRED', 2, 1)" in str(warn.message) for warn in w)
             if outcar_vr_mismatch:  # warning about our artificially shifted vasprun energy:
                 assert any(
                     "sub_1_O_on_Se_1/vasp_std:\nThe total energies of the provided (bulk) `OUTCAR` "
@@ -2783,8 +2783,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert all(
                 i in str(w[-1].message)
                 for i in [
-                    "There are mismatching INCAR tags for your bulk and defect calculations",
-                    "[('ADDGRID', True, False)]",
+                    "There are mismatching INCAR tags for your defect and bulk calculations",
+                    "[('ADDGRID', False, True)]",
                 ]
             )
 
@@ -2824,8 +2824,8 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert all(
                 i in str(w[-1].message)
                 for i in [
-                    "There are mismatching INCAR tags for your bulk and defect calculations",
-                    "[('ADDGRID', True, False), ('ENCUT', 450.0, 500.0)]",
+                    "There are mismatching INCAR tags for your defect and bulk calculations",
+                    "[('ADDGRID', False, True), ('ENCUT', 500.0, 450.0)]",
                 ]
             )
 
@@ -2853,7 +2853,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 all(
                     i in str(warning.message)
                     for i in [
-                        "The KPOINTS for your bulk and defect calculations do not match",
+                        "The KPOINTS for your defect and bulk calculations do not match",
                         "[0.125, 0.125, 0.125]",
                     ]
                 )
@@ -2885,7 +2885,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 all(
                     i in str(warning.message)
                     for i in [
-                        "The POTCAR symbols for your bulk and defect calculations do not match",
+                        "The POTCAR symbols for your defect and bulk calculations do not match",
                         "PAW_PBE Cd 06Sep2000",
                         "PAW_PBE Cd_GW 06Sep2000",
                     ]

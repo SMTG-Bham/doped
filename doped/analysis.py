@@ -1357,10 +1357,10 @@ class DefectsParser:
         ]
         if mismatching_INCAR_warnings:
             warnings.warn(
-                f"There are mismatching INCAR tags for (some of) your bulk and defect calculations which "
+                f"There are mismatching INCAR tags for (some of) your defect and bulk calculations which "
                 f"are likely to cause errors in the parsed results (energies). Found the following "
                 f"differences:\n"
-                f"(in the format: 'Defects: (INCAR tag, value in bulk calculation, value in defect "
+                f"(in the format: 'Defects: (INCAR tag, value in defect calculation, value in bulk "
                 f"calculation))':"
                 f"\n{_format_mismatching_incar_warning(mismatching_INCAR_warnings)}\n"
                 f"In general, the same INCAR settings should be used in all final calculations for these "
@@ -1377,10 +1377,10 @@ class DefectsParser:
                 [f"{name}: {mismatching}" for name, mismatching in mismatching_kpoints_warnings]
             )
             warnings.warn(
-                f"There are mismatching KPOINTS for (some of) your bulk and defect calculations which "
+                f"There are mismatching KPOINTS for (some of) your defect and bulk calculations which "
                 f"are likely to cause errors in the parsed results (energies). Found the following "
                 f"differences:\n"
-                f"(in the format: (bulk kpoints, defect kpoints)):"
+                f"(in the format: (defect kpoints, bulk kpoints)):"
                 f"\n{joined_info_string}\n"
                 f"In general, the same KPOINTS settings should be used for all final calculations for "
                 f"accurate results!"
@@ -1396,10 +1396,10 @@ class DefectsParser:
                 [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]
             )
             warnings.warn(
-                f"There are mismatching POTCAR symbols for (some of) your bulk and defect calculations "
+                f"There are mismatching POTCAR symbols for (some of) your defect and bulk calculations "
                 f"which are likely to cause severe errors in the parsed results (energies). Found the "
                 f"following differences:\n"
-                f"(in the format: (bulk POTCARs, defect POTCARs)):"
+                f"(in the format: (defect POTCARs, bulk POTCARs)):"
                 f"\n{joined_info_string}\n"
                 f"In general, the same POTCAR settings should be used for all calculations for accurate "
                 f"results!"

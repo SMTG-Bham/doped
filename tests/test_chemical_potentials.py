@@ -913,16 +913,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
         print([str(warning.message) for warning in w])  # for debugging
-        assert all(
-            any(i in str(warning.message) for warning in w)
-            for i in [
-                "There are mismatching INCAR tags",
-                "['O2']:",
-                "Where ZrO2 was used as the reference entry calculation.",
-                "[('HFSCREEN', 0.2, 0.20786986), ('LREAL', False, 'Auto      ! projection operators: "
-                "autom')]",
-            ]
-        )
+        expected_mismatching_info = [
+            "There are mismatching INCAR tags",
+            "['O2']:",
+            "Where ZrO2 was used as the reference entry calculation.",
+            "[('HFSCREEN', 0.20786986, 0.2), ('LREAL', 'Auto      ! projection operators: autom', "
+            "False)]",
+        ]
+        assert all(any(i in str(warning.message) for warning in w) for i in expected_mismatching_info)
         self._general_cpa_check(cpa)
 
         # test no warning with check_compatibility=False:
@@ -943,16 +941,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
         print([str(warning.message) for warning in w])  # for debugging
-        assert all(
-            any(i in str(warning.message) for warning in w)
-            for i in [
-                "There are mismatching INCAR tags",
-                "['O2']:",
-                "Where ZrO2 was used as the reference entry calculation.",
-                "[('HFSCREEN', 0.2, 0.20786986), ('LREAL', False, 'Auto      ! projection operators: "
-                "autom')]",
-            ]
-        )
+        assert all(any(i in str(warning.message) for warning in w) for i in expected_mismatching_info)
         self._general_cpa_check(la_cpa)
 
         with warnings.catch_warnings(record=True) as w:
@@ -963,7 +952,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             for i in [
                 "There are mismatching INCAR tags",
                 "['Mg']:",
-                "[('ENCUT', 450.0, 585.0)]",
+                "[('ENCUT', 585.0, 450.0)]",
                 "Where MgO was used as the reference entry calculation.",
             ]
         )
@@ -993,8 +982,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             for i in [
                 "There are mismatching POTCAR symbols",
                 "Where ZrO2 was used as the reference entry calculation.",
-                "O2: [[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}], [{'titel': "
-                "'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}]]",
+                "O2: [[{'titel': 'PAW_PBE O_h 08Apr2002_Fake', 'hash': None, 'summary_stats': {}}], "
+                "[{'titel': 'PAW_PBE O 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
             ]
         )
         self._general_cpa_check(cpa)
@@ -1044,25 +1033,25 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "There are mismatching INCAR tags for (some of) your competing phases calculations which are "
             "likely to cause errors in the parsed results (energies & thus chemical potential limits). "
             "Found the following differences:\n"
-            "(in the format: 'Entries: (INCAR tag, value in reference calculation, value in entry "
+            "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
             "calculation))':\n",
-            "['Ag', 'Sn']:\n[('ADDGRID', False, True), ('HFSCREEN', 0.207, 0.2), ('LASPH', False, True), "
-            "('NKRED', 1, 2)]",
-            "['Cs2AgBr3', 'Br', 'Cs3Bi2Br9', 'CsAgBr3', 'Cs', 'AgBr']:\n[('ADDGRID', False, True), "
-            "('HFSCREEN', 0.207, 0.2), ('LASPH', False, True)]",
-            "['Bi']:\n[('ADDGRID', False, True), ('HFSCREEN', 0.207, 0.2), ('LASPH', False, True), "
-            "('NKRED', 1, 3)]",
+            "['Ag', 'Sn']:\n[('ADDGRID', True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False), "
+            "('NKRED', 2, 1)]",
+            "['Cs2AgBr3', 'Br', 'Cs3Bi2Br9', 'CsAgBr3', 'Cs', 'AgBr']:\n[('ADDGRID', True, False), "
+            "('HFSCREEN', 0.2, 0.207), ('LASPH', True, False)]",
+            "['Bi']:\n[('ADDGRID', True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False), "
+            "('NKRED', 3, 1)]",
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             "In general, the same INCAR settings should be used in all final calculations for these tags "
             "which can affect energies!",
             "There are mismatching POTCAR symbols for (some of) your competing phases calculations which "
             "are likely to cause errors in the parsed results (energies & thus chemical potential "
             "limits). Found the following differences:",
-            "(in the format: (reference POTCARs, entry POTCARs)):",
-            "Bi: [[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}], [{'titel': "
-            "'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}]]",
-            "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}], "
-            "[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}]]",
+            "(in the format: (entry POTCARs, reference POTCARs)):",
+            "Bi: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
+            "Cs3Bi2Br9: [[{'titel': 'PAW_PBE Bi_d 06Sep2000', 'hash': None, 'summary_stats': {}}], "
+            "[{'titel': 'PAW_PBE Bi 08Apr2002', 'hash': None, 'summary_stats': {}}]]",
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             "In general, the same POTCAR settings should be used in all final calculations for these tags "
             "which can affect energies!",

@@ -1189,7 +1189,7 @@ def _compare_potcar_symbols(
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
             if warn:
                 warnings.warn(
-                    f"The POTCAR symbols for your {bulk_name} and {defect_name} calculations do not "
+                    f"The POTCAR symbols for your {defect_name} and {bulk_name} calculations do not "
                     f"match, which is likely to cause severe errors in the parsed results. Found the "
                     f"following symbol in the {bulk_name} calculation:"
                     f"\n{symbol['titel']}\n"
@@ -1198,7 +1198,7 @@ def _compare_potcar_symbols(
                     f"The same POTCAR settings should be used for all calculations for accurate results!"
                 )
             if not only_matching_elements:
-                return [bulk_potcar_symbols, defect_potcar_symbols]
+                return [defect_potcar_symbols, bulk_potcar_symbols]
             bulk_mismatch_list.append(symbol)
             defect_mismatch_list.append(
                 next(
@@ -1210,7 +1210,7 @@ def _compare_potcar_symbols(
             )
 
     if bulk_mismatch_list:
-        return [bulk_mismatch_list, defect_mismatch_list]
+        return [defect_mismatch_list, bulk_mismatch_list]
 
     return True
 
@@ -1245,18 +1245,18 @@ def _compare_kpoints(
     if not (actual_kpoints_eq or kpoints_eq):
         if warn:
             warnings.warn(
-                f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
+                f"The KPOINTS for your {defect_name} and {bulk_name} calculations do not match, which is "
                 f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
-                f"{bulk_name} calculation:"
-                f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"  # list more readable vs array
-                f"and in the {defect_name} calculation:"
-                f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"
+                f"{defect_name} calculation:"
+                f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"  # list form is more readable
+                f"and in the {bulk_name} calculation:"
+                f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"
                 f"In general, the same KPOINTS settings should be used for all final calculations for "
                 f"accurate results!"
             )
         return [
-            [list(kpoints) for kpoints in sorted_bulk_kpoints],
             [list(kpoints) for kpoints in sorted_defect_kpoints],
+            [list(kpoints) for kpoints in sorted_bulk_kpoints],
         ]
 
     return True
@@ -1306,7 +1306,7 @@ def _compare_incar_tags(
         if key in fatal_incar_mismatch_tags:
             defect_val = defect_incar_dict.get(key, fatal_incar_mismatch_tags[key])
             if not _compare_incar_vals(val, defect_val):
-                mismatch_list.append((key, val, defect_val))
+                mismatch_list.append((key, defect_val, val))
 
     # get any missing keys:
     defect_incar_keys_not_in_bulk = set(defect_incar_dict.keys()) - set(bulk_incar_dict.keys())
@@ -1315,15 +1315,15 @@ def _compare_incar_tags(
         if key in fatal_incar_mismatch_tags and not _compare_incar_vals(
             defect_incar_dict[key], fatal_incar_mismatch_tags[key]
         ):
-            mismatch_list.append((key, fatal_incar_mismatch_tags[key], defect_incar_dict[key]))
+            mismatch_list.append((key, defect_incar_dict[key], fatal_incar_mismatch_tags[key]))
 
     if mismatch_list:
         if warn:
             warnings.warn(
-                f"There are mismatching INCAR tags for your {bulk_name} and {defect_name} calculations "
+                f"There are mismatching INCAR tags for your {defect_name} and {bulk_name} calculations "
                 f"which are likely to cause errors in the parsed results (energies). Found the following "
                 f"differences:\n"
-                f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
+                f"(in the format: (INCAR tag, value in {defect_name} calculation, value in {bulk_name} "
                 f"calculation)):"
                 f"\n{mismatch_list}\n"
                 f"In general, the same INCAR settings should be used in all final calculations for these "
