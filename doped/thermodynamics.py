@@ -451,14 +451,14 @@ def group_defects_by_distance(
         if new_entries_to_cluster := {  # reduce to unique entries which are not in any previous cluster
             entry
             for entry in defect_entries
-            if not any(entry in entry_set for entry_set in clustered_defect_entries.values())
+            if all(entry not in entry_set for entry_set in clustered_defect_entries.values())
         }:
             clustered_defect_entries[n] = new_entries_to_cluster
 
     return clustered_defect_entries
 
 
-def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[DefectEntry]]:
+def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[DefectEntry]]:
     """
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
     ``{defect name without charge: [DefectEntry]}``, where the values are lists
@@ -487,7 +487,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
     """
     from doped.analysis import check_and_set_defect_entry_name
 
-    grouped_entries: dict[str, list[DefectEntry]] = {}  # dict for groups of entries with the same prefix
+    grouped_entries: dict[str, set[DefectEntry]] = {}  # dict for groups of entries with the same prefix
 
     for _i, entry in enumerate(entry_list):
         # check defect entry name and (re)define if necessary
@@ -496,10 +496,10 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, list[Defec
 
         # If the prefix is not yet in the dictionary, initialize it with empty lists
         if entry_name_wout_charge not in grouped_entries:
-            grouped_entries[entry_name_wout_charge] = []
+            grouped_entries[entry_name_wout_charge] = set()
 
         # Append the current entry to the appropriate group
-        grouped_entries[entry_name_wout_charge].append(entry)
+        grouped_entries[entry_name_wout_charge].add(entry)
 
     return grouped_entries
 
@@ -991,24 +991,38 @@ class DefectThermodynamics(MSONable):
         all_entries: dict = {}  # similar format to stable_entries, but with all (incl unstable) entries
 
         try:
-            self._clustered_defect_entries = group_defects_by_distance(
-                list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
-            )  # {cluster index: {DefectEntry, ...}}
+            self._clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]] = (
+                group_defects_by_distance(
+                    list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
+                )
+            )  # {cluster index: {DefectEntry, ...}}; dict[int, set[DefectEntry]]
             self._clustered_defect_entries_by_type = group_defects_by_type_and_distance(
                 list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
-            )  # {simple defect name: {cluster index: {DefectEntry, ...}}}
-            grouped_entries_list = list(
-                chain(*map(methodcaller("values"), self._clustered_defect_entries_by_type.values()))
-            )  # [[DefectEntry, ...], ...]
+            )  # {simple defect name: {cluster index: {DefectEntry, ...}}};
+            # dict[str, dict[int, set[DefectEntry]]]
 
         except Exception as e:
-            grouped_entries = group_defects_by_name(list(self.defect_entries.values()))
-            grouped_entries_list = list(grouped_entries.values())
+            self._clustered_defect_entries = group_defects_by_name(
+                list(self.defect_entries.values())
+            )  # {defect name without charge: [DefectEntry,...]}; dict[str, set[DefectEntry]]
+            self._clustered_defect_entries_by_type = {
+                entry.defect.name: defaultdict(set) for entry in self.defect_entries.values()
+            }  # {simple defect name: {defect name without charge: {DefectEntry, ...}}};
+            # dict[str, dict[str, set[DefectEntry]]]
+            for defect_name_wout_charge, defect_entry_set in self._clustered_defect_entries.items():
+                self._clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
+                    defect_name_wout_charge  # type: ignore
+                ] = defect_entry_set
+
             warnings.warn(
                 f"Grouping (inequivalent) defects by distance failed with error: {e!r}"
                 f"\nGrouping by defect names (`DefectEntry.name`) instead."
             )  # possibly different bulks (though this should be caught/warned about earlier), or not
             # parsed with recent doped versions etc
+
+        grouped_entries_list: list[list[DefectEntry]] = list(
+            chain(*map(methodcaller("values"), self._clustered_defect_entries_by_type.values()))
+        )  # [[DefectEntry, ...], ...]
 
         for grouped_defect_entries in grouped_entries_list:
             sorted_defect_entries = sorted(
