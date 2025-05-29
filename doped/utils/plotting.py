@@ -392,18 +392,86 @@ def format_defect_name(
                 f"_{'_'.join(defect_species.split('_')[2:-1])}", ""
             )
 
-    def _check_matching_defect_format(element, name, pre_def_type_list, post_def_type_list):
-        return any(f"{pre_def_type}{element}" in name for pre_def_type in pre_def_type_list) or any(
-            f"{element}{post_def_type}" in name for post_def_type in post_def_type_list
-        )
+    def _check_matching_defect_format(
+        element: str,
+        name: str,
+        pre_def_type_list: list[str],
+        post_def_type_list: list[str],
+    ) -> int:
+        """
+        Check if the given ``name`` matches expected defect naming formats,
+        including the placement of the ``element`` and pre/post defect type
+        information, without consideration of any site information (parsed
+        separately).
 
-    def _check_matching_defect_format_with_site_info(element, name, pre_def_type_list, post_def_type_list):
-        for site_preposition in ["s", "m", "mult", ""]:
-            for site_postposition in [r"[a-z]", ""]:
+        Args:
+            element (str):
+                The defect element being checked (e.g., "Ag", "Cd", "H").
+            name (str):
+                The string to check for matching format.
+            pre_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["v_", "va_",
+                "V_"]), occurring `before` the ``element`` position in ``name``.
+            post_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["_v", "_vac",
+                "_V"]), occurring `after` the ``element`` position in ``name``.
+
+        Returns:
+            int:
+                Returns the length of the ``name`` string minus the character
+                position of the start of the match (so matching the start of
+                ``name`` returns ``len(name)``, a match after 3 characters
+                returns ``len(name) - 3`` etc., in order to favour matching
+                near the start of the string). As such, a return value of ``0``
+                indicates no match found.
+        """
+        patterns = [f"{pre_def_type}{element}" for pre_def_type in pre_def_type_list] + [
+            f"{element}{post_def_type}" for post_def_type in post_def_type_list
+        ]
+        if any(name.startswith(pattern) for pattern in patterns):
+            return len(name)
+        for i in range(len(name) - 1):
+            if any(name[i : i + len(pattern)] == pattern for pattern in patterns):
+                return len(name) - i
+        return 0  # 0 -> False, no match found
+
+    def _check_matching_defect_format_with_old_site_info(
+        element: str,
+        name: str,
+        pre_def_type_list: list[str],
+        post_def_type_list: list[str],
+    ) -> tuple[bool, str | None]:
+        """
+        Checks if the given ``name`` matches expected defect naming formats,
+        including the placement of the ``element`` and site information.
+
+        Args:
+            element (str):
+                The defect element being checked (e.g., "Ag", "Cd", "H").
+            name (str):
+                The string to check for matching format.
+            pre_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["v_", "va_",
+                "V_"]), occurring `before` the ``element`` position in ``name``.
+            post_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["_v", "_vac",
+                "_V"]), occurring `after` the ``element`` position in ``name``.
+
+
+        Returns:
+            tuple[bool, str | None]:
+                A tuple where the first element is a boolean indicating if
+                the format matches, and the second element is the site
+                information (if applicable) or ``None``.
+        """
+        for site_preposition in ["s", "m", "mult", ""]:  # possible site into prepositions
+            for site_postposition in [r"[a-z]", ""]:  # possible site info postpositions
                 match = re.match(
+                    # ([a-z_]+) -> 1st group; matches any letters or underscores (no numbers)
+                    # ({site_preposition}[0-9]+{site_postposition}) -> 2nd group; pre, number(s), post
                     f"([a-z_]+)({site_preposition}[0-9]+{site_postposition})",
                     name,
-                    re.I,
+                    re.I,  # case-insensitive match
                 )
 
                 if match:
@@ -461,7 +529,7 @@ def format_defect_name(
         defect_name_without_site_info = None
         defect_name_with_site_info = None
 
-        match_found, site_info = _check_matching_defect_format_with_site_info(
+        match_found, site_info = _check_matching_defect_format_with_old_site_info(
             element,
             name,
             pre_vacancy_strings,
@@ -474,7 +542,7 @@ def format_defect_name(
             defect_name_without_site_info = f"$\\it{{V}}\\!$ $_{{{element}}}^{{{charge_string}}}$"
 
         else:
-            match_found, site_info = _check_matching_defect_format_with_site_info(
+            match_found, site_info = _check_matching_defect_format_with_old_site_info(
                 element,
                 name,
                 pre_interstitial_strings,
@@ -487,31 +555,31 @@ def format_defect_name(
         if include_site_info_in_name and defect_name_with_site_info is not None:
             return defect_name_with_site_info
 
-        if (
-            _check_matching_defect_format(element, name, pre_vacancy_strings, post_vacancy_strings)
-            and defect_name is None
-        ):
-            if include_site_info_in_name and doped_site_info is not None:
-                return f"$\\it{{V}}\\!$ $_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
-
-            return f"$\\it{{V}}\\!$ $_{{{element}}}^{{{charge_string}}}$"
-
-        if (
-            _check_matching_defect_format(
+        if defect_name is None:
+            vacancy_match_score = _check_matching_defect_format(
+                element, name, pre_vacancy_strings, post_vacancy_strings
+            )
+            interstitial_match_score = _check_matching_defect_format(
                 element,
                 name,
                 pre_interstitial_strings,
                 post_interstitial_strings,
             )
-            and defect_name is None
-        ):
-            if include_site_info_in_name and doped_site_info is not None:
-                return f"{element}$_{{i_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
-            return f"{element}$_i^{{{charge_string}}}$"
+            if vacancy_match_score > interstitial_match_score:
+                if include_site_info_in_name and doped_site_info is not None:
+                    return f"$\\it{{V}}\\!$ $_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
-        if defect_name is None and defect_name_without_site_info is not None:
-            return defect_name_without_site_info
+                return f"$\\it{{V}}\\!$ $_{{{element}}}^{{{charge_string}}}$"
+
+            if interstitial_match_score > vacancy_match_score:  # otherwise they are both 0 (no match)
+                if include_site_info_in_name and doped_site_info is not None:
+                    return f"{element}$_{{i_{{{doped_site_info}}}}}^{{{charge_string}}}$"
+
+                return f"{element}$_i^{{{charge_string}}}$"
+
+            if defect_name_without_site_info is not None:
+                return defect_name_without_site_info
 
         return defect_name
 
@@ -533,12 +601,14 @@ def format_defect_name(
         if (
             defect_name and include_site_info_in_name
         ):  # if we have a match, check if we can add the site number
-            for site_preposition in ["s", "m", "mult", ""]:
+            for site_preposition in ["s", "m", "mult", ""]:  # old site info formats
                 for site_postposition in [r"[a-z]", ""]:
                     match = re.match(
+                        # ([a-z_]+) -> 1st group; matches any letters or underscores (no numbers)
+                        # ({site_preposition}[0-9]+{site_postposition}) -> 2nd group; pre, number(s), post
                         f"([a-z_]+)({site_preposition}[0-9]+{site_postposition})",
                         name,
-                        re.I,
+                        re.I,  # case-insensitive match
                     )
 
                     if match:

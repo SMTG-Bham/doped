@@ -294,6 +294,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "inter_14_Th_+2": "Th$_i^{+2}$",
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th}^{+2}$",
             "As_i_C2_-3": "As$_i^{-3}$",
+            "Ag_i_C3v_Ag2.40_0": "Ag$_i^{0}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -372,6 +373,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "inter_14_Th_+2": "Th$_{i_{14}}^{+2}$",
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th_{14}}^{+2}$",
             "As_i_C2_-3": "As$_{i_{C_{2}}}^{-3}$",
+            "Ag_i_C3v_Ag2.40_0": "Ag$_{i_{C_{3v}-Ag2.40}}^{0}$",
         }
         for (
             defect_species,
