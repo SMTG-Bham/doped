@@ -624,7 +624,9 @@ def get_matching_site(
         PeriodicSite:
             The closest matching site in ``structure`` to the input ``site``.
     """
-    if not anonymous:  # try directly match first
+    if (
+        isinstance(site, PeriodicSite) and not anonymous
+    ):  # try directly match first         if site in structure:
         if site in structure:
             return site
 
@@ -640,8 +642,12 @@ def get_matching_site(
         if site_w_no_ox_state in bulk_sites_w_no_ox_state:
             return structure.sites[bulk_sites_w_no_ox_state.index(site_w_no_ox_state)]
 
+    site_frac_coords = (
+        site.frac_coords if hasattr(site, "frac_coords") else np.array(site, dtype=float)
+    )  # ensure site is in fractional coords
+
     # else get closest site in structure, raising error if not within tol Å:
-    if not anonymous:
+    if isinstance(site, PeriodicSite) and not anonymous:  # reduce to only matching species
         candidate_frac_coords, candidate_indices = get_coords_and_idx_of_species(
             structure, site.specie.symbol, frac_coords=True
         )
@@ -650,17 +656,11 @@ def get_matching_site(
         candidate_indices = np.arange(len(structure))
 
     closest_site_idx = candidate_indices[
-        np.argmin(
-            structure.lattice.get_all_distances(
-                site.frac_coords if hasattr(site, "frac_coords") else site, candidate_frac_coords
-            ).ravel()
-        )
+        np.argmin(structure.lattice.get_all_distances(site_frac_coords, candidate_frac_coords).ravel())
     ]
     closest_site = structure.sites[closest_site_idx]
 
-    closest_site_dist = closest_site.distance_and_image_from_frac_coords(
-        site.frac_coords if hasattr(site, "frac_coords") else site
-    )[0]
+    closest_site_dist = closest_site.distance_and_image_from_frac_coords(site_frac_coords)[0]
     if closest_site_dist > tol:
         raise ValueError(
             f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
@@ -668,7 +668,11 @@ def get_matching_site(
             f"mismatch in sites/structures here!)."
         )
 
-    if not anonymous and site.specie.symbol != closest_site.specie.symbol:
+    if (
+        not anonymous
+        and isinstance(site, PeriodicSite)
+        and site.specie.symbol != closest_site.specie.symbol
+    ):
         raise ValueError(
             f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
             f"with distance {closest_site_dist:.2f} Å which is a different element! Set `anonymous=True` "
