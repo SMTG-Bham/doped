@@ -232,24 +232,24 @@ class CompetingPhasesTestCase(unittest.TestCase):
         Test generating CompetingPhases with a composition that's not on the
         Materials Project database.
         """
+        unknown_host_cp_kwargs = {"composition": "Cu2SiSe4", "api_key": self.api_key}
         for cp_settings in [
-            {
-                "composition": "Cu2SiSe4",
-            },
-            {"composition": "Cu2SiSe4", "energy_above_hull": 0.0},
-            {"composition": "Cu2SiSe4", "full_phase_diagram": True},
+            {},
+            {"energy_above_hull": 0.0},
+            {"full_phase_diagram": True},
         ]:
-            print(f"Testing with settings: {cp_settings}")
+            kwargs = {**unknown_host_cp_kwargs, **cp_settings}
+            print(f"Testing with settings: {kwargs}")
             with warnings.catch_warnings(record=True) as w:
-                cp = chemical_potentials.CompetingPhases(**cp_settings)
+                cp = chemical_potentials.CompetingPhases(**kwargs)
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
                 w[-1].message
             )
-            if cp_settings.get("full_phase_diagram"):
+            if kwargs.get("full_phase_diagram"):
                 assert len(cp.entries) == 29
-            elif cp_settings.get("energy_above_hull") == 0.0:
+            elif kwargs.get("energy_above_hull") == 0.0:
                 assert len(cp.entries) == 8
             else:
                 assert len(cp.entries) == 26
