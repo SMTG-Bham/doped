@@ -37,35 +37,7 @@ if TYPE_CHECKING:
 # Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
 
 
-# Species/Element overrides:
-def _hashable_single_species_info(single_species):
-    return single_species.Z, getattr(single_species, "oxi_state", None)
-
-
-def _species_hash__(self):
-    """
-    Custom ``__hash__`` method for ``Species`` instances.
-    """
-    return hash(_hashable_single_species_info(self))
-
-
-def _species_eq__(self, other):
-    """
-    Custom ``__eq__`` method for ``Species`` instances.
-    """
-    if not isinstance(other, Species):
-        return NotImplemented
-    return _hashable_single_species_info(self) == _hashable_single_species_info(other)
-
-
-Species.__eq__ = _species_eq__
-Species.__hash__ = _species_hash__
-Element.__eq__ = _species_eq__
-Element.__hash__ = _species_hash__
-
 # Composition overrides:
-
-
 def _composition__hash__(self):
     """
     Custom ``__hash__`` method for ``Composition`` instances, to make
@@ -195,7 +167,7 @@ def _periodic_site__hash__(self):
         else {}
     )
 
-    species_info = tuple(_hashable_single_species_info(el) for el in self.species)
+    species_info = tuple(str(el) for el in self.species)  # string representation is used for species hash
     try:
         return hash(
             (
@@ -260,8 +232,6 @@ def cache_species(structure_cls):
     significantly speeds up ``pydefect`` eigenvalue parsing in large structures
     (due to repeated use of ``Structure.indices_from_symbol``.
     """
-    Species.__eq__ = _species_eq__
-    Species.__hash__ = _species_hash__  # use efficient hash for species
     Composition.__eq__ = _Composition__eq__
     Composition.__hash__ = _composition__hash__  # use efficient hash for composition
     original_species = structure_cls.species

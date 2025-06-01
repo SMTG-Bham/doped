@@ -293,18 +293,26 @@ def get_sga_and_symprec(struct: Structure, symprec: float = 0.01) -> tuple[Space
 def _get_sga(
     struct: Structure, symprec: float = 0.01, return_symprec: bool = False
 ) -> SpacegroupAnalyzer | tuple[SpacegroupAnalyzer, float]:
-    return _cache_ready_get_sga(struct, symprec=symprec, return_symprec=return_symprec)
+    return _cache_ready_get_sga(
+        struct,
+        symprec=symprec,
+        return_symprec=return_symprec,
+        use_magnetic_symmetry=(os.environ.get("USE_MAGNETIC_SYMMETRY", "0") == "1"),  # default no mag symm
+    )
 
 
 @lru_cache(maxsize=int(1e3))
 def _cache_ready_get_sga(
-    struct: Structure, symprec: float = 0.01, return_symprec: bool = False
+    struct: Structure,
+    symprec: float = 0.01,
+    return_symprec: bool = False,
+    use_magnetic_symmetry: bool = False,
 ) -> SpacegroupAnalyzer | tuple[SpacegroupAnalyzer, float]:
     """
     ``get_sga`` code, with hashable input arguments for caching (using
     ``Structure`` hash function from ``doped.utils.efficiency``).
     """
-    if os.environ.get("USE_MAGNETIC_SYMMETRY", "0") == "0":  # don't use magnetic symmetry
+    if not use_magnetic_symmetry:  # don't use magnetic symmetry by default
         struct = deepcopy(struct)
         for site in struct:
             site.properties = {}

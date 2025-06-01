@@ -34,6 +34,7 @@ from doped.generation import DefectsGenerator, get_defect_name_from_entry
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
     get_BCS_conventional_structure,
+    get_spglib_conv_structure,
     summed_rms_dist,
     swap_axes,
     translate_structure,
@@ -138,9 +139,12 @@ def _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_rem
 
     # only run more intensive checks on neutral entries, as charged entries are just copies of this
     if defect_entry.charge_state == 0 and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula:
-        sga = SpacegroupAnalyzer(defect_gen.primitive_structure)
+        struc_wout_oxi = defect_gen.primitive_structure.copy()
+        struc_wout_oxi.remove_oxidation_states()
+        sga = SpacegroupAnalyzer(struc_wout_oxi)
+        conventional_structure, conv_sga = get_spglib_conv_structure(sga)
         reoriented_conv_structure = swap_axes(
-            sga.get_conventional_standard_structure(), defect_gen._BilbaoCS_conv_cell_vector_mapping
+            conventional_structure, defect_gen._BilbaoCS_conv_cell_vector_mapping
         )
         assert np.allclose(
             defect_entry.conventional_structure.lattice.matrix,
@@ -3410,7 +3414,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         _compare_attributes(agsbte2_defect_gen_a, agsbte2_defect_gen_b)
         assert np.allclose(
             agsbte2_defect_gen_a.supercell_matrix,
-            np.array([[0.0, 3.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]]),
+            np.array([[3.0, 0.0, 0.0], [0.0, -1, 0.0], [0.0, 0.0, -1.0]]),
         )
         self._general_defect_gen_check(agsbte2_defect_gen_a)
 
@@ -3695,6 +3699,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         """
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
+            os.environ["USE_MAGNETIC_SYMMETRY"] = "1"  # use magnetic symmetry
             defect_gen = DefectsGenerator(self.coh12_bro3_2)
 
         print([str(warning.message) for warning in w])  # for debugging
@@ -3703,6 +3708,15 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
             "Symmetry determination failed for the default symprec value of 0.01, but succeeded with "
             "symprec = 0.1, which will be used for symmetry determination functions here."
         ) in str(w[-1].message)
+
+        del os.environ["USE_MAGNETIC_SYMMETRY"]  # use default, no magnetic symmetry
+        with warnings.catch_warnings(record=True) as w:
+            warnings.resetwarnings()
+            defect_gen = DefectsGenerator(self.coh12_bro3_2)
+
+        self._general_defect_gen_check(defect_gen)
+        print([str(warning.message) for warning in w])  # for debugging
+        assert not w  # no warnings with default (ignoring magnetic symmetry)
 
     def test_gen_spaced_structure(self):
         """
