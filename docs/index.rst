@@ -110,6 +110,7 @@ Studies using ``doped``, so far
 - S\. R. Kavanagh et al. **Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics** `Energy & Environmental Science <https://doi.org/10.1039/D4EE04647A>`__ 2025
 - J\. Hu et al. **Enabling ionic transport in Li₃AlP₂ the roles of defects and disorder** `Journal of Materials Chemistry A <https://doi.org/10.1039/D4TA04347B>`__ 2025
 - X\. Jiang et al. **Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies** `Journal of Materials Chemistry C <https://doi.org/10.1039/D4TC04558K>`__ 2025
+- M\. R. Khan et al. **Interplay between intrinsic defects and optoelectronic properties of semi-Heusler gapped metals** `Physical Chemistry Chemical Physics <https://doi.org/10.1039/D5CP00673B>`__ 2025
 - R\. Chinnappan **First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN** `Physica Scripta <https://doi.org/10.1088/1402-4896/adca71>`__ 2025
 - R\. Desai et al. **Exploring the Defect Landscape and Dopability of Chalcogenide Perovskite BaZrS₃** `Journal of Physical Chemistry C <https://doi.org/10.1021/acs.jpcc.5c01597>`__ 2025
 - C\. Kaewmeechai, J. Strand & A. Shluger **Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga₂O₃** `Physica Status Solidi B <https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652>`__ 2025
