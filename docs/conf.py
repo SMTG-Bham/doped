@@ -31,6 +31,7 @@ extensions = [
     "sphinx_click",
     "sphinx_design",
     "myst_nb",  # for jupyter notebooks
+    "sphinx_copybutton",
 ]
 
 # Make sure the target is unique
