@@ -5,6 +5,7 @@ renku-sphinx-theme>=0.5.0
 sphinx_rtd_theme>=2.0
 sphinx_click
 sphinx_design
+sphinx_copybutton
 ase
 hiphive
 click
