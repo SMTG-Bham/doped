@@ -21,13 +21,17 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.core.structure import PeriodicSite
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun, suppress_logging
+from doped.utils.parsing import (
+    _partial_defect_entry_from_structures,
+    get_magnetization_from_vasprun,
+    get_nelect_from_vasprun,
+    suppress_logging,
+)
 from doped.utils.plotting import _get_backend
 
 with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
@@ -251,21 +255,15 @@ def get_band_edge_info(
     min_distance = sorted_distances[sorted_distances > 0.5][0]
 
     if defect_supercell_site is None:
-        (
-            _defect,
-            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            defect_site_in_bulk,  # vacancy site
-            _defect_site_index,
-            _bulk_site_index,
-            _guessed_initial_defect_structure,
-            _unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
+        defect_struct_info = defect_from_structures(
             bulk_vr.final_structure,
             defect_vr.final_structure.copy(),
             return_all_info=True,
             oxi_state="Undetermined",
+            multiplicity=1,
         )
+        defect_site = defect_struct_info[1]  # _relaxed_ defect site (if substitution/interstitial)
+        defect_site_in_bulk = defect_struct_info[2]  # vacancy site
         defect_supercell_site = defect_site or defect_site_in_bulk
 
     neighbor_indices = [
@@ -490,40 +488,11 @@ def get_eigenvalue_analysis(
                 "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum "
                 "must be provided!"
             )
-        from doped.analysis import defect_from_structures
 
         bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
         defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
-
-        (
-            defect,
-            defect_site,
-            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
-            defect_site_index,  # in this initial_defect_structure
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_vr.final_structure,
-            defect_vr.final_structure,
-            oxi_state="Undetermined",
-            return_all_info=True,
-        )
-        defect_entry = DefectEntry(
-            # pmg attributes:
-            defect=defect,  # this corresponds to _unrelaxed_ defect
-            charge_state=0,
-            sc_entry=ComputedStructureEntry(
-                structure=defect_vr.final_structure,
-                energy=0.0,  # needs to be set, so set to 0.0
-            ),
-            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-            bulk_entry=None,
-            # doped attributes:
-            defect_supercell_site=defect_site,  # _relaxed_ defect site
-            defect_supercell=defect_vr.final_structure,
-            bulk_supercell=bulk_vr.final_structure,
+        defect_entry = _partial_defect_entry_from_structures(
+            bulk_vr.final_structure, defect_vr.final_structure, oxi_state="Undetermined", multiplicity=1
         )
 
     # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used
