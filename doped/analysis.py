@@ -1153,11 +1153,11 @@ class DefectsParser:
                     parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
                         defect_folder
                     )
-                    parsing_warning = self._parse_parsing_warnings(
-                        warnings_string, defect_folder, f"{defect_folder}/{self.subfolder}"
+                    parsing_warnings.append(
+                        self._parse_parsing_warnings(
+                            warnings_string, defect_folder, f"{defect_folder}/{self.subfolder}"
+                        )
                     )
-
-                    parsing_warnings.append(parsing_warning)
                     if parsed_defect_entry is not None:
                         parsed_defect_entries.append(parsed_defect_entry)
 
@@ -1181,13 +1181,14 @@ class DefectsParser:
                     parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
                         charged_defect_folder
                     )
-                    parsing_warning = self._update_pbar_and_return_warnings_from_parsing(
-                        parsed_defect_entry,
-                        warnings_string,
-                        charged_defect_folder,
-                        pbar,
+                    parsing_warnings.append(
+                        self._update_pbar_and_return_warnings_from_parsing(
+                            parsed_defect_entry,
+                            warnings_string,
+                            charged_defect_folder,
+                            pbar,
+                        )
                     )
-                    parsing_warnings.append(parsing_warning)
                     if parsed_defect_entry is not None:
                         parsed_defect_entries.append(parsed_defect_entry)
 
@@ -1219,13 +1220,14 @@ class DefectsParser:
                             self._parse_defect_and_handle_warnings, folders_to_process
                         )
                         for result in results:  # result -> (defect_entry, warnings_string, folder)
-                            parsing_warning = self._update_pbar_and_return_warnings_from_parsing(
-                                defect_entry=result[0],
-                                warnings_string=result[1],
-                                defect_folder=result[2],
-                                pbar=pbar,
+                            parsing_warnings.append(
+                                self._update_pbar_and_return_warnings_from_parsing(
+                                    defect_entry=result[0],
+                                    warnings_string=result[1],
+                                    defect_folder=result[2],
+                                    pbar=pbar,
+                                )
                             )
-                            parsing_warnings.append(parsing_warning)
                             if result[0] is not None:
                                 parsed_defect_entries.append(result[0])
 
@@ -2308,12 +2310,12 @@ class DefectParser:
         point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
             defect_entry,
             relaxed=True,
-            verbose=False,
+            verbose=kwargs.get("verbose", False),
             return_periodicity_breaking=True,
             **{
                 k: v
                 for k, v in kwargs.items()
-                if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+                if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
             },
         )  # relaxed so defect symm_ops
         assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)

@@ -903,16 +903,16 @@ def _raw_get_all_equiv_sites(
             if verbose:
                 print(
                     f"Equivalent site generation succeeded (with consistent site symmetries) with symprec "
-                    f"= {symprec:.3f} & dist_tol_factor = {dist_tol_factor:.3f}, giving "
+                    f"= {symprec} & dist_tol_factor = {dist_tol_factor}, giving "
                     f"{len(equiv_sites)} equivalent sites in the input structure."
                 )
             break
 
         if verbose:
             print(
-                f"Equivalent site generation failed with symprec = {trial_symprec:.3f} & dist_tol_factor "
-                "= {trial_dist_tol_factor:.3f}, giving {len(equiv_sites)} equivalent sites in the input "
-                "structure."
+                f"Equivalent site generation failed with symprec = {trial_symprec} & dist_tol_factor "
+                f"= {trial_dist_tol_factor}, giving {len(equiv_sites)} equivalent sites in the input "
+                f"structure."
             )
 
     return (equiv_sites, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else equiv_sites
@@ -1376,8 +1376,8 @@ def get_equiv_frac_coords_in_primitive(
 
         if verbose:
             print(
-                "Failed folding to primitive cell of equivalent supercell sites, with symprec = "
-                "{symprec}, dist_tol_factor = {dist_tol_factor}."
+                f"Failed folding to primitive cell of equivalent supercell sites, with symprec = "
+                f"{symprec}, dist_tol_factor = {dist_tol_factor}."
             )
 
     if rotated_struct is None:

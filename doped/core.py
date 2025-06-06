@@ -1114,12 +1114,12 @@ class DefectEntry(thermo.DefectEntry):
                     self,
                     relaxed=True,
                     return_periodicity_breaking=True,
-                    verbose=False,
+                    verbose=kwargs.get("verbose", False),
                     symprec=symprec,
                     **{
                         k: v
                         for k, v in kwargs.items()
-                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
                     },
                 )  # relaxed so defect symm_ops
                 assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
@@ -1149,12 +1149,13 @@ class DefectEntry(thermo.DefectEntry):
 
             from doped.utils.parsing import _update_defect_entry_structure_metadata
 
+            structure_metadata_kwargs = kwargs
+            if bulk_symprec is not None:  # only include if not None
+                structure_metadata_kwargs["symprec"] = bulk_symprec
             _update_defect_entry_structure_metadata(
                 self,
                 overwrite=True,
-                symprec=symprec,
-                bulk_symprec=bulk_symprec,
-                **kwargs,
+                **structure_metadata_kwargs,
             )  # re-determines site positions / multiplicities
 
         if (
