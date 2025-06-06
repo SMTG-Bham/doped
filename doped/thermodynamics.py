@@ -379,6 +379,9 @@ def group_defects_by_distance(
     #    already members of an earlier defect entry cluster.
 
     for entry in entry_list:
+        # TODO: Try using defect structure (now defined in primitive, and doesn't have potential
+        #  periodicity-breaking issues), time and see how much faster, and fall back to old approach if
+        #  any issues
         entry_bulk_supercell = _get_bulk_supercell(entry)
         if entry_bulk_supercell.lattice != bulk_lattice:
             # recalculate bulk_symm_ops if bulk supercell differs
@@ -388,6 +391,7 @@ def group_defects_by_distance(
 
         # need to use relaxed defect site if bulk_site not in calculation_metadata:
         bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
+        assert bulk_site is not None, "No bulk site found in defect entry calculation metadata!"
 
         # get min distances to each equiv_site_tuple for previously checked defect entries:
         min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
@@ -408,13 +412,14 @@ def group_defects_by_distance(
                 )
             except ValueError:  # likely interstitials, need to add equiv sites to tuple
                 equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                    tuple(frac_coords)
+                    tuple(frac_coords)  # type: ignore
                     for frac_coords in get_all_equiv_sites(
                         bulk_site.frac_coords,
                         symm_bulk_struct,
                         bulk_symm_ops,
                         symprec=symprec,
                         just_frac_coords=True,
+                        return_symprec_and_dist_tol_factor=False,
                     )
                 )
 
@@ -2890,6 +2895,8 @@ class DefectThermodynamics(MSONable):
         self,
         skip_formatting: bool = False,
         symprec: float | None = None,
+        bulk_symprec: float | None = None,
+        **kwargs,
     ) -> pd.DataFrame:
         r"""
         Generates a table of the bulk-site & relaxed defect point group
@@ -2970,18 +2977,48 @@ class DefectThermodynamics(MSONable):
                 strings (and keep as ``int``\s and ``float``\s instead).
                 (default: False)
             symprec (float):
-                Symmetry tolerance for ``spglib`` to use when determining
-                relaxed defect point symmetries and thus orientational
-                degeneracies. Default is ``0.1`` which matches that used by
-                the ``Materials Project`` and is larger than the ``pymatgen``
-                default of ``0.01`` (which is used by ``doped`` for
-                unrelaxed/bulk structures) to account for residual structural
-                noise in relaxed defect supercells.
-                You may want to adjust for your system (e.g. if there are
-                very slight octahedral distortions etc.). If ``symprec`` is
-                set, then the point symmetries and corresponding orientational
-                degeneracy will be re-parsed/computed even if already present
-                in the ``DefectEntry`` object ``calculation_metadata``.
+                Symmetry precision to use for determining symmetry operations
+                and thus point symmetries with ``spglib``, for the `relaxed`
+                defect supercell. Default in ``doped`` is ``0.1`` which matches
+                that used by the ``Materials Project`` and is larger than the
+                ``pymatgen`` default of ``0.01`` to account for residual
+                structural noise in relaxed defect supercells. If set, then
+                site symmetries & degeneracies will be re-parsed/computed even
+                if already present in the ``DefectEntry`` object
+                ``calculation_metadata``.
+                You may want to adjust for your system (e.g. if there are very
+                slight octahedral distortions etc.). If
+                ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+                this value will be automatically adjusted (up to 10x, down to
+                0.1x) until the identified equivalent sites from ``spglib``
+                have consistent point group symmetries. Setting ``verbose`` to
+                ``True`` will print information on the trialled ``symprec``
+                (and ``dist_tol_factor`` values).
+                (Default: None)
+            bulk_symprec (float):
+                Symmetry precision to use for determining symmetry operations
+                and thus point symmetries with ``spglib``, for the `unrelaxed`
+                (bulk site) point symmetry. Default in ``doped`` is ``0.01``
+                which matches the ``pymatgen`` default. You may want to adjust
+                for your system (e.g. if there are very slight octahedral
+                distortions etc.). If set, then site symmetries & degeneracies
+                will be re-parsed/computed even if already present in the
+                ``DefectEntry`` object ``calculation_metadata``.
+                If ``fixed_symprec_and_dist_tol_factor`` is ``False``
+                (default), this value will be automatically adjusted (up to
+                10x, down to 0.1x) until the identified equivalent sites from
+                ``spglib`` have consistent point group symmetries. Setting
+                ``verbose`` to ``True`` will print information on the trialled
+                ``symprec`` (and ``dist_tol_factor`` values).
+                (Default: None)
+            **kwargs:
+                Additional keyword arguments to pass to
+                ``get_all_equiv_sites`` /
+                ``get_equiv_frac_coords_in_primitive``, such as
+                ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
+                ``verbose``, and/or ``Defect`` initialization (such as
+                ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
+                ``defect_and_info_from_structures`` function.
 
         Returns:
             ``pandas`` ``DataFrame``
@@ -2989,7 +3026,9 @@ class DefectThermodynamics(MSONable):
         table_list = []
 
         for name, defect_entry in self.defect_entries.items():
-            defect_entry._parse_and_set_degeneracies(symprec=symprec)
+            defect_entry._parse_and_set_symmetries_and_degeneracies(
+                symprec=symprec, bulk_symprec=bulk_symprec, **kwargs
+            )
             try:
                 multiplicity_per_unit_cell = defect_entry.defect.multiplicity * (
                     len(get_primitive_structure(defect_entry.defect.structure))  # spglib primitive

@@ -15,10 +15,12 @@ from xml.etree.ElementTree import Element as XML_Element
 import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import LinearAssignment, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike, SpeciesLike
@@ -1574,7 +1576,7 @@ def _get_defect_supercell(defect_entry: DefectEntry):
     return None
 
 
-def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
+def _get_unrelaxed_defect_structure(defect_entry: DefectEntry, **kwargs) -> Structure | None:
     if (
         hasattr(defect_entry, "calculation_metadata")
         and defect_entry.calculation_metadata
@@ -1584,31 +1586,13 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
 
     bulk_supercell = _get_bulk_supercell(defect_entry)
 
-    if bulk_supercell is not None:
-        from doped.analysis import defect_from_structures
+    if bulk_supercell is not None:  # reparse info:
+        _update_defect_entry_structure_metadata(defect_entry, **kwargs)
 
-        (
-            _defect,
-            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            _defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials
-            _defect_site_index,
-            _bulk_site_index,
-            _guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_supercell,
-            _get_defect_supercell(defect_entry),
-            return_all_info=True,
-            oxi_state="Undefined",  # don't need oxidation states for this
-        )
-        return unrelaxed_defect_structure
-
-    return None
+    return defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
 
 
-def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True):
+def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True) -> np.ndarray[float] | None:
     sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
     site = None
 
@@ -1622,101 +1606,154 @@ def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True):
     return sc_defect_frac_coords
 
 
-def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
-    if not relaxed:
-        if (  # noqa: SIM102
-            hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata
-        ):
-            if site := defect_entry.calculation_metadata.get("bulk_site"):
+def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs) -> PeriodicSite | None:
+    def _return_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
+        if relaxed or defect_entry.defect.defect_type == DefectType.Interstitial:
+            # always final relaxed site for interstitials (note that "bulk_site" may be guessed initial
+            # site if it is close enough to the final relaxed site):
+            if site := getattr(defect_entry, "defect_supercell_site", None):
                 return site
 
-        # otherwise need to reparse info:
-        from doped.analysis import defect_from_structures
-
-        bulk_supercell = _get_bulk_supercell(defect_entry)
-        defect_supercell = _get_defect_supercell(defect_entry)
-
-        (
-            _defect,
-            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials
-            defect_site_index,
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_supercell,
-            defect_supercell,
-            return_all_info=True,
-            oxi_state="Undefined",  # don't need oxidation states for this
-        )
-
-        # update any missing calculation_metadata:
-        defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
-            defect_entry.calculation_metadata.get(
-                "guessed_initial_defect_structure", guessed_initial_defect_structure
-            )
-        )
-        defect_entry.calculation_metadata["defect_site_index"] = defect_entry.calculation_metadata.get(
-            "defect_site_index", defect_site_index
-        )
-        defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
-            "bulk_site_index", bulk_site_index
-        )
-        defect_entry.calculation_metadata["unrelaxed_defect_structure"] = (
-            defect_entry.calculation_metadata.get("unrelaxed_defect_structure", unrelaxed_defect_structure)
-        )
-
-        # add displacement from (guessed) initial site to final defect site:
-        if defect_site_index is not None:  # not a vacancy
-            guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
-            final_site = defect_supercell[defect_site_index]
-            guessed_displacement = final_site.distance(guessed_initial_site)
-            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
-                defect_entry.calculation_metadata.get("guessed_initial_defect_site", guessed_initial_site)
-            )
-            defect_entry.calculation_metadata["guessed_defect_displacement"] = (
-                defect_entry.calculation_metadata.get("guessed_defect_displacement", guessed_displacement)
-            )
-            defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
-                "bulk_site_index", bulk_site_index
-            )
-        else:  # vacancy
-            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
-                defect_entry.calculation_metadata.get(
-                    "guessed_initial_defect_site", bulk_supercell[bulk_site_index]
+            if defect_entry.sc_defect_frac_coords is not None:
+                return PeriodicSite(
+                    defect_entry.defect.site.species,
+                    defect_entry.sc_defect_frac_coords,
+                    _get_defect_supercell(defect_entry).lattice,
                 )
-            )
-            defect_entry.calculation_metadata[
-                "guessed_defect_displacement"
-            ] = defect_entry.calculation_metadata.get(
-                "guessed_defect_displacement", None
-            )  # type: ignore
 
-        if bulk_site_index is None:  # interstitial
-            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
-                "bulk_site", defect_site_in_bulk
-            )
-        else:
-            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
-                "bulk_site", bulk_supercell[bulk_site_index]
-            )
+        # otherwise we use ``bulk_site``, for relaxed = False (vacancies & substitutions)
+        if (
+            hasattr(defect_entry, "calculation_metadata")
+            and defect_entry.calculation_metadata
+            and defect_entry.calculation_metadata.get("bulk_site")
+        ):
+            return defect_entry.calculation_metadata.get("bulk_site")
 
-        return defect_entry.calculation_metadata["bulk_site"]
+        return None
 
-    if hasattr(defect_entry, "defect_supercell_site") and defect_entry.defect_supercell_site:
-        return defect_entry.defect_supercell_site
+    if defect_supercell_site := _return_defect_supercell_site(defect_entry, relaxed=relaxed):
+        return defect_supercell_site
 
-    if defect_entry.sc_defect_frac_coords is not None:
-        return PeriodicSite(
-            defect_entry.defect.site.species,
-            defect_entry.sc_defect_frac_coords,
-            _get_defect_supercell(defect_entry).lattice,
-        )
+    # otherwise need to reparse info:
+    _update_defect_entry_structure_metadata(defect_entry, **kwargs)
 
-    return None
+    return _return_defect_supercell_site(defect_entry, relaxed=relaxed)
+
+
+def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite: bool = False, **kwargs):
+    """
+    Helper function to reparse the defect site information for a given
+    ``DefectEntry``, updating the relevant attributes and calculation metadata.
+
+    Args:
+        defect_entry (DefectEntry):
+            The ``DefectEntry`` object for which to update the defect site
+            information.
+        overwrite (bool):
+            Whether to overwrite existing ``DefectEntry`` attributes with the
+            newly parsed values. Default is ``False`` (i.e. only update if the
+            attributes are not already set).
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``) in the
+            ``defect_and_info_from_structures`` function.
+    """
+    from doped.analysis import defect_and_info_from_structures
+
+    bulk_supercell = _get_bulk_supercell(defect_entry)
+    defect_supercell = _get_defect_supercell(defect_entry)
+    (
+        defect,
+        defect_site,
+        defect_structure_metadata,
+    ) = defect_and_info_from_structures(
+        bulk_supercell,
+        defect_supercell,
+        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+    )
+    if not getattr(defect_entry, "calculation_metadata", None):
+        defect_entry.calculation_metadata = {}
+
+    # update any missing calculation_metadata:
+    for k, v in defect_structure_metadata.items():
+        if not defect_entry.calculation_metadata.get(k) or overwrite:
+            defect_entry.calculation_metadata[k] = v
+
+    for attr_name, value in {
+        "defect": defect,
+        "sc_defect_frac_coords": defect_site.frac_coords,  # _relaxed_ defect site
+        "defect_supercell_site": defect_site,
+        "defect_supercell": defect_supercell,
+        "bulk_supercell": bulk_supercell,
+    }.items():
+        if not getattr("defect_entry", attr_name, None) or overwrite:
+            setattr(defect_entry, attr_name, value)
+
+
+def _partial_defect_entry_from_structures(
+    bulk_supercell: Structure, defect_supercell: Structure, **kwargs
+) -> DefectEntry:
+    """
+    Helper function to create a partial ``DefectEntry`` from the input bulk and
+    defect supercells.
+
+    Uses ``defect_and_info_from_structures`` to extract the defect structural
+    information, and creates a corresponding ``DefectEntry`` object (which has
+    no ``bulk_entry`` and a fake zero-energy ``sc_entry``, and so cannot be
+    used for energy analyses). Primarily intended for internal usage in
+    ``doped`` parsing/analysis functions.
+
+    Args:
+        bulk_supercell (Structure):
+            The bulk supercell structure.
+        defect_supercell (Structure):
+            The defect supercell structure.
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``) in the
+            ``defect_and_info_from_structures`` function.
+
+    Returns:
+        DefectEntry:
+            A partial ``DefectEntry`` object containing the defect and defect
+            site information, but no ``bulk_entry`` and a zero-energy
+            ``sc_entry``.
+    """
+    from doped.analysis import defect_and_info_from_structures
+
+    (
+        defect,
+        defect_site,
+        defect_structure_metadata,
+    ) = defect_and_info_from_structures(
+        bulk_supercell,
+        defect_supercell,
+        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+    )
+
+    return DefectEntry(
+        # pmg attributes:
+        defect=defect,  # this corresponds to _unrelaxed_ defect
+        charge_state=0,
+        sc_entry=ComputedStructureEntry(
+            structure=bulk_supercell,
+            energy=0.0,  # needs to be set, so set to 0.0
+        ),
+        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+        bulk_entry=None,
+        # doped attributes:
+        name="Partial Defect Entry",
+        defect_supercell_site=defect_site,  # _relaxed_ defect site
+        defect_supercell=defect_supercell,
+        bulk_supercell=bulk_supercell,
+        calculation_metadata=defect_structure_metadata,  # only structural metadata here
+    )
 
 
 def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:

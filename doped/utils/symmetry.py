@@ -23,7 +23,6 @@ from pymatgen.analysis.structure_matcher import (
 )
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from pymatgen.util.coord import is_coord_subset_pbc
@@ -33,13 +32,14 @@ from sympy import Eq, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
-from doped.utils.efficiency import Element, PeriodicSite, SpacegroupAnalyzer, Structure
+from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
     _get_unrelaxed_defect_structure,
+    _partial_defect_entry_from_structures,
     get_site_mapping_indices,
 )
 
@@ -3170,38 +3170,12 @@ def point_symmetry_from_structure(
             )
 
     if bulk_structure is not None:
-        from doped.analysis import defect_from_structures
-
-        (
-            defect,
-            defect_site,
-            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
-            defect_site_index,  # in this initial_defect_structure
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
+        defect_entry = _partial_defect_entry_from_structures(
             bulk_structure,
             structure,
             oxi_state="Undetermined",
-            return_all_info=True,
+            multiplicity=1,
             skip_atom_mapping_check=skip_atom_mapping_check,
-        )
-        defect_entry = DefectEntry(
-            # pmg attributes:
-            defect=defect,  # this corresponds to _unrelaxed_ defect
-            charge_state=0,
-            sc_entry=ComputedStructureEntry(
-                structure=structure,
-                energy=0.0,  # needs to be set, so set to 0.0
-            ),
-            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-            bulk_entry=None,
-            # doped attributes:
-            defect_supercell_site=defect_site,  # _relaxed_ defect site
-            defect_supercell=structure,
-            bulk_supercell=bulk_structure,
         )
 
         return point_symmetry_from_defect_entry(

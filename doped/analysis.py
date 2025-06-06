@@ -27,7 +27,7 @@ from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.core import DefectEntry, guess_and_set_oxi_states_with_timeout
+from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import (
     get_defect_name_from_defect,
     get_defect_name_from_entry,
@@ -184,6 +184,9 @@ def defect_from_structures(
     bulk_voronoi_node_dict: dict | None = None,
     skip_atom_mapping_check: bool = False,
     **kwargs,
+) -> (
+    Defect
+    | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure, dict | None]
 ):
     """
     Auto-determines the defect type and defect site from the supplied bulk and
@@ -223,14 +226,17 @@ def defect_from_structures(
             the cell definitions match (e.g. both supercells were generated
             with ``doped``). Default is ``False``.
         **kwargs:
-            Keyword arguments to pass to ``Defect`` initialization, such
-            as ``oxi_state`` or ``multiplicity``. These are mainly intended
-            for use cases when fast site matching and ``Defect`` creation
-            are desired (e.g. when analysing MD trajectories of defects),
-            where providing these parameters can greatly speed up parsing.
-            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip
-            their auto-determination and accelerate parsing, if these
-            properties are not required.
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
+            fast site matching and ``Defect`` creation are desired (e.g. when
+            analysing MD trajectories of defects), where providing these
+            parameters can greatly speed up parsing.
+            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
+            auto-determination and accelerate parsing, if these properties are
+            not required.
 
     Returns:
         defect (Defect):
@@ -352,11 +358,16 @@ def defect_from_structures(
         )
 
     # get defect site in primitive structure, for Defect generation:
-    primitive_structure = get_primitive_structure(bulk_supercell)
+    primitive_structure = get_primitive_structure(bulk_supercell, symprec=kwargs.get("symprec") or 0.01)
     equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
-        defect_site_in_bulk.frac_coords,
+        (defect_site if defect_type == "interstitial" else defect_site_in_bulk).frac_coords,
         primitive_structure,
         bulk_supercell,
+        **{
+            k: v
+            for k, v in kwargs.items()
+            if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+        },  # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
     )
     equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
     equiv_defect_sites_in_prim = [
@@ -375,6 +386,13 @@ def defect_from_structures(
             bulk_site_in_prim.species = site_in_bulk.species
             bulk_site_in_prim = get_matching_site(bulk_site_in_prim, primitive_structure)
             defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
+
+        # also drop unsupported Defect() kwargs for non-interstitial defects:
+        kwargs = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+        }
 
     for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
         # substitutions differs from defect_site)
@@ -399,6 +417,172 @@ def defect_from_structures(
         guessed_initial_defect_structure,
         unrelaxed_defect_structure,
         bulk_voronoi_node_dict,
+    )
+
+
+def defect_and_info_from_structures(
+    bulk_supercell: Structure,
+    defect_supercell: Structure,
+    bulk_voronoi_node_dict: dict | None = None,
+    skip_atom_mapping_check: bool = False,
+    initial_defect_structure_path: PathLike | None = None,
+    **kwargs,
+) -> tuple[Defect, PeriodicSite, dict]:
+    """
+    Generates a corresponding ``Defect`` object from the supplied bulk and
+    defect supercells (using ``defect_from_structures``), and returns the
+    ``Defect`` object, the `relaxed` defect site in the defect supercell, and a
+    dictionary of calculation metadata (including the defect site in the bulk
+    supercell, defect site indices in the defect and bulk supercells, the
+    guessed initial defect structure, and the unrelaxed defect structure).
+
+    Args:
+        bulk_supercell (Structure):
+            Bulk supercell structure.
+        defect_supercell (Structure):
+            Defect structure to use for identifying the defect site and type.
+        bulk_voronoi_node_dict (dict):
+            Dictionary of bulk supercell Voronoi node information, for
+            expedited site-matching (for interstitials). If ``None`` (default),
+            will be re-calculated. Mostly deprecated as Voronoi tessellation in
+            ``doped`` has been massively accelerated, now typically taking
+            negligible time.
+        skip_atom_mapping_check (bool):
+            If ``True``, skips the atom mapping check which ensures that the
+            bulk and defect supercell lattice definitions are matched
+            (important for accurate defect site determination and charge
+            corrections). Can be used to speed up parsing when you are sure
+            the cell definitions match (e.g. both supercells were generated
+            with ``doped``). Default is ``False``.
+        initial_defect_structure_path (PathLike):
+            Path to the initial/unrelaxed defect structure. Only recommended
+            for use if structure matching with the relaxed defect structure(s)
+            fails (rare). Default is ``None``.
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
+            fast site matching and ``Defect`` creation are desired (e.g. when
+            analysing MD trajectories of defects), where providing these
+            parameters can greatly speed up parsing.
+            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
+            auto-determination and accelerate parsing, if these properties are
+            not required.
+
+    Returns:
+        defect (Defect):
+            ``doped`` ``Defect`` object.
+        defect_site (Site):
+            ``pymatgen`` ``Site`` object of the `relaxed` defect site in the
+            defect supercell.
+        defect_structure_metadata (dict):
+            Dictionary containing metadata about the defect structure,
+            including:
+
+            - ``guessed_initial_defect_structure``: The guessed initial defect
+              structure (before relaxation).
+            - ``guessed_defect_displacement``: Displacement from the guessed
+              initial defect site to the final `relaxed` site (``None`` for
+              vacancies).
+            - ``defect_site_index``: Index of the defect site in the defect
+              supercell (``None`` for vacancies).
+            - ``bulk_site_index``: Index of the defect site in the bulk
+              supercell (``None`` for interstitials).
+            - ``unrelaxed_defect_structure``: The unrelaxed defect structure
+              (similar to ``guessed_initial_defect_structure``, but with
+              interstitials at their final `relaxed` positions, and all bulk
+              atoms at their unrelaxed positions).
+            - ``bulk_site``: The defect site in the bulk supercell (i.e.
+              unrelaxed vacancy/substitution site, or final `relaxed` site for
+              interstitials).
+    """
+    defect_structure_metadata = {}
+
+    # identify defect site, structural information, and create defect object:
+    # Can specify initial defect structure (to help find the defect site if we have a very distorted
+    # final structure), but regardless try using the final structure (from defect OUTCAR) first:
+    try:
+        (
+            defect,
+            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+            # w/interstitials (if guessed initial site is sufficiently close to the relaxed site, then
+            # it is used here, otherwise the actual relaxed site is used)
+            defect_site_index,
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_supercell,
+            defect_supercell,
+            bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+            skip_atom_mapping_check=skip_atom_mapping_check,
+            return_all_info=True,
+            **kwargs,
+        )
+
+    except RuntimeError:
+        if not initial_defect_structure_path:
+            raise
+
+        defect_structure_for_ID = Poscar.from_file(initial_defect_structure_path).structure.copy()
+        (
+            defect,
+            defect_site_in_initial_struct,
+            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
+            defect_site_index,  # in this initial_defect_structure
+            bulk_site_index,
+            guessed_initial_defect_structure,
+            unrelaxed_defect_structure,
+            _bulk_voronoi_node_dict,
+        ) = defect_from_structures(
+            bulk_supercell,
+            defect_structure_for_ID,
+            bulk_voronoi_node_dict=bulk_voronoi_node_dict,
+            skip_atom_mapping_check=skip_atom_mapping_check,
+            return_all_info=True,
+            **kwargs,
+        )
+
+        # then try get defect_site in final structure:
+        # need to check that it's the correct defect site and hasn't been reordered/changed compared to
+        # the initial_defect_structure used here -> check same element and distance reasonable:
+        defect_site = defect_site_in_initial_struct
+
+        if defect.defect_type != core.DefectType.Vacancy:
+            final_defect_site = defect_supercell[defect_site_index]
+            if (
+                defect_site_in_initial_struct.specie.symbol == final_defect_site.specie.symbol
+            ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
+                defect_site = final_defect_site
+
+    defect_structure_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
+    defect_structure_metadata["defect_site_index"] = defect_site_index
+    defect_structure_metadata["bulk_site_index"] = bulk_site_index
+
+    # add displacement from (guessed) initial site to final defect site:
+    if defect_site_index is not None:  # not a vacancy
+        guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
+        guessed_displacement = defect_site.distance(guessed_initial_site)
+        defect_structure_metadata["guessed_initial_defect_site"] = guessed_initial_site
+        defect_structure_metadata["guessed_defect_displacement"] = guessed_displacement
+    else:  # vacancy
+        defect_structure_metadata["guessed_initial_defect_site"] = bulk_supercell[bulk_site_index]
+        defect_structure_metadata["guessed_defect_displacement"] = None  # type: ignore
+
+    defect_structure_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
+    if bulk_site_index is None:  # interstitial
+        defect_structure_metadata["bulk_site"] = defect_site_in_bulk
+    else:
+        defect_structure_metadata["bulk_site"] = bulk_supercell[bulk_site_index]
+
+    return (
+        defect,
+        defect_site,
+        defect_structure_metadata,
     )
 
 
@@ -484,21 +668,30 @@ def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
     )
 
 
-def defect_name_from_structures(bulk_structure: Structure, defect_structure: Structure):
+def defect_name_from_structures(bulk_supercell: Structure, defect_supercell: Structure, **kwargs) -> str:
     """
     Get the doped/SnB defect name using the bulk and defect structures.
 
     Args:
-        bulk_structure (Structure):
+        bulk_supercell (Structure):
             Bulk (pristine) structure.
-        defect_structure (Structure):
+        defect_supercell (Structure):
             Defect structure.
+        **kwargs:
+            Keyword arguments to pass to ``defect_from_structures`` (such as
+            ``oxi_state``, ``multiplicity``, ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``).
 
     Returns:
         str: Defect name.
     """
-    # set oxi_state to avoid wasting time trying to auto-determine when unnecessary here
-    defect = defect_from_structures(bulk_structure, defect_structure, oxi_state="Undetermined")
+    # set oxi_state and multiplicity to avoid wasting time trying to auto-determine when unnecessary here
+    default_init_kwargs = {"oxi_state": "Undetermined", "multiplicity": 1}
+    default_init_kwargs.update(kwargs)
+    defect = defect_from_structures(
+        bulk_supercell, defect_supercell, return_all_info=False, **default_init_kwargs  # type: ignore
+    )
+    assert isinstance(defect, Defect)  # mypy typing
 
     # note that if the symm_op approach fails for any reason here, the defect-supercell expansion
     # approach will only be valid if the defect structure is a diagonal expansion of the primitive...
@@ -511,12 +704,11 @@ def defect_entry_from_paths(
     bulk_path: PathLike,
     dielectric: float | np.ndarray | list | None = None,
     charge_state: int | None = None,
-    initial_defect_structure_path: PathLike | None = None,
     skip_corrections: bool = False,
     error_tolerance: float = 0.05,
     bulk_band_gap_vr: PathLike | Vasprun | None = None,
     **kwargs,
-):
+) -> DefectEntry:
     """
     Parse the defect calculation outputs in ``defect_path`` and return the
     parsed ``DefectEntry`` object.
@@ -551,10 +743,6 @@ def defect_entry_from_paths(
         charge_state (int):
             Charge state of defect. If not provided, will be automatically
             determined from the defect calculation outputs.
-        initial_defect_structure_path (PathLike):
-            Path to the initial/unrelaxed defect structure. Only recommended
-            for use if structure matching with the relaxed defect structure(s)
-            fails (rare). Default is ``None``.
         skip_corrections (bool):
             Whether to skip the calculation and application of finite-size
             charge corrections to the defect energy (not recommended in most
@@ -587,9 +775,16 @@ def defect_entry_from_paths(
             Keyword arguments to pass to ``DefectParser()`` methods
             (``load_FNV_data()``, ``load_eFNV_data()``,
             ``load_bulk_gap_data()``), ``point_symmetry_from_defect_entry()``
-            or ``defect_from_structures``, including ``bulk_locpot_dict``,
-            ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
-            ``symprec`` or ``oxi_state``.
+            or ``defect_and_info_from_structures``, including
+            ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+            ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
+            ``angle_tolerance``, ``user_charges``,
+            ``initial_defect_structure_path`` etc (see their docstrings).
+            Note that ``bulk_symprec`` can be supplied as the ``symprec`` value
+            to use for determining equivalent sites (and thus defect
+            multiplicities / unrelaxed site symmetries), while an input
+            ``symprec`` value will be used for determining `relaxed` site
+            symmetries.
 
     Returns:
         Parsed ``DefectEntry`` object.
@@ -599,7 +794,6 @@ def defect_entry_from_paths(
         bulk_path,
         dielectric=dielectric,
         charge_state=charge_state,
-        initial_defect_structure_path=initial_defect_structure_path,
         skip_corrections=skip_corrections,
         error_tolerance=error_tolerance,
         bulk_band_gap_vr=bulk_band_gap_vr,
@@ -756,13 +950,19 @@ class DefectsParser:
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
                 ``point_symmetry_from_defect_entry()`` or
-                ``defect_from_structures``; including ``bulk_locpot_dict``,
-                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
-                ``symprec`` or ``oxi_state``; or for controlling shallow defect
-                charge correction error warnings (see ``error_tolerance``
-                description) with ``shallow_charge_stability_tolerance``.
-                Primarily used by ``DefectsParser`` to expedite parsing by
-                avoiding reloading bulk data for each defect.
+                ``defect_and_info_from_structures``, including
+                ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
+                ``angle_tolerance``, ``user_charges``,
+                ``initial_defect_structure_path`` etc. (see their docstrings);
+                or for controlling shallow defect charge correction error
+                warnings (see ``error_tolerance`` description) with
+                ``shallow_charge_stability_tolerance``.
+                Note that ``bulk_symprec`` can be supplied as the ``symprec``
+                value to use for determining equivalent sites (and thus defect
+                multiplicities / unrelaxed site symmetries), while an input
+                ``symprec`` value will be used for determining `relaxed` site
+                symmetries.
 
         Attributes:
             defect_dict (dict):
@@ -1803,11 +2003,18 @@ class DefectParser:
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
                 ``point_symmetry_from_defect_entry()`` or
-                ``defect_from_structures``, including ``bulk_locpot_dict``,
-                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
-                ``symprec`` or ``oxi_state``. Primarily used by
-                ``DefectsParser`` to expedite parsing by avoiding reloading
-                bulk data for each defect.
+                ``defect_and_info_from_structures``, including
+                ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
+                ``angle_tolerance``, ``user_charges``,
+                ``initial_defect_structure_path`` etc (see their docstrings).
+                Primarily used by ``DefectsParser`` to expedite parsing by
+                avoiding reloading bulk data for each defect. Note that
+                ``bulk_symprec`` can be supplied as the ``symprec`` value to
+                use for determining equivalent sites (and thus defect
+                multiplicities / unrelaxed site symmetries), while an input
+                ``symprec`` value will be used for determining `relaxed` site
+                symmetries.
         """
         self.defect_entry: DefectEntry = defect_entry
         self.defect_vr = defect_vr
@@ -1826,7 +2033,6 @@ class DefectParser:
         bulk_procar: Procar | None = None,
         dielectric: float | np.ndarray | list | None = None,
         charge_state: int | None = None,
-        initial_defect_structure_path: PathLike | None = None,
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         bulk_band_gap_vr: PathLike | Vasprun | None = None,
@@ -1876,11 +2082,6 @@ class DefectParser:
                 determined from defect calculation outputs, or if that fails,
                 using the defect folder name (must end in "_+X" or "_-X" where
                 +/-X is the defect charge state).
-            initial_defect_structure_path (PathLike):
-                Path to the initial/unrelaxed defect structure. Only
-                recommended for use if structure matching with the relaxed
-                defect structure(s) fails (rare).
-                Default is ``None``.
             skip_corrections (bool):
                 Whether to skip the calculation and application of finite-size
                 charge corrections to the defect energy (not recommended in
@@ -1931,11 +2132,18 @@ class DefectParser:
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
                 ``point_symmetry_from_defect_entry()`` or
-                ``defect_from_structures``, including ``bulk_locpot_dict``,
-                ``bulk_site_potentials``, ``use_MP``, ``mpid``, ``api_key``,
-                ``symprec`` or ``oxi_state``. Primarily used by
-                ``DefectsParser`` to expedite parsing by avoiding reloading
-                bulk data for each defect.
+                ``defect_and_info_from_structures``, including
+                ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
+                ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
+                ``angle_tolerance``, ``user_charges``,
+                ``initial_defect_structure_path`` etc (see their docstrings).
+                Primarily used by ``DefectsParser`` to expedite parsing by
+                avoiding reloading bulk data for each defect. Note that
+                ``bulk_symprec`` can be supplied as the ``symprec`` value to
+                use for determining equivalent sites (and thus defect
+                multiplicities / unrelaxed site symmetries), while an input
+                ``symprec`` value will be used for determining `relaxed` site
+                symmetries.
 
         Return:
             ``DefectParser`` object.
@@ -2050,80 +2258,32 @@ class DefectParser:
                 f"used for both the defect and bulk calculations! (i.e. assuming the dilute limit)"
             )
 
-        # identify defect site, structural information, and create defect object:
-        # Can specify initial defect structure (to help find the defect site if we have a very distorted
-        # final structure), but regardless try using the final structure (from defect OUTCAR) first:
-        try:
-            (
-                defect,
-                defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-                defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-                # w/interstitials
-                defect_site_index,
-                bulk_site_index,
-                guessed_initial_defect_structure,
-                unrelaxed_defect_structure,
-                _bulk_voronoi_node_dict,
-            ) = defect_from_structures(
-                bulk_supercell,
-                defect_structure.copy(),
-                return_all_info=True,
-                oxi_state=kwargs.get("oxi_state"),
-            )
-
-        except RuntimeError:
-            if not initial_defect_structure_path:
-                raise
-
-            defect_structure_for_ID = Poscar.from_file(initial_defect_structure_path).structure.copy()
-            (
-                defect,
-                defect_site_in_initial_struct,
-                defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
-                defect_site_index,  # in this initial_defect_structure
-                bulk_site_index,
-                guessed_initial_defect_structure,
-                unrelaxed_defect_structure,
-                _bulk_voronoi_node_dict,
-            ) = defect_from_structures(
-                bulk_supercell,
-                defect_structure_for_ID,
-                return_all_info=True,
-                oxi_state=kwargs.get("oxi_state"),
-            )
-
-            # then try get defect_site in final structure:
-            # need to check that it's the correct defect site and hasn't been reordered/changed compared to
-            # the initial_defect_structure used here -> check same element and distance reasonable:
-            defect_site = defect_site_in_initial_struct
-
-            if defect.defect_type != core.DefectType.Vacancy:
-                final_defect_site = defect_structure[defect_site_index]
-                if (
-                    defect_site_in_initial_struct.specie.symbol == final_defect_site.specie.symbol
-                ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
-                    defect_site = final_defect_site
-
-        calculation_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
-        calculation_metadata["defect_site_index"] = defect_site_index
-        calculation_metadata["bulk_site_index"] = bulk_site_index
-
-        # add displacement from (guessed) initial site to final defect site:
-        if defect_site_index is not None:  # not a vacancy
-            guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
-            final_site = defect_vr.final_structure[defect_site_index]
-            guessed_displacement = final_site.distance(guessed_initial_site)
-            calculation_metadata["guessed_initial_defect_site"] = guessed_initial_site
-            calculation_metadata["guessed_defect_displacement"] = guessed_displacement
-        else:  # vacancy
-            calculation_metadata["guessed_initial_defect_site"] = bulk_supercell[bulk_site_index]
-            calculation_metadata["guessed_defect_displacement"] = None  # type: ignore
-
-        calculation_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
-        if bulk_site_index is None:  # interstitial
-            calculation_metadata["bulk_site"] = defect_site_in_bulk
-        else:
-            calculation_metadata["bulk_site"] = bulk_supercell[bulk_site_index]
+        (
+            defect,
+            defect_site,
+            defect_structure_metadata,
+        ) = defect_and_info_from_structures(
+            bulk_supercell,
+            defect_structure.copy(),
+            **{
+                k.replace("bulk_", ""): v
+                for k, v in kwargs.items()
+                if k
+                in [
+                    "oxi_state",
+                    "multiplicity",
+                    "symprec",
+                    "bulk_symprec",  # for interstitial multiplicities; changed to "symprec"
+                    "dist_tol_factor",  # for interstitial multiplicities
+                    "angle_tolerance",
+                    "user_charges",
+                    "initial_defect_structure_path",
+                    "fixed_symprec_and_dist_tol_factor",
+                    "verbose",
+                ]
+            },
+        )
+        calculation_metadata.update(defect_structure_metadata)  # add defect structure metadata
 
         defect_entry = DefectEntry(
             # pmg attributes:
@@ -2141,14 +2301,20 @@ class DefectParser:
             degeneracy_factors=degeneracy_factors,
         )
 
-        bulk_supercell_symm_ops = get_sga(bulk_vr.final_structure, symprec=0.01).get_symmetry_operations()
+        bulk_supercell_symm_ops = get_sga(
+            bulk_vr.final_structure, symprec=kwargs.get("bulk_symprec", 0.01)
+        ).get_symmetry_operations()
         # get orientational degeneracy
         point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
             defect_entry,
             relaxed=True,
             verbose=False,
             return_periodicity_breaking=True,
-            symprec=kwargs.get("symprec"),
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+            },
         )  # relaxed so defect symm_ops
         assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
         relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
@@ -2156,13 +2322,29 @@ class DefectParser:
             defect_entry,
             symm_ops=bulk_supercell_symm_ops,  # unrelaxed so bulk symm_ops
             relaxed=False,
-            symprec=0.01,  # same symprec used w/interstitial multiplicity for consistency
-        )
+            **{
+                k.replace("bulk_", ""): v
+                for k, v in kwargs.items()
+                if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+            },
+        )  # same symprec used w/interstitial multiplicity for consistency
         assert isinstance(bulk_site_point_group, str)  # typing (str returned)
         with contextlib.suppress(ValueError):
             defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
                 relaxed_point_group=relaxed_point_group,
                 bulk_site_point_group=bulk_site_point_group,
+                **{
+                    k: v
+                    for k, v in kwargs.items()
+                    if k
+                    in [
+                        "symprec",
+                        "bulk_symprec",
+                        "dist_tol_factor",
+                        "fixed_symprec_and_dist_tol_factor",
+                        "verbose",
+                    ]
+                },
             )
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
