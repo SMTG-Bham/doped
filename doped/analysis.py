@@ -181,13 +181,9 @@ def defect_from_structures(
     bulk_supercell: Structure,
     defect_supercell: Structure,
     return_all_info: bool = False,
-    bulk_voronoi_node_dict: dict | None = None,
     skip_atom_mapping_check: bool = False,
     **kwargs,
-) -> (
-    Defect
-    | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure, dict | None]
-):
+) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
     """
     Auto-determines the defect type and defect site from the supplied bulk and
     defect structures, and returns a corresponding ``Defect`` object with the
@@ -212,12 +208,6 @@ def defect_from_structures(
         return_all_info (bool):
             If ``True``, returns additional python objects related to the
             site-matching, listed above. (Default = False)
-        bulk_voronoi_node_dict (dict):
-            Dictionary of bulk supercell Voronoi node information, for
-            expedited site-matching. If ``None`` (default), will be
-            re-calculated. Mostly deprecated as Voronoi tessellation in
-            ``doped`` has been massively accelerated, now typically taking
-            negligible time.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
             bulk and defect supercell lattice definitions are matched
@@ -261,9 +251,6 @@ def defect_from_structures(
         unrelaxed_defect_structure (Structure):
             ``pymatgen`` ``Structure`` object of the unrelaxed defect
             structure.
-        bulk_voronoi_node_dict (dict):
-            Dictionary of bulk supercell Voronoi node information, for further
-            expedited site-matching.
     """
     try:  # Try automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
@@ -320,17 +307,8 @@ def defect_from_structures(
         if defect_type == "interstitial":
             # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
             # the _initial_ interstitial site
-            if not bulk_voronoi_node_dict:
-                voronoi_frac_coords = [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)]
-                bulk_voronoi_node_dict = {
-                    "bulk_supercell": bulk_supercell,
-                    "Voronoi nodes": voronoi_frac_coords,
-                }
-            else:
-                voronoi_frac_coords = bulk_voronoi_node_dict["Voronoi nodes"]  # type: ignore[index]
-
             closest_node_frac_coords = min(
-                voronoi_frac_coords,
+                [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)],
                 key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
             )
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
@@ -416,14 +394,12 @@ def defect_from_structures(
         bulk_site_idx,
         guessed_initial_defect_structure,
         unrelaxed_defect_structure,
-        bulk_voronoi_node_dict,
     )
 
 
 def defect_and_info_from_structures(
     bulk_supercell: Structure,
     defect_supercell: Structure,
-    bulk_voronoi_node_dict: dict | None = None,
     skip_atom_mapping_check: bool = False,
     initial_defect_structure_path: PathLike | None = None,
     **kwargs,
@@ -441,12 +417,6 @@ def defect_and_info_from_structures(
             Bulk supercell structure.
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site and type.
-        bulk_voronoi_node_dict (dict):
-            Dictionary of bulk supercell Voronoi node information, for
-            expedited site-matching (for interstitials). If ``None`` (default),
-            will be re-calculated. Mostly deprecated as Voronoi tessellation in
-            ``doped`` has been massively accelerated, now typically taking
-            negligible time.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
             bulk and defect supercell lattice definitions are matched
@@ -514,11 +484,9 @@ def defect_and_info_from_structures(
             bulk_site_index,
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
         ) = defect_from_structures(
             bulk_supercell,
             defect_supercell,
-            bulk_voronoi_node_dict=bulk_voronoi_node_dict,
             skip_atom_mapping_check=skip_atom_mapping_check,
             return_all_info=True,
             **kwargs,
@@ -537,11 +505,9 @@ def defect_and_info_from_structures(
             bulk_site_index,
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
         ) = defect_from_structures(
             bulk_supercell,
             defect_structure_for_ID,
-            bulk_voronoi_node_dict=bulk_voronoi_node_dict,
             skip_atom_mapping_check=skip_atom_mapping_check,
             return_all_info=True,
             **kwargs,
