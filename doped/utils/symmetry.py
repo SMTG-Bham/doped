@@ -9,7 +9,7 @@ import warnings
 from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from functools import lru_cache
-from itertools import permutations
+from itertools import permutations, product
 
 import numpy as np
 import pandas as pd
@@ -688,12 +688,15 @@ def _doped_cluster_frac_coords(
 def get_all_equiv_sites(
     frac_coords: ArrayLike,
     structure: Structure,
-    symm_ops: list[SymmOp] | None = None,
+    symm_ops: Sequence[SymmOp] | None = None,  # TODO: Check if this is still worth using
     symprec: float = 0.01,
-    dist_tol: float = 0.01,
+    dist_tol_factor: float = 1.0,
     species: str = "X",
     just_frac_coords: bool = False,
-) -> list[PeriodicSite | np.ndarray]:
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float]:
     """
     Get a list of all equivalent sites of the input fractional coordinates in
     ``structure``.
@@ -707,23 +710,54 @@ def get_all_equiv_sites(
             Structure to use for the lattice, to which the fractional
             coordinates correspond, and for determining symmetry operations
             if not provided.
-        symm_ops (list[SymmOp]):
+        symm_ops (Sequence[SymmOp]):
             List of symmetry operations to use for the equivalent site
             generation (can be provided to avoid re-calculation). If not
             provided, the symmetry operations will be determined using
             ``get_sga`` with the chosen ``symprec``.
         symprec (float):
-            Symmetry precision to use for determining symmetry operations
-            (default: 0.01).
-        dist_tol (float):
+            Symmetry precision to use for determining symmetry operations.
+            Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
+            ``False`` (default), this value will be automatically adjusted (up
+            to 10x, down to 0.1x) until the identified equivalent sites from
+            ``spglib`` have consistent point group symmetries. Setting
+            ``verbose`` to ``True`` will print information on the trialled
+            ``symprec`` (and ``dist_tol_factor`` values), and setting
+            ``return_symprec_and_dist_tol_factor`` to ``True`` will return the
+            final ``symprec`` (and ``dist_tol_factor``) used for the equivalent
+            site generation.
+        dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
-            are truly distinct), in Å (default: 0.01).
+            are truly distinct), as a multiplicative factor of ``symprec``.
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
+            value will also be automatically adjusted if necessary (up to 10x,
+            down to 0.1x)(after ``symprec`` adjustments) until the identified
+            equivalent sites from ``spglib`` have consistent point group
+            symmetries. Setting ``verbose`` to ``True`` will print information
+            on the trialled ``dist_tol_factor`` (and ``symprec``) values, and
+            setting ``return_symprec_and_dist_tol_factor`` to ``True`` will
+            return the final ``symprec`` (and ``dist_tol_factor``) used for
+            the equivalent site generation.
         species (str):
             Species to use for the equivalent sites (default: "X").
         just_frac_coords (bool):
             If ``True``, just returns the fractional coordinates of the
             equivalent sites (rather than ``pymatgen`` ``PeriodicSite``
             objects). Default: False.
+        return_symprec_and_dist_tol_factor (bool):
+            If ``True``, returns the final symmetry precision and distance
+            tolerance factor used for the equivalent site generation (see
+            ``symprec`` and ``dist_tol_factor`` argument descriptions). Default
+            is ``False``.
+        fixed_symprec_and_dist_tol_factor (bool):
+            If ``True``, uses the provided ``symprec`` and ``dist_tol_factor``
+            values without any automatic adjustments (see ``symprec`` and
+            ``dist_tol_factor`` argument descriptions). Default is ``False``.
+        verbose (bool):
+            If ``True``, prints information on the trialled ``symprec`` and
+            ``dist_tol_factor`` values, and the identified equivalent sites.
+            Default is ``False``.
 
     Returns:
         list[PeriodicSite | np.ndarray]:
@@ -738,13 +772,25 @@ def get_all_equiv_sites(
             structure,
             tuple(symm_ops) if symm_ops else None,
             symprec,
-            dist_tol,
+            dist_tol_factor,
             species,
             just_frac_coords,
+            return_symprec_and_dist_tol_factor,
+            fixed_symprec_and_dist_tol_factor,
+            verbose,
         )
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
         return _raw_get_all_equiv_sites(
-            frac_coords, structure, symm_ops, symprec, dist_tol, species, just_frac_coords
+            frac_coords,
+            structure,
+            symm_ops,
+            symprec,
+            dist_tol_factor,
+            species,
+            just_frac_coords,
+            return_symprec_and_dist_tol_factor,
+            fixed_symprec_and_dist_tol_factor,
+            verbose,
         )
 
 
@@ -754,23 +800,42 @@ def _cache_ready_get_all_equiv_sites(
     structure: Structure,
     symm_ops: tuple[SymmOp] | None = None,
     symprec: float = 0.01,
-    dist_tol: float = 0.01,
+    dist_tol_factor: float = 1.0,
     species: str = "X",
     just_frac_coords: bool = False,
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
 ):
     return _raw_get_all_equiv_sites(
-        frac_coords, structure, symm_ops, symprec, dist_tol, species, just_frac_coords
+        frac_coords,
+        structure,
+        symm_ops,
+        symprec,
+        dist_tol_factor,
+        species,
+        just_frac_coords,
+        return_symprec_and_dist_tol_factor,
+        fixed_symprec_and_dist_tol_factor,
+        verbose,
     )
+
+
+_TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])
 
 
 def _raw_get_all_equiv_sites(
     frac_coords: ArrayLike,
     structure: Structure,
-    symm_ops: Sequence[SymmOp] | None = None,
+    symm_ops: Sequence[SymmOp] | None = None,  # TODO: Remove, no longer used? Quick profile to see if
+    # caching worthwhile
     symprec: float = 0.01,
-    dist_tol: float = 0.01,
+    dist_tol_factor: float = 1.0,
     species: str = "X",
     just_frac_coords: bool = False,
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
 ):
     # ensure sites have the same property keys, otherwise can cause issues with pymatgen primitive
     # structure determination:
@@ -786,26 +851,71 @@ def _raw_get_all_equiv_sites(
     else:
         properties = {}
 
-    if symm_ops is None:
-        sga = get_sga(structure, symprec=symprec)
-        symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
+    def _get_equiv_sites_with_given_symprec(
+        symprec: float,
+        dist_tol_factor: float,
+        symm_ops: Sequence[SymmOp] | None = None,
+        just_frac_coords: bool = False,
+    ):
+        dist_tol = dist_tol_factor * symprec  # distance tolerance for clustering sites
+        if symm_ops is None:
+            sga, symprec = get_sga_and_symprec(structure, symprec=symprec)
+            symm_ops = sga.get_symmetry_operations()  # fractional symm_ops by default
 
-    dummy_site = PeriodicSite(species, frac_coords, structure.lattice, properties=properties)
-    x_sites = [
-        apply_symm_op_to_site(
-            symm_op,
-            dummy_site,
-            fractional=True,
-            rotate_lattice=structure.lattice,  # enforce same lattice, just want transformed frac coords
-            just_unit_cell_frac_coords=just_frac_coords,
+        dummy_site = PeriodicSite(species, frac_coords, structure.lattice, properties=properties)
+        x_sites = [
+            apply_symm_op_to_site(
+                symm_op,
+                dummy_site,
+                fractional=True,
+                rotate_lattice=structure.lattice,  # same lattice, just want transformed frac coords
+                just_unit_cell_frac_coords=just_frac_coords,
+            )
+            for symm_op in symm_ops
+        ]
+        if not just_frac_coords:
+            for site in x_sites:
+                site.to_unit_cell(in_place=True)  # faster with in_place
+
+        return cluster_sites_by_dist_tol(x_sites, structure, dist_tol=dist_tol)
+
+    if fixed_symprec_and_dist_tol_factor:
+        equiv_sites = _get_equiv_sites_with_given_symprec(
+            symprec, dist_tol_factor, symm_ops=symm_ops, just_frac_coords=just_frac_coords
         )
-        for symm_op in symm_ops
-    ]
-    if not just_frac_coords:
-        for site in x_sites:
-            site.to_unit_cell(in_place=True)  # faster with in_place
 
-    return cluster_sites_by_dist_tol(x_sites, structure, dist_tol, method="single", criterion="distance")
+    # the choice of equivalent sites should give consistent site symmetries for each equivalent site (using
+    # the same ``symprec`` as for generation), however this is sometimes not the case (due to small
+    # numerical noise / ``dist_tol`` choices etc), so check that the site symmetries (according to
+    # ``symprec``) are self-consistent, and adjust ``symprec`` if not:
+    trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
+    trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
+    for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
+        equiv_sites = _get_equiv_sites_with_given_symprec(
+            trial_symprec, trial_dist_tol_factor, symm_ops=None, just_frac_coords=False
+        )
+        struct_with_all_X = _get_struct_with_all_X(structure, equiv_sites)
+        sga_with_all_X = get_sga(struct_with_all_X, symprec=trial_symprec)
+        if len(set(sga_with_all_X.get_symmetry_dataset().site_symmetry_symbols[-len(equiv_sites) :])) == 1:
+            symprec = trial_symprec
+            dist_tol_factor = trial_dist_tol_factor
+            equiv_sites = [site.frac_coords for site in equiv_sites] if just_frac_coords else equiv_sites
+            if verbose:
+                print(
+                    f"Equivalent site generation succeeded (with consistent site symmetries) with symprec "
+                    f"= {symprec:.3f} & dist_tol_factor = {dist_tol_factor:.3f}, giving "
+                    f"{len(equiv_sites)} equivalent sites in the input structure."
+                )
+            break
+
+        if verbose:
+            print(
+                f"Equivalent site generation failed with symprec = {trial_symprec:.3f} & dist_tol_factor "
+                "= {trial_dist_tol_factor:.3f}, giving {len(equiv_sites)} equivalent sites in the input "
+                "structure."
+            )
+
+    return (equiv_sites, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else equiv_sites
 
 
 def cluster_sites_by_dist_tol(
@@ -860,15 +970,21 @@ def cluster_sites_by_dist_tol(
     return [unique_sites[np.where(cn == n)[0][0]] for n in set(cn)]  # take 1st of each cluster
 
 
+# TODO: Should use equiv frac coords in primitive instead here, to avoid any possible issues with
+#  periodicity-breaking cells
 def get_min_dist_between_equiv_sites(
     site_1: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     site_2: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     structure: Structure | None = None,
     symprec: float = 0.01,
-) -> float:
+    dist_tol_factor: float = 1.0,
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
+) -> float | tuple[float, float, float]:
     """
-    Convenience function to get the minimum distance (in Å) between equivalent
-    sites of two input site/``Defect``/``DefectEntry`` objects in a structure.
+    Get the minimum distance (in Å) between equivalent sites of two input
+    site/``Defect``/``DefectEntry`` objects in a structure.
 
     Args:
         site_1 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
@@ -886,13 +1002,49 @@ def get_min_dist_between_equiv_sites(
             ``site_1`` and ``site_2``. Required if ``site_1`` and ``site_2``
             are not ``Defect`` or ``DefectEntry`` objects. Default: None.
         symprec (float):
-            Symmetry precision to use for determining symmetry-equivalent
-            sites. Default: 0.01.
+            Symmetry precision to use for determining symmetry operations.
+            Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
+            ``False`` (default), this value will be automatically adjusted (up
+            to 10x, down to 0.1x) until the identified equivalent sites from
+            ``spglib`` have consistent point group symmetries. Setting
+            ``verbose`` to ``True`` will print information on the trialled
+            ``symprec`` (and ``dist_tol_factor`` values), and setting
+            ``return_symprec_and_dist_tol_factor`` to ``True`` will return the
+            final ``symprec`` (and ``dist_tol_factor``) used for the equivalent
+            site generation.
+        dist_tol_factor (float):
+            Distance tolerance for clustering generated sites (to ensure they
+            are truly distinct), as a multiplicative factor of ``symprec``.
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
+            value will also be automatically adjusted if necessary (up to 10x,
+            down to 0.1x)(after ``symprec`` adjustments) until the identified
+            equivalent sites from ``spglib`` have consistent point group
+            symmetries. Setting ``verbose`` to ``True`` will print information
+            on the trialled ``dist_tol_factor`` (and ``symprec``) values, and
+            setting ``return_symprec_and_dist_tol_factor`` to ``True`` will
+            return the final ``symprec`` (and ``dist_tol_factor``) used for
+            the equivalent site generation.
+        return_symprec_and_dist_tol_factor (bool):
+            If ``True``, returns the final symmetry precision and distance
+            tolerance factor used for the equivalent site generation (see
+            ``symprec`` and ``dist_tol_factor`` argument descriptions). Default
+            is ``False``.
+        fixed_symprec_and_dist_tol_factor (bool):
+            If ``True``, uses the provided ``symprec`` and ``dist_tol_factor``
+            values without any automatic adjustments (see ``symprec`` and
+            ``dist_tol_factor`` argument descriptions). Default is ``False``.
+        verbose (bool):
+            If ``True``, prints information on the trialled ``symprec`` and
+            ``dist_tol_factor`` values, and the identified equivalent sites.
+            Default is ``False``.
 
     Returns:
-        float:
-            The minimum distance (in Å) between equivalent sites of ``site_1``
-            and ``site_2``.
+        float | tuple[float, float, float]:
+            Minimum distance (in Å) between equivalent sites of ``site_1``
+            and ``site_2``, or a tuple of  (minimum distance, ``symprec``,
+            ``dist_tol_factor``) if ``return_symprec_and_dist_tol_factor`` is
+            ``True``.
     """
 
     def _parse_site_to_frac_coords(site):
@@ -920,11 +1072,13 @@ def get_min_dist_between_equiv_sites(
         )
 
     bulk_lattice = structure.lattice
-    bulk_supercell_sga = get_sga(structure, symprec=symprec)
+    bulk_supercell_sga, symprec = get_sga_and_symprec(structure, symprec=symprec)
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
     bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
-    def _get_equiv_frac_coords(frac_coords, site):
+    def _get_equiv_frac_coords_symprec_and_dist_tol(
+        frac_coords, site, symprec=symprec, dist_tol_factor=dist_tol_factor
+    ):
         try:
             bulk_site = site.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(site)
         except AttributeError:  # not a DefectEntry
@@ -939,24 +1093,43 @@ def get_min_dist_between_equiv_sites(
                 equiv_sites = [i.frac_coords for i in symm_bulk_struct.find_equivalent_sites(bulk_site)]
 
         if not equiv_sites:
-            equiv_sites = get_all_equiv_sites(
+            equiv_sites, symprec, dist_tol_factor = get_all_equiv_sites(
                 frac_coords,
                 symm_bulk_struct,
                 bulk_symm_ops,
                 symprec=symprec,
+                dist_tol_factor=dist_tol_factor,
                 just_frac_coords=True,
+                return_symprec_and_dist_tol_factor=True,
+                fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+                verbose=verbose,
             )
 
-        return equiv_sites
+        return equiv_sites, symprec, dist_tol_factor
 
-    equiv_fcoords_1 = _get_equiv_frac_coords(frac_coords_1, site_1)
-    equiv_fcoords_2 = _get_equiv_frac_coords(frac_coords_2, site_2)
+    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_frac_coords_symprec_and_dist_tol(
+        frac_coords_1, site_1
+    )
+    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_frac_coords_symprec_and_dist_tol(
+        frac_coords_2, site_2
+    )
 
-    return np.min(bulk_lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
+    min_dist = np.min(bulk_lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
+    if return_symprec_and_dist_tol_factor:
+        return min_dist, symprec, dist_tol_factor
+    return min_dist
 
 
-def _get_symm_dataset_of_struc_with_all_equiv_sites(
-    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
+def _get_symm_dataset_of_struct_with_all_equiv_sites(
+    frac_coords: ArrayLike,
+    struct: Structure,
+    symm_ops: Sequence[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol_factor: float = 1.0,
+    species: str = "X",
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
 ):
     """
     Get the symmetry dataset of a ``SpacegroupAnalyzer`` object of a structure
@@ -964,35 +1137,99 @@ def _get_symm_dataset_of_struc_with_all_equiv_sites(
     ``struct``, and also returning the list of unique equivalent sites.
 
     Tries to use hashing and caching to accelerate if possible.
+
+    Returns:
+        tuple[SpacegroupDataset, list[PeriodicSite], float, float]:
+            Symmetry dataset of the structure with all equivalent sites of
+            ``frac_coords`` added, the list of unique equivalent sites, and
+            if ``return_symprec_and_dist_tol_factor`` is ``True``, the final
+            ``symprec`` and ``dist_tol_factor`` used for the equivalent site
+            generation.
     """
     try:
-        return _cache_ready_get_symm_dataset_of_struc_with_all_equiv_sites(
-            tuple(frac_coords), struct, tuple(symm_ops) if symm_ops else None, symprec, dist_tol, species
+        return _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(
+            tuple(frac_coords),
+            struct,
+            tuple(symm_ops) if symm_ops else None,
+            symprec,
+            dist_tol_factor,
+            species,
+            return_symprec_and_dist_tol_factor,
+            fixed_symprec_and_dist_tol_factor,
+            verbose,
         )
     except TypeError:  # issue with hashing (possibly due to ``species`` choice), use raw function
-        return _raw_get_symm_dataset_of_struc_with_all_equiv_sites(
-            frac_coords, struct, symm_ops, symprec, dist_tol, species
+        return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
+            frac_coords,
+            struct,
+            symm_ops,
+            symprec,
+            dist_tol_factor,
+            species,
+            return_symprec_and_dist_tol_factor,
+            fixed_symprec_and_dist_tol_factor,
+            verbose,
         )
 
 
 @lru_cache(maxsize=int(1e3))
-def _cache_ready_get_symm_dataset_of_struc_with_all_equiv_sites(
-    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
+def _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(
+    frac_coords: tuple,
+    struct: Structure,
+    symm_ops: tuple[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol_factor: float = 1.0,
+    species: str = "X",
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
 ):
-    return _raw_get_symm_dataset_of_struc_with_all_equiv_sites(
-        frac_coords, struct, symm_ops, symprec, dist_tol, species
+    return _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
+        frac_coords,
+        struct,
+        symm_ops,
+        symprec,
+        dist_tol_factor,
+        species,
+        return_symprec_and_dist_tol_factor,
+        fixed_symprec_and_dist_tol_factor,
+        verbose,
     )
 
 
-def _raw_get_symm_dataset_of_struc_with_all_equiv_sites(
-    frac_coords, struct, symm_ops=None, symprec=0.01, dist_tol=0.01, species="X"
+def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
+    frac_coords: ArrayLike,
+    struct: Structure,
+    symm_ops: Sequence[SymmOp] | None = None,
+    symprec: float = 0.01,
+    dist_tol_factor: float = 1.0,
+    species: str = "X",
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
 ):
-    unique_sites = get_all_equiv_sites(
-        list(frac_coords), struct, symm_ops, dist_tol=dist_tol, species=species
+    equiv_sites_output = get_all_equiv_sites(
+        list(frac_coords),
+        struct,
+        symm_ops,
+        symprec=symprec,
+        dist_tol_factor=dist_tol_factor,
+        species=species,
+        return_symprec_and_dist_tol_factor=True,
+        fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+        verbose=verbose,
     )
+    assert len(equiv_sites_output) == 3  # typing, return_symprec_and_dist_tol_factor = True
+    unique_sites, symprec, dist_tol_factor = equiv_sites_output
     struct_with_all_X = _get_struct_with_all_X(struct, unique_sites)
-    sga_with_all_X = get_sga(struct_with_all_X, symprec=symprec)
-    return sga_with_all_X.get_symmetry_dataset(), unique_sites
+    sga_with_all_X, symprec = get_sga_and_symprec(struct_with_all_X, symprec=symprec)
+    return_tuple = (sga_with_all_X.get_symmetry_dataset(), unique_sites)
+    return (
+        (*return_tuple, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else return_tuple
+    )
+
+
+# TODO: Should quickly check the output of this with return_symprec_and_dist_tol_factor
 
 
 def _get_struct_with_all_X(struct, unique_sites):
@@ -1011,9 +1248,12 @@ def get_equiv_frac_coords_in_primitive(
     supercell: Structure,
     symm_ops: list[SymmOp] | None = None,
     symprec: float = 0.01,
-    dist_tol: float = 0.01,
+    dist_tol_factor: float = 1.0,
     equiv_coords: bool = True,
-) -> list[np.ndarray] | np.ndarray:
+    return_symprec_and_dist_tol_factor: bool = False,
+    fixed_symprec_and_dist_tol_factor: bool = False,
+    verbose: bool = False,
+) -> list[np.ndarray] | np.ndarray | tuple[list[np.ndarray] | np.ndarray, float, float]:
     """
     Get equivalent fractional coordinates of ``frac_coords`` (in ``supercell``)
     in the given ``primitive`` cell.
@@ -1040,58 +1280,105 @@ def get_equiv_frac_coords_in_primitive(
             the symmetry operations will be determined using ``get_sga`` with
             the chosen ``symprec``.
         symprec (float):
-            Symmetry precision to use for determining symmetry operations
-            (default: 0.01).
-        dist_tol (float):
+            Symmetry precision to use for determining symmetry operations.
+            Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
+            ``False`` (default), this value will be automatically adjusted (up
+            to 10x, down to 0.1x) until the identified equivalent sites from
+            ``spglib`` have consistent point group symmetries. Setting
+            ``verbose`` to ``True`` will print information on the trialled
+            ``symprec`` (and ``dist_tol_factor`` values), and setting
+            ``return_symprec_and_dist_tol_factor`` to ``True`` will return the
+            final ``symprec`` (and ``dist_tol_factor``) used for the equivalent
+            site generation.
+        dist_tol_factor (float):
             Distance tolerance for clustering generated sites (to ensure they
-            are truly distinct), in Å (default: 0.01).
+            are truly distinct), as a multiplicative factor of ``symprec``.
+            Default is 1.0 (i.e. ``dist_tol = symprec``, in Å). If
+            ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
+            value will also be automatically adjusted if necessary (up to 10x,
+            down to 0.1x)(after ``symprec`` adjustments) until the identified
+            equivalent sites from ``spglib`` have consistent point group
+            symmetries. Setting ``verbose`` to ``True`` will print information
+            on the trialled ``dist_tol_factor`` (and ``symprec``) values, and
+            setting ``return_symprec_and_dist_tol_factor`` to ``True`` will
+            return the final ``symprec`` (and ``dist_tol_factor``) used for
+            the equivalent site generation.
         equiv_coords (bool):
             If ``True``, returns a list of equivalent fractional coords in the
             primitive cell. If ``False``, returns the first equivalent
             fractional coordinates in the list, sorted using
             ``_frac_coords_sort_func``. Default: ``True``.
+        return_symprec_and_dist_tol_factor (bool):
+            If ``True``, returns the final symmetry precision and distance
+            tolerance factor used for the equivalent site generation (see
+            ``symprec`` and ``dist_tol_factor`` argument descriptions). Default
+            is ``False``.
+        fixed_symprec_and_dist_tol_factor (bool):
+            If ``True``, uses the provided ``symprec`` and ``dist_tol_factor``
+            values without any automatic adjustments (see ``symprec`` and
+            ``dist_tol_factor`` argument descriptions). Default is ``False``.
+        verbose (bool):
+            If ``True``, prints information on the trialled ``symprec`` and
+            ``dist_tol_factor`` values, and the identified equivalent sites.
+            Default is ``False``.
 
     Returns:
-        list[np.ndarray] | np.ndarray:
+        list[np.ndarray] | np.ndarray | tuple[list[np.ndarray] | np.ndarray, float, float]:
             List of equivalent fractional coordinates in the primitive cell, or
             the first equivalent fractional coordinate in the list (sorted
             using ``_frac_coords_sort_func``), depending on the value of
-            ``equiv_coords``.
+            ``equiv_coords``. If ``return_symprec_and_dist_tol_factor`` is
+            ``True``, also returns the final ``symprec`` and
+            ``dist_tol_factor`` used for the equivalent site generation.
     """
-    found_match = False
-    for trial_symprec_factor in [1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1]:
-        for trial_dist_tol_factor in [1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1]:
-            # sometimes we can have edge cases where slight numerical differences cause issues with
-            # dist_tol/symprec choices, and then primitive cell determination as a result, so scan over
-            # some values if necessary:
-            unique_sites = get_all_equiv_sites(
-                frac_coords,
-                supercell,
-                symm_ops if trial_symprec_factor == 1 else None,  # otherwise regenerate with same symprec
-                dist_tol=dist_tol * trial_dist_tol_factor,
-                symprec=symprec * trial_symprec_factor,
-            )
-            supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
-            prim_with_all_X = get_primitive_structure(
-                supercell_with_all_X, ignored_species=["X"], symprec=symprec * trial_symprec_factor
-            )
+    trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
+    trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
+    for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
+        # sometimes we can have edge cases where slight numerical differences cause issues with
+        # dist_tol/symprec choices, and then primitive cell determination as a result, so scan over
+        # some values if necessary. Here we scan over symprec values first (following the approach in
+        # ``get_all_equiv_sites``), then dist_tol values -- this approach was found to be best from testing
+        equiv_sites_output = get_all_equiv_sites(
+            frac_coords,
+            supercell,
+            # symm_ops if i == 0 else None,  # otherwise regenerate with same symprec
+            # TODO: symm_ops useful? Check! (caching covers it?)
+            symprec=trial_symprec,
+            dist_tol_factor=trial_dist_tol_factor,
+            return_symprec_and_dist_tol_factor=True,
+            fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+            verbose=verbose,
+        )
+        assert len(equiv_sites_output) == 3  # typing, return_symprec_and_dist_tol_factor = True
+        unique_sites, adjusted_trial_symprec, adjusted_trial_dist_tol_factor = equiv_sites_output
+        supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
+        prim_with_all_X = get_primitive_structure(
+            supercell_with_all_X, ignored_species=["X"], symprec=adjusted_trial_symprec
+        )
 
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=UserWarning)
-                rotated_struct, matrix = _rotate_and_get_supercell_matrix(
-                    prim_with_all_X,
-                    primitive,
-                    ltol=symprec * trial_symprec_factor,
-                    atol=1 * trial_symprec_factor,  # default is 1
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning)
+            rotated_struct, matrix = _rotate_and_get_supercell_matrix(
+                prim_with_all_X,
+                primitive,
+                ltol=adjusted_trial_symprec,
+                atol=100 * adjusted_trial_symprec,  # default is 1
+            )
+        if rotated_struct is not None:
+            symprec = adjusted_trial_symprec
+            dist_tol_factor = adjusted_trial_dist_tol_factor
+            if verbose:
+                print(
+                    f"Succeeded folding to primitive cell of equivalent supercell sites, with symprec = "
+                    f"{symprec}, dist_tol_factor = {dist_tol_factor}."
                 )
-            if rotated_struct is not None:
-                found_match = True
-                break
-
-        if found_match:
-            dist_tol = dist_tol * trial_dist_tol_factor
-            symprec = symprec * trial_symprec_factor
             break
+
+        if verbose:
+            print(
+                "Failed folding to primitive cell of equivalent supercell sites, with symprec = "
+                "{symprec}, dist_tol_factor = {dist_tol_factor}."
+            )
 
     if rotated_struct is None:
         warnings.warn(
@@ -1100,6 +1387,7 @@ def get_equiv_frac_coords_in_primitive(
         )
         return None
 
+    dist_tol = symprec * dist_tol_factor
     primitive_with_all_X = rotated_struct * matrix
     orig_rms_dist = summed_rms_dist(primitive, primitive_with_all_X, ignored_species=["X"])
     if orig_rms_dist != 0:
@@ -1123,10 +1411,13 @@ def get_equiv_frac_coords_in_primitive(
         ):  # only take re-oriented cell if it improves RMS diff and doesn't significantly change min_dist
             primitive_with_all_X = reoriented_primitive_with_all_X
             dist_tol = max(dist_tol, abs(orig_min_dist - new_min_dist))
+            dist_tol_factor = dist_tol / symprec
 
     # now re-apply ``get_all_equiv_sites`` to each site primitive cell X site, to account for possible
     # periodicity-breaking in the supercell, which would then only give a subset of the actual equivalent
     # sites in the primitive cell:
+    if verbose:
+        print("Regenerating equivalent sites in primitive cell...")
     all_equiv_prim_frac_coords = cluster_sites_by_dist_tol(
         [
             equiv_frac_coords
@@ -1137,7 +1428,9 @@ def get_equiv_frac_coords_in_primitive(
                 primitive,
                 just_frac_coords=True,
                 symprec=symprec,
-                dist_tol=dist_tol,
+                dist_tol_factor=dist_tol_factor,
+                fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+                verbose=verbose,
             )
         ],
         primitive.lattice,
@@ -1152,6 +1445,8 @@ def get_equiv_frac_coords_in_primitive(
         key=_frac_coords_sort_func,
     )
 
+    if return_symprec_and_dist_tol_factor:
+        return (prim_coord_list if equiv_coords else prim_coord_list[0]), symprec, dist_tol_factor
     return prim_coord_list if equiv_coords else prim_coord_list[0]
 
 
@@ -1411,6 +1706,7 @@ def get_wyckoff(
     symm_ops: list | None = None,
     equiv_sites: bool = False,
     symprec: float = 0.01,
+    **kwargs,
 ) -> str | tuple:
     r"""
     Get the Wyckoff label of the input fractional coordinates in the input
@@ -1426,10 +1722,20 @@ def get_wyckoff(
             List of ``pymatgen`` ``SymmOp``\s of the structure. If ``None``
             (default), will recompute these from the input structure.
         equiv_sites (bool):
-            If ``True``, also returns a list of equivalent sites in ``struct``.
+            If ``True``, returns a tuple of (Wyckoff label, list of equivalent
+            sites). Default is ``False``.
         symprec (float):
-            Symmetry precision for ``SpacegroupAnalyzer``.
-            Default is 0.01.
+            Symmetry precision to use for determining symmetry operations.
+            Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
+            ``False`` (default), this value will be automatically adjusted (up
+            to 10x, down to 0.1x) until the identified equivalent sites from
+            ``spglib`` have consistent point group symmetries. Setting
+            ``verbose`` to ``True`` will print information on the trialled
+            ``symprec`` (and ``dist_tol_factor`` values).
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``,
+            such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
+            and ``verbose``.
 
     Returns:
         str | tuple:
@@ -1437,8 +1743,13 @@ def get_wyckoff(
             structure. If ``equiv_sites`` is ``True``, also returns a list of
             equivalent sites in the structure.
     """
-    symm_dataset, unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        frac_coords, struct, symm_ops, symprec=symprec
+    symm_dataset, unique_sites = _get_symm_dataset_of_struct_with_all_equiv_sites(
+        frac_coords,
+        struct,
+        symm_ops,
+        symprec=symprec,
+        return_symprec_and_dist_tol_factor=False,
+        **kwargs,
     )
     conv_cell_factor = len(symm_dataset.std_positions) / len(symm_dataset.wyckoffs)
     multiplicity = int(conv_cell_factor * len(unique_sites))
@@ -2288,7 +2599,12 @@ def _skip_to_spacegroup(f, spacegroup, setting=None):
     return line
 
 
-def point_symmetry_from_defect(defect: Defect, symm_ops: list | None = None, symprec: float = 0.01) -> str:
+def point_symmetry_from_defect(
+    defect: Defect,
+    symm_ops: list | None = None,
+    symprec: float = 0.01,
+    **kwargs,
+) -> str:
     """
     Get the defect site point symmetry from a `Defect` object.
 
@@ -2301,30 +2617,47 @@ def point_symmetry_from_defect(defect: Defect, symm_ops: list | None = None, sym
             List of symmetry operations of ``defect.structure``, to avoid
             re-calculating. Default is ``None`` (recalculates).
         symprec (float):
-            Symmetry tolerance for ``spglib``. Default is 0.01.
+            Symmetry precision to use for determining symmetry operations and
+            thus point symmetries. Default is 0.01. If
+            ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
+            value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``,
+            such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
+            and ``verbose``.
 
     Returns:
         str: Defect point symmetry.
     """
-    symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-        defect.site.frac_coords,
-        defect.structure,
-        symm_ops=symm_ops,
-        symprec=symprec,
-        species=defect.site.species_string if defect.defect_type == DefectType.Interstitial else "X",
-    )
-    spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
-    if spglib_point_group_symbol is not None:
-        return spglib_point_group_symbol
+    try:
+        point_symm = point_symmetry_from_site(
+            defect.site,
+            defect.structure,
+            symm_ops=symm_ops,
+            symprec=symprec,
+            **kwargs,
+        )
+        if point_symm is not None:
+            return point_symm
 
-    # symm_ops approach failed, just use diagonal defect supercell approach:
-    defect_diagonal_supercell = defect.get_supercell_structure(
-        sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
-        dummy_species="X",
-    )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
-    # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = get_sga(defect_diagonal_supercell, symprec=symprec)
-    return schoenflies_from_hermann(sga.get_point_group_symbol())
+        warnings.warn(
+            "Defect point symmetry could not be determined from the standard approach. Falling back "
+            "to supercell generation approach (which can be less efficient)."
+        )
+        raise ValueError("Defect point symmetry could not be determined from the standard approach.")
+
+    except ValueError:  # symm_ops approach failed, just use diagonal defect supercell approach:
+        defect_diagonal_supercell = defect.get_supercell_structure(
+            sc_mat=np.array([[2, 0, 0], [0, 2, 0], [0, 0, 2]]),
+            dummy_species="X",
+        )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
+        # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
+        sga = get_sga(defect_diagonal_supercell, symprec=symprec)
+        return schoenflies_from_hermann(sga.get_point_group_symbol())
 
 
 def point_symmetry_from_defect_entry(
@@ -2332,8 +2665,9 @@ def point_symmetry_from_defect_entry(
     symm_ops: list | None = None,
     symprec: float | None = None,
     relaxed: bool = True,
-    verbose: bool = True,
+    verbose: bool | None = None,
     return_periodicity_breaking: bool = False,
+    **kwargs,
 ) -> str | tuple[str, bool]:
     r"""
     Get the defect site point symmetry from a ``DefectEntry`` object.
@@ -2390,25 +2724,39 @@ def point_symmetry_from_defect_entry(
             ``defect_entry.defect_supercell`` (if ``relaxed=True``), to avoid
             re-calculating. Default is ``None`` (recalculates).
         symprec (float):
-            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed
-            structures, 0.1 for relaxed (to account for residual structural
-            noise, matching that used by the ``Materials Project``). You may
-            want to adjust for your system (e.g. if there are very slight
-            octahedral distortions etc.).
+            Symmetry precision to use for determining symmetry operations and
+            thus point symmetries with ``spglib``. Default is 0.01 for
+            unrelaxed structures, 0.1 for relaxed (to account for residual
+            structural noise, matching that used by the ``Materials Project``).
+            You may want to adjust for your system (e.g. if there are very
+            slight octahedral distortions etc.).
+            If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+            this value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
         relaxed (bool):
             If ``False``, determines the site symmetry using the defect site
             `in the unrelaxed bulk supercell` (i.e. the bulk site symmetry),
             otherwise tries to determine the point symmetry of the relaxed
-            defect in the defect supercell. Default is True.
+            defect in the defect supercell. Default is ``True``.
         verbose (bool):
-            If True, prints a warning if the supercell is detected to break the
-            crystal periodicity (and hence not be able to return a reliable
-            `relaxed` point symmetry). Default is ``True``.
+            If ``None`` (default) or ``True``, prints a warning if the
+            supercell is detected to break the crystal periodicity (and hence
+            not be able to return a reliable `relaxed` point symmetry).
+            ``True`` corresponds to higher verbosity, where information on
+            trialled ``symprec`` and ``dist_tol_factor`` values in equivalent
+            site generation is also printed. Default is ``None``.
         return_periodicity_breaking (bool):
             If ``True``, also returns a boolean specifying if the supercell has
             been detected to break the crystal periodicity (and hence not be
             able to return a reliable `relaxed` point symmetry) or not. Mainly
             for internal ``doped`` usage. Default is ``False``.
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``,
+            such as ``dist_tol_factor`` and
+            ``fixed_symprec_and_dist_tol_factor``.
 
     Returns:
         str:
@@ -2420,6 +2768,8 @@ def point_symmetry_from_defect_entry(
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
         # slight distortions present in the unrelaxed material).
+    periodicity_breaking_verbose = verbose is not False  # None/True -> True, False -> False
+    equiv_sites_verbose = verbose is True  # True -> True, None/False -> False
 
     # from spglib docs: For atomic positions, roughly speaking, two position vectors x and x' in
     # Cartesian coordinates are considered to be the same if |x' - x| < symprec. The angle distortion
@@ -2460,7 +2810,9 @@ def point_symmetry_from_defect_entry(
                 defect_entry,
                 unrelaxed_defect_structure=unrelaxed_defect_structure,
                 symprec=symprec,
-                verbose=verbose,
+                verbose=periodicity_breaking_verbose,
+                equiv_sites_verbose=equiv_sites_verbose,
+                **kwargs,
             )
         else:
             warnings.warn(
@@ -2485,17 +2837,21 @@ def point_symmetry_from_defect_entry(
         )
         if defect_supercell_bulk_site_coords is not None:
             try:
-                symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-                    defect_supercell_bulk_site_coords,
-                    supercell,
-                    symm_ops=symm_ops,  # defect symm_ops needed for relaxed=True, bulk for relaxed=False
-                    symprec=symprec,
-                    dist_tol=symprec,
-                    species=(
-                        defect_entry.defect.site.species_string
-                        if defect_entry.defect.defect_type == DefectType.Interstitial
-                        else "X"
-                    ),
+                symm_dataset, unique_sites, symprec, _dist_tol_factor = (
+                    _get_symm_dataset_of_struct_with_all_equiv_sites(
+                        defect_supercell_bulk_site_coords,
+                        supercell,
+                        symm_ops=symm_ops,  # defect symm_ops needed w/ relaxed=True, bulk w/ relaxed=False
+                        symprec=symprec,
+                        species=(
+                            defect_entry.defect.site.species_string
+                            if defect_entry.defect.defect_type == DefectType.Interstitial
+                            else "X"
+                        ),
+                        return_symprec_and_dist_tol_factor=True,
+                        verbose=equiv_sites_verbose,
+                        **kwargs,
+                    )
                 )
 
                 # Note:
@@ -2517,8 +2873,13 @@ def point_symmetry_from_defect_entry(
                 _failed = True
 
         if defect_supercell_bulk_site_coords is None or _failed:
+            assert symprec is not None  # typing
             point_group = point_symmetry_from_defect(
-                defect_entry.defect, symm_ops=symm_ops, symprec=symprec
+                defect_entry.defect,
+                symm_ops=symm_ops,
+                symprec=symprec,
+                verbose=equiv_sites_verbose,
+                **kwargs,
             )
             # possibly pymatgen DefectEntry object without defect_supercell_site set
             if relaxed:
@@ -2532,17 +2893,23 @@ def point_symmetry_from_defect_entry(
             return point_group
 
         if not relaxed:
-            # `site_symmetry_symbols[-1]` should be used (within this equiv sites approach) for unrelaxed
+            # `site_symmetry_symbols` should be used (within this equiv sites approach) for unrelaxed
             # defects (rather than `pointgroup`), as the site symmetry can be lower than the crystal point
             # group, but not vice versa; so when populating all equivalent sites (of the defect site,
-            # in the bulk supercell) the overall point group is retained and is not necessarily the defect
-            # site symmetry. e.g. consider populating all equivalent sites of a C1 interstitial site in a
-            # structure (such as CdTe), then the overall point group is still the bulk point group,
-            # but the site symmetry is in fact C1.
+            # in the bulk supercell) the overall point group should be retained and is not necessarily the
+            # defect site symmetry. e.g. consider populating all equivalent sites of a C1 interstitial
+            # site in a structure (such as CdTe), then the overall point group is still the bulk point
+            # group, but the site symmetry is in fact C1.
             # This issue is avoided for relaxed defect supercells as we take the symm_ops of our reduced
             # symmetry cell rather than that of the bulk (so no chance of spurious symmetry upgrade from
             # equivalent sites), and hence the max point symmetry is the point symmetry of the defect
-            spglib_point_group_symbol = schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
+            spglib_point_group_symbols = [
+                schoenflies_from_hermann(hermann_symbol)
+                for hermann_symbol in symm_dataset.site_symmetry_symbols[-len(unique_sites) :]
+            ]  # get point group symbols for all unique sites
+            spglib_point_group_symbol = max(
+                spglib_point_group_symbols, key=group_order_from_schoenflies
+            )  # use highest symmetry point group symbol
 
             # Note that, if the supercell is non-periodicity-breaking, then the site symmetry can be simply
             # determined using the point group of the unrelaxed defect structure:
@@ -2590,16 +2957,18 @@ def point_symmetry_from_defect_entry(
         dummy_species="X",
     )  # create defect supercell, which is a diagonal expansion of the unit cell so that the defect
     # periodic image retains the unit cell symmetry, in order not to affect the point group symmetry
-    sga = get_sga(defect_diagonal_supercell, symprec=symprec)
+    sga = get_sga(defect_diagonal_supercell, symprec=symprec or 0.01)
     point_group = schoenflies_from_hermann(sga.get_point_group_symbol())
     return (point_group, not matching) if return_periodicity_breaking else point_group
 
 
 def _check_relaxed_defect_symmetry_determination(
     defect_entry: DefectEntry,
-    unrelaxed_defect_structure: Structure = None,
+    unrelaxed_defect_structure: Structure | None = None,
     symprec: float = 0.1,
     verbose: bool = False,
+    equiv_sites_verbose: bool = False,
+    **kwargs,
 ):
     defect_supercell_bulk_site_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=False)
 
@@ -2613,37 +2982,48 @@ def _check_relaxed_defect_symmetry_determination(
         unrelaxed_defect_structure = _get_unrelaxed_defect_structure(defect_entry)
 
     if unrelaxed_defect_structure is not None:
-        unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
-            get_sga(unrelaxed_defect_structure, symprec=symprec).get_symmetry_dataset().pointgroup,
-        )
-
         bulk_supercell = _get_bulk_supercell(defect_entry)
-        if symprec not in [0.1, None]:  # only pre-calculate bulk_symm_ops if not default symprec
-            bulk_symm_ops = get_sga(bulk_supercell).get_symmetry_operations()
-        else:
-            bulk_symm_ops = None
+        # if symprec not in [0.1, None]:  # only pre-calculate bulk_symm_ops if not default symprec
+        #     bulk_symm_ops = get_sga(bulk_supercell, symprec=symprec).get_symmetry_operations()
+        # else:
+        #     bulk_symm_ops = None  # TODO: Deal with this
 
         match = False
-        # allow some variation in dist_tol as this can be a little sensitive and not always perfectly
-        # mappable to symprec:
-        for trial_dist_tol in [symprec, symprec * 0.85, symprec * 1.15]:
-            symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-                defect_supercell_bulk_site_coords,
-                bulk_supercell,
-                symm_ops=bulk_symm_ops,
-                symprec=symprec,
-                dist_tol=trial_dist_tol,
-                species=(
-                    defect_entry.defect.site.species_string
-                    if defect_entry.defect.defect_type == DefectType.Interstitial
-                    else "X"
-                ),
-            )
-            bulk_spglib_point_group_symbol = schoenflies_from_hermann(
-                symm_dataset.site_symmetry_symbols[-1]
-            )
+        symm_dataset, unique_sites, symprec, dist_tol = _get_symm_dataset_of_struct_with_all_equiv_sites(
+            defect_supercell_bulk_site_coords,
+            bulk_supercell,
+            # symm_ops=bulk_symm_ops, # TODO: Needed?
+            symprec=symprec,
+            species=(
+                defect_entry.defect.site.species_string
+                if defect_entry.defect.defect_type == DefectType.Interstitial
+                else "X"
+            ),
+            return_symprec_and_dist_tol_factor=True,
+            verbose=equiv_sites_verbose,
+            **kwargs,
+        )
+        bulk_spglib_point_group_symbols = {
+            schoenflies_from_hermann(hermann_symbol)
+            for hermann_symbol in symm_dataset.site_symmetry_symbols[-len(unique_sites) :]
+        }  # get point group symbols for all unique sites
 
-            if bulk_spglib_point_group_symbol == unrelaxed_spglib_point_group_symbol:
+        # allow some small variation in symprec/dist_tol as the result can be a little sensitive:
+        trial_symprecs = [symprec, symprec * 0.85, symprec * 1.15]
+        for trial_symprec in trial_symprecs:
+            unrelaxed_spglib_point_group_symbol = schoenflies_from_hermann(
+                get_sga(unrelaxed_defect_structure, symprec=trial_symprec)
+                .get_symmetry_dataset()
+                .pointgroup,
+            )
+            if equiv_sites_verbose:
+                print(
+                    f"Using symprec {trial_symprec}, got point group = "
+                    f"{unrelaxed_spglib_point_group_symbol} for the unrelaxed defect supercell, and the "
+                    f"following for the defect sites: {bulk_spglib_point_group_symbols}"
+                )
+
+            if unrelaxed_spglib_point_group_symbol in bulk_spglib_point_group_symbols:
                 match = True
                 break
 
@@ -2673,9 +3053,10 @@ def point_symmetry_from_structure(
     symm_ops: list | None = None,
     symprec: float | None = None,
     relaxed: bool = True,
-    verbose: bool = True,
+    verbose: bool | None = None,
     return_periodicity_breaking: bool = False,
     skip_atom_mapping_check: bool = False,
+    **kwargs,
 ) -> str | tuple[str, bool]:
     r"""
     Get the point symmetry of a given structure.
@@ -2725,25 +3106,35 @@ def point_symmetry_from_structure(
             ``relaxed=True``), to avoid re-calculating. Default is ``None``
             (recalculates).
         symprec (float):
-            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed
-            structures, 0.1 for relaxed (to account for residual structural
-            noise, matching that used by the ``Materials Project``). You may
-            want to adjust for your system (e.g. if there are very slight
-            octahedral distortions etc.).
+            Symmetry precision to use for determining symmetry operations and
+            thus point symmetries with ``spglib``. Default is 0.01 for
+            unrelaxed structures, 0.1 for relaxed (to account for residual
+            structural noise, matching that used by the ``Materials Project``).
+            You may want to adjust for your system (e.g. if there are very
+            slight octahedral distortions etc.).
+            If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+            this value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
         relaxed (bool):
             If ``False``, determines the site symmetry using the defect site
             `in the unrelaxed bulk supercell` (i.e. the bulk site symmetry),
             otherwise tries to determine the point symmetry of the relaxed
             defect in the defect supercell. Default is ``True``.
         verbose (bool):
-            If ``True``, prints a warning if the supercell is detected to break
-            the crystal periodicity (and hence not be able to return a reliable
-            `relaxed` point symmetry). Default is ``True``.
+            If ``None`` (default) or ``True``, prints a warning if the
+            supercell is detected to break the crystal periodicity (and hence
+            not be able to return a reliable `relaxed` point symmetry).
+            ``True`` corresponds to higher verbosity, where information on
+            trialled ``symprec`` and ``dist_tol_factor`` values in equivalent
+            site generation is also printed. Default is ``None``.
         return_periodicity_breaking (bool):
             If ``True``, also returns a boolean specifying if the supercell has
             been detected to break the crystal periodicity (and hence not be
             able to return a reliable `relaxed` point symmetry) or not. Default
-            is False.
+            is ``False``.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
             bulk and defect supercell lattice definitions are matched
@@ -2751,6 +3142,10 @@ def point_symmetry_from_structure(
             corrections). Can be used to speed up parsing when you are sure
             the cell definitions match (e.g. both supercells were generated
             with ``doped``). Default is ``False``.
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``,
+            such as ``dist_tol_factor`` and
+            ``fixed_symprec_and_dist_tol_factor``.
 
     Returns:
         str:
@@ -2816,6 +3211,7 @@ def point_symmetry_from_structure(
             relaxed=relaxed,
             verbose=verbose,
             return_periodicity_breaking=return_periodicity_breaking,
+            **kwargs,
         )
 
     # else bulk structure is None and normal relaxed structure symmetry determination failed
@@ -2831,6 +3227,7 @@ def point_symmetry_from_site(
     coords_are_cartesian: bool = False,
     symm_ops: list | None = None,
     symprec: float = 0.01,
+    **kwargs,
 ) -> str:
     r"""
     Get the point symmetry of a site in a structure.
@@ -2851,9 +3248,20 @@ def point_symmetry_from_site(
             List of symmetry operations of the ``structure`` to avoid
             re-calculating. Default is ``None`` (recalculates).
         symprec (float):
-            Symmetry tolerance for ``spglib``. Default is 0.01. You may want to
-            adjust for your system (e.g. if there are very slight octahedral
-            distortions etc.).
+            Symmetry precision to use for determining symmetry operations and
+            thus point symmetries with ``spglib``. Default is 0.01. You may
+            want to adjust for your system (e.g. if there are very slight
+            octahedral distortions etc.). If
+            ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default), this
+            value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``,
+            such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
+            and ``verbose``.
 
     Returns:
         str: Site point symmetry.
@@ -2864,15 +3272,26 @@ def point_symmetry_from_site(
         )
 
     try:
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species=site.species_string
+        symm_dataset, unique_sites = _get_symm_dataset_of_struct_with_all_equiv_sites(
+            site.frac_coords,
+            structure,
+            symm_ops=symm_ops,
+            symprec=symprec,
+            species=site.species_string,
+            **kwargs,
         )
     except SymmetryUndeterminedError:
-        symm_dataset, _unique_sites = _get_symm_dataset_of_struc_with_all_equiv_sites(
-            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species="X"
+        symm_dataset, unique_sites = _get_symm_dataset_of_struct_with_all_equiv_sites(
+            site.frac_coords, structure, symm_ops=symm_ops, symprec=symprec, species="X", **kwargs
         )
 
-    return schoenflies_from_hermann(symm_dataset.site_symmetry_symbols[-1])
+    spglib_point_group_symbols = [
+        schoenflies_from_hermann(hermann_symbol)
+        for hermann_symbol in symm_dataset.site_symmetry_symbols[-len(unique_sites) :]
+    ]  # get point group symbols for all unique sites
+    return max(
+        spglib_point_group_symbols, key=group_order_from_schoenflies
+    )  # use highest symmetry point group symbol
 
 
 # Schoenflies, Hermann-Mauguin, spgid dict: (Taken from the excellent Abipy with GNU GPL License)
@@ -2913,9 +3332,6 @@ _PTG_IDS = [
 
 _SCH_to_HERM = {t[0]: t[1] for t in _PTG_IDS}
 _HERM_to_SCH = {t[1]: t[0] for t in _PTG_IDS}
-_SPGID_to_SCH = {t[2]: t[0] for t in _PTG_IDS}
-_SCH_to_SPGID = {t[0]: t[2] for t in _PTG_IDS}
-
 sch_symbols = list(_SCH_to_HERM.keys())
 
 
@@ -2997,6 +3413,8 @@ def get_orientational_degeneracy(
     bulk_symm_ops: list | None = None,
     defect_symm_ops: list | None = None,
     symprec: float = 0.1,
+    bulk_symprec: float = 0.01,
+    **kwargs,
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed`
@@ -3082,13 +3500,35 @@ def get_orientational_degeneracy(
             (used in determining the `relaxed` point symmetry), to avoid
             re-calculating. Default is ``None`` (recalculates).
         symprec (float):
-            Symmetry tolerance for ``spglib`` to use when determining point
-            symmetries and thus orientational degeneracies. Default is ``0.1``
-            which matches that used by the ``Materials Project`` and is larger
-            than the ``pymatgen`` default of ``0.01`` to account for residual
-            structural noise in relaxed defect supercells. You may want to
-            adjust for your system (e.g. if there are very slight octahedral
-            distortions etc.).
+            Symmetry precision to use for determining symmetry operations and
+            thus point symmetries with ``spglib``, for the `relaxed` point
+            symmetry. Default is ``0.1`` which matches that used by the
+            ``Materials Project`` and is larger than the ``pymatgen`` default
+            of ``0.01`` to account for residual structural noise in relaxed
+            defect supercells. You may want to adjust for your system (e.g. if
+            there are very slight octahedral distortions etc.).
+            If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+            this value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
+        bulk_symprec (float):
+            Symmetry precision to use for determining symmetry operations and
+            thus point symmetries with ``spglib``, for the `unrelaxed` (bulk
+            site) point symmetry. Default is ``0.01`` which matches the
+            ``pymatgen`` default. You may want to adjust for your system (e.g.
+            if there are very slight octahedral distortions etc.).
+            If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+            this value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``,
+            such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
+            and ``verbose``.
 
     Returns:
         float: Orientational degeneracy factor for the defect.
@@ -3113,14 +3553,16 @@ def get_orientational_degeneracy(
             symm_ops=defect_symm_ops,  # defect not bulk symm_ops
             symprec=symprec,
             relaxed=True,  # relaxed
+            **kwargs,
         )
 
     if bulk_site_point_group is None:
         bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,  # type: ignore
             symm_ops=bulk_symm_ops,  # bulk not defect symm_ops
-            symprec=symprec,  # same symprec as relaxed_point_group for consistency
+            symprec=bulk_symprec,  # same default (None) as equiv_sites (-> multiplicity) for consistency
             relaxed=False,  # unrelaxed
+            **kwargs,
         )
 
     # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
@@ -3138,63 +3580,6 @@ def get_orientational_degeneracy(
     return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
         relaxed_point_group
     )
-
-
-def are_equivalent_sites(
-    s1: PeriodicSite, s2: PeriodicSite, structure: Structure, symprec: float = 0.01
-) -> bool:
-    """
-    Check if two periodic sites are symmetry-equivalent in the given
-    ``structure``.
-
-    Symmetry-equivalency is checked using the ``SymmetrizedStructure`` class
-    for vacancies and substitutions, or using the equivalent sites for
-    interstitials, along with ``doped`` efficiency functions for fast
-    comparisons.
-
-    This matches the approach taken for determining defect site multiplicities
-    (used in concentrations) and in ``group_defects_by_distance`` used in
-    ``doped.thermodynamics``.
-
-    Args:
-        s1 (PeriodicSite):
-            First periodic site.
-        s2 (PeriodicSite):
-            Second periodic site.
-        structure (Structure):
-            Structure in which to check for symmetry-equivalency between the
-            two input sites.
-        symprec (float):
-            Symmetry tolerance for ``spglib``. Default is 0.01.
-
-    Returns:
-        bool:
-            ``True`` if the sites are symmetry-equivalent, ``False`` otherwise.
-    """
-    host_struct = structure.copy()
-    if isinstance(s1.specie, Element) or isinstance(s2.specie, Element):
-        s1._specie = Element(s1.specie)
-        s2._specie = Element(s2.specie)
-        host_struct.remove_oxidation_states()
-
-    bulk_sga = get_sga(host_struct, symprec=symprec)
-    try:
-        symm_struct = bulk_sga.get_symmetrized_structure()  # could cache this for speed if needed?
-        return s2 in symm_struct.find_equivalent_sites(s1)
-
-    except ValueError:  # s1 not in symm_struct, possibly interstitial
-        if s2 in symm_struct:  # s2 not an interstitial though, return False
-            return False
-
-        s1_equiv_sites = get_all_equiv_sites(
-            s1.frac_coords,
-            host_struct,
-            symm_ops=bulk_sga.get_symmetry_operations(),
-            symprec=symprec,
-            dist_tol=symprec,
-            species=s1.species_string,
-        )
-        return s2 in s1_equiv_sites
 
 
 def is_periodic_image(
