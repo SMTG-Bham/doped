@@ -754,8 +754,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
             self._check_CdTe_example_dist_tol(defect_thermo, 4)  # 1.5 Å default
-            self._set_and_check_dist_tol(2.0, defect_thermo, 3)
-            self._set_and_check_dist_tol(1.0, defect_thermo, 5)
+            self._set_and_check_dist_tol(3.0, defect_thermo, 3)
+            self._set_and_check_dist_tol(1.0, defect_thermo, 4)
+            self._set_and_check_dist_tol(0.5, defect_thermo, 5)
 
         # test mismatching chempot warnings:
         print("Checking mismatching chempots")

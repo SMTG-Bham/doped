@@ -430,7 +430,8 @@ def group_defects_by_distance(
     # cluster numbers ``n`` to get unique cluster numbers, sort by cluster size to favour larger
     # clusters (see workflow comment above), using ``np.where(cn == n)[0]`` to get the indices of ``cn`` /
     # ``all_frac_coords`` which are in cluster ``n``:
-    cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol)
+    # centroid usually best method to avoid large daisy-chaining effects with many defects:
+    cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol, method="centroid")
     unique_clusters = sorted(set(cn), key=lambda n: len(np.where(cn == n)[0]), reverse=True)
 
     clustered_defect_entries: dict[int, set[DefectEntry]] = {}  # {cluster index: {DefectEntry, ...}}
