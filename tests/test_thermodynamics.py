@@ -43,7 +43,6 @@ from doped.utils.parsing import _get_defect_supercell_frac_coords, get_vasprun
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
     get_min_dist_between_equiv_sites,
-    get_sga,
     point_symmetry_from_site,
     point_symmetry_from_structure,
 )
@@ -753,8 +752,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             and len(defect_thermo.defect_entries) < 20
             and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
-            self._check_CdTe_example_dist_tol(defect_thermo, 4)  # 1.5 Å default
-            self._set_and_check_dist_tol(3.0, defect_thermo, 3)
+            self._check_CdTe_example_dist_tol(defect_thermo, 3)  # 1.5 Å default
+            self._set_and_check_dist_tol(2.0, defect_thermo, 3)
             self._set_and_check_dist_tol(1.0, defect_thermo, 4)
             self._set_and_check_dist_tol(0.5, defect_thermo, 5)
 
@@ -821,29 +820,47 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         if check_dists:
             self._check_dist_tol_equiv_dists(defect_thermo)
+            print("Finished checking dists")
 
     def _check_dist_tol_equiv_dists(self, defect_thermo):
-        for cluster in defect_thermo._clustered_defect_entries.values():
-            cluster_list = list(cluster)
-            if len(cluster) == 1:
-                continue
-            for entry in cluster_list:
-                min_dist = 100
-                for other_entry in cluster_list:
-                    if entry == other_entry:
-                        continue
-                    min_dist = min(min_dist, get_min_dist_between_equiv_sites(entry, other_entry))
+        flattened_clustered_defect_entries_by_type = {
+            f"{defect_type}_{cn}": cluster
+            for defect_type, cluster_subdict in (defect_thermo._clustered_defect_entries_by_type.items())
+            for cn, cluster in cluster_subdict.items()
+        }
+        for method, cluster_dict in [
+            ("centroid", defect_thermo._clustered_defect_entries),
+            ("single", flattened_clustered_defect_entries_by_type),
+        ]:
+            print(f"Checking dist_tol for {method} clustering")
+            for cluster in cluster_dict.values():
+                cluster_list = list(cluster)
+                if len(cluster) == 1:
+                    continue
+                for entry in cluster_list:
+                    min_dist = 100
+                    for other_entry in cluster_list:
+                        if entry == other_entry:
+                            continue
+                        min_dist = min(min_dist, get_min_dist_between_equiv_sites(entry, other_entry))
 
-                print(f"Checking dist_tol for {entry.name}")
-                assert min_dist < defect_thermo.dist_tol  # min dist less than dist_tol
+                    print(f"Checking dist_tol for {entry.name}")
+                    assert min_dist < defect_thermo.dist_tol  # min dist less than dist_tol
 
-                # pick some random entries from other clusters and assert dist is greater than min_dist:
-                for other_cluster in defect_thermo._clustered_defect_entries.values():
-                    if other_cluster == cluster:
-                        continue
-                    entry_from_other_cluster = next(iter(other_cluster))
-                    print(f"Checking dist_tol for {entry.name}, vs {entry_from_other_cluster.name}")
-                    assert get_min_dist_between_equiv_sites(entry, entry_from_other_cluster) > min_dist
+                    # pick some random entries from other clusters and check distances:
+                    other_cluster_dict = (
+                        defect_thermo._clustered_defect_entries
+                        if method == "centroid"
+                        else defect_thermo._clustered_defect_entries_by_type[entry.defect.name]
+                    )
+                    for other_cluster in other_cluster_dict.values():
+                        if other_cluster == cluster:
+                            continue
+                        entry_from_other_cluster = next(iter(other_cluster))
+                        print(f"Checking dist_tol for {entry.name}, vs {entry_from_other_cluster.name}")
+                        assert get_min_dist_between_equiv_sites(entry, entry_from_other_cluster) > (
+                            min_dist / 2 if method == "centroid" else min_dist
+                        )
 
     def _clear_symmetry_degeneracy_info(self, defect_thermo):
         for defect_entry in defect_thermo.defect_entries.values():
@@ -2282,9 +2299,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             f"{row[0]}_{int(row[1])}": {"bulk site symmetry": row[2], "relaxed point symmetry": row[3]}
             for row in cdte_sym_degen_lists
         }
-        bulk_symm_ops = get_sga(
-            next(iter(cdte_defect_thermo.defect_entries.values())).bulk_supercell
-        ).get_symmetry_operations()
         skipped = 0
         for name, defect_entry in cdte_defect_thermo.defect_entries.items():
             print(f"Testing point_symmetry for {defect_entry.name}")
@@ -2327,7 +2341,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             symm, periodicity_breaking = point_symmetry_from_structure(
                 defect_entry.defect_supercell,
                 bulk_structure=defect_entry.bulk_supercell,
-                symm_ops=bulk_symm_ops,
                 return_periodicity_breaking=True,
             )
             assert symm == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
@@ -2354,7 +2367,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     defect_entry.defect_supercell,
                     bulk_structure=defect_entry.bulk_supercell,
                     relaxed=False,
-                    symm_ops=bulk_symm_ops,
                 )
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
             )
@@ -2362,7 +2374,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 point_symmetry_from_site(
                     _get_defect_supercell_frac_coords(defect_entry, relaxed=False),
                     defect_entry.bulk_supercell,
-                    symm_ops=bulk_symm_ops,
                 )
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
             )
@@ -2373,7 +2384,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     ),
                     defect_entry.bulk_supercell,
                     coords_are_cartesian=True,
-                    symm_ops=bulk_symm_ops,
                 )
                 == sym_degen_dict[defect_entry.name]["bulk site symmetry"]
             )

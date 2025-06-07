@@ -255,7 +255,10 @@ def raw_energy_from_chempots(composition: str | dict | Composition, chempots: di
 
 
 def group_defects_by_type_and_distance(
-    defect_entries: list[DefectEntry], dist_tol: float = 1.5, symprec: float = 0.1
+    defect_entries: list[DefectEntry],
+    dist_tol: float = 1.5,
+    symprec: float = 0.1,
+    method: str = "single",
 ) -> dict[str, dict[int, set[DefectEntry]]]:
     """
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
@@ -293,6 +296,12 @@ def group_defects_by_type_and_distance(
             supercell, for site clustering. Default is 0.1 (matching ``doped``
             default for point symmetry determination for relaxed defect
             supercells).
+        method (str):
+            Clustering algorithm to use with the ``scipy`` ``linkage()``
+            function. Default is ``"single"`` (equivalent to the Nearest Point
+            algorithm; recommended choice when dealing with small numbers of
+            defects (i.e. when subdivided by defect type), but can be prone to
+            daisy-chaining effects).
 
     Returns:
         dict:
@@ -310,13 +319,17 @@ def group_defects_by_type_and_distance(
             [entry for entry in defect_entries if entry.defect.name == defect_name],
             dist_tol=dist_tol,
             symprec=symprec,
+            method=method,
         )
 
     return defect_type_cluster_dict
 
 
 def group_defects_by_distance(
-    entry_list: list[DefectEntry], dist_tol: float = 1.5, symprec: float = 0.1
+    entry_list: list[DefectEntry],
+    dist_tol: float = 1.5,
+    symprec: float = 0.1,
+    method: str = "centroid",
 ) -> dict[int, set[DefectEntry]]:
     r"""
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
@@ -354,6 +367,10 @@ def group_defects_by_distance(
             supercell, for site clustering. Default is 0.1 (matching ``doped``
             default for point symmetry determination for relaxed defect
             supercells).
+        method (str):
+            Clustering algorithm to use with the ``scipy`` ``linkage()``
+            function. Default is ``"centroid"`` (typically best when handling
+            many defects, avoiding large daisy-chaining effects).
 
     Returns:
         dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
@@ -431,7 +448,7 @@ def group_defects_by_distance(
     # clusters (see workflow comment above), using ``np.where(cn == n)[0]`` to get the indices of ``cn`` /
     # ``all_frac_coords`` which are in cluster ``n``:
     # centroid usually best method to avoid large daisy-chaining effects with many defects:
-    cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol, method="centroid")
+    cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol, method=method)
     unique_clusters = sorted(set(cn), key=lambda n: len(np.where(cn == n)[0]), reverse=True)
 
     clustered_defect_entries: dict[int, set[DefectEntry]] = {}  # {cluster index: {DefectEntry, ...}}
