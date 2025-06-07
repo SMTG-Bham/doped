@@ -627,7 +627,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         aren't, so ``_a`` & ``_b`` are appended to those names.
         """
         thermo = deepcopy(self.Se_ext_no_pnict_thermo)  # don't overwrite
-        thermo.dist_tol = 1.25  # so O_i interstitials are kept separate
+        thermo.dist_tol = 1.45  # keeps O_i sites separate but merges F/Cl/Br_i
         fig = thermo.plot()
         legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
         print(legend_txt)

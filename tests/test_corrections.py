@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import matplotlib as mpl
 import numpy as np
-import pytest
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
+from test_thermodynamics import custom_mpl_image_compare
 
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
@@ -214,24 +214,14 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             dielectric=9.13,
         )
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="v_Cd_-2_FNV_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("v_Cd_-2_FNV_plot.png")
     def test_plot_freysoldt(self):
         """
         Test FNV correction plotting.
         """
         return get_freysoldt_correction(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True)[1]
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="v_Cd_-2_FNV_plot_custom.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("v_Cd_-2_FNV_plot_custom.png")
     def test_plot_freysoldt_custom(self):
         """
         Test FNV correction plotting, with customisation.
@@ -252,12 +242,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
 
         return fig
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="F_O_+1_eFNV_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("F_O_+1_eFNV_plot.png")
     def test_plot_kumagai(self):
         """
         Test eFNV correction plotting.
@@ -267,12 +252,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         assert np.isclose(corr.correction_energy, 0.12691248591191384)
         return fig
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="F_O_+1_eFNV_wacky_region_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("F_O_+1_eFNV_wacky_region_plot.png")
     def test_plot_kumagai_adjusted_sampling_region(self):
         """
         Test eFNV correction plotting, with an adjusted sampling region.
@@ -291,12 +271,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         )  # correction error unchanged as correction not applied
         return fig
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="F_O_+1_eFNV_plot_custom.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("F_O_+1_eFNV_plot_custom.png")
     def test_plot_kumagai_custom(self):
         """
         Test eFNV correction plotting, with figure customisation.
@@ -309,12 +284,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
 
         return fig
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="F_O_+1_eFNV_plot_excluded.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("F_O_+1_eFNV_plot_excluded.png")
     def test_plot_kumagai_excluded(self):
         """
         Test eFNV correction plotting and correction, with excluded_indices
@@ -351,12 +321,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         )  # correction now applied to DefectEntry when using DefectEntry.get_kumagai_correction()
         return fig
 
-    @pytest.mark.mpl_image_compare(
-        baseline_dir=f"{data_dir}/remote_baseline_plots",
-        filename="Te_i_+2_eFNV_plot.png",
-        style=f"{module_path}/../doped/utils/doped.mplstyle",
-        savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-    )
+    @custom_mpl_image_compare("Te_i_+2_eFNV_plot.png")
     def test_plot_kumagai_Te_i_2(self):
         """
         Test eFNV correction plotting with Te_i^+2 (slightly trickier defect

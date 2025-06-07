@@ -883,6 +883,9 @@ def _raw_get_all_equiv_sites(
         equiv_sites = _get_equiv_sites_with_given_symprec(
             symprec, dist_tol_factor, symm_ops=symm_ops, just_frac_coords=just_frac_coords
         )
+        return (
+            (equiv_sites, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else equiv_sites
+        )
 
     # the choice of equivalent sites should give consistent site symmetries for each equivalent site (using
     # the same ``symprec`` as for generation), however this is sometimes not the case (due to small
@@ -1364,6 +1367,9 @@ def get_equiv_frac_coords_in_primitive(
                 ltol=adjusted_trial_symprec,
                 atol=100 * adjusted_trial_symprec,  # default is 1
             )
+        if fixed_symprec_and_dist_tol_factor:
+            break  # just take first attempt
+
         if rotated_struct is not None:
             symprec = adjusted_trial_symprec
             dist_tol_factor = adjusted_trial_dist_tol_factor
@@ -1830,21 +1836,20 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
     Returns:
         tuple: Tuple of sorting criteria values.
     """
-    is_diagonal = np.allclose(lattice_matrix, np.diag(np.diag(lattice_matrix)))
-    symmetric = np.allclose(lattice_matrix, lattice_matrix.T)
+
+    def is_symmetric(matrix: np.ndarray, tol: float = 1e-3) -> bool:
+        iu = np.triu_indices_from(matrix, k=1)  # indices of upper triangle of matrix
+        return np.all(np.abs(matrix[iu] - matrix.T[iu]) <= tol)
+
+    is_diagonal = np.all(np.abs(lattice_matrix[~np.eye(3, dtype=bool)]) < 1e-3)
+    symmetric = is_diagonal or is_symmetric(lattice_matrix)
     num_negs = np.sum(lattice_matrix < 0)
     diag_sum = np.round(np.sum(np.abs(np.diag(lattice_matrix))), 1)
-    flat_matrix = lattice_matrix.flatten()
-    num_equals = sum(
-        flat_matrix[i] == flat_matrix[j]
-        for i in range(len(flat_matrix))
-        for j in range(i, len(flat_matrix))
-    )  # double (square) counting, but doesn't matter (sorting behaviour the same)
-    num_abs_equals = sum(
-        abs(flat_matrix[i]) == abs(flat_matrix[j])
-        for i in range(len(flat_matrix))
-        for j in range(i, len(flat_matrix))
-    )  # double (square) counting, but doesn't matter (sorting behaviour the same)
+    flat_matrix = lattice_matrix.ravel()
+    unique_vals, counts = np.unique(flat_matrix, return_counts=True)
+    num_equals = np.sum(counts * (counts + 1) // 2)
+    abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
+    num_abs_equals = np.sum(abs_counts * (abs_counts + 1) // 2)
     a, b, c = np.linalg.norm(lattice_matrix, axis=1)
 
     return (

@@ -753,9 +753,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             and len(defect_thermo.defect_entries) < 20
             and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
-            self._check_CdTe_example_dist_tol(defect_thermo, 3)
-            self._set_and_check_dist_tol(1.0, defect_thermo, 4)
-            self._set_and_check_dist_tol(0.5, defect_thermo, 5)
+            self._check_CdTe_example_dist_tol(defect_thermo, 4)  # 1.5 Å default
+            self._set_and_check_dist_tol(2.0, defect_thermo, 3)
+            self._set_and_check_dist_tol(1.0, defect_thermo, 5)
 
         # test mismatching chempot warnings:
         print("Checking mismatching chempots")
@@ -807,8 +807,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def _check_CdTe_example_dist_tol(self, defect_thermo, num_grouped_defects):
         print(f"Testing CdTe updated dist_tol: {defect_thermo.dist_tol}")
-        tl_df = defect_thermo.get_transition_levels()
-        assert tl_df.shape == (num_grouped_defects, 2)
         # number of entries in Figure label (i.e. grouped defects)
         assert len(defect_thermo.plot().get_axes()[0].get_legend().get_texts()) == num_grouped_defects
 
@@ -1362,33 +1360,28 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert list(non_formatted_sym_degen_df.index.to_numpy()[i]) == row[:2]
 
     def _check_YTOS_symmetries_degeneracies(self, YTOS_defect_thermo: DefectThermodynamics):
+        # this behaviour is also tested extensively in ``test_analysis.py``;
+        # ``test_bulk_symprec_and_periodicity_breaking_checks``
         sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
             YTOS_defect_thermo.get_symmetries_and_degeneracies
         )
         # hardcoded tests to ensure symmetry determination working as expected:
-        assert any(
-            list(sym_degen_df.iloc[i]) == ["C1", "C4v", 0.125, 1, 0.125, 2.0]
-            for i in range(sym_degen_df.shape[0])
-        )
-        assert any(
-            list(sym_degen_df.index.to_numpy()[i]) == ["Int_F", "-1"] for i in range(sym_degen_df.shape[0])
-        )
+        assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["C4v", "C4v", 1.0, 1, 1.0, 2.0]
 
         sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
             YTOS_defect_thermo.get_symmetries_and_degeneracies, symprec=0.1
         )
-        assert any(
-            list(sym_degen_df.iloc[i]) == ["C1", "C4v", 0.125, 1, 0.125, 2.0]
-            for i in range(sym_degen_df.shape[0])
-        )
+        assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["C4v", "C4v", 1.0, 1, 1.0, 2.0]
 
         sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
             YTOS_defect_thermo.get_symmetries_and_degeneracies, symprec=0.01
         )
-        assert any(
-            list(sym_degen_df.iloc[i]) == ["C1", "Cs", 0.5, 1, 0.5, 2.0]
-            for i in range(sym_degen_df.shape[0])
+        assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["C4v", "Cs", 4.0, 1, 4.0, 2.0]
+
+        sym_degen_df, _, _ = _run_func_and_capture_stdout_warnings(
+            YTOS_defect_thermo.get_symmetries_and_degeneracies, bulk_symprec=0.008
         )
+        assert list(sym_degen_df.loc[("Int_F", "-1")]) == ["Cs", "C4v", 0.25, 1, 0.25, 8.0]
 
     def _check_Sb2O5_symmetries_degeneracies(self, Sb2O5_defect_thermo: DefectThermodynamics):
         sym_degen_df = Sb2O5_defect_thermo.get_symmetries_and_degeneracies()
@@ -2196,79 +2189,92 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         # test "CdTe_defect_dict_old_names", regenerate thermo as calling symmetry methods above with
         # different symprec changes the saved symmetries:
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
-        sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
-        print(sym_degen_df)
-        assert sym_degen_df.shape == (50, 6)
-        assert list(sym_degen_df.columns) == [
-            "Site_Symm",
-            "Defect_Symm",
-            "g_Orient",
-            "g_Spin",
-            "g_Total",
-            "Mult",
-        ]
-        assert list(sym_degen_df.index.names) == ["Defect", "q"]
+        cdte_defect_dict_wout_parsed_site_info = deepcopy(cdte_defect_dict)
+        for entry in cdte_defect_dict_wout_parsed_site_info.values():
+            del entry.defect_supercell_site
+            entry.calculation_metadata = {}
+            entry.degeneracy_factors = {}
 
-        # hardcoded tests to ensure ordering is consistent (by defect type according to
-        # sort_defect_entries, then by charge state from left (most positive) to right (most negative),
-        cdte_sym_degen_lists = [  # manually checked by SK (see thesis pg. 146/7)
-            ["vac_1_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["vac_1_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
-            ["vac_1_Cd", "-2", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["vac_1_Cd_1_not_in_gap", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
-            ["vac_1_Cd_C2v_Bipolaron_S0", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["vac_1_Cd_C2v_Bipolaron_S1", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["vac_1_Cd_Td", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["vac_2_Te", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["vac_2_Te", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
-            ["vac_2_Te", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["vac_2_Te", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
-            ["vac_2_Te", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
-            ["vac_2_Te_C3v_low_energy_metastable", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
-            ["vac_2_Te_orig_metastable", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
-            ["vac_2_Te_orig_non_JT_distorted", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["vac_2_Te_shaken", "-2", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["vac_2_Te_unperturbed", "-2", "Td", "C2", 12.0, 1, 12.0, 1.0],
-            ["as_1_Cd_on_Te", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["as_1_Cd_on_Te", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
-            ["as_1_Cd_on_Te", "0", "Td", "Cs", 12.0, 1, 12.0, 1.0],
-            ["as_1_Cd_on_Te", "-1", "Td", "Td", 1.0, 2, 2.0, 1.0],
-            ["as_1_Cd_on_Te", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
-            ["as_2_Cd_on_Te_metastable", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
-            ["as_2_Cd_on_Te_orig_C2v", "0", "Td", "D2d", 3.0, 1, 3.0, 1.0],
-            ["as_1_Te_on_Cd", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["as_1_Te_on_Cd", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
-            ["as_1_Te_on_Cd", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
-            ["as_1_Te_on_Cd", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
-            ["as_1_Te_on_Cd", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
-            ["as_2_Te_on_Cd_C1_meta", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
-            ["as_2_Te_on_Cd_C2v_meta", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
-            ["as_2_Te_on_Cd_C3v_metastable", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
-            ["as_2_Te_on_Cd_Cs_meta", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
-            ["as_2_Te_on_Cd_metastable1", "-1", "Td", "C1", 24.0, 2, 48.0, 1.0],
-            ["as_2_Te_on_Cd_metastable2", "-1", "Td", "C1", 24.0, 2, 48.0, 1.0],
-            ["Int_Cd_1", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["Int_Cd_1", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
-            ["Int_Cd_1", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["Int_Cd_3", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["Int_Cd_3", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
-            ["Int_Cd_3", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
-            ["Int_Te_3", "+2", "C1", "Cs", 0.5, 1, 0.5, 24.0],
-            ["Int_Te_3", "+1", "Cs", "C2v", 0.5, 2, 1.0, 12.0],
-            ["Int_Te_3", "0", "C1", "C2", 0.5, 1, 0.5, 24.0],
-            ["Int_Te_3", "-1", "C1", "C2", 0.5, 2, 1.0, 24.0],
-            ["Int_Te_3", "-2", "C1", "C2", 0.5, 1, 0.5, 24.0],
-            # with previous parsing (-> symprec = 0.2); gives C3v (also with symprec=0.15), but C3 with
-            # symprec=0.1 (new default):
-            ["Int_Te_3_C3v_meta", "+2", "C1", "C3v", 0.16666666666666666, 1, 0.16666666666666666, 24.0],
-            ["Int_Te_3_orig_dimer_meta", "+2", "C1", "C2", 0.5, 1, 0.5, 24.0],
-            ["Int_Te_3_unperturbed", "+1", "C1", "Cs", 0.5, 2, 1.0, 24.0],
-            ["Int_Te_3_unperturbed", "0", "Cs", "C2v", 0.5, 1, 0.5, 12.0],
-        ]
-        for i, row in enumerate(cdte_sym_degen_lists):
-            print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row[2:]
-            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+        cdte_thermo_wout_parsed_site_info = DefectThermodynamics(
+            cdte_defect_dict_wout_parsed_site_info,
+            vbm=cdte_defect_thermo.vbm,
+            band_gap=cdte_defect_thermo.band_gap,
+        )
+
+        for cdte_thermo_for_symm_analysis in [cdte_defect_thermo, cdte_thermo_wout_parsed_site_info]:
+            sym_degen_df = cdte_thermo_for_symm_analysis.get_symmetries_and_degeneracies()
+            print(sym_degen_df)
+            assert sym_degen_df.shape == (50, 6)
+            assert list(sym_degen_df.columns) == [
+                "Site_Symm",
+                "Defect_Symm",
+                "g_Orient",
+                "g_Spin",
+                "g_Total",
+                "Mult",
+            ]
+            assert list(sym_degen_df.index.names) == ["Defect", "q"]
+
+            # hardcoded tests to ensure ordering is consistent (by defect type according to
+            # sort_defect_entries, then by charge state from left (most positive) to right (most negative),
+            cdte_sym_degen_lists = [  # manually checked by SK (see thesis pg. 146/7)
+                ["vac_1_Cd", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+                ["vac_1_Cd", "-1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+                ["vac_1_Cd", "-2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["vac_1_Cd_1_not_in_gap", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+                ["vac_1_Cd_C2v_Bipolaron_S0", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+                ["vac_1_Cd_C2v_Bipolaron_S1", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+                ["vac_1_Cd_Td", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["vac_2_Te", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["vac_2_Te", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+                ["vac_2_Te", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+                ["vac_2_Te", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
+                ["vac_2_Te", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+                ["vac_2_Te_C3v_low_energy_metastable", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
+                ["vac_2_Te_orig_metastable", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
+                ["vac_2_Te_orig_non_JT_distorted", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["vac_2_Te_shaken", "-2", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+                ["vac_2_Te_unperturbed", "-2", "Td", "C2", 12.0, 1, 12.0, 1.0],
+                ["as_1_Cd_on_Te", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["as_1_Cd_on_Te", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
+                ["as_1_Cd_on_Te", "0", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+                ["as_1_Cd_on_Te", "-1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+                ["as_1_Cd_on_Te", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
+                ["as_2_Cd_on_Te_metastable", "0", "Td", "C2v", 6.0, 1, 6.0, 1.0],
+                ["as_2_Cd_on_Te_orig_C2v", "0", "Td", "D2d", 3.0, 1, 3.0, 1.0],
+                ["as_1_Te_on_Cd", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["as_1_Te_on_Cd", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+                ["as_1_Te_on_Cd", "0", "Td", "C3v", 4.0, 1, 4.0, 1.0],
+                ["as_1_Te_on_Cd", "-1", "Td", "Cs", 12.0, 2, 24.0, 1.0],
+                ["as_1_Te_on_Cd", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+                ["as_2_Te_on_Cd_C1_meta", "-2", "Td", "C1", 24.0, 1, 24.0, 1.0],
+                ["as_2_Te_on_Cd_C2v_meta", "+1", "Td", "C2v", 6.0, 2, 12.0, 1.0],
+                ["as_2_Te_on_Cd_C3v_metastable", "+1", "Td", "C3v", 4.0, 2, 8.0, 1.0],
+                ["as_2_Te_on_Cd_Cs_meta", "-2", "Td", "Cs", 12.0, 1, 12.0, 1.0],
+                ["as_2_Te_on_Cd_metastable1", "-1", "Td", "C1", 24.0, 2, 48.0, 1.0],
+                ["as_2_Te_on_Cd_metastable2", "-1", "Td", "C1", 24.0, 2, 48.0, 1.0],
+                ["Int_Cd_1", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["Int_Cd_1", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+                ["Int_Cd_1", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["Int_Cd_3", "+2", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["Int_Cd_3", "+1", "Td", "Td", 1.0, 2, 2.0, 1.0],
+                ["Int_Cd_3", "0", "Td", "Td", 1.0, 1, 1.0, 1.0],
+                ["Int_Te_3", "+2", "C1", "Cs", 0.5, 1, 0.5, 24.0],
+                ["Int_Te_3", "+1", "Cs", "C2v", 0.5, 2, 1.0, 12.0],
+                ["Int_Te_3", "0", "C1", "C2", 0.5, 1, 0.5, 24.0],
+                ["Int_Te_3", "-1", "C1", "C2", 0.5, 2, 1.0, 24.0],
+                ["Int_Te_3", "-2", "C1", "C2", 0.5, 1, 0.5, 24.0],
+                # with previous parsing (-> symprec = 0.2); gives C3v (also with symprec=0.15), but C3 with
+                # symprec=0.1 (new default):
+                ["Int_Te_3_C3v_meta", "+2", "C1", "C3", 0.3333333333333333, 1, 0.3333333333333333, 24.0],
+                ["Int_Te_3_orig_dimer_meta", "+2", "C1", "C2", 0.5, 1, 0.5, 24.0],
+                ["Int_Te_3_unperturbed", "+1", "C1", "Cs", 0.5, 2, 1.0, 24.0],
+                ["Int_Te_3_unperturbed", "0", "Cs", "Cs", 1.0, 1, 1.0, 12.0],
+            ]
+            for i, row in enumerate(cdte_sym_degen_lists):
+                print(i, row)
+                assert list(sym_degen_df.iloc[i]) == row[2:]
+                assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
 
         # test with direct use of point_symmetry_from_structure function:
         sym_degen_dict = {
@@ -2317,14 +2323,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 )
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )
-            symm, matching = point_symmetry_from_structure(
+            symm, periodicity_breaking = point_symmetry_from_structure(
                 defect_entry.defect_supercell,
                 bulk_structure=defect_entry.bulk_supercell,
                 symm_ops=bulk_symm_ops,
                 return_periodicity_breaking=True,
             )
             assert symm == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
-            assert not matching
+            assert not periodicity_breaking
 
             assert (
                 point_symmetry_from_structure(
