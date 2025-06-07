@@ -40,6 +40,7 @@ from doped.core import (
     _orientational_degeneracy_warning,
 )
 from doped.generation import sort_defect_entries
+from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
@@ -140,7 +141,6 @@ def _update_old_chempots_dict(chempots: dict | None = None) -> dict | None:
     Also replaces any usages of ``"elt_refs"`` with ``"el_refs"``.
     """
     if chempots is not None and any("facets" in key or "elt_refs" in key for key in chempots):
-        chempots = deepcopy(chempots)  # don't modify original dict, only deepcopy if needed
         for key in list(chempots.keys()):
             chempots[key.replace("elt_refs", "el_refs").replace("facets", "limits")] = chempots.pop(key)
 
@@ -165,8 +165,6 @@ def _parse_chempots(
                 "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!"
             )
 
-    chempots = _update_old_chempots_dict(chempots)  # this deepcopies, making sure we don't overwrite
-
     if chempots is None:
         if el_refs is not None:
             chempots = {
@@ -176,6 +174,10 @@ def _parse_chempots(
             }
 
         return chempots, el_refs
+
+    chempots = _fast_dict_deepcopy_max_two_levels(chempots)  # deep copy to avoid overwriting original
+    chempots = _update_old_chempots_dict(chempots)
+    assert chempots is not None  # typing
 
     if "limits_wrt_el_refs" in chempots:  # doped format
         if not update_el_refs:

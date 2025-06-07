@@ -99,10 +99,55 @@ def _Composition__eq__(self, other):
 class Hashabledict(dict):
     def __hash__(self):
         """
-        Make the dictionary hashable by converting it to a tuple of key-value
-        pairs.
+        Make the dictionary hashable by recursively "freezing" into only
+        hashable built-ins, then hash that.
+
+        Handles nested dicts, lists, sets, tuples, etc.
         """
-        return hash(frozenset(self.items()))
+
+        def _freeze(obj):
+            if isinstance(obj, dict):  # convert to frozenset of tuples
+                return frozenset((k, _freeze(v)) for k, v in obj.items())
+            if isinstance(obj, list):  # lists → tuples
+                return tuple(_freeze(v) for v in obj)
+            if isinstance(obj, set):  # sets → frozensets
+                return frozenset(_freeze(v) for v in obj)
+            if isinstance(obj, tuple):  # tuples → tuples of frozen values
+                return tuple(_freeze(v) for v in obj)
+            # else assume it's already hashable (int, str, custom …)
+            return obj
+
+        return hash(_freeze(self))
+
+
+def _get_hashable_dict(d: dict) -> Hashabledict:
+    if isinstance(d, Hashabledict):
+        return d
+    if isinstance(d, dict):
+        return Hashabledict(d)  # convert to hashable dict for caching purposes
+    return d
+
+
+def _fast_dict_deepcopy_max_two_levels(d: dict) -> dict:
+    """
+    Fast deepcopy of a dict with at most two levels of nested dicts (i.e. d →
+    dict → dict → values).
+
+    Implemented to allow fast deep-copying of nested chemical potential dicts,
+    avoiding the overhead of `deepcopy` when looping over many chemical
+    potential dicts.
+    """
+    return {
+        k: (
+            {
+                k2: (v2.copy() if isinstance(v2, dict) else v2)  # final level, shallow copy sufficient
+                for k2, v2 in v1.items()
+            }
+            if isinstance(v1, dict)
+            else v1
+        )
+        for k, v1 in d.items()
+    }
 
 
 @lru_cache(maxsize=int(1e5))
@@ -111,9 +156,7 @@ def _cached_Composition_init(comp_input):
 
 
 def _cache_ready_Composition_init(comp_input):
-    if isinstance(comp_input, dict) and not isinstance(comp_input, Hashabledict):
-        comp_input = Hashabledict(comp_input)  # convert to hashable to make use of caching
-    return _cached_Composition_init(comp_input)
+    return _cached_Composition_init(_get_hashable_dict(comp_input))
 
 
 def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
@@ -359,7 +402,7 @@ _original_get_symmetry_operations = SpacegroupAnalyzer.get_symmetry_operations
 
 
 @lru_cache(maxsize=int(1e3))
-def get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
+def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
     """
     Get the symmetry operations associated with the structure.
 
@@ -370,6 +413,7 @@ def get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
 
 SpacegroupAnalyzer.__hash__ = _sga__hash__
 SpacegroupAnalyzer._get_symmetry = _get_symmetry
+SpacegroupAnalyzer.get_symmetry_operations = _get_symmetry_operations
 
 
 def _get_symbol(element: Element | Species, comparator: AbstractComparator | None = None) -> str:
