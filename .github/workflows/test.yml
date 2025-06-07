@@ -38,13 +38,13 @@ jobs:
         if: always()  # run even if non-plotting tests fail
         id: plotting_tests  # Add an ID to this step for reference
         run: |
-          pytest --mpl -m "mpl_image_compare" tests  # all plotting tests
+          pytest -vv --mpl -m "mpl_image_compare" tests  # all plotting tests
           
       - name: Generate GH Actions test plots
         if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
         run: |
           # Generate the test plots in case there were any failures:
-          pytest --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" tests
+          pytest -vv --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" tests
 
       # Upload test plots
       - name: Archive test plots
