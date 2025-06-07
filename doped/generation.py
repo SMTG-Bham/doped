@@ -289,17 +289,31 @@ def get_neighbour_distances_and_symbols(
                 )
                 for neigh in neighbours
             ],
-            key=lambda x: (symmetry._custom_round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
+            key=lambda x: (round(x[0], 2), _list_index_or_val(element_list, x[1]), x[1]),
         )
         neighbour_tuples = [  # prune site_distances to remove any with distances within 0.02 Å of the
-            # previous n:
+            # previous n (and the same element as the previous n):
             neighbour_tuples[i]
             for i in range(len(neighbour_tuples))
             if neighbour_tuples[i][0] > min_dist
-            and (
-                i == 0
-                or abs(neighbour_tuples[i][0] - neighbour_tuples[i - 1][0]) > 0.02
-                or neighbour_tuples[i][1] != neighbour_tuples[i - 1][1]
+            and i == 0
+            or neighbour_tuples[i][0] - neighbour_tuples[i - 1][0] > 0.02
+            or (
+                neighbour_tuples[i][1] != neighbour_tuples[i - 1][1]
+                and neighbour_tuples[  # check no prev occurrence of this elt within 0.02 Å (e.g. XdYdXd)
+                    i
+                ][0]
+                - max(
+                    [
+                        neighbour_tuple[0]
+                        for neighbour_tuple in neighbour_tuples[:i]
+                        if neighbour_tuple[1] == neighbour_tuples[i][1]
+                    ]
+                    or [
+                        0,
+                    ]
+                )
+                > 0.02
             )
         ][:n]
 
@@ -376,7 +390,7 @@ def closest_site_info(
         return ""  # min dist > 40, already warned in ``get_neighbour_distances_and_symbols``
 
     min_distance, closest_site = site_distances[n - 1]
-    return f"{closest_site}{symmetry._custom_round(min_distance, 2):.2f}"
+    return f"{closest_site}{min_distance:.2f}"
 
 
 def get_defect_name_from_defect(
@@ -1234,9 +1248,11 @@ def get_ideal_supercell_matrix(
             return cst.transformation_matrix
 
         except Exception:  # cubic supercell generation failed, used doped algorithm
-            print("Could not find a suitable cubic supercell within the limits: ")
-            print(f"min_atoms = {min_atoms}, min_image_distance = {min_image_distance}")
-            print("Attempting doped supercell generation algorithm...")
+            print(
+                f"Could not find a suitable cubic supercell within the limits:\nmin_atoms = {min_atoms}, "
+                f"min_image_distance = {min_image_distance}.\nAttempting doped supercell generation "
+                f"algorithm..."
+            )
 
     # get min (hypothetical) target_size from min_atoms and min_image_distance:
     min_target_size_from_atoms = int(np.ceil(min_atoms / len(structure)))
