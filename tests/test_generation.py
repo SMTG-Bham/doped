@@ -22,15 +22,15 @@ from ase.build import bulk, make_supercell
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core.structure import PeriodicSite, Species, Structure
+from pymatgen.analysis.structure_matcher import ElementComparator
+from pymatgen.core.structure import Species
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Poscar
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
 from doped.core import Defect, DefectEntry, Interstitial, Substitution, Vacancy
 from doped.generation import DefectsGenerator, get_defect_name_from_entry
+from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure, StructureMatcher
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
     get_BCS_conventional_structure,
@@ -671,8 +671,8 @@ Te_Cd_Cs_Te2.83Cd4.62Te5.42c   [+4,+3,+2,+1,0,-1,-2]  [0.444,0.222,0.222]  9b
 
 Interstitials                 Guessed Charges        Conv. Cell Coords    Wyckoff
 ----------------------------  ---------------------  -------------------  ---------
-Cd_i_C1_Cd2.71Te2.71Cd4.00a   [+2,+1,0]              [0.111,0.389,0.181]  18c
-Cd_i_C1_Cd2.71Te2.71Cd4.00b   [+2,+1,0]              [0.056,0.445,0.070]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.01a   [+2,+1,0]              [0.111,0.389,0.181]  18c
+Cd_i_C1_Cd2.71Te2.71Cd4.01b   [+2,+1,0]              [0.056,0.445,0.070]  18c
 Cd_i_C1_Cd2.71Te2.71Cd4.25a   [+2,+1,0]              [0.167,0.167,0.292]  18c
 Cd_i_C1_Cd2.71Te2.71Cd4.25b   [+2,+1,0]              [0.333,0.333,0.125]  18c
 Cd_i_C1_Cd2.71Te2.71Cd4.25c   [+2,+1,0]              [0.167,0.167,0.625]  18c
@@ -714,8 +714,8 @@ Cd_i_Cs_Te2.83Cd3.27Te5.42b   [+2,+1,0]              [0.222,0.111,0.278]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42c   [+2,+1,0]              [0.445,0.222,0.056]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42d   [+2,+1,0]              [0.222,0.445,0.278]  9b
 Cd_i_Cs_Te2.83Cd3.27Te5.42e   [+2,+1,0]              [0.555,0.111,0.278]  9b
-Te_i_C1_Cd2.71Te2.71Cd4.00a   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.389,0.181]  18c
-Te_i_C1_Cd2.71Te2.71Cd4.00b   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.445,0.070]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.01a   [+4,+3,+2,+1,0,-1,-2]  [0.111,0.389,0.181]  18c
+Te_i_C1_Cd2.71Te2.71Cd4.01b   [+4,+3,+2,+1,0,-1,-2]  [0.056,0.445,0.070]  18c
 Te_i_C1_Cd2.71Te2.71Cd4.25a   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.292]  18c
 Te_i_C1_Cd2.71Te2.71Cd4.25b   [+4,+3,+2,+1,0,-1,-2]  [0.333,0.333,0.125]  18c
 Te_i_C1_Cd2.71Te2.71Cd4.25c   [+4,+3,+2,+1,0,-1,-2]  [0.167,0.167,0.625]  18c
@@ -953,9 +953,9 @@ Ag_i_C2_Ag1.95Se1.95Ag2.98a  [+2,+1,0]          [0.500,0.250,0.668]  2d
 Ag_i_C2_Ag1.95Se1.95Ag2.98b  [+2,+1,0]          [0.500,0.750,0.171]  2d
 Ag_i_C2_Ag2.01Se2.01Ag2.31   [+2,+1,0]          [0.341,0.500,0.500]  2b
 Ag_i_C2_Ag2.01Se2.01Ag2.33   [+2,+1,0]          [0.665,0.000,0.000]  2a
-Ag_i_C2_Ag2.02Se2.02Ag2.88   [+2,+1,0]          [0.500,0.250,0.184]  2d
-Ag_i_C2_Ag2.02Se2.02Ag2.89   [+2,+1,0]          [0.500,0.250,0.319]  2d
-Ag_i_C2_Ag2.38               [+2,+1,0]          [0.000,0.750,0.002]  2c
+Ag_i_C2_Ag2.02               [+2,+1,0]          [0.500,0.250,0.184]  2d
+Ag_i_C2_Ag2.03               [+2,+1,0]          [0.500,0.250,0.319]  2d
+Ag_i_C2_Ag2.37               [+2,+1,0]          [0.000,0.750,0.002]  2c
 Ag_i_C2_Ag2.45               [+2,+1,0]          [0.899,0.000,0.000]  2a
 Ag_i_C2_Ag2.48               [+2,+1,0]          [0.091,0.500,0.500]  2b
 Se_i_C1                      [0,-1,-2]          [0.435,0.123,0.251]  4e
@@ -963,9 +963,9 @@ Se_i_C2_Ag1.95Se1.95Ag2.98a  [0,-1,-2]          [0.500,0.250,0.668]  2d
 Se_i_C2_Ag1.95Se1.95Ag2.98b  [0,-1,-2]          [0.500,0.750,0.171]  2d
 Se_i_C2_Ag2.01Se2.01Ag2.31   [0,-1,-2]          [0.341,0.500,0.500]  2b
 Se_i_C2_Ag2.01Se2.01Ag2.33   [0,-1,-2]          [0.665,0.000,0.000]  2a
-Se_i_C2_Ag2.02Se2.02Ag2.88   [0,-1,-2]          [0.500,0.250,0.184]  2d
-Se_i_C2_Ag2.02Se2.02Ag2.89   [0,-1,-2]          [0.500,0.250,0.319]  2d
-Se_i_C2_Ag2.38               [0,-1,-2]          [0.000,0.750,0.002]  2c
+Se_i_C2_Ag2.02               [0,-1,-2]          [0.500,0.250,0.184]  2d
+Se_i_C2_Ag2.03               [0,-1,-2]          [0.500,0.250,0.319]  2d
+Se_i_C2_Ag2.37               [0,-1,-2]          [0.000,0.750,0.002]  2c
 Se_i_C2_Ag2.45               [0,-1,-2]          [0.899,0.000,0.000]  2a
 Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
 \n"""
@@ -3279,7 +3279,6 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             warnings.resetwarnings()
             # suggested check function in `get_defect_name_from_entry`:
             for defect_name, defect_entry in sb2se3_defect_gen.items():
-                print(defect_name)
                 unrelaxed_name = get_defect_name_from_entry(defect_entry, relaxed=False)
                 relaxed_name = get_defect_name_from_entry(defect_entry)
                 print(defect_name, unrelaxed_name, relaxed_name)
@@ -3778,13 +3777,13 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
             "Na_i_C3v_Cd4.25Te4.25Cd6.28a  [+1,0]             [0.333,0.667,0.168]  1a",
             "Na_i_C3v_Cd4.25Te4.25Cd6.28b  [+1,0]             [0.667,0.333,0.835]  1a",
             "Na_i_C3v_Cd7.57Te7.57Cd8.02   [+1,0]             [0.333,0.667,0.001]  1a",
-            "Na_i_C3v_Cd7.57Te7.57Te8.03   [+1,0]             [0.667,0.333,0.001]  1a",
+            "Na_i_C3v_Cd7.57Te7.57Te8.02   [+1,0]             [0.667,0.333,0.001]  1a",
             "Na_i_C3v_Te2.00               [+1,0]             [0.000,0.000,0.226]  1a",
             "Na_i_C3v_Te2.83Cd3.27Te5.42a  [+1,0]             [0.000,0.000,0.439]  1a",
             "Na_i_C3v_Te2.83Cd3.27Te5.42b  [+1,0]             [0.333,0.667,0.606]  1a",
             "Na_i_C3v_Te3.34               [+1,0]             [0.667,0.333,0.226]  1a",
-            "Na_i_Cs_Cd2.71Te2.71Cd2.71    [+1,0]             [0.333,0.167,0.418]  3d",
-            "Na_i_Cs_Cd2.71Te2.71Cd4.25    [+1,0]             [0.167,0.333,0.585]  3d",
+            "Na_i_Cs_Cd2.71Te2.71Cd4.25a   [+1,0]             [0.333,0.167,0.418]  3d",
+            "Na_i_Cs_Cd2.71Te2.71Cd4.25b   [+1,0]             [0.167,0.333,0.585]  3d",
             "Na_i_Cs_Te3.06                [+1,0]             [0.500,0.500,0.226]  3d",
         ]:
             print(i)

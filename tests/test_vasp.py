@@ -16,12 +16,12 @@ import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
 from monty.serialization import loadfn
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core.structure import Structure
+from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_generation import _compare_attributes, if_present_rm
 
 from doped.generation import DefectsGenerator
+from doped.utils.efficiency import Structure, StructureMatcher
 from doped.vasp import (
     DefectDictSet,
     DefectRelaxSet,
