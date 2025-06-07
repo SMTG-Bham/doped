@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "3.0.0"
+version = "3.1.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "skavanagh@seas.harvard.edu"}]
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2025.5.2",  # breaking changes to MPRester (mp-api dropped)
+    "pymatgen>=2025.5.28",  # breaking changes to MPRester (mp-api dropped), and UFloat handling
     "pymatgen-analysis-defects>=2023.8.22",
     "shakenbreak>=3.4",  # oxi-state functions renaming, and doped StructureMatcher efficiency updates
     "ase",  # required by ShakeNBreak anyway
