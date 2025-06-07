@@ -63,7 +63,6 @@ from doped.utils.symmetry import (
     get_equiv_frac_coords_in_primitive,
     get_orientational_degeneracy,
     get_primitive_structure,
-    get_sga,
     point_symmetry_from_defect_entry,
 )
 
@@ -128,7 +127,8 @@ def _convert_anisotropic_dielectric_to_isotropic_harmonic_mean(
 
 
 def check_and_set_defect_entry_name(
-    defect_entry: DefectEntry, possible_defect_name: str = "", bulk_symm_ops: list | None = None
+    defect_entry: DefectEntry,
+    possible_defect_name: str = "",
 ) -> None:
     """
     Check that ``possible_defect_name`` is a recognised format by doped (i.e.
@@ -144,10 +144,6 @@ def check_and_set_defect_entry_name(
         possible_defect_name (str):
             Possible defect name (usually the folder name) to check if
             recognised by ``doped``, otherwise defect name is re-determined.
-        bulk_symm_ops (list):
-            List of symmetry operations of the defect_entry.bulk_supercell
-            structure (used in determining the `unrelaxed` point symmetry), to
-            avoid re-calculating. Default is None (recalculates).
     """
     formatted_defect_name = None
     charge_state = defect_entry.charge_state
@@ -167,7 +163,7 @@ def check_and_set_defect_entry_name(
     # recognised:
     if "full_unrelaxed_defect_name" not in defect_entry.calculation_metadata:
         defect_entry.calculation_metadata["full_unrelaxed_defect_name"] = (
-            f"{get_defect_name_from_entry(defect_entry, symm_ops=bulk_symm_ops, relaxed=False)}_"
+            f"{get_defect_name_from_entry(defect_entry, relaxed=False)}_"
             f"{'+' if charge_state > 0 else ''}{charge_state}"
         )
 
@@ -2268,10 +2264,6 @@ class DefectParser:
             calculation_metadata=calculation_metadata,
             degeneracy_factors=degeneracy_factors,
         )
-
-        bulk_supercell_symm_ops = get_sga(
-            bulk_vr.final_structure, symprec=kwargs.get("bulk_symprec", 0.01)
-        ).get_symmetry_operations()
         # get orientational degeneracy
         point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
             defect_entry,
@@ -2283,12 +2275,11 @@ class DefectParser:
                 for k, v in kwargs.items()
                 if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
             },
-        )  # relaxed so defect symm_ops
+        )
         assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
         relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
         bulk_site_point_group = point_symmetry_from_defect_entry(
             defect_entry,
-            symm_ops=bulk_supercell_symm_ops,  # unrelaxed so bulk symm_ops
             relaxed=False,
             **{
                 k.replace("bulk_", ""): v
@@ -2318,9 +2309,7 @@ class DefectParser:
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
-        check_and_set_defect_entry_name(
-            defect_entry, possible_defect_name, bulk_symm_ops=bulk_supercell_symm_ops
-        )
+        check_and_set_defect_entry_name(defect_entry, possible_defect_name)
 
         dp = cls(
             defect_entry,

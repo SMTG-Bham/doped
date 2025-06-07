@@ -360,7 +360,6 @@ def group_defects_by_distance(
     bulk_lattice = bulk_supercell.lattice
     bulk_supercell_sga = get_sga(bulk_supercell, symprec=symprec)
     symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
-    bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
     equiv_sites_entries_dict: dict[tuple[tuple[float, float, float], ...], list[DefectEntry]] = (
         defaultdict(list)
@@ -384,10 +383,9 @@ def group_defects_by_distance(
         #  any issues
         entry_bulk_supercell = _get_bulk_supercell(entry)
         if entry_bulk_supercell.lattice != bulk_lattice:
-            # recalculate bulk_symm_ops if bulk supercell differs
+            # recalculate if bulk supercell differs
             bulk_supercell_sga = get_sga(entry_bulk_supercell, symprec=symprec)
             symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
-            bulk_symm_ops = bulk_supercell_sga.get_symmetry_operations()
 
         # need to use relaxed defect site if bulk_site not in calculation_metadata:
         bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
@@ -416,7 +414,6 @@ def group_defects_by_distance(
                     for frac_coords in get_all_equiv_sites(
                         bulk_site.frac_coords,
                         symm_bulk_struct,
-                        bulk_symm_ops,
                         symprec=symprec,
                         just_frac_coords=True,
                         return_symprec_and_dist_tol_factor=False,

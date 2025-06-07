@@ -382,7 +382,6 @@ def closest_site_info(
 def get_defect_name_from_defect(
     defect: Defect,
     element_list: list[str] | None = None,
-    symm_ops: list | None = None,
     symprec: float = 0.01,
 ):
     """
@@ -395,16 +394,13 @@ def get_defect_name_from_defect(
             ``closest_site_info()`` returns deterministic results (in case two
             different elements located at the same distance from defect site).
             Default is None.
-        symm_ops (list):
-            List of symmetry operations of ``defect.structure``, to avoid
-            re-calculating. Default is ``None`` (recalculates).
         symprec (float):
             Symmetry tolerance for ``spglib``. Default is 0.01.
 
     Returns:
         str: Defect name.
     """
-    point_group_symbol = symmetry.point_symmetry_from_defect(defect, symm_ops=symm_ops, symprec=symprec)
+    point_group_symbol = symmetry.point_symmetry_from_defect(defect, symprec=symprec)
 
     return f"{defect.name}_{point_group_symbol}_{closest_site_info(defect, element_list=element_list)}"
 
@@ -412,7 +408,6 @@ def get_defect_name_from_defect(
 def get_defect_name_from_entry(
     defect_entry: DefectEntry,
     element_list: list | None = None,
-    symm_ops: list | None = None,
     symprec: float | None = None,
     relaxed: bool = True,
 ):
@@ -452,11 +447,6 @@ def get_defect_name_from_entry(
             ``closest_site_info()`` returns deterministic results (in case two
             different elements located at the same distance from defect site).
             Default is None.
-        symm_ops (list):
-            List of symmetry operations of either the
-            ``defect_entry.bulk_supercell`` structure (if ``relaxed=False``) or
-            ``defect_entry.defect_supercell`` (if ``relaxed=True``), to avoid
-            re-calculating. Default is ``None`` (recalculates).
         symprec (float):
             Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed
             structures, 0.2 for relaxed (to account for residual structural
@@ -472,7 +462,7 @@ def get_defect_name_from_entry(
         str: Defect name.
     """
     point_group_symbol = symmetry.point_symmetry_from_defect_entry(
-        defect_entry, symm_ops=symm_ops, symprec=symprec, relaxed=relaxed
+        defect_entry, symprec=symprec, relaxed=relaxed
     )
 
     return (
@@ -489,7 +479,6 @@ def _get_neutral_defect_entry(
     conventional_structure,
     _BilbaoCS_conv_cell_vector_mapping,
     wyckoff_label_dict,
-    conv_symm_ops,
 ):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Not all sites")
@@ -530,7 +519,6 @@ def _get_neutral_defect_entry(
             wyckoff_label, conv_cell_sites = symmetry.get_wyckoff(
                 symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
                 conventional_structure,
-                conv_symm_ops,
                 equiv_sites=True,
             )
             conv_cell_coord_list = [
@@ -596,7 +584,6 @@ def _check_if_name_subset(long_name: str, poss_subset_name: str):
 def name_defect_entries(
     defect_entries: list[DefectEntry | Defect],
     element_list: list[str] | None = None,
-    symm_ops: list | None = None,
 ):
     """
     Create a dictionary of ``{name: DefectEntry}`` from a list of
@@ -623,10 +610,6 @@ def name_defect_entries(
             ``closest_site_info()`` returns deterministic results (in case two
             different elements located at the same distance from defect site).
             Default is None.
-        symm_ops (list):
-            List of symmetry operations of ``defect.structure`` (i.e. the
-            primitive structure), to avoid re-calculating. Default is ``None``
-            (re-calculates).
 
     Returns:
         dict: Dictionary of ``{name: DefectEntry}`` objects.
@@ -648,7 +631,7 @@ def name_defect_entries(
                 if isinstance(previous_entry, DefectEntry | thermo.DefectEntry)
                 else previous_entry
             )
-            previous_entry_full_name = get_defect_name_from_defect(prev_defect, element_list, symm_ops)
+            previous_entry_full_name = get_defect_name_from_defect(prev_defect, element_list)
             previous_entry_name = get_shorter_name(previous_entry_full_name, split_number - 1)
             defect_naming_dict[previous_entry_name] = previous_entry
 
@@ -716,7 +699,7 @@ def name_defect_entries(
             if isinstance(defect_entry, DefectEntry | thermo.DefectEntry)
             else defect_entry
         )
-        full_defect_name = get_defect_name_from_defect(defect, element_list, symm_ops)
+        full_defect_name = get_defect_name_from_defect(defect, element_list)
         split_number = 1 if defect.defect_type == core.DefectType.Interstitial else 2
         shorter_defect_name = get_shorter_name(full_defect_name, split_number)
         if not any(_check_if_name_subset(name, shorter_defect_name) for name in defect_naming_dict):
@@ -1813,7 +1796,6 @@ class DefectsGenerator(MSONable):
                 pbar.set_description("Generating interstitials")
                 if self.interstitial_coords:
                     # map interstitial coords to primitive structure, and get multiplicities
-                    symm_ops = sga.get_symmetry_operations(cartesian=False)
                     self.prim_interstitial_coords = []
 
                     for interstitial_frac_coords in self.interstitial_coords:
@@ -1821,7 +1803,6 @@ class DefectsGenerator(MSONable):
                             frac_coords=interstitial_frac_coords,
                             primitive=self.primitive_structure,
                             supercell=self.structure,
-                            symm_ops=symm_ops,  # 'supercell' symmetry operations
                             equiv_coords=True,
                         )
                         self.prim_interstitial_coords.append(
@@ -1888,9 +1869,6 @@ class DefectsGenerator(MSONable):
                 wyckoff_label_dict,
             ) = conv_struct_results
 
-            conv_sga = symmetry.get_sga(self.conventional_structure)
-            conv_symm_ops = conv_sga.get_symmetry_operations(cartesian=False)
-
             # process defects into defect entries:
             partial_func = partial(
                 _get_neutral_defect_entry,
@@ -1900,7 +1878,6 @@ class DefectsGenerator(MSONable):
                 conventional_structure=self.conventional_structure,
                 _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict=wyckoff_label_dict,
-                conv_symm_ops=conv_symm_ops,
             )
 
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
@@ -1950,10 +1927,9 @@ class DefectsGenerator(MSONable):
             # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
             self.defects = {k: v for k, v in self.defects.items() if v}
 
-            prim_sga = symmetry.get_sga(self.primitive_structure)
-            prim_symm_ops = prim_sga.get_symmetry_operations(cartesian=False)
             named_defect_dict = name_defect_entries(
-                defect_entry_list, element_list=self._element_list, symm_ops=prim_symm_ops
+                defect_entry_list,
+                element_list=self._element_list,
             )
             pbar.update(5)  # 95% of progress bar
             if not isinstance(pbar, MagicMock):
@@ -2853,8 +2829,6 @@ def get_interstitial_sites(
     )
 
     label_equiv_fpos_dict: dict[int, list[np.ndarray[float]]] = {}
-    sga = symmetry.get_sga(host_structure, symprec=interstitial_gen_kwargs.get("symprec", 0.01))
-    symm_ops = sga.get_symmetry_operations()
     tight_dist = get_stol_equiv_dist(
         interstitial_gen_kwargs.get("tight_stol", 0.02), host_structure
     )  # 0.06 Å for CdTe, Sb2Si2Te6
@@ -2870,12 +2844,12 @@ def get_interstitial_sites(
 
         if not match_found:  # try equiv sites:
             this_equiv_fpos = [
-                site.frac_coords
+                site.frac_coords  # type: ignore
                 for site in symmetry.get_all_equiv_sites(
                     frac_coords,
                     host_structure,
-                    symm_ops=symm_ops,
                     symprec=interstitial_gen_kwargs.get("symprec", 0.01),
+                    return_symprec_and_dist_tol_factor=False,
                 )
             ]
             for label, equiv_fpos in list(label_equiv_fpos_dict.items()):

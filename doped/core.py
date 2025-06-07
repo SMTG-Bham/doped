@@ -1121,7 +1121,7 @@ class DefectEntry(thermo.DefectEntry):
                         for k, v in kwargs.items()
                         if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
                     },
-                )  # relaxed so defect symm_ops
+                )
                 assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
                 (
                     self.calculation_metadata["relaxed point symmetry"],
@@ -2411,8 +2411,6 @@ class Defect(core.Defect):
     def get_multiplicity(
         self,
         primitive_structure: Structure | None = None,
-        structure_symm_ops: list | None = None,
-        primitive_symm_ops: list | None = None,
         symprec: float | None = None,
         dist_tol_factor: float = 1.0,
         **kwargs,
@@ -2433,12 +2431,6 @@ class Defect(core.Defect):
             primitive_structure (Structure | None):
                 Structure to use for the primitive unit cell. Can be provided
                 to avoid recalculation of the primitive cell.
-            structure_symm_ops (list | None):
-                List of symmetry operations for ``self.structure``. Can be
-                provided to avoid recalculation.
-            primitive_symm_ops (list | None):
-                List of symmetry operations for ``primitive_structure``. Can be
-                provided to avoid recalculation.
             symprec (float):
                 Symmetry precision to use for determining symmetry operations
                 and thus equivalent sites with ``spglib``. Default is ``None``,
@@ -2489,7 +2481,6 @@ class Defect(core.Defect):
                         self.site.frac_coords,
                         primitive_structure,
                         self.structure,
-                        symm_ops=structure_symm_ops,
                         symprec=symprec or self.symprec,
                         dist_tol_factor=dist_tol_factor,
                         **kwargs,
@@ -2500,7 +2491,6 @@ class Defect(core.Defect):
             get_all_equiv_sites(
                 self.site.frac_coords,
                 self.structure,
-                symm_ops=structure_symm_ops,
                 just_frac_coords=True,
                 symprec=symprec or self.symprec,
                 dist_tol_factor=dist_tol_factor,

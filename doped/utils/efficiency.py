@@ -9,7 +9,6 @@ import operator
 import re
 from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
-from fractions import Fraction
 from functools import cached_property, lru_cache
 from typing import TYPE_CHECKING
 
@@ -28,7 +27,7 @@ from pymatgen.core.periodic_table import Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Molecule, Structure
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
-from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmOp
 from scipy.spatial import Voronoi
 
 if TYPE_CHECKING:
@@ -334,53 +333,42 @@ Molecule.__hash__ = _DopedMolecule__hash__
 
 
 # SpacegroupAnalyzer overrides:
+def _sga__hash__(self):
+    """
+    Custom ``__hash__`` method for ``SpacegroupAnalyzer`` instances, to make
+    them hashable for efficient caching of e.g. symmetry operation generation.
+    """
+    return hash((self._cell, self._symprec, self._angle_tol))
+
+
+_original_get_symmetry = SpacegroupAnalyzer._get_symmetry
+
+
+@lru_cache(maxsize=int(1e3))
 def _get_symmetry(self) -> tuple[NDArray, NDArray]:
     """
     Get the symmetry operations associated with the structure.
 
     Refactored from ``pymatgen`` to allow caching, to boost efficiency when
     working with large defect supercells.
-
-    Returns:
-        Symmetry operations as a tuple of two equal length sequences;
-        ``(rotations, translations)``. "rotations" is the numpy integer array
-        of the rotation matrices for scaled positions, while "translations"
-        gives the ``numpy`` ``float64`` array of the translation vectors in
-        scaled positions.
     """
-    return _cache_ready_get_symmetry(
-        cell=self._cell, symprec=self._symprec, angle_tol=self._angle_tol, formula=self._structure.formula
-    )
+    return _original_get_symmetry(self)  # call the original method, with the now cacheable class
+
+
+_original_get_symmetry_operations = SpacegroupAnalyzer.get_symmetry_operations
 
 
 @lru_cache(maxsize=int(1e3))
-def _cache_ready_get_symmetry(cell, symprec, angle_tol, formula=None):
+def get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
     """
-    Cached version of ``get_symmetry`` method, to speed up symmetry operations
-    in ``pymatgen``.
+    Get the symmetry operations associated with the structure.
 
-    Refactored from ``pymatgen`` to allow caching, to boost efficiency when
-    working with large defect supercells.
+    Refactored from ``pymatgen`` to allow caching, to boost efficiency.
     """
-    import spglib
-
-    dct = spglib.get_symmetry(cell, symprec=symprec, angle_tolerance=angle_tol)
-    if dct is None:
-        raise ValueError(
-            f"Symmetry detection failed for structure with formula {formula}. "
-            f"Try setting {symprec=} to a different value."
-        )
-    # Sometimes spglib returns small translation vectors, e.g.
-    # [1e-4, 2e-4, 1e-4]
-    # (these are in fractional coordinates, so should be small denominator fractions)
-    translations: NDArray = np.array(
-        [[float(Fraction(c).limit_denominator(1000)) for c in trans] for trans in dct["translations"]]
-    )
-
-    translations[np.abs(translations) == 1] = 0  # Fractional translations of 1 are more simply 0
-    return dct["rotations"], translations
+    return _original_get_symmetry_operations(self)  # call the original method, now a cacheable class
 
 
+SpacegroupAnalyzer.__hash__ = _sga__hash__
 SpacegroupAnalyzer._get_symmetry = _get_symmetry
 
 
