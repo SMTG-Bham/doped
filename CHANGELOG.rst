@@ -1,6 +1,12 @@
 Change Log
 ==========
 
+..  Release checklist: Version bump, update changelog, possibly update pytest timings if significant new tests added, check tutorials run
+
+v.3.1.0
+----------
+TODO
+
 v.3.0.0
 ----------
 - Major efficiency updates to most parts of the workflow, mostly implemented as helper functions in
