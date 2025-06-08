@@ -857,7 +857,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not os.path.exists("test_dir/CdTe_bulk")
 
             poscar = Poscar.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-            assert poscar.comment == "Cd27 Te27 - Bulk"
+            assert poscar.comment == "Cd27 Te27 -- Bulk"
 
             drs = DefectRelaxSet(self.CdTe_defect_gen["Cd_i_C3v_0"], poscar_comment="Test pop")
             drs.write_all("test_dir", poscar=True)
@@ -880,7 +880,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not os.path.exists("test_dir/CdTe_bulk")
 
             poscar = Poscar.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-            assert poscar.comment == "Cd27 Te27 - Bulk"
+            assert poscar.comment == "Cd27 Te27 -- Bulk"
 
     def test_default_kpoints_soc_handling(self):
         """
@@ -1146,9 +1146,13 @@ class DefectsSetTest(unittest.TestCase):
                 # generated output files
                 if_present_rm(folder)
 
-        if_present_rm("AgSbTe2_test")
-        if_present_rm("CdTe_defects_generator.json")
-        if_present_rm("test_CdTe_defects_generator.json")
+        for i in [
+            "test_pop",
+            "AgSbTe2_test",
+            "CdTe_defects_generator.json",
+            "test_CdTe_defects_generator.json",
+        ]:
+            if_present_rm(i)
 
     def check_generated_vasp_inputs(
         self,

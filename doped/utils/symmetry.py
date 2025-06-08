@@ -584,6 +584,9 @@ def cluster_coords(
     lattice = structure if isinstance(structure, Lattice) else structure.lattice
     condensed_m = squareform(get_distance_matrix(fcoords, lattice), checks=False)
     z = linkage(condensed_m, method=method)
+    # Note: with method = "centroid", the z distances are the distances between
+    # cluster centroids, while for method = "single", the z distances are the
+    # minimum distances between all points in different clusters
     return fcluster(z, dist_tol, criterion=criterion)
 
 

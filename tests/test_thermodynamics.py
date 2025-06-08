@@ -86,6 +86,17 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
+@pytest.fixture(autouse=True)
+def _inject_capsys(request, capsys):
+    """
+    Automatically attach the ``pytest`` capsys fixture to every test class
+    instance as ``self.capsys``; allowing ``self.capsys.readouterr()`` to be
+    called to clear the previous output.
+    """
+    if request.instance is not None:
+        request.instance.capsys = capsys
+
+
 def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
     original_stdout = sys.stdout  # Save a reference to the original standard output
     sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
@@ -360,11 +371,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         check_compatibility=True,
         check_dists=True,
     ):
+        print(f"Checking defect_thermo: {defect_thermo}")
         defect_thermo = deepcopy(defect_thermo)  # don't edit! (e.g. saved symmetry info)
         if defect_dict is not None:
             self._compare_defect_thermo_and_dict(deepcopy(defect_thermo), defect_dict)
 
-        print(defect_thermo)
         assert set(defect_thermo.defect_entries.keys()) == {
             defect_entry.name for defect_entry in defect_thermo.defect_entries.values()
         }
@@ -385,6 +396,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert defect_thermo.check_compatibility == check_compatibility
 
         if check_dists:
+            print("Checking distances...")
             self._check_dist_tol_equiv_dists(defect_thermo)  # test dist_tol clustering
 
         # check methods run ok without errors:
@@ -412,6 +424,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             reloaded_thermo = DefectThermodynamics.from_dict(thermo_dict)
             self._compare_defect_thermos(deepcopy(defect_thermo), deepcopy(reloaded_thermo))
 
+        print("Checking attributes...")
         assert all(
             i in defect_thermo.__repr__()
             for i in [
@@ -428,48 +441,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert isinstance(defect_thermo.all_stable_entries, list)
         assert isinstance(defect_thermo.all_unstable_entries, list)
 
-        # test runs fine with different options for ``get_symmetries_and_degeneracies``:
-        prev_df = None
-        for kwargs in [
-            {},  # straight up defaults
-            {"skip_formatting": True},
-            {"skip_formatting": True, "symprec": 0.1},
-            {"skip_formatting": True, "symprec": 1},
-        ]:
-            if defect_thermo.bulk_formula in ["CdTe", "MgO", "Sb2O5"] and kwargs.get("symprec", False):
-                continue  # slow cases due to large supercells / many defects, skip for tests (CdTe
-                # explicitly tested later anyway)
-            symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
-                defect_thermo.get_symmetries_and_degeneracies, **kwargs
-            )
-            assert not output, "No output expected for get_symmetries_and_degeneracies"
-            assert isinstance(symm_df, pd.DataFrame), "Expected a DataFrame"
-            if kwargs.get("skip_formatting", False):
-                print("Checking `q` format")
-                assert all(isinstance(i, int) for i in symm_df.index.get_level_values("q").unique())
-
-            print("Checking column and index names")
-            assert set(symm_df.columns) == {
-                "Site_Symm",
-                "Defect_Symm",
-                "g_Orient",
-                "g_Spin",
-                "g_Total",
-                "Mult",
-            }
-            assert set(symm_df.index.names) == {"Defect", "q"}
-
-            if prev_df is not None:
-                print("Comparing to previous symm_df")
-                # format q (charge) index as int for comparison to account for skip_formatting usage:
-                prev_df.index = prev_df.index.set_levels(prev_df.index.levels[1].astype(int), level=1)
-                if kwargs.get("symprec") != 1 and (
-                    defect_thermo.bulk_formula != "CdTe" or not kwargs.get("symprec")
-                ):
-                    assert symm_df.equals(prev_df)
-
-            prev_df = symm_df
-
+        print("Checking DefectThermodynamics analysis methods...")
+        print("Checking get_formation_energies()...")
         # test runs fine with different options for ``get_formation_energies``:
         prev_df = None
         for kwargs in [
@@ -540,7 +513,52 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             if not kwargs.get("fermi_level"):
                 prev_df = form_e_df
 
+        self.capsys.readouterr()  # clear previous stdout
+        print("Checking get_symmetries_and_degeneracies()...")
+        # test runs fine with different options for ``get_symmetries_and_degeneracies``:
+        prev_df = None
+        for kwargs in [
+            {},  # straight up defaults
+            {"skip_formatting": True},
+            {"skip_formatting": True, "symprec": 0.1},
+            {"skip_formatting": True, "symprec": 1},
+        ]:
+            if defect_thermo.bulk_formula in ["CdTe", "MgO", "Sb2O5"] and kwargs.get("symprec", False):
+                continue  # slow cases due to large supercells / many defects, skip for tests (CdTe
+                # explicitly tested later anyway)
+            symm_df, output, symm_w = _run_func_and_capture_stdout_warnings(
+                defect_thermo.get_symmetries_and_degeneracies, **kwargs
+            )
+            assert not output, "No output expected for get_symmetries_and_degeneracies"
+            assert isinstance(symm_df, pd.DataFrame), "Expected a DataFrame"
+            if kwargs.get("skip_formatting", False):
+                print("Checking `q` format")
+                assert all(isinstance(i, int) for i in symm_df.index.get_level_values("q").unique())
+
+            print("Checking column and index names")
+            assert set(symm_df.columns) == {
+                "Site_Symm",
+                "Defect_Symm",
+                "g_Orient",
+                "g_Spin",
+                "g_Total",
+                "Mult",
+            }
+            assert set(symm_df.index.names) == {"Defect", "q"}
+
+            if prev_df is not None:
+                print("Comparing to previous symm_df")
+                # format q (charge) index as int for comparison to account for skip_formatting usage:
+                prev_df.index = prev_df.index.set_levels(prev_df.index.levels[1].astype(int), level=1)
+                if kwargs.get("symprec") != 1 and (
+                    defect_thermo.bulk_formula != "CdTe" or not kwargs.get("symprec")
+                ):
+                    assert symm_df.equals(prev_df)
+
+            prev_df = symm_df
+
         # test runs fine with different options for ``get_equilibrium_concentrations``:
+        print("Checking get_equilibrium_concentrations()...")
         prev_df = None
         for kwargs in [
             {},  # straight up defaults
@@ -646,6 +664,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 print(f"Checking len of: {[str(warning_message) for warning_message in w]}")
                 assert len(w) in {0, 1}
 
+        # self.capsys.readouterr()  # clear previous stdout
+        print("Checking plot()...")
         figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
         assert isinstance(figure_or_list, mpl.figure.Figure | list)
         assert not output
@@ -656,6 +676,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 for warn in w
             )
 
+        print("Checking get_transition_levels()...")
         with warnings.catch_warnings(record=True) as w:
             tl_df = defect_thermo.get_transition_levels()
             assert set(tl_df.columns) == {"In Band Gap?", "eV from VBM"}
@@ -672,6 +693,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print([str(warning.message) for warning in w])  # for debugging
         assert not w
 
+        print(
+            "Checking warnings/errors/outputs for get_equilibrium_fermi_level, "
+            "get_fermi_level_and_concentrations, get_doping_windows, get_dopability_limits"
+        )
         with pytest.raises(ValueError) as exc:
             defect_thermo.get_equilibrium_fermi_level()
         assert "No bulk DOS calculation (`bulk_dos`) provided" in str(exc.value)
@@ -745,6 +770,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 assert set(dopability_limits.loc["n-type"]).issubset({"N/A", -np.inf, np.inf})
                 assert set(dopability_limits.loc["p-type"]).issubset({"O-rich (MgO-O2)", "Mg_O_+4", -2.96})
 
+        self.capsys.readouterr()  # clear previous stdout
+        print("Checking dist_tol settings...")
         # test setting dist_tol:
         if (
             defect_thermo.bulk_formula == "CdTe"
@@ -752,10 +779,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             and len(defect_thermo.defect_entries) < 20
             and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
-            self._check_CdTe_example_dist_tol(defect_thermo, 3)  # 1.5 Å default
+            self._check_CdTe_example_dist_tol(defect_thermo, 4)  # 1.5 Å default
             self._set_and_check_dist_tol(2.0, defect_thermo, 3)
-            self._set_and_check_dist_tol(1.0, defect_thermo, 4)
-            self._set_and_check_dist_tol(0.5, defect_thermo, 5)
+            self._set_and_check_dist_tol(1.0, defect_thermo, 5)
 
         # test mismatching chempot warnings:
         print("Checking mismatching chempots")
@@ -859,8 +885,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         entry_from_other_cluster = next(iter(other_cluster))
                         print(f"Checking dist_tol for {entry.name}, vs {entry_from_other_cluster.name}")
                         assert get_min_dist_between_equiv_sites(entry, entry_from_other_cluster) > (
-                            min_dist / 2 if method == "centroid" else min_dist
+                            min_dist / 3 if method == "centroid" else min_dist
                         )
+                        # with method = "centroid", the z distances (used for clustering based on
+                        # ``dist_tol``) are the distances between cluster centroids (and so it is possible
+                        # for the minimum distance between points in two different clusters to be less than
+                        # ``dist_tol``), while for method = "single", the z distances are the minimum
+                        # distances between all points in different clusters (so min distance between equiv
+                        # sites should always be greater than ``dist_tol``).
 
     def _clear_symmetry_degeneracy_info(self, defect_thermo):
         for defect_entry in defect_thermo.defect_entries.values():
@@ -882,17 +914,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             (self.V2O5_defect_dict, "V2O5_defect_dict"),
             (self.MgO_defect_dict, "MgO_defect_dict"),
         ]:
-            print(f"Checking {name}")
+            print(f"Checking {name}; initialisation from list")
             with warnings.catch_warnings(record=True) as w:
                 defect_thermo = DefectThermodynamics(list(defect_dict.values()))  # test init with list
             print([str(warning.message) for warning in w])  # for debugging
             assert not w
             self._check_defect_thermo(defect_thermo, defect_dict)  # default values
+            self.capsys.readouterr()  # clear previous stdout, if passed
 
+            print(f"Checking {name}; initialisation from dict")
             defect_thermo = DefectThermodynamics(defect_dict)  # test init with dict
             self._check_defect_thermo(defect_thermo, defect_dict)  # default values
+            self.capsys.readouterr()  # clear previous stdout, if passed
 
             if "V2O5" in name:
+                print(f"Checking {name}; initialisation from dict with chempots and el_refs")
                 defect_thermo = DefectThermodynamics(
                     defect_dict,
                     chempots=self.V2O5_chempots,
@@ -904,7 +940,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
                 )
+                self.capsys.readouterr()  # clear previous stdout, if passed
 
+                print(f"Checking {name}; initialisation from list with chempots and el_refs")
                 defect_thermo = DefectThermodynamics(
                     list(defect_dict.values()), chempots=self.V2O5_chempots
                 )
@@ -914,6 +952,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
                 )
+                self.capsys.readouterr()  # clear previous stdout, if passed
 
         print("Checking CdTe with mismatching chempots")
         with warnings.catch_warnings(record=True) as w:
@@ -1073,9 +1112,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test outputs of transition level functions for CdTe.
         """
         assert self.CdTe_defect_thermo.transition_level_map == {
-            "v_Cd": {0.47047144459596113: [0, -2]},
+            "Int_Te_3_a": {0.08967094380236373: [2, 1]},
+            "Int_Te_3_b": {},
             "Te_Cd": {},
-            "Int_Te_3": {0.03497090517885537: [2, 1]},
+            "v_Cd": {0.47047144459596113: [0, -2]},
         }
 
         tl_info = ["Defect: v_Cd", "Defect: Te_Cd"]
@@ -1085,43 +1125,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Transition level ε(0/-1*) at 0.542 eV above the VBM",
         ]
 
-        result, tl_output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_defect_thermo.print_transition_levels
-        )
-        assert not result
-        assert not w
-        for i in (
-            tl_info
-            + tl_info_not_all
-            + [
-                "Defect: Int_Te_3\x1b",
-                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
-            ]
-        ):
-            assert i in tl_output
-        for i in [*tl_info_all, "Int_Te_3_a", "*", "Int_Te_3_b", "Int_Te_3_Unperturbed"]:
-            assert i not in tl_output
-
-        result, tl_output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_defect_thermo.print_transition_levels, all=True
-        )
-        assert not result
-        assert not w
-        for i in (
-            tl_info
-            + tl_info_all
-            + [
-                "Defect: Int_Te_3\x1b",
-                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
-                "Transition level ε(+2/+1*) at 0.090 eV above the VBM",
-            ]
-        ):
-            assert i in tl_output
-
-        for i in tl_info_not_all:
-            assert i not in tl_output
-
-        self.CdTe_defect_thermo.dist_tol = 1
         result, tl_output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.print_transition_levels
         )
@@ -1167,7 +1170,44 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]:
             assert i not in tl_output
 
-        self.CdTe_defect_thermo.dist_tol = 0.5
+        self.CdTe_defect_thermo.dist_tol = 2.0
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels
+        )
+        assert not result
+        assert not w
+        for i in (
+            tl_info
+            + tl_info_not_all
+            + [
+                "Defect: Int_Te_3\x1b",
+                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+        for i in [*tl_info_all, "Int_Te_3_a", "*", "Int_Te_3_b", "Int_Te_3_Unperturbed"]:
+            assert i not in tl_output
+
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels, all=True
+        )
+        assert not result
+        assert not w
+        for i in (
+            tl_info
+            + tl_info_all
+            + [
+                "Defect: Int_Te_3\x1b",
+                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                "Transition level ε(+2/+1*) at 0.090 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+
+        for i in tl_info_not_all:
+            assert i not in tl_output
+
+        self.CdTe_defect_thermo.dist_tol = 1.0
         result, tl_output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.print_transition_levels
         )
@@ -1217,6 +1257,21 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_get_transition_levels_CdTe(self):
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
+        assert tl_df.shape == (4, 2)
+        assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "ε(+2/+1)"]
+        assert list(tl_df.iloc[2]) == [0.09, True]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_b", "None"]
+        assert list(tl_df.iloc[3]) == [np.inf, False]
+
+        tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
+        assert tl_df.shape == (5, 3)
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "ε(+2/+1)"]
+        assert list(tl_df.iloc[3]) == [0.09, True, 0]
+        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
+        assert list(tl_df.iloc[4]) == [np.inf, False, 0]
+
+        self.CdTe_defect_thermo.dist_tol = 2.0
+        tl_df = self.CdTe_defect_thermo.get_transition_levels()
         assert tl_df.shape == (3, 2)
         assert list(tl_df.iloc[0]) == [0.47, True]
         assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-2)"]
@@ -1238,22 +1293,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(tl_df.iloc[4]) == [0.09, True, 1]
         assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3", "ε(+2/+1*)"]
 
-        self.CdTe_defect_thermo.dist_tol = 1
-        tl_df = self.CdTe_defect_thermo.get_transition_levels()
-        assert tl_df.shape == (4, 2)
-        assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "ε(+2/+1)"]
-        assert list(tl_df.iloc[2]) == [0.09, True]
-        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_b", "None"]
-        assert list(tl_df.iloc[3]) == [np.inf, False]
-
-        tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
-        assert tl_df.shape == (5, 3)
-        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "ε(+2/+1)"]
-        assert list(tl_df.iloc[3]) == [0.09, True, 0]
-        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
-        assert list(tl_df.iloc[4]) == [np.inf, False, 0]
-
-        self.CdTe_defect_thermo.dist_tol = 0.5
+        self.CdTe_defect_thermo.dist_tol = 1.0
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
         assert tl_df.shape == (5, 2)
         assert list(tl_df.iloc[2]) == [np.inf, False]
@@ -2750,9 +2790,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ("v_Cd_-1", -np.inf),
             ("v_Cd_-2", 1.028),
             ("Te_Cd_+1", np.inf),
-            ("Int_Te_3_Unperturbed_1", -np.inf),
-            ("Int_Te_3_1", 1.465),
-            ("Int_Te_3_2", 0.035),
+            ("Int_Te_3_Unperturbed_1", 1.4092),
+            ("Int_Te_3_1", np.inf),
+            ("Int_Te_3_2", 0.08967),
         ]:
             assert np.isclose(
                 self.CdTe_defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry),

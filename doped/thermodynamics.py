@@ -265,10 +265,10 @@ def group_defects_by_type_and_distance(
     format ``{simple defect name: {cluster index: {DefectEntry, ...}}``, with
     defect types as keys, and values being sub-dictionaries of defect entries
     clustered according to the given ``dist_tol`` distance tolerance (between
-    symmetry-equivalent sites in the bulk supercell). ``simple defect name`` is
-    the nominal defect type (e.g. ``Te_i`` for ``Te_i_Td_Cd2.83_+2``) and
-    ``{DefectEntry, ...}`` is a set of ``DefectEntry`` objects which have been
-    grouped in the same cluster.
+    symmetry-equivalent sites in the bulk supercell) and clustering ``method``.
+    ``simple defect name`` is the nominal defect type (e.g. ``Te_i`` for
+    ``Te_i_Td_Cd2.83_+2``) and ``{DefectEntry, ...}`` is a set of
+    ``DefectEntry`` objects which have been grouped in the same cluster.
 
     This is used to group together different defect entries (different charge
     states, and/or ground and metastable states (different spin or geometries))
@@ -302,6 +302,11 @@ def group_defects_by_type_and_distance(
             algorithm; recommended choice when dealing with small numbers of
             defects (i.e. when subdivided by defect type), but can be prone to
             daisy-chaining effects).
+            Recommended choices include ``"centroid"`` (which clusters sites
+            based on the distance between cluster centroids, vs ``dist_tol``)
+            or ``"single"`` (clusters based on the minimum distance between any
+            pair of sites, vs ``dist_tol``). See ``scipy`` ``linkage()`` for
+            other choices.
 
     Returns:
         dict:
@@ -334,8 +339,8 @@ def group_defects_by_distance(
     r"""
     Given an input list of ``DefectEntry`` objects, returns a dictionary of
     defect entries clustered according to the given ``dist_tol`` distance
-    tolerance (between symmetry-equivalent sites in the bulk supercell), in the
-    format: ``{cluster index: {DefectEntry, ...}}``.
+    tolerance (between symmetry-equivalent sites in the bulk supercell) and
+    clustering ``method``; format: ``{cluster index: {DefectEntry, ...}}``.
 
     This is used to group together different defect entries (different charge
     states, and/or ground and metastable states (different spin or geometries))
@@ -371,6 +376,11 @@ def group_defects_by_distance(
             Clustering algorithm to use with the ``scipy`` ``linkage()``
             function. Default is ``"centroid"`` (typically best when handling
             many defects, avoiding large daisy-chaining effects).
+            Recommended choices include ``"centroid"`` (which clusters sites
+            based on the distance between cluster centroids, vs ``dist_tol``)
+            or ``"single"`` (clusters based on the minimum distance between any
+            pair of sites, vs ``dist_tol``). See ``scipy`` ``linkage()`` for
+            other choices.
 
     Returns:
         dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
@@ -645,14 +655,15 @@ class DefectThermodynamics(MSONable):
                 ``calculation_metadata`` dict attributes of the ``DefectEntry``
                 objects in ``defect_entries``.
             dist_tol (float):
-                Threshold for the closest distance (in Å) between equivalent
-                defect sites, for different species of the same defect type,
-                to be grouped together (for plotting, transition level analysis
-                and defect concentration calculations). In most cases, if the
-                minimum distance between equivalent defect sites is less than
-                ``dist_tol``, then they will be grouped together, otherwise
-                treated as separate defects. See ``plot()`` and
-                ``get_fermi_level_and_concentrations()`` for more information.
+                Distance threshold (in Å) to use for clustering (equivalent)
+                defect sites (for plotting, transition level analysis and
+                defect concentration calculations; see ``plot()`` and
+                ``get_fermi_level_and_concentrations()`` for more information).
+                See ``group_defects_by_distance()`` and
+                ``group_defects_by_type_and_distance()`` for more information
+                on clustering strategies -- ``self._clustered_defect_entries``
+                and/or ``self._clustered_defect_entries_by_type`` can also be
+                manually set with these functions for greater control.
                 (Default: 1.5)
             check_compatibility (bool):
                 Whether to check the compatibility of the bulk entry for each
@@ -701,10 +712,9 @@ class DefectThermodynamics(MSONable):
             band_gap (float):
                 Band gap of the host, to use for analysis.
             dist_tol (float):
-                Threshold for the closest distance (in Å) between equivalent
-                defect sites, for different species of the same defect type,
-                to be grouped together (for plotting, transition level analysis
-                and defect concentration calculations).
+                Distance threshold (in Å) to use for clustering (equivalent)
+                defect sites (for plotting, transition level analysis and
+                defect concentration calculations).
             transition_levels (dict):
                 Dictionary of charge transition levels for each defect entry.
                 (e.g. ``{defect_name: {charge: transition_level}}``).
@@ -1546,16 +1556,22 @@ class DefectThermodynamics(MSONable):
     @property
     def dist_tol(self):
         r"""
-        Get the distance tolerance (in Å) used for grouping defects together
-        (for plotting, transition level analysis and defect concentration
-        calculations) based on the distances between their symmetry-equivalent
-        sites.
+        Distance threshold (in Å) to use for clustering (equivalent) defect
+        sites (for plotting, transition level analysis and defect concentration
+        calculations; see ``plot()`` and
+        ``get_fermi_level_and_concentrations()`` for more information). See
+        ``group_defects_by_distance()`` and
+        ``group_defects_by_type_and_distance()`` for more information on
+        clustering strategies -- ``self._clustered_defect_entries`` and/or
+        ``self._clustered_defect_entries_by_type`` can also be manually set
+        with these functions for greater control.
 
-        For the most part, ``DefectEntry``\s of the same type and with
+        With default settings, ``DefectEntry``\s `of the same type` and with
         distances between equivalent defect sites less than ``dist_tol`` (1.5 Å
-        by default) are grouped together. If a ``DefectEntry``\'s site has a
-        distance less than ``dist_tol`` to multiple sets of equivalent sites,
-        then it should be matched to the one with the lowest minimum distance.
+        by default) are `mostly` grouped together. If a ``DefectEntry``\'s site
+        has a distance less than ``dist_tol`` to multiple sets of equivalent
+        sites, then it should be matched to the one with the lowest minimum
+        distance.
 
         This is used to group together different defect entries (different
         charge states, and/or ground and metastable states (different spin or
@@ -1566,33 +1582,16 @@ class DefectThermodynamics(MSONable):
         defect type group is calculated at the annealing temperature, and then
         the equilibrium relative population of the constituent entries is
         recalculated at the quenched temperature.
+        ``dist_tol`` is also used to cluster defects of `all types` when
+        determining site competition in defect concentration calculations.
         """
         return self._dist_tol
 
     @dist_tol.setter
     def dist_tol(self, input_dist_tol: float):
         r"""
-        Get the distance tolerance (in Å) used for grouping defects together
-        (for plotting, transition level analysis and defect concentration
-        calculations) based on the distances between their symmetry-equivalent
-        sites, and reparse the thermodynamic information (transition levels
-        etc) with this tolerance.
-
-        For the most part, ``DefectEntry``\s of the same type and with
-        distances between equivalent defect sites less than ``dist_tol`` (1.5 Å
-        by default) are grouped together. If a ``DefectEntry``\'s site has a
-        distance less than ``dist_tol`` to multiple sets of equivalent sites,
-        then it should be matched to the one with the lowest minimum distance.
-
-        This is used to group together different defect entries (different
-        charge states, and/or ground and metastable states (different spin or
-        geometries)) which correspond to the same defect type (e.g.
-        interstitials at a given site), which is then used in plotting,
-        transition level analysis and defect concentration calculations; e.g.
-        in the frozen defect approximation, the total concentration of a given
-        defect type group is calculated at the annealing temperature, and then
-        the equilibrium relative population of the constituent entries is
-        recalculated at the quenched temperature.
+        Set the ``dist_tol`` attribute value, and re-parse defect clusters and
+        derived information with this new distance tolerance.
         """
         self._dist_tol = input_dist_tol
         self._parse_transition_levels()  # re-group and parse based on new dist_tol
@@ -3252,11 +3251,7 @@ class DefectThermodynamics(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             lean (bool):
                 Whether to return a leaner ``DataFrame`` with `only` the defect
                 name, charge state, and concentration in cm^-3 (assumes
@@ -3591,12 +3586,6 @@ class DefectThermodynamics(MSONable):
                 ``i`` runs over all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
-                Note that while large ``dist_tol``\s are often preferable for
-                plotting (to condense the defect formation energy lines), this
-                is often not ideal for determining site competition in
-                concentration analyses as it can lead to unrealistically-large
-                clusters.
-
         Returns:
             Self consistent Fermi level (in eV from the VBM (``self.vbm``)),
             and the corresponding electron and hole concentrations (in cm^-3)
@@ -3873,11 +3862,7 @@ class DefectThermodynamics(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0) or ``_parse_fermi_dos``
@@ -4887,12 +4872,6 @@ class FermiSolver(MSONable):
                 ``i`` runs over all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
-                Note that while large ``dist_tol``\s are often preferable for
-                plotting (to condense the defect formation energy lines), this
-                is often not ideal for determining site competition in
-                concentration analyses as it can lead to unrealistically-large
-                clusters.
-
         Returns:
             tuple[float, float, float]: A tuple containing:
                 - The Fermi level (float) in eV.
@@ -5038,11 +5017,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
 
         Returns:
             pd.DataFrame:
@@ -5324,11 +5299,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -5715,11 +5686,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -5939,11 +5906,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -6154,11 +6117,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -6388,11 +6347,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -6578,11 +6533,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -6812,11 +6763,7 @@ class FermiSolver(MSONable):
                 (``"verbose"``), which will give the same behaviour as ``True``
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
-                output ``DataFrame``. Note that while large ``dist_tol``\s are
-                often preferable for plotting (to condense the defect formation
-                energy lines), this is often not ideal for determining site
-                competition in concentration analyses as it can lead to
-                unrealistically-large clusters.
+                output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
