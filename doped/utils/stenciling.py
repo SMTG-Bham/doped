@@ -47,6 +47,7 @@ def get_defect_in_supercell(
     check_bulk: bool = True,
     target_frac_coords: np.ndarray[float] | list[float] | bool = True,
     edge_tol: float = 1,
+    min_dist_tol_factor: float = 0.99,
 ) -> tuple[Structure, Structure]:
     """
     Re-generate a relaxed defect structure in a different supercell.
@@ -139,6 +140,10 @@ def get_defect_in_supercell(
             stencil out in the new supercell (of ``target_supercell``
             dimension). Default is 1 Angstrom, and then this is sequentially
             increased up to 4.5 Angstrom if the initial scan fails.
+        min_dist_tol_factor (float):
+            Tolerance factor when checking the minimum interatomic distance in
+            the stenciled defect supercell, as a factor of the minimum distance
+            in the original ``DefectEntry.defect_supercell``. Default is 0.99.
 
     Returns:
         tuple[Structure, Structure]:
@@ -169,10 +174,12 @@ def get_defect_in_supercell(
     try:
         orig_supercell = _get_defect_supercell(defect_entry)
         orig_min_dist = min_dist(orig_supercell)
+        min_dist_tol = orig_min_dist * min_dist_tol_factor
         orig_bulk_supercell = _get_bulk_supercell(defect_entry)
         orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
         target_supercell = target_supercell.copy()
         bulk_min_bond_length = min_dist(orig_bulk_supercell)
+        bulk_min_dist_tol = bulk_min_bond_length * min_dist_tol_factor
         target_frac_coords = [0.5, 0.5, 0.5] if target_frac_coords is True else target_frac_coords
 
         # ensure no oxidation states (for easy composition matching later)
@@ -202,7 +209,7 @@ def get_defect_in_supercell(
             orig_supercell_with_X,
             big_supercell_with_X,
             trans_orig_bulk_supercell * superset_matrix,
-            orig_min_dist,
+            min_dist_tol,
         )
 
         # translate structure to put defect at the centre of the big supercell (w/frac_coords)
@@ -218,7 +225,7 @@ def get_defect_in_supercell(
             big_defect_supercell,
             target_supercell,
             bulk_min_bond_length=bulk_min_bond_length,
-            min_dist_tol=orig_min_dist,
+            min_dist_tol=min_dist_tol,
             edge_tol=edge_tol,
             pbar=pbar,
         )
@@ -226,7 +233,7 @@ def get_defect_in_supercell(
             big_bulk_supercell,
             target_supercell,
             bulk_min_bond_length=bulk_min_bond_length,
-            min_dist_tol=bulk_min_bond_length,
+            min_dist_tol=bulk_min_dist_tol,
             edge_tol=1e-3,
             pbar=None,
         )  # shouldn't need `edge_tol`, should be much faster than defect supercell stencil
@@ -330,8 +337,8 @@ def get_defect_in_supercell(
             "by this function) should be used for its reference host cell calculation.",
         )
 
-    _check_min_dist(oriented_new_defect_supercell, orig_min_dist)  # check distances are reasonable
-    _check_min_dist(oriented_new_bulk_supercell, bulk_min_bond_length)
+    _check_min_dist(oriented_new_defect_supercell, min_dist_tol)  # check distances are reasonable
+    _check_min_dist(oriented_new_bulk_supercell, bulk_min_dist_tol)
     return oriented_new_defect_supercell, oriented_new_bulk_supercell
 
 
