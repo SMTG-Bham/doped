@@ -2249,13 +2249,21 @@ class DefectParser:
         )
         calculation_metadata.update(defect_structure_metadata)  # add defect structure metadata
 
+        # ComputedEntry.parameters keys have random order when using Vasprun.get_computed_entry(), which is
+        # fine but shows file differences in git diffs, so sort them to avoid this (just for easier
+        # tracking for SK, allow it fam)
+        sc_entry = defect_vr.get_computed_entry()
+        bulk_entry = bulk_vr.get_computed_entry()
+        for computed_entry in [sc_entry, bulk_entry]:
+            computed_entry.parameters = dict(sorted(computed_entry.parameters.items()))
+
         defect_entry = DefectEntry(
             # pmg attributes:
             defect=defect,  # this corresponds to _unrelaxed_ defect
             charge_state=parsed_charge_state,
-            sc_entry=defect_vr.get_computed_entry(),
+            sc_entry=sc_entry,
             sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-            bulk_entry=bulk_vr.get_computed_entry(),
+            bulk_entry=bulk_entry,
             # doped attributes:
             name=possible_defect_name,  # set later, so set now to avoid guessing in ``__post_init__()``
             defect_supercell_site=defect_site,  # _relaxed_ defect site
