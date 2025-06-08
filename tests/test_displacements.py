@@ -19,6 +19,8 @@ from doped.utils.displacements import (
 )
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
+module_path = os.path.dirname(os.path.abspath(__file__))
+STYLE = f"{module_path}/../doped/utils/displacement.mplstyle"
 
 
 def if_present_rm(path):
@@ -245,64 +247,64 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                     == ellipsoid_radii[0] / ellipsoid_radii[2]
                 )
 
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png")
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png", style=STYLE)
     def test_plot_site_displacements_proj(self):
         # Vacancy, displacement separated by direction:
         return self.v_Cd_0_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False
         )
 
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot.png")
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot.png", style=STYLE)
     def test_plot_site_displacements(self):
         # Vacancy, total displacement
         return self.v_Cd_0_defect_entry.plot_site_displacements(
             separated_by_direction=False, use_plotly=False
         )
 
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot_relaxed_dists.png")
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot_relaxed_dists.png", style=STYLE)
     def test_plot_site_displacements_proj_relaxed_dists(self):
         # Vacancy, displacement separated by direction:
         return self.v_Cd_0_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False, relaxed_distances=True
         )
 
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot_relaxed_dists.png")
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot_relaxed_dists.png", style=STYLE)
     def test_plot_site_displacements_relaxed_dists(self):
         # Vacancy, total displacement
         return self.v_Cd_0_defect_entry.plot_site_displacements(
             separated_by_direction=False, use_plotly=False, relaxed_distances=True
         )
 
-    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png")
+    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png", style=STYLE)
     def test_plot_site_displacements_ytos(self):
         # Interstitial, total displacement
         return self.F_i_m1_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False
         )
 
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_ellipsoid_plot.png")
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_ellipsoid_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_ellipsoid(self):
         return plot_displacements_ellipsoid(self.v_Cd_0_defect_entry, plot_ellipsoid=True)
 
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_anisotropy_plot.png")
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_anisotropy_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_anisotropy(self):
         return plot_displacements_ellipsoid(
             self.v_Cd_0_defect_entry, plot_ellipsoid=False, plot_anisotropy=True
         )
 
-    @custom_mpl_image_compare(filename="Te_Cd_1_disp_ellipsoid_plot.png")
+    @custom_mpl_image_compare(filename="Te_Cd_1_disp_ellipsoid_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_ellipsoid_Te_Cd_1(self):
         return plot_displacements_ellipsoid(self.Te_Cd_1_defect_entry, plot_anisotropy=True)[0]
 
-    @custom_mpl_image_compare(filename="Te_Cd_1_disp_anisotropy_plot.png")
+    @custom_mpl_image_compare(filename="Te_Cd_1_disp_anisotropy_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_anisotropy_Te_Cd_1(self):
         return plot_displacements_ellipsoid(self.Te_Cd_1_defect_entry, plot_anisotropy=True)[1]
 
-    @custom_mpl_image_compare(filename="F_i_-1_disp_ellipsoid_plot.png")
+    @custom_mpl_image_compare(filename="F_i_-1_disp_ellipsoid_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_ellipsoid_F_i_m1(self):
         return plot_displacements_ellipsoid(self.F_i_m1_defect_entry, plot_ellipsoid=True)
 
-    @custom_mpl_image_compare(filename="F_i_-1_disp_anisotropy_plot.png")
+    @custom_mpl_image_compare(filename="F_i_-1_disp_anisotropy_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_anisotropy_F_i_m1(self):
         return plot_displacements_ellipsoid(
             self.F_i_m1_defect_entry, plot_ellipsoid=False, plot_anisotropy=True

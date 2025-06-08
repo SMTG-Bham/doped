@@ -1927,6 +1927,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             atol=2e2,
         )
 
+        plt.style.use(STYLE)
         f, ax = plt.subplots()
         for defect_index in doped_output_df.index.unique():
             matching_rows = doped_output_df[doped_output_df.index == defect_index]
@@ -1958,9 +1959,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for full consistency with ``test_thermodynamics`` test (due to site
         competition differences etc).
         """
-        plt.style.use(STYLE)
-        f, ax = plt.subplots()
-
         kwargs = {
             "limit": "Te-rich",
             "annealing_temperature_range": anneal_temperatures,
@@ -1989,6 +1987,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             atol=1e-3,
         )
 
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
         # ax.plot(  # cut because requires using scissored DOS to get correct annealing Fermi level
         #     doped_output_df["Annealing Temperature (K)"].unique(),
         #     doped_annealing_output_df["Fermi Level (eV wrt VBM)"].unique(),
@@ -2273,14 +2273,13 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             n_points=50,  # n_points in each dimension when scanning over the chemical potential grid
             annealing_temperature=1000,  # the temperature at which to anneal the system
         )
-
-        from matplotlib.colors import LogNorm
-
         Cu_i_data = data.loc["Int_Cu"]
         Cu_i_concs = Cu_i_data["Concentration (cm^-3)"]
 
         plt.style.use(STYLE)
         fig, ax = plt.subplots()
+        from matplotlib.colors import LogNorm
+
         sc = ax.scatter(
             Cu_i_data["μ_Se (eV)"],
             Cu_i_data["μ_Cu (eV)"],

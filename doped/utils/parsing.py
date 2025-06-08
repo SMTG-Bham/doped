@@ -1359,11 +1359,13 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     """
     # group by the mismatching tags, so we can print them together:
     mismatching_tags_name_list_dict = {
-        tuple(sorted(mismatching_set)): [
-            name
-            for name, other_mismatching_set in mismatching_INCAR_warnings
-            if other_mismatching_set == mismatching_set
-        ]
+        tuple(sorted(mismatching_set)): sorted(
+            [
+                name
+                for name, other_mismatching_set in mismatching_INCAR_warnings
+                if other_mismatching_set == mismatching_set
+            ]
+        )  # sort for consistency
         for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
     }
     return "\n".join(

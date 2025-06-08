@@ -1514,11 +1514,15 @@ class DefectsParser:
         # note that we also check if multiple charge corrections have been applied to the same defect
         # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
 
-        mismatching_INCAR_warnings = [
-            (name, set(defect_entry.calculation_metadata.get("mismatching_INCAR_tags")))
-            for name, defect_entry in self.defect_dict.items()
-            if defect_entry.calculation_metadata.get("mismatching_INCAR_tags")
-        ]
+        mismatching_INCAR_warnings = sorted(
+            [
+                (name, set(defect_entry.calculation_metadata.get("mismatching_INCAR_tags")))
+                for name, defect_entry in self.defect_dict.items()
+                if defect_entry.calculation_metadata.get("mismatching_INCAR_tags")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )  # sort by number of mismatches, reversed
         if mismatching_INCAR_warnings:
             warnings.warn(
                 f"There are mismatching INCAR tags for (some of) your defect and bulk calculations which "
@@ -1531,11 +1535,15 @@ class DefectsParser:
                 f"tags which can affect energies!"
             )
 
-        mismatching_kpoints_warnings = [
-            (name, defect_entry.calculation_metadata.get("mismatching_KPOINTS"))
-            for name, defect_entry in self.defect_dict.items()
-            if defect_entry.calculation_metadata.get("mismatching_KPOINTS")
-        ]
+        mismatching_kpoints_warnings = sorted(
+            [
+                (name, defect_entry.calculation_metadata.get("mismatching_KPOINTS"))
+                for name, defect_entry in self.defect_dict.items()
+                if defect_entry.calculation_metadata.get("mismatching_KPOINTS")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )
         if mismatching_kpoints_warnings:
             joined_info_string = "\n".join(
                 [f"{name}: {mismatching}" for name, mismatching in mismatching_kpoints_warnings]
@@ -1550,11 +1558,15 @@ class DefectsParser:
                 f"accurate results!"
             )
 
-        mismatching_potcars_warnings = [
-            (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))
-            for name, defect_entry in self.defect_dict.items()
-            if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols")
-        ]
+        mismatching_potcars_warnings = sorted(
+            [
+                (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))
+                for name, defect_entry in self.defect_dict.items()
+                if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols")
+            ],
+            key=lambda x: (len(x[1]), x[0]),
+            reverse=True,
+        )  # sort by number of mismatches, reversed
         if mismatching_potcars_warnings:
             joined_info_string = "\n".join(
                 [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]

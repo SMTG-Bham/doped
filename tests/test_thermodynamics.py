@@ -54,7 +54,7 @@ BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
 STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
 
 
-def custom_mpl_image_compare(filename):
+def custom_mpl_image_compare(filename, style=STYLE):
     """
     Set our default settings for MPL image compare.
     """
@@ -64,7 +64,7 @@ def custom_mpl_image_compare(filename):
         @pytest.mark.mpl_image_compare(
             baseline_dir=BASELINE_DIR,
             filename=filename,
-            style=STYLE,
+            style=style,
             savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
         )
         def wrapper(*args, **kwargs):
@@ -668,7 +668,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print("Checking plot()...")
         figure_or_list, output, w = _run_func_and_capture_stdout_warnings(defect_thermo.plot)
         assert isinstance(figure_or_list, mpl.figure.Figure | list)
-        assert not output
+        assert not output or "Trying to install ShakeNBreak custom font" in output
         if chempots is None:
             assert any(
                 "You have not specified chemical potentials (`chempots`), so chemical potentials are set "

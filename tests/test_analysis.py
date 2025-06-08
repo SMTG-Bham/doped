@@ -3417,7 +3417,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # S = 0 bipolaron ncl:
         vr = get_vasprun(
-            f"{self.data_dir}/magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
+            f"{self.data_dir}/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S0_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 0.903, atol=0.05)
@@ -3425,7 +3425,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # S = 1 bipolaron ncl:
         vr = get_vasprun(
-            f"{self.data_dir}/magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
+            f"{self.data_dir}/Magnetization_Tests/CdTe/v_Cd_C2v_Bipolaron_S1_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 1.6, atol=0.05)
@@ -3433,7 +3433,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # O2 triplet calculation, vasp_std, ISPIN = 2
         vr = get_vasprun(
-            f"{self.data_dir}/magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
+            f"{self.data_dir}/Magnetization_Tests/O2_mmm_EaH_0/vasp_std/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         print(get_magnetization_from_vasprun(vr))
@@ -3442,7 +3442,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # O2 triplet calculation, vasp_ncl (near-perfect triplet)
         vr = get_vasprun(
-            f"{self.data_dir}/magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
+            f"{self.data_dir}/Magnetization_Tests/O2_mmm_EaH_0/vasp_ncl/vasprun.xml.gz",
             parse_projected_eigen=True,
         )
         assert np.isclose(np.linalg.norm(get_magnetization_from_vasprun(vr)), 2, atol=0.001)
@@ -3460,7 +3460,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test DefectsParser handling:
         dp, w = _create_dp_and_capture_warnings(
-            output_path=f"{self.data_dir}/magnetization_Tests/CdTe",
+            output_path=f"{self.data_dir}/Magnetization_Tests/CdTe",
             bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             dielectric=9.13,
         )

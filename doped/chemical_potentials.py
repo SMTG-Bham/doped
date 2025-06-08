@@ -1847,11 +1847,15 @@ class CompetingPhasesAnalyzer(MSONable):
                         incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
                     )
 
-                mismatching_INCAR_warnings = [
-                    (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
-                    for entry in entries
-                    if entry.data.get("mismatching_INCAR_tags")
-                ]
+                mismatching_INCAR_warnings = sorted(
+                    [
+                        (entry.name, set(entry.data.get("mismatching_INCAR_tags")))
+                        for entry in entries
+                        if entry.data.get("mismatching_INCAR_tags")
+                    ],
+                    key=lambda x: (len(x[1]), x[0]),
+                    reverse=True,
+                )  # sort by number of mismatches, reversed
                 if mismatching_INCAR_warnings:
                     warnings.warn(
                         f"There are mismatching INCAR tags for (some of) your competing phases "
@@ -1878,11 +1882,15 @@ class CompetingPhasesAnalyzer(MSONable):
                         potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
                     )
 
-                mismatching_potcars_warnings = [
-                    (entry.name, entry.data.get("mismatching_POTCAR_symbols"))
-                    for entry in entries
-                    if entry.data.get("mismatching_POTCAR_symbols")
-                ]
+                mismatching_potcars_warnings = sorted(
+                    [
+                        (entry.name, entry.data.get("mismatching_POTCAR_symbols"))
+                        for entry in entries
+                        if entry.data.get("mismatching_POTCAR_symbols")
+                    ],
+                    key=lambda x: (len(x[1]), x[0]),
+                    reverse=True,
+                )  # sort by number of mismatches, reversed
                 if mismatching_potcars_warnings:
                     joined_info_string = "\n".join(
                         [f"{name}: {mismatching}" for name, mismatching in mismatching_potcars_warnings]

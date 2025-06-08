@@ -1037,7 +1037,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "calculation))':\n",
             "['Ag', 'Sn']:\n[('ADDGRID', True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False), "
             "('NKRED', 2, 1)]",
-            "['Cs2AgBr3', 'Br', 'Cs3Bi2Br9', 'CsAgBr3', 'Cs', 'AgBr']:\n[('ADDGRID', True, False), "
+            "['AgBr', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3']:\n[('ADDGRID', True, False), "
             "('HFSCREEN', 0.2, 0.207), ('LASPH', True, False)]",
             "['Bi']:\n[('ADDGRID', True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False), "
             "('NKRED', 3, 1)]",
