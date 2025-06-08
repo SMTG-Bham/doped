@@ -52,14 +52,14 @@ jobs:
         env:
           MPLBACKEND: Agg  # non-interactive backend for matplotlib
         run: |  # update durations file with `pytest -vv -m "mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_plotting`
-          pytest -vv --mpl -m "mpl_image_compare" --splits 10 --group ${{ matrix.split }} tests  # all plotting tests
+          pytest -vv --mpl -m "mpl_image_compare" --splits 10 --group ${{ matrix.split }} --durations-path tests/.pytest_split_durations_plotting tests
 
       - name: Generate GH Actions test plots
         if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
         env:
           MPLBACKEND: Agg  # non-interactive backend for matplotlib
         run: |  # Generate the test plots in case there were any failures:
-          pytest -vv --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" --splits 10 --group ${{ matrix.split }} tests
+          pytest -vv --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" --splits 10 --group ${{ matrix.split }} --durations-path tests/.pytest_split_durations_plotting tests
 
       # Upload test plots
       - name: Archive test plots
