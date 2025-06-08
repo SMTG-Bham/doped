@@ -230,8 +230,8 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                     assert np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark), atol=1e-3)
                     assert np.allclose(ellipsoid_radii, np.array(ellipsoid_radii_benchmark), atol=1e-3)
                     assert np.allclose(
-                        ellipsoid_rotation, np.array(ellipsoid_rotation_benchmark), atol=1e-3
-                    )
+                        np.abs(ellipsoid_rotation), np.abs(ellipsoid_rotation_benchmark), atol=1e-3
+                    )  # use absolute values, as vectors can be inverted
 
                 else:
                     assert np.allclose(ellipsoid_center, np.array(ellipsoid_center_benchmark), atol=2.0)
