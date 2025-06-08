@@ -446,7 +446,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         with warnings.catch_warnings(record=True) as w:
             plot = self.CdTe_defect_thermo.plot()
         print([str(warn.message) for warn in w])  # for debugging
-        assert len(w) == 2
+        assert len(w) == 3
         assert any("All formation energies for" in str(warn.message) for warn in w)
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot

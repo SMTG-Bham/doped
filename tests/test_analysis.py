@@ -1097,9 +1097,9 @@ class DefectsParsingTestCase(unittest.TestCase):
             i in str(w[0].message)
             for i in [
                 "There are mismatching INCAR tags",
-                "['vac_O_2', 'vac_O_1', 'vac_O_0']:\n[('LASPH', True, False)]",
-            ]  # defect entries are sorted by sort_defect_entries, which should make this ordering
-        )  # deterministic
+                "['vac_O_0', 'vac_O_1', 'vac_O_2']:\n[('LASPH', True, False)]",
+            ]
+        )
 
         assert len(dp.defect_dict) == 3
         self._check_DefectsParser(dp)
