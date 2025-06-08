@@ -1312,9 +1312,10 @@ class DefectEntry(thermo.DefectEntry):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site as the
-                defect of interest. Otherwise, uses the standard dilute limit
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site as the defect of
+                interest. Otherwise, uses the standard dilute limit
                 approximation. Note that when used with
                 ``DefectEntry.equilibrium_concentration()`` here, only this
                 defect itself is considered in the sum over ``i`` in the

@@ -3243,8 +3243,9 @@ class DefectThermodynamics(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
                 Alternatively ``site_competition`` can be set to a string
@@ -3582,8 +3583,9 @@ class DefectThermodynamics(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
         Returns:
@@ -3854,8 +3856,9 @@ class DefectThermodynamics(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
                 Alternatively ``site_competition`` can be set to a string
@@ -5009,8 +5012,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
                 Alternatively ``site_competition`` can be set to a string
@@ -5289,8 +5293,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
@@ -5676,8 +5681,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
@@ -5896,8 +5902,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
@@ -6107,8 +6114,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
@@ -6337,8 +6345,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
@@ -6523,8 +6532,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
@@ -6753,8 +6763,9 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
+                over all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
                 uses the standard dilute limit approximation.
