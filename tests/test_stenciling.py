@@ -104,7 +104,7 @@ class DefectStencilingTest(unittest.TestCase):
 
                 _check_min_dist(
                     expanded_defect_supercell,
-                    orig_min_dist=min_dist(defect_entry.defect_supercell),
+                    min_dist_tol=min_dist(defect_entry.defect_supercell) * 0.99,
                     warning=False,
                 )  # check min_dist, error if minimum distance has changed for some reason
                 assert self.tight_sm.fit(reference_struct, expanded_defect_supercell)
@@ -163,7 +163,7 @@ class DefectStencilingTest(unittest.TestCase):
 
                 _check_min_dist(
                     expanded_defect_supercell,
-                    orig_min_dist=min_dist(defect_entry.defect_supercell),
+                    min_dist_tol=min_dist(defect_entry.defect_supercell) * 0.99,
                     warning=False,
                 )  # check min_dist, error if minimum distance has changed for some reason
 
