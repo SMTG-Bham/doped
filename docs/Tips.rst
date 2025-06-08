@@ -149,7 +149,7 @@ Layered / Low Dimensional Materials
 Layered and low-dimensional materials introduce complications for defect analysis. One point is that
 typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions
 (e.g. `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_,
-`vacancies in low-dimensional chalcogenides <https://arxiv.org/abs/2401.12127>`_ etc), as a result of
+`vacancies in low-dimensional chalcogenides <https://doi.org/10.1038/s41524-024-01303-9>`_ etc), as a result of
 having more complex energy landscapes, and so use of structure-searching strategies like
 `ShakeNBreak <https://shakenbreak.readthedocs.io>`__ can be particularly important.
 
