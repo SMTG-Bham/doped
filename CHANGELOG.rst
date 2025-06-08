@@ -5,7 +5,21 @@ Change Log
 
 v.3.1.0
 ----------
-TODO
+- Update chemical potentials code:
+    - Handle recent breaking changes in ``pymatgen`` (Apr 2025).
+    - Auto check compatibility of ``INCAR``\s and ``POTCAR``\s in competing phases calculations (as already done for supercell calculations).
+    - Merge ``ExtrinsicCompetingPhases`` to ``CompetingPhases``
+- Directly parse spin magnetisation from VASP outputs, including handling for NCL spins.
+- Add site-competition handling in defect concentration functions; usage in this `paper <https://doi.org/10.26434/chemrxiv-2025-j44qd>`__, see `docstring <https://doped.readthedocs.io/en/latest/doped.thermodynamics.html#doped.thermodynamics.DefectThermodynamics.get_equilibrium_concentrations>`__.
+- Include 'adsorbate' interstitial sites for structures with significant vacuum volume.
+- Avoid ``multiprocessing`` errors with python scripts that don't use ``if __name__ == "__main__":`` (#105, #108)
+- Improved algorithm for defect site clustering (for plotting & concentration analyses).
+- Use primitive cell for parsed ``Defect``\s, rather than supercell.
+- ``delta_gap`` updates:
+    - Add ``delta_gap`` option to ``FermiSolver`` methods
+    - Allow ``delta_gap`` to be given as a function for temperature-dependent methods
+- Many efficiency updates.
+- Miscellaneous minor bug fixes, improvements and docs updates.
 
 v.3.0.0
 ----------
