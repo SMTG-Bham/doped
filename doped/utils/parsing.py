@@ -1269,12 +1269,13 @@ def _compare_kpoints(
 
 
 def _compare_incar_tags(
-    bulk_incar_dict,
-    defect_incar_dict,
-    fatal_incar_mismatch_tags=None,
-    bulk_name="bulk",
-    defect_name="defect",
-    warn=True,
+    bulk_incar_dict: dict[str, str | int | float],
+    defect_incar_dict: dict[str, str | int | float],
+    fatal_incar_mismatch_tags: dict[str, str | int | float] | None = None,
+    ignore_tags: set[str] | None = None,
+    bulk_name: str="bulk",
+    defect_name: str="defect",
+    warn: bool=True,
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
@@ -1297,6 +1298,13 @@ def _compare_incar_tags(
             "PRECFOCK": "Normal",  # default Normal
             "LDAU": False,  # default False
             "NKRED": 1,  # default 1
+            "LSORBIT": False,  # default False
+        }
+    if ignore_tags is not None:
+        fatal_incar_mismatch_tags = {
+            key: val
+            for key, val in fatal_incar_mismatch_tags.items()
+            if key not in ignore_tags
         }
 
     def _compare_incar_vals(val1, val2):

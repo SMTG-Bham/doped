@@ -1831,7 +1831,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 incar_template_entry = sorted_entries_with_incar_data[0]
                 for entry in entries:
                     incar_mismatches = _compare_incar_tags(
-                        incar_template_entry.data["incar"], entry.data["incar"], warn=False
+                        incar_template_entry.data["incar"],
+                        entry.data["incar"],
+                        ignore_tags={"NKRED"},  # no NKRED mismatch warnings for competing phases
+                        warn=False,
                     )  # warned collectively below if any mismatches
                     # ignore ISIF warnings in cases of supercell calculations (i.e. either gas calculations
                     # or bulk supercell -- assumed to be the correct volume):

@@ -1035,12 +1035,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "Found the following differences:\n"
             "(in the format: 'Entries: (INCAR tag, value in entry calculation, value in reference "
             "calculation))':\n",
-            "['Ag', 'Sn']:\n[('ADDGRID', True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False), "
-            "('NKRED', 2, 1)]",
-            "['AgBr', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3']:\n[('ADDGRID', True, False), "
-            "('HFSCREEN', 0.2, 0.207), ('LASPH', True, False)]",
-            "['Bi']:\n[('ADDGRID', True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False), "
-            "('NKRED', 3, 1)]",
+            "['Ag', 'AgBr', 'Bi', 'Br', 'Cs', 'Cs2AgBr3', 'Cs3Bi2Br9', 'CsAgBr3', 'Sn']:\n[('ADDGRID', "
+            "True, False), ('HFSCREEN', 0.2, 0.207), ('LASPH', True, False)]",
             "Where Cs2AgBiBr6 was used as the reference entry calculation.",
             "In general, the same INCAR settings should be used in all final calculations for these tags "
             "which can affect energies!",
