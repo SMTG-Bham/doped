@@ -23,7 +23,7 @@ dependencies = [
     "numpy>=1.21.0",
     "pymatgen>=2025.5.28",  # breaking changes to MPRester (mp-api dropped), and UFloat handling
     "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.4",  # oxi-state functions renaming, and doped StructureMatcher efficiency updates
+    "shakenbreak>=3.4.2",  # doped StructureMatcher efficiency updates (using ``StructureMatcher_scan_stol``)
     "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
