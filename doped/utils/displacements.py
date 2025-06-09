@@ -533,20 +533,16 @@ def calc_displacements_ellipsoid(
         (center, radii, rotation)
         """
         tolerance = 0.01
-
         P = np.array(P)
         N, d = np.shape(P)
 
-        # Q will be our working array
-        Q = np.vstack([np.copy(P.T), np.ones(N)])
+        Q = np.vstack([np.copy(P.T), np.ones(N)])  # working array
         QT = Q.T
 
-        # initializations
         err = 1.0 + tolerance
         u = (1.0 / N) * np.ones(N)
 
-        # Khachiyan Algorithm
-        while err > tolerance:
+        while err > tolerance:  # Khachiyan Algorithm
             V = np.dot(Q, np.dot(np.diag(u), QT))
             M = np.diag(np.dot(QT, np.dot(np.linalg.inv(V), Q)))  # M the diagonal vector of an NxN matrix
             j = np.argmax(M)
@@ -557,19 +553,19 @@ def calc_displacements_ellipsoid(
             err = np.linalg.norm(new_u - u)
             u = new_u
 
-        # center of the ellipse
-        center = np.dot(P.T, u)
+        center = np.dot(P.T, u)  # center of the ellipse
 
-        # the A matrix for the ellipse
-        A = (
+        A = (  # the A matrix for the ellipse
             np.linalg.inv(
                 np.dot(P.T, np.dot(np.diag(u), P)) - np.array([[a * b for b in center] for a in center])
             )
             / d
         )
 
-        # Get the values we'd like to return
         U, s, rotation = np.linalg.svd(A)
+        # rotation vectors are interchangeable with their inverse (*-1), so choose that which most
+        # closely aligns with the positive octant (i.e. with [1, 1, 1]):
+        rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < 0, -1, 1)
         radii = 1.0 / np.sqrt(s)
 
         return center, radii, rotation
