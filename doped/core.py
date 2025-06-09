@@ -2738,6 +2738,24 @@ def remove_site_oxi_state(site: PeriodicSite):
     site.species = Composition(new_sp)
 
 
+def _get_single_valence_oxi_states(bulk_oxi_states: Structure | Composition | dict = False) -> dict:
+    if isinstance(bulk_oxi_states, Structure):
+        single_valence_oxi_states = {
+            el.symbol: el.oxi_state for el in bulk_oxi_states.composition.elements
+        }
+    elif isinstance(bulk_oxi_states, Composition):
+        single_valence_oxi_states = {el.symbol: el.oxi_state for el in bulk_oxi_states.elements}
+    elif isinstance(bulk_oxi_states, dict):
+        single_valence_oxi_states = bulk_oxi_states
+    else:
+        raise TypeError(
+            f"Input bulk_oxi_states must be a pymatgen Structure, Composition or dict, not "
+            f"{type(bulk_oxi_states)}."
+        )
+
+    return single_valence_oxi_states
+
+
 def doped_defect_from_pmg_defect(
     defect: core.Defect, bulk_oxi_states: Structure | Composition | dict | bool = False, **doped_kwargs
 ):

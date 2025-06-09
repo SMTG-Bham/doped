@@ -30,6 +30,7 @@ from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
+from pymatgen.util.coord import get_angle
 from pymatgen.util.typing import PathLike
 from tabulate import tabulate
 from tqdm import tqdm
@@ -41,12 +42,20 @@ from doped.core import (
     Interstitial,
     Substitution,
     Vacancy,
+    _get_single_valence_oxi_states,
     doped_defect_from_pmg_defect,
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
-from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
+from doped.utils.efficiency import (
+    Composition,
+    DopedTopographyAnalyzer,
+    DopedVacancyGenerator,
+    Element,
+    PeriodicSite,
+    Structure,
+)
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
 
@@ -2386,6 +2395,265 @@ class DefectsGenerator(MSONable):
             ``DefectsGenerator`` object
         """
         return loadfn(filename)
+
+    # TODO: Use check like this to determine whether to call this function in default DefectsGenerator
+    #  workflow
+    # if self.kwargs.get("skip_split_vacancies", False):
+    #     print(
+    #         "Skipping split vacancies as 'skip_split_vacancies' is set to True in kwargs."
+    #     )
+    #     return False
+    # TODO: Should also allow kwarg to give in tolerance of relative electrostatic energy for including
+    #  candidate split vacancies
+    # TODO: Also allow kwarg to control anion split vacancy generation (but off by default as we expect
+    #  a lower prevalence rate?)
+    def get_split_vacancies(self, verbose: bool = True):  # TODO: Use verbose = False in DefectsGen
+        """
+        Todo:
+        Note that this function requires the bulk oxidation states to be set
+        (in the ``DefectsGenerator._bulk_oxi_states`` attribute), which is
+        done automatically in ``DefectsGenerator`` initialisation when oxidation
+        states can be successfully guessed. Additionally, this function assumes
+        single oxidation states for each element in the bulk structure (i.e.
+        does not account for any mixed valence).
+        """
+        if not self._bulk_oxi_states:
+            if verbose:
+                warnings.warn(
+                    "No oxidation states determined for bulk structure, which is required for candidate "
+                    "low-energy split vacancy identification (via electrostatic analysis)!"
+                )
+            return None
+
+        single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
+        cations = {elt for elt, oxi in single_valence_oxi_states.items() if oxi > 0}
+        if not cations:  # TODO: And no split anion vacancy allowed
+            if verbose:
+                warnings.warn(
+                    "No cations found in host structure, skipping (cation) split vacancy identification!"
+                )
+            return None
+
+        # try from database, otherwise print info message and try from electrostatics
+        split_vacancies = self.get_split_vacancies_from_database(
+            verbose="Will use electrostatic analysis to check for candidate low-energy split vacancies. "
+            "Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
+        )
+        if split_vacancies:
+            return split_vacancies
+
+        return self.get_split_vacancies_from_electrostatics()
+
+    def get_split_vacancies_from_database(self, verbose: bool | str = False):
+        """
+        TODO.
+        """
+        raise NotImplementedError("Not implemented yet.")
+
+    def get_split_vacancies_from_electrostatics(self, relative_electrostatic_energy_tol: float = 0.1):
+        """
+        Get candidate split vacancies from electrostatics analysis.
+        """
+        single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
+        bulk_supercell_w_oxi_states = self.bulk_supercell.copy()
+        bulk_supercell_w_oxi_states.add_oxidation_state_by_element(single_valence_oxi_states)
+        # bulk_supercell_es_energy = get_es_energy(bulk_supercell_w_oxi_states)
+        cations = {elt for elt in single_valence_oxi_states if single_valence_oxi_states[elt] > 0}
+
+        def estimate_ES_time(num_candidates, cell_size):
+            """
+            Estimated electrostatic estimation compute time per process.
+
+            From fitting and testing with/without multiprocessing over
+            different sizes / compositions, on a Macbook Pro 2021. Quadratic as
+            expected.
+            """
+            return 1.7e-5 * num_candidates * cell_size**2
+
+        for cation in cations:
+            candidate_split_vacancies: dict[frozenset[float], dict] = {}
+            if self.kwargs.get("dist_tol"):
+                dist_tol = self.kwargs["dist_tol"]
+            else:
+                dist_tol = 5
+                while (
+                    not candidate_split_vacancies
+                    or estimate_ES_time(len(candidate_split_vacancies), self.bulk_supercell.num_sites)
+                    / (4 * 60)
+                    > 5  # will be >5 mins with 4 processes, reduce search space (for v low symmetry cases)
+                ) and dist_tol > 0:
+                    try:
+                        candidate_split_vacancies = self.get_candidate_split_vacancies_for_element(
+                            cation, dist_tol=dist_tol
+                        )
+                    except Exception as exc:
+                        print(f"Error generating split vacancies for {cation}: {exc}")
+                        break
+                    dist_tol -= 0.5
+
+                # TODO: Here print dist_tol to be used, and that it can be set by user if wanted
+
+            # if not candidate_split_vacancies:
+            #     print(f"No candidate split vacancies found for {cation} in {formula}")
+            #     dumpfn({}, f"outputs/{formula}_skipped_{formatted_date}_{task_id}_{ntasks}.json.gz")
+            #     continue
+            # ...
+
+        #
+        #     # candidate_split_vacancies = {energy: subdict for energy, subdict in
+        #     candidate_split_vacancies.items()
+        #     # if subdict["v1i_dist"]**2 + subdict["v2i_dist"]**2 <= 36} # for efficiency
+        #     # tested, adding this constraint only speeds up by ~50%, not worth it. Can later check if our
+        #     initial screens only gave lower energy split vacancies for distances less than this.
+        #
+        #     if verbose:
+        #         print(
+        #             f"{len(candidate_split_vacancies)} candidate split vacancies found for {cation},
+        #             of which {len({v['short_name'] for v in candidate_split_vacancies.values()})} unique
+        #             short-names"
+        #         )
+        #
+        #     vacs = [
+        #         entry
+        #         for entry in defect_gen.values()
+        #         if entry.name.startswith(f"v_{cation}_")
+        #     ]
+        #     fully_ionised_charge_state = min([entry.charge_state for entry in vacs])  # most negative
+        #     fully_ionised_vacs = [
+        #         entry for entry in vacs if entry.charge_state == fully_ionised_charge_state
+        #     ]
+        #     if verbose:
+        #         print(
+        #             f"{len(fully_ionised_vacs)} fully-ionised single {cation} vacancies found"
+        #         )
+
+    def get_candidate_split_vacancies_for_element(
+        self,
+        element: str,
+        dist_tol: float = 5.0,
+        show_pbar: bool = True,
+    ) -> dict[frozenset[float], dict]:
+        """
+        Generate inequivalent split vacancy configurations for a given element,
+        with a maximum vacancy-interstitial distance of ``dist_tol`` Å.
+
+        Split vacancies are generated by finding all possible
+        vacancy-interstitial-vacancy complexes with vacancy-interstitial distances
+        less than ``dist_tol`` Å, and removing any duplicates when considering
+        the vacancy-interstitial distances and angles.
+
+        Note that hypothetically there could exist some non-degenerate split
+        vacancy configurations which have the same set of V-I-V distances, in
+        which case one may want to avoid the automatic pruning used here, though
+        this is expected to be extremely rare in practice.
+
+        See https://doi.org/10.48550/arXiv.2412.19330 for further details.
+
+        Args:
+            element (str):
+                The element for which to generate split vacancies.
+            dist_tol (float):
+                The maximum distance between vacancy and interstitial sites
+                to allow for candidate split vacancies (which are
+                vacancy-interstitial-vacancy complexes). Default is 5.0 Å.
+            show_pbar (bool):
+                Whether to show a progress bar during generation.
+                Default is ``True``.
+
+        Returns:
+            dict:
+                A dictionary of candidate split vacancies, with the
+                vacancy-interstitial distances as keys and a dictionary
+                of the defect information as values.
+        """
+        interstitial_entries = [
+            entry
+            for entry in self.defect_entries.values()
+            if entry.name.startswith(f"{element}_i") and entry.charge_state == 0
+        ]
+        if not interstitial_entries:
+            # no neutral entries (possibly due to user editing), take all interstitials and reduce to
+            # unique set by defect_supercell_site property:
+            interstitial_entries = list(
+                {
+                    entry.defect_supercell_site: entry
+                    for entry in self.defect_entries.values()
+                    if entry.name.startswith(f"{element}_i")
+                }.values()
+            )
+
+        if not interstitial_entries:
+            raise ValueError(
+                f"No interstitial entries found for element {element} -- required for split vacancy "
+                f"generation."
+            )
+
+        # dict, using VIV dists as keys to avoid unwanted duplicates:
+        candidate_split_vacancies: dict[frozenset[float], dict] = {}
+        defect_init_kwargs = {
+            "oxi_state": 0,
+            "multiplicity": 1,
+        }  # to avoid slow pymatgen functions for these
+        doped_vacancy_generator = DopedVacancyGenerator()
+
+        if show_pbar:
+            interstitial_entries = tqdm(
+                interstitial_entries, desc=f"Generating split vacancies for {element}..."
+            )
+
+        for interstitial_entry in interstitial_entries:
+            assert interstitial_entry.defect_supercell_site is not None  # supercell site exists
+            if interstitial_entry.name.startswith(f"{element}_i"):
+                # we set oxi_state to 0 to avoid pymatgen trying to guess oxi states
+                for vac in doped_vacancy_generator.generate(
+                    structure=interstitial_entry.defect_supercell,
+                    rm_species={element},
+                    **defect_init_kwargs,
+                ):
+                    if vac.site.distance(interstitial_entry.defect_supercell_site) < dist_tol:
+                        for second_vac in doped_vacancy_generator.generate(
+                            structure=vac.defect_structure, rm_species={element}, **defect_init_kwargs
+                        ):
+                            if (
+                                second_vac.site.distance(interstitial_entry.defect_supercell_site)
+                                < dist_tol
+                            ):
+                                v1i_dist = round(
+                                    vac.site.distance(interstitial_entry.defect_supercell_site), 3
+                                )
+                                v2i_dist = round(
+                                    second_vac.site.distance(interstitial_entry.defect_supercell_site), 3
+                                )
+                                if (
+                                    round(v1i_dist, 1) != 0 and round(v2i_dist, 1) != 0
+                                ):  # if v-i dist is zero then is a single vacancy (V added at i site)
+                                    vec_1 = (
+                                        vac.site.coords - interstitial_entry.defect_supercell_site.coords
+                                    )
+                                    vec_2 = (
+                                        second_vac.site.coords
+                                        - interstitial_entry.defect_supercell_site.coords
+                                    )
+                                    angle = get_angle(vec_1, vec_2, units="degrees")
+                                    candidate_split_vacancies[
+                                        frozenset(
+                                            (round(v1i_dist, 2), round(v2i_dist, 2), round(angle, 1))
+                                        )
+                                    ] = {
+                                        "interstitial_site": interstitial_entry.defect_supercell_site,
+                                        "vacancy_1_site": vac.site,
+                                        "vacancy_2_site": second_vac.site,
+                                        "vacancy_1_interstitial_distance": v1i_dist,
+                                        "vacancy_2_interstitial_distance": v2i_dist,
+                                        "VIV_dist_key": f"{v1i_dist:.2f}_{v2i_dist:.2f}",
+                                        "VIV_bond_angle_degrees": round(angle, 3),
+                                    }
+        # note that if/when generalising to the creation of defect complexes with 4+ constituent point
+        # defects, would need to account for all possible bond and dihedral angles to determine
+        # geometric uniqueness. For 2-defect complexes, likely want to take both distance and site group
+        # (from symm structure) for uniqueness
+
+        return candidate_split_vacancies
 
     def __getattr__(self, attr):
         """
