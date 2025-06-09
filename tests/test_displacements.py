@@ -173,32 +173,32 @@ class DefectDisplacementsTestCase(unittest.TestCase):
     def test_calc_displacements_ellipsoid(self):
         # Vacancy:
         # These benchmarks are for the displacement ellipsoid of V_Cd^0 in CdTe at quantile=0.8:
-        ellipsoid_center_V_Cd_0 = [7.0425819, 6.02166313, 6.95936032]
-        ellipsoid_radii_V_Cd_0 = [4.87240561, 5.05708172, 7.17470889]
+        ellipsoid_center_V_Cd_0 = [7.13105322, 6.00301352, 7.01083535]
+        ellipsoid_radii_V_Cd_0 = [4.93846557, 5.13530794, 7.24309775]
         ellipsoid_rotation_V_Cd_0 = [
-            [-0.60311542, 0.65630014, 0.45334526],
-            [-0.72881472, -0.68438333, 0.02117917],
-            [0.32416183, -0.31763121, 0.89108334],
+            [-0.6268144, 0.6346784, 0.45198123],
+            [0.71042757, 0.70376392, -0.0030035],
+            [0.31999434, -0.31921729, 0.89202239],
         ]
 
         # Substitution:
         # These benchmarks are for the displacement ellipsoid of Te_Cd^+1 in CdTe at quantile=0.8:
-        ellipsoid_center_Te_Cd_1 = [6.18957603, 6.17932465, 6.84044422]
-        ellipsoid_radii_Te_Cd_1 = [3.10352118, 5.06896107, 5.11217386]
+        ellipsoid_center_Te_Cd_1 = [6.19574587, 6.19525728, 6.88797036]
+        ellipsoid_radii_Te_Cd_1 = [3.15467871, 5.13765138, 5.14004549]
         ellipsoid_rotation_Te_Cd_1 = [
-            [-0.57487044, -0.57786455, 0.57930695],
-            [0.23007278, -0.79357926, -0.56329254],
-            [0.78523276, -0.19053747, 0.58915616],
+            [0.5772016, 0.57738077, 0.57746841],
+            [0.26610123, 0.80155036, 0.53545043],
+            [0.77202879, 0.15539778, 0.61629788],
         ]
 
         # Interstitial:
         # These benchmarks are for the displacement ellipsoid of Int_Te_3_1 in CdTe at quantile=0.8:
-        ellipsoid_center_Te_i_1 = [6.09696696, 7.48234777, 6.19752711]
-        ellipsoid_radii_Te_i_1 = [3.48790624, 5.56101187, 6.8367233]
+        ellipsoid_center_Te_i_1 = [6.09363088, 7.49090509, 6.25422689]
+        ellipsoid_radii_Te_i_1 = [3.55290552, 5.58410512, 6.92612648]
         ellipsoid_rotation_Te_i_1 = [
-            [-0.43707588, -0.59878091, -0.67113791],
-            [-0.38107693, 0.79918498, -0.46484808],
-            [0.81470549, 0.05258129, -0.57748607],
+            [0.44059141, 0.59640957, 0.6709507],
+            [0.38012734, 0.80103898, 0.46242811],
+            [0.81325421, 0.05130485, 0.57964248],
         ]
 
         for entry, ellipsoid_center_benchmark, ellipsoid_radii_benchmark, ellipsoid_rotation_benchmark in [

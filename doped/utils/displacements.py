@@ -474,6 +474,7 @@ def calc_displacements_ellipsoid(
     quantile: float = 0.8,
     relaxed_distances: bool = False,
     return_extras: bool = False,
+    tolerance: float = 5e-4,
 ) -> tuple:
     """
     Calculate displacements around a defect site and fit an ellipsoid to these
@@ -500,6 +501,9 @@ def calc_displacements_ellipsoid(
             threshold, where the structure has been shifted to place the defect
             at the cell midpoint ([0.5, 0.5, 0.5]) in fractional coordinates.
             Default is ``False``.
+        tolerance (float):
+            Tolerance for the minimum volume ellipsoid fitting algorithm.
+            Default is 5e-4. Smaller is more precise, but slower.
 
     Returns:
         tuple:
@@ -514,7 +518,7 @@ def calc_displacements_ellipsoid(
             used to fit the ellipsoid, appended to the return tuple.
     """
 
-    def _get_minimum_volume_ellipsoid(P):
+    def _get_minimum_volume_ellipsoid(P, tolerance=5e-4):
         """
         Find the minimum volume ellipsoid which holds all the points.
 
@@ -532,7 +536,6 @@ def calc_displacements_ellipsoid(
         Returns:
         (center, radii, rotation)
         """
-        tolerance = 0.01
         P = np.array(P)
         N, d = np.shape(P)
 
@@ -563,9 +566,20 @@ def calc_displacements_ellipsoid(
         )
 
         U, s, rotation = np.linalg.svd(A)
-        # rotation vectors are interchangeable with their inverse (*-1), so choose that which most
-        # closely aligns with the positive octant (i.e. with [1, 1, 1]):
-        rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < 0, -1, 1)
+        # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
+        # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
+        # with the positive octant (i.e. along [1, 1, 1]):
+        # dots_111 = R.T @ np.array([1.0, 1.0, 1.0])  # shape (3,)
+        # signs = np.where(dots_111 < -tolerance*2, -1.0, 1.0)  # shape (3,), either -1 or +1
+        # R *= signs  # broadcast over rows
+        print(rotation)
+        print(np.dot(rotation, [1, 1, 1]))
+        print(np.dot(rotation, [1, 1, 1])[:, None] < 0)
+        print(np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1))
+        # rotation = _canonical_axes(rotation)
+        rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1)
+        print(rotation)
+        print(np.dot(rotation, [1, 1, 1]))
         radii = 1.0 / np.sqrt(s)
 
         return center, radii, rotation
