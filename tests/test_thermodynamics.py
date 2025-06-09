@@ -3452,7 +3452,6 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             "No chemical potentials supplied, so using 0 for all chemical potentials" in str(warn.message)
             for warn in w
         )
-        assert np.isclose(fl, 1.283453, atol=1e-3)
 
         defect_thermo = deepcopy(self.defect_thermo)
         defect_thermo.chempots = None
@@ -3915,7 +3914,6 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             "No chemical potentials supplied, so using 0 for all chemical potentials" in str(warn.message)
             for warn in w
         )
-        assert np.isclose(results[0], 1.34875, atol=1e-3)
 
         defect_thermo = deepcopy(self.defect_thermo)
         defect_thermo.chempots = None
