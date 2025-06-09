@@ -19,5 +19,7 @@ Please provide a clear and concise description of what the bug is.
 - Please describe how and where the bug occurs, preferably with screenshots to help.
 - If possible, please provide the code and inputs you are using which causes this bug, so the developers can debug.
 
-**OS**
+**Version & OS**
+What version of `doped` and Python are you using? (`pip show doped` & `python --version`)
+
 Are you using Windows?

@@ -1,5 +1,5 @@
 """
-Helper functions for parsing VASP supercell defect calculations.
+Helper functions for parsing defect supercell calculations.
 """
 
 import contextlib
@@ -8,21 +8,24 @@ import logging
 import os
 import re
 import warnings
-from collections import defaultdict
-from functools import lru_cache
+from copy import deepcopy
+from functools import lru_cache, partialmethod
+from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
+from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import LinearAssignment, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
+from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
-from pymatgen.util.typing import PathLike
+from pymatgen.util.typing import PathLike, SpeciesLike
 
-from doped.core import DefectEntry
+from doped.core import DefectEntry, remove_site_oxi_state
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
@@ -62,43 +65,68 @@ def find_archived_fname(fname, raise_error=True):
 # has to be defined as staticmethod to be consistent with usage in pymatgen, alternatively could make
 # fake custom class:
 @staticmethod  # type: ignore[misc]
-def parse_projected_eigen_no_mag(elem):
+def parse_projected_eigen(
+    elem: XML_Element, parse_mag: bool = True
+) -> tuple[dict[Spin, np.ndarray], np.ndarray | None]:
     """
     Parse the projected eigenvalues from a ``Vasprun`` object (used during
-    initialisation), but excluding the projected magnetisation for efficiency.
+    initialisation), but excluding the projected magnetization for efficiency.
 
-    This is a modified version of ``_parse_projected_eigen``
-    from ``pymatgen.io.vasp.outputs.Vasprun``, which skips
-    parsing of the projected magnetisation in order to expedite
-    parsing in ``doped``, as well as some small adjustments to
-    maximise efficiency.
+    Note that following SK's PRs to ``pymatgen`` (#4359, #4360), parsing of
+    projected eigenvalues adds minimal additional cost to Vasprun parsing
+    (~1-5%), while parsing of projected magnetization can add ~30% cost.
+
+    This is a modified version of ``_parse_projected_eigen`` from
+    ``pymatgen.io.vasp.outputs.Vasprun``, which allows skipping of projected
+    magnetization parsing in order to expedite parsing in ``doped``, as well as
+    some small adjustments to maximise efficiency.
+
+    Args:
+        elem (Element):
+            The XML element to parse, with projected eigenvalues/magnetization.
+        parse_mag (bool):
+            Whether to parse the projected magnetization. Default is ``True``.
+
+    Returns:
+        Tuple[Dict[Spin, np.ndarray], Optional[np.ndarray]]:
+            A dictionary of projected eigenvalues for each spin channel
+            (up/down), and the projected magnetization (if parsed).
     """
     root = elem.find("array/set")
-    proj_eigen = defaultdict(list)
-    sets = root.findall("set")
+    proj_eigen = {}
+    sets = root.findall("set")  # type: ignore[union-attr]
 
     for s in sets:
-        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])
+        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])  # type: ignore[index]
         if spin == 1 or (spin == 2 and len(sets) == 2):
             spin_key = Spin.up if spin == 1 else Spin.down
-            proj_eigen[spin_key] = np.array(
-                [[_parse_vasp_array(sss) for sss in ss.findall("set")] for ss in s.findall("set")]
-            )
+        elif parse_mag:  # parse projected magnetization
+            spin_key = spin  # {2:"x", 3:"y", 4:"z"}
+        else:
+            continue
+
+        proj_eigen[spin_key] = np.array(
+            [[_parse_vasp_array(sss) for sss in ss.findall("set")] for ss in s.findall("set")]
+        )
+
+    if len(proj_eigen) > 2:
+        # non-collinear magnetism (spin-orbit coupling) enabled, last three "spin channels" are the
+        # projected magnetization of the orbitals in the x, y, and z Cartesian coordinates:
+        proj_mag = np.stack([proj_eigen.pop(i) for i in range(2, 5)], axis=-1)
+        proj_eigen = {Spin.up: proj_eigen[Spin.up]}
+    else:
+        proj_mag = None
 
     # here we _could_ round to 3 decimal places (and ensure rounding 0.0005 up to 0.001) to be _mostly_
     # consistent with PROCAR values (still not 100% the same as e.g. 0.00047 will be rounded to 0.0005
     # in vasprun, but 0.000 in PROCAR), but this is _reducing_ the accuracy so better not to do this,
     # and accept that PROCAR results may not be as numerically robust
     # proj_eigen = {k: np.round(v+0.00001, 3) for k, v in proj_eigen.items()}
-    proj_mag = None
     elem.clear()
     return proj_eigen, proj_mag
 
 
-Vasprun._parse_projected_eigen = parse_projected_eigen_no_mag  # skip parsing of proj magnetisation
-
-
-def get_vasprun(vasprun_path: PathLike, **kwargs):
+def get_vasprun(vasprun_path: PathLike, parse_mag: bool = True, **kwargs):
     """
     Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
     """
@@ -110,10 +138,22 @@ def get_vasprun(vasprun_path: PathLike, **kwargs):
     warnings.filterwarnings(
         "ignore", message="No POTCAR file with matching TITEL fields"
     )  # `message` only needs to match start of message
-    default_kwargs = {"parse_dos": False}
+    default_kwargs = {"parse_dos": False, "exception_on_bad_xml": False}
     default_kwargs.update(kwargs)
+
+    Vasprun._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag)
     try:
-        vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
+        with warnings.catch_warnings(record=True) as w:
+            vasprun = Vasprun(find_archived_fname(vasprun_path), **default_kwargs)
+        for warning in w:
+            if "XML is malformed" in str(warning.message):
+                warnings.warn(
+                    f"vasprun.xml file at {vasprun_path} is corrupted/incomplete. Attempting to "
+                    f"continue parsing but may fail!"
+                )
+            else:  # show warning, preserving original category:
+                warnings.warn(warning.message, category=warning.category)
+
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"vasprun.xml not found at {vasprun_path}(.gz/.xz/.bz/.lzma). Needed for parsing calculation "
@@ -172,8 +212,8 @@ def get_core_potentials_from_outcar(
         outcar_path (PathLike):
             The path to the OUTCAR file.
         dir_type (str):
-            The type of directory the OUTCAR is in (e.g. ``bulk`` or ``defect``)
-            for informative error messages.
+            The type of directory the OUTCAR is in (e.g. ``bulk`` or
+            ``defect``) for informative error messages.
         total_energy (Optional[Union[list, float]]):
             The already-parsed total energy for the structure. If provided,
             will check that the total energy of the ``OUTCAR`` matches this
@@ -181,7 +221,7 @@ def get_core_potentials_from_outcar(
 
     Returns:
         np.ndarray:
-            The core potentials from the last ionic step in the ``OUTCAR`` file.
+            The core potentials from the last ionic step in the ``OUTCAR``.
     """
     # initialise Outcar class without running __init__ method:
     outcar = Outcar.__new__(Outcar)
@@ -200,8 +240,8 @@ def _get_final_energy_from_outcar(outcar_path):
     Get the final total energy from an ``OUTCAR`` file, even if the calculation
     was not completed.
 
-    Templated on the ``OUTCAR`` parsing code from ``pymatgen``,
-    but works even if the ``OUTCAR`` is incomplete.
+    Templated on the ``OUTCAR`` parsing code from ``pymatgen``, but works even
+    if the ``OUTCAR`` is incomplete.
     """
     e0_pattern = re.compile(r"energy\(sigma->0\)\s*=\s+([\d\-\.]+)")
     e0 = None
@@ -260,62 +300,43 @@ def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""
     )
 
 
-def get_procar(procar_path: PathLike):
+def get_procar(procar_path: PathLike) -> Procar:
     """
-    Read the ``PROCAR(.gz)`` file as an ``easyunfold`` ``Procar`` object (if
-    ``easyunfold`` installed), else a ``pymatgen`` ``Procar`` object (doesn't
-    support SOC).
+    Read the ``PROCAR(.gz)`` file as a ``pymatgen`` ``Procar`` object.
 
-    If ``easyunfold`` installed, the ``Procar`` will be parsed with
-    ``easyunfold`` and then the ``proj_data`` attribute will be converted
-    to a ``data`` attribute (to be compatible with ``pydefect``, which uses
-    the ``pymatgen`` format).
+    Previously, ``pymatgen`` ``Procar`` parsing did not support SOC
+    calculations, however this was updated in
+    https://github.com/materialsproject/pymatgen/pull/3890 to use code from
+    ``easyunfold`` (https://smtg-bham.github.io/easyunfold -- a package for
+    unfolding electronic band structures for symmetry-broken / defect /
+    dopant systems, with many plotting & analysis tools).
     """
     try:
         procar_path = find_archived_fname(str(procar_path))  # convert to string if Path object
     except FileNotFoundError:
         raise FileNotFoundError(f"PROCAR file not found at {procar_path}(.gz/.xz/.bz/.lzma)!") from None
 
-    easyunfold_installed = True  # first try loading with easyunfold
-    try:
-        from easyunfold.procar import Procar as EasyunfoldProcar
-    except ImportError:
-        easyunfold_installed = False
-
-    if easyunfold_installed:
-        procar = EasyunfoldProcar(procar_path, normalise=False)
-        if procar._is_soc:
-            procar.data = {Spin.up: procar.proj_data[0]}
-        else:
-            procar.data = {Spin.up: procar.proj_data[0], Spin.down: procar.proj_data[1]}
-        del procar.proj_data  # reduce space
-    else:
-        try:  # try parsing with ``pymatgen`` instead, but doesn't support SOC!
-            procar = Procar(procar_path)
-        except IndexError as exc:  # SOC error
-            raise ValueError(
-                "PROCAR from a SOC calculation was provided, but `easyunfold` is not installed and "
-                "`pymatgen` does not support SOC PROCAR parsing! Please install `easyunfold` with `pip "
-                "install easyunfold`."
-            ) from exc
-
-    return procar
+    return Procar(procar_path)
 
 
-def _get_output_files_and_check_if_multiple(output_file: PathLike = "vasprun.xml", path: PathLike = "."):
+def _get_output_files_and_check_if_multiple(
+    output_file: PathLike = "vasprun.xml", path: PathLike = "."
+) -> tuple[PathLike, bool]:
     """
     Search for all files with filenames matching ``output_file``, case-
     insensitive.
 
-    Returns (output file path, Multiple?) where ``Multiple`` is
-    ``True`` if multiple matching files are found.
-
     Args:
         output_file (PathLike):
-            The filename to search for (case-insensitive).
-            Should be either ``vasprun.xml``, ``OUTCAR``,
-            ``LOCPOT`` or ``PROCAR``.
-        path (PathLike): The path to the directory to search in.
+            The filename to search for (case-insensitive). Should be either
+            ``vasprun.xml``, ``OUTCAR``, ``LOCPOT`` or ``PROCAR``.
+        path (PathLike):
+            The path to the directory to search in.
+
+    Returns:
+        Tuple[PathLike, bool]:
+            The path to the identified file, and a boolean indicating whether
+            multiple files were found.
     """
     if output_file.lower() == "vasprun.xml":
         search_patterns = ["vasprun", ".xml"]
@@ -359,10 +380,10 @@ def get_defect_type_and_composition_diff(
             The defect structure or composition.
 
     Returns:
-        Tuple[str, Dict[str, int]]:
+        tuple[str, Dict[str, int]]:
             The defect type (``interstitial``, ``vacancy`` or ``substitution``)
-            and the composition difference between the bulk and defect structures
-            as a dictionary.
+            and the composition difference between the bulk and defect
+            structures as a dictionary.
     """
     bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
     defect_comp = defect.composition if isinstance(defect, Structure) else defect
@@ -394,7 +415,7 @@ def get_defect_type_and_composition_diff(
 def get_defect_type_site_idxs_and_unrelaxed_structure(
     bulk_supercell: Structure,
     defect_supercell: Structure,
-):
+) -> tuple[str, int | None, int | None, Structure]:
     """
     Get the defect type, site (indices in the bulk and defect supercells) and
     unrelaxed structure, where 'unrelaxed structure' corresponds to the
@@ -413,19 +434,19 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             The defect supercell structure.
 
     Returns:
-        defect_type:
-            The type of defect as a string (``interstitial``, ``vacancy``
-            or ``substitution``).
-        bulk_site_idx:
-            Index of the site in the bulk structure that corresponds
-            to the defect site in the defect structure
-        defect_site_idx:
-            Index of the defect site in the defect structure
-        unrelaxed_defect_structure:
+        defect_type (str):
+            The type of defect as a string (``interstitial``, ``vacancy`` or
+            ``substitution``).
+        bulk_site_idx (int):
+            Index of the site in the bulk structure that corresponds to the
+            defect site in the defect structure.
+        defect_site_idx (int):
+            Index of the defect site in the defect structure.
+        unrelaxed_defect_structure (Structure):
             Pristine defect supercell structure for vacancies/substitutions
             (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
-            pristine bulk structure with the `final` relaxed interstitial
-            site for interstitials.
+            pristine bulk structure with the `final` relaxed interstitial site
+            for interstitials.
     """
 
     def process_substitution(bulk_supercell, defect_supercell, composition_diff):
@@ -552,21 +573,115 @@ def _get_species_from_composition_diff(composition_diff, el_change):
     return next(el for el, amt in composition_diff.items() if amt == el_change)
 
 
-def get_coords_and_idx_of_species(structure, species_name, frac_coords=True):
+def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=True):
     """
     Get arrays of the coordinates and indices of the given species in the
-    structure.
+    structure/list of sites.
     """
     from doped.utils.efficiency import _parse_site_species_str
 
     coords = []
     idx = []
-    for i, site in enumerate(structure):
+    for i, site in enumerate(structure_or_sites):
         if _parse_site_species_str(site, wout_charge=True) == species_name:
             coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
 
     return np.array(coords), np.array(idx)
+
+
+def get_matching_site(
+    site: PeriodicSite | np.ndarray[float], structure: Structure, anonymous: bool = False, tol: float = 0.5
+) -> PeriodicSite:
+    """
+    Get the (closest) matching ``PeriodicSite`` in ``structure`` for the input
+    ``site``, which can be a ``PeriodicSite`` or fractional coordinates.
+
+    If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
+    default) away from the input ``site`` coordinates, an error is raised.
+
+    Automatically accounts for possible differences in assigned oxidation
+    states, site property dicts etc.
+
+    Args:
+        site (PeriodicSite | np.ndarray[float]):
+            The site for which to find the closest matching site in
+            ``structure``, either as a ``PeriodicSite`` or fractional
+            coordinates array. If fractional coordinates, then ``anonymous``
+            is set to ``True``.
+        structure (Structure):
+            The structure in which to search for matching sites to ``site``.
+        anonymous (bool):
+            Whether to use anonymous matching, allowing different
+            species/elements to match each other (i.e. just matching based on
+            coordinates). Default is ``False`` if ``site`` is a
+            ``PeriodicSite``, and ``True`` if ``site`` is fractional
+            coordinates.
+        tol (float):
+            A distance tolerance (in Å), where an error will be thrown if the
+            closest matching site is > ``tol`` Å away from the input ``site``.
+            Default is 0.5 Å.
+
+    Returns:
+        PeriodicSite:
+            The closest matching site in ``structure`` to the input ``site``.
+    """
+    if (
+        isinstance(site, PeriodicSite) and not anonymous
+    ):  # try directly match first         if site in structure:
+        if site in structure:
+            return site
+
+        site_w_no_ox_state = deepcopy(site)
+        remove_site_oxi_state(site_w_no_ox_state)
+        site_w_no_ox_state.properties = {}
+
+        bulk_sites_w_no_ox_state = structure.copy().sites
+        for bulk_site in bulk_sites_w_no_ox_state:
+            remove_site_oxi_state(bulk_site)
+            bulk_site.properties = {}
+
+        if site_w_no_ox_state in bulk_sites_w_no_ox_state:
+            return structure.sites[bulk_sites_w_no_ox_state.index(site_w_no_ox_state)]
+
+    site_frac_coords = (
+        site.frac_coords if hasattr(site, "frac_coords") else np.array(site, dtype=float)
+    )  # ensure site is in fractional coords
+
+    # else get closest site in structure, raising error if not within tol Å:
+    if isinstance(site, PeriodicSite) and not anonymous:  # reduce to only matching species
+        candidate_frac_coords, candidate_indices = get_coords_and_idx_of_species(
+            structure, site.specie.symbol, frac_coords=True
+        )
+    else:
+        candidate_frac_coords = structure.frac_coords
+        candidate_indices = np.arange(len(structure))
+
+    closest_site_idx = candidate_indices[
+        np.argmin(structure.lattice.get_all_distances(site_frac_coords, candidate_frac_coords).ravel())
+    ]
+    closest_site = structure.sites[closest_site_idx]
+
+    closest_site_dist = closest_site.distance_and_image_from_frac_coords(site_frac_coords)[0]
+    if closest_site_dist > tol:
+        raise ValueError(
+            f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
+            f"with distance {closest_site_dist:.2f} Å (greater than {tol} Å and suggesting a likely "
+            f"mismatch in sites/structures here!)."
+        )
+
+    if (
+        not anonymous
+        and isinstance(site, PeriodicSite)
+        and site.specie.symbol != closest_site.specie.symbol
+    ):
+        raise ValueError(
+            f"Closest site to input defect site ({site}) in bulk supercell is {closest_site} "
+            f"with distance {closest_site_dist:.2f} Å which is a different element! Set `anonymous=True` "
+            f"to allow matching of different elements/species if this is desired."
+        )
+
+    return closest_site
 
 
 def find_nearest_coords(
@@ -579,8 +694,8 @@ def find_nearest_coords(
     Find the nearest coords in ``candidate_frac_coords`` to
     ``target_frac_coords``.
 
-    If ``return_idx`` is ``True``, also returns the index of the nearest
-    coords in ``candidate_frac_coords`` to ``target_frac_coords``.
+    If ``return_idx`` is ``True``, also returns the index of the nearest coords
+    in ``candidate_frac_coords`` to ``target_frac_coords``.
 
     Args:
         candidate_frac_coords (Union[list, np.ndarray]):
@@ -616,8 +731,8 @@ def find_missing_idx(
     site combination that gives the minimum summed squared distances between
     paired sites.
 
-    The index returned is the index of the missing/outlier coordinate in
-    the larger set of coordinates.
+    The index returned is the index of the missing/outlier coordinate in the
+    larger set of coordinates.
 
     Args:
         frac_coords1 (Union[list, np.ndarray]):
@@ -634,7 +749,7 @@ def find_missing_idx(
     )
     # in theory this could be made even faster using ``lll_frac_tol`` as in ``_cart_dists()`` in
     # ``pymatgen``, with smart choice of initial ``lll_frac_tol`` and scanning upwards if the match is
-    # below the threshold tolerance (as in ``_scan_sm_stol_till_match()``), but in practice this
+    # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
     # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
     site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
@@ -648,32 +763,34 @@ def _create_unrelaxed_defect_structure(
     new_species: str | None = None,
     bulk_site_idx: int | None = None,
     defect_site_idx: int | None = None,
-):
+) -> Structure:
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
     supercell with the unrelaxed defect site.
 
-    The unrelaxed defect site corresponds to the vacancy/substitution site
-    in the pristine (bulk) supercell for vacancies/substitutions, and the
-    `final` relaxed interstitial site for interstitials (as the assignment
-    of their initial site is ambiguous).
+    The unrelaxed defect site corresponds to the vacancy/substitution site in
+    the pristine (bulk) supercell for vacancies/substitutions, and the `final`
+    relaxed interstitial site for interstitials (as the assignment of their
+    initial site is ambiguous).
 
     Args:
         bulk_supercell (Structure):
             The bulk supercell structure.
         frac_coords (Union[list, np.ndarray]):
-            The fractional coordinates of the defect site.
-            Unnecessary if ``bulk_site_idx`` is provided.
+            The fractional coordinates of the defect site. Unnecessary if
+            ``bulk_site_idx`` is provided.
         new_species (str):
-            The species of the defect site.
-            Unnecessary for vacancies.
+            The species of the defect site. Unnecessary for vacancies.
         bulk_site_idx (int):
-            The index of the site in the bulk structure that corresponds
-            to the defect site in the defect structure.
+            The index of the site in the bulk structure that corresponds to the
+            defect site in the defect structure.
         defect_site_idx (int):
             The index of the defect site to use in the unreleaxed defect
-            structure. Just for consistency with the relaxed defect
-            structure.
+            structure. Just for consistency with the relaxed defect structure.
+
+    Returns:
+        Structure:
+            The unrelaxed defect structure.
     """
     unrelaxed_defect_structure = bulk_supercell.copy()  # create unrelaxed defect structure
 
@@ -699,14 +816,14 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     Calculates the Wigner-Seitz radius of the structure, which corresponds to
     the maximum radius of a sphere fitting inside the cell.
 
-    Uses the ``calc_max_sphere_radius`` function from
-    ``pydefect``, with a wrapper to avoid unnecessary logging
-    output and warning suppression from ``vise``.
+    Uses the ``calc_max_sphere_radius`` function from ``pydefect``, with a
+    wrapper to avoid unnecessary logging output and warning suppression from
+    ``vise``.
 
     Args:
         lattice (Union[Structure,Lattice]):
-            The lattice of the structure (either a ``pymatgen``
-            ``Structure`` or ``Lattice`` object).
+            The lattice of the structure (either a ``pymatgen`` ``Structure``
+            or ``Lattice`` object).
 
     Returns:
         float:
@@ -714,14 +831,12 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
 
-    with warnings.catch_warnings():
-        import logging
-
+    # avoid vise/pydefect warning suppression and INFO messages:
+    with suppress_logging(), warnings.catch_warnings():
         try:
-            from vise import user_settings
-
-            user_settings.logger.setLevel(logging.CRITICAL)  # suppress pydefect INFO messages
             from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
+
+            return calc_max_sphere_radius(lattice_matrix)
 
         except ImportError:  # vise/pydefect not installed
             distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
@@ -730,8 +845,6 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
                 a_k = lattice_matrix[i]
                 distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
             return max(distances) / 2.0
-
-    return calc_max_sphere_radius(lattice_matrix)
 
 
 def check_atom_mapping_far_from_defect(
@@ -761,11 +874,11 @@ def check_atom_mapping_far_from_defect(
         defect_coords (np.ndarray[float]):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
-            Whether the defect coordinates are in Cartesian or
-            fractional coordinates. Default is ``False`` (fractional).
+            Whether the defect coordinates are in Cartesian or fractional
+            coordinates. Default is ``False`` (fractional).
         displacement_tol (float):
-            The tolerance for the displacement of atoms far from the
-            defect site, in Ångströms. Default is 0.5 Å.
+            The tolerance for the displacement of atoms far from the defect
+            site, in Ångströms. Default is 0.5 Å.
         warning (bool, str):
             Whether to throw a warning if a mismatch is detected. If
             ``warning = "verbose"`` (default), the individual atomic
@@ -857,10 +970,12 @@ def check_atom_mapping_far_from_defect(
 def get_site_mapping_indices(
     struct1: Structure,
     struct2: Structure,
-    species=None,
+    species: SpeciesLike | None = None,
     allow_duplicates: bool = False,
     threshold: float = 2.0,
     dists_only: bool = False,
+    anonymous: bool = False,
+    ignored_species: list[str] | None = None,
 ):
     """
     Get the site mapping indices between two structures (from ``struct1`` to
@@ -872,11 +987,11 @@ def get_site_mapping_indices(
     NOTE: This assumes that both structures have the same lattice definitions
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
-    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
-    warning should be thrown anyway during parsing). Currently this function
-    is only used for analysing site displacements in the ``displacements`` module
-    so this is fine (user will already have been warned at this point if there is a
-    possible mismatch).
+    defect/bulk supercell (in which case the
+    ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
+    during parsing). Currently, this function is only used for analysing site
+    displacements in the ``displacements`` module so this is fine (user will
+    already have been warned at this point if there is a possible mismatch).
 
     Args:
         struct1 (Structure):
@@ -884,38 +999,59 @@ def get_site_mapping_indices(
         struct2 (Structure):
             The template structure.
         species (str):
-            If provided, only sites of this species will be considered
-            when matching sites. Default is ``None`` (all species).
+            If provided, only sites of this species will be considered when
+            matching sites. Default is ``None`` (all species).
         allow_duplicates (bool):
-            If ``True``, allow multiple sites in ``struct1`` to be matched
-            to the same site in ``struct2``. Default is ``False``.
+            If ``True``, allow multiple sites in ``struct1`` to be matched to
+            the same site in ``struct2``. Default is ``False``.
         threshold (float):
-            If the distance between a pair of matched sites is larger than this,
-            then a warning will be thrown. Default is 2.0 Å.
+            If the distance between a pair of matched sites is larger than
+            this, then a warning will be thrown. Default is 2.0 Å.
         dists_only (bool):
             Whether to return only the distances between matched sites, rather
             than a list of lists containing the distance, index in ``struct1``
             and index in ``struct2``. Default is ``False``.
+        anonymous (bool):
+            If ``True``, the species of the sites will not be considered when
+            matching sites. Default is ``False`` (only matching species can be
+            matched together).
+        ignored_species (list[str]):
+            A list of species to ignore when matching sites. Default is no
+            species ignored.
 
     Returns:
         list:
-            A list of lists containing the distance, index in struct1 and
-            index in struct2 for each matched site. If ``dists_only`` is
-            ``True``, then only the distances between matched sites are returned.
+            A list of lists containing the distance, index in ``struct1`` and
+            index in ``struct2`` for each matched site. If ``dists_only`` is
+            ``True``, then only the distances between matched sites are
+            returned.
     """
     ## Generate a site matching table between the input and the template
     min_dist_with_index = []
     all_input_fcoords = [list(site.frac_coords) for site in struct1]
     all_template_fcoords = [list(site.frac_coords) for site in struct2]
+    s1_species_symbols = (
+        [
+            species.symbol
+            for species in struct1.composition.elements
+            if species.symbol not in (ignored_species or [])
+        ]
+        if not anonymous
+        else [None]
+    )
 
-    for s1_species in struct1.composition.elements:
-        if species is not None and s1_species.symbol != species:
+    for s1_species_symbol in s1_species_symbols:
+        if species is not None and s1_species_symbol != species:
             continue
         input_fcoords = [
-            list(site.frac_coords) for site in struct1 if site.specie.symbol == s1_species.symbol
+            list(site.frac_coords)
+            for site in struct1
+            if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
         template_fcoords = [
-            list(site.frac_coords) for site in struct2 if site.specie.symbol == s1_species.symbol
+            list(site.frac_coords)
+            for site in struct2
+            if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
 
         dmat = struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
@@ -992,10 +1128,10 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     NOTE: This assumes that both structures have the same lattice definitions
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
-    defect/bulk supercell (in which case the ``check_atom_mapping_far_from_defect``
-    warning should be thrown anyway during parsing). Currently this function
-    is no longer used, but if it is reintroduced at any point, this point should
-    be noted!
+    defect/bulk supercell (in which case the
+    ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
+    during parsing). Currently, this function is no longer used, but if it is
+    reintroduced at any point, this point should be noted!
 
     Args:
         s1_structure (Structure):
@@ -1003,8 +1139,8 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
         s2_structure (Structure):
             The template structure.
         threshold (float):
-            If the distance between a pair of matched sites is larger than this,
-            then a warning will be thrown. Default is 5.0 Å.
+            If the distance between a pair of matched sites is larger than
+            this, then a warning will be thrown. Default is 5.0 Å.
 
     Returns:
         Structure:
@@ -1029,7 +1165,12 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
 
 def _compare_potcar_symbols(
-    bulk_potcar_symbols, defect_potcar_symbols, bulk_name="bulk", defect_name="defect"
+    bulk_potcar_symbols,
+    defect_potcar_symbols,
+    bulk_name="bulk",
+    defect_name="defect",
+    warn=True,
+    only_matching_elements=False,
 ):
     """
     Check all POTCAR symbols in the bulk are the same in the defect
@@ -1038,18 +1179,45 @@ def _compare_potcar_symbols(
     Returns True if the symbols match, otherwise returns a list of the symbols
     for the bulk and defect calculations.
     """
-    for symbol in bulk_potcar_symbols:
+    if only_matching_elements:
+        defect_elements = [symbol["titel"].split()[1].split("_")[0] for symbol in defect_potcar_symbols]
+        symbols_to_check = [
+            symbol
+            for symbol in bulk_potcar_symbols
+            if symbol["titel"].split()[1].split("_")[0] in defect_elements
+        ]
+    else:
+        symbols_to_check = bulk_potcar_symbols
+
+    bulk_mismatch_list = []
+    defect_mismatch_list = []
+    for symbol in symbols_to_check:
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
-            warnings.warn(
-                f"The POTCAR symbols for your {bulk_name} and {defect_name} calculations do not match, "
-                f"which is likely to cause severe errors in the parsed results. Found the following "
-                f"symbol in the {bulk_name} calculation:"
-                f"\n{symbol['titel']}\n"
-                f"but not in the {defect_name} calculation:"
-                f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
-                f"The same POTCAR settings should be used for all calculations for accurate results!"
+            if warn:
+                warnings.warn(
+                    f"The POTCAR symbols for your {defect_name} and {bulk_name} calculations do not "
+                    f"match, which is likely to cause severe errors in the parsed results. Found the "
+                    f"following symbol in the {bulk_name} calculation:"
+                    f"\n{symbol['titel']}\n"
+                    f"but not in the {defect_name} calculation:"
+                    f"\n{[symbol['titel'] for symbol in defect_potcar_symbols]}\n"
+                    f"The same POTCAR settings should be used for all calculations for accurate results!"
+                )
+            if not only_matching_elements:
+                return [defect_potcar_symbols, bulk_potcar_symbols]
+            bulk_mismatch_list.append(symbol)
+            defect_mismatch_list.append(
+                next(
+                    def_symbol
+                    for def_symbol in defect_potcar_symbols
+                    if def_symbol["titel"].split()[1].split("_")[0]
+                    == symbol["titel"].split()[1].split("_")[0]
+                )
             )
-            return [bulk_potcar_symbols, defect_potcar_symbols]
+
+    if bulk_mismatch_list:
+        return [defect_mismatch_list, bulk_mismatch_list]
+
     return True
 
 
@@ -1060,6 +1228,7 @@ def _compare_kpoints(
     defect_kpoints=None,
     bulk_name="bulk",
     defect_name="defect",
+    warn=True,
 ):
     """
     Check bulk and defect KPOINTS are the same, using the
@@ -1080,19 +1249,20 @@ def _compare_kpoints(
     kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
 
     if not (actual_kpoints_eq or kpoints_eq):
-        warnings.warn(
-            f"The KPOINTS for your {bulk_name} and {defect_name} calculations do not match, which is "
-            f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
-            f"{bulk_name} calculation:"
-            f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"  # list more readable than array
-            f"and in the {defect_name} calculation:"
-            f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"
-            f"In general, the same KPOINTS settings should be used for all final calculations for "
-            f"accurate results!"
-        )
+        if warn:
+            warnings.warn(
+                f"The KPOINTS for your {defect_name} and {bulk_name} calculations do not match, which is "
+                f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
+                f"{defect_name} calculation:"
+                f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"  # list form is more readable
+                f"and in the {bulk_name} calculation:"
+                f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"
+                f"In general, the same KPOINTS settings should be used for all final calculations for "
+                f"accurate results!"
+            )
         return [
-            [list(kpoints) for kpoints in sorted_bulk_kpoints],
             [list(kpoints) for kpoints in sorted_defect_kpoints],
+            [list(kpoints) for kpoints in sorted_bulk_kpoints],
         ]
 
     return True
@@ -1104,6 +1274,7 @@ def _compare_incar_tags(
     fatal_incar_mismatch_tags=None,
     bulk_name="bulk",
     defect_name="defect",
+    warn=True,
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
@@ -1141,7 +1312,7 @@ def _compare_incar_tags(
         if key in fatal_incar_mismatch_tags:
             defect_val = defect_incar_dict.get(key, fatal_incar_mismatch_tags[key])
             if not _compare_incar_vals(val, defect_val):
-                mismatch_list.append((key, val, defect_val))
+                mismatch_list.append((key, defect_val, val))
 
     # get any missing keys:
     defect_incar_keys_not_in_bulk = set(defect_incar_dict.keys()) - set(bulk_incar_dict.keys())
@@ -1150,48 +1321,135 @@ def _compare_incar_tags(
         if key in fatal_incar_mismatch_tags and not _compare_incar_vals(
             defect_incar_dict[key], fatal_incar_mismatch_tags[key]
         ):
-            mismatch_list.append((key, fatal_incar_mismatch_tags[key], defect_incar_dict[key]))
+            mismatch_list.append((key, defect_incar_dict[key], fatal_incar_mismatch_tags[key]))
 
     if mismatch_list:
-        # compare to defaults:
-        warnings.warn(
-            f"There are mismatching INCAR tags for your {bulk_name} and {defect_name} calculations which "
-            f"are likely to cause errors in the parsed results (energies). Found the following "
-            f"differences:\n"
-            f"(in the format: (INCAR tag, value in {bulk_name} calculation, value in {defect_name} "
-            f"calculation)):"
-            f"\n{mismatch_list}\n"
-            f"In general, the same INCAR settings should be used in all final calculations for these tags "
-            f"which can affect energies!"
-        )
+        if warn:
+            warnings.warn(
+                f"There are mismatching INCAR tags for your {defect_name} and {bulk_name} calculations "
+                f"which are likely to cause errors in the parsed results (energies). Found the following "
+                f"differences:\n"
+                f"(in the format: (INCAR tag, value in {defect_name} calculation, value in {bulk_name} "
+                f"calculation)):"
+                f"\n{mismatch_list}\n"
+                f"In general, the same INCAR settings should be used in all final calculations for these "
+                f"tags which can affect energies!"
+            )
         return mismatch_list
     return True
 
 
-def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float:
+def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str, set]]) -> str:
     """
-    Determine the magnetization (number of spin-up vs spin-down electrons) from
-    a ``Vasprun`` object.
+    Convenience function to generate a formatted warning string listing
+    mismatching INCAR tags and their values in a clean output.
+
+    Used in ``doped.analysis`` and ``doped.chemical_potentials`` when checking
+    calculation compatibilities.
+
+    Args:
+        mismatching_INCAR_warnings (list[tuple[str, set]]):
+            A list of tuples containing the INCAR tag and the set of
+            mismatching values for that tag.
+
+    Returns:
+        str:
+            A formatted string listing the mismatching INCAR tags and their
+            values.
+    """
+    # group by the mismatching tags, so we can print them together:
+    mismatching_tags_name_list_dict = {
+        tuple(sorted(mismatching_set)): sorted(
+            [
+                name
+                for name, other_mismatching_set in mismatching_INCAR_warnings
+                if other_mismatching_set == mismatching_set
+            ]
+        )  # sort for consistency
+        for mismatching_set in [mismatching for name, mismatching in mismatching_INCAR_warnings]
+    }
+    return "\n".join(
+        [
+            f"{entry_list}:\n{list(mismatching)}"
+            for mismatching, entry_list in mismatching_tags_name_list_dict.items()
+        ]
+    )
+
+
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
+    """
+    Determine the total magnetization from a ``Vasprun`` object.
+
+    For spin-polarised calculations, this is the difference between the number
+    of spin-up vs spin-down electrons. For non-spin-polarised calculations,
+    there is no magnetization. For non-collinear (NCL) magnetization (e.g.
+    spin-orbit coupling (SOC) calculations), the magnetization becomes a vector
+    (spinor), in which case we take the vector norm as the total magnetization.
+
+    VASP does not write the total magnetization to ``vasprun.xml`` file (but
+    does to the ``OUTCAR`` file), and so here we have to reverse-engineer it
+    from the eigenvalues (for normal spin-polarised calculations) or the
+    projected magnetization & eigenvalues (for NCL calculations). For NCL
+    calculations, we sum the projected orbital magnetizations for all occupied
+    states, weighted by the `k`-point weights and normalised by the total
+    orbital projections for each band and `k`-point. This gives the best
+    estimate of the total magnetization from the projected magnetization array,
+    but due to incomplete orbital projections and orbital-dependent non-uniform
+    scaling factors (i.e. completeness of orbital projects for `s` vs `p` vs
+    `d` orbitals etc.), there can be inaccuracies up to ~30% in the estimated
+    total magnetization for tricky cases.
 
     Args:
         vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract the total magnetization.
+            The ``Vasprun`` object from which to extract the total
+            magnetization.
 
     Returns:
-        int or float: The total magnetization of the system.
+        int or float or np.ndarray[float]:
+            The total magnetization of the system.
     """
-    # in theory should be able to use vasprun.idos (integrated dos), but this
-    # doesn't show spin-polarisation / account for NELECT changes from neutral
-    # apparently
-
+    # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
+    # spin-polarisation / account for NELECT changes from neutral apparently
     eigenvalues_and_occs = vasprun.eigenvalues
-    kweights = vasprun.actual_kpoints_weights
+    kweights = np.array(vasprun.actual_kpoints_weights)
 
-    # first check if it's even a spin-polarised calculation:
+    # first check if it's a spin-polarised calculation:
     if len(eigenvalues_and_occs) == 1 or not vasprun.is_spin:
-        return 0  # non-spin polarised or SOC calculation
-    # (can't pull SOC magnetization this way and either way isn't needed/desired for magnetization value
-    # in ``VaspBandEdgeProperties``)
+        # non-spin-polarised or NCL calculation:
+        if not vasprun.parameters.get("LNONCOLLINEAR", False):
+            return 0  # non-spin polarised calculation
+        if getattr(vasprun, "projected_magnetisation", None) is None:
+            raise RuntimeError(
+                "Cannot determine magnetization from non-collinear Vasprun calculation, as this requires "
+                "the `Vasprun.projected_magnetisation` attribute, which is parsed with "
+                "`Vasprun(parse_projected_eigen=True)` (default in `doped`)."
+            )
+
+        # else NCL calculation:
+        # need to scale by the summed orbital projections for each band (which should be 1):
+        # vasprun.projected_eigenvalues[Spin.up].shape -> (nkpoints, nbands, natoms, norbitals)
+        summed_orbital_projections = vasprun.projected_eigenvalues[Spin.up].sum(axis=(-2, -1))
+        summed_orbital_projections = np.where(
+            summed_orbital_projections == 0, 1, summed_orbital_projections
+        )  # avoid division by zero, by setting any zero values to 1
+        normalisation_factors = 1 / summed_orbital_projections
+
+        # vasprun.projected_magnetisation.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
+        # sum the projected magnetization over atoms and orbitals, then multiply by per-band/kpoint
+        # normalisation factors:
+        normalised_proj_mag_per_kpoint_band_direction = (
+            vasprun.projected_magnetisation.sum(axis=(-3, -2)) * normalisation_factors[..., None]
+        )  # [..., None] adds new axis, which allows broadcasting (i.e.
+        # (nkpoints, nbands, 3) * (nkpoints, nbands, 1) -- adding the "(...,1 )" dimension)
+
+        # then multiply by occupancies, sum over bands, multiply by k-point weights, sum over k-points:
+        return (
+            (
+                normalised_proj_mag_per_kpoint_band_direction
+                * eigenvalues_and_occs[Spin.up][:, :, 1][..., None]
+            ).sum(axis=1)
+            * kweights[..., None]
+        ).sum(axis=0)
 
     # product of the sum of occupations over all bands, times the k-point weights:
     n_spin_up = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
@@ -1211,11 +1469,10 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     Returns:
         int or float: The number of electrons in the system.
     """
-    # can also obtain this (NELECT), charge and magnetisation from Outcar objects, worth keeping in mind
+    # can also obtain this (NELECT), charge and magnetization from Outcar objects, worth keeping in mind
     # but not needed atm
-    # in theory should be able to use vasprun.idos (integrated dos), but this
-    # doesn't show spin-polarisation / account for NELECT changes from neutral
-    # apparently
+    # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
+    # spin-polarisation / account for NELECT changes from neutral apparently
 
     eigenvalues_and_occs = vasprun.eigenvalues
     kweights = vasprun.actual_kpoints_weights
@@ -1244,8 +1501,8 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             engineer ``NELECT`` using the ``DefectDictSet``.
 
     Returns:
-        int or float: The number of electrons in the system for a neutral
-        charge state.
+        int or float:
+            The number of electrons in the system for a neutral charge state.
     """
     nelect = None
     if not skip_potcar_init:
@@ -1291,217 +1548,6 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
         ).nelect
 
 
-def get_interstitial_site_and_orientational_degeneracy(
-    interstitial_defect_entry: DefectEntry, dist_tol: float = 0.15
-) -> int:
-    """
-    Get the combined site and orientational degeneracy of an interstitial
-    defect entry.
-
-    The standard approach of using ``_get_equiv_sites()`` for interstitial
-    site multiplicity and then ``point_symmetry_from_defect_entry()`` &
-    ``get_orientational_degeneracy`` for symmetry/orientational degeneracy
-    is preferred (as used in the ``DefectParser`` code), but alternatively
-    this function can be used to compute the product of the site and
-    orientational degeneracies.
-
-    This is done by determining the number of equivalent sites in the bulk
-    supercell for the given interstitial site (from defect_supercell_site),
-    which gives the combined site and orientational degeneracy `if` there
-    was no relaxation of the bulk lattice atoms. This matches the true
-    combined degeneracy in most cases, except for split-interstitial type
-    defects etc, where this would give an artificially high degeneracy
-    (as, for example, the interstitial site is automatically assigned to
-    one of the split-interstitial atoms and not the midpoint, giving a
-    doubled degeneracy as it considers the two split-interstitial sites as
-    two separate (degenerate) interstitial sites, instead of one).
-    This is counteracted by dividing by the number of sites which are present
-    in the defect supercell (within a distance tolerance of dist_tol in Å)
-    with the same species, ensuring none of the predicted `different`
-    equivalent sites are actually `included` in the defect structure.
-
-    Args:
-        interstitial_defect_entry: DefectEntry object for the interstitial
-            defect.
-        dist_tol: distance tolerance in Å for determining equivalent sites.
-
-    Returns:
-        combined site and orientational degeneracy of the interstitial defect
-        entry (int).
-    """
-    from doped.utils.symmetry import _get_all_equiv_sites
-
-    if interstitial_defect_entry.bulk_entry is None:
-        raise ValueError(
-            "bulk_entry must be set for interstitial_defect_entry to determine the site and orientational "
-            "degeneracies! (i.e. must be a parsed DefectEntry)"
-        )
-    equiv_sites = _get_all_equiv_sites(
-        _get_defect_supercell_bulk_site_coords(interstitial_defect_entry),
-        _get_bulk_supercell(interstitial_defect_entry),
-    )
-    equiv_sites_array = np.array([site.frac_coords for site in equiv_sites])
-    defect_supercell_sites_of_same_species_array = np.array(
-        [
-            site.frac_coords
-            for site in _get_defect_supercell(interstitial_defect_entry)
-            if site.specie.symbol == interstitial_defect_entry.defect.site.specie.symbol
-        ]
-    )
-
-    distance_matrix = _get_bulk_supercell(interstitial_defect_entry).lattice.get_all_distances(
-        defect_supercell_sites_of_same_species_array[:, None], equiv_sites_array
-    )[:, 0]
-
-    return len(equiv_sites) // len(distance_matrix[distance_matrix < dist_tol])
-
-
-def get_orientational_degeneracy(
-    defect_entry: DefectEntry | None = None,
-    relaxed_point_group: str | None = None,
-    bulk_site_point_group: str | None = None,
-    bulk_symm_ops: list | None = None,
-    defect_symm_ops: list | None = None,
-    symprec: float = 0.1,
-) -> float:
-    r"""
-    Get the orientational degeneracy factor for a given `relaxed` DefectEntry,
-    by supplying either the DefectEntry object or the bulk-site & relaxed
-    defect point group symbols (e.g. "Td", "C3v" etc).
-
-    If a DefectEntry is supplied (and the point group symbols are not),
-    this is computed by determining the `relaxed` defect point symmetry and the
-    (unrelaxed) bulk site symmetry, and then getting the ratio of
-    their point group orders (equivalent to the ratio of partition
-    functions or number of symmetry operations (i.e. degeneracy)).
-
-    For interstitials, the bulk site symmetry corresponds to the
-    point symmetry of the interstitial site with `no relaxation
-    of the host structure`, while for vacancies/substitutions it is
-    simply the symmetry of their corresponding bulk site.
-    This corresponds to the point symmetry of ``DefectEntry.defect``,
-    or ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``.
-
-    Note: This tries to use the defect_entry.defect_supercell to determine
-    the `relaxed` site symmetry. However, it should be noted that this is not
-    guaranteed to work in all cases; namely for non-diagonal supercell
-    expansions, or sometimes for non-scalar supercell expansion matrices
-    (e.g. a 2x1x2 expansion)(particularly with high-symmetry materials)
-    which can mess up the periodicity of the cell. ``doped`` tries to automatically
-    check if this is the case, and will warn you if so.
-
-    This can also be checked by using this function on your doped `generated` defects:
-
-    .. code-block:: python
-
-        from doped.generation import get_defect_name_from_entry
-        for defect_name, defect_entry in defect_gen.items():
-            print(defect_name, get_defect_name_from_entry(defect_entry, relaxed=False),
-                  get_defect_name_from_entry(defect_entry), "\n")
-
-    And if the point symmetries match in each case, then using this function on your
-    parsed `relaxed` DefectEntry objects should correctly determine the final relaxed
-    defect symmetry (and orientational degeneracy) - otherwise periodicity-breaking
-    prevents this.
-
-    If periodicity-breaking prevents auto-symmetry determination, you can manually
-    determine the relaxed defect and bulk-site point symmetries, and/or orientational
-    degeneracy, from visualising the structures (e.g. using VESTA)(can use
-    ``get_orientational_degeneracy`` to obtain the corresponding orientational
-    degeneracy factor for given defect/bulk-site point symmetries) and setting the
-    corresponding values in the
-    ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']`` and/or
-    ``degeneracy_factors['orientational degeneracy']`` attributes.
-    Note that the bulk-site point symmetry corresponds to that of ``DefectEntry.defect``,
-    or equivalently ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
-    which for vacancies/substitutions is the symmetry of the corresponding bulk site,
-    while for interstitials it is the point symmetry of the `final relaxed` interstitial
-    site when placed in the (unrelaxed) bulk structure.
-    The degeneracy factor is used in the calculation of defect/carrier concentrations
-    and Fermi level behaviour (see e.g. https://doi.org/10.1039/D2FD00043A &
-    https://doi.org/10.1039/D3CS00432E).
-
-    Args:
-        defect_entry (DefectEntry): DefectEntry object. (Default = None)
-        relaxed_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
-            of the `relaxed` defect structure, if already calculated / manually
-            determined. Default is None (automatically calculated by doped).
-        bulk_site_point_group (str): Point group symmetry (e.g. "Td", "C3v" etc)
-            of the defect site in the bulk, if already calculated / manually
-            determined. For vacancies/substitutions, this should match the site
-            symmetry label from ``doped`` when generating the defect, while for
-            interstitials it should be the point symmetry of the `final relaxed`
-            interstitial site, when placed in the bulk structure.
-            Default is None (automatically calculated by doped).
-        bulk_symm_ops (list):
-            List of symmetry operations of the defect_entry.bulk_supercell
-            structure (used in determining the `unrelaxed` bulk site symmetry), to
-            avoid re-calculating. Default is None (recalculates).
-        defect_symm_ops (list):
-            List of symmetry operations of the defect_entry.defect_supercell
-            structure (used in determining the `relaxed` point symmetry), to
-            avoid re-calculating. Default is None (recalculates).
-        symprec (float):
-            Symmetry tolerance for ``spglib`` to use when determining point
-            symmetries and thus orientational degeneracies. Default is ``0.1``
-            which matches that used by the ``Materials Project`` and is larger
-            than the ``pymatgen`` default of ``0.01`` to account for residual
-            structural noise in relaxed defect supercells.
-            You may want to adjust for your system (e.g. if there are very slight
-            octahedral distortions etc.).
-
-    Returns:
-        float: orientational degeneracy factor for the defect.
-    """
-    from doped.utils.symmetry import group_order_from_schoenflies, point_symmetry_from_defect_entry
-
-    if defect_entry is None:
-        if relaxed_point_group is None or bulk_site_point_group is None:
-            raise ValueError(
-                "Either the DefectEntry or both defect and bulk site point group symbols must be "
-                "provided for doped to determine the orientational degeneracy! "
-            )
-
-    elif defect_entry.bulk_entry is None:
-        raise ValueError(
-            "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
-            "(i.e. must be a parsed DefectEntry)"
-        )
-
-    if relaxed_point_group is None:
-        # this will throw warning if auto-detected that supercell breaks trans symmetry
-        relaxed_point_group = point_symmetry_from_defect_entry(
-            defect_entry,  # type: ignore
-            symm_ops=defect_symm_ops,  # defect not bulk symm_ops
-            symprec=symprec,
-            relaxed=True,  # relaxed
-        )
-
-    if bulk_site_point_group is None:
-        bulk_site_point_group = point_symmetry_from_defect_entry(
-            defect_entry,  # type: ignore
-            symm_ops=bulk_symm_ops,  # bulk not defect symm_ops
-            symprec=symprec,  # same symprec as relaxed_point_group for consistency
-            relaxed=False,  # unrelaxed
-        )
-
-    # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
-    # (so avoid warning for now; user will be warned anyway if symmetry determination failing)
-    # if orientational_degeneracy < 1 and not (
-    #     defect_type == DefectType.Interstitial
-    #     or (isinstance(defect_type, str) and defect_type.lower() == "interstitial")
-    # ):
-    #     raise ValueError(
-    #         f"From the input/determined point symmetries, an orientational degeneracy factor of "
-    #         f"{orientational_degeneracy} is predicted, which is less than 1, which is not reasonable "
-    #         f"for vacancies/substitutions, indicating an error in the symmetry determination!"
-    #     )
-
-    return group_order_from_schoenflies(bulk_site_point_group) / group_order_from_schoenflies(
-        relaxed_point_group
-    )
-
-
 def _get_bulk_supercell(defect_entry: DefectEntry):
     if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
         return defect_entry.bulk_supercell
@@ -1532,7 +1578,7 @@ def _get_defect_supercell(defect_entry: DefectEntry):
     return None
 
 
-def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
+def _get_unrelaxed_defect_structure(defect_entry: DefectEntry, **kwargs) -> Structure | None:
     if (
         hasattr(defect_entry, "calculation_metadata")
         and defect_entry.calculation_metadata
@@ -1542,31 +1588,13 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry):
 
     bulk_supercell = _get_bulk_supercell(defect_entry)
 
-    if bulk_supercell is not None:
-        from doped.analysis import defect_from_structures
+    if bulk_supercell is not None:  # reparse info:
+        _update_defect_entry_structure_metadata(defect_entry, **kwargs)
 
-        (
-            _defect,
-            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            _defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials
-            _defect_site_index,
-            _bulk_site_index,
-            _guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_supercell,
-            _get_defect_supercell(defect_entry),
-            return_all_info=True,
-            oxi_state="Undefined",  # don't need oxidation states for this
-        )
-        return unrelaxed_defect_structure
-
-    return None
+    return defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
 
 
-def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=True):
+def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True) -> np.ndarray[float] | None:
     sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
     site = None
 
@@ -1580,173 +1608,306 @@ def _get_defect_supercell_bulk_site_coords(defect_entry: DefectEntry, relaxed=Tr
     return sc_defect_frac_coords
 
 
-def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
-    if not relaxed:
-        if (  # noqa: SIM102
-            hasattr(defect_entry, "calculation_metadata") and defect_entry.calculation_metadata
-        ):
-            if site := defect_entry.calculation_metadata.get("bulk_site"):
+def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs) -> PeriodicSite | None:
+    def _return_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
+        if relaxed or defect_entry.defect.defect_type == DefectType.Interstitial:
+            # always final relaxed site for interstitials (note that "bulk_site" may be guessed initial
+            # site if it is close enough to the final relaxed site):
+            if site := getattr(defect_entry, "defect_supercell_site", None):
                 return site
 
-        # otherwise need to reparse info:
-        from doped.analysis import defect_from_structures
-
-        bulk_supercell = _get_bulk_supercell(defect_entry)
-        defect_supercell = _get_defect_supercell(defect_entry)
-
-        (
-            _defect,
-            _defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials
-            defect_site_index,
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_supercell,
-            defect_supercell,
-            return_all_info=True,
-            oxi_state="Undefined",  # don't need oxidation states for this
-        )
-
-        # update any missing calculation_metadata:
-        defect_entry.calculation_metadata["guessed_initial_defect_structure"] = (
-            defect_entry.calculation_metadata.get(
-                "guessed_initial_defect_structure", guessed_initial_defect_structure
-            )
-        )
-        defect_entry.calculation_metadata["defect_site_index"] = defect_entry.calculation_metadata.get(
-            "defect_site_index", defect_site_index
-        )
-        defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
-            "bulk_site_index", bulk_site_index
-        )
-        defect_entry.calculation_metadata["unrelaxed_defect_structure"] = (
-            defect_entry.calculation_metadata.get("unrelaxed_defect_structure", unrelaxed_defect_structure)
-        )
-
-        # add displacement from (guessed) initial site to final defect site:
-        if defect_site_index is not None:  # not a vacancy
-            guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
-            final_site = defect_supercell[defect_site_index]
-            guessed_displacement = final_site.distance(guessed_initial_site)
-            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
-                defect_entry.calculation_metadata.get("guessed_initial_defect_site", guessed_initial_site)
-            )
-            defect_entry.calculation_metadata["guessed_defect_displacement"] = (
-                defect_entry.calculation_metadata.get("guessed_defect_displacement", guessed_displacement)
-            )
-            defect_entry.calculation_metadata["bulk_site_index"] = defect_entry.calculation_metadata.get(
-                "bulk_site_index", bulk_site_index
-            )
-        else:  # vacancy
-            defect_entry.calculation_metadata["guessed_initial_defect_site"] = (
-                defect_entry.calculation_metadata.get(
-                    "guessed_initial_defect_site", bulk_supercell[bulk_site_index]
+            if defect_entry.sc_defect_frac_coords is not None:
+                return PeriodicSite(
+                    defect_entry.defect.site.species,
+                    defect_entry.sc_defect_frac_coords,
+                    _get_defect_supercell(defect_entry).lattice,
                 )
-            )
-            defect_entry.calculation_metadata[
-                "guessed_defect_displacement"
-            ] = defect_entry.calculation_metadata.get(
-                "guessed_defect_displacement", None
-            )  # type: ignore
 
-        if bulk_site_index is None:  # interstitial
-            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
-                "bulk_site", defect_site_in_bulk
-            )
-        else:
-            defect_entry.calculation_metadata["bulk_site"] = defect_entry.calculation_metadata.get(
-                "bulk_site", bulk_supercell[bulk_site_index]
-            )
+        # otherwise we use ``bulk_site``, for relaxed = False (vacancies & substitutions)
+        if (
+            hasattr(defect_entry, "calculation_metadata")
+            and defect_entry.calculation_metadata
+            and defect_entry.calculation_metadata.get("bulk_site")
+        ):
+            return defect_entry.calculation_metadata.get("bulk_site")
 
-        return defect_entry.calculation_metadata["bulk_site"]
+        return None
 
-    if hasattr(defect_entry, "defect_supercell_site") and defect_entry.defect_supercell_site:
-        return defect_entry.defect_supercell_site
+    if defect_supercell_site := _return_defect_supercell_site(defect_entry, relaxed=relaxed):
+        return defect_supercell_site
 
-    if defect_entry.sc_defect_frac_coords is not None:
-        return PeriodicSite(
-            defect_entry.defect.site.species,
-            defect_entry.sc_defect_frac_coords,
-            _get_defect_supercell(defect_entry).lattice,
-        )
+    # otherwise need to reparse info:
+    _update_defect_entry_structure_metadata(defect_entry, **kwargs)
 
-    return None
+    return _return_defect_supercell_site(defect_entry, relaxed=relaxed)
 
 
-def simple_spin_degeneracy_from_charge(structure, charge_state: int = 0) -> int:
+def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite: bool = False, **kwargs):
     """
-    Get the defect spin degeneracy from the supercell and charge state,
-    assuming either simple singlet (S=0) or doublet (S=1/2) behaviour.
-
-    Even-electron defects are assumed to have a singlet ground state, and odd-
-    electron defects are assumed to have a doublet ground state.
-    """
-    total_Z = int(sum(Element(elt).Z * num for elt, num in structure.composition.as_dict().items()))
-    return int((total_Z + charge_state) % 2 + 1)
-
-
-def _defect_spin_degeneracy_from_vasprun(defect_vr: Vasprun, charge_state: int = 0) -> int:
-    """
-    Get the defect spin degeneracy from the vasprun output, assuming either
-    singlet (S=0) or doublet (S=1/2) behaviour.
-
-    Even-electron defects are assumed to have a singlet ground state, and odd-
-    electron defects are assumed to have a doublet ground state.
-    """
-    return simple_spin_degeneracy_from_charge(defect_vr.final_structure, charge_state)
-
-
-def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> int:
-    """
-    Determine the defect charge state from the defect vasprun, and compare to
-    the manually-set charge state if provided.
+    Helper function to reparse the defect site information for a given
+    ``DefectEntry``, updating the relevant attributes and calculation metadata.
 
     Args:
-        defect_vr (Vasprun):
-            Defect ``pymatgen`` ``Vasprun`` object.
-        charge_state (int):
-            Manually-set charge state for the defect, to check if it matches
-            the auto-determined charge state.
+        defect_entry (DefectEntry):
+            The ``DefectEntry`` object for which to update the defect site
+            information.
+        overwrite (bool):
+            Whether to overwrite existing ``DefectEntry`` attributes with the
+            newly parsed values. Default is ``False`` (i.e. only update if the
+            attributes are not already set).
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``) in the
+            ``defect_and_info_from_structures`` function.
+    """
+    from doped.analysis import defect_and_info_from_structures
+
+    bulk_supercell = _get_bulk_supercell(defect_entry)
+    defect_supercell = _get_defect_supercell(defect_entry)
+    (
+        defect,
+        defect_site,
+        defect_structure_metadata,
+    ) = defect_and_info_from_structures(
+        bulk_supercell,
+        defect_supercell,
+        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+    )
+    if not getattr(defect_entry, "calculation_metadata", None):
+        defect_entry.calculation_metadata = {}
+
+    # update any missing calculation_metadata:
+    for k, v in defect_structure_metadata.items():
+        if not defect_entry.calculation_metadata.get(k) or overwrite:
+            defect_entry.calculation_metadata[k] = v
+
+    for attr_name, value in {
+        "defect": defect,
+        "sc_defect_frac_coords": defect_site.frac_coords,  # _relaxed_ defect site
+        "defect_supercell_site": defect_site,
+        "defect_supercell": defect_supercell,
+        "bulk_supercell": bulk_supercell,
+    }.items():
+        if not getattr("defect_entry", attr_name, None) or overwrite:
+            setattr(defect_entry, attr_name, value)
+
+
+def _partial_defect_entry_from_structures(
+    bulk_supercell: Structure, defect_supercell: Structure, **kwargs
+) -> DefectEntry:
+    """
+    Helper function to create a partial ``DefectEntry`` from the input bulk and
+    defect supercells.
+
+    Uses ``defect_and_info_from_structures`` to extract the defect structural
+    information, and creates a corresponding ``DefectEntry`` object (which has
+    no ``bulk_entry`` and a fake zero-energy ``sc_entry``, and so cannot be
+    used for energy analyses). Primarily intended for internal usage in
+    ``doped`` parsing/analysis functions.
+
+    Args:
+        bulk_supercell (Structure):
+            The bulk supercell structure.
+        defect_supercell (Structure):
+            The defect supercell structure.
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``) in the
+            ``defect_and_info_from_structures`` function.
 
     Returns:
-        int: The auto-determined defect charge state.
+        DefectEntry:
+            A partial ``DefectEntry`` object containing the defect and defect
+            site information, but no ``bulk_entry`` and a zero-energy
+            ``sc_entry``.
+    """
+    from doped.analysis import defect_and_info_from_structures
+
+    (
+        defect,
+        defect_site,
+        defect_structure_metadata,
+    ) = defect_and_info_from_structures(
+        bulk_supercell,
+        defect_supercell,
+        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+    )
+
+    return DefectEntry(
+        # pmg attributes:
+        defect=defect,  # this corresponds to _unrelaxed_ defect
+        charge_state=0,
+        sc_entry=ComputedStructureEntry(
+            structure=bulk_supercell,
+            energy=0.0,  # needs to be set, so set to 0.0
+        ),
+        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+        bulk_entry=None,
+        # doped attributes:
+        name="Partial Defect Entry",
+        defect_supercell_site=defect_site,  # _relaxed_ defect site
+        defect_supercell=defect_supercell,
+        bulk_supercell=bulk_supercell,
+        calculation_metadata=defect_structure_metadata,  # only structural metadata here
+    )
+
+
+def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:
+    """
+    Get the total number of electrons (including core electrons! -- so
+    different to ``NELECT`` in VASP in most cases) for a given structure and
+    charge state.
+
+    Args:
+        structure (Structure):
+            The structure for which to get the total number of electrons.
+        charge_state (int):
+            The charge state of the system. Default is 0.
+
+    Returns:
+        int:
+            The total number of electrons in the system, including core
+            electrons.
+    """
+    total_Z = int(
+        sum(Element(elt).Z * num for elt, num in structure.composition.get_el_amt_dict().items())
+    )
+    return int(total_Z + charge_state)
+
+
+def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = None) -> int:
+    """
+    Get the spin degeneracy (multiplicity) of a system from a ``VASP`` vasprun
+    output.
+
+    Spin degeneracy is determined by first getting the total magnetization and
+    thus electron spin (S = N_μB/2 -- where N_μB is the magnetization in Bohr
+    magnetons (i.e. electronic units, as used in VASP), and using the spin
+    multiplicity equation: ``g_spin = 2S + 1``. The total magnetization
+    ``N_μB`` is determined using ``get_magnetization_from_vasprun`` (see
+    docstring for details), and if this fails, then simple spin behaviour is
+    assumed with singlet (S = 0) behaviour for even-electron systems and
+    doublet behaviour (S = 1/2) for odd-electron systems.
+
+    For non-collinear (NCL) magnetization (e.g. spin-orbit coupling (SOC)
+    calculations), the magnetization ``N_μB`` becomes a vector (spinor), in
+    which case we take the vector norm as the total magnetization. This can be
+    non-integer in these cases (e.g. due to SOC mixing of spin states, as
+    **_S_** is no longer a good quantum number). As an approximation for these
+    cases, we round ``N_μB`` to the nearest integer which would be allowed
+    under collinear magnetism (i.e. even numbers for even-electron systems, odd
+    numbers for odd-electron systems).
+
+    Args:
+        vasprun (Vasprun):
+            ``pymatgen`` ``Vasprun`` for which to determine spin degeneracy.
+        charge_state (int):
+            The charge state of the system, which can be used to determine the
+            number of electrons. If ``None`` (default), automatically
+            determines the number of electrons using
+            ``get_nelect_from_vasprun(vasprun)``.
+
+    Returns:
+        int: Spin degeneracy of the system.
+    """
+    if charge_state is None:
+        num_electrons = get_nelect_from_vasprun(vasprun)
+    else:
+        num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
+
+    try:
+        magnetization = get_magnetization_from_vasprun(vasprun)
+        if isinstance(magnetization, np.ndarray):
+            # take the vector norm as the total magnetization
+            magnetization = np.linalg.norm(magnetization)
+
+        # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
+        if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...
+            magnetization = round(magnetization / 2) * 2  # nearest even number
+        else:
+            magnetization = round((magnetization - 1) / 2) * 2 + 1  # nearest odd number
+
+        # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
+        # i.e. number of electrons, as in VASP):
+        return magnetization + 1
+
+    except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization:
+        return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))  # guess from charge
+
+
+def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
+    """
+    Get the spin degeneracy of a system from the total number of electrons,
+    assuming simple singlet (S=0) behaviour for even-electron systems or
+    doublet (S=1/2) behaviour for odd-electron systems.
+
+    Spin multiplicity is equal to ``2S + 1``, so 1 for singlets (S = 0), 2 for
+    doublets (S = 1/2), 3 for triplets (S = 1) etc.
+
+    Args:
+        num_electrons (int): The total number of electrons.
+
+    Returns:
+        int:
+            The spin multiplicity assuming singlet or doublet behaviour.
+    """
+    return int(num_electrons % 2 + 1)
+
+
+def total_charge_from_vasprun(vasprun: Vasprun, charge_state: int | None) -> int:
+    """
+    Determine the total charge state of a system from the vasprun, and compare
+    to the expected charge state if provided.
+
+    Args:
+        vasprun (Vasprun):
+            ``pymatgen`` ``Vasprun`` object for which to determine the total
+            charge.
+        charge_state (int):
+            Expected charge state, to check if it matches the auto-determined
+            charge state.
+
+    Returns:
+        int: The auto-determined charge state.
     """
     auto_charge = None
 
     try:
-        if defect_vr.incar.get("NELECT") is None:
-            auto_charge = 0  # neutral defect if NELECT not specified
+        if vasprun.incar.get("NELECT") is None:
+            auto_charge = 0  # neutral if NELECT not specified
 
         else:
-            defect_nelect = defect_vr.parameters.get("NELECT")
-            neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr)
+            nelect = vasprun.parameters.get("NELECT")
+            neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
 
-            auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+            auto_charge = -1 * (nelect - neutral_nelect)
 
             if auto_charge is None or abs(auto_charge) >= 10:
-                neutral_defect_nelect = get_neutral_nelect_from_vasprun(defect_vr, skip_potcar_init=True)
+                neutral_nelect = get_neutral_nelect_from_vasprun(vasprun, skip_potcar_init=True)
                 try:
-                    auto_charge = -1 * (defect_nelect - neutral_defect_nelect)
+                    auto_charge = -1 * (nelect - neutral_nelect)
 
                 except Exception as e:
                     auto_charge = None
                     if charge_state is None:
                         raise RuntimeError(
-                            "Defect charge cannot be automatically determined as POTCARs have not been "
+                            "System charge cannot be automatically determined as POTCARs have not been "
                             "setup with pymatgen (see Step 2 at "
-                            "https://github.com/SMTG-Bham/doped#installation). Please specify defect "
-                            "charge manually using the `charge_state` argument, or set up POTCARs with "
+                            "https://github.com/SMTG-Bham/doped#installation). Please specify charge "
+                            "state manually using the `charge_state` argument, or set up POTCARs with "
                             "pymatgen."
                         ) from e
 
             if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
                 raise RuntimeError(
-                    f"Auto-determined defect charge q={int(auto_charge):+} is unreasonably large. "
-                    f"Please specify defect charge manually using the `charge` argument."
+                    f"Auto-determined system charge q={int(auto_charge):+} is unreasonably large. "
+                    f"Please specify system charge manually using the `charge` argument."
                 )
 
         if (
@@ -1756,7 +1917,7 @@ def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> 
             and abs(auto_charge) < 5
         ):
             warnings.warn(
-                f"Auto-determined defect charge q={int(auto_charge):+} does not match specified charge "
+                f"Auto-determined system charge q={int(auto_charge):+} does not match specified charge "
                 f"q={int(charge_state):+}. Will continue with specified charge_state, but beware!"
             )
 
@@ -1769,8 +1930,8 @@ def defect_charge_from_vasprun(defect_vr: Vasprun, charge_state: int | None) -> 
 
     if charge_state is None:
         raise RuntimeError(
-            "Defect charge could not be automatically determined from the defect calculation outputs. "
-            "Please manually specify defect charge using the `charge_state` argument."
+            "System charge could not be automatically determined from the calculation outputs. "
+            "Please manually specify charge state using the `charge_state` argument."
         )
 
     return charge_state
@@ -1827,31 +1988,3 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, 
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
     )
-
-
-def doped_entry_id(vasprun: Vasprun) -> str:
-    """
-    Generate an ``entry_id`` from a ``pymatgen`` ``Vasprun`` object, to use
-    with ``ComputedEntry``/``ComputedStructureEntry`` objects (from
-    ``Vasprun.get_computed_entry()``).
-
-    The ``entry_id`` is set to:
-    ``{reduced chemical formula}_{vr.energy}``
-
-    This is to avoid the use of parsing-time-dependent ``entry_id``
-    from ``pymatgen``, and may be replaced in the future if this issue
-    is resolved: https://github.com/materialsproject/pymatgen/issues/4259
-
-    Currently not used in ``doped`` parsing however, as
-    ``ComputedEntry.parameters`` gets randomly re-organised upon saving
-    to ``json``, so the same ``ComputedEntry`` saved to file at different
-    times still gives slightly different ``json`` files.
-
-    Args:
-        vasprun (Vasprun):
-            The ``Vasprun`` object from which to generate the ``entry_id``.
-
-    Returns:
-        str: The generated ``entry_id``.
-    """
-    return f"{vasprun.final_structure.composition.reduced_formula}_{vasprun.final_energy}"

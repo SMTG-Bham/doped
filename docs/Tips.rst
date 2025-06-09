@@ -16,9 +16,10 @@ their specific needs/system.
 
 Interstitials
 -------------------
-As described in the `YouTube defect calculation tutorial <https://youtu.be/FWz7nm9qoNg>`_, our
-recommended workflow for calculating interstitial defects is to first generate the set of
-candidate interstitial sites for your structure using ``DefectsGenerator`` (which uses Voronoi tessellation
+As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7nm9qoNg>`__,
+`B站 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__),
+our recommended workflow for calculating interstitial defects is to first generate the set of candidate
+interstitial sites for your structure using ``DefectsGenerator`` (which uses Voronoi tessellation
 for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) for each
 charge state of the generated interstitial candidates, and then pruning some of the candidate sites based
 on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
@@ -148,8 +149,9 @@ Layered / Low Dimensional Materials
 Layered and low-dimensional materials introduce complications for defect analysis. One point is that
 typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions
 (e.g. `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_,
-`vacancies in low-dimensional chalcogenides <https://arxiv.org/abs/2401.12127>`_ etc), as a result of
-having more complex energy landscapes.
+`vacancies in low-dimensional chalcogenides <https://doi.org/10.1038/s41524-024-01303-9>`_ etc), as a result of
+having more complex energy landscapes, and so use of structure-searching strategies like
+`ShakeNBreak <https://shakenbreak.readthedocs.io>`__ can be particularly important.
 
 Another is that often the application of charge correction schemes to supercell calculations with layered
 materials may require some fine-tuning for converged results. To illustrate, for Sb₂Si₂Te₆ (
@@ -229,6 +231,62 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
 .. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png
     :height: 320px
     :align: right
+
+
+2D Materials and Surface Defects
+--------------------------------
+Following on from the layered materials discussion above, there are additional complications when modelling
+defects in two-dimensional materials, or defects near surfaces in three-dimensional materials, primarily
+related to the implementation of finite-size charge corrections. For a detailed discussion, see
+`Kumagai Phys Rev B 2024 <https://doi.org/10.1103/PhysRevB.109.054106>`__.
+
+In these cases, defects can be generated using a similar workflow as for 3D materials, where now our input
+host system to ``DefectsGenerator`` should be a slab structure with a converged vacuum size. ``doped`` will
+automatically generate all symmetry-inequivalent defects in this slab, and relevant properties such as
+distance to surface can be readily calculated through the site information and ``pymatgen`` ``Structure``\s
+stored with the ``doped`` ``DefectEntry`` / ``Defect`` objects.
+The calculation inputs can then be generated as before, along with ``ShakeNBreak`` distortions
+(recommended), and then parsed with ``doped``'s ``DefectsParser`` class similar to 3D materials.
+
+For charge corrections however, it is recommended to use the advanced finite-size corrections adapted for
+2D materials (to correctly model the distance-dependent dielectric profile in vacuum). Possible approaches
+include that of `Noh et al. <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.89.205417>`__
+and `Komsa et al. <https://journals.aps.org/prx/abstract/10.1103/PhysRevX.4.031044>`__ ("NK" method),
+now implemented in `pydefect_2d <https://github.com/kumagai-group/pydefect_2d>`__; the approach of
+`Freysoldt and Neugebauer <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.97.205425>`__,
+implemented in
+`sxdefectalign2d <https://sxrepo.mpie.de/attachments/download/57/sxdefectalign2d-manual.pdf>`__; or the
+self-consistent potential correction (SCPC) method introduced by
+`da Silva et al. <https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.126.076401>`__ with
+implementation details `here <https://github.com/aradi/SCPC-Method>`__.
+
+Thus it is recommended to set ``skip_corrections = False`` when parsing defects in 2D materials / surface
+defects with ``DefectsParser`` (to avoid automatic application of 3D charge corrections), and then update
+the ``DefectEntry`` charge corrections with the externally-calculated 2D values, before continuing your
+analyses. For example, the ``DefectEntry`` charge corrections can be updated like this:
+
+.. code-block:: python
+
+    # updated charge corrections using an appropriate 2D materials scheme
+    new_corrections = {  # format: {entry_name: correction in eV}
+        "v_Cd_-1": +0.2,
+        "v_Cd_-2": +0.4,
+        "Te_Cd_+1": -0.2,
+    }  # note that these corrections are added to the un-corrected formation energies, to give the final values
+
+    for entry_name, entry in defect_thermo.defect_entries.items():
+        if entry_name in new_corrections:
+            for corr_key in list(entry.corrections.keys()):  # this inner loop is not required if ``skip_corrections`` was set to ``True``
+                if "charge_correction" in corr_key:
+                    print(f"Removing {corr_key} for {entry_name}: {entry.corrections.pop(corr_key):+.2f} eV")
+
+            entry.corrections.update({"2D Correction": new_corrections[entry_name]})
+            print(f"New correction for {entry_name}: {new_corrections[entry_name]:+.2f} eV")
+
+        else:
+            print(f"No corrections to add for {entry_name}")
+
+
 
 Eigenvalue / Electronic Structure Analysis
 ------------------------------------------
@@ -388,14 +446,85 @@ states can be omitted from plotting and analysis using the ``unstable_entries`` 
 detected to be shallow ('perturbed host') states and unstable for Fermi levels in the band gap are omitted
 from plotting for clarity & accuracy.
 
-Spin Polarisation
+Density of States (DOS) Calculations
+------------------------------------
+As discussed in the
+`thermodynamics & doping tutorial <https://doped.readthedocs.io/en/latest/thermodynamics_tutorial.html#doping-calculations>`__,
+the electronic density of states (DOS) of the bulk material (provided as ``bulk_dos``) is required to
+determine carrier concentrations and thus (quasi-)equilibrium Fermi levels and defect concentrations under
+various conditions, along with the defect formation energies and other inputs.
+
+The bulk DOS (``bulk_dos``) calculation should be a static calculation with the `primitive` unit cell, using:
+
+- Dense `k`-point sampling and energy grid spacing (``KPOINTS`` and ``NEDOS`` respectively with ``VASP``)
+  to give a converged DOS spectrum (see e.g.
+  `vaspup2.0 <https://github.com/kavanase/vaspup2.0?tab=readme-ov-file#density-of-states-and-absorption-spectrum-convergence>`__)
+  and an accurate band gap.
+- Ideally tetrahedron smearing (``ISMEAR = -5`` in ``VASP``) for improved DOS convergence with respect to
+  `k`-points.
+- Consistent DFT functional settings as used for the final bulk/defect supercell calculations (e.g. ``LHFCALC``,
+  ``AEXX``, ``LSORBIT`` etc).
+- The same host crystal structure used to generate the bulk/defect supercells, and same pseudopotentials
+  (``POTCAR``\s in ``VASP``) used for the supercell calculations.
+
+
+If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
+and bulk/defect supercell calculations (stored as ``DefectThermodynamics.vbm/gap``), this can lead to
+inaccuracies in the thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it
+will throw a warning like:
+``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap`...``.
+
+This can arise for a number of reasons:
+
+- Differences in DFT functional choices, pseudopotentials (``POTCAR``\s in ``VASP``) or bulk crystal
+  structure/volume.
+
+    - This can cause severe errors and should be rectified so that the DOS and supercell
+      calculation settings are made consistent as discussed above.
+
+- Effects of smearing schemes (e.g. ``ISMEAR`` in ``VASP``), such that the band edges are not
+  accurately determined in the bulk DOS calculation.
+
+    - If possible, use tetrahedron smearing (``ISMEAR = -5``) for improved DOS convergence with respect to
+      `k`-points as discussed above. If this is not possible, but dense `k`-point sampling and energy grid
+      spacing is being used, then this should not significantly impact accuracies and the warning can be
+      ignored (set ``skip_dos_check = True`` to silence the warning).
+
+- Significant differences in `k`-point sampling between the bulk DOS and supercell calculations, such that
+  the same band edges are not captured in both calculations. This can happen in cases where band edges
+  occur at `k`-points which are not high-symmetry and/or are outside of the `k`-point grid of the supercell
+  calculations.
+
+    - Assuming the `k`-point sampling of the DOS calculation is sufficiently dense, then the issue is just
+      that the VBM eigenvalue and band gap of the bulk supercell calculation is not accurate. This can be
+      rectified by using the ``bulk_band_gap_vr`` option during defect parsing (see
+      `DefectsParser docstring <https://doped.readthedocs.io/en/latest/doped.analysis.html#doped.analysis.DefectsParser>`__)
+      to set the bulk band gap and VBM eigenvalue to the correct values.
+    - In this case, the absolute values of predictions should not be affected as the eigenvalue references
+      in the calculations are consistent, just the reported Fermi levels will be referenced to
+      ``DefectThermodynamics.vbm`` which may not be the exact VBM position here.
+
+- Small numerical inaccuracies in determining the VBM eigenvalue or band gap directly from the DOS
+  spectrum.
+
+    - Determining the VBM eigenvalue or band gap directly from a DOS spectrum is not entirely
+      straightforward, due to effects of smearing, noise, finite sampling etc. If all other possible issues
+      above have been ruled out and the detected mismatch is relatively small, then this may be the case
+      and can be ignored (set ``skip_dos_check = True`` to silence the warning) --- accuracies should not
+      be significantly affected.
+
+.. note::
+    The Fermi level will be always referenced to ``DefectThermodynamics.vbm``.
+
+
+Magnetization
 -----------------
-Proper accounting of spin polarisation and multiplicity is crucial for accurate defect calculations and
+Proper accounting of magnetization and spin multiplicity is important for accurate defect calculations and
 analysis. For defect species with odd numbers of electrons (and thus being open-shell), they will adopt
 non-zero integer spin states, while defect species with even numbers of electrons can be either
 closed-shell (spin-paired) or open-shell (spin-active), depending on the defect species and its electronic
 structure. As such, defect calculations should typically be performed with spin polarisation allowed in all
-cases (i.e. with ``ISPIN = 2`` in VASP).
+cases (i.e. with ``ISPIN = 2`` or ``LSORBIT = True`` (for SOC) in VASP).
 
 .. tip::
 
@@ -405,7 +534,7 @@ cases (i.e. with ``ISPIN = 2`` in VASP).
     spin polarisation) for subsequent calculations to reduce the computational cost.
 
     The ``snb-mag --verbose`` CLI command from ``ShakeNBreak`` can be used to automatically check the
-    magnetisation of a VASP defect calculation in this way (and is automatically used by ``snb-run`` to
+    magnetization of a VASP defect calculation in this way (and is automatically used by ``snb-run`` to
     set ``ISPIN = 1`` for continued ``ShakeNBreak`` relaxations of any closed-shell defect calculations,
     if it is being used to manage the structure-searching calculations).
 
@@ -414,18 +543,18 @@ cases (i.e. with ``ISPIN = 2`` in VASP).
         ❯ snb-mag -h
         Usage: snb-mag [OPTIONS]
 
-          Checks if the magnetisation (spin polarisation) values of all atoms in the
+          Checks if the magnetization (spin polarisation) values of all atoms in the
           VASP calculation are below a certain threshold, by pulling this data from
-          the OUTCAR. Returns a shell exit status of 0 if magnetisation is below the
+          the OUTCAR. Returns a shell exit status of 0 if magnetization is below the
           threshold and 1 if above.
 
         Options:
           -o, --outcar FILE      Path to OUTCAR(.gz) file
-          -t, --threshold FLOAT  Atoms with absolute magnetisation below this value
+          -t, --threshold FLOAT  Atoms with absolute magnetization below this value
                                  are considered un-magnetised / non-spin-polarised.
-                                 The threshold for total magnetisation is 10x this
+                                 The threshold for total magnetization is 10x this
                                  value.  [default: 0.01]
-          -v, --verbose          Print information about the magnetisation of the
+          -v, --verbose          Print information about the magnetization of the
                                  system.
           -h, --help             Show this message and exit.
 
@@ -433,19 +562,22 @@ cases (i.e. with ``ISPIN = 2`` in VASP).
 In most cases and particularly for `s`/`p` orbital systems, odd electron defects will adopt a doublet spin
 state (`S` = 1/2, one unpaired electron), while even electron defects will tend to adopt a closed-shell
 singlet spin state (`S` = 0, no unpaired electrons), as a consequence of the Aufbau principle and Hund's
-rule. This is the default logic assumed in ``doped`` (and ``ShakeNBreak``), where the expected spin state
-is enforced by setting ``NUPDOWN`` (number of unpaired electrons) to ``0`` for even-electron and ``1`` for
-odd-electron defect species.
+rule. For input file generation in ``VASP``, ``NUPDOWN`` is used in the ``INCAR`` to enforce the total
+magnetization (number of unpaired electron spins), which by default is set to ``0`` for even-electron
+and ``1`` for odd-electron defect species in ``doped``.
 
-However, this is not always the case and often we can have open-shell triplet states for even-electron
-defects (with `S` = 1, two unpaired electrons) or quartet states for odd-electron defects (with `S` = 3/2,
-three unpaired electrons). Such cases are most common when the defect species adopts a
+However, this is not always the case and often we can have open-shell triplet states for
+even-electron defects (with `S` = 1, two unpaired electrons) or quartet states for odd-electron defects
+(with `S` = 3/2, three unpaired electrons). Such cases are most common when the defect species adopts a
 bipolaron/multi-polaron state (e.g. for `V`\ :sub:`Cd`\ :sup:`0*` in
-`CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__), a molecular dimer-like state (such as
-O\ :sub:`2` species in oxides, or
-`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__) or with
-orbital-degenerate/correlated defects where Hund's rule implies open-shell solutions (such as the
-highly-studied `NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
+`CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__, `V`\ :sub:`Se`\ :sup:`0` in
+`t-Se <https://pubs.rsc.org/en/content/articlelanding/2025/ee/d4ee04647a>`__, or `V`\ :sub:`P`\ :sup:`-1`
+in `NaP <https://journals.aps.org/prxenergy/abstract/10.1103/PRXEnergy.2.043002>`__), a molecular
+dimer-like state (such as O\ :sub:`2` species in oxides or
+`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__), defects involving
+multiple localised `d`/`f` electrons, or orbital-degenerate/correlated defects where Hund's rule implies
+open-shell solutions (such as the highly-studied
+`NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
 or `transition metal impurities in silicon <https://journals.aps.org/prmaterials/abstract/10.1103/PhysRevMaterials.6.L053201>`__).
 If you encounter defect states like these and/or suspect that alternative spin configurations may be
 possible, you should test the different possibilities by setting ``NUPDOWN`` (and possibly ``MAGMOM``,
@@ -478,9 +610,16 @@ for multiple defects.
 
     For magnetic competing phases, the spin configuration should also be appropriately set. ``doped`` will
     automatically set ``ISPIN=2`` (allowing spin polarisation) and ``NUPDOWN`` according to the
-    magnetisation output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
+    magnetization output from the ``Materials Project`` calculation of the competing phase, but ``MAGMOM``
     (and possibly ``ISPIN``/``NUPDOWN``) may also need to be set to induce a specific spin configuration in
     certain cases.
+
+When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
+``VASP`` output files, in order to determine the spin multiplicity. This value is stored in
+``DefectEntry.degeneracy_factors["spin degeneracy"]`` (and printed in
+``DefectThermodynamics.get_symmetries_and_degeneracies()``) and used in thermodynamic analyses. See the
+`spin_degeneracy_from_vasprun <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.parsing.spin_degeneracy_from_vasprun>`__
+API docs for details.
 
 Symmetry Precision (``symprec``)
 --------------------------------
@@ -499,8 +638,9 @@ etc.).
 
 .. tip::
 
-    Note that you can directly use the ``point_symmetry`` function from ``doped.utils.symmetry`` (see the
-    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry>`__
+    Note that you can directly use the ``point_symmetry_from_structure`` function from
+    ``doped.utils.symmetry`` (see the
+    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry_from_structure>`__
     in the python API docs) to obtain the relaxed or unrelaxed (bulk site) point symmetries of a given
     defect supercell, directly from just the relaxed structures, regardless of whether these defects were
     generated/parsed with ``doped``.
@@ -510,6 +650,13 @@ etc.).
     Wyckoff letters for lattice sites can depend on the ordering of elements in the conventional standard
     structure, for which doped uses the ``spglib`` convention (e.g. in the ``DefectsGenerator`` info
     output).
+
+.. note::
+
+    By default, magnetic symmetry (i.e. MAGMOMs) are not used in symmetry analysis in ``doped``, as noise 
+    in these values (particularly in structures from the Materials Project) often leads to incorrect 
+    symmetry determinations. To use magnetic moments in symmetry analyses, set the environment variable 
+    ``USE_MAGNETIC_SYMMETRY=1`` (i.e. ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
 
 Serialization & Data Provenance (``JSON``/``csv``)

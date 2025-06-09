@@ -16,21 +16,21 @@ import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
 from monty.serialization import loadfn
-from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
-from pymatgen.core.structure import Structure
+from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_generation import _compare_attributes, if_present_rm
 
 from doped.generation import DefectsGenerator
+from doped.utils.efficiency import Structure, StructureMatcher
 from doped.vasp import (
     DefectDictSet,
     DefectRelaxSet,
     DefectsSet,
+    DopedDictSet,
     DopedKpoints,
     _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
-    scaled_ediff,
     singleshot_incar_settings,
 )
 
@@ -212,10 +212,9 @@ class DefectDictSetTest(unittest.TestCase):
         assert expected_incar_settings.items() <= dds.incar.items()
 
         if dds.incar.get("NSW", 0) > 0:
-            assert dds.incar["EDIFF"] == scaled_ediff(len(struct))
+            assert dds.incar["EDIFF"] == 1e-5  # default EDIFF
         else:
             assert dds.incar["EDIFF"] == 1e-6  # hard set to 1e-6 for static calculations
-        default_relax_settings.pop("EDIFF_PER_ATOM")
 
         for k, v in default_relax_settings.items():
             if k == "GGA" and dds.incar.get("LHFCALC", False):
@@ -289,7 +288,10 @@ class DefectDictSetTest(unittest.TestCase):
         else:
             assert dds.kpoints.kpts == kpt
         if _potcars_available():
-            assert dds.incar["NELECT"] == nelect
+            if dds.charge_state != 0:
+                assert dds.incar["NELECT"] == nelect
+            else:
+                assert "NELECT" not in dds.incar
             assert dds.incar["NUPDOWN"] == nupdown
 
     def test_neutral_defect_dict_set(self):
@@ -392,6 +394,28 @@ class DefectDictSetTest(unittest.TestCase):
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
+    def test_ediff_per_atom_custom_setting(self):
+        # first with DopedDictSet:
+        with warnings.catch_warnings(record=True) as w:
+            dds = DopedDictSet(
+                self.prim_cdte.copy(),
+                user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
+                user_kpoints_settings={"reciprocal_density": 123},
+            )
+        print([warning.message for warning in w])  # for debugging
+        assert any(
+            "EDIFF_PER_ATOM was set to 1.00e-02 eV/atom, which" in str(warning.message) for warning in w
+        )
+        assert any("This is a very large EDIFF for VASP" in str(warning.message) for warning in w)
+        assert np.isclose(dds.incar["EDIFF"], 1e-2 * len(self.prim_cdte))
+
+        # now with DefectDictSet:
+        dds = DefectDictSet(
+            self.prim_cdte.copy(),
+            user_incar_settings={"EDIFF_PER_ATOM": 1e-2},
+        )
+        assert np.isclose(dds.incar["EDIFF"], 1e-2 * len(self.prim_cdte))
+
     def test_initialisation_for_all_structs(self):
         """
         Test the initialisation of DefectDictSet for a range of structure
@@ -488,11 +512,12 @@ class DefectDictSetTest(unittest.TestCase):
             ):
                 dds_incar_without_comments["KPAR"] = int(dds_incar_without_comments["KPAR"][0])
             dds_incar_without_comments.pop(next(k for k in dds.incar if k.startswith("#")))
-            assert written_incar == dds_incar_without_comments
+            assert written_incar == dds_incar_without_comments, "Written INCAR does not match dds.incar"
 
             with open(f"{output_path}/INCAR") as f:
                 incar_lines = f.readlines()
-            print(incar_lines)
+            print(f"{output_path}/INCAR:", incar_lines)
+            print("Testing comment strings")
             for comment_string in [
                 "# MAY WANT TO CHANGE NCORE, KPAR, AEXX, ENCUT",
                 "needed if using the kumagai-oba",
@@ -500,6 +525,7 @@ class DefectDictSetTest(unittest.TestCase):
             ]:
                 assert any(comment_string in line for line in incar_lines)
 
+            print("Testing ALGO")
             if dds.incar.get("ALGO", "normal").lower() == "normal":  # ALGO = Normal default, has comment
                 assert any(
                     "change to all if zhegv, fexcp/f or zbrent, or poor electronic convergence" in line
@@ -709,7 +735,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         `DefectEntry`s.
         """
         if not self.heavy_tests:
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
             assert parent_drs.defect_entry == input_defect_entry
@@ -765,7 +791,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         POSCARs.
         """
         if not _potcars_available():  # need to write files without error for charged defects
-            return
+            pytest.skip()
 
         for defect_gen_name in [
             "CdTe_defect_gen",
@@ -831,7 +857,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not os.path.exists("test_dir/CdTe_bulk")
 
             poscar = Poscar.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-            assert poscar.comment == "Cd27 Te27 - Bulk"
+            assert poscar.comment == "Cd27 Te27 -- Bulk"
 
             drs = DefectRelaxSet(self.CdTe_defect_gen["Cd_i_C3v_0"], poscar_comment="Test pop")
             drs.write_all("test_dir", poscar=True)
@@ -854,7 +880,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not os.path.exists("test_dir/CdTe_bulk")
 
             poscar = Poscar.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-            assert poscar.comment == "Cd27 Te27 - Bulk"
+            assert poscar.comment == "Cd27 Te27 -- Bulk"
 
     def test_default_kpoints_soc_handling(self):
         """
@@ -1120,9 +1146,13 @@ class DefectsSetTest(unittest.TestCase):
                 # generated output files
                 if_present_rm(folder)
 
-        if_present_rm("AgSbTe2_test")
-        if_present_rm("CdTe_defects_generator.json")
-        if_present_rm("test_CdTe_defects_generator.json")
+        for i in [
+            "test_pop",
+            "AgSbTe2_test",
+            "CdTe_defects_generator.json",
+            "test_CdTe_defects_generator.json",
+        ]:
+            if_present_rm(i)
 
     def check_generated_vasp_inputs(
         self,
@@ -1223,7 +1253,7 @@ class DefectsSetTest(unittest.TestCase):
 
     def test_CdTe_files(self):
         if not self.heavy_tests:
-            return
+            pytest.skip("Skipping heavy test on GH Actions")
 
         CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
         defects_set = DefectsSet(

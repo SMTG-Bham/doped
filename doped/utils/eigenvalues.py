@@ -1,13 +1,14 @@
 r"""
 Helper functions for setting up PHS analysis.
 
-Contains modified versions of functions from pydefect (https://github.com/kumagai-group/pydefect)
-and vise (https://github.com/kumagai-group/vise), to avoid requiring additional files (i.e. ``PROCAR``\s).
+Contains modified versions of functions from ``pydefect`` and ``vise``
+(https://github.com/kumagai-group/pydefect / vise).
 
-Note that this module attempts to import modules from ``pydefect`` & ``vise``, which are highly-recommended
-but not strictly required dependencies of ``doped`` (currently not available on ``conda-forge``), and so
-any imports of code from this module will attempt their import, raising an ``ImportError`` if not
-available.
+Note that this module attempts to import modules from ``pydefect`` & ``vise``,
+which are highly-recommended but not strictly required dependencies of
+``doped`` (currently not available on ``conda-forge``), and so any imports of
+code from this module will attempt their import, raising an ``ImportError`` if
+not available.
 """
 
 import contextlib
@@ -15,31 +16,26 @@ import os
 import warnings
 from collections import defaultdict
 from itertools import zip_longest
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.core.structure import PeriodicSite
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
-from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
+from doped.utils.parsing import (
+    _partial_defect_entry_from_structures,
+    get_magnetization_from_vasprun,
+    get_nelect_from_vasprun,
+    suppress_logging,
+)
 from doped.utils.plotting import _get_backend
 
-if TYPE_CHECKING:
-    from easyunfold.procar import Procar as EasyunfoldProcar
-
-
-with warnings.catch_warnings():  # avoid vise warning suppression:
-    import logging
-
+with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
     try:
-        from vise import user_settings
-
-        user_settings.logger.setLevel(logging.CRITICAL)
         import pydefect.analyzer.make_band_edge_states
         import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
         from pydefect.analyzer.band_edge_states import (
@@ -73,20 +69,20 @@ def band_edge_properties_from_vasprun(
         integer_criterion (float):
             Threshold criterion for determining if a band is unoccupied
             (< ``integer_criterion``), partially occupied (between
-            ``integer_criterion`` and 1 - ``integer_criterion``), or
-            fully occupied (> 1 - ``integer_criterion``).
-            Default is 0.1.
+            ``integer_criterion`` and 1 - ``integer_criterion``), or fully
+            occupied (> 1 - ``integer_criterion``). Default is 0.1.
 
     Returns:
         ``BandEdgeProperties`` object.
     """
+    is_ncl = vasprun.parameters.get("LNONCOLLINEAR", False)
     band_edge_prop = BandEdgeProperties(
         eigenvalues=eigenvalues_from_vasprun(vasprun),
         nelect=get_nelect_from_vasprun(vasprun),
-        magnetization=get_magnetization_from_vasprun(vasprun),
+        magnetization=0 if is_ncl else get_magnetization_from_vasprun(vasprun),  # only needed for ISPIN=2
         kpoint_coords=vasprun.actual_kpoints,
         integer_criterion=integer_criterion,
-        is_non_collinear=vasprun.parameters.get("LNONCOLLINEAR", False),
+        is_non_collinear=is_ncl,
     )
     band_edge_prop.structure = vasprun.final_structure
     return band_edge_prop
@@ -106,9 +102,8 @@ def make_perfect_band_edge_state_from_vasp(
         integer_criterion (float):
             Threshold criterion for determining if a band is unoccupied
             (< ``integer_criterion``), partially occupied (between
-            ``integer_criterion`` and 1 - ``integer_criterion``), or
-            fully occupied (> 1 - ``integer_criterion``).
-            Default is 0.1.
+            ``integer_criterion`` and 1 - ``integer_criterion``), or fully
+            occupied (> 1 - ``integer_criterion``). Default is 0.1.
 
     Returns:
         ``PerfectBandEdgeState`` object.
@@ -126,13 +121,13 @@ def make_band_edge_orbital_infos(
     cbm: float,
     eigval_shift: float = 0.0,
     neighbor_indices: list[int] | None = None,
-    defect_procar: Union["EasyunfoldProcar", Procar] | None = None,
+    defect_procar: Procar | None = None,
 ):
     r"""
     Make ``BandEdgeOrbitalInfos`` from a ``Vasprun`` object.
 
-    Modified from ``pydefect`` to use projected orbitals
-    stored in the ``Vasprun`` object.
+    Modified from ``pydefect`` to use projected orbitals stored in the
+    ``Vasprun`` object.
 
     Args:
         defect_vr (Vasprun): Defect ``Vasprun`` object.
@@ -142,11 +137,12 @@ def make_band_edge_orbital_infos(
             Shift eigenvalues down by this value (to set VBM at 0 eV).
             Default is 0.0.
         neighbor_indices (list[int]):
-            Indices of neighboring atoms to the defect site, for localisation analysis.
-            Default is ``None``\.
-        defect_procar (EasyunfoldProcar, Procar):
-            ``EasyunfoldProcar`` or ``Procar`` object, for the defect supercell,
-            if projected eigenvalue/orbitals data is not provided in ``defect_vr``\.
+            Indices of neighboring atoms to the defect site, for localisation
+            analysis. Default is ``None``.
+        defect_procar (Procar):
+            ``pymatgen`` ``Procar`` object, for the defect supercell, if
+            projected eigenvalue/orbitals data is not provided in
+            ``defect_vr``.
 
     Returns:
         ``BandEdgeOrbitalInfos`` object.
@@ -194,8 +190,8 @@ def make_band_edge_orbital_infos(
 def get_band_edge_info(
     bulk_vr: Vasprun,
     defect_vr: Vasprun,
-    bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
-    defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    bulk_procar: PathLike | Procar | None = None,
+    defect_procar: PathLike | Procar | None = None,
     defect_supercell_site: PeriodicSite | None = None,
     neighbor_cutoff_factor: float = 1.3,
 ) -> tuple[BandEdgeOrbitalInfos, EdgeInfo, EdgeInfo]:
@@ -204,52 +200,49 @@ def get_band_edge_info(
     specifically ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo``
     objects for the bulk VBM and CBM.
 
-    See https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
+    See:
+    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
 
     Args:
         bulk_vr (Vasprun):
-            ``Vasprun`` object of the bulk supercell calculation.
-            If ``bulk_procar`` is not provided, then this must have the
-            ``projected_eigenvalues`` attribute (i.e. from a calculation
-            with ``LORBIT > 10`` in the ``INCAR`` and parsed with
-            ``parse_projected_eigen = True``).
+            ``Vasprun`` object of the bulk supercell calculation. If
+            ``bulk_procar`` is not provided, then this must have the
+            ``projected_eigenvalues`` attribute (i.e. from a calculation with
+            ``LORBIT > 10`` in the ``INCAR`` and parsed with
+            ``parse_projected_eigen = True`` (default)).
         defect_vr (Vasprun):
-            ``Vasprun`` object of the defect supercell calculation.
-            If ``defect_procar`` is not provided, then this must have the
-            ``projected_eigenvalues`` attribute (i.e. from a calculation
-            with ``LORBIT > 10`` in the ``INCAR`` and parsed with
-            ``parse_projected_eigen = True``).
-        bulk_procar (PathLike, EasyunfoldProcar, Procar):
-            Either a path to the ``VASP`` ``PROCAR`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-            ``pymatgen`` ``Procar`` object, for the bulk supercell
-            calculation. Not required if the supplied ``bulk_vr`` was
-            parsed with ``parse_projected_eigen = True``.
-            Default is ``None``.
-        defect_procar (PathLike, EasyunfoldProcar, Procar):
-            Either a path to the ``VASP`` ``PROCAR`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-            ``pymatgen`` ``Procar`` object, for the defect supercell
-            calculation. Not required if the supplied ``bulk_vr`` was
-            parsed with ``parse_projected_eigen = True``.
-            Default is ``None``.
+            ``Vasprun`` object of the defect supercell calculation. If
+            ``defect_procar`` is not provided, then this must have the
+            ``projected_eigenvalues`` attribute (i.e. from a calculation with
+            ``LORBIT > 10`` in the ``INCAR`` and parsed with
+            ``parse_projected_eigen = True`` (default)).
+        bulk_procar (PathLike, Procar):
+            Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+            object, for the reference bulk supercell calculation. Not required
+            if the supplied ``bulk_vr`` was parsed with
+            ``parse_projected_eigen = True`` (default). Default is ``None``.
+        defect_procar (PathLike, Procar):
+            Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+            object, for the defect supercell calculation. Not required if the
+            supplied ``defect_vr`` was parsed with
+            ``parse_projected_eigen = True`` (default). Default is ``None``.
         defect_supercell_site (PeriodicSite):
-            ``PeriodicSite`` object of the defect site in the defect
-            supercell, from which the defect neighbours are determined
-            for localisation analysis. If ``None`` (default), then the
-            defect site is determined automatically from the defect
-            and bulk supercell structures.
+            ``PeriodicSite`` object of the defect site in the defect supercell,
+            from which the defect neighbours are determined for localisation
+            analysis. If ``None`` (default), then the defect site is determined
+            automatically from the defect and bulk supercell structures.
         neighbor_cutoff_factor (float):
-            Sites within ``min_distance * neighbor_cutoff_factor`` of
-            the defect site in the `relaxed` defect supercell are
-            considered neighbors for localisation analysis, where
-            ``min_distance`` is the minimum distance between sites in
-            the defect supercell. Default is 1.3 (matching the ``pydefect``
-            default).
+            Sites within ``min_distance * neighbor_cutoff_factor`` of the
+            defect site in the `relaxed` defect supercell are considered
+            neighbours for localisation analysis, where ``min_distance`` is the
+            minimum distance between sites in the defect supercell. Default is
+            1.3 (matching the ``pydefect`` default).
 
     Returns:
-        ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects
-        for the bulk VBM and CBM.
+        ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects for the
+        bulk VBM and CBM.
     """
     band_edge_prop = band_edge_properties_from_vasprun(bulk_vr)
 
@@ -262,21 +255,15 @@ def get_band_edge_info(
     min_distance = sorted_distances[sorted_distances > 0.5][0]
 
     if defect_supercell_site is None:
-        (
-            _defect,
-            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            defect_site_in_bulk,  # vacancy site
-            _defect_site_index,
-            _bulk_site_index,
-            _guessed_initial_defect_structure,
-            _unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
+        defect_struct_info = defect_from_structures(
             bulk_vr.final_structure,
             defect_vr.final_structure.copy(),
             return_all_info=True,
             oxi_state="Undetermined",
+            multiplicity=1,
         )
+        defect_site = defect_struct_info[1]  # _relaxed_ defect site (if substitution/interstitial)
+        defect_site_in_bulk = defect_struct_info[2]  # vacancy site
         defect_supercell_site = defect_site or defect_site_in_bulk
 
     neighbor_indices = [
@@ -285,25 +272,22 @@ def get_band_edge_info(
         if defect_supercell_site.distance(site) <= min_distance * neighbor_cutoff_factor
     ]
 
-    from pydefect.analyzer.band_edge_states import logger
+    with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
+        if bulk_procar is not None:
+            vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
+        else:
+            orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
+            vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
+            cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
 
-    logger.setLevel(logging.CRITICAL)  # quieten unnecessary eigenvalue shift INFO message
-
-    if bulk_procar is not None:
-        vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
-    else:
-        orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
-        vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
-        cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
-
-    band_orb = make_band_edge_orbital_infos(
-        defect_vr,
-        vbm_info.orbital_info.energy,
-        cbm_info.orbital_info.energy,
-        eigval_shift=-vbm_info.orbital_info.energy,
-        neighbor_indices=neighbor_indices,
-        defect_procar=_parse_procar(defect_procar),
-    )
+        band_orb = make_band_edge_orbital_infos(
+            defect_vr,
+            vbm_info.orbital_info.energy,
+            cbm_info.orbital_info.energy,
+            eigval_shift=-vbm_info.orbital_info.energy,
+            neighbor_indices=neighbor_indices,
+            defect_procar=_parse_procar(defect_procar),
+        )
 
     return band_orb, vbm_info, cbm_info
 
@@ -318,10 +302,9 @@ def _add_eigenvalues(
     Add eigenvalues to plot.
 
     Refactored from implementation in ``pydefect`` to avoid calling
-    ``ax.scatter`` individually many times when we have many kpoints
-    and bands, which can make the plotting quite slow (>10 seconds),
-    and allow setting custom colors for occupied, unoccupied, and
-    partially occupied states.
+    ``ax.scatter`` individually many times when we have many kpoints and bands,
+    which can make the plotting quite slow (>10 seconds), and allow setting
+    custom colors for occupied, unoccupied, and partially occupied states.
     """
     for _spin_idx, (eo_by_spin, ax) in enumerate(
         zip(self._energies_and_occupations, self.axs, strict=False)
@@ -365,9 +348,9 @@ def get_eigenvalue_analysis(
     ks_labels: bool = False,
     style_file: str | None = None,
     bulk_vr: PathLike | Vasprun | None = None,
-    bulk_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    bulk_procar: PathLike | Procar | None = None,
     defect_vr: PathLike | Vasprun | None = None,
-    defect_procar: Union[PathLike, "EasyunfoldProcar", Procar] | None = None,
+    defect_procar: PathLike | Procar | None = None,
     force_reparse: bool = False,
     ylims: tuple[float, float] | None = None,
     legend_kwargs: dict | None = None,
@@ -380,125 +363,124 @@ def get_eigenvalue_analysis(
     calculation outputs, as well as a plot of the single-particle electronic
     eigenvalues and their occupation (if ``plot=True``).
 
-    Can be used to determine if a defect is adopting a perturbed host
-    state (PHS / shallow state), see
-    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states.
-    Note that the classification of electronic states as band edges or localized
-    orbitals is based on the similarity of orbital projections and eigenvalues
-    between the defect and bulk cell calculations (see
-    ``similar_orb/energy_criterion`` argument descriptions below for more details).
-    You may want to adjust the default values of these keyword arguments, as the
-    defaults may not be appropriate in all cases. In particular, the P-ratio values
-    can give useful insight, revealing the level of (de)localisation of the states.
+    Can be used to determine if a defect is adopting a perturbed host state
+    (PHS / shallow state), see:
+    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
+
+    Note that the classification of electronic states as band edges or
+    localised orbitals is based on the similarity of orbital projections and
+    eigenvalues between the defect and bulk cell calculations (see
+    ``similar_orb/energy_criterion`` argument descriptions below for more
+    details). You may want to adjust the default values of these keyword
+    arguments, as the defaults may not be appropriate in all cases. In
+    particular, the P-ratio values can give useful insight, revealing the level
+    of (de)localisation of the states.
 
     Either a ``doped`` ``DefectEntry`` object can be provided, or the required
     VASP output files/objects for the bulk and defect supercell calculations
-    (``Vasprun``\s, or ``Vasprun``\s and ``Procar``\s).
-    If a ``DefectEntry`` is provided but eigenvalue data has not already been
-    parsed (default in ``doped`` is to parse this data with ``DefectsParser``/
-    ``DefectParser``, as controlled by the ``parse_projected_eigen`` flag),
-    then this function will attempt to load the eigenvalue data from either
-    the input ``Vasprun``/``PROCAR`` objects or files, or from the
-    ``bulk/defect_path``\s in ``defect_entry.calculation_metadata``.
-    If so, will initially try to load orbital projections from ``vasprun.xml(.gz)``
-    files (slightly slower but more accurate), or failing that from ``PROCAR(.gz)``
-    files if present.
+    (``Vasprun``\s, or ``Vasprun``\s and ``Procar``\s). If a ``DefectEntry`` is
+    provided but eigenvalue data has not already been parsed (default in
+    ``doped`` is to parse this data with ``DefectsParser``/``DefectParser``, as
+    controlled by the ``parse_projected_eigen`` flag), then this function will
+    attempt to load the eigenvalue data from either the input ``Vasprun`` /
+    ``PROCAR`` objects or files, or from the ``bulk/defect_path``\s in
+    ``defect_entry.calculation_metadata``. If so, will initially try to load
+    orbital projections from ``vasprun.xml(.gz)`` files (more accurate due to
+    less rounding errors), or failing that from ``PROCAR(.gz)`` files if
+    present.
 
-    This function uses code from ``pydefect``, so please cite the ``pydefect`` paper:
-    "Insights into oxygen vacancies from high-throughput first-principles calculations"
-    Yu Kumagai, Naoki Tsunoda, Akira Takahashi, and Fumiyasu Oba
-    Phys. Rev. Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
+    This function uses code from ``pydefect``, so please cite the ``pydefect``
+    paper: https://doi.org/10.1103/PhysRevMaterials.5.123803
 
     Args:
         defect_entry (DefectEntry):
             ``doped`` ``DefectEntry`` object. Default is ``None``.
         plot (bool):
-            Whether to plot the single-particle eigenvalues.
-            (Default: True)
+            Whether to plot the single-particle eigenvalues. (Default: True)
         filename (str):
-            Filename to save the eigenvalue plot to (if ``plot = True``).
-            If ``None`` (default), plots are not saved.
+            Filename to save the eigenvalue plot to (if ``plot = True``). If
+            ``None`` (default), plots are not saved.
         ks_labels (bool):
-            Whether to add band index labels to the KS levels.
-            (Default: False)
+            Whether to add band index labels to the KS levels. (Default: False)
         style_file (str):
-            Path to a ``mplstyle`` file to use for the plot. If None
+            Path to a ``mplstyle`` file to use for the plot. If ``None``
             (default), uses the ``doped`` displacement plot style
             (``doped/utils/displacement.mplstyle``).
         bulk_vr (PathLike, Vasprun):
             Not required if ``defect_entry`` provided and eigenvalue data
-            already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-            or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
-            supercell calculation. If ``None`` (default), tries to load
-            the ``Vasprun`` object from
-            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
-            or, failing that, from a ``vasprun.xml(.gz)`` file at
-            ``defect_entry.calculation_metadata["bulk_path"]``.
-        bulk_procar (PathLike, EasyunfoldProcar, Procar):
-            Not required if ``defect_entry`` provided and eigenvalue data
-            already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
-            or if ``bulk_vr`` was parsed with ``parse_projected_eigen = True``.
-            Either a path to the ``VASP`` ``PROCAR`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-            ``pymatgen`` ``Procar`` object, for the reference bulk supercell
-            calculation.
-            If ``None`` (default), tries to load from a ``PROCAR(.gz)``
-            file at ``defect_entry.calculation_metadata["bulk_path"]``.
-        defect_vr (PathLike, Vasprun):
-            Not required if ``defect_entry`` provided and eigenvalue data
-            already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
-            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-            or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
+            already parsed (default behaviour when parsing with ``doped``, data
+            in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
+            ``pymatgen`` ``Vasprun`` object, for the reference bulk supercell
             calculation. If ``None`` (default), tries to load the ``Vasprun``
             object from
-            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
+            ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
+            or, failing that, from a ``vasprun.xml(.gz)`` file at
+            ``defect_entry.calculation_metadata["bulk_path"]``.
+        bulk_procar (PathLike, Procar):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``, data
+            in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
+            ``bulk_vr`` was parsed with ``parse_projected_eigen = True``
+            (default). Either a path to the ``VASP`` ``PROCAR`` output file
+            (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
+            ``Procar`` object, for the reference bulk supercell calculation. If
+            ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
+            ``defect_entry.calculation_metadata["bulk_path"]``.
+        defect_vr (PathLike, Vasprun):
+            Not required if ``defect_entry`` provided and eigenvalue data
+            already parsed (default behaviour when parsing with ``doped``, data
+            in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
+            Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file or a
+            ``pymatgen`` ``Vasprun`` object, for the defect supercell
+            calculation. If ``None`` (default), tries to load the ``Vasprun``
+            object from
+            ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
-        defect_procar (PathLike, EasyunfoldProcar, Procar):
+        defect_procar (PathLike, Procar):
             Not required if ``defect_entry`` provided and eigenvalue data
-            already parsed (default behaviour when parsing with ``doped``,
-            data in ``defect_entry.calculation_metadata["eigenvalue_data"]``),
-            or if ``defect_vr`` was parsed with ``parse_projected_eigen = True``.
-            Either a path to the ``VASP`` ``PROCAR`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or an ``easyunfold``/
-            ``pymatgen`` ``Procar`` object, for the defect supercell calculation.
-            If ``None`` (default), tries to load from a ``PROCAR(.gz)``
-            file at ``defect_entry.calculation_metadata["defect_path"]``.
+            already parsed (default behaviour when parsing with ``doped``, data
+            in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
+            ``defect_vr`` was parsed with ``parse_projected_eigen = True``
+            (default). Either a path to the ``VASP`` ``PROCAR`` output file
+            (with ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen``
+            ``Procar`` object, for the defect supercell calculation. If
+            ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
+            ``defect_entry.calculation_metadata["defect_path"]``.
         force_reparse (bool):
-            Whether to force re-parsing of the eigenvalue data, even if
-            already present in the ``calculation_metadata``.
+            Whether to force re-parsing of the eigenvalue data, even if already
+            present in the ``calculation_metadata`` dict.
         ylims (tuple[float, float]):
-            Custom y-axis limits for the eigenvalue plot. If ``None`` (default),
-            the y-axis limits are automatically set to +/-5% of the eigenvalue
-            range.
+            Custom y-axis limits for the eigenvalue plot. If ``None``
+            (default), the y-axis limits are automatically set to +/-5% of the
+            eigenvalue range.
         legend_kwargs (dict):
             Custom keyword arguments to pass to the ``ax.legend`` call in the
             eigenvalue plot (e.g. "loc", "fontsize", "framealpha" etc.). If set
             to ``False``, then no legend is shown. Default is ``None``.
         similar_orb_criterion (float):
-            Threshold criterion for determining if the orbitals of two eigenstates
-            are similar (for identifying band-edge and defect states). If the
-            summed orbital projection differences, normalised by the total orbital
-            projection coefficients,  are less than this value, then the orbitals
-            are considered similar. Default is to try with 0.2 (``pydefect`` default),
-            then if this fails increase to 0.35, and lastly 0.5.
+            Threshold criterion for determining if the orbitals of two
+            eigenstates are similar (for identifying band-edge and defect
+            states). If the summed orbital projection differences, normalised
+            by the total orbital projection coefficients, are less than this
+            value, then the orbitals are considered similar. Default is to try
+            with 0.2 (``pydefect`` default), then if this fails increase to
+            0.35, and lastly 0.5.
         similar_energy_criterion (float):
-            Threshold criterion for considering two eigenstates similar in energy,
-            used for identifying band-edge (and defect states). Bands within this
-            energy difference from the VBM/CBM of the bulk are considered potential
-            band-edge states. Default is to try with the larger of either 0.25 eV
-            or 0.1 eV + the potential alignment from defect to bulk cells as
-            determined by the charge correction in ``defect_entry.corrections_metadata``
-            if present. If this fails, then it is increased to the ``pydefect`` default
-            of 0.5 eV.
+            Threshold criterion for considering two eigenstates similar in
+            energy, used for identifying band-edge (and defect states). Bands
+            within this energy difference from the VBM/CBM of the bulk are
+            considered potential band-edge states. Default is to try with the
+            larger of either 0.25 eV or 0.1 eV + the potential alignment from
+            defect to bulk cells as determined by the charge correction in
+            ``defect_entry.corrections_metadata`` if present. If this fails,
+            then it is increased to the ``pydefect`` default of 0.5 eV.
 
     Returns:
         ``pydefect`` ``BandEdgeStates`` object, containing the band-edge and
-        defect eigenvalue information, and the eigenvalue plot (if ``plot=True``).
+        defect eigenvalue information, and the eigenvalue plot (if
+        ``plot=True``).
     """
     if defect_entry is None:
         if not all([bulk_vr, defect_vr]):
@@ -506,42 +488,15 @@ def get_eigenvalue_analysis(
                 "If `defect_entry` is not provided, then both `bulk_vr` and `defect_vr` at a minimum "
                 "must be provided!"
             )
-        from doped.analysis import defect_from_structures
 
         bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
         defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
-
-        (
-            defect,
-            defect_site,
-            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
-            defect_site_index,  # in this initial_defect_structure
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-            _bulk_voronoi_node_dict,
-        ) = defect_from_structures(
-            bulk_vr.final_structure,
-            defect_vr.final_structure,
-            oxi_state="Undetermined",
-            return_all_info=True,
-        )
-        defect_entry = DefectEntry(
-            # pmg attributes:
-            defect=defect,  # this corresponds to _unrelaxed_ defect
-            charge_state=0,
-            sc_entry=ComputedStructureEntry(
-                structure=defect_vr.final_structure,
-                energy=0.0,  # needs to be set, so set to 0.0
-            ),
-            sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-            bulk_entry=None,
-            # doped attributes:
-            defect_supercell_site=defect_site,  # _relaxed_ defect site
-            defect_supercell=defect_vr.final_structure,
-            bulk_supercell=bulk_vr.final_structure,
+        defect_entry = _partial_defect_entry_from_structures(
+            bulk_vr.final_structure, defect_vr.final_structure, oxi_state="Undetermined", multiplicity=1
         )
 
+    # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used
+    #  with e.g. polarons etc
     defect_entry._load_and_parse_eigenvalue_data(
         bulk_vr=bulk_vr,
         defect_vr=defect_vr,
@@ -631,13 +586,14 @@ def get_eigenvalue_analysis(
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
     EigenvalueMplPlotter._add_eigenvalues = _add_eigenvalues  # faster monkey-patch for adding eigenvalues
-    emp = EigenvalueMplPlotter(
-        title="Eigenvalues",
-        band_edge_orb_infos=band_orb,
-        supercell_vbm=vbm,
-        supercell_cbm=cbm,
-        y_range=[vbm - 3, cbm + 3],
-    )
+    with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
+        emp = EigenvalueMplPlotter(
+            title="Eigenvalues",
+            band_edge_orb_infos=band_orb,
+            supercell_vbm=vbm,
+            supercell_cbm=cbm,
+            y_range=[vbm - 3, cbm + 3],
+        )
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12

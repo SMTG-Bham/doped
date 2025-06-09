@@ -1,10 +1,10 @@
 """
-Code to analyse VASP defect calculations.
+Code for plotting defect formation energies.
 
-These functions are built from a combination of useful modules from pymatgen
-and AIDE (by Adam Jackson and Alex Ganose), alongside substantial modification,
-in the efforts of making an efficient, user-friendly package for managing and
-analysing defect calculations, with publication-quality outputs.
+These functions were built from a combination of useful modules from
+``pymatgen``, ``AIDE`` (by Adam Jackson and Alex Ganose), alongside substantial
+modification, the efforts of making an efficient, user-friendly package for
+managing and analysing defect calculations with publication-quality outputs.
 """
 
 import contextlib
@@ -25,12 +25,13 @@ from pymatgen.util.typing import PathLike
 from doped.utils.symmetry import sch_symbols  # point group symbols
 
 if TYPE_CHECKING:
+    from doped.core import DefectEntry
     from doped.thermodynamics import DefectThermodynamics
 
 
 def _get_backend(save_format: str) -> str | None:
     """
-    Try use pycairo as backend if installed, and save_format is pdf.
+    Try use ``pycairo`` as backend if installed, and ``save_format`` is "pdf".
     """
     backend = None
     if "pdf" in save_format:
@@ -71,7 +72,6 @@ def get_colormap(colormap: str | Colormap | None = None, default: str = "batlow"
             https://matplotlib.org/stable/users/explain/colors/colormaps), or
             a ``Colormap`` / ``ListedColormap`` object. If ``None`` (default),
             uses ``default`` colormap (which is ``"batlow"`` by default).
-
             Append "S" to the colormap name if using a sequential colormap
             from https://www.fabiocrameri.ch/colourmaps.
         default (str):
@@ -118,8 +118,8 @@ def get_linestyles(linestyles: str | list[str] = "-", num_lines: int = 1) -> lis
     Get a list of linestyles to use for plotting, from a string or list of
     strings (linestyles).
 
-    If a list is provided which doesn't match the number of lines,
-    the list is repeated until it does.
+    If a list is provided which doesn't match the number of lines, the list is
+    repeated until it does.
 
     Args:
         linestyles (str, list[str]):
@@ -127,8 +127,8 @@ def get_linestyles(linestyles: str | list[str] = "-", num_lines: int = 1) -> lis
             for all lines. If a list, uses each linestyle in the list for each
             line. Defaults to ``"-"``.
         num_lines (int):
-            Number of lines to plot (and thus number of linestyles
-            to output in list). Defaults to 1.
+            Number of lines to plot (and thus number of linestyles to output in
+            list). Defaults to 1.
     """
     if isinstance(linestyles, str):
         return [linestyles] * num_lines
@@ -270,22 +270,21 @@ def format_defect_name(
     Format defect name for plot titles.
 
     (i.e. from ``"Cd_i_C3v_0"`` to ``"$Cd_{i}^{0}$"`` or
-    ``"$Cd_{i_{C3v}}^{0}$"``). Note this assumes "V\_..."
-    means vacancy not Vanadium.
+    ``"$Cd_{i_{C3v}}^{0}$"``). Note this assumes "V\_..." means vacancy not
+    Vanadium.
 
     Args:
-        defect_species (:obj:`str`):
-            Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``)
-        include_site_info_in_name (:obj:`bool`):
+        defect_species (str):
+            Name of defect including charge state (e.g. ``"Cd_i_C3v_0"``).
+        include_site_info_in_name (bool):
             Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
-            or ``"$Cd_{i_{C3v}}^{0}$"``\). Defaults to ``False``.
-        wout_charge (:obj:`bool`, optional):
+            or ``"$Cd_{i_{C3v}}^{0}$"``). Defaults to ``False``.
+        wout_charge (bool):
             Whether to exclude the charge state from the formatted
             ``defect_species`` name. Defaults to ``False``.
 
     Returns:
-        :obj:`str`:
-            formatted defect name
+        str: Formatted defect name.
     """
     if wout_charge:
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
@@ -393,18 +392,86 @@ def format_defect_name(
                 f"_{'_'.join(defect_species.split('_')[2:-1])}", ""
             )
 
-    def _check_matching_defect_format(element, name, pre_def_type_list, post_def_type_list):
-        return any(f"{pre_def_type}{element}" in name for pre_def_type in pre_def_type_list) or any(
-            f"{element}{post_def_type}" in name for post_def_type in post_def_type_list
-        )
+    def _check_matching_defect_format(
+        element: str,
+        name: str,
+        pre_def_type_list: list[str],
+        post_def_type_list: list[str],
+    ) -> int:
+        """
+        Check if the given ``name`` matches expected defect naming formats,
+        including the placement of the ``element`` and pre/post defect type
+        information, without consideration of any site information (parsed
+        separately).
 
-    def _check_matching_defect_format_with_site_info(element, name, pre_def_type_list, post_def_type_list):
-        for site_preposition in ["s", "m", "mult", ""]:
-            for site_postposition in [r"[a-z]", ""]:
+        Args:
+            element (str):
+                The defect element being checked (e.g., "Ag", "Cd", "H").
+            name (str):
+                The string to check for matching format.
+            pre_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["v_", "va_",
+                "V_"]), occurring `before` the ``element`` position in ``name``.
+            post_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["_v", "_vac",
+                "_V"]), occurring `after` the ``element`` position in ``name``.
+
+        Returns:
+            int:
+                Returns the length of the ``name`` string minus the character
+                position of the start of the match (so matching the start of
+                ``name`` returns ``len(name)``, a match after 3 characters
+                returns ``len(name) - 3`` etc., in order to favour matching
+                near the start of the string). As such, a return value of ``0``
+                indicates no match found.
+        """
+        patterns = [f"{pre_def_type}{element}" for pre_def_type in pre_def_type_list] + [
+            f"{element}{post_def_type}" for post_def_type in post_def_type_list
+        ]
+        if any(name.startswith(pattern) for pattern in patterns):
+            return len(name)
+        for i in range(len(name) - 1):
+            if any(name[i : i + len(pattern)] == pattern for pattern in patterns):
+                return len(name) - i
+        return 0  # 0 -> False, no match found
+
+    def _check_matching_defect_format_with_old_site_info(
+        element: str,
+        name: str,
+        pre_def_type_list: list[str],
+        post_def_type_list: list[str],
+    ) -> tuple[bool, str | None]:
+        """
+        Checks if the given ``name`` matches expected defect naming formats,
+        including the placement of the ``element`` and site information.
+
+        Args:
+            element (str):
+                The defect element being checked (e.g., "Ag", "Cd", "H").
+            name (str):
+                The string to check for matching format.
+            pre_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["v_", "va_",
+                "V_"]), occurring `before` the ``element`` position in ``name``.
+            post_def_type_list (list[str]):
+                List of possible defect type strings (e.g., ["_v", "_vac",
+                "_V"]), occurring `after` the ``element`` position in ``name``.
+
+
+        Returns:
+            tuple[bool, str | None]:
+                A tuple where the first element is a boolean indicating if
+                the format matches, and the second element is the site
+                information (if applicable) or ``None``.
+        """
+        for site_preposition in ["s", "m", "mult", ""]:  # possible site into prepositions
+            for site_postposition in [r"[a-z]", ""]:  # possible site info postpositions
                 match = re.match(
+                    # ([a-z_]+) -> 1st group; matches any letters or underscores (no numbers)
+                    # ({site_preposition}[0-9]+{site_postposition}) -> 2nd group; pre, number(s), post
                     f"([a-z_]+)({site_preposition}[0-9]+{site_postposition})",
                     name,
-                    re.I,
+                    re.I,  # case-insensitive match
                 )
 
                 if match:
@@ -462,7 +529,7 @@ def format_defect_name(
         defect_name_without_site_info = None
         defect_name_with_site_info = None
 
-        match_found, site_info = _check_matching_defect_format_with_site_info(
+        match_found, site_info = _check_matching_defect_format_with_old_site_info(
             element,
             name,
             pre_vacancy_strings,
@@ -475,7 +542,7 @@ def format_defect_name(
             defect_name_without_site_info = f"$\\it{{V}}\\!$ $_{{{element}}}^{{{charge_string}}}$"
 
         else:
-            match_found, site_info = _check_matching_defect_format_with_site_info(
+            match_found, site_info = _check_matching_defect_format_with_old_site_info(
                 element,
                 name,
                 pre_interstitial_strings,
@@ -488,31 +555,31 @@ def format_defect_name(
         if include_site_info_in_name and defect_name_with_site_info is not None:
             return defect_name_with_site_info
 
-        if (
-            _check_matching_defect_format(element, name, pre_vacancy_strings, post_vacancy_strings)
-            and defect_name is None
-        ):
-            if include_site_info_in_name and doped_site_info is not None:
-                return f"$\\it{{V}}\\!$ $_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
-
-            return f"$\\it{{V}}\\!$ $_{{{element}}}^{{{charge_string}}}$"
-
-        if (
-            _check_matching_defect_format(
+        if defect_name is None:
+            vacancy_match_score = _check_matching_defect_format(
+                element, name, pre_vacancy_strings, post_vacancy_strings
+            )
+            interstitial_match_score = _check_matching_defect_format(
                 element,
                 name,
                 pre_interstitial_strings,
                 post_interstitial_strings,
             )
-            and defect_name is None
-        ):
-            if include_site_info_in_name and doped_site_info is not None:
-                return f"{element}$_{{i_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
-            return f"{element}$_i^{{{charge_string}}}$"
+            if vacancy_match_score > interstitial_match_score:
+                if include_site_info_in_name and doped_site_info is not None:
+                    return f"$\\it{{V}}\\!$ $_{{{element}_{{{doped_site_info}}}}}^{{{charge_string}}}$"
 
-        if defect_name is None and defect_name_without_site_info is not None:
-            return defect_name_without_site_info
+                return f"$\\it{{V}}\\!$ $_{{{element}}}^{{{charge_string}}}$"
+
+            if interstitial_match_score > vacancy_match_score:  # otherwise they are both 0 (no match)
+                if include_site_info_in_name and doped_site_info is not None:
+                    return f"{element}$_{{i_{{{doped_site_info}}}}}^{{{charge_string}}}$"
+
+                return f"{element}$_i^{{{charge_string}}}$"
+
+            if defect_name_without_site_info is not None:
+                return defect_name_without_site_info
 
         return defect_name
 
@@ -534,12 +601,14 @@ def format_defect_name(
         if (
             defect_name and include_site_info_in_name
         ):  # if we have a match, check if we can add the site number
-            for site_preposition in ["s", "m", "mult", ""]:
+            for site_preposition in ["s", "m", "mult", ""]:  # old site info formats
                 for site_postposition in [r"[a-z]", ""]:
                     match = re.match(
+                        # ([a-z_]+) -> 1st group; matches any letters or underscores (no numbers)
+                        # ({site_preposition}[0-9]+{site_postposition}) -> 2nd group; pre, number(s), post
                         f"([a-z_]+)({site_preposition}[0-9]+{site_postposition})",
                         name,
-                        re.I,
+                        re.I,  # case-insensitive match
                     )
 
                     if match:
@@ -977,66 +1046,69 @@ def formation_energy_plot(
     filename: PathLike | None = None,
 ):
     """
-    Produce defect formation energy vs Fermi energy plot.
+    Produce defect formation energy vs Fermi level plot.
 
     Args:
         defect_thermodynamics (DefectThermodynamics):
             ``DefectThermodynamics`` object containing defect entries to plot.
         dft_chempots (dict):
-            Dictionary of ``{Element: value}`` giving the chemical
-            potential of each element.
+            Dictionary of ``{Element: value}`` giving the chemical potential of
+            each element.
         el_refs (dict):
-            Dictionary of ``{Element: value}`` giving the reference
-            energy of each element.
+            Dictionary of ``{Element: value}`` giving the reference energy of
+            each element.
         chempot_table (bool):
             Whether to print the chemical potential table above the plot.
             (Default: True)
         all_entries (bool, str):
             Whether to plot the formation energy lines of `all` defect entries,
-            rather than the default of showing only the equilibrium states at each
-            Fermi level position (traditional). If instead set to "faded", will plot
-            the equilibrium states in bold, and all unstable states in faded grey
-            (Default: False)
+            rather than the default of showing only the equilibrium states at
+            each Fermi level position (traditional). If instead set to "faded",
+            will plot the equilibrium states in bold, and all unstable states
+            in faded grey. (Default: False)
         xlim:
-            Tuple (min,max) giving the range of the x-axis (Fermi level). May want
-            to set manually when including transition level labels, to avoid crossing
-            the axes. Default is to plot from -0.3 to +0.3 eV above the band gap.
+            Tuple (min,max) giving the range of the x-axis (Fermi level). May
+            want to set manually when including transition level labels, to
+            avoid crossing the axes. Default is to plot from -0.3 to +0.3 eV
+            above the band gap.
         ylim:
-            Tuple (min,max) giving the range for the y-axis (formation energy). May
-            want to set manually when including transition level labels, to avoid
-            crossing the axes. Default is from 0 to just above the maximum formation
-            energy value in the band gap.
+            Tuple (min,max) giving the range for the y-axis (formation energy).
+            May want to set manually when including transition level labels, to
+            avoid crossing the axes. Default is from 0 to just above the
+            maximum formation energy value in the band gap.
         fermi_level (float):
-            If set, plots a dashed vertical line at this Fermi level value, typically
-            used to indicate the equilibrium Fermi level position (e.g. calculated
-            with py-sc-fermi). (Default: None)
+            If set, plots a dashed vertical line at this Fermi level value,
+            typically used to indicate the equilibrium Fermi level position.
+            (Default: None)
         include_site_info (bool):
-            Whether to include site info in defect names in the plot legend (e.g.
-            $Cd_{i_{C3v}}^{0}$ rather than $Cd_{i}^{0}$). Default is ``False``, where
-            site info is not included unless we have inequivalent sites for the same
-            defect type. If, even with site info added, there are duplicate defect
-            names, then "-a", "-b", "-c" etc are appended to the names to differentiate.
+            Whether to include site info in defect names in the plot legend
+            (e.g. ``$Cd_{i_{C3v}}^{0}$`` rather than ``$Cd_{i}^{0}$``). Default
+            is ``False``, where site info is not included unless we have
+            inequivalent sites for the same defect type. If, even with site
+            info added, there are duplicate defect names, then "-a", "-b", "-c"
+            etc. are appended to the names to differentiate.
         title (str):
             Title for the plot. (Default: None)
         colormap (str, matplotlib.colors.Colormap):
             Colormap to use for the formation energy lines, either as a string
             (which can be a colormap name from
-            https://matplotlib.org/stable/users/explain/colors/colormaps or from
-            https://www.fabiocrameri.ch/colourmaps -- append 'S' if using a sequential
-            colormap from the latter) or a ``Colormap`` / ``ListedColormap`` object.
-            If ``None`` (default), uses ``tab10`` with ``alpha=0.75`` (if 10 or fewer
-            lines to plot), ``tab20`` (if 20 or fewer lines) or ``batlow`` (if more
-            than 20 lines).
-        linestyles (list):
-            Linestyles to use for the formation energy lines, either as a single
-            linestyle (``str``) or list of linestyles (``list[str]``) in the order of
-            appearance of lines in the plot legend. Default is ``"-"``; i.e. solid
-            linestyle for all entries.
+            https://matplotlib.org/stable/users/explain/colors/colormaps or
+            from https://www.fabiocrameri.ch/colourmaps -- append 'S' if using
+            a sequential colormap from the latter) or a ``Colormap`` /
+            ``ListedColormap`` object. If ``None`` (default), uses ``tab10``
+            with ``alpha=0.75`` (if 10 or fewer lines to plot), ``tab20`` (if
+            20 or fewer lines) or ``batlow`` (if more than 20 lines).
+        linestyles (str, list[str]):
+            Linestyles to use for the formation energy lines, either as a
+            single linestyle (``str``) or list of linestyles (``list[str]``) in
+            the order of appearance of lines in the plot legend. Default is
+            ``"-"``; i.e. solid linestyle for all entries.
         auto_labels (bool):
-            Whether to automatically label the transition levels with their charge
-            states. If there are many transition levels, this can be quite ugly.
-            (Default: False)
-        filename (PathLike): Filename to save the plot to. (Default: None (not saved))
+            Whether to automatically label the transition levels with their
+            charge states. If there are many transition levels, this can be
+            quite ugly. (Default: False)
+        filename (PathLike):
+            Filename to save the plot to. (Default: None (not saved)).
 
     Returns:
         ``matplotlib`` ``Figure`` object.
@@ -1085,11 +1157,13 @@ def formation_energy_plot(
             zorder=0.5,  # plot behind other lines, but above band edges
         )
 
+    tl_map: dict[str, dict[float, list[int]]] = defect_thermodynamics.transition_level_map  # type: ignore
+    stable_entries: dict[str, list["DefectEntry"]] = defect_thermodynamics.stable_entries  # type: ignore
     for cnt, def_name in enumerate(xy.keys()):  # plot transition levels
         x_trans: list[float] = []
         y_trans: list[float] = []
         tl_labels, tl_label_type = [], []
-        for x_val, chargeset in defect_thermodynamics.transition_level_map[def_name].items():
+        for x_val, chargeset in tl_map[def_name].items():
             x_trans.append(x_val)
             y_trans.append(
                 next(
@@ -1098,7 +1172,7 @@ def formation_energy_plot(
                         chempots=dft_chempots,
                         fermi_level=x_val,
                     )
-                    for defect_entry in defect_thermodynamics.stable_entries[def_name]
+                    for defect_entry in stable_entries[def_name]
                     if defect_entry.charge_state == chargeset[0]
                 )
             )
@@ -1181,18 +1255,17 @@ def plot_chemical_potential_table(
         ax (plt.Axes):
             Axes object to plot the table in.
         dft_chempots (dict):
-            Dictionary of chemical potentials of the form
-            ``{Element: value}``.
+            Dictionary of chemical potentials of the form ``{Element: value}``.
         cellLoc (str):
             Alignment of text in cells. Default is "left".
         el_refs (dict):
             Dictionary of elemental reference energies of the form
-            ``{Element: value}``. If provided, the chemical potentials
-            are given with respect to these reference energies.
+            ``{Element: value}``. If provided, the chemical potentials are
+            given with respect to these reference energies.
 
     Returns:
-        The ``matplotlib.table.Table`` object (which has been
-        added to the ``ax`` object).
+        The ``matplotlib.table.Table`` object (which has been added to the
+        ``ax`` object).
     """
     if el_refs is not None:
         dft_chempots = {el: energy - el_refs[el] for el, energy in dft_chempots.items()}

@@ -294,6 +294,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "inter_14_Th_+2": "Th$_i^{+2}$",
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th}^{+2}$",
             "As_i_C2_-3": "As$_i^{-3}$",
+            "Ag_i_C3v_Ag2.40_0": "Ag$_i^{0}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -372,6 +373,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "inter_14_Th_+2": "Th$_{i_{14}}^{+2}$",
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th_{14}}^{+2}$",
             "As_i_C2_-3": "As$_{i_{C_{2}}}^{-3}$",
+            "Ag_i_C3v_Ag2.40_0": "Ag$_{i_{C_{3v}-Ag2.40}}^{0}$",
         }
         for (
             defect_species,
@@ -444,7 +446,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         with warnings.catch_warnings(record=True) as w:
             plot = self.CdTe_defect_thermo.plot()
         print([str(warn.message) for warn in w])  # for debugging
-        assert len(w) == 2
+        assert len(w) == 3
         assert any("All formation energies for" in str(warn.message) for warn in w)
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot
@@ -540,11 +542,18 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_CdTe_LZ_all_defects_plot(self):
         return self.CdTe_LZ_thermo_wout_meta.plot(limit="Te-rich")
 
-    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_2.png")
-    def test_CdTe_LZ_all_defects_plot_dist_tol_2(self):
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_1pt6.png")
+    def test_CdTe_LZ_all_defects_plot_dist_tol_1pt6(self):
         # Matches SK Thesis Fig 6.1b
         lz_cdte_defect_thermo = self.CdTe_LZ_thermo_wout_meta
-        lz_cdte_defect_thermo.dist_tol = 2  # increase to 2 Å to merge Te_i defects
+        lz_cdte_defect_thermo.dist_tol = 1.6  # increase to 1.6 Å to merge Te_i defects
+
+        return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_dist_tol_3.png")
+    def test_CdTe_LZ_all_defects_plot_dist_tol_3(self):
+        lz_cdte_defect_thermo = self.CdTe_LZ_thermo_wout_meta
+        lz_cdte_defect_thermo.dist_tol = 3  # increase to 3 Å to merge Te_i and Cd_i defects
 
         return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
 
@@ -617,7 +626,9 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         are removed by including site info, but some (``inter_11_H_X``) which
         aren't, so ``_a`` & ``_b`` are appended to those names.
         """
-        fig = self.Se_ext_no_pnict_thermo.plot()
+        thermo = deepcopy(self.Se_ext_no_pnict_thermo)  # don't overwrite
+        thermo.dist_tol = 1.45  # keeps O_i sites separate but merges F/Cl/Br_i
+        fig = thermo.plot()
         legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
         print(legend_txt)
         for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$"]:
@@ -660,7 +671,6 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         print(legend_txt)
         for i in [
             "O$_{i_{1}}$",
-            "O$_{i_{2}}$",
             "Te$_{Se_{1}}$",
             "H$_{i_{11}}$$_{-a}$",
             "H$_{i_{11}}$$_{-b}$",

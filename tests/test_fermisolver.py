@@ -23,7 +23,14 @@ import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
-from test_thermodynamics import STYLE, custom_mpl_image_compare, data_dir
+from test_thermodynamics import (
+    STYLE,
+    anneal_temperatures,
+    belas_linear_fit,
+    custom_mpl_image_compare,
+    data_dir,
+    reduced_anneal_temperatures,
+)
 
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -31,7 +38,9 @@ from doped.thermodynamics import (
     _get_py_sc_fermi_dos_from_fermi_dos,
     get_e_h_concs,
     get_fermi_dos,
+    get_interpolated_chempots,
 )
+from doped.utils.plotting import format_defect_name
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
 module_path = os.path.dirname(os.path.abspath(__file__))
@@ -123,7 +132,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
         assert pyscfermi_dos.nelect == self.CdTe_fermi_dos.nelecs
         assert pyscfermi_dos.nelect == 18
         assert np.isclose(pyscfermi_dos.bandgap, self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True))
-        assert np.isclose(pyscfermi_dos.bandgap, 1.5308, atol=1e-3)
+        assert np.isclose(pyscfermi_dos.bandgap, 1.5263, atol=1e-3)
         assert not pyscfermi_dos.spin_polarised  # SOC DOS
 
         e_vbm = self.CdTe_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
@@ -181,19 +190,21 @@ def check_concentrations_df(solver, concentrations, free_defects=None):
     Note: Will need to update when testing ``free_defects``, ``fixed_defects``.
     """
     free_defects = free_defects or []
-    annealing = "Annealing Temperature" in concentrations.columns
+    annealing = "Annealing Temperature (K)" in concentrations.columns
     formation_energy = None
 
     for defect, row in concentrations.iterrows():
         print(f"Checking {defect}")
         total_concentration = 0
-        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        formal_chempots = {
+            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+        }
         this_row_formation_energy = sum(formal_chempots.values())
         if formation_energy is not None:
             assert np.isclose(this_row_formation_energy, formation_energy, atol=1e-4)
         formation_energy = this_row_formation_energy
 
-        temperature = row["Annealing Temperature"] if annealing else row["Temperature"]
+        temperature = row["Annealing Temperature (K)"] if annealing else row["Temperature (K)"]
         if annealing:
             dopant_concentration = row["Dopant (cm^-3)"] if "Dopant (cm^-3)" in row.index else None
             fermi_level = solver.defect_thermodynamics.get_equilibrium_fermi_level(
@@ -205,7 +216,7 @@ def check_concentrations_df(solver, concentrations, free_defects=None):
         for defect_entry in solver.defect_thermodynamics.all_entries[defect]:
             total_concentration += defect_entry.equilibrium_concentration(
                 temperature=temperature,
-                fermi_level=fermi_level if annealing else row["Fermi Level"],
+                fermi_level=fermi_level if annealing else row["Fermi Level (eV wrt VBM)"],
                 chempots=formal_chempots,
                 el_refs=solver.defect_thermodynamics.el_refs,
             )
@@ -558,26 +569,28 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         for i in [
-            "Fermi Level",
+            "Fermi Level (eV wrt VBM)",
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
-            "Temperature",
+            "Temperature (K)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
         # Check that concentrations are reasonable numbers
         assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
-        assert np.isclose(concentrations["Temperature"].iloc[0], 300)
+        assert np.isclose(concentrations["Temperature (K)"].iloc[0], 300)
         # Check appended chemical potentials
         for element in single_chempot_dict:
-            assert f"μ_{element}" in concentrations.columns
-            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+            assert f"μ_{element} (eV)" in concentrations.columns
+            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations)
 
         # test Fermi level, carrier and defect concentrations against known values
-        assert np.isclose(concentrations["Fermi Level"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level)
+        assert np.isclose(
+            concentrations["Fermi Level (eV wrt VBM)"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level
+        )
         assert np.isclose(
             concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_300K_eff_1e16_e, rtol=1e-3
         )
@@ -596,9 +609,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             annealing_temperature=300,  # set to 300 to match equilibrium_solve
         )
         pseudo_concentrations = pseudo_concentrations.rename(
-            columns={"Annealing Temperature": "Temperature"}
+            columns={"Annealing Temperature (K)": "Temperature (K)"}
         )  # retains ordering
-        pseudo_concentrations = pseudo_concentrations.drop(columns=["Quenched Temperature"])
+        pseudo_concentrations = pseudo_concentrations.drop(columns=["Quenched Temperature (K)"])
         pd.testing.assert_frame_equal(
             concentrations, pseudo_concentrations, rtol=1e-3, check_dtype=False
         )  # Temperature can be int/float
@@ -619,24 +632,24 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         for i in [
-            "Fermi Level",
+            "Fermi Level (eV wrt VBM)",
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
-            "Temperature",
+            "Temperature (K)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
-        assert np.isclose(concentrations["Temperature"].iloc[0], 700)
+        assert np.isclose(concentrations["Temperature (K)"].iloc[0], 700)
         # Check appended chemical potentials
         for element in single_chempot_dict:
-            assert f"μ_{element}" in concentrations.columns
-            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+            assert f"μ_{element} (eV)" in concentrations.columns
+            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations)
 
         # test Fermi level, carrier and defect concentrations against known values
-        assert np.isclose(concentrations["Fermi Level"].iloc[0], self.CdTe_700K_fermi_level)
+        assert np.isclose(concentrations["Fermi Level (eV wrt VBM)"].iloc[0], self.CdTe_700K_fermi_level)
         assert np.isclose(concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_700K_e, rtol=1e-3)
         assert np.isclose(concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_700K_h, rtol=1e-3)
 
@@ -653,9 +666,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             quenched_temperature=700,
         )
         pseudo_concentrations = pseudo_concentrations.rename(
-            columns={"Annealing Temperature": "Temperature"}
+            columns={"Annealing Temperature (K)": "Temperature (K)"}
         )  # retains ordering
-        pseudo_concentrations = pseudo_concentrations.drop(columns=["Quenched Temperature"])
+        pseudo_concentrations = pseudo_concentrations.drop(columns=["Quenched Temperature (K)"])
         pd.testing.assert_frame_equal(
             concentrations, pseudo_concentrations, rtol=1e-3, check_dtype=False
         )  # Temperature can be int/float
@@ -693,10 +706,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         for i in [
-            "Fermi Level",
+            "Fermi Level (eV wrt VBM)",
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
-            "Temperature",
+            "Temperature (K)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
@@ -705,8 +718,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert "defect2" in concentrations.index
         # Check appended chemical potentials
         for element in single_chempot_dict:
-            assert f"μ_{element}" in concentrations.columns
-            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+            assert f"μ_{element} (eV)" in concentrations.columns
+            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
     @parameterize_backend()
     def test_pseudo_equilibrium_solve(self, backend):
@@ -726,29 +739,29 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         for i in [
-            "Fermi Level",
+            "Fermi Level (eV wrt VBM)",
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
-            "Annealing Temperature",
-            "Quenched Temperature",
+            "Annealing Temperature (K)",
+            "Quenched Temperature (K)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
         # Check that concentrations are reasonable numbers
         assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
-        assert np.isclose(concentrations["Quenched Temperature"].iloc[0], 300)
-        assert np.isclose(concentrations["Annealing Temperature"].iloc[0], 800)
+        assert np.isclose(concentrations["Quenched Temperature (K)"].iloc[0], 300)
+        assert np.isclose(concentrations["Annealing Temperature (K)"].iloc[0], 800)
         # Check appended chemical potentials
         for element in single_chempot_dict:
-            assert f"μ_{element}" in concentrations.columns
-            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+            assert f"μ_{element} (eV)" in concentrations.columns
+            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations)
 
         # test Fermi level, carrier and defect concentrations against known values
         assert np.isclose(
-            concentrations["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+            concentrations["Fermi Level (eV wrt VBM)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
         )
         assert np.isclose(
             concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_e, rtol=1e-3
@@ -782,25 +795,26 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         for i in [
-            "Fermi Level",
+            "Fermi Level (eV wrt VBM)",
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
-            "Annealing Temperature",
-            "Quenched Temperature",
+            "Annealing Temperature (K)",
+            "Quenched Temperature (K)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
         # Check that concentrations are reasonable numbers
         assert np.all(concentrations["Concentration (cm^-3)"] >= 0)
-        assert np.isclose(concentrations["Quenched Temperature"].iloc[0], 150)
-        assert np.isclose(concentrations["Annealing Temperature"].iloc[0], 1400)
+        assert np.isclose(concentrations["Quenched Temperature (K)"].iloc[0], 150)
+        assert np.isclose(concentrations["Annealing Temperature (K)"].iloc[0], 1400)
         # Check appended chemical potentials
         for element in single_chempot_dict:
-            assert f"μ_{element}" in concentrations.columns
-            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+            assert f"μ_{element} (eV)" in concentrations.columns
+            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
         assert np.isclose(
-            concentrations["Fermi Level"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_fermi_level
+            concentrations["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_fermi_level,
         )
         assert np.isclose(
             concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_e, rtol=1e-3
@@ -852,11 +866,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
         for i in [
-            "Fermi Level",
+            "Fermi Level (eV wrt VBM)",
             "Electrons (cm^-3)",
             "Holes (cm^-3)",
-            "Annealing Temperature",
-            "Quenched Temperature",
+            "Annealing Temperature (K)",
+            "Quenched Temperature (K)",
         ]:
             assert i in concentrations.columns, f"Missing column: {i}"
 
@@ -864,13 +878,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert "defect1" in concentrations.index
         assert "defect2" in concentrations.index
 
-        assert np.isclose(concentrations["Quenched Temperature"].iloc[0], 300)
-        assert np.isclose(concentrations["Annealing Temperature"].iloc[0], 800)
+        assert np.isclose(concentrations["Quenched Temperature (K)"].iloc[0], 300)
+        assert np.isclose(concentrations["Annealing Temperature (K)"].iloc[0], 800)
 
         # Check appended chemical potentials
         for element in single_chempot_dict:
-            assert f"μ_{element}" in concentrations.columns
-            assert concentrations[f"μ_{element}"].iloc[0] == single_chempot_dict[element]
+            assert f"μ_{element} (eV)" in concentrations.columns
+            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
     @parameterize_backend()
     def test_scan_temperature_equilibrium(self, backend):
@@ -887,14 +901,16 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             effective_dopant_concentration=1e16,
         )
         assert len(concentrations) > 0
-        assert set(temperatures).issubset(concentrations["Temperature"].unique())
+        assert set(temperatures).issubset(concentrations["Temperature (K)"].unique())
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations)
 
         # test Fermi level, carrier and defect concentrations against known values
-        concentrations_300K = concentrations[concentrations["Temperature"] == 300]
-        assert np.isclose(concentrations_300K["Fermi Level"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level)
+        concentrations_300K = concentrations[concentrations["Temperature (K)"] == 300]
+        assert np.isclose(
+            concentrations_300K["Fermi Level (eV wrt VBM)"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level
+        )
         assert np.isclose(
             concentrations_300K["Electrons (cm^-3)"].iloc[0], self.CdTe_300K_eff_1e16_e, rtol=1e-3
         )
@@ -910,13 +926,17 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         # v_Cd concentration is basically the same at all <=500K temperatures here, as it's the only
         # significant compensating species to the effective dopant concentration:
-        concentrations_lte_500K = concentrations[concentrations["Temperature"] <= 500]
+        concentrations_lte_500K = concentrations[concentrations["Temperature (K)"] <= 500]
         assert np.allclose(concentrations_lte_500K.loc["v_Cd", "Concentration (cm^-3)"], 5e15, rtol=1e-3)
         for defect in set(concentrations.index.values):
             print(f"Checking {defect}")
             assert np.isclose(
-                concentrations[concentrations["Temperature"] == 200].loc[defect, "Concentration (cm^-3)"],
-                concentrations[concentrations["Temperature"] == 400].loc[defect, "Concentration (cm^-3)"],
+                concentrations[concentrations["Temperature (K)"] == 200].loc[
+                    defect, "Concentration (cm^-3)"
+                ],
+                concentrations[concentrations["Temperature (K)"] == 400].loc[
+                    defect, "Concentration (cm^-3)"
+                ],
                 atol=1e-40,
                 rtol=1e-3,
             ) == (defect == "v_Cd")
@@ -941,19 +961,20 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
-        assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
-        assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
+        assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature (K)"].unique())
+        assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature (K)"].unique())
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations)
 
         # test Fermi level, carrier and defect concentrations against known values
         concentrations_800K = concentrations[
-            (concentrations["Annealing Temperature"] == 800)
-            & (concentrations["Quenched Temperature"] == 300)
+            (concentrations["Annealing Temperature (K)"] == 800)
+            & (concentrations["Quenched Temperature (K)"] == 300)
         ]
         assert np.isclose(
-            concentrations_800K["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+            concentrations_800K["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_800K_eff_1e16_fermi_level,
         )
         assert np.isclose(
             concentrations_800K["Electrons (cm^-3)"].iloc[0],
@@ -998,22 +1019,23 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         assert isinstance(concentrations, pd.DataFrame)
         assert len(concentrations) > 0
-        assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature"].unique())
-        assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature"].unique())
+        assert set(annealing_temperatures).issubset(concentrations["Annealing Temperature (K)"].unique())
+        assert set(quenched_temperatures).issubset(concentrations["Quenched Temperature (K)"].unique())
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations, free_defects=["v_Cd"])
 
         # test Fermi level, carrier and defect concentrations against known values
         concentrations_800K = concentrations[
-            (concentrations["Annealing Temperature"] == 800)
-            & (concentrations["Quenched Temperature"] == 300)
+            (concentrations["Annealing Temperature (K)"] == 800)
+            & (concentrations["Quenched Temperature (K)"] == 300)
         ]
         assert not np.isclose(  # changed from before
-            concentrations_800K["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+            concentrations_800K["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_800K_eff_1e16_fermi_level,
         )
         assert np.isclose(
-            concentrations_800K["Fermi Level"].iloc[0], 0.936, atol=1e-3
+            concentrations_800K["Fermi Level (eV wrt VBM)"].iloc[0], 0.936, atol=1e-3
         )  # much more n-type now, with v_Cd as free defect
 
     @parameterize_backend()
@@ -1120,7 +1142,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         # test Fermi level, carrier and defect concentrations against known values
         concentrations_1e16 = concentrations[concentrations["Dopant (cm^-3)"] == 1e16]
-        assert np.isclose(concentrations_1e16["Fermi Level"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level)
+        assert np.isclose(
+            concentrations_1e16["Fermi Level (eV wrt VBM)"].iloc[0], self.CdTe_300K_eff_1e16_fermi_level
+        )
         assert np.isclose(
             concentrations_1e16["Electrons (cm^-3)"].iloc[0], self.CdTe_300K_eff_1e16_e, rtol=1e-3
         )
@@ -1141,7 +1165,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             temperature=700,
         )
         concentrations_0 = concentrations[concentrations["Dopant (cm^-3)"] == 0]
-        assert np.isclose(concentrations_0["Fermi Level"].iloc[0], self.CdTe_700K_fermi_level)
+        assert np.isclose(concentrations_0["Fermi Level (eV wrt VBM)"].iloc[0], self.CdTe_700K_fermi_level)
         assert np.isclose(concentrations_0["Electrons (cm^-3)"].iloc[0], self.CdTe_700K_e, rtol=1e-3)
         assert np.isclose(concentrations_0["Holes (cm^-3)"].iloc[0], self.CdTe_700K_h, rtol=1e-3)
         pd.testing.assert_series_equal(
@@ -1169,9 +1193,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
         assert len(concentrations) > 0
         assert set(dopant_concentrations).issubset(concentrations["Dopant (cm^-3)"].unique())
-        assert "Annealing Temperature" in concentrations.columns
-        assert "Quenched Temperature" in concentrations.columns
-        assert "Temperature" not in concentrations.columns
+        assert "Annealing Temperature (K)" in concentrations.columns
+        assert "Quenched Temperature (K)" in concentrations.columns
+        assert "Temperature (K)" not in concentrations.columns
 
         # check concentrations match Fermi level and chemical potentials:
         check_concentrations_df(solver, concentrations)
@@ -1179,7 +1203,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # test Fermi level, carrier and defect concentrations against known values
         concentrations_1e16 = concentrations[concentrations["Dopant (cm^-3)"] == 1e16]
         assert np.isclose(
-            concentrations_1e16["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+            concentrations_1e16["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_800K_eff_1e16_fermi_level,
         )
         assert np.isclose(
             concentrations_1e16["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_800K_eff_1e16_e, rtol=1e-3
@@ -1203,7 +1228,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
         concentrations_0 = concentrations[concentrations["Dopant (cm^-3)"] == 0]
         assert np.isclose(
-            concentrations_0["Fermi Level"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_fermi_level
+            concentrations_0["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_fermi_level,
         )
         assert np.isclose(
             concentrations_0["Electrons (cm^-3)"].iloc[0],
@@ -1242,12 +1268,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert len(concentrations) > 0
         # Check that the concentrations have been calculated at n_points
         unique_chempot_sets = concentrations[
-            [f"μ_{el}" for el in self.CdTe_thermo.chempots["elemental_refs"]]
+            [f"μ_{el} (eV)" for el in self.CdTe_thermo.chempots["elemental_refs"]]
         ].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
         for mu_col in [col for col in concentrations.columns if "μ_" in col]:
-            elt = mu_col.strip("μ_")
+            elt = mu_col.strip("μ_").split()[0]
             chempot_vals = [
                 limit_dict[elt]
                 for limit_dict in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
@@ -1267,9 +1293,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         check_concentrations_df(solver, concentrations)
 
         # test Fermi level, carrier and defect concentrations against known values
-        concentrations_Te_rich = concentrations[concentrations["μ_Te"] == 0]
+        concentrations_Te_rich = concentrations[concentrations["μ_Te (eV)"] == 0]
         assert np.isclose(
-            concentrations_Te_rich["Fermi Level"].iloc[0], self.CdTe_anneal_800K_eff_1e16_fermi_level
+            concentrations_Te_rich["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_800K_eff_1e16_fermi_level,
         )
         assert np.isclose(
             concentrations_Te_rich["Electrons (cm^-3)"].iloc[0],
@@ -1293,9 +1320,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             annealing_temperature=1400,
             quenched_temperature=150,
         )
-        concentrations_Cd_rich = concentrations[concentrations["μ_Cd"] == 0]
+        concentrations_Cd_rich = concentrations[concentrations["μ_Cd (eV)"] == 0]
         assert np.isclose(
-            concentrations_Cd_rich["Fermi Level"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_fermi_level
+            concentrations_Cd_rich["Fermi Level (eV wrt VBM)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_fermi_level,
         )
         assert np.isclose(
             concentrations_Cd_rich["Electrons (cm^-3)"].iloc[0],
@@ -1334,7 +1362,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             effective_dopant_concentration=1e16,
         )
         assert len(concentrations) > 0
-        unique_chempot_sets = concentrations[["μ_Cd", "μ_Te"]].drop_duplicates()
+        unique_chempot_sets = concentrations[["μ_Cd (eV)", "μ_Te (eV)"]].drop_duplicates()
         assert len(unique_chempot_sets) == n_points
 
     @parameterize_backend()
@@ -1428,7 +1456,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             limit = "Cd-rich" if min_max == "max" else "Te-rich"
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
             assert formal_chempots == single_chempot_dict
             _check_output_concentrations(solver, result)
 
@@ -1442,7 +1472,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 n_points=5,
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
             _check_output_concentrations(solver, result)
 
             # doesn't actually occur at the Te-rich limit for min electrons:
@@ -1510,7 +1542,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             limit = "Te-rich" if min_max == "max" else "Cd-rich"
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
             assert formal_chempots == single_chempot_dict
             _check_output_concentrations(solver, result)
 
@@ -1524,7 +1558,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 n_points=5,
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
             _check_output_concentrations(solver, result)
 
             # doesn't actually occur at the Te-rich limit for max quenched holes:
@@ -1555,7 +1591,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 "Searching for chemical potentials which minimise the target defect(s): ['V_S_3']..."
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
 
             # confirm that formal_chempots does not correspond to a X-rich limit:
             for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
@@ -1574,7 +1612,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 **{temp_arg_name: 603},
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
             assert any(
                 all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
                 for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
@@ -1604,7 +1644,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 "'V_S_2', 'V_S_3', 'V_Sb_1', 'V_Sb_2']..."
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
 
             # here the minimising chempots are an intermediate chempot again, but slightly different
             # to before:
@@ -1629,7 +1671,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 "'S_Sb_2']..."
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
             single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="S-rich")
             assert all(  # for S_Sb total concentration, maximised at S-rich limit:
                 np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
@@ -1652,13 +1696,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             print(f"Testing {min_max}imising Fermi level...")
             with patch("builtins.print") as mock_print:
                 result = solver.optimise(
-                    target="Fermi Level",
+                    target="Fermi Level (eV wrt VBM)",
                     min_or_max=min_max,
                     annealing_temperature=973,  # SK Thesis Fig. 6.17
                 )
             mock_print.assert_called_once_with(
                 f"Searching for chemical potentials which {min_max}imise the target column: ['Fermi "
-                f"Level']..."
+                f"Level (eV wrt VBM)']..."
             )
             assert result.equals(
                 solver.optimise(
@@ -1669,7 +1713,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
 
             if min_max == "min":  # formal_chempots does not correspond to a X-rich limit, for min Fermi:
                 for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
@@ -1697,12 +1743,15 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         for min_max in ["min", "max"]:
             print(f"Testing {min_max}imising chemical potential...")
             with patch("builtins.print") as mock_print:
-                result = solver.optimise(target="μ_Te", min_or_max=min_max, annealing_temperature=973)
+                result = solver.optimise(target="μ_Te (eV)", min_or_max=min_max, annealing_temperature=973)
             mock_print.assert_called_once_with(
-                f"Searching for chemical potentials which {min_max}imise the target column: ['μ_Te']..."
+                f"Searching for chemical potentials which {min_max}imise the target column: ['μ_Te ("
+                f"eV)']..."
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
 
             # corresponds to Te-rich/poor limits:
             limit = "Te-rich" if min_max == "max" else "Cd-rich"
@@ -1742,23 +1791,19 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "match"
         ) in str(w[-1].message)
 
-    @parameterize_backend()
-    def test_get_interpolated_chempots(self, backend):
+    def test_get_interpolated_chempots(self):
         """
-        Test ``_get_interpolated_chempots`` method.
+        Test ``get_interpolated_chempots`` function.
         """
-        solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         chempot_start = {"Cd": -0.5, "Te": -1.0}
         chempot_end = {"Cd": -1.0, "Te": -0.5}
         n_points = 3
-
-        interpolated_chempots = solver._get_interpolated_chempots(chempot_start, chempot_end, n_points)
+        interpolated_chempots = get_interpolated_chempots(chempot_start, chempot_end, n_points)
 
         assert len(interpolated_chempots) == n_points
         assert interpolated_chempots[0] == chempot_start
         assert interpolated_chempots[-1] == chempot_end
-        # Check middle point
-        expected_middle = {"Cd": -0.75, "Te": -0.75}
+        expected_middle = {"Cd": -0.75, "Te": -0.75}  # Check middle point
         assert interpolated_chempots[1] == expected_middle
 
     @parameterize_backend()
@@ -1778,7 +1823,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # test error with single-chempot-limit system:
         Se_pnict_thermo = loadfn(os.path.join(data_dir, "Se_Pnict_Thermo.json.gz"))
         solver = FermiSolver(
-            Se_pnict_thermo, bulk_dos=self.CdTe_fermi_dos, skip_vbm_check=True, backend=backend
+            Se_pnict_thermo, bulk_dos=self.CdTe_fermi_dos, skip_dos_check=True, backend=backend
         )
         with pytest.raises(ValueError) as exc:
             solver._parse_and_check_grid_like_chempots()
@@ -1798,10 +1843,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             solver._parse_and_check_grid_like_chempots()
 
     @parameterize_backend()
-    def test_skip_vbm_check(self, backend):
+    def test_skip_dos_check(self, backend):
         """
         Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
-        is skipped with ``skip_vbm_check``.
+        is skipped with ``skip_dos_check``.
 
         Main test code in ``test_thermodynamics.py``.
         """
@@ -1819,23 +1864,216 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             FermiSolver(
                 defect_thermodynamics=defect_thermo,
                 bulk_dos=fd_up_fdos,
-                skip_vbm_check=True,
+                skip_dos_check=True,
                 backend=backend,
             )
         print([str(warning.message) for warning in w])
         assert not w
 
+    @parameterize_backend()
+    def test_delta_gap_calculated_fermi_level_k10(self, backend):
+        """
+        Test calculating the Fermi level using a 10x10x10 k-point mesh DOS
+        calculation for primitive CdTe; with ``delta_gap``.
+
+        Mirrors the direct functions test (``test_calculated_fermi_level_k10``)
+        in ``test_thermodynamics``, but now with ``FermiSolver`` functions.
+        """
+        solver = deepcopy(self.solver_doped if backend == "doped" else self.solver_py_sc_fermi)
+        solver.defect_thermodynamics.bulk_dos = os.path.join(
+            module_path, "data/CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
+        )
+
+        quenched_fermi_levels = []
+        for anneal_temp in reduced_anneal_temperatures:
+            gap_shift = belas_linear_fit(anneal_temp) - 1.5
+            result = solver.pseudo_equilibrium_solve(
+                # quenching to 300K (default)
+                single_chempot_dict=self.CdTe_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"],
+                annealing_temperature=anneal_temp,
+                delta_gap=gap_shift,
+            )
+            quenched_fermi_levels += [result.iloc[0]["Fermi Level (eV wrt VBM)"]]
+
+        # (approx) same result as with k181818 NKRED=2 (0.31825 eV with this DOS)
+        # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
+        assert np.isclose(
+            np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3 if backend == "doped" else 1e-2
+        )
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te.png")
+    def test_delta_gap_interpolate_chempots_CdTe(self):
+        """
+        Mirrors ``test_CdTe_concentrations_vs_chempots`` in
+        ``test_thermodynamics``, but now using ``FermiSolver`` (with
+        ``delta_gap``).
+
+        Tests both backends, but only uses the ``doped`` results for plotting
+        for full consistency with ``test_thermodynamics`` test (due to site
+        competition differences etc).
+        """
+        kwargs = {
+            "limits": ["Cd-rich", "Te-rich"],
+            "annealing_temperature": 875,  # typical for CdTe
+            "delta_gap": belas_linear_fit(875) - 1.5,
+        }
+
+        doped_output_df = self.solver_doped.interpolate_chempots(**kwargs)
+        py_sc_fermi_output_df = self.solver_py_sc_fermi.interpolate_chempots(**kwargs)
+        pd.testing.assert_frame_equal(doped_output_df, py_sc_fermi_output_df, rtol=2e-2, atol=1e16)
+        pd.testing.assert_series_equal(
+            doped_output_df["Fermi Level (eV wrt VBM)"],
+            py_sc_fermi_output_df["Fermi Level (eV wrt VBM)"],
+            atol=2e2,
+        )
+
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
+        for defect_index in doped_output_df.index.unique():
+            matching_rows = doped_output_df[doped_output_df.index == defect_index]
+            ax.plot(
+                matching_rows["μ_Te (eV)"],
+                matching_rows["Concentration (cm^-3)"],
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+            )
+
+        ax.plot(
+            doped_output_df["μ_Te (eV)"], doped_output_df["Electrons (cm^-3)"], label="Electrons", ls="--"
+        )
+        ax.plot(doped_output_df["μ_Te (eV)"], doped_output_df["Holes (cm^-3)"], label="Holes", ls="--")
+        ax.set_yscale("log")
+        ax.set_ylim(1e7, 1e19)
+        ax.set_ylabel("Concentration (cm$^{-3}$)")
+        ax.set_xlabel("Te Chemical Potential (eV)")
+        ax.legend()
+
+        return f
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels.png")
+    def test_delta_gap_scan_temperature(self):
+        """
+        Mirrors ``test_calculated_fermi_levels`` in ``test_thermodynamics``,
+        but now using ``FermiSolver`` (with ``delta_gap`` as a function!).
+
+        Tests both backends, but only uses the ``doped`` results for plotting
+        for full consistency with ``test_thermodynamics`` test (due to site
+        competition differences etc).
+        """
+        kwargs = {
+            "limit": "Te-rich",
+            "annealing_temperature_range": anneal_temperatures,
+            "delta_gap": lambda T: belas_linear_fit(T) - 1.5,
+        }
+
+        doped_output_df = self.solver_doped.scan_temperature(**kwargs)
+        py_sc_fermi_output_df = self.solver_py_sc_fermi.scan_temperature(**kwargs)
+        pd.testing.assert_frame_equal(doped_output_df, py_sc_fermi_output_df, rtol=0.2, atol=2e17)
+        pd.testing.assert_series_equal(
+            doped_output_df["Fermi Level (eV wrt VBM)"],
+            py_sc_fermi_output_df["Fermi Level (eV wrt VBM)"],
+            atol=2e2,
+        )
+        kwargs["temperature_range"] = kwargs.pop("annealing_temperature_range")
+
+        # remember this is LZ thermo, not FNV thermo shown in thermodynamics tutorial
+        assert np.isclose(
+            np.mean(
+                doped_output_df["Fermi Level (eV wrt VBM)"][
+                    (doped_output_df["Annealing Temperature (K)"] >= 800)
+                    & (doped_output_df["Annealing Temperature (K)"] <= 950)
+                ]
+            ),
+            0.318674,
+            atol=1e-3,
+        )
+
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
+        # ax.plot(  # cut because requires using scissored DOS to get correct annealing Fermi level
+        #     doped_output_df["Annealing Temperature (K)"].unique(),
+        #     doped_annealing_output_df["Fermi Level (eV wrt VBM)"].unique(),
+        #     marker="o",
+        #     label="$E_F$ during annealing (@ $T_{anneal}$)",
+        #     color="k",
+        #     alpha=0.25,
+        # )
+        ax.plot(
+            doped_output_df["Annealing Temperature (K)"].unique(),
+            doped_output_df["Fermi Level (eV wrt VBM)"].unique(),
+            marker="o",
+            label="$E_F$ upon cooling (@ $T$ = 300K)",
+            color="k",
+            alpha=0.9,
+        )
+        ax.set_xlabel("Anneal Temperature (K)")
+        ax.set_ylabel("Fermi Level wrt VBM (eV)")
+        ax.set_xlim(300, 1400)
+        ax.axvspan(500 + 273.15, 700 + 273.15, alpha=0.2, color="#33A7CC", label="Typical Anneal Range")
+        ax.fill_between(
+            doped_output_df["Annealing Temperature (K)"],
+            (1.5 - belas_linear_fit(doped_output_df["Annealing Temperature (K)"])) / 2,
+            0,
+            alpha=0.2,
+            color="C0",
+            label="VBM (T @ $T_{anneal}$)",
+            linewidth=0.25,
+        )
+        ax.fill_between(
+            doped_output_df["Annealing Temperature (K)"],
+            1.5 - (1.5 - belas_linear_fit(doped_output_df["Annealing Temperature (K)"])) / 2,
+            1.5,
+            alpha=0.2,
+            color="C1",
+            label="CBM (T @ $T_{anneal}$)",
+            linewidth=0.25,
+        )
+
+        ax.legend(fontsize=8)
+
+        ax.imshow(  # show VB in blue from -0.3 to 0 eV:
+            [(1, 1), (0, 0)],
+            cmap=plt.cm.Blues,
+            extent=(ax.get_xlim()[0], ax.get_xlim()[1], -0.3, 0),
+            vmin=0,
+            vmax=3,
+            interpolation="bicubic",
+            rasterized=True,
+            aspect="auto",
+        )
+
+        ax.imshow(
+            [
+                (
+                    0,
+                    0,
+                ),
+                (1, 1),
+            ],
+            cmap=plt.cm.Oranges,
+            extent=(ax.get_xlim()[0], ax.get_xlim()[1], 1.5, 1.8),
+            vmin=0,
+            vmax=3,
+            interpolation="bicubic",
+            rasterized=True,
+            aspect="auto",
+        )
+        ax.set_ylim(-0.2, 1.7)
+
+        return f
+
 
 def _check_output_concentrations(solver, result):
     row = result.iloc[0]  # same parameters for each concentration row from ``optimise()`` method
     kwargs = {
-        "single_chempot_dict": {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        "single_chempot_dict": {
+            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+        }
     }
-    if "Annealing Temperature" in row.index:
-        kwargs["annealing_temperature"] = row["Annealing Temperature"]
-        kwargs["quenched_temperature"] = row["Quenched Temperature"]
+    if "Annealing Temperature (K)" in row.index:
+        kwargs["annealing_temperature"] = row["Annealing Temperature (K)"]
+        kwargs["quenched_temperature"] = row["Quenched Temperature (K)"]
     else:
-        kwargs["temperature"] = row["Temperature"]
+        kwargs["temperature"] = row["Temperature (K)"]
     if "Dopant (cm^-3)" in row.index:
         kwargs["effective_dopant_concentration"] = row["Dopant (cm^-3)"]
 
@@ -1899,7 +2137,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             "Searching for chemical potentials which maximise the target column: ['Electrons (cm^-3)']..."
         )
         row = result.iloc[0]
-        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        formal_chempots = {
+            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+        }
 
         # corresponds to Cu-rich limit: (minimising v_Cu)
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-rich")
@@ -1927,7 +2167,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             "Searching for chemical potentials which minimise the target column: ['Holes (cm^-3)']..."
         )
         row = result.iloc[0]
-        formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+        formal_chempots = {
+            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+        }
 
         # corresponds to Cu-rich limit: (minimising v_Cu)
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-rich")
@@ -1972,7 +2214,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 "Searching for chemical potentials which minimise the target defect(s): ['Int_Cu']..."
             )
             row = result.iloc[0]
-            formal_chempots = {mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col}
+            formal_chempots = {
+                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+            }
 
             # confirm that formal_chempots does not correspond to a X-rich limit:
             for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
@@ -2001,7 +2245,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 )
                 row = result.iloc[0]
                 formal_chempots = {
-                    mu_col.strip("μ_"): row[mu_col] for mu_col in row.index if "μ_" in mu_col
+                    mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
                 }
 
                 # corresponds to Cu-rich/poor limits:
@@ -2029,17 +2273,16 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             n_points=50,  # n_points in each dimension when scanning over the chemical potential grid
             annealing_temperature=1000,  # the temperature at which to anneal the system
         )
-
-        from matplotlib.colors import LogNorm
-
         Cu_i_data = data.loc["Int_Cu"]
         Cu_i_concs = Cu_i_data["Concentration (cm^-3)"]
 
         plt.style.use(STYLE)
         fig, ax = plt.subplots()
+        from matplotlib.colors import LogNorm
+
         sc = ax.scatter(
-            Cu_i_data["μ_Se"],
-            Cu_i_data["μ_Cu"],
+            Cu_i_data["μ_Se (eV)"],
+            Cu_i_data["μ_Cu (eV)"],
             c=Cu_i_concs,
             cmap="viridis",
             norm=LogNorm(min(Cu_i_concs), min(Cu_i_concs) * 1.1),  # small range for better contrast
@@ -2068,7 +2311,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         )
         assert len(concentrations) > 0
         unique_chempot_sets = concentrations[
-            [f"μ_{el}" for el in self.Cu2SiSe3_thermo.chempots["elemental_refs"]]
+            [f"μ_{el} (eV)" for el in self.Cu2SiSe3_thermo.chempots["elemental_refs"]]
         ].drop_duplicates()
         assert len(unique_chempot_sets) > 0
 
