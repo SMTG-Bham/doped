@@ -678,10 +678,7 @@ def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol
     # brute-force permutation matching should not be required, due to our controlled ordering and
     # comparisons of equivalent sites, but current implementation is super-fast (particularly for small
     # molecules, like complexes), so worth being safe
-    try:
-        rmsd = BruteForceOrderMatcher(molecule_1).fit(molecule_2, break_on_tol=tol)[-1]
-    except TypeError:  # older pymatgen without SK efficient `break_on_tol`; PR #4392
-        rmsd = BruteForceOrderMatcher(molecule_1).fit(molecule_2)[-1]
+    rmsd = BruteForceOrderMatcher(molecule_1).fit(molecule_2, break_on_tol=tol)[-1]
     return rmsd < tol
 
 
