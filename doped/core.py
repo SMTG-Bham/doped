@@ -28,7 +28,13 @@ if TYPE_CHECKING:
     from doped.utils.parsing import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # type: ignore
-        from pydefect.analyzer.band_edge_states import BandEdgeStates
+        try:
+            from pydefect.analyzer.band_edge_states import BandEdgeStates
+        except ImportError:
+            warnings.warn(
+                "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "
+                "be installed with `pip install pydefect`."
+            )
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 

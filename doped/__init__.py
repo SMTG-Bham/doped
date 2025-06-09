@@ -14,12 +14,18 @@ import multiprocessing
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
-import vise.util.logger
 from packaging.version import parse
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
-vise.util.logger.get_logger = logging.getLogger  # to avoid repeated vise INFO messages with Parallel code
+try:
+    import vise.util.logger
+    vise.util.logger.get_logger = logging.getLogger  # to avoid repeated vise INFO messages with Parallel code
+except ImportError:
+    warnings.warn(
+        "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "
+        "be installed with `pip install pydefect`."
+    )
 
 
 def _check_pmg_compatibility():
