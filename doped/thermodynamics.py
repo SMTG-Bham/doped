@@ -456,10 +456,12 @@ def group_defects_by_distance(
     # cn is an array of cluster numbers, of length ``len(all_frac_coords)``, so we take the set of
     # cluster numbers ``n`` to get unique cluster numbers, sort by cluster size to favour larger
     # clusters (see workflow comment above), using ``np.where(cn == n)[0]`` to get the indices of ``cn`` /
-    # ``all_frac_coords`` which are in cluster ``n``:
+    # ``all_frac_coords`` which are in cluster ``n``, and then also by index for deterministic behaviour:
     # centroid usually best method to avoid large daisy-chaining effects with many defects:
     cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol, method=method)
-    unique_clusters = sorted(set(cn), key=lambda n: len(np.where(cn == n)[0]), reverse=True)
+    unique_clusters = sorted(
+        set(cn), key=lambda n: (len(np.where(cn == n)[0]), min(np.where(cn == n)[0])), reverse=True
+    )
 
     clustered_defect_entries: dict[int, set[DefectEntry]] = {}  # {cluster index: {DefectEntry, ...}}
 
@@ -1058,7 +1060,7 @@ class DefectThermodynamics(MSONable):
 
         for grouped_defect_entries in grouped_entries_list:
             sorted_defect_entries = sorted(
-                grouped_defect_entries, key=lambda x: (-x.charge_state, x.get_ediff())
+                grouped_defect_entries, key=lambda x: (-x.charge_state, x.get_ediff(), x.name)
             )  # sort by charge (most positive first, following left-to-right order in formation energy
             # diagrams), and then energy (for those of the same charge) for ordering in output plots/dfs
 

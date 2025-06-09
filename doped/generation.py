@@ -75,7 +75,7 @@ warnings.formatwarning = _custom_formatwarning
 
 def _list_index_or_val(lst, item, val=100):
     """
-    Returns the index of the item in the lst, or val if not found.
+    Returns the index of the item in the list, or val if not found.
     """
     try:
         return lst.index(item)
@@ -2564,7 +2564,7 @@ def _element_sort_func(element_str: str) -> tuple[int, int]:
 
 def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None) -> dict | list:
     """
-    Sort defect entries for deterministic behaviour (for output and when
+    Sort defect entries for deterministic behaviour; for output and when
     reloading ``DefectsGenerator`` objects, with ``DefectThermodynamics``
     entries (particularly for deterministic plotting behaviour), and with
     ``DefectsParser`` objects.
@@ -2573,7 +2573,7 @@ def sort_defect_entries(defect_entries: dict | list, element_list: list | None =
     interstitials), then by order of appearance of elements in the host
     composition, then by periodic group (main groups 1, 2, 13-18 first, then
     TMs), then by atomic number, then (for defect entries of the same type)
-    sort by charge state (from positive to negative).
+    sort by name and charge state (from positive to negative).
 
     Args:
         defect_entries (dict or list):
