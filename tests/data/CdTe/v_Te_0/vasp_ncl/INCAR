@@ -21,7 +21,6 @@ LSORBIT = True
 LVHAR = False
 NCORE = 10
 NEDOS = 3000
-NELECT = 480.0
 NSW = 0
 NUPDOWN = 0
 PREC = Accurate

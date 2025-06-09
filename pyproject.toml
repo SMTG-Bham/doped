@@ -1,6 +1,6 @@
 [project]
 name = "doped"
-version = "3.0.0"
+version = "3.1.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
 authors = [{name = "Seán Kavanagh", email = "skavanagh@seas.harvard.edu"}]
 readme = "README.md"
@@ -16,21 +16,19 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.10"  # dictated by "pymatgen>=2024.9.10" requirement
+requires-python = ">=3.10"  # dictated by "pymatgen>=2025" requirement
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2024.9.10",  # needs new SymmetryUndeterminedError class
+    "pymatgen>=2025.5.28",  # breaking changes to MPRester (mp-api dropped), and UFloat handling
     "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.3.4",  # oxi-state functions renaming
+    "shakenbreak>=3.4",  # oxi-state functions renaming, and doped StructureMatcher efficiency updates
     "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
     "filelock",
     "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
-    "easyunfold>=0.3.6",  # for efficient PROCAR parsing (and supporting SOC),
-    # if any dependency issues arise can make easyunfold an optional dependency
     "cmcrameri>=1.4",  # for colour-maps; >=1.4 required for cmcrameri.cm.cmaps definition
     "matplotlib-label-lines", # for labelling lines in matplotlib plots
     "dscribe",  # for defect site guessing using SOAP analysis
@@ -47,10 +45,18 @@ Repository = "https://github.com/SMTG-Bham/doped"
 tests = [
     "pytest>=8.3",
     "pytest-mpl>=0.16.1",
-    "mp-api",  # not required by default as user can use legacy API, but needed for tests
     "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
+    "pytest-split>=0.10.0",  # for test splitting
 ]
-docs = ["sphinx", "sphinx-book-theme", "sphinx_design"]
+docs = [
+    "sphinx>7",
+    "myst-nb>=1.0",
+    "recommonmark",
+    "renku-sphinx-theme>=0.5.0",
+    "sphinx_rtd_theme>=2.0",
+    "sphinx_design",
+    "sphinx_click"
+]
 analysis = [
     "easyunfold",
     "py-sc-fermi",
@@ -128,6 +134,8 @@ pre-summary-newline = true
 make-summary-multi-line = true
 wrap-summaries = 79
 wrap-descriptions = 79
+# can use force-wrap on CLI to wrap _all_ of the docstrings (not just first paragraphs), but also messes up
+# argument descriptions
 
 [tool.codespell]
 ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll"  # lowercase!

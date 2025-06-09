@@ -8,13 +8,19 @@ on:
       - '*'  # all branches
 
 jobs:
-  build:
+  test:
     strategy:
       fail-fast: false
 
       matrix:
         os: [ ubuntu-latest, macos-14 ]
-        python-version: [ '3.10', '3.11', '3.12' ]
+        python-version: [ '3.10', '3.13' ]  # lowest and highest supported Python versions
+
+        # if durations files present, pytest-split will use them to intelligently distribute tests
+        split: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
+
+    env:
+      MPLBACKEND: Agg  # non-interactive backend for matplotlib
 
     runs-on: ${{ matrix.os }}
 
@@ -30,31 +36,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[tests]
 
-      - name: Install spglib on macOS
-        if: matrix.os == 'macos-14'
-        run: |
-          pip install git+https://github.com/spglib/spglib --config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF  # avoid spglib warnings
-
-      - name: Install spglib on ubuntu
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          conda install -c conda-forge spglib  # avoid spglib warnings
-
       - name: Test
-        run:  |
-          pytest -vv -m "not mpl_image_compare" tests  # all non-plotting tests
+        run: |  # update durations file with `pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting`
+          pytest -vv -m "not mpl_image_compare" \
+            --splits 10 --group ${{ matrix.split }} \
+            --durations-path tests/.pytest_split_durations_non_plotting \
+            --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
       - name: Plotting Tests
         if: always()  # run even if non-plotting tests fail
         id: plotting_tests  # Add an ID to this step for reference
-        run: |
-          pytest --mpl -m "mpl_image_compare" tests  # all plotting tests
-          
+        env:
+          MPLBACKEND: Agg  # non-interactive backend for matplotlib
+        run: |  # update durations file with `pytest -vv -m "mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_plotting`
+          pytest -vv --mpl -m "mpl_image_compare" \
+            --splits 10 --group ${{ matrix.split }} \
+            --durations-path tests/.pytest_split_durations_plotting \
+            --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
+
       - name: Generate GH Actions test plots
         if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
-        run: |
-          # Generate the test plots in case there were any failures:
-          pytest --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" tests
+        env:
+          MPLBACKEND: Agg  # non-interactive backend for matplotlib
+        run: |  # Generate the test plots in case there were any failures:
+          pytest -vv --mpl-generate-path=tests/remote_baseline -m "mpl_image_compare" \
+            --splits 10 --group ${{ matrix.split }} \
+            --durations-path tests/.pytest_split_durations_plotting \
+            --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
       # Upload test plots
       - name: Archive test plots

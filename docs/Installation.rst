@@ -52,7 +52,7 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    .. code-block:: bash
 
       PMG_VASP_PSP_DIR: <Path to VASP pseudopotential top directory>
-      PMG_MAPI_KEY: <Your MP API key obtained from https://legacy.materialsproject.org/open>
+      PMG_MAPI_KEY: <Your MP API key obtained from https://next-gen.materialsproject.org/dashboard>
 
    Within your ``VASP pseudopotential top directory``, you should have a folder named
    ``POT_GGA_PAW_PBE``/``potpaw_PBE.54``/``POT_GGA_PAW_PBE_54`` which contains ``POTCAR.X(.gz)`` files,
@@ -88,12 +88,14 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
 
       PMG_DEFAULT_FUNCTIONAL: PBE  # whatever functional label your POTCARs have
 
-   Note the Materials Project API key is required for determining the necessary competing phases to calculate in order to determine the chemical potential limits (required for defect formation energies). This should correspond to the legacy MP API, with your unique key available at: https://legacy.materialsproject.org/open.
+   Note the Materials Project API key is required for determining the necessary competing phases to
+   calculate in order to determine the chemical potential limits (required for defect formation energies).
+   Your API key can be obtained at: https://next-gen.materialsproject.org/dashboard
 
 
 If you use ``doped`` in your research, please cite:
 
-- S\. R. Kavanagh et al. `doped: Python toolkit for robust and repeatable charged defect supercell calculations <https://doi.org/10.21105/joss.06433>`__. *Journal of Open Source Software* 9 (96), 6433, **2024**
+- Kavanagh et al. `doped: Python toolkit for robust and repeatable charged defect supercell calculations <https://doi.org/10.21105/joss.06433>`__. *Journal of Open Source Software* 9 (96), 6433, **2024**
 
 
 Developer Installation
