@@ -1691,7 +1691,7 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
         "defect_supercell": defect_supercell,
         "bulk_supercell": bulk_supercell,
     }.items():
-        if not getattr("defect_entry", attr_name, None) or overwrite:
+        if not getattr(defect_entry, attr_name, None) or overwrite:
             setattr(defect_entry, attr_name, value)
 
 
