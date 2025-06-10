@@ -21,6 +21,7 @@ import pandas as pd
 from labellines import labelLines
 from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
+from matplotlib.tri import Triangulation
 from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
@@ -2934,8 +2935,6 @@ class CompetingPhasesAnalyzer(MSONable):
         #  control; implement this (removes need for np.unique() call)), units = plot y units
         # TODO: Code in this function (particularly label position handling and intersections) should be
         #  able to be made more succinct, and also modularise a bit?
-        # TODO: Merge gridding code with ``ChemicalPotentialGrid`` below (should make handling >ternary
-        #  systems easier?)
         # TODO: Option to only show all calculated competing phases?
 
         # Note that we could also add option to instead plot competing phases lines coloured,
@@ -2972,44 +2971,38 @@ class CompetingPhasesAnalyzer(MSONable):
 
         dependent_el_idx = cpd.elements.index(dependent_element)
         independent_el_indices = [i for i in range(len(cpd.elements)) if i != dependent_el_idx]
-        dependent_el_pts = np.array(host_domains[:, dependent_el_idx])
-        independent_el_pts = np.array(host_domains[:, independent_el_indices])
-        hull = ConvexHull(independent_el_pts)  # convex hull of points to get bounding polygon
-
-        # create a dense grid that covers the entire range of the vertices:
-        x_min, y_min = independent_el_pts.min(axis=0)
-        x_max, y_max = independent_el_pts.max(axis=0)
-        grid_x, grid_y = np.mgrid[x_min:x_max:300j, y_min:y_max:300j]  # type: ignore
-        grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
-
-        # Delaunay triangulation to get points inside the stability hull:
-        delaunay = Delaunay(hull.points[hull.vertices])
-        inside_hull = delaunay.find_simplex(grid_points) >= 0
-        points_inside = grid_points[inside_hull]
-
-        # interpolate the values to get the dependent chempot here:
-        values_inside = griddata(independent_el_pts, dependent_el_pts, points_inside, method="linear")
+        cpg = ChemicalPotentialGrid.from_dataframe(
+            pd.DataFrame(host_domains, columns=[cpd.elements[i].symbol for i in range(len(cpd.elements))])
+        )
+        grid = cpg.get_grid(n_points=12, cartesian=False)
+        values_inside = grid[dependent_element.symbol].to_numpy()
+        points_inside = grid.drop(columns=[dependent_element.symbol]).to_numpy()
 
         style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         fig, ax = plt.subplots()
-        mesh_x, x_indices = np.unique(points_inside[:, 0], return_inverse=True)
-        mesh_y, y_indices = np.unique(points_inside[:, 1], return_inverse=True)
-        mesh_z = np.full((len(mesh_y), len(mesh_x)), np.nan)  # Create the mesh grid, init with NaNs
-        mesh_z[y_indices, x_indices] = values_inside  # populate the grid
 
+        tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
         vmin = cbar_range[0] if cbar_range else None
         vmax = cbar_range[1] if cbar_range else None
-        if vmax is None and np.isclose(np.nanmax(mesh_z), 0, atol=3e-2):
-            vmax = 0  # extend to 0, as sometimes cutoff at -0.01 eV etc
+        if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):
+            vmax = 0
 
-        cmap = get_colormap(colormap, default="batlow")  # get colormap choice
-        dep_mu = ax.pcolormesh(
-            mesh_x, mesh_y, mesh_z, rasterized=True, cmap=cmap, shading="auto", vmax=vmax, vmin=vmin
+        cmap = get_colormap(colormap, default="batlow")
+        dep_mu = ax.tripcolor(
+            tri,
+            values_inside,
+            rasterized=True,
+            cmap=cmap,
+            shading="gouraud",  # smooth
+            vmin=vmin,
+            vmax=vmax,
         )
 
         cbar = fig.colorbar(dep_mu)
 
+        x_max, y_max = points_inside.max(axis=0)
+        x_min, y_min = points_inside.min(axis=0)
         x_range = abs(x_max - x_min)
         y_range = abs(y_max - y_min)
 
