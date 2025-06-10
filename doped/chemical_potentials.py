@@ -9,7 +9,7 @@ import copy
 import itertools
 import os
 import warnings
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from copy import deepcopy
 from pathlib import Path
 from re import sub
@@ -1765,6 +1765,77 @@ class ChemicalPotentialGrid:
             grid_with_values,
             columns=[*list(independent_vars.columns), dependent_variable],
         )
+
+
+def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
+    """
+    Generate a grid of points inside the convex hull of the given vertices,
+    using barycentric coordinates (i.e. weighted averages of the vertices).
+
+    This is a far more efficient way to generate a grid of points inside the
+    convex hull than the brute-force approach of generating a Cartesian grid of
+    points in the range of the vertices and then filtering out points outside
+    the convex hull, but means that the grid is evenly spaced in barycentric
+    ('relative') coordinates, but not necessarily in Cartesian coordinates.
+
+    Args:
+        vertices (np.ndarray):
+            Coordinates of the convex-hull vertices in k-D space.
+        n_points (int):
+            The number of points to generate along each simplex edge. Note that
+            large values (>= 100) with multinary systems can quickly explode to
+            extreme numbers of points, crashing system memory. The total number
+            of output points depends on this value along with the
+            dimensionality and number of vertices (and thus simplices).
+            Default is 20.
+
+    Returns:
+        np.ndarray:
+            A grid of points inside the convex hull, in Cartesian coordinates.
+            The shape of the array is (M, k), where M is the number of points
+            in the grid.
+    """
+    if vertices.ndim != 2:
+        raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
+
+    # vertices defines the polytope (k-D polyhedron) of the convex hull; shape (N, k)
+    # we then tessellate the hull with Delaunay triangulation, which breaks the polytope into a set of
+    # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
+    # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc)
+    k = vertices.shape[-1]  # dimensionality (k ≥ 2)
+    tri = Delaunay(vertices)
+    simplices = vertices[tri.simplices]  # shape (S, k+1, k); where S is the number of simplices
+
+    # generate a grid of barycentric coordinates (i.e. weighted averages of the vertices) which are inside
+    # the convex hull; for this the total weight should sum to 1, so generate tuples (n0,..,nk) with
+    # sum = ``n_points``, and then divide by ``n_points``:
+    def _compositions(r: int, k: int) -> Iterator[tuple[int, ...]]:
+        """
+        Yield all tuples (n0,...,nk) such that  ∑ n_i = r and n_i ≥ 0.
+
+        Stars-and-bars: choose k cut positions in r+k slots.
+        """
+        # choose k cut indices; add sentinels at -1 and r+k
+        for cuts in itertools.combinations(range(r + k), k):
+            prev = -1
+            parts = []
+            for c in (*cuts, r + k):
+                parts.append(c - prev - 1)
+                prev = c
+            yield tuple(parts)
+
+    # instead of the slow int_bary construction:
+    bary_coords = (
+        np.array(list(_compositions(n_points, k))) / n_points
+    )  # (L, k+1); where L depends on binomial(n_points + k, k)
+
+    # Loop over simplices, mapping barycentric to Cartesian coordinates:
+    points = []
+    for verts in simplices:  # verts has shape (k+1, k)
+        # matrix-multiply each row of `bary_coords` (weights) by the vertex matrix `verts`
+        points.append(bary_coords @ verts)  # affine combination -> (L, k) array
+
+    return np.vstack(points)  # (M, k); where M = L * S
 
 
 class CompetingPhasesAnalyzer(MSONable):
