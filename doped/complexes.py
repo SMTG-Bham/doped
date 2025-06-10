@@ -23,10 +23,8 @@ from doped.utils.parsing import (
 )
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import (
-    SymmOp,
     get_equiv_frac_coords_in_primitive,
     get_primitive_structure,
-    get_sga,
     is_periodic_image,
 )
 
@@ -241,10 +239,10 @@ def get_equivalent_complex_defect_sites_in_primitive(
     interstitial_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
     substitution_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
     primitive_structure: Structure | None = None,
-    supercell_symm_ops: list[SymmOp] | None = None,
-    dist_tol: float = 0.01,
     symprec: float = 0.01,
+    dist_tol_factor: float = 1.0,
     return_molecules: bool = False,
+    **kwargs,
 ) -> list[list[PeriodicSite]] | list[Molecule]:
     r"""
     Generate all equivalent complex defect site configurations in the primitive
@@ -266,7 +264,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
     4. From the sets of symmetry-equivalent defect sites in the primitive unit
     cell, generate all possible combinations of candidate point defect sites
     that have inter-defect distances matching the input complex defect sites
-    (+/- 2 :math:`\times` ``dist_tol``).
+    (+/- 2 :math:`\times` ``symprec`` :math:`\times`  ``dist_tol_factor``).
 
     5. From these candidate site combinations, generate complex defect
     molecules (as ``pymatgen`` ``Molecule``\s), and reduce to only those which
@@ -289,33 +287,45 @@ def get_equivalent_complex_defect_sites_in_primitive(
             The primitive unit cell structure, in which to get equivalent
             complex defect sites. If ``None`` (default), the primitive
             structure will be determined from the bulk supercell.
-        supercell_symm_ops (list[SymmOp] | None):
-            The symmetry operations of the bulk supercell, which can be
-            provided to speed up the search for equivalent sites. If ``None``
-            (default), these are automatically determined.
-        dist_tol (float):
-            Distance tolerance for clustering generated equivalent sites (to
-            ensure they are truly distinct), searching for equivalent sites
-            (by inter-defect distances) and matching equivalent complex defect
-            geometries (as ``Molecule``\s), in Å. Default is 0.01 Å.
+        symprec (float):
+            Symmetry precision for determining the primitive structure (if not
+            provided), supercell symmetry operations and equivalent defect
+            sites in the primitive unit cell. Defaults to 0.01. Note that this
+            should match the value used for determining the point defect
+            multiplicities (e.g. with the ``Defect.get_multiplicity()``
+            methods) for appropriate comparisons -- the same default of 0.01 is
+            used in all relevant ``doped`` functions.
+            If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+            this value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
+        dist_tol_factor (float):
+            Distance tolerance for clustering generated sites (to ensure they
+            are truly distinct), searching for equivalent sites (by
+            inter-defect distances) and matching equivalent complex defect
+            geometries (as ``Molecule``\s), as a multiplicative factor of
+            ``symprec``. Default is 1.0 (i.e. ``dist_tol = symprec``, in Å).
             Note that this should match the value used for determining the
             point defect multiplicities (e.g. with the
             ``Defect.get_multiplicity()`` methods) for appropriate comparisons
             -- the same default of 0.01 Å is used in all relevant ``doped``
-            functions.
-        symprec (float):
-            Symmetry precision for determining the primitive structure (if not
-            provided), supercell symmetry operations (if not provided) and
-            equivalent defect sites in the primitive unit cell. Defaults to
-            0.01. Note that this should match the value used for determining
-            the point defect multiplicities (e.g. with the
-            ``Defect.get_multiplicity()`` methods) for appropriate comparisons
-            -- the same default of 0.01 is used in all relevant ``doped``
-            functions.
+            functions. If ``fixed_symprec_and_dist_tol_factor`` is ``False``
+            (default), this value will also be automatically adjusted if
+            necessary (up to 10x, down to 0.1x)(after ``symprec`` adjustments)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``dist_tol_factor`` (and
+            ``symprec``) values.
         return_molecules (bool):
             Whether to return the equivalent complex defect molecules as
             ``Molecule`` objects, or as lists of ``PeriodicSite``
             objects. Default is ``False`` (return lists of ``PeriodicSite``\s).
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``
+            (via ``get_equiv_frac_coords_in_primitive()``), such as
+            ``fixed_symprec_and_dist_tol_factor`` and ``verbose``.
 
     Returns:
         list[list[PeriodicSite]] | list[Molecule]:
@@ -326,9 +336,6 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # Note: An alternative approach here would be to use the intersection of host crystal symmetry
     # operations and those of the complex defect (molecule), though unlikely to be any more efficient
     primitive_structure = primitive_structure or get_primitive_structure(bulk_supercell, symprec=symprec)
-    supercell_symm_ops = (
-        supercell_symm_ops or get_sga(bulk_supercell, symprec=symprec).get_symmetry_operations()
-    )  # inputting bulk supercell symm ops is typically only a small speed up (due to caching)
 
     vacancy_sites = vacancy_sites or []
     interstitial_sites = interstitial_sites or []
@@ -362,18 +369,28 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # set efficient and unique hash for Site and PeriodicSite, to allow use as dict keys
     complex_equiv_prim_frac_coords_dict = {
         site: {  # dict of sets of equivalent frac coords in primitive unit cell, for each point defect
-            tuple(frac_coords.round(4))
+            tuple(frac_coords.round(4))  # type: ignore  # (return_symprec_and_dist_tol_factor=False)
             for frac_coords in get_equiv_frac_coords_in_primitive(
                 site.frac_coords,
                 primitive_structure,
                 bulk_supercell,
-                symm_ops=supercell_symm_ops,  # only small speed up (due to caching)
                 symprec=symprec,
-                dist_tol=dist_tol,
+                dist_tol_factor=dist_tol_factor,
+                return_symprec_and_dist_tol_factor=False,
+                **kwargs,
             )
         }
         for site in complex_defect_sites
     }
+    _, symprec, dist_tol_factor = get_equiv_frac_coords_in_primitive(
+        complex_defect_sites[-1].frac_coords,
+        primitive_structure,
+        bulk_supercell,
+        symprec=symprec,
+        dist_tol_factor=dist_tol_factor,
+        return_symprec_and_dist_tol_factor=True,
+        **kwargs,
+    )  # get dynamically-adjusted symprec / dist_tol_factor
     # Note: In original drafts, we used ``get_matching_site`` and ``SymmetrizedStructure.equivalent_sites``
     # to get the symmetry-equivalent sites of vacancies/substitutions in the primitive unit cell at this
     # step, but _should_ be fully redundant/equivalent to ``get_equiv_frac_coords_in_primitive``
@@ -381,6 +398,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
     # min multiplicity is the maximum of m_i - choose - n_i, where m_i is the multiplicity of the i-th
     # point defect in the complex, and n_i is the number of symmetry-equivalent i-th point defects in the
     # complex:
+    dist_tol = symprec * dist_tol_factor  # distance tolerance for clustering generated sites
     frac_tol = np.max(np.array([dist_tol, dist_tol, dist_tol]) / primitive_structure.lattice.abc)
 
     unique_complex_site_m_n_equiv_prim_frac_dict: dict[PeriodicSite, dict[str, Any]] = {}
@@ -570,9 +588,10 @@ def get_complex_defect_multiplicity(
     interstitial_sites: Iterable | PeriodicSite | None = None,
     substitution_sites: Iterable | PeriodicSite | None = None,
     primitive_structure: Structure | None = None,
-    supercell_symm_ops: list[SymmOp] | None = None,
-    dist_tol: float = 0.01,
+    symprec: float = 0.01,
+    dist_tol_factor: float = 1.0,
     primitive_cell_multiplicity: bool = True,
+    **kwargs,
 ) -> int:
     r"""
     Get the multiplicity of a given complex defect configuration (as given by
@@ -606,32 +625,44 @@ def get_complex_defect_multiplicity(
             The primitive unit cell structure, in which to get equivalent
             complex defect sites. If ``None`` (default), the primitive
             structure will be determined from the bulk supercell.
-        supercell_symm_ops (list[SymmOp] | None):
-            The symmetry operations of the bulk supercell, which can be
-            provided to speed up the search for equivalent sites. If ``None``
-            (default), these are automatically determined.
-        dist_tol (float):
-            Distance tolerance for clustering generated equivalent sites (to
-            ensure they are truly distinct), searching for equivalent sites
-            (by inter-defect distances) and matching equivalent complex defect
-            geometries (as ``Molecule``\s), in Å. Default is 0.01 Å.
+        symprec (float):
+            Symmetry precision for determining the primitive structure (if not
+            provided), supercell symmetry operations and equivalent defect
+            sites in the primitive unit cell. Defaults to 0.01. Note that this
+            should match the value used for determining the point defect
+            multiplicities (e.g. with the ``Defect.get_multiplicity()``
+            methods) for appropriate comparisons -- the same default of 0.01 is
+            used in all relevant ``doped`` functions.
+            If ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
+            this value will be automatically adjusted (up to 10x, down to 0.1x)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``symprec`` (and
+            ``dist_tol_factor`` values).
+        dist_tol_factor (float):
+            Distance tolerance for clustering generated sites (to ensure they
+            are truly distinct), searching for equivalent sites (by
+            inter-defect distances) and matching equivalent complex defect
+            geometries (as ``Molecule``\s), as a multiplicative factor of
+            ``symprec``. Default is 1.0 (i.e. ``dist_tol = symprec``, in Å).
             Note that this should match the value used for determining the
             point defect multiplicities (e.g. with the
             ``Defect.get_multiplicity()`` methods) for appropriate comparisons
             -- the same default of 0.01 Å is used in all relevant ``doped``
-            functions.
-        symprec (float):
-            Symmetry precision for determining the primitive structure (if not
-            provided), supercell symmetry operations (if not provided) and
-            equivalent defect sites in the primitive unit cell. Defaults to
-            0.01. Note that this should match the value used for determining
-            the point defect multiplicities (e.g. with the
-            ``Defect.get_multiplicity()`` methods) for appropriate comparisons
-            -- the same default of 0.01 is used in all relevant ``doped``
-            functions.
+            functions. If ``fixed_symprec_and_dist_tol_factor`` is ``False``
+            (default), this value will also be automatically adjusted if
+            necessary (up to 10x, down to 0.1x)(after ``symprec`` adjustments)
+            until the identified equivalent sites from ``spglib`` have
+            consistent point group symmetries. Setting ``verbose`` to ``True``
+            will print information on the trialled ``dist_tol_factor`` (and
+            ``symprec``) values.
         primitive_cell_multiplicity (bool):
             Whether to return the site multiplicity in the primitive unit cell
             (``True``) or the bulk supercell (``False``). Default is ``True``.
+        **kwargs:
+            Additional keyword arguments to pass to ``get_all_equiv_sites``
+            (via ``get_equiv_frac_coords_in_primitive()``), such as
+            ``fixed_symprec_and_dist_tol_factor`` and ``verbose``.
 
     Returns:
         int:
@@ -646,9 +677,10 @@ def get_complex_defect_multiplicity(
         interstitial_sites=interstitial_sites,
         substitution_sites=substitution_sites,
         primitive_structure=primitive_structure,
-        supercell_symm_ops=supercell_symm_ops,
-        dist_tol=dist_tol,
+        symprec=symprec,
+        dist_tol_factor=dist_tol_factor,
         return_molecules=True,  # for speed
+        **kwargs,
     )
     return len(equiv_complex_molecules) * (
         1
