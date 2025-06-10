@@ -1669,53 +1669,61 @@ class ChemicalPotentialGrid:
 
         self.vertices = pd.DataFrame.from_dict(formatted_chempots_dict, orient="index")
 
-    def get_grid(self, n_points: int = 100) -> pd.DataFrame:
+    @classmethod
+    def from_dataframe(cls, vertices: pd.DataFrame) -> "ChemicalPotentialGrid":
         """
-        Generates a grid within the convex hull of the vertices and
-        interpolates the dependent variable values.
+        Create a ``ChemicalPotentialGrid`` object from a dataframe of the
+        chemical potential limits (i.e. vertices).
 
-        This method creates a grid of points that spans the chemical potential
-        space defined by the vertices. It ensures that the generated points lie
+        Args:
+            vertices (pd.DataFrame):
+                A ``DataFrame`` of the chemical potential limits (i.e. vertices).
+                The columns should be the chemical potentials of the elements,
+                and the rows should be the limits.
+
+        Returns:
+            ChemicalPotentialGrid:
+                A ``ChemicalPotentialGrid`` object.
+        """
+        self = cls.__new__(cls)  # skip init function
+        self.vertices = vertices
+        return self
+
+    def get_grid(self, n_points: int = 20, cartesian: bool = False) -> pd.DataFrame:
+        r"""
+        Generates a grid of points that spans the chemical potential space
+        defined by the vertices. It ensures that the generated points lie
         within the convex hull of the provided vertices and interpolates the
         chemical potential values at these points.
 
+        By default, the grid is generated in barycentric coordinates (i.e. in
+        'relative' coordinates, as weighted averages of the chemical potential
+        limits). This is far more efficient than generating a Cartesian grid,
+        but means that the grid is evenly spaced in barycentric ('relative')
+        coordinates, and not necessarily in Cartesian coordinates. If
+        ``cartesian`` is set to ``True``, then a regular grid in Cartesian
+        coordinates is generated (however this can be much slower).
+
         Args:
             n_points (int):
                 The number of points to generate along each axis (i.e. chemical
-                potential range) of the grid. Note that this may not always be
-                the final number of points in the grid, as points lying outside
-                the convex hull are excluded.
-                Default is 100.
-
-        Returns:
-            pd.DataFrame:
-                A ``DataFrame`` containing the points within the convex hull,
-                along with their corresponding interpolated chemical potential
-                values. Each row represents a point in the grid with associated
-                chemical potential values.
-        """
-        return self.grid_from_dataframe(self.vertices, n_points)
-
-    @staticmethod
-    def grid_from_dataframe(mu_dataframe: pd.DataFrame, n_points: int = 100) -> pd.DataFrame:
-        r"""
-        Generates a grid within the convex hull of the vertices.
-
-        This method creates a grid of points within the convex hull defined by
-        the input ``DataFrame``\. It interpolates the values of chemical
-        potentials over this grid, ensuring that all generated points lie
-        within the convex hull of the given vertices.
-
-        Args:
-            mu_dataframe (pd.DataFrame):
-                A ``DataFrame`` containing the chemical potential data, with
-                the last column representing the dependent variable and the
-                preceding columns representing the independent variables.
-            n_points (int):
-                The number of points to generate along each axis (i.e. chemical
-                potential range) of the grid. Note that this may not always be
-                the final number of points in the grid, as points lying outside
-                the convex hull are excluded. Defaults to 100.
+                potential range) of the grid. With the default barycentric
+                approach (``cartesian=False``), the number of generated points
+                depends on this value along with the dimensionality and number
+                of vertices (and thus simplices), being roughly proportional to
+                ``n_points**k`` where ``k`` is the number of independent
+                variables (chemical potentials). Note that large values
+                (>= 100) with multinary systems can quickly explode to extreme
+                numbers of points, crashing system memory.
+                For ``cartesian=True``, the number of generated points for a
+                given ``n_points`` is typically far smaller.
+                Default is 20.
+            cartesian (bool):
+                Whether to generate the grid in Cartesian coordinates. If
+                ``False`` (default), the grid is generated in barycentric
+                coordinates, which is far more efficient, but means that the
+                grid is evenly spaced in barycentric ('relative') coordinates,
+                and not necessarily in Cartesian coordinates.
 
         Returns:
             pd.DataFrame:
@@ -1723,9 +1731,9 @@ class ChemicalPotentialGrid:
                 along with their corresponding interpolated values of the
                 dependent variable. Each row represents a point in the grid.
         """
-        dependent_variable = mu_dataframe.columns[-1]
-        dependent_var = mu_dataframe[dependent_variable].to_numpy()
-        independent_vars = mu_dataframe.drop(columns=dependent_variable)
+        dependent_variable = self.vertices.columns[-1]
+        dependent_var = self.vertices[dependent_variable].to_numpy()
+        independent_vars = self.vertices.drop(columns=dependent_variable)
 
         n_dims = independent_vars.shape[1]  # Get the number of independent variables (dimensions)
         if n_dims < 2:
@@ -1739,18 +1747,21 @@ class ChemicalPotentialGrid:
         # Get the convex hull of the vertices
         hull = ConvexHull(independent_vars.values)
 
-        # Create a dense grid that covers the entire range of the vertices
-        grid_ranges = [
-            np.linspace(independent_vars.iloc[:, i].min(), independent_vars.iloc[:, i].max(), n_points)
-            for i in range(n_dims)
-        ]
-        grid = np.meshgrid(*grid_ranges, indexing="ij")  # Create N-dimensional grid
-        grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
+        if cartesian:  # Create a dense grid that covers the entire range of the vertices
+            grid_ranges = [
+                np.linspace(independent_vars.iloc[:, i].min(), independent_vars.iloc[:, i].max(), n_points)
+                for i in range(n_dims)
+            ]
+            grid = np.meshgrid(*grid_ranges, indexing="ij")  # Create N-dimensional grid
+            grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
 
-        # Delaunay triangulation to get points inside the convex hull
-        delaunay = Delaunay(hull.points[hull.vertices])
-        inside_hull = delaunay.find_simplex(grid_points) >= 0
-        points_inside = grid_points[inside_hull]
+            # Delaunay triangulation to get points inside the convex hull
+            delaunay = Delaunay(hull.points[hull.vertices])
+            inside_hull = delaunay.find_simplex(grid_points) >= 0
+            points_inside = grid_points[inside_hull]
+
+        else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
+            points_inside = _lattice_in_hull(hull.points[hull.vertices])
 
         # Interpolate the values to get the dependent chemical potential
         values_inside = griddata(independent_vars.values, dependent_var, points_inside, method="linear")
@@ -1759,7 +1770,7 @@ class ChemicalPotentialGrid:
         grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
         # Add vertices to the grid
-        grid_with_values = np.vstack((grid_with_values, mu_dataframe.to_numpy()))
+        grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
 
         return pd.DataFrame(
             grid_with_values,
