@@ -1723,10 +1723,6 @@ class ChemicalPotentialGrid:
                 along with their corresponding interpolated values of the
                 dependent variable. Each row represents a point in the grid.
         """
-        # time this function:
-        import time
-
-        start_time = time.time()
         dependent_variable = mu_dataframe.columns[-1]
         dependent_var = mu_dataframe[dependent_variable].to_numpy()
         independent_vars = mu_dataframe.drop(columns=dependent_variable)
@@ -1741,9 +1737,7 @@ class ChemicalPotentialGrid:
             )
 
         # Get the convex hull of the vertices
-        print(f"Pre-convex hull time: {time.time() - start_time}")
         hull = ConvexHull(independent_vars.values)
-        print(f"Post-convex hull time: {time.time() - start_time}")
 
         # Create a dense grid that covers the entire range of the vertices
         grid_ranges = [
@@ -1752,26 +1746,21 @@ class ChemicalPotentialGrid:
         ]
         grid = np.meshgrid(*grid_ranges, indexing="ij")  # Create N-dimensional grid
         grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
-        print(f"Pre-delaunay time: {time.time() - start_time}")
+
         # Delaunay triangulation to get points inside the convex hull
         delaunay = Delaunay(hull.points[hull.vertices])
-        print(f"Post-delaunay time: {time.time() - start_time}")
-        print(f"Grid points: {grid_points.shape}")
         inside_hull = delaunay.find_simplex(grid_points) >= 0
-        print(f"Inside hull: {inside_hull.shape}")
         points_inside = grid_points[inside_hull]
-        print(f"Points inside: {points_inside.shape}")
-        print(f"Post-inside hull time: {time.time() - start_time}")
 
         # Interpolate the values to get the dependent chemical potential
         values_inside = griddata(independent_vars.values, dependent_var, points_inside, method="linear")
-        print(f"Post-interpolation time: {time.time() - start_time}")
+
         # Combine points with their corresponding interpolated values
         grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
         # Add vertices to the grid
         grid_with_values = np.vstack((grid_with_values, mu_dataframe.to_numpy()))
-        print(f"Post-vertices time: {time.time() - start_time}")
+
         return pd.DataFrame(
             grid_with_values,
             columns=[*list(independent_vars.columns), dependent_variable],
