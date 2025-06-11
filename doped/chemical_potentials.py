@@ -1690,7 +1690,9 @@ class ChemicalPotentialGrid:
         self.vertices = vertices
         return self
 
-    def get_grid(self, n_points: int = 20, cartesian: bool = False) -> pd.DataFrame:
+    def get_grid(
+        self, n_points: int = 20, cartesian: bool = False, decimal_places: int = 4
+    ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
         defined by the vertices. It ensures that the generated points lie
@@ -1725,12 +1727,14 @@ class ChemicalPotentialGrid:
                 coordinates, which is far more efficient, but means that the
                 grid is evenly spaced in barycentric ('relative') coordinates,
                 and not necessarily in Cartesian coordinates.
+            decimal_places (int):
+                The number of decimal places to round the grid coordinates to.
+                Default is 4.
 
         Returns:
             pd.DataFrame:
-                A ``DataFrame`` containing the points within the convex hull
-                along with their corresponding interpolated values of the
-                dependent variable. Each row represents a point in the grid.
+                A ``DataFrame`` containing the points within the convex hull.
+                Each row represents a point in the grid.
         """
         dependent_variable = self.vertices.columns[-1]
         dependent_var = self.vertices[dependent_variable].to_numpy()
@@ -1746,7 +1750,7 @@ class ChemicalPotentialGrid:
             )
 
         # Get the convex hull of the vertices
-        hull = ConvexHull(independent_vars.values)
+        hull = ConvexHull(independent_vars.to_numpy())
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             grid_ranges = [
@@ -1765,7 +1769,9 @@ class ChemicalPotentialGrid:
             points_inside = _lattice_in_hull(hull.points[hull.vertices])
 
         # Interpolate the values to get the dependent chemical potential
-        values_inside = griddata(independent_vars.values, dependent_var, points_inside, method="linear")
+        values_inside = griddata(
+            independent_vars.to_numpy(), dependent_var, points_inside, method="linear"
+        )
 
         # Combine points with their corresponding interpolated values
         grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
@@ -1773,10 +1779,159 @@ class ChemicalPotentialGrid:
         # Add vertices to the grid
         grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
 
-        return pd.DataFrame(
+        return (
+            pd.DataFrame(
+                grid_with_values,
+                columns=[*list(independent_vars.columns), dependent_variable],
+            )
+            .round(decimal_places)
+            .drop_duplicates()
+        )
+
+    def get_constrained_grid(
+        self,
+        fixed_elements: dict[str, float],
+        n_points: int = 20,
+        cartesian: bool = False,
+        decimal_places: int = 4,
+    ) -> pd.DataFrame:
+        r"""
+        Generates a grid of points that spans the chemical potential space
+        defined by the vertices, constrained by a set of fixed chemical
+        potentials.
+
+        By default, the grid is generated in barycentric coordinates (i.e. in
+        'relative' coordinates, as weighted averages of the chemical potential
+        limits). This is far more efficient than generating a Cartesian grid,
+        but means that the grid is evenly spaced in barycentric ('relative')
+        coordinates, and not necessarily in Cartesian coordinates. If
+        ``cartesian`` is set to ``True``, then a regular grid in Cartesian
+        coordinates is generated (however this can be much slower).
+
+        Args:
+            fixed_elements (dict):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{column_name: value}``; e.g. ``{"Li": -2}``).
+            n_points (int):
+                The number of points to generate along each non-fixed axis
+                (i.e. chemical potential range) of the grid. With the default
+                barycentric approach (``cartesian=False``), the number of
+                generated points depends on this value along with the
+                dimensionality and number of vertices (and thus simplices),
+                being roughly proportional to ``n_points**k`` where ``k`` is
+                the number of independent variables (chemical potentials). Note
+                that large values (>= 100) with multinary systems can quickly
+                explode to extreme numbers of points, crashing system memory.
+                For ``cartesian=True``, the number of generated points for a
+                given ``n_points`` is typically far smaller.
+                Default is 20.
+            cartesian (bool):
+                Whether to generate the grid in Cartesian coordinates. If
+                ``False`` (default), the grid is generated in barycentric
+                coordinates, which is far more efficient, but means that the
+                grid is evenly spaced in barycentric ('relative') coordinates,
+                and not necessarily in Cartesian coordinates.
+            decimal_places (int):
+                The number of decimal places to round the grid coordinates to.
+                Default is 4.
+
+        Returns:
+            pd.DataFrame:
+                A ``DataFrame`` containing the points within the convex hull,
+                constrained by the fixed chemical potentials. Each row
+                represents a point in the grid.
+        """
+        fixed_elements = {
+            k if k in self.vertices.columns else f"μ_{k} (eV)": v for k, v in fixed_elements.items()
+        }
+        variables = [col for col in self.vertices.columns if col not in fixed_elements]
+        dependent_variable = variables[-1]
+        dependent_var = self.vertices[dependent_variable].to_numpy()
+        independent_vars = self.vertices.drop(columns=dependent_variable)
+        vertices = independent_vars.to_numpy()
+
+        for element, value in fixed_elements.items():
+            try:
+                vertices = _intersect_hull_with_plane(
+                    vertices,
+                    list(independent_vars.columns).index(element),
+                    value,
+                )
+            except ValueError as e:
+                if "does not meet the hull" in str(e):
+                    raise ValueError(  # TODO: Test
+                        "The input set of fixed chemical potentials does not intersect with the convex "
+                        "hull (i.e. stable chemical potential range) of the host material. "
+                    ) from e
+
+                raise e
+
+        # Interpolate the values to get the dependent chemical potential
+        values_inside = griddata(independent_vars.to_numpy(), dependent_var, vertices, method="linear")
+
+        # Combine points with their corresponding interpolated values
+        grid_with_values = np.hstack((vertices, values_inside.reshape(-1, 1)))
+
+        # remove nan values and round
+        grid_with_values = grid_with_values[~np.isnan(grid_with_values[:, -1])].round(decimal_places + 1)
+
+        constrained_vertices = pd.DataFrame(
             grid_with_values,
             columns=[*list(independent_vars.columns), dependent_variable],
         )
+        # these are our new constrained vertices, now we generate the grid (without the fixed element):
+        input_constrained_vertices = constrained_vertices.drop(columns=list(fixed_elements.keys()))
+        constrained_grid = ChemicalPotentialGrid.from_dataframe(input_constrained_vertices)
+        return constrained_grid.get_grid(
+            n_points=n_points, cartesian=cartesian, decimal_places=decimal_places
+        ).dropna()
+
+
+def _intersect_hull_with_plane(
+    vertices: np.ndarray,
+    axis: int,
+    value: float,
+    tol: float = 1e-10,
+) -> np.ndarray:
+    """
+    Intersect the convex hull with a plane defined by a fixed value of a given
+    axis.
+
+    Args:
+        vertices (np.ndarray):
+            Coordinates of the convex-hull vertices.
+        axis (int):
+            Index of the coordinate you want to fix (0-based).
+        value (float):
+            The plane, such that ``x[axis] = value``.
+        tol (float):
+            Numerical tolerance for deciding if points lie on the plane.
+
+    Returns:
+        np.ndarray:
+            Coordinates of intersections between the convex hull and the plane.
+    """
+    lo, hi = vertices[:, axis].min(), vertices[:, axis].max()
+    if value < lo - tol or value > hi + tol:
+        raise ValueError(f"The plane {axis} = {value} does not meet the hull.")
+
+    pts = []
+    # for each edge, check if it crosses the plane:
+    for i, j in itertools.combinations(range(len(vertices)), 2):
+        v_i, v_j = vertices[i], vertices[j]
+        d_i = v_i[axis] - value  # vector from plane to vertex i, along axis
+        d_j = v_j[axis] - value  # vector from plane to vertex j, along axis
+
+        if d_i * d_j < 0:  # opposite signs in vectors -> crossing
+            t = d_i / (d_i - d_j)  # 0 < t < 1
+            pts.append(v_i + t * (v_j - v_i))  # intersection point
+
+        else:  # check if endpoint is on plane:
+            for d, v in zip([d_i, d_j], [v_i, v_j], strict=False):
+                if abs(d) <= tol:
+                    pts.append(v)
+
+    return np.asarray(pts)
 
 
 def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
@@ -2842,6 +2997,7 @@ class CompetingPhasesAnalyzer(MSONable):
     def plot_chempot_heatmap(
         self,
         dependent_element: str | Element | None = None,
+        fixed_elements: dict[str, float] | None = None,
         xlim: tuple[float, float] | None = None,
         ylim: tuple[float, float] | None = None,
         cbar_range: tuple[float, float] | None = None,
@@ -2853,12 +3009,20 @@ class CompetingPhasesAnalyzer(MSONable):
         style_file: PathLike | None = None,
     ) -> plt.Figure:
         """
-        Plot a heatmap of the chemical potentials for a ternary system.
+        Plot a heatmap of the chemical potentials for a multinary system.
 
         In this plot, the ``dependent_element`` chemical potential is plotted
         as a heatmap over the stability region of the host composition, as a
-        function of the other two elemental chemical potentials on the x and y
+        function of two other elemental chemical potentials on the x and y
         axes.
+
+        3-D data is required to plot a 2-D heatmap, and so this function can be
+        applied as-is for ternary systems, but for higher-dimensional systems
+        a set of chemical potential constraints must be provided (as
+        ``fixed_elements``) to project the chemical stability region to 3-D.
+        # TODO: Add example and link here
+        # TODO: Show example getting the centroid of the stability region, and
+        # fixing chempots to that?
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
@@ -2869,12 +3033,23 @@ class CompetingPhasesAnalyzer(MSONable):
         If using the default colour map (``batlow``) in publications, please
         consider citing: https://zenodo.org/records/8409685
 
+        Tip: https://github.com/frssp/cplapy can be used to generate 3D plots
+        of chemical stability regions, to show the bordering competing phases
+        in quaternary systems.
+
         Args:
             dependent_element (str or Element):
                 The element for which the chemical potential is plotted as a
                 heatmap. If None (default), the last element in the bulk
                 composition formula is used (which corresponds to the most
                 electronegative element present).
+            fixed_elements (dict):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{element: value}``; e.g. ``{"Li": -2}``). This is required
+                for multinary systems, where N-3 fixed chemical potentials
+                should be specified (where N is the number of elements in the
+                chemical system). If ``None`` (default), chemical potentials
+                are not fixed.
             xlim (tuple):
                 The x-axis limits for the plot. If None (default), the limits
                 are set to the minimum and maximum values of the x-axis data,
@@ -2924,11 +3099,7 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
-        # TODO: Use Li3PS4 for testing and example in _tutorial_
-        # TODO: Only works for ternary systems! For 2D, warn and return line plot?
-        # For 4D+, could set constraint for fixed μ of other element, or fixed bordering phase?
-        # -> Add to Future ToDo
-        # Could look at Sungyhun's `cplapy` for doing 4D chempot plots?
+        # TODO: Use Li3PS4, AgSbTe2, Cs2AgBiBr6 for testing and example in _tutorial_, and link
         # TODO: Draft! Need to test for multiple systems
         # TODO: Plot extrinsic too?
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
@@ -2948,33 +3119,44 @@ class CompetingPhasesAnalyzer(MSONable):
         cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))
 
         # check dimensionality:
+        fixed_elements = fixed_elements or {}
         if len(cpd.elements) == 2:  # switch to line plot
             warnings.warn(
                 "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary "
                 "system, switching to a chemical potential line plot."
             )
             # TODO
-        elif len(cpd.elements) != 3:
+        elif len(cpd.elements) - len(fixed_elements) != 3:
             raise ValueError(
-                f"Chemical potential heatmap (i.e. 2D) plotting is only possible for ternary "
-                f"systems, but this is a {len(cpd.elements)}-D system!"
+                f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
+                f"potential constraints for >ternary systems; such that the number of elements in the "
+                f"chemical system ({len(cpd.elements)}) minus the number of fixed chemical potentials "
+                f"({len(fixed_elements)}) must be equal to 3."
             )
-            # TODO: Allow fixed chempot value for other elements to reduce to 2/3D
 
         host_domains = cpd.domains[self.composition.reduced_formula]
+        variables = [el for el in self.composition.elements if el.symbol not in fixed_elements]
 
         if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
-            dependent_element = self.composition.elements[-1]
+            dependent_element = variables[-1]
         elif isinstance(dependent_element, str):
             dependent_element = Element(dependent_element)
         assert isinstance(dependent_element, Element)  # typing
 
         dependent_el_idx = cpd.elements.index(dependent_element)
-        independent_el_indices = [i for i in range(len(cpd.elements)) if i != dependent_el_idx]
+        independent_elts = [
+            el
+            for i, el in enumerate(cpd.elements)
+            if i != dependent_el_idx and el.symbol not in fixed_elements
+        ]
+
         cpg = ChemicalPotentialGrid.from_dataframe(
-            pd.DataFrame(host_domains, columns=[cpd.elements[i].symbol for i in range(len(cpd.elements))])
+            pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
         )
-        grid = cpg.get_grid(n_points=12, cartesian=False)
+        if fixed_elements:
+            grid = cpg.get_constrained_grid(fixed_elements, n_points=12, cartesian=False)
+        else:
+            grid = cpg.get_grid(n_points=12, cartesian=False)
         values_inside = grid[dependent_element.symbol].to_numpy()
         points_inside = grid.drop(columns=[dependent_element.symbol]).to_numpy()
 
@@ -3006,18 +3188,19 @@ class CompetingPhasesAnalyzer(MSONable):
         x_range = abs(x_max - x_min)
         y_range = abs(y_max - y_min)
 
+        x_padding = padding or x_range * 0.1
+        y_padding = padding or y_range * 0.1
+
         if xlim is None:
-            x_padding = padding or x_range * 0.1
             xlim = (float(x_min - x_padding), float(x_max + x_padding))
 
         if ylim is None:
-            y_padding = padding or y_range * 0.1
             ylim = (float(y_min - y_padding), float(y_max + y_padding))
 
         ax.set_xlim(*xlim), ax.set_ylim(*ylim)
         cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
-        ax.set_xlabel(rf"$\Delta\mu$ ({cpd.elements[independent_el_indices[0]].symbol}) (eV)")
-        ax.set_ylabel(rf"$\Delta\mu$ ({cpd.elements[independent_el_indices[1]].symbol}) (eV)")
+        ax.set_xlabel(rf"$\Delta\mu$ ({independent_elts[0].symbol}) (eV)")
+        ax.set_ylabel(rf"$\Delta\mu$ ({independent_elts[1].symbol}) (eV)")
         ax.xaxis.set_minor_locator(AutoMinorLocator(2))
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
         if title:
@@ -3047,9 +3230,20 @@ class CompetingPhasesAnalyzer(MSONable):
             if len(domain_pts) < 2:
                 continue  # not a stable bordering phase
 
+            # if fixed elements, need to get the intersectional line:
+            try:
+                for element, value in fixed_elements.items():
+                    domain_pts = _intersect_hull_with_plane(
+                        np.array(domain_pts),
+                        cpd.elements.index(Element(element)),
+                        value,
+                    )
+            except ValueError:
+                continue  # no intersection with plane, skip to next phase
+
             f = interp1d(
-                np.array(domain_pts)[:, independent_el_indices[0]],
-                np.array(domain_pts)[:, independent_el_indices[1]],
+                np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])],
+                np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])],
                 kind="linear",
                 assume_sorted=False,
                 fill_value="extrapolate",
@@ -3058,12 +3252,17 @@ class CompetingPhasesAnalyzer(MSONable):
                 warnings.filterwarnings("ignore", "divide by zero")
                 vertical_line = (np.abs(f(x)) == np.inf).any()
             if vertical_line:  # handle any vertical lines
+                x_val = domain_pts[0][cpd.elements.index(independent_elts[0])]
                 line = ax.axvline(
-                    domain_pts[0][independent_el_indices[0]], label=latexify(formula), color="k"
+                    x_val,
+                    label=latexify(formula),
+                    color="k",
                 )
-                x_val = domain_pts[0][independent_el_indices[0]]
                 y_min, y_max = ax.get_ylim()
-                intersection = ((x_val, y_min), (x_val, y_max))
+                if x_val < xlim[1] and x_val > xlim[0]:
+                    intersection = ((x_val, y_min), (x_val, y_max))
+                else:
+                    intersection = None
             else:
                 (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
 
@@ -3080,7 +3279,7 @@ class CompetingPhasesAnalyzer(MSONable):
                     x_intersections.append((x_max, float(y_x_max)))
 
                 # Check intersections with horizontal bounds (y_min and y_max)
-                if not np.isclose(float(y_x_min), float(y_x_max)):  # not a horizontal line
+                if not np.isclose(float(y_x_min), float(y_x_max), atol=1e-4):  # not a horizontal line
                     x_y_min = interp1d(
                         f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate"
                     )(y_min)
@@ -3095,10 +3294,19 @@ class CompetingPhasesAnalyzer(MSONable):
                 intersection = np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
                 # in case intersects at x/y corner (which would give a duplicate)
 
-            if intersection is not None and np.size(intersection) > 0:
-                intersections.append(intersection)
-                lines.append(line)
-                labels[formula] = f  # labels is dict of formula: line function
+            # check if the midpoint of the intersections are within 1e-4 of any edge:
+            if intersection is not None:
+                if np.size(intersection) == 4:
+                    midpoint = np.mean(intersection, axis=0)
+                    if np.any(np.abs(midpoint - np.array([x_min, y_min])) < 1e-4) or np.any(
+                        np.abs(midpoint - np.array([x_max, y_max])) < 1e-4
+                    ):
+                        continue
+
+                if np.size(intersection) >= 4:
+                    intersections.append(intersection)
+                    lines.append(line)
+                    labels[formula] = f  # labels is dict of formula: line function
 
         # pre-set x_points:
         if label_positions:
@@ -3143,7 +3351,9 @@ class CompetingPhasesAnalyzer(MSONable):
                 elif bbox.xmax > xlim[1]:
                     delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
                 if delta_x != 0:
-                    new_position = (new_position[0] + delta_x, new_position[1] + f(delta_x) - f(0))
+                    delta_y_from_x = f(delta_x) - f(0)
+                    if new_position[1] + delta_y_from_x < ylim[1]:  # only move if not outside of ylim
+                        new_position = (new_position[0] + delta_x, new_position[1] + delta_y_from_x)
 
                 if bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
                     x = np.linspace(-50, 50, 1000)
@@ -3154,7 +3364,9 @@ class CompetingPhasesAnalyzer(MSONable):
                 if bbox.ymax > ylim[1]:
                     delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
                 if delta_y != 0:
-                    new_position = (new_position[0] + f_inv(delta_y) - f_inv(0), new_position[1] + delta_y)
+                    delta_x_from_y = f_inv(delta_y) - f_inv(0)
+                    if new_position[0] + delta_x_from_y < xlim[1]:  # only move if not outside of xlim
+                        new_position = (new_position[0] + delta_x_from_y, new_position[1] + delta_y)
 
             text.set_position(new_position)
 
