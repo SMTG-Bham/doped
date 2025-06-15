@@ -1760,9 +1760,12 @@ class ChemicalPotentialGrid:
                 "systems, for which ``FermiSolver.interpolate_chempots()`` can be used."
             )
 
-        # Get the convex hull of the vertices
-        hull = ConvexHull(independent_vars.to_numpy())
-        delaunay_tri = Delaunay(hull.points[hull.vertices])
+        hull = ConvexHull(independent_vars.to_numpy())  # convex hull of the vertices
+        # ensure vertices and dependent values are aligned:
+        hull_idx = hull.vertices  # indices of the hull points
+        coords_hull = independent_vars.to_numpy()[hull_idx]
+        values_hull = dependent_var[hull_idx]
+        delaunay_tri = Delaunay(coords_hull)
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             grid_ranges = [
@@ -1782,7 +1785,7 @@ class ChemicalPotentialGrid:
             grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
-            grid_with_values = _lattice_in_hull(delaunay_tri, dependent_var, n_points=n_points)
+            grid_with_values = _lattice_in_hull(delaunay_tri, values_hull, n_points=n_points)
 
         # Ensure vertices are in the grid
         grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
@@ -1865,9 +1868,10 @@ class ChemicalPotentialGrid:
                 )
             except ValueError as e:
                 if "does not meet the hull" in str(e):
-                    raise ValueError(  # TODO: Test
-                        "The input set of fixed chemical potentials does not intersect with the convex "
-                        "hull (i.e. stable chemical potential range) of the host material. "
+                    raise ValueError(
+                        f"The input set of fixed chemical potentials does not intersect with the convex "
+                        f"hull (i.e. stable chemical potential range) of the host material. Convex hull "
+                        f"vertices:\n{self.vertices}\n"
                     ) from e
 
                 raise e
@@ -1963,7 +1967,8 @@ def _lattice_in_hull(
             Values of the dependent variable (e.g. chemical potential) at the
             vertices. If provided, the function will also interpolate the
             dependent variable values at the generated points inside the convex
-            hull. Defaults is ``None``.
+            hull -- must have the same order as the vertices in
+            ``delaunay_tri``! Default is ``None``.
         n_points (int):
             The number of points to generate along each simplex edge. Note that
             large values (>= 100) with multinary systems can quickly explode to
@@ -3127,7 +3132,7 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
-        # TODO: Use Li3PS4, AgSbTe2, Cs2AgBiBr6 for testing and example in _tutorial_, and link
+        # TODO: Add example in _tutorial_, and link
         # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
@@ -3148,12 +3153,10 @@ class CompetingPhasesAnalyzer(MSONable):
         # check dimensionality:
         fixed_elements = fixed_elements or {}
         if len(cpd.elements) == 2:  # switch to line plot
-            warnings.warn(
-                "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary "
-                "system, switching to a chemical potential line plot."
-            )
-            # TODO
-        elif len(cpd.elements) - len(fixed_elements) != 3:
+            raise ValueError(
+                "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system!"
+            )  # TODO: Change to warning and auto switch to line plot?
+        if len(cpd.elements) - len(fixed_elements) != 3:
             raise ValueError(
                 f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
                 f"potential constraints for >ternary systems; such that the number of elements in the "
