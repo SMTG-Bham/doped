@@ -1691,7 +1691,11 @@ class ChemicalPotentialGrid:
         return self
 
     def get_grid(
-        self, n_points: int = 20, cartesian: bool = False, decimal_places: int = 4
+        self,
+        n_points: int = 20,
+        cartesian: bool = False,
+        decimal_places: int = 4,
+        drop_duplicates: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -1730,6 +1734,13 @@ class ChemicalPotentialGrid:
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Default is 4.
+            drop_duplicates (bool):
+                Whether to drop duplicate points in the generated grid. With
+                barycentric coordinate generation, there can be duplicate
+                points in the generated grid from overlapping simplices. If
+                duplicates are acceptable (likely true for most downstream
+                usages; e.g. plotting etc) then this can be set to ``False`` to
+                speed up runtime.
 
         Returns:
             pd.DataFrame:
@@ -1751,6 +1762,7 @@ class ChemicalPotentialGrid:
 
         # Get the convex hull of the vertices
         hull = ConvexHull(independent_vars.to_numpy())
+        delaunay_tri = Delaunay(hull.points[hull.vertices])
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             grid_ranges = [
@@ -1761,32 +1773,26 @@ class ChemicalPotentialGrid:
             grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
 
             # Delaunay triangulation to get points inside the convex hull
-            delaunay = Delaunay(hull.points[hull.vertices])
-            inside_hull = delaunay.find_simplex(grid_points) >= 0
+            inside_hull = delaunay_tri.find_simplex(grid_points) >= 0
             points_inside = grid_points[inside_hull]
+            values_inside = griddata(  # interpolate values to get the dependent chemical potential
+                independent_vars.to_numpy(), dependent_var, points_inside, method="linear"
+            )
+            # Combine points with their corresponding interpolated values:
+            grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
-            points_inside = _lattice_in_hull(hull.points[hull.vertices])
+            grid_with_values = _lattice_in_hull(delaunay_tri, dependent_var, n_points=n_points)
 
-        # Interpolate the values to get the dependent chemical potential
-        values_inside = griddata(
-            independent_vars.to_numpy(), dependent_var, points_inside, method="linear"
-        )
-
-        # Combine points with their corresponding interpolated values
-        grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
-
-        # Add vertices to the grid
+        # Ensure vertices are in the grid
         grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
 
-        return (
-            pd.DataFrame(
-                grid_with_values,
-                columns=[*list(independent_vars.columns), dependent_variable],
-            )
-            .round(decimal_places)
-            .drop_duplicates()
-        )
+        grid_df = pd.DataFrame(
+            grid_with_values,
+            columns=[*list(independent_vars.columns), dependent_variable],
+        ).round(decimal_places)
+
+        return grid_df if not drop_duplicates else grid_df.drop_duplicates()
 
     def get_constrained_grid(
         self,
@@ -1934,7 +1940,9 @@ def _intersect_hull_with_plane(
     return np.asarray(pts)
 
 
-def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
+def _lattice_in_hull(
+    delaunay_tri: Delaunay, dependent_var: np.ndarray | None = None, n_points: int = 20
+) -> np.ndarray:
     """
     Generate a grid of points inside the convex hull of the given vertices,
     using barycentric coordinates (i.e. weighted averages of the vertices).
@@ -1944,10 +1952,18 @@ def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
     points in the range of the vertices and then filtering out points outside
     the convex hull, but means that the grid is evenly spaced in barycentric
     ('relative') coordinates, but not necessarily in Cartesian coordinates.
+    If greater precision is needed in output predictions, one can just scale
+    ``n_points`` until convergence.
 
     Args:
-        vertices (np.ndarray):
-            Coordinates of the convex-hull vertices in k-D space.
+        delaunay_tri (Delaunay):
+            A Delaunay triangulation object representing the convex hull of
+            the vertices.
+        dependent_var (np.ndarray | None):
+            Values of the dependent variable (e.g. chemical potential) at the
+            vertices. If provided, the function will also interpolate the
+            dependent variable values at the generated points inside the convex
+            hull. Defaults is ``None``.
         n_points (int):
             The number of points to generate along each simplex edge. Note that
             large values (>= 100) with multinary systems can quickly explode to
@@ -1962,6 +1978,7 @@ def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
             The shape of the array is (M, k), where M is the number of points
             in the grid.
     """
+    vertices = delaunay_tri.points  # vertices of the convex hull
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
 
@@ -1970,8 +1987,6 @@ def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
     # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
     # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc)
     k = vertices.shape[-1]  # dimensionality (k ≥ 2)
-    tri = Delaunay(vertices)
-    simplices = vertices[tri.simplices]  # shape (S, k+1, k); where S is the number of simplices
 
     # generate a grid of barycentric coordinates (i.e. weighted averages of the vertices) which are inside
     # the convex hull; for this the total weight should sum to 1, so generate tuples (n0,..,nk) with
@@ -1996,13 +2011,26 @@ def _lattice_in_hull(vertices: np.ndarray, n_points: int = 20) -> np.ndarray:
         np.array(list(_compositions(n_points, k))) / n_points
     )  # (L, k+1); where L depends on binomial(n_points + k, k)
 
-    # Loop over simplices, mapping barycentric to Cartesian coordinates:
-    points = []
-    for verts in simplices:  # verts has shape (k+1, k)
-        # matrix-multiply each row of `bary_coords` (weights) by the vertex matrix `verts`
-        points.append(bary_coords @ verts)  # affine combination -> (L, k) array
+    # Note: If one really wanted a regular(ish) grid spacing in Cartesian (i.e. energy) coordinates,
+    # the barycentric coordinate grid spacing could be scaled by the Euclidean distance between the simplex
+    # vertices (for each simplex), but this should not be necessary/important for most use cases (if
+    # more precision is needed in output predictions, can just scale ``n_points`` as needed). Can always
+    # be implemented if needed
 
-    return np.vstack(points)  # (M, k); where M = L * S
+    verts_per_simplex = vertices[
+        delaunay_tri.simplices
+    ]  # shape (S, k+1, k); where S is the number of simplices
+
+    # Vectorised Cartesian coordinates (and interpolated values if dependent_var is provided):
+    # points_inside: (S, L, k) -> reshape -> (S*L, k)
+    points_inside = np.einsum("lK,sKm->slm", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
+    if dependent_var is None:
+        return points_inside
+
+    vals_per_simplex = dependent_var[delaunay_tri.simplices]  # (S, k+1)
+    # values_inside: (S, L) -> reshape -> (S*L,)
+    values_inside = np.einsum("lK,sK->sl", bary_coords, vals_per_simplex).ravel()
+    return np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
 
 class CompetingPhasesAnalyzer(MSONable):
@@ -3100,13 +3128,12 @@ class CompetingPhasesAnalyzer(MSONable):
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
         # TODO: Use Li3PS4, AgSbTe2, Cs2AgBiBr6 for testing and example in _tutorial_, and link
-        # TODO: Draft! Need to test for multiple systems
-        # TODO: Plot extrinsic too?
+        # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
         # TODO: Code in this function (particularly label position handling and intersections) should be
         #  able to be made more succinct, and also modularise a bit?
-        # TODO: Option to only show all calculated competing phases?
+        # TODO: Option to show _all_ calculated competing phases? (Not just bordering)
 
         # Note that we could also add option to instead plot competing phases lines coloured,
         # with a legend added giving the composition of each competing phase line (as in the SI of
