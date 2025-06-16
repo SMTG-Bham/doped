@@ -1692,7 +1692,7 @@ class ChemicalPotentialGrid:
 
     def get_grid(
         self,
-        n_points: int = 20,
+        n_points: int | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
@@ -1712,19 +1712,17 @@ class ChemicalPotentialGrid:
         coordinates is generated (however this can be much slower).
 
         Args:
-            n_points (int):
-                The number of points to generate along each axis (i.e. chemical
-                potential range) of the grid. With the default barycentric
-                approach (``cartesian=False``), the number of generated points
-                depends on this value along with the dimensionality and number
-                of vertices (and thus simplices), being roughly proportional to
-                ``n_points**k`` where ``k`` is the number of independent
-                variables (chemical potentials). Note that large values
-                (>= 100) with multinary systems can quickly explode to extreme
-                numbers of points, crashing system memory.
-                For ``cartesian=True``, the number of generated points for a
-                given ``n_points`` is typically far smaller.
-                Default is 20.
+            n_points (int | None):
+                `Minimum` number of grid points to generate. The output grid
+                will contain at least this many points (regularly spaced in
+                barycentric or Cartesian space depending ``cartesian``), in
+                addition to the vertices themselves, then with any duplicate /
+                overlapping points dropped. The default is 1000 when
+                barycentric coordinates are used (``cartesian=False``), and 100
+                otherwise (as Cartesian grid generation and sub-selection to
+                the stable polytope is much slower).
+                Note that large values (>= 1e5) with multinary systems can
+                explode, crashing system memory.
             cartesian (bool):
                 Whether to generate the grid in Cartesian coordinates. If
                 ``False`` (default), the grid is generated in barycentric
@@ -1747,11 +1745,12 @@ class ChemicalPotentialGrid:
                 A ``DataFrame`` containing the points within the convex hull.
                 Each row represents a point in the grid.
         """
+        n_points = n_points or (1000 if not cartesian else 100)
         dependent_variable = self.vertices.columns[-1]
         dependent_var = self.vertices[dependent_variable].to_numpy()
         independent_vars = self.vertices.drop(columns=dependent_variable)
 
-        n_dims = independent_vars.shape[1]  # Get the number of independent variables (dimensions)
+        n_dims = independent_vars.shape[1]  # number of independent variables (dimensions)
         if n_dims < 2:
             raise ValueError(
                 "Chemical potential grid generation is only possible for systems with "
@@ -1768,8 +1767,15 @@ class ChemicalPotentialGrid:
         delaunay_tri = Delaunay(coords_hull)
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
+            # hull volume (in N-D) times grid density = num points:
+            req_grid_density = n_points / hull.volume  # points per N-D volume
+            req_density_per_dim = req_grid_density ** (1 / n_dims)  # points per dim, inverse system units
             grid_ranges = [
-                np.linspace(independent_vars.iloc[:, i].min(), independent_vars.iloc[:, i].max(), n_points)
+                np.arange(
+                    independent_vars.iloc[:, i].min(),
+                    independent_vars.iloc[:, i].max(),
+                    1 / req_density_per_dim,  # step size in system units = 1/points-per-dimension
+                )
                 for i in range(n_dims)
             ]
             grid = np.meshgrid(*grid_ranges, indexing="ij")  # Create N-dimensional grid
@@ -1800,7 +1806,7 @@ class ChemicalPotentialGrid:
     def get_constrained_grid(
         self,
         fixed_elements: dict[str, float],
-        n_points: int = 20,
+        n_points: int | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
     ) -> pd.DataFrame:
@@ -1821,19 +1827,17 @@ class ChemicalPotentialGrid:
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
                 ``{column_name: value}``; e.g. ``{"Li": -2}``).
-            n_points (int):
-                The number of points to generate along each non-fixed axis
-                (i.e. chemical potential range) of the grid. With the default
-                barycentric approach (``cartesian=False``), the number of
-                generated points depends on this value along with the
-                dimensionality and number of vertices (and thus simplices),
-                being roughly proportional to ``n_points**k`` where ``k`` is
-                the number of independent variables (chemical potentials). Note
-                that large values (>= 100) with multinary systems can quickly
-                explode to extreme numbers of points, crashing system memory.
-                For ``cartesian=True``, the number of generated points for a
-                given ``n_points`` is typically far smaller.
-                Default is 20.
+            n_points (int | None):
+                `Minimum` number of grid points to generate, within the
+                constrained subspace. The output grid will contain at least
+                this many points (regularly spaced in barycentric or Cartesian
+                space depending ``cartesian``), in addition to the vertices of
+                the constrained subspace, then with any duplicate / overlapping
+                points dropped. The default is 1000 when barycentric
+                coordinates are used (``cartesian=False``), and 100 otherwise
+                (as Cartesian grid generation and sub-selection to the stable
+                polytope is much slower). Note that large values (>= 1e5) with
+                multinary systems can explode, crashing system memory.
             cartesian (bool):
                 Whether to generate the grid in Cartesian coordinates. If
                 ``False`` (default), the grid is generated in barycentric
@@ -1945,7 +1949,7 @@ def _intersect_hull_with_plane(
 
 
 def _lattice_in_hull(
-    delaunay_tri: Delaunay, dependent_var: np.ndarray | None = None, n_points: int = 20
+    delaunay_tri: Delaunay, dependent_var: np.ndarray | None = None, n_points: int = 1000
 ) -> np.ndarray:
     """
     Generate a grid of points inside the convex hull of the given vertices,
@@ -1970,12 +1974,9 @@ def _lattice_in_hull(
             hull -- must have the same order as the vertices in
             ``delaunay_tri``! Default is ``None``.
         n_points (int):
-            The number of points to generate along each simplex edge. Note that
-            large values (>= 100) with multinary systems can quickly explode to
-            extreme numbers of points, crashing system memory. The total number
-            of output points depends on this value along with the
-            dimensionality and number of vertices (and thus simplices).
-            Default is 20.
+            `Minimum` number of grid points to generate. The output grid will
+            contain at least this many points, regularly spaced in barycentric
+            space. Default is 1000.
 
     Returns:
         np.ndarray:
@@ -1995,7 +1996,7 @@ def _lattice_in_hull(
 
     # generate a grid of barycentric coordinates (i.e. weighted averages of the vertices) which are inside
     # the convex hull; for this the total weight should sum to 1, so generate tuples (n0,..,nk) with
-    # sum = ``n_points``, and then divide by ``n_points``:
+    # sum = ``n_points_per_dim``, and then divide by ``n_points_per_dim``:
     def _compositions(r: int, k: int) -> Iterator[tuple[int, ...]]:
         """
         Yield all tuples (n0,...,nk) such that  ∑ n_i = r and n_i ≥ 0.
@@ -2009,12 +2010,23 @@ def _lattice_in_hull(
             for c in (*cuts, r + k):
                 parts.append(c - prev - 1)
                 prev = c
-            yield tuple(parts)
+            yield tuple(parts)  # (L, k+1); where L depends on binomial(n_points_per_dim + k, k)
 
-    # instead of the slow int_bary construction:
-    bary_coords = (
-        np.array(list(_compositions(n_points, k))) / n_points
-    )  # (L, k+1); where L depends on binomial(n_points + k, k)
+    # Note: In theory one could skip this loop and directly predict the required number of points along
+    # each simplex dimension, with some fitting of scaling, but the individual computation is very fast for
+    # reasonable to large ``n_points``, so shouldn't be an issue in practice.
+    n_points_per_dim = 1
+    unscaled_bary_coords: list[tuple[int, ...]] = []
+    while len(unscaled_bary_coords) * len(delaunay_tri.simplices) < n_points:
+        unscaled_bary_coords = list(_compositions(n_points_per_dim, k))
+        n_points_per_dim += 1
+        if n_points_per_dim > max(n_points, 1):  # should never happen
+            raise RuntimeError(
+                "Barycentric coordinate generation failed! Please check your inputs, and report this "
+                "issue to the developers if they are reasonable."
+            )
+
+    bary_coords = np.array(unscaled_bary_coords) / n_points_per_dim  # (L, k+1); L >= n_points
 
     # Note: If one really wanted a regular(ish) grid spacing in Cartesian (i.e. energy) coordinates,
     # the barycentric coordinate grid spacing could be scaled by the Euclidean distance between the simplex
@@ -3184,9 +3196,9 @@ class CompetingPhasesAnalyzer(MSONable):
             pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
         )
         if fixed_elements:
-            grid = cpg.get_constrained_grid(fixed_elements, n_points=12, cartesian=False)
+            grid = cpg.get_constrained_grid(fixed_elements, n_points=100, cartesian=False)
         else:
-            grid = cpg.get_grid(n_points=12, cartesian=False)
+            grid = cpg.get_grid(n_points=100, cartesian=False)
         values_inside = grid[dependent_element.symbol].to_numpy()
         points_inside = grid.drop(columns=[dependent_element.symbol]).to_numpy()
 

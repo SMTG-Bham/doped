@@ -6408,7 +6408,7 @@ class FermiSolver(MSONable):
     def scan_chemical_potential_grid(
         self,
         chempots: dict | None = None,
-        n_points: int = 10,
+        n_points: int = 100,
         annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
@@ -6418,6 +6418,7 @@ class FermiSolver(MSONable):
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        cartesian: bool = False,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
@@ -6455,12 +6456,14 @@ class FermiSolver(MSONable):
                 ``DefectThermodynamics.el_refs = ...`` if you want to update
                 the elemental reference energies for any reason.
             n_points (int):
-                The number of points to generate along each axis of the grid.
-                The actual number of grid points may be less, as points outside
-                the convex hull are excluded. The higher the dimension of your
-                chemical system (i.e. number of elements), the more sensitive
-                the runtime will be to the choice of ``n_points``.
-                Default is 10.
+                `Minimum` number of grid points to generate. The output grid
+                will contain at least this many points (regularly spaced in
+                barycentric or Cartesian space depending ``cartesian``), in
+                addition to the chemical potential limit vertices themselves,
+                then with any duplicate / overlapping points dropped. Note that
+                large values (>= 1e5) with multinary systems can explode,
+                crashing system memory.
+                Default is 100.
             annealing_temperature (Optional[float]):
                 Temperature in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
@@ -6546,6 +6549,13 @@ class FermiSolver(MSONable):
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
                 output ``DataFrame``.
+            cartesian (bool):
+                Whether to generate the search grid (over chemical potentials)
+                in Cartesian (energy) coordinates. If ``False`` (default), the
+                grid is generated in barycentric coordinates, which is far more
+                efficient, but means that the grid is evenly spaced in
+                barycentric ('relative') coordinates, and not necessarily in
+                Cartesian coordinates.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -6558,7 +6568,7 @@ class FermiSolver(MSONable):
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        grid = ChemicalPotentialGrid(chempots).get_grid(n_points)
+        grid = ChemicalPotentialGrid(chempots).get_grid(n_points=n_points, cartesian=cartesian)
         chempot_dict_list = [
             {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
             for _idx, chempot_series in grid.iterrows()
@@ -6618,13 +6628,14 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
-        n_points: int = 10,
+        n_points: int = 30,
         effective_dopant_concentration: float | None = None,
         delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        cartesian: bool = False,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
@@ -6706,11 +6717,10 @@ class FermiSolver(MSONable):
                 stops when the relative change in the target value is less than
                 this value. Defaults to ``0.01``.
             n_points (int):
-                The number of points to generate along each axis of the
-                chemical potentials grid for each iteration of the search. The
-                higher the dimension of your chemical system (i.e. number of
-                elements), the more sensitive the runtime will be to the choice
-                of ``n_points``. Defaults to ``10``.
+                `Minimum` number of grid points to generate for each iteration
+                of the search; see ``scan_chemical_potential_grid`` docstring.
+                Large values are typically not required as the search will
+                iterate to convergence. Defaults to 30.
             effective_dopant_concentration (Optional[float]):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -6777,6 +6787,14 @@ class FermiSolver(MSONable):
                 as well as including the lattice site indices (used to
                 determine which defects will compete for the same sites) in the
                 output ``DataFrame``.
+            cartesian (bool):
+                Whether to generate the search grid (over chemical potentials)
+                in Cartesian (energy) coordinates. If ``False`` (default), the
+                grid is generated in barycentric coordinates, which is far more
+                efficient, but means that the grid is evenly spaced in
+                barycentric ('relative') coordinates, and not necessarily in
+                Cartesian coordinates. Cartesian grid spacing is always used
+                for 1D chemical potential spaces.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_gap`` is not 0).
@@ -6799,7 +6817,12 @@ class FermiSolver(MSONable):
         # TODO: Add option of just specifying an element, to min/max its summed defect concentrations
         # TODO: When per-charge option added, test setting target to a defect species (with charge)
 
-        optimise_func = self._optimise_line if len(el_refs) == 2 else self._optimise_grid
+        if len(el_refs) == 2:
+            optimise_func = self._optimise_line
+        else:
+            optimise_func = self._optimise_grid
+            kwargs.update({"cartesian": cartesian})
+
         return optimise_func(
             target=target,
             min_or_max=min_or_max,
@@ -6827,7 +6850,7 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
-        n_points: int = 10,
+        n_points: int = 30,
         effective_dopant_concentration: float | None = None,
         delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
@@ -6987,13 +7010,14 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         tolerance: float = 0.01,
-        n_points: int = 10,
+        n_points: int = 30,
         effective_dopant_concentration: float | None = None,
         delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
+        cartesian: bool = False,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
@@ -7010,7 +7034,9 @@ class FermiSolver(MSONable):
         while True:
             chempots_dict_list = [
                 {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
-                for _idx, chempot_series in chempots_grid.get_grid(n_points).iterrows()
+                for _idx, chempot_series in chempots_grid.get_grid(
+                    n_points=n_points, cartesian=cartesian
+                ).iterrows()
             ]
             target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
                 target=target,

@@ -1148,19 +1148,20 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
     def test_get_grid(self):
         for cart in [True, False]:
-            grid_df = self.grid.get_grid(100 if cart else 20, cartesian=cart)
+            print(f"Testing grid with cartesian={cart}")
+            grid_df = self.grid.get_grid(3800, cartesian=cart)
             assert isinstance(grid_df, pd.DataFrame)
             assert np.isclose(max(grid_df["μ_Cu (eV)"]), 0.0)
-            assert np.isclose(max(grid_df["μ_Si (eV)"]), -0.077858, atol=1e-3)
+            assert np.isclose(max(grid_df["μ_Si (eV)"]), -0.0759, atol=1e-2)
             assert np.isclose(max(grid_df["μ_Se (eV)"]), 0.0)
-            assert np.isclose(min(grid_df["μ_Cu (eV)"]), -0.463558, atol=1e-3)
-            assert np.isclose(min(grid_df["μ_Si (eV)"]), -1.708951, atol=1e-3)
-            assert np.isclose(min(grid_df["μ_Se (eV)"]), -0.758105, atol=1e-3)
+            assert np.isclose(min(grid_df["μ_Cu (eV)"]), -0.463558, atol=1e-2)
+            assert np.isclose(min(grid_df["μ_Si (eV)"]), -1.708951, atol=1e-2)
+            assert np.isclose(min(grid_df["μ_Se (eV)"]), -0.758105, atol=1e-2)
             assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.1966, atol=1e-3 if cart else 2e-2)
             assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94906, atol=1e-3 if cart else 2e-1)
-            assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 6e-2)
+            assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 7e-2)
 
-            assert len(grid_df) == (3886 if cart else 1077)
+            assert len(grid_df) == (3792 if cart else 3751)
 
     def test_chempot_heatmap_3D_w_fixed_elements_error(self):
         with pytest.raises(ValueError) as exc:
