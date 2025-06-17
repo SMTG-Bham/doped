@@ -39,7 +39,7 @@ from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
-from scipy.interpolate import griddata, interp1d
+from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
@@ -3258,7 +3258,7 @@ class CompetingPhasesAnalyzer(MSONable):
             ax.set_title(title)
 
         # plot formation energy lines:
-        lines = []
+        lines = {}  # {formula: matplotlib line object}
         labels = {}  # {formula: line function}
         intersections = []
         x_min, x_max = ax.get_xlim()
@@ -3274,7 +3274,7 @@ class CompetingPhasesAnalyzer(MSONable):
             domain_pts = [
                 chempot_coords
                 for chempot_coords in pts
-                if any(np.allclose(chempot_coords, coords) for coords in host_domains)
+                if np.any(np.all(np.isclose(host_domains, chempot_coords), axis=1))  # (M, k)
             ]
             if len(domain_pts) < 2:
                 continue  # not a stable bordering phase
@@ -3290,16 +3290,22 @@ class CompetingPhasesAnalyzer(MSONable):
             except ValueError:
                 continue  # no intersection with plane, skip to next phase
 
-            f = interp1d(
-                np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])],
-                np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])],
-                kind="linear",
-                assume_sorted=False,
-                fill_value="extrapolate",
-            )
+            formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
+            formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
+            m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)  # fit line function
+
+            def f(xx, m=m, b=b):  # line function for the fitted line
+                return m * xx + b
+
+            def inv_f(yy, m=m, b=b):  # inverse of the line function
+                return (yy - b) / m
+
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", "divide by zero")
-                vertical_line = (np.abs(f(x)) == np.inf).any()
+                vertical_line = (np.abs(f(x)) == np.inf).any() or (
+                    f(x).max() - f(x).min() > 1e5  # basically a vertical line, account for rounding
+                )
+
             if vertical_line:  # handle any vertical lines
                 x_val = domain_pts[0][cpd.elements.index(independent_elts[0])]
                 line = ax.axvline(
@@ -3310,8 +3316,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 y_min, y_max = ax.get_ylim()
                 if x_val < xlim[1] and x_val > xlim[0]:
                     intersection = ((x_val, y_min), (x_val, y_max))
-                else:
-                    intersection = None
+
             else:
                 (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
 
@@ -3320,25 +3325,23 @@ class CompetingPhasesAnalyzer(MSONable):
                 y_intersections = []
 
                 # Check intersections with vertical bounds (x_min and x_max)
-                y_x_min = f(x_min)
-                y_x_max = f(x_max)
-                if y_min <= y_x_min <= y_max:
-                    x_intersections.append((x_min, float(y_x_min)))
-                if y_min <= y_x_max <= y_max:
-                    x_intersections.append((x_max, float(y_x_max)))
+                y_at_x_min = f(x_min)
+                y_at_x_max = f(x_max)
+                if y_min <= y_at_x_min <= y_max:
+                    x_intersections.append((x_min, float(y_at_x_min)))
+                if y_min <= y_at_x_max <= y_max:
+                    x_intersections.append((x_max, float(y_at_x_max)))
 
                 # Check intersections with horizontal bounds (y_min and y_max)
-                if not np.isclose(float(y_x_min), float(y_x_max), atol=1e-4):  # not a horizontal line
-                    x_y_min = interp1d(
-                        f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate"
-                    )(y_min)
-                    x_y_max = interp1d(
-                        f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate"
-                    )(y_max)
-                    if x_min <= x_y_min <= x_max:
-                        y_intersections.append((float(x_y_min), y_min))
-                    if x_min <= x_y_max <= x_max:
-                        y_intersections.append((float(x_y_max), y_max))
+                if not np.isclose(
+                    float(y_at_x_min), float(y_at_x_max), atol=1e-4
+                ):  # not a horizontal line
+                    x_at_y_min = inv_f(y_min)
+                    x_at_y_max = inv_f(y_max)
+                    if x_min <= x_at_y_min <= x_max:
+                        y_intersections.append((float(x_at_y_min), y_min))
+                    if x_min <= x_at_y_max <= x_max:
+                        y_intersections.append((float(x_at_y_max), y_max))
 
                 intersection = np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
                 # in case intersects at x/y corner (which would give a duplicate)
@@ -3354,7 +3357,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
                 if np.size(intersection) >= 4:
                     intersections.append(intersection)
-                    lines.append(line)
+                    lines[formula] = line  # lines is dict of formula: matplotlib line object
                     labels[formula] = f  # labels is dict of formula: line function
 
         # pre-set x_points:
@@ -3373,11 +3376,12 @@ class CompetingPhasesAnalyzer(MSONable):
                     )
 
             elif isinstance(label_positions, dict):  # match formula (key) to line:
-                label_positions = {k: labels[k] for k in label_positions if k in labels}
+                lines = {k: lines[k] for k in label_positions if k in lines}
+                label_positions = [label_positions[k] for k in lines]
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", "The value at position")
-                labelLines(lines, xvals=label_positions, align=False, color="black")
+                labelLines(list(lines.values()), xvals=label_positions, align=False, color="black")
 
         # make sure all labels are well enclosed within the plot:
         latexified_labels = {latexify(k): v for k, v in labels.items()}
@@ -3406,14 +3410,13 @@ class CompetingPhasesAnalyzer(MSONable):
 
                 if bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
                     x = np.linspace(-50, 50, 1000)
-                    f_inv = interp1d(f(x), x, assume_sorted=False, kind="linear", fill_value="extrapolate")
 
                 if bbox.ymin < ylim[0]:
                     delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
                 if bbox.ymax > ylim[1]:
                     delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
                 if delta_y != 0:
-                    delta_x_from_y = f_inv(delta_y) - f_inv(0)
+                    delta_x_from_y = inv_f(delta_y) - inv_f(0)
                     if new_position[0] + delta_x_from_y < xlim[1]:  # only move if not outside of xlim
                         new_position = (new_position[0] + delta_x_from_y, new_position[1] + delta_y)
 

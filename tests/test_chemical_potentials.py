@@ -1271,9 +1271,12 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             label_positions=False,
         )
 
-    # TODO: Test fixed elements, w/Na2FePO4F
-    # e.g. na2fepo4f_cpa.plot_chempot_heatmap(fixed_elements={"Na": -1.9, "P": -1.3}), currently has
-    # some issues with multiple fixed elements it seems
+    @custom_mpl_image_compare(filename="Na2FePO4F_chempot_heatmap.png")
+    def test_5D_fixed_elements_heatmap(self):
+        na2fepo4f_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "Na2FePO4F", entries=self.na2fepo4f_cp.entries
+        )
+        return na2fepo4f_cpa.plot_chempot_heatmap(fixed_elements={"Na": -1.9, "P": -1.3})
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
     def test_Na2FePO4F_chempot_grid(self):
