@@ -2296,7 +2296,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
         )
         data = solver.scan_chemical_potential_grid(
-            n_points=50,
+            n_points=500,
             annealing_temperature=1000,  # the temperature at which to anneal the system
         )
         return _plot_Cu_i_data(data.loc["Int_Cu"])
@@ -2307,7 +2307,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
         )
         data = solver.scan_chemical_potential_grid(
-            n_points=50,
+            n_points=500,
             annealing_temperature=1000,  # the temperature at which to anneal the system
             cartesian=True,
         )

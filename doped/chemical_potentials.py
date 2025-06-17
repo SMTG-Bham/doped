@@ -2015,11 +2015,11 @@ def _lattice_in_hull(
     # Note: In theory one could skip this loop and directly predict the required number of points along
     # each simplex dimension, with some fitting of scaling, but the individual computation is very fast for
     # reasonable to large ``n_points``, so shouldn't be an issue in practice.
-    n_points_per_dim = 1
+    n_points_per_dim = 0
     unscaled_bary_coords: list[tuple[int, ...]] = []
     while len(unscaled_bary_coords) * len(delaunay_tri.simplices) < n_points:
-        unscaled_bary_coords = list(_compositions(n_points_per_dim, k))
         n_points_per_dim += 1
+        unscaled_bary_coords = list(_compositions(n_points_per_dim, k))
         if n_points_per_dim > max(n_points, 1):  # should never happen
             raise RuntimeError(
                 "Barycentric coordinate generation failed! Please check your inputs, and report this "
@@ -3052,6 +3052,7 @@ class CompetingPhasesAnalyzer(MSONable):
         label_positions: list[float] | dict[str, float] | bool = True,
         filename: PathLike | None = None,
         style_file: PathLike | None = None,
+        **kwargs,
     ) -> plt.Figure:
         """
         Plot a heatmap of the chemical potentials for a multinary system.
@@ -3140,6 +3141,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 Path to a mplstyle file to use for the plot. If ``None``
                 (default), uses the default ``doped`` style (from
                 ``doped/utils/doped.mplstyle``).
+            **kwargs:
+                Additional keyword arguments to pass to
+                ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+                (default = 1000) and ``cartesian`` (default = ``False``).
 
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
@@ -3195,10 +3200,12 @@ class CompetingPhasesAnalyzer(MSONable):
         cpg = ChemicalPotentialGrid.from_dataframe(
             pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
         )
+        grid_kwargs: dict[str, Any] = {"n_points": 1000, "cartesian": False}
+        grid_kwargs.update(kwargs)
         if fixed_elements:
-            grid = cpg.get_constrained_grid(fixed_elements, n_points=100, cartesian=False)
+            grid = cpg.get_constrained_grid(fixed_elements, **grid_kwargs)
         else:
-            grid = cpg.get_grid(n_points=100, cartesian=False)
+            grid = cpg.get_grid(**grid_kwargs)
         values_inside = grid[dependent_element.symbol].to_numpy()
         points_inside = grid.drop(columns=[dependent_element.symbol]).to_numpy()
 

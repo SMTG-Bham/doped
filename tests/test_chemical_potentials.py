@@ -1281,7 +1281,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         Test ``ChemicalPotentialGrid`` generation and plotting for a complex
         quinary system (Na2FePO4F).
         """
-        grid_df = self.na2fepo4f_grid.get_grid(30, drop_duplicates=False)
+        grid_df = self.na2fepo4f_grid.get_grid(1e8, drop_duplicates=False)
         return _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.01)
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid_cartesian.png")
@@ -1290,7 +1290,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         Test ``ChemicalPotentialGrid`` generation and plotting for a complex
         quinary system (Na2FePO4F).
         """
-        grid_df = self.na2fepo4f_grid.get_grid(100, cartesian=True)
+        grid_df = self.na2fepo4f_grid.get_grid(2e5, cartesian=True)
         return _plot_Na2FePO4F_chempot_grid(grid_df)
 
 
