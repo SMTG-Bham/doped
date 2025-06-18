@@ -56,6 +56,7 @@ The following literature contain useful discussions of various aspects of defect
 - [Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai](https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams)
 - [Defect Structure Searching – Mosquera-Lois et al.](https://doi.org/10.1038/s41524-023-00973-1)
 - [Free Energies of Defects – Mosquera-Lois et al.](https://doi.org/10.1039/D3CS00432E)
+- [DeepWiki Code Overview & Workflow](https://deepwiki.com/SMTG-Bham/doped/1-overview)
 <!--- TODO: Squires perspective when ready --->
 
 ## `ShakeNBreak`

@@ -38,6 +38,8 @@ We can then compare the energies of these trial relaxations, and remove candidat
   one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each other,
   this is the case.
 
+See the DeepWiki workflow summary [here](https://deepwiki.com/SMTG-Bham/doped/9-troubleshooting-and-best-practices#best-practices-for-specific-systems).
+
 .. tip::
 
     As with many steps in the defect calculation workflow, these are only rough general guidelines and
