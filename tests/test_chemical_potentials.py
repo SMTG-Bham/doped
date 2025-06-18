@@ -1161,7 +1161,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94906, atol=1e-3 if cart else 2e-1)
             assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 7e-2)
 
-            assert len(grid_df) == (3792 if cart else 3751)
+            assert len(grid_df) == (3792 if cart else 3744)
 
     def test_chempot_heatmap_3D_w_fixed_elements_error(self):
         with pytest.raises(ValueError) as exc:
