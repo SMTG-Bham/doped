@@ -1189,12 +1189,6 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert "Chemical potential heatmap plotting requires 3-D data" in str(exc.value)
         assert "(4) minus the number of fixed chemical potentials (2)" in str(exc.value)
 
-    def test_chempot_heatmap_4D_without_fixed_elements_error(self):
-        with pytest.raises(ValueError) as exc:
-            self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap()
-        assert "Chemical potential heatmap plotting requires 3-D data" in str(exc.value)
-        assert "(4) minus the number of fixed chemical potentials (0)" in str(exc.value)
-
     def test_chempot_heatmap_2D_error(self):
         with pytest.raises(ValueError) as exc:  # this will likely change with updated code
             self.zro2_cpa.plot_chempot_heatmap()
@@ -1210,16 +1204,24 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             "stable chemical potential range) of the host material." in str(exc.value)
         )
 
+    def plot_and_test_no_warnings(self, cpa, **kwargs):
+        with warnings.catch_warnings(record=True) as w:
+            plot = cpa.plot_chempot_heatmap(**kwargs)
+        print([str(warning.message) for warning in w])
+        assert not w
+        return plot
+
     @custom_mpl_image_compare(filename="AgSbTe2_chempot_heatmap_default.png")
     def test_AgSbTe2_chempot_heatmap_default(self):
-        return self.AgSbTe2_cpa.plot_chempot_heatmap()
+        return self.plot_and_test_no_warnings(self.AgSbTe2_cpa)
 
     @custom_mpl_image_compare(
         filename="AgSbTe2_chempot_heatmap_custom.png",
         style=f"{module_path}/../doped/utils/displacement.mplstyle",
     )
     def test_AgSbTe2_chempot_heatmap_custom(self):
-        plot = self.AgSbTe2_cpa.plot_chempot_heatmap(
+        plot = self.plot_and_test_no_warnings(
+            self.AgSbTe2_cpa,
             dependent_element="Ag",
             xlim=(-0.5, 0.0),
             ylim=(-0.4, 0.0),
@@ -1236,11 +1238,12 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="LiPS4_chempot_heatmap_default.png")
     def test_LiPS4_chempot_heatmap_default(self):
-        return self.LiPS4_cpa.plot_chempot_heatmap()
+        return self.plot_and_test_no_warnings(self.LiPS4_cpa)
 
     @custom_mpl_image_compare(filename="LiPS4_chempot_heatmap_custom.png")
     def test_LiPS4_chempot_heatmap_custom(self):
-        return self.LiPS4_cpa.plot_chempot_heatmap(
+        return self.plot_and_test_no_warnings(
+            self.LiPS4_cpa,
             dependent_element="Li",
             padding=0.1,
             title=False,
@@ -1249,21 +1252,56 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_default.png")
     def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_default(self):
-        return self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(fixed_elements={"Cs": -3.3815})
-
-    @custom_mpl_image_compare(filename="Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_custom.png")
-    def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_custom(self):
-        return self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(
-            fixed_elements={"Cs": -3.4815},  # different
-            xlim=(-0.45, 0),
-            ylim=(-2.35, -0.9),
-            cbar_range=(-0.57, -0.3),
-            label_positions=False,
+        return self.plot_and_test_no_warnings(
+            self.Sn_in_Cs2AgBiBr6_ncl_cpa, fixed_elements={"Cs": -3.3815}
         )
+
+    @custom_mpl_image_compare(
+        filename="Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_custom.png",
+        style=f"{module_path}/../doped/utils/displacement.mplstyle",
+    )
+    def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_custom(self):
+        """
+        Test customising the heatmap for a 4-D system, with custom label
+        positions.
+
+        Same example used in the plotting customisation tutorial.
+        """
+        return self.plot_and_test_no_warnings(
+            self.Sn_in_Cs2AgBiBr6_ncl_cpa,
+            fixed_elements={"Cs": -3.3815},
+            dependent_element="Bi",  # change dependent (colourbar) element
+            xlim=(-0.4, 0.0),
+            ylim=(-0.6, -0.2),
+            cbar_range=(-2, -1),
+            colormap="navia",
+            padding=0.05,
+            title=True,
+            label_positions={
+                "CsAgBr3": (-0.3, 0.025),
+                "AgBr": (-0.16, 0.0),
+                "Cs3Bi2Br9": (-0.1, -0.05),
+            },  # custom label positions
+            style_file=f"{module_path}/../doped/utils/displacement.mplstyle",
+        )
+
+    @custom_mpl_image_compare(
+        filename="Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_auto_centroid.png",
+        style=f"{module_path}/../doped/utils/displacement.mplstyle",
+    )
+    def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_auto_centroid(self):
+        """
+        Test customising the heatmap for a 4-D system, with custom label
+        positions.
+
+        Same example used in the plotting customisation tutorial.
+        """
+        return self.plot_and_test_no_warnings(self.Sn_in_Cs2AgBiBr6_ncl_cpa, dependent_element="Cs")
 
     @custom_mpl_image_compare(filename="Sn_in_Cs2AgBiBr6_std_chempot_heatmap_custom.png")
     def test_Sn_in_Cs2AgBiBr6_std_chempot_heatmap_custom(self):
-        return self.Sn_in_Cs2AgBiBr6_std_cpa.plot_chempot_heatmap(
+        return self.plot_and_test_no_warnings(
+            self.Sn_in_Cs2AgBiBr6_std_cpa,
             fixed_elements={"Cs": -3.3815},
             xlim=(-0.45, 0),
             ylim=(-2.35, -0.9),
@@ -1276,7 +1314,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         na2fepo4f_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "Na2FePO4F", entries=self.na2fepo4f_cp.entries
         )
-        return na2fepo4f_cpa.plot_chempot_heatmap(fixed_elements={"Na": -1.9, "P": -1.3})
+        return self.plot_and_test_no_warnings(na2fepo4f_cpa, fixed_elements={"Na": -1.9, "P": -1.3})
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
     def test_Na2FePO4F_chempot_grid(self):

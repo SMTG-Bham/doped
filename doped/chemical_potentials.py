@@ -3200,21 +3200,27 @@ class CompetingPhasesAnalyzer(MSONable):
                 "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system!"
             )  # TODO: Change to warning and auto switch to line plot?
         if len(cpd.elements) - len(fixed_elements) != 3:  # auto fix to centroid of stability region:
+            info_message = (
+                f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
+                f"potential constraints for >ternary systems; such that the number of elements in the "
+                f"chemical system ({len(cpd.elements)}) minus the number of fixed chemical potentials "
+                f"({len(fixed_elements)}) must be equal to 3."
+            )
+            if len(cpd.elements) - len(fixed_elements) < 3:
+                raise ValueError(info_message)
             centroid = cpg.get_grid(cartesian=True, include_vertices=False).mean(axis=0)
             req_num_constraints = len(cpd.elements) - 3
-            fixed_elements = {
+            additional_fixed_elements = {
                 el.symbol: round(centroid[el.symbol], 4)
                 for i, el in enumerate(input_variable_elements)
                 if i < req_num_constraints
             }
             print(
-                f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
-                f"potential constraints for >ternary systems; such that the number of elements in the "
-                f"chemical system ({len(cpd.elements)}) minus the number of fixed chemical potentials "
-                f"({len(fixed_elements)}) must be equal to 3. The following chemical potentials will be "
-                f"constrained to their mean (centroid) values in the chemical stability region: "
-                f"{fixed_elements}"
+                f"{info_message} The following chemical potentials will additionally be constrained to "
+                f"their mean (centroid) values in the chemical stability region: "
+                f"{additional_fixed_elements}"
             )
+            fixed_elements = {**fixed_elements, **additional_fixed_elements}
 
         independent_elts = [
             el for el in cpd.elements if el.symbol not in fixed_elements and el != dependent_element
