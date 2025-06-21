@@ -9,7 +9,7 @@ import copy
 import itertools
 import os
 import warnings
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
 from pathlib import Path
 from re import sub
@@ -3153,8 +3153,6 @@ class CompetingPhasesAnalyzer(MSONable):
         # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
         #  control; implement this (removes need for np.unique() call)), units = plot y units
-        # TODO: Code in this function (particularly label position handling and intersections) should be
-        #  able to be made more succinct, and also modularise a bit?
         # TODO: Option to show _all_ calculated competing phases? (Not just bordering)
 
         # Note that we could also add option to instead plot competing phases lines coloured,
@@ -3165,7 +3163,8 @@ class CompetingPhasesAnalyzer(MSONable):
         from shakenbreak.plotting import _install_custom_font
 
         _install_custom_font()
-        cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))
+        cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))  # change to
+        # self.entries when extrinsic plotting functionality added
 
         # check dimensionality:
         fixed_elements = fixed_elements or {}
@@ -3197,26 +3196,27 @@ class CompetingPhasesAnalyzer(MSONable):
             if i != dependent_el_idx and el.symbol not in fixed_elements
         ]
 
+        # Generate grid data
         cpg = ChemicalPotentialGrid.from_dataframe(
             pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
-        )
+        )  # change input to self.chempots when extrinsic plotting added
         grid_kwargs: dict[str, Any] = {"n_points": 1000, "cartesian": False}
         grid_kwargs.update(kwargs)
         if fixed_elements:
-            grid = cpg.get_constrained_grid(fixed_elements, **grid_kwargs)
+            grid_data = cpg.get_constrained_grid(fixed_elements, **grid_kwargs)
         else:
-            grid = cpg.get_grid(**grid_kwargs)
-        values_inside = grid[dependent_element.symbol].to_numpy()
-        points_inside = grid.drop(columns=[dependent_element.symbol]).to_numpy()
+            grid_data = cpg.get_grid(**grid_kwargs)
+        values_inside = grid_data[dependent_element.symbol].to_numpy()
+        points_inside = grid_data.drop(columns=[dependent_element.symbol]).to_numpy()
+        tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
 
+        # Create plot
         style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
         plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
         fig, ax = plt.subplots()
-
-        tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
         vmin = cbar_range[0] if cbar_range else None
         vmax = cbar_range[1] if cbar_range else None
-        if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):
+        if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
             vmax = 0
 
         cmap = get_colormap(colormap, default="batlow")
@@ -3229,16 +3229,13 @@ class CompetingPhasesAnalyzer(MSONable):
             vmin=vmin,
             vmax=vmax,
         )
-
         cbar = fig.colorbar(dep_mu)
 
+        # Set plot limits and labels
         x_max, y_max = points_inside.max(axis=0)
         x_min, y_min = points_inside.min(axis=0)
-        x_range = abs(x_max - x_min)
-        y_range = abs(y_max - y_min)
-
-        x_padding = padding or x_range * 0.1
-        y_padding = padding or y_range * 0.1
+        x_padding = padding or abs(x_max - x_min) * 0.1
+        y_padding = padding or abs(y_max - y_min) * 0.1
 
         if xlim is None:
             xlim = (float(x_min - x_padding), float(x_max + x_padding))
@@ -3246,21 +3243,49 @@ class CompetingPhasesAnalyzer(MSONable):
         if ylim is None:
             ylim = (float(y_min - y_padding), float(y_max + y_padding))
 
-        ax.set_xlim(*xlim), ax.set_ylim(*ylim)
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
         cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
         ax.set_xlabel(rf"$\Delta\mu$ ({independent_elts[0].symbol}) (eV)")
         ax.set_ylabel(rf"$\Delta\mu$ ({independent_elts[1].symbol}) (eV)")
         ax.xaxis.set_minor_locator(AutoMinorLocator(2))
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+
+        # Add title
         if title:
             if not isinstance(title, str):
                 title = latexify(f"{self.composition.reduced_formula}")
             ax.set_title(title)
 
-        # plot formation energy lines:
+        # Plot competing phase lines and labels
+        self._plot_competing_phase_lines(
+            ax, cpd, host_domains, fixed_elements, independent_elts, label_positions
+        )
+
+        # Adjust label positions to stay within plot bounds
+        self._adjust_label_positions(ax, padding)
+
+        if filename:
+            fig.savefig(filename, bbox_inches="tight", dpi=600)
+
+        return fig
+
+    def _plot_competing_phase_lines(
+        self,
+        ax: plt.Axes,
+        cpd: ChemicalPotentialDiagram,
+        host_domains: np.ndarray,
+        fixed_elements: dict[str, float],
+        independent_elts: list[Element],
+        label_positions: list[float] | dict[str, float] | bool,
+    ) -> None:
+        """
+        Plot competing phase lines and add labels.
+        """
         lines = {}  # {formula: matplotlib line object}
         labels = {}  # {formula: line function}
         intersections = []
+        x = np.linspace(-50, 50, 1000)
         x_min, x_max = ax.get_xlim()
         y_min, y_max = ax.get_ylim()
 
@@ -3268,9 +3293,7 @@ class CompetingPhasesAnalyzer(MSONable):
             if formula == self.composition.reduced_formula:
                 continue
 
-            intersection = None  # catch cases where lines are not within plot boundaries
-            x = np.linspace(-50, 50, 1000)
-            # get domain points which match those in host_domains:
+            # Get domain points that match host domains
             domain_pts = [
                 chempot_coords
                 for chempot_coords in pts
@@ -3279,153 +3302,201 @@ class CompetingPhasesAnalyzer(MSONable):
             if len(domain_pts) < 2:
                 continue  # not a stable bordering phase
 
-            # if fixed elements, need to get the intersectional line:
             try:
-                for element, value in fixed_elements.items():
-                    domain_pts = _intersect_hull_with_plane(
-                        np.array(domain_pts),
-                        cpd.elements.index(Element(element)),
-                        value,
-                    )
+                domain_pts = self._apply_fixed_element_constraints(
+                    domain_pts, fixed_elements, cpd.elements
+                )  # handle fixed elements by intersecting with planes
             except ValueError:
                 continue  # no intersection with plane, skip to next phase
 
+            # Fit line function
             formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
             formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
-            m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)  # fit line function
+            m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
 
             def f(xx, m=m, b=b):  # line function for the fitted line
                 return m * xx + b
 
-            def inv_f(yy, m=m, b=b):  # inverse of the line function
-                return (yy - b) / m
-
+            # Check for vertical lines
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", "divide by zero")
                 vertical_line = (np.abs(f(x)) == np.inf).any() or (
                     f(x).max() - f(x).min() > 1e5  # basically a vertical line, account for rounding
                 )
 
-            if vertical_line:  # handle any vertical lines
-                x_val = domain_pts[0][cpd.elements.index(independent_elts[0])]
-                line = ax.axvline(
-                    x_val,
-                    label=latexify(formula),
-                    color="k",
-                )
-                y_min, y_max = ax.get_ylim()
-                if x_val < xlim[1] and x_val > xlim[0]:
-                    intersection = ((x_val, y_min), (x_val, y_max))
+            # Plot line and get intersections
+            line, intersection = self._plot_single_phase_line(
+                ax, formula, domain_pts, cpd, independent_elts, vertical_line, f, x
+            )
 
-            else:
-                (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
-
-                # Find intersections with the bounding box:
-                x_intersections = []
-                y_intersections = []
-
-                # Check intersections with vertical bounds (x_min and x_max)
-                y_at_x_min = f(x_min)
-                y_at_x_max = f(x_max)
-                if y_min <= y_at_x_min <= y_max:
-                    x_intersections.append((x_min, float(y_at_x_min)))
-                if y_min <= y_at_x_max <= y_max:
-                    x_intersections.append((x_max, float(y_at_x_max)))
-
-                # Check intersections with horizontal bounds (y_min and y_max)
-                if not np.isclose(
-                    float(y_at_x_min), float(y_at_x_max), atol=1e-4
-                ):  # not a horizontal line
-                    x_at_y_min = inv_f(y_min)
-                    x_at_y_max = inv_f(y_max)
-                    if x_min <= x_at_y_min <= x_max:
-                        y_intersections.append((float(x_at_y_min), y_min))
-                    if x_min <= x_at_y_max <= x_max:
-                        y_intersections.append((float(x_at_y_max), y_max))
-
-                intersection = np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
-                # in case intersects at x/y corner (which would give a duplicate)
-
-            # check if the midpoint of the intersections are within 1e-4 of any edge:
-            if intersection is not None:
+            if intersection is not None and np.size(intersection) >= 4:
                 if np.size(intersection) == 4:
+                    # if 4 intersections, check if the midpoint of intersections is at an edge (skip if so)
                     midpoint = np.mean(intersection, axis=0)
                     if np.any(np.abs(midpoint - np.array([x_min, y_min])) < 1e-4) or np.any(
                         np.abs(midpoint - np.array([x_max, y_max])) < 1e-4
                     ):
                         continue
 
-                if np.size(intersection) >= 4:
-                    intersections.append(intersection)
-                    lines[formula] = line  # lines is dict of formula: matplotlib line object
-                    labels[formula] = f  # labels is dict of formula: line function
+                intersections.append(intersection)
+                lines[formula] = line
+                labels[formula] = f
 
-        # pre-set x_points:
-        if label_positions:
-            if label_positions is True:  # use custom doped algorithm
-                poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
+        if label_positions:  # add labels to lines
+            self._add_line_labels(
+                intersections,
+                label_positions,
+                lines,
+                x_range=abs(x_max - x_min),
+                y_range=abs(y_max - y_min),
+            )
+
+    def _apply_fixed_element_constraints(
+        self, domain_pts: list, fixed_elements: dict[str, float], elements: list[Element]
+    ) -> np.ndarray:
+        """
+        Apply fixed element constraints by intersecting with planes.
+        """
+        domain_pts = np.array(domain_pts)
+        for element, value in fixed_elements.items():
+            domain_pts = _intersect_hull_with_plane(
+                domain_pts,
+                elements.index(Element(element)),
+                value,
+            )
+        return domain_pts
+
+    def _plot_single_phase_line(
+        self,
+        ax: plt.Axes,
+        formula: str,
+        domain_pts: np.ndarray,
+        cpd: ChemicalPotentialDiagram,
+        independent_elts: list[Element],
+        vertical_line: bool,
+        f: Callable,
+        x: np.ndarray,
+    ) -> tuple[plt.Line2D, np.ndarray | None]:
+        """
+        Plot a single competing phase line and return line object and
+        intersections.
+        """
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+
+        if vertical_line:
+            x_val = domain_pts[0][cpd.elements.index(independent_elts[0])]
+            line = ax.axvline(x_val, label=latexify(formula), color="k")
+            if x_val < xlim[1] and x_val > xlim[0]:
+                intersection = ((x_val, ylim[0]), (x_val, ylim[1]))
+            else:
+                intersection = None
+        else:
+            (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
+            intersection = self._get_line_intersections(f, xlim, ylim)
+
+        return line, intersection
+
+    def _get_line_intersections(
+        self, f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
+    ) -> np.ndarray:
+        """
+        Get intersections of a line with the plot bounding box.
+        """
+        x_min, x_max = xlim
+        y_min, y_max = ylim
+        x_intersections = []
+        y_intersections = []
+
+        # Check intersections with vertical bounds (x_min and x_max)
+        y_at_x_min = f(x_min)
+        y_at_x_max = f(x_max)
+        if y_min <= y_at_x_min <= y_max:
+            x_intersections.append((x_min, float(y_at_x_min)))
+        if y_min <= y_at_x_max <= y_max:
+            x_intersections.append((x_max, float(y_at_x_max)))
+
+        # Check intersections with horizontal bounds (y_min and y_max)
+        if not np.isclose(float(y_at_x_min), float(y_at_x_max), atol=1e-4):  # not a horizontal line
+
+            def inv_f(yy):  # inverse of the line function
+                return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else x_min
+
+            x_at_y_min = inv_f(y_min)
+            x_at_y_max = inv_f(y_max)
+            if x_min <= x_at_y_min <= x_max:
+                y_intersections.append((float(x_at_y_min), y_min))
+            if x_min <= x_at_y_max <= x_max:
+                y_intersections.append((float(x_at_y_max), y_max))
+
+        # take unique points in case intersects at x/y corner (which would give a duplicate):
+        return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
+
+    def _add_line_labels(
+        self,
+        intersections: list,
+        label_positions: list[float] | dict[str, float] | bool,
+        lines: dict[str, plt.Line2D],
+        x_range: float,
+        y_range: float,
+    ) -> None:
+        """
+        Add labels to the competing phase lines.
+        """
+        if label_positions is True:  # use custom doped algorithm
+            poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
+            label_positions, best_norm_min_dist = _find_best_label_positions(
+                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+            )
+            if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
+                poss_label_positions = _possible_label_positions_from_bbox_intersections(
+                    intersections, positions_per_line=5
+                )
                 label_positions, best_norm_min_dist = _find_best_label_positions(
                     poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
                 )
-                if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
-                    poss_label_positions = _possible_label_positions_from_bbox_intersections(
-                        intersections, positions_per_line=5
-                    )
-                    label_positions, best_norm_min_dist = _find_best_label_positions(
-                        poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-                    )
 
-            elif isinstance(label_positions, dict):  # match formula (key) to line:
-                lines = {k: lines[k] for k in label_positions if k in lines}
-                label_positions = [label_positions[k] for k in lines]
+        elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
+            lines = {k: lines[k] for k in label_positions if k in lines}
+            label_positions = [label_positions[k] for k in lines]
 
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", "The value at position")
-                labelLines(list(lines.values()), xvals=label_positions, align=False, color="black")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "The value at position")
+            labelLines(list(lines.values()), xvals=label_positions, align=False, color="black")
 
-        # make sure all labels are well enclosed within the plot:
-        latexified_labels = {latexify(k): v for k, v in labels.items()}
-        # Get all the text artists (labels) in the current axes:
-        label_text_artists = [
-            artist
-            for artist in ax.get_children()
-            if isinstance(artist, plt.Text) and artist.get_text() in latexified_labels
-        ]
-        for text in label_text_artists:
-            bbox = text.get_window_extent().transformed(plt.gca().transData.inverted())
-            # if bbox bounds outside of plot, move text to inside plot:
+    def _adjust_label_positions(self, ax: plt.Axes, padding: float | None) -> None:
+        """
+        Adjust label positions to ensure they stay within plot bounds.
+        """
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        x_padding = padding or (xlim[1] - xlim[0]) * 0.1
+        y_padding = padding or (ylim[1] - ylim[0]) * 0.1
+
+        latexified_labels = {
+            artist.get_text(): artist for artist in ax.get_children() if isinstance(artist, plt.Text)
+        }
+        for text in latexified_labels.values():
+            bbox = text.get_window_extent().transformed(ax.transData.inverted())
             new_position = text.get_position()
             delta_x = delta_y = 0
-            f = latexified_labels[text.get_text()]
 
             if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
-                if bbox.xmin < xlim[0]:
+                if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
                     delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
-                elif bbox.xmax > xlim[1]:
+                elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
                     delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
-                if delta_x != 0:
-                    delta_y_from_x = f(delta_x) - f(0)
-                    if new_position[1] + delta_y_from_x < ylim[1]:  # only move if not outside of ylim
-                        new_position = (new_position[0] + delta_x, new_position[1] + delta_y_from_x)
 
-                if bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
-                    x = np.linspace(-50, 50, 1000)
-
-                if bbox.ymin < ylim[0]:
+                if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
                     delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
-                if bbox.ymax > ylim[1]:
+                if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
                     delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
-                if delta_y != 0:
-                    delta_x_from_y = inv_f(delta_y) - inv_f(0)
-                    if new_position[0] + delta_x_from_y < xlim[1]:  # only move if not outside of xlim
-                        new_position = (new_position[0] + delta_x_from_y, new_position[1] + delta_y)
+
+                # Apply adjustments while keeping within bounds
+                if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
+                    new_position = (new_position[0] + delta_x, new_position[1])
+                if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
+                    new_position = (new_position[0], new_position[1] + delta_y)
 
             text.set_position(new_position)
-
-        if filename:
-            fig.savefig(filename, bbox_inches="tight", dpi=600)
-
-        return fig
 
     def __repr__(self):
         """
