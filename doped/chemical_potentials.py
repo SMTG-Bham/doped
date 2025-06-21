@@ -3049,7 +3049,7 @@ class CompetingPhasesAnalyzer(MSONable):
         colormap: str | colors.Colormap | None = None,
         padding: float | None = None,
         title: str | bool = False,
-        label_positions: list[float] | dict[str, float] | bool = True,
+        label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
         filename: PathLike | None = None,
         style_file: PathLike | None = None,
         **kwargs,
@@ -3125,15 +3125,17 @@ class CompetingPhasesAnalyzer(MSONable):
                 added. If ``True``, the title is set to the bulk composition
                 formula, or if ``str``, the title is set to the provided
                 string.
-            label_positions (list, dict or bool):
+            label_positions (bool, dict or list):
                 The positions for the chemical formula line labels. If ``True``
                 (default), the labels are placed using a custom ``doped``
                 algorithm which attempts to find the best possible positions
                 (minimising overlap). If ``False``, no labels are added.
                 Alternatively a dictionary can be provided, where the keys are
-                the chemical formulae and the values are the x positions at
-                which to place the line labels. If a list of floats, the labels
-                are placed at the provided x positions.
+                the chemical formulae and the values are tuples of
+                ``(x_coord, y-offset)`` at which to place the line labels
+                (where y-offset is the offset from the line at ``x=x_coord``).
+                A list of tuples can also be provided, where the order is
+                assumed to match the competing phase lines.
             filename (PathLike):
                 The filename to save the plot to. If ``None`` (default), the
                 plot is not saved.
@@ -3151,8 +3153,6 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         # TODO: Add example in _tutorial_, and link
         # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
-        # TODO: Can use `yoffsets` parameter to shift the labels for vertical lines, to allow more
-        #  control; implement this (removes need for np.unique() call)), units = plot y units
         # TODO: Option to show _all_ calculated competing phases? (Not just bordering)
 
         # Note that we could also add option to instead plot competing phases lines coloured,
@@ -3251,19 +3251,16 @@ class CompetingPhasesAnalyzer(MSONable):
         ax.xaxis.set_minor_locator(AutoMinorLocator(2))
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
 
-        # Add title
-        if title:
+        if title:  # add title
             if not isinstance(title, str):
                 title = latexify(f"{self.composition.reduced_formula}")
             ax.set_title(title)
 
-        # Plot competing phase lines and labels
-        self._plot_competing_phase_lines(
+        self._plot_competing_phase_lines(  # plot competing phase lines and labels
             ax, cpd, host_domains, fixed_elements, independent_elts, label_positions
         )
 
-        # Adjust label positions to stay within plot bounds
-        self._adjust_label_positions(ax, padding)
+        self._adjust_label_positions(ax, padding)  # adjust label positions to stay within plot bounds
 
         if filename:
             fig.savefig(filename, bbox_inches="tight", dpi=600)
@@ -3277,7 +3274,7 @@ class CompetingPhasesAnalyzer(MSONable):
         host_domains: np.ndarray,
         fixed_elements: dict[str, float],
         independent_elts: list[Element],
-        label_positions: list[float] | dict[str, float] | bool,
+        label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
     ) -> None:
         """
         Plot competing phase lines and add labels.
@@ -3312,7 +3309,9 @@ class CompetingPhasesAnalyzer(MSONable):
             # Fit line function
             formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
             formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
-            m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
+            with warnings.catch_warnings():  # ignore np polyfit rank warning (with vertical lines)
+                warnings.filterwarnings("ignore", "Polyfit may be poorly conditioned")
+                m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
 
             def f(xx, m=m, b=b):  # line function for the fitted line
                 return m * xx + b
@@ -3344,11 +3343,11 @@ class CompetingPhasesAnalyzer(MSONable):
 
         if label_positions:  # add labels to lines
             self._add_line_labels(
-                intersections,
-                label_positions,
-                lines,
+                intersections=intersections,
+                lines=lines,
                 x_range=abs(x_max - x_min),
                 y_range=abs(y_max - y_min),
+                label_positions=label_positions,
             )
 
     def _apply_fixed_element_constraints(
@@ -3434,10 +3433,10 @@ class CompetingPhasesAnalyzer(MSONable):
     def _add_line_labels(
         self,
         intersections: list,
-        label_positions: list[float] | dict[str, float] | bool,
         lines: dict[str, plt.Line2D],
         x_range: float,
         y_range: float,
+        label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
     ) -> None:
         """
         Add labels to the competing phase lines.
@@ -3459,9 +3458,19 @@ class CompetingPhasesAnalyzer(MSONable):
             lines = {k: lines[k] for k in label_positions if k in lines}
             label_positions = [label_positions[k] for k in lines]
 
+        if isinstance(label_positions, list):
+            label_positions = np.array(label_positions, dtype=float)
+
+        assert isinstance(label_positions, np.ndarray)  # typing; converted to array now
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "The value at position")
-            labelLines(list(lines.values()), xvals=label_positions, align=False, color="black")
+            labelLines(
+                list(lines.values()),
+                xvals=label_positions[:, 0],
+                yoffsets=label_positions[:, 1],
+                align=False,
+                color="black",
+            )
 
     def _adjust_label_positions(self, ax: plt.Axes, padding: float | None) -> None:
         """
@@ -3583,16 +3592,6 @@ def _possible_label_positions_from_bbox_intersections(
     poss_label_positions = np.zeros((len(intersections), positions_per_line, 2))
     for label_idx, points in enumerate(intersections):  # get possible label positions
         for line_pos_idx in range(positions_per_line):
-            if (
-                points[1][0] == points[0][0]
-            ):  # vertical line, will only allow midpoint with current labellines
-                # see https://github.com/cphyc/matplotlib-label-lines/pull/136
-                poss_label_positions[label_idx, line_pos_idx, :] = (
-                    points[0][0],
-                    np.array(points)[:, 1].mean(),
-                )
-                continue
-
             first_pt_factor = ((positions_per_line + 1) - (line_pos_idx + 1)) / (positions_per_line + 1)
             second_pt_factor = 1 - first_pt_factor
             poss_label_positions[label_idx, line_pos_idx, 0] = (points[0][0] * first_pt_factor) + (
@@ -3627,7 +3626,8 @@ def _find_best_label_positions(
 
     Returns:
         np.ndarray:
-            The best possible label positions, with shape ``(N_lines, 2)``.
+            The best possible label positions, with shape ``(N_lines, 2)``,
+            where the second dimension is (x,y-offset) coordinates.
         float:
             The best normalised minimum distance between labels,
             if ``return_best_norm_dist`` is True.
@@ -3638,15 +3638,13 @@ def _find_best_label_positions(
     combinations = list(itertools.product(range(N_possibilities_per_label), repeat=N_labels))
 
     # Prepare an empty array to store the results
-    result = np.zeros((len(combinations), N_labels, N_xy))  # N_xy should be 2
+    all_combos = np.zeros((len(combinations), N_labels, N_xy))  # N_xy should be 2
 
     # Fill the result array with the corresponding coordinates
     for i, combo in enumerate(combinations):
-        result[i] = poss_label_positions[np.arange(N_labels), combo]
+        all_combos[i] = poss_label_positions[np.arange(N_labels), combo]
 
-    #  result.shape should be (N_possibilities_per_label**N_labels, N_labels, N_xy = 2)
-    all_combos = np.unique(result, axis=0)  # get unique combos (accounts for vertical lines which
-    # currently only allow midpoint to be used)
+    #  all_combos.shape should be (N_possibilities_per_label**N_labels, N_labels, N_xy = 2)
     all_combos[:, :, 0] /= x_range
     all_combos[:, :, 1] /= y_range
     dists = np.linalg.norm(all_combos[:, :, np.newaxis] - all_combos[:, np.newaxis, :], axis=-1)
@@ -3656,12 +3654,22 @@ def _find_best_label_positions(
     dists_list = [sorted(sublist) for sublist in unique_dists.tolist()]
     max_idx = dists_list.index(sorted(dists_list, reverse=True)[0])
     best_combo = all_combos[max_idx]
-    best_combo[:, 0] *= x_range  # reverse normalisation
+    best_combo[:, 0] *= x_range
+    best_combo[:, 1] *= y_range  # reverse normalisation
+
+    # set y-offset to 0 except for vertical lines:
+    for i in range(N_labels):
+        if poss_label_positions[i, 0, 0] == poss_label_positions[i, -1, 0]:  # vertical line
+            best_combo[i, 1] -= np.mean(
+                poss_label_positions[i, :, 1]
+            )  # y_offset relative to midpoint (default for vertical lines)
+        else:
+            best_combo[i, 1] = 0  # zero y-offset
 
     if return_best_norm_dist:
-        return best_combo[:, 0], dists_list[max_idx][0]
+        return best_combo, dists_list[max_idx][0]
 
-    return best_combo[:, 0]
+    return best_combo
 
 
 def get_X_rich_limit(X: str, chempots: dict):
