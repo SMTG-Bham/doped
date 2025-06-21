@@ -1696,6 +1696,7 @@ class ChemicalPotentialGrid:
         cartesian: bool = False,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
+        include_vertices: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -1716,11 +1717,12 @@ class ChemicalPotentialGrid:
                 `Minimum` number of grid points to generate. The output grid
                 will contain at least this many points (regularly spaced in
                 barycentric or Cartesian space depending ``cartesian``), in
-                addition to the vertices themselves, then with any duplicate /
-                overlapping points dropped. The default is 1000 when
-                barycentric coordinates are used (``cartesian=False``), and 100
-                otherwise (as Cartesian grid generation and sub-selection to
-                the stable polytope is much slower).
+                addition to the vertices themselves (if ``include_vertices`` is
+                ``True``; default), then with any duplicate / overlapping
+                points dropped. The default is 1000 when barycentric
+                coordinates are used (``cartesian=False``), and 100 otherwise
+                (as Cartesian grid generation and sub-selection to the stable
+                polytope is much slower).
                 Note that large values (>= 1e5) with multinary systems can
                 explode, crashing system memory.
             cartesian (bool):
@@ -1739,6 +1741,9 @@ class ChemicalPotentialGrid:
                 duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
                 speed up runtime.
+            include_vertices (bool):
+                Whether to include the vertices themselves in the generated
+                grid. Default is ``True``.
 
         Returns:
             pd.DataFrame:
@@ -1793,8 +1798,8 @@ class ChemicalPotentialGrid:
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
             grid_with_values = _lattice_in_hull(delaunay_tri, values_hull, n_points=n_points)
 
-        # Ensure vertices are in the grid
-        grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
+        if include_vertices:  # Ensure vertices are in the grid
+            grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
 
         grid_df = pd.DataFrame(
             grid_with_values,
@@ -1809,6 +1814,7 @@ class ChemicalPotentialGrid:
         n_points: int | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
+        include_vertices: bool = True,
     ) -> pd.DataFrame:
         r"""
         Generates a grid of points that spans the chemical potential space
@@ -1832,12 +1838,13 @@ class ChemicalPotentialGrid:
                 constrained subspace. The output grid will contain at least
                 this many points (regularly spaced in barycentric or Cartesian
                 space depending ``cartesian``), in addition to the vertices of
-                the constrained subspace, then with any duplicate / overlapping
-                points dropped. The default is 1000 when barycentric
-                coordinates are used (``cartesian=False``), and 100 otherwise
-                (as Cartesian grid generation and sub-selection to the stable
-                polytope is much slower). Note that large values (>= 1e5) with
-                multinary systems can explode, crashing system memory.
+                the constrained subspace (if ``include_vertices`` is ``True``;
+                default), then with any duplicate / overlapping points dropped.
+                The default is 1000 when barycentric coordinates are used
+                (``cartesian=False``), and 100 otherwise (as Cartesian grid
+                generation and sub-selection to the stable polytope is much
+                slower). Note that large values (>= 1e5) with multinary systems
+                can explode, crashing system memory.
             cartesian (bool):
                 Whether to generate the grid in Cartesian coordinates. If
                 ``False`` (default), the grid is generated in barycentric
@@ -1847,6 +1854,9 @@ class ChemicalPotentialGrid:
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Default is 4.
+            include_vertices (bool):
+                Whether to include the vertices themselves in the generated
+                grid. Default is ``True``.
 
         Returns:
             pd.DataFrame:
@@ -1897,7 +1907,10 @@ class ChemicalPotentialGrid:
         input_constrained_vertices = constrained_vertices.drop(columns=list(fixed_elements.keys()))
         constrained_grid = ChemicalPotentialGrid.from_dataframe(input_constrained_vertices)
         return constrained_grid.get_grid(
-            n_points=n_points, cartesian=cartesian, decimal_places=decimal_places
+            n_points=n_points,
+            cartesian=cartesian,
+            decimal_places=decimal_places,
+            include_vertices=include_vertices,
         ).dropna()
 
 
@@ -3065,10 +3078,9 @@ class CompetingPhasesAnalyzer(MSONable):
         3-D data is required to plot a 2-D heatmap, and so this function can be
         applied as-is for ternary systems, but for higher-dimensional systems
         a set of chemical potential constraints must be provided (as
-        ``fixed_elements``) to project the chemical stability region to 3-D.
-        # TODO: Add example and link here
-        # TODO: Show example getting the centroid of the stability region, and
-        # fixing chempots to that?
+        ``fixed_elements``) to project the chemical stability region to 3-D;
+        see the competing phases tutorial:
+        https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
@@ -3091,11 +3103,14 @@ class CompetingPhasesAnalyzer(MSONable):
                 electronegative element present).
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
-                ``{element: value}``; e.g. ``{"Li": -2}``). This is required
-                for multinary systems, where N-3 fixed chemical potentials
-                should be specified (where N is the number of elements in the
-                chemical system). If ``None`` (default), chemical potentials
-                are not fixed.
+                ``{element: value}``; e.g. ``{"Li": -2}``) if the chemical
+                system is >3-D. Constraining chemical potentials is required for
+                multinary systems, in order to reduce the dimensionality to 3-D
+                for plotting a 2-D heatmap. For a system with N elements, N-3
+                fixed chemical potentials should be specified. If ``None``
+                (default), the chemical potentials of the first N-3 elements in
+                the bulk composition are fixed to their mean values in the
+                stability region (i.e. the centroid of the stability region).
             xlim (tuple):
                 The x-axis limits for the plot. If None (default), the limits
                 are set to the minimum and maximum values of the x-axis data,
@@ -3151,10 +3166,8 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
-        # TODO: Add example in _tutorial_, and link
-        # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # TODO: Option to show _all_ calculated competing phases? (Not just bordering)
-
+        # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # Note that we could also add option to instead plot competing phases lines coloured,
         # with a legend added giving the composition of each competing phase line (as in the SI of
         # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
@@ -3166,40 +3179,48 @@ class CompetingPhasesAnalyzer(MSONable):
         cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))  # change to
         # self.entries when extrinsic plotting functionality added
 
-        # check dimensionality:
+        host_domains = cpd.domains[self.composition.reduced_formula]
+        cpg = ChemicalPotentialGrid.from_dataframe(
+            pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
+        )
         fixed_elements = fixed_elements or {}
+        input_variable_elements = [
+            el for el in self.composition.elements if el.symbol not in fixed_elements
+        ]
+        if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
+            dependent_element = input_variable_elements[-1]
+        elif isinstance(dependent_element, str):
+            dependent_element = Element(dependent_element)
+        assert isinstance(dependent_element, Element)  # typing
+        input_variable_elements.remove(dependent_element)
+
+        # check dimensionality:
         if len(cpd.elements) == 2:  # switch to line plot
             raise ValueError(
                 "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system!"
             )  # TODO: Change to warning and auto switch to line plot?
-        if len(cpd.elements) - len(fixed_elements) != 3:
-            raise ValueError(
+        if len(cpd.elements) - len(fixed_elements) != 3:  # auto fix to centroid of stability region:
+            centroid = cpg.get_grid(cartesian=True, include_vertices=False).mean(axis=0)
+            req_num_constraints = len(cpd.elements) - 3
+            fixed_elements = {
+                el.symbol: round(centroid[el.symbol], 4)
+                for i, el in enumerate(input_variable_elements)
+                if i < req_num_constraints
+            }
+            print(
                 f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
                 f"potential constraints for >ternary systems; such that the number of elements in the "
                 f"chemical system ({len(cpd.elements)}) minus the number of fixed chemical potentials "
-                f"({len(fixed_elements)}) must be equal to 3."
+                f"({len(fixed_elements)}) must be equal to 3. The following chemical potentials will be "
+                f"constrained to their mean (centroid) values in the chemical stability region: "
+                f"{fixed_elements}"
             )
 
-        host_domains = cpd.domains[self.composition.reduced_formula]
-        variables = [el for el in self.composition.elements if el.symbol not in fixed_elements]
-
-        if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
-            dependent_element = variables[-1]
-        elif isinstance(dependent_element, str):
-            dependent_element = Element(dependent_element)
-        assert isinstance(dependent_element, Element)  # typing
-
-        dependent_el_idx = cpd.elements.index(dependent_element)
         independent_elts = [
-            el
-            for i, el in enumerate(cpd.elements)
-            if i != dependent_el_idx and el.symbol not in fixed_elements
+            el for el in cpd.elements if el.symbol not in fixed_elements and el != dependent_element
         ]
 
         # Generate grid data
-        cpg = ChemicalPotentialGrid.from_dataframe(
-            pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
-        )  # change input to self.chempots when extrinsic plotting added
         grid_kwargs: dict[str, Any] = {"n_points": 1000, "cartesian": False}
         grid_kwargs.update(kwargs)
         if fixed_elements:
@@ -3260,7 +3281,7 @@ class CompetingPhasesAnalyzer(MSONable):
             ax, cpd, host_domains, fixed_elements, independent_elts, label_positions
         )
 
-        self._adjust_label_positions(ax, padding)  # adjust label positions to stay within plot bounds
+        self._nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
 
         if filename:
             fig.savefig(filename, bbox_inches="tight", dpi=600)
@@ -3309,8 +3330,10 @@ class CompetingPhasesAnalyzer(MSONable):
             # Fit line function
             formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
             formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
-            with warnings.catch_warnings():  # ignore np polyfit rank warning (with vertical lines)
-                warnings.filterwarnings("ignore", "Polyfit may be poorly conditioned")
+            if min(formula_x_vals) == max(formula_x_vals):  # vertical line
+                m = np.inf
+                b = formula_x_vals[0]
+            else:
                 m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
 
             def f(xx, m=m, b=b):  # line function for the fitted line
@@ -3455,8 +3478,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 )
 
         elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
-            lines = {k: lines[k] for k in label_positions if k in lines}
-            label_positions = [label_positions[k] for k in lines]
+            lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
+            label_positions = [label_positions[k] for k in lines]  # reorder to match lines
 
         if isinstance(label_positions, list):
             label_positions = np.array(label_positions, dtype=float)
@@ -3465,14 +3488,14 @@ class CompetingPhasesAnalyzer(MSONable):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "The value at position")
             labelLines(
-                list(lines.values()),
+                list(lines.values()),  # must be in same order as plotting order...
                 xvals=label_positions[:, 0],
                 yoffsets=label_positions[:, 1],
                 align=False,
                 color="black",
             )
 
-    def _adjust_label_positions(self, ax: plt.Axes, padding: float | None) -> None:
+    def _nudge_labels_inside_axes(self, ax: plt.Axes, padding: float | None) -> None:
         """
         Adjust label positions to ensure they stay within plot bounds.
         """
