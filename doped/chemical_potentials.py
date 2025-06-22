@@ -3336,7 +3336,7 @@ class CompetingPhasesAnalyzer(MSONable):
             # Fit line function
             formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
             formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
-            if min(formula_x_vals) == max(formula_x_vals):  # vertical line
+            if np.isclose(min(formula_x_vals), max(formula_x_vals), atol=5e-5):  # vertical line
                 m = np.inf
                 b = formula_x_vals[0]
             else:
