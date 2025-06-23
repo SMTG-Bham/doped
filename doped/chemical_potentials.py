@@ -3197,8 +3197,10 @@ class CompetingPhasesAnalyzer(MSONable):
         # check dimensionality:
         if len(cpd.elements) == 2:  # switch to line plot
             raise ValueError(
-                "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system!"
-            )  # TODO: Change to warning and auto switch to line plot?
+                "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
+                "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
+                "line plot of the chemical potentials as shown in the doped competing phases tutorial."
+            )
         if len(cpd.elements) - len(fixed_elements) != 3:  # auto fix to centroid of stability region:
             info_message = (
                 f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "

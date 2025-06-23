@@ -1192,8 +1192,11 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     def test_chempot_heatmap_2D_error(self):
         with pytest.raises(ValueError) as exc:  # this will likely change with updated code
             self.zro2_cpa.plot_chempot_heatmap()
-        assert "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system!" in str(
-            exc.value
+        assert (
+            "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
+            "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
+            "line plot of the chemical potentials as shown in the doped competing phases tutorial."
+            in str(exc.value)
         )
 
     def test_chempot_heatmap_4D_w_fixed_elements_outside_range(self):
