@@ -147,8 +147,8 @@ class DefectEntry(thermo.DefectEntry):
 
     # doped attributes:
     name: str = ""
-    calculation_metadata: dict = field(default_factory=dict)
-    degeneracy_factors: dict = field(default_factory=dict)
+    calculation_metadata: dict[str, Any] = field(default_factory=dict)
+    degeneracy_factors: dict[str, float] = field(default_factory=dict)
     conventional_structure: Structure | None = None
     conv_cell_frac_coords: np.ndarray | None = None
     equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
