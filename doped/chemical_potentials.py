@@ -3056,6 +3056,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self,
         dependent_element: str | Element | None = None,
         fixed_elements: dict[str, float] | None = None,
+        bordering_phases: bool = True,
         xlim: tuple[float, float] | None = None,
         ylim: tuple[float, float] | None = None,
         cbar_range: tuple[float, float] | None = None,
@@ -3111,6 +3112,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 (default), the chemical potentials of the first N-3 elements in
                 the bulk composition are fixed to their mean values in the
                 stability region (i.e. the centroid of the stability region).
+            bordering_phases (bool):
+                Whether to plot the competing/secondary phases which border the
+                host composition in the chemical potential diagram.
+                Default is ``True``.
             xlim (tuple):
                 The x-axis limits for the plot. If None (default), the limits
                 are set to the minimum and maximum values of the x-axis data,
@@ -3166,7 +3171,6 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
-        # TODO: Option to show _all_ calculated competing phases? (Not just bordering)
         # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # Note that we could also add option to instead plot competing phases lines coloured,
         # with a legend added giving the composition of each competing phase line (as in the SI of
@@ -3285,11 +3289,13 @@ class CompetingPhasesAnalyzer(MSONable):
                 title = latexify(f"{self.composition.reduced_formula}")
             ax.set_title(title)
 
-        self._plot_competing_phase_lines(  # plot competing phase lines and labels
-            ax, cpd, host_domains, fixed_elements, independent_elts, label_positions
-        )
-
-        self._nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
+        if bordering_phases:
+            self._plot_competing_phase_lines(  # plot competing phase lines and labels
+                ax, cpd, host_domains, fixed_elements, independent_elts, label_positions
+            )
+            self._nudge_labels_inside_axes(
+                ax, padding
+            )  # adjust label positions to stay within plot bounds
 
         if filename:
             fig.savefig(filename, bbox_inches="tight", dpi=600)

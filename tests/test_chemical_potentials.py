@@ -1319,6 +1319,15 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         )
         return self.plot_and_test_no_warnings(na2fepo4f_cpa, fixed_elements={"Na": -1.9, "P": -1.3})
 
+    @custom_mpl_image_compare(filename="Na2FePO4F_chempot_heatmap_no_bordering.png")
+    def test_no_bordering_heatmap(self):
+        na2fepo4f_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "Na2FePO4F", entries=self.na2fepo4f_cp.entries
+        )
+        return self.plot_and_test_no_warnings(
+            na2fepo4f_cpa, fixed_elements={"Na": -1.9, "P": -1.3}, bordering_phases=False
+        )
+
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
     def test_Na2FePO4F_chempot_grid(self):
         """
