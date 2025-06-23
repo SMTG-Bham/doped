@@ -1313,94 +1313,8 @@ class DefectsParser:
         )
         self.defect_dict = sort_defect_entries(self.defect_dict)  # type: ignore
 
-        FNV_correction_errors = []
-        eFNV_correction_errors = []
-        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_dos_check=True)
-        for name, defect_entry in self.defect_dict.items():
-            # first check if it's a stable defect:
-            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
-
-            if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
-                defect_entry.is_shallow  # as this would require two ``DefectThermodynamics`` inits...
-                and fermi_stability_window
-                < kwargs.get(
-                    "shallow_charge_stability_tolerance",
-                    min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
-                )
-            ):
-                continue  # no charge correction warnings for unstable charge states
-
-            if (
-                defect_entry.corrections_metadata.get("freysoldt_charge_correction_error", 0)
-                > error_tolerance
-            ):
-                FNV_correction_errors.append(
-                    (name, defect_entry.corrections_metadata["freysoldt_charge_correction_error"])
-                )
-            if (
-                defect_entry.corrections_metadata.get("kumagai_charge_correction_error", 0)
-                > error_tolerance
-            ):
-                eFNV_correction_errors.append(
-                    (name, defect_entry.corrections_metadata["kumagai_charge_correction_error"])
-                )
-
-        def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
-            long_name = "Freysoldt" if type == "FNV" else "Kumagai"
-            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
-                error_tol_string = f"{error_tolerance:.3f}"
-                correction_errors_string = "\n".join(
-                    f"{name}: {error:.3f} eV" for name, error in correction_errors
-                )
-            else:  # else give in scientific notation:
-                error_tol_string = f"{error_tolerance:.2e}"
-                correction_errors_string = "\n".join(
-                    f"{name}: {error:.2e} eV" for name, error in correction_errors
-                )
-
-            warnings.warn(
-                f"Estimated error in the {long_name} ({type}) charge correction for certain "
-                f"defects is greater than the `error_tolerance` (= {error_tol_string} eV):"
-                f"\n{correction_errors_string}\n"
-                f"You may want to check the accuracy of the corrections by plotting the site "
-                f"potential differences (using `defect_entry.get_{long_name.lower()}_correction()`"
-                f" with `plot=True`). Large errors are often due to unstable or shallow defect "
-                f"charge states (which can't be accurately modelled with the supercell "
-                f"approach). If these errors are not acceptable, you may need to use a larger "
-                f"supercell for more accurate energies."
-            )
-
-        if FNV_correction_errors:
-            _call_multiple_corrections_tolerance_warning(FNV_correction_errors, type="FNV")
-        if eFNV_correction_errors:
-            _call_multiple_corrections_tolerance_warning(eFNV_correction_errors, type="eFNV")
-
-        # check if same type of charge correction was used in each case or not:
-        if (
-            len(
-                {
-                    k
-                    for defect_entry in self.defect_dict.values()
-                    for k in defect_entry.corrections
-                    if k.endswith("_charge_correction")
-                }
-            )
-            > 1
-        ):
-            warnings.warn(
-                "Beware: The Freysoldt (FNV) charge correction scheme has been used for some defects, "
-                "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
-                "this should be fine, and the results should be the same regardless (assuming a "
-                "relatively well-converged supercell size), while for _anisotropic_ materials this could "
-                "lead to some quantitative inaccuracies. You can use the "
-                "`DefectThermodynamics.get_formation_energies()` method to print out the calculated "
-                "charge corrections for all defects, and/or visualise the charge corrections using "
-                "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
-                "check."
-            )  # either way have the error analysis for the charge corrections so in theory should be grand
-        # note that we also check if multiple charge corrections have been applied to the same defect
-        # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
-
+        # handle (and warn) any charge correction errors or calculation parameter mismatches:
+        self._handle_charge_correction_errors(self.error_tolerance, **kwargs)
         _warn_calculation_mismatches(self.defect_dict)  # warn any mismatching defect/bulk calc parameters
 
         if self.json_filename is not False:  # save to json unless json_filename is False:
@@ -1411,82 +1325,6 @@ class DefectsParser:
                 self.json_filename = f"{formula}_defect_dict.json.gz"
 
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
-
-    def _parse_parsing_warnings(self, warnings_string: str, defect_folder: str, defect_path: str) -> str:
-        if warnings_string:
-            split_warnings = warnings_string.split("\n\n")
-            if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
-                location = f" at {defect_path}" if defect_path != "N/A" else ""  # let's ride the vibration
-                return (  # either only warnings (no exceptions), or warning(s) + exception
-                    f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
-                )
-            return warnings_string  # only exception, return as is
-
-        return ""
-
-    def _get_defect_folder(self, entry):
-        return (
-            entry.calculation_metadata["defect_path"]
-            .replace("/.", "")
-            .split("/")[-1 if self.subfolder == "." else -2]
-        )
-
-    def _update_pbar_and_return_warnings_from_parsing(
-        self,
-        defect_entry: DefectEntry,
-        warnings_string: str = "",
-        defect_folder: str = "",
-        pbar: tqdm = None,
-    ):
-        if pbar:
-            pbar.update()
-
-        defect_path = "N/A"
-        if defect_entry is not None:
-            defect_folder = self._get_defect_folder(defect_entry)
-            defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
-            if pbar:
-                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-
-        if warnings_string:
-            return self._parse_parsing_warnings(warnings_string, defect_folder, defect_path)
-
-        return warnings_string  # failed parsing warning if defect_entry is None
-
-    def _parse_defect_and_handle_warnings(self, defect_folder: str) -> tuple:
-        """
-        Process defect and catch warnings along the way, so we can print which
-        warnings came from which defect together at the end, in a summarised
-        output.
-
-        Args:
-            defect_folder (str): The defect folder to parse.
-
-        Returns:
-            tuple: (parsed_defect_entry, warnings_string, defect_folder)
-        """
-        with warnings.catch_warnings(record=True) as captured_warnings:
-            parsed_defect_entry = self._parse_single_defect(defect_folder)
-
-        ignore_messages = [
-            "Estimated error",
-            "There are mismatching",
-            "The KPOINTS",
-            "The POTCAR",
-        ]  # collectively warned later
-
-        def _check_ignored_message_in_warning(warning_message):
-            if hasattr(warning_message, "args"):
-                return any(warning_message.args[0].startswith(i) for i in ignore_messages)
-            return any(warning_message.startswith(i) for i in ignore_messages)
-
-        warnings_string = "\n\n".join(
-            str(warning.message)
-            for warning in captured_warnings
-            if not _check_ignored_message_in_warning(warning.message)
-        )
-
-        return parsed_defect_entry, warnings_string, defect_folder
 
     def _parse_single_defect(self, defect_folder):
         try:
@@ -1534,6 +1372,187 @@ class DefectsParser:
             return None
 
         return dp.defect_entry
+
+    def _parse_defect_and_handle_warnings(self, defect_folder: str) -> tuple:
+        """
+        Process defect and catch warnings along the way, so we can print which
+        warnings came from which defect together at the end, in a summarised
+        output.
+
+        Args:
+            defect_folder (str): The defect folder to parse.
+
+        Returns:
+            tuple: (parsed_defect_entry, warnings_string, defect_folder)
+        """
+        with warnings.catch_warnings(record=True) as captured_warnings:
+            parsed_defect_entry = self._parse_single_defect(defect_folder)
+
+        ignore_messages = [
+            "Estimated error",
+            "There are mismatching",
+            "The KPOINTS",
+            "The POTCAR",
+        ]  # collectively warned later
+
+        def _check_ignored_message_in_warning(warning_message):
+            if hasattr(warning_message, "args"):
+                return any(warning_message.args[0].startswith(i) for i in ignore_messages)
+            return any(warning_message.startswith(i) for i in ignore_messages)
+
+        warnings_string = "\n\n".join(
+            str(warning.message)
+            for warning in captured_warnings
+            if not _check_ignored_message_in_warning(warning.message)
+        )
+
+        return parsed_defect_entry, warnings_string, defect_folder
+
+    def _update_pbar_and_return_warnings_from_parsing(
+        self,
+        defect_entry: DefectEntry,
+        warnings_string: str = "",
+        defect_folder: str = "",
+        pbar: tqdm = None,
+    ):
+        if pbar:
+            pbar.update()
+
+        defect_path = "N/A"
+        if defect_entry is not None:
+            defect_folder = self._get_defect_folder(defect_entry)
+            defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
+            if pbar:
+                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+
+        if warnings_string:
+            return self._parse_parsing_warnings(warnings_string, defect_folder, defect_path)
+
+        return warnings_string  # failed parsing warning if defect_entry is None
+
+    def _parse_parsing_warnings(self, warnings_string: str, defect_folder: str, defect_path: str) -> str:
+        if warnings_string:
+            split_warnings = warnings_string.split("\n\n")
+            if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
+                location = f" at {defect_path}" if defect_path != "N/A" else ""  # let's ride the vibration
+                return (  # either only warnings (no exceptions), or warning(s) + exception
+                    f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
+                )
+            return warnings_string  # only exception, return as is
+
+        return ""
+
+    def _get_defect_folder(self, entry):
+        return (
+            entry.calculation_metadata["defect_path"]
+            .replace("/.", "")
+            .split("/")[-1 if self.subfolder == "." else -2]
+        )
+
+    def _handle_charge_correction_errors(self, error_tolerance: float, **kwargs) -> None:
+        """
+        Check for charge correction errors and warn if they exceed the error
+        tolerance.
+
+        Args:
+            error_tolerance (float):
+                The error tolerance threshold for charge corrections (in eV),
+                used to decide whether to trigger a warning.
+            **kwargs:
+                Additional keyword arguments, such as
+                ``shallow_charge_stability_tolerance``.
+        """
+        FNV_correction_errors: list[tuple[str, float]] = []
+        eFNV_correction_errors: list[tuple[str, float]] = []
+        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_dos_check=True)
+
+        for name, defect_entry in self.defect_dict.items():
+            # first check if it's a stable defect:
+            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+
+            if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
+                defect_entry.is_shallow  # as this would require two ``DefectThermodynamics`` inits...
+                and fermi_stability_window
+                < kwargs.get(
+                    "shallow_charge_stability_tolerance",
+                    min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+                )
+            ):
+                continue  # no charge correction warnings for unstable charge states
+
+            for correction_type, correction_error_list in [
+                ("freysoldt", FNV_correction_errors),
+                ("kumagai", eFNV_correction_errors),
+            ]:
+                if (
+                    defect_entry.corrections_metadata.get(f"{correction_type}_charge_correction_error", 0)
+                    > error_tolerance
+                ):
+                    correction_error_list.append(
+                        (
+                            name,
+                            defect_entry.corrections_metadata[
+                                f"{correction_type}_charge_correction_error"
+                            ],
+                        )
+                    )
+
+        def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
+            long_name = "Freysoldt" if type == "FNV" else "Kumagai"
+            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
+                error_tol_string = f"{error_tolerance:.3f}"
+                correction_errors_string = "\n".join(
+                    f"{name}: {error:.3f} eV" for name, error in correction_errors
+                )
+            else:  # else give in scientific notation:
+                error_tol_string = f"{error_tolerance:.2e}"
+                correction_errors_string = "\n".join(
+                    f"{name}: {error:.2e} eV" for name, error in correction_errors
+                )
+
+            warnings.warn(
+                f"Estimated error in the {long_name} ({type}) charge correction for certain defects is "
+                f"greater than the `error_tolerance` (= {error_tol_string} eV):"
+                f"\n{correction_errors_string}\n"
+                f"You may want to check the accuracy of the corrections by plotting the site potential "
+                f"differences (using `defect_entry.get_{long_name.lower()}_correction()` with "
+                f"`plot=True`). Large errors are often due to unstable or shallow defect charge states "
+                f"(which can't be accurately modelled with the supercell approach). If these errors are "
+                f"not acceptable, you may need to use a larger supercell for more accurate energies."
+            )
+
+        for correction_errors, type in [
+            (FNV_correction_errors, "FNV"),
+            (eFNV_correction_errors, "eFNV"),
+        ]:
+            if correction_errors:
+                _call_multiple_corrections_tolerance_warning(correction_errors, type=type)
+
+        # check if same type of charge correction was used in each case or not:
+        if (
+            len(
+                {
+                    k
+                    for defect_entry in self.defect_dict.values()
+                    for k in defect_entry.corrections
+                    if k.endswith("_charge_correction")
+                }
+            )
+            > 1
+        ):
+            warnings.warn(
+                "Beware: The Freysoldt (FNV) charge correction scheme has been used for some defects, "
+                "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
+                "this should be fine, and the results should be the same regardless (assuming a "
+                "relatively well-converged supercell size), while for _anisotropic_ materials this could "
+                "lead to some quantitative inaccuracies. You can use the "
+                "`DefectThermodynamics.get_formation_energies()` method to print out the calculated "
+                "charge corrections for all defects, and/or visualise the charge corrections using "
+                "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
+                "check."
+            )
+        # note that we also check if multiple charge corrections have been applied to the same defect
+        # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
 
     def get_defect_thermodynamics(
         self,
