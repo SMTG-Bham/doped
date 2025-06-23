@@ -32,8 +32,8 @@ if TYPE_CHECKING:
             from pydefect.analyzer.band_edge_states import BandEdgeStates
         except ImportError:
             warnings.warn(
-                "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "
-                "be installed with `pip install pydefect`."
+                "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, "
+                "and can be installed with `pip install pydefect`."
             )
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
@@ -1319,8 +1319,8 @@ class DefectEntry(thermo.DefectEntry):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
-                over all defects which occupy the same site as the defect of
+                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                all defects which occupy the same site as the defect of
                 interest. Otherwise, uses the standard dilute limit
                 approximation. Note that when used with
                 ``DefectEntry.equilibrium_concentration()`` here, only this
