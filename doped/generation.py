@@ -2562,7 +2562,7 @@ def _element_sort_func(element_str: str) -> tuple[int, int]:
     return (group, elt.Z)
 
 
-def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None) -> dict | list:
+def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None):
     """
     Sort defect entries for deterministic behaviour; for output and when
     reloading ``DefectsGenerator`` objects, with ``DefectThermodynamics``

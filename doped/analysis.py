@@ -1116,7 +1116,7 @@ class DefectsParser:
                         defect_folder
                     )
                     parsing_warnings.append(
-                        self._parse_parsing_warnings(
+                        _process_parsing_warnings(
                             warnings_string, defect_folder, f"{defect_folder}/{self.subfolder}"
                         )
                     )
@@ -1144,11 +1144,12 @@ class DefectsParser:
                         charged_defect_folder
                     )
                     parsing_warnings.append(
-                        self._update_pbar_and_return_warnings_from_parsing(
-                            parsed_defect_entry,
-                            warnings_string,
-                            charged_defect_folder,
-                            pbar,
+                        _update_pbar_and_return_warnings_from_parsing(
+                            defect_entry=parsed_defect_entry,
+                            subfolder=self.subfolder,
+                            warnings_string=warnings_string,
+                            defect_folder=charged_defect_folder,
+                            pbar=pbar,
                         )
                     )
                     if parsed_defect_entry is not None:
@@ -1183,8 +1184,9 @@ class DefectsParser:
                         )
                         for result in results:  # result -> (defect_entry, warnings_string, folder)
                             parsing_warnings.append(
-                                self._update_pbar_and_return_warnings_from_parsing(
+                                _update_pbar_and_return_warnings_from_parsing(
                                     defect_entry=result[0],
+                                    subfolder=self.subfolder,
                                     warnings_string=result[1],
                                     defect_folder=result[2],
                                     pbar=pbar,
@@ -1213,105 +1215,7 @@ class DefectsParser:
                 f"expected (see `DefectsParser` docstring)."
             )
 
-        parsed_defect_entries = sort_defect_entries(parsed_defect_entries)  # type: ignore
-
-        # check if there are duplicate entries in the parsed defect entries, warn and remove:
-        energy_entries_dict: dict[float, list[DefectEntry]] = {}  # {energy: [defect_entry]}
-        for defect_entry in parsed_defect_entries:  # find duplicates by comparing supercell energies
-            if defect_entry.sc_entry_energy in energy_entries_dict:
-                energy_entries_dict[defect_entry.sc_entry_energy].append(defect_entry)
-            else:
-                energy_entries_dict[defect_entry.sc_entry_energy] = [defect_entry]
-
-        for energy, entries_list in energy_entries_dict.items():
-            if len(entries_list) > 1:  # More than one entry with the same energy
-                # sort any duplicates by name length, name, folder length, folder (shorter preferred)
-                energy_entries_dict[energy] = sorted(
-                    entries_list,
-                    key=lambda x: (
-                        len(x.name),
-                        x.name,
-                        len(self._get_defect_folder(x)),
-                        self._get_defect_folder(x),
-                    ),
-                )
-
-        if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
-            duplicate_entry_names_folders_string = "\n".join(
-                "["
-                + ", ".join(f"{entry.name} ({self._get_defect_folder(entry)})" for entry in entries_list)
-                + "]"
-                for entries_list in energy_entries_dict.values()
-                if len(entries_list) > 1
-            )
-            warnings.warn(
-                f"The following parsed defect entries were found to be duplicates (exact same defect "
-                f"supercell energies). The first of each duplicate group shown will be kept and the "
-                f"other duplicate entries omitted:\n{duplicate_entry_names_folders_string}"
-            )
-        parsed_defect_entries = [next(iter(entries_list)) for entries_list in energy_entries_dict.values()]
-
-        # get any defect entries in parsed_defect_entries that share the same name (without charge):
-        # first get any entries with duplicate names:
-        entries_to_rename = [
-            defect_entry
-            for defect_entry in parsed_defect_entries
-            if len(
-                [
-                    defect_entry
-                    for other_defect_entry in parsed_defect_entries
-                    if defect_entry.name == other_defect_entry.name
-                ]
-            )
-            > 1
-        ]
-        # then get all entries with the same name(s), ignoring charge state (in case e.g. only duplicate
-        # for one charge state etc):
-        entries_to_rename = [
-            defect_entry
-            for defect_entry in parsed_defect_entries
-            if any(
-                defect_entry.name.rsplit("_", 1)[0] == other_defect_entry.name.rsplit("_", 1)[0]
-                for other_defect_entry in entries_to_rename
-            )
-        ]
-
-        self.defect_dict = {
-            defect_entry.name: defect_entry
-            for defect_entry in parsed_defect_entries
-            if defect_entry not in entries_to_rename
-        }
-
-        with contextlib.suppress(AttributeError, TypeError):  # sort by supercell frac cooords,
-            # to aid deterministic naming:
-            entries_to_rename.sort(
-                key=lambda x: _frac_coords_sort_func(_get_defect_supercell_frac_coords(x))
-            )
-
-        new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
-        # set name attribute: (these are names without charges!)
-        for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
-            defect_entry.name = (
-                f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
-                f"{defect_entry.charge_state}"
-            )
-
-        if duplicate_names := [  # if any duplicate names, crash (and burn, b...)
-            defect_entry.name
-            for defect_entry in entries_to_rename
-            if defect_entry.name in self.defect_dict
-        ]:
-            raise ValueError(
-                f"Some defect entries have the same name, due to mixing of doped-named and unnamed "
-                f"defect folders. This would cause defect entries to be overwritten. Please check "
-                f"your defect folder names in `output_path`!\nDuplicate defect names:\n"
-                f"{duplicate_names}"
-            )
-
-        self.defect_dict.update(
-            {defect_entry.name: defect_entry for defect_entry in new_named_defect_entries_dict.values()}
-        )
-        self.defect_dict = sort_defect_entries(self.defect_dict)  # type: ignore
+        self.defect_dict = _name_parsed_defect_entries(parsed_defect_entries, subfolder=self.subfolder)
 
         # handle (and warn) any charge correction errors or calculation parameter mismatches:
         self._handle_charge_correction_errors(self.error_tolerance, **kwargs)
@@ -1324,7 +1228,8 @@ class DefectsParser:
                 ).defect.structure.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
                 self.json_filename = f"{formula}_defect_dict.json.gz"
 
-            dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
+            assert isinstance(self.json_filename, str)  # typing
+            dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))
 
     def _parse_single_defect(self, defect_folder):
         try:
@@ -1407,47 +1312,6 @@ class DefectsParser:
         )
 
         return parsed_defect_entry, warnings_string, defect_folder
-
-    def _update_pbar_and_return_warnings_from_parsing(
-        self,
-        defect_entry: DefectEntry,
-        warnings_string: str = "",
-        defect_folder: str = "",
-        pbar: tqdm = None,
-    ):
-        if pbar:
-            pbar.update()
-
-        defect_path = "N/A"
-        if defect_entry is not None:
-            defect_folder = self._get_defect_folder(defect_entry)
-            defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
-            if pbar:
-                pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-
-        if warnings_string:
-            return self._parse_parsing_warnings(warnings_string, defect_folder, defect_path)
-
-        return warnings_string  # failed parsing warning if defect_entry is None
-
-    def _parse_parsing_warnings(self, warnings_string: str, defect_folder: str, defect_path: str) -> str:
-        if warnings_string:
-            split_warnings = warnings_string.split("\n\n")
-            if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
-                location = f" at {defect_path}" if defect_path != "N/A" else ""  # let's ride the vibration
-                return (  # either only warnings (no exceptions), or warning(s) + exception
-                    f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
-                )
-            return warnings_string  # only exception, return as is
-
-        return ""
-
-    def _get_defect_folder(self, entry):
-        return (
-            entry.calculation_metadata["defect_path"]
-            .replace("/.", "")
-            .split("/")[-1 if self.subfolder == "." else -2]
-        )
 
     def _handle_charge_correction_errors(self, error_tolerance: float, **kwargs) -> None:
         """
@@ -1720,6 +1584,49 @@ class DefectsParser:
         )
 
 
+def _update_pbar_and_return_warnings_from_parsing(
+    defect_entry: DefectEntry,
+    subfolder: str = ".",
+    warnings_string: str = "",
+    defect_folder: str = "",
+    pbar: tqdm = None,
+) -> str:
+    """
+    Update the ``tqdm`` progress bar (and set description), and process any
+    warnings from parsing.
+    """
+    if pbar:
+        pbar.update()
+
+    defect_path = "N/A"
+    if defect_entry is not None:
+        defect_folder = _get_defect_folder(defect_entry, subfolder)
+        defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
+        if pbar:
+            pbar.set_description(f"Parsing {defect_folder}/{subfolder}".replace("/.", ""))
+
+    if warnings_string:
+        return _process_parsing_warnings(warnings_string, defect_folder, defect_path)
+
+    return warnings_string  # failed parsing warning if defect_entry is None
+
+
+def _process_parsing_warnings(warnings_string: str, defect_folder: str, defect_path: str) -> str:
+    """
+    Process any warnings from parsing.
+    """
+    if warnings_string:
+        split_warnings = warnings_string.split("\n\n")
+        if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
+            location = f" at {defect_path}" if defect_path != "N/A" else ""  # let's ride the vibration
+            return (  # either only warnings (no exceptions), or warning(s) + exception
+                f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
+            )
+        return warnings_string  # only exception, return as is
+
+    return ""
+
+
 def _process_and_raise_parsing_warnings(
     parsing_warnings: list[str], bulk_path: str = "bulk", subfolder: str = "."
 ) -> None:
@@ -1844,6 +1751,144 @@ def _process_and_raise_parsing_warnings(
         defect_set = {defect_name for defect_name in defect_name_list if defect_name}
         if defect_set:
             warnings.warn(f"Defects: {defect_set} each encountered the same warning:\n{warning}")
+
+
+def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
+    """
+    Get the defect folder name from a ``DefectEntry`` object.
+
+    Args:
+        entry (DefectEntry):
+            The defect entry to get the folder name from.
+        subfolder (str):
+            The subfolder of the defect calculation directory.
+
+    Returns:
+        str:
+            The defect folder name.
+    """
+    return (
+        entry.calculation_metadata["defect_path"]
+        .replace("/.", "")
+        .split("/")[-1 if subfolder == "." else -2]
+    )
+
+
+def _name_parsed_defect_entries(
+    parsed_defect_entries: list[DefectEntry], subfolder: str = "."
+) -> dict[str, DefectEntry]:
+    """
+    Format parsed defect entries, including naming and sorting, handling any
+    duplicates and renaming appropriately.
+
+    Args:
+        parsed_defect_entries (list[DefectEntry]):
+            List of parsed defect entries to format.
+        subfolder (str):
+            Defect calculation subfolder name.
+
+    Returns:
+        dict[str, DefectEntry]:
+            Formatted dictionary of defect entries.
+    """
+    # sort input entries for deterministic naming:
+    parsed_defect_entries = sort_defect_entries(parsed_defect_entries)
+
+    # check if there are duplicate entries in the parsed defect entries, warn and remove:
+    energy_entries_dict: dict[float, list[DefectEntry]] = {}  # {energy: [defect_entry]}
+    for defect_entry in parsed_defect_entries:  # find duplicates by comparing supercell energies
+        if defect_entry.sc_entry_energy in energy_entries_dict:
+            energy_entries_dict[defect_entry.sc_entry_energy].append(defect_entry)
+        else:
+            energy_entries_dict[defect_entry.sc_entry_energy] = [defect_entry]
+
+    for energy, entries_list in energy_entries_dict.items():
+        if len(entries_list) > 1:  # more than one entry with the same energy
+            # sort any duplicates by name length, name, folder length, folder (shorter preferred)
+            energy_entries_dict[energy] = sorted(
+                entries_list,
+                key=lambda x: (
+                    len(x.name),
+                    x.name,
+                    len(_get_defect_folder(x, subfolder)),
+                    _get_defect_folder(x, subfolder),
+                ),
+            )
+
+    if any(len(entries_list) > 1 for entries_list in energy_entries_dict.values()):
+        duplicate_entry_names_folders_string = "\n".join(
+            "["
+            + ", ".join(f"{entry.name} ({_get_defect_folder(entry, subfolder)})" for entry in entries_list)
+            + "]"
+            for entries_list in energy_entries_dict.values()
+            if len(entries_list) > 1
+        )
+        warnings.warn(
+            f"The following parsed defect entries were found to be duplicates (exact same defect "
+            f"supercell energies). The first of each duplicate group shown will be kept and the "
+            f"other duplicate entries omitted:\n{duplicate_entry_names_folders_string}"
+        )
+    parsed_defect_entries = [next(iter(entries_list)) for entries_list in energy_entries_dict.values()]
+
+    # get any defect entries in parsed_defect_entries that share the same name (without charge):
+    # first get any entries with duplicate names:
+    entries_to_rename = [
+        defect_entry
+        for defect_entry in parsed_defect_entries
+        if len(
+            [
+                defect_entry
+                for other_defect_entry in parsed_defect_entries
+                if defect_entry.name == other_defect_entry.name
+            ]
+        )
+        > 1
+    ]
+    # then get all entries with the same name(s), ignoring charge state (in case e.g. only duplicate
+    # for one charge state etc):
+    entries_to_rename = [
+        defect_entry
+        for defect_entry in parsed_defect_entries
+        if any(
+            defect_entry.name.rsplit("_", 1)[0] == other_defect_entry.name.rsplit("_", 1)[0]
+            for other_defect_entry in entries_to_rename
+        )
+    ]
+
+    # Create initial defect_dict with non-duplicate entries
+    defect_dict = {
+        defect_entry.name: defect_entry
+        for defect_entry in parsed_defect_entries
+        if defect_entry not in entries_to_rename
+    }
+
+    with contextlib.suppress(AttributeError, TypeError):  # sort by supercell frac cooords,
+        # to aid deterministic naming:
+        entries_to_rename.sort(key=lambda x: _frac_coords_sort_func(_get_defect_supercell_frac_coords(x)))
+
+    new_named_defect_entries_dict = name_defect_entries(entries_to_rename)
+    # set name attribute: (these are names without charges!)
+    for defect_name_wout_charge, defect_entry in new_named_defect_entries_dict.items():
+        defect_entry.name = (
+            f"{defect_name_wout_charge}_{'+' if defect_entry.charge_state > 0 else ''}"
+            f"{defect_entry.charge_state}"
+        )
+
+    if duplicate_names := [  # if any duplicate names, crash (and burn, b...)
+        defect_entry.name for defect_entry in entries_to_rename if defect_entry.name in defect_dict
+    ]:
+        raise ValueError(
+            f"Some defect entries have the same name, due to mixing of doped-named and unnamed "
+            f"defect folders. This would cause defect entries to be overwritten. Please check "
+            f"your defect folder names in `output_path`!\nDuplicate defect names:\n"
+            f"{duplicate_names}"
+        )
+
+    defect_dict.update(
+        {defect_entry.name: defect_entry for defect_entry in new_named_defect_entries_dict.values()}
+    )
+
+    return sort_defect_entries(defect_dict)
 
 
 def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
