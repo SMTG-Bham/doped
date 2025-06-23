@@ -951,121 +951,12 @@ class DefectsParser:
         self.bulk_vr = None  # loaded later
         self.kwargs = kwargs
 
-        possible_defect_folders = [
-            dir
-            for dir in os.listdir(self.output_path)
-            if any(
-                "vasprun" in file and ".xml" in file
-                for file_list in [tup[2] for tup in os.walk(os.path.join(self.output_path, dir))]
-                for file in file_list
-            )
-        ]
+        # get folders for parsing:
+        self.defect_folders, self.output_path, self.subfolder, self.bulk_path = (
+            _get_calculation_folders_for_parsing(self.output_path, self.subfolder, self.bulk_path)
+        )
 
-        if not possible_defect_folders:  # user may have specified the defect folder directly, so check
-            # if we can dynamically determine the defect folder:
-            possible_defect_folders = [
-                dir
-                for dir in os.listdir(os.path.join(self.output_path, os.pardir))
-                if any(
-                    "vasprun" in file and ".xml" in file
-                    for file_list in [
-                        tup[2] for tup in os.walk(os.path.join(self.output_path, os.pardir, dir))
-                    ]
-                    for file in file_list
-                )
-                and (
-                    os.path.basename(self.output_path) in dir  # only that defect directory
-                    or "bulk" in str(dir).lower()  # or a bulk directory, for later
-                    or (self.bulk_path is not None and str(self.bulk_path).lower() in str(dir).lower())
-                )
-            ]
-            if possible_defect_folders:  # update output path (otherwise will crash with informative error)
-                self.output_path = os.path.join(self.output_path, os.pardir)
-
-        if self.subfolder is None:  # determine subfolder to use
-            vasp_subfolders = [
-                subdir
-                for possible_defect_folder in possible_defect_folders
-                for subdir in os.listdir(os.path.join(self.output_path, possible_defect_folder))
-                if os.path.isdir(os.path.join(self.output_path, possible_defect_folder, subdir))
-                and "vasp_" in subdir
-            ]
-            vasp_type_count_dict = {  # Count Dik
-                i: len([subdir for subdir in vasp_subfolders if i in subdir])
-                for i in ["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam"]
-            }
-            # take first entry with non-zero count, else use defect folder itself:
-            self.subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
-        self.subfolder = str(self.subfolder)
-
-        possible_bulk_folders = [
-            dir
-            for dir in possible_defect_folders
-            if "bulk" in str(dir).lower()
-            or (self.bulk_path is not None and str(dir).lower() == str(self.bulk_path).lower())
-        ]
-
-        if self.bulk_path is None:  # determine bulk_path to use
-            if len(possible_bulk_folders) == 1:
-                self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
-            elif len([dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk")]) == 1:
-                self.bulk_path = os.path.join(
-                    self.output_path,
-                    next(iter(dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk"))),
-                )
-            else:
-                raise ValueError(
-                    f"Could not automatically determine bulk supercell calculation folder in "
-                    f"{self.output_path}, found {len(possible_bulk_folders)} folders containing "
-                    f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
-                    f"specify `bulk_path` manually."
-                )
-        if not os.path.isdir(self.bulk_path):
-            if len(possible_bulk_folders) == 1:
-                self.bulk_path = os.path.join(self.output_path, possible_bulk_folders[0])
-            else:
-                raise FileNotFoundError(
-                    f"Could not find bulk supercell calculation folder at '{self.bulk_path}'!"
-                )
-
-        self.defect_folders = [
-            dir
-            for dir in possible_defect_folders
-            if dir not in possible_bulk_folders
-            and (
-                self.subfolder in os.listdir(os.path.join(self.output_path, dir)) or self.subfolder == "."
-            )
-        ]
-
-        # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is:
-        if os.path.isdir(os.path.join(self.bulk_path, self.subfolder)) and any(
-            "vasprun" in file and ".xml" in file
-            for file in os.listdir(os.path.join(self.bulk_path, self.subfolder))
-        ):
-            self.bulk_path = os.path.join(self.bulk_path, self.subfolder)
-        elif all("vasprun" not in file or ".xml" not in file for file in os.listdir(self.bulk_path)):
-            possible_bulk_subfolders = [
-                dir
-                for dir in os.listdir(self.bulk_path)
-                if os.path.isdir(os.path.join(self.bulk_path, dir))
-                and any(
-                    "vasprun" in file and ".xml" in file
-                    for file in os.listdir(os.path.join(self.bulk_path, dir))
-                )
-            ]
-            if len(possible_bulk_subfolders) == 1 and subfolder is None:
-                # if only one subfolder with a vasprun.xml file in it, and `subfolder` wasn't explicitly
-                # set by the user, then use this
-                self.bulk_path = os.path.join(self.bulk_path, possible_bulk_subfolders[0])
-            else:
-                raise FileNotFoundError(
-                    f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-                    f"{self.bulk_path} or subfolder: {self.subfolder} -- please ensure `vasprun.xml(.gz)` "
-                    f"files are present and/or specify `bulk_path` manually."
-                )
-
-        # remove trailing '/.' from bulk_path if present:
-        self.bulk_path = self.bulk_path.rstrip("/.")
+        # parse bulk calculation:
         bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", self.bulk_path)
         if multiple:
             _multiple_files_warning(
@@ -1231,9 +1122,13 @@ class DefectsParser:
             assert isinstance(self.json_filename, str)  # typing
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))
 
-    def _parse_single_defect(self, defect_folder):
+    def _parse_single_defect(self, defect_folder: str) -> DefectEntry | None:
+        """
+        Parse a single defect calculation, using ``DefectParser.from_paths()``.
+        """
         try:
             self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
+            assert isinstance(self.subfolder, str)  # typing, converted to str by this point
             dp = DefectParser.from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
@@ -1582,6 +1477,156 @@ class DefectsParser:
             f"defect entries in self.defect_dict. Available attributes:\n{properties}\n\n"
             f"Available methods:\n{methods}"
         )
+
+
+def _get_calculation_folders_for_parsing(
+    output_path: PathLike = ".", subfolder: PathLike | None = None, bulk_path: PathLike | None = None
+) -> tuple[list[str], PathLike, PathLike, PathLike]:
+    """
+    Get calculation folders for parsing.
+
+    Args:
+        output_path (PathLike):
+            Path to the output directory containing the calculation folders to
+            be parsed. Default is current directory (".").
+        subfolder (PathLike | None):
+            Calculation directories
+        subfolder (PathLike):
+            Name of subfolder(s) within each calculation folder (in the
+            ``output_path`` directory) from which to parse. If not specified
+            (default), ``doped`` checks first for ``vasp_ncl``, ``vasp_std``,
+            ``vasp_gam`` subfolders with calculation outputs
+            (``vasprun.xml(.gz)`` files) and uses the highest level VASP type
+            (ncl > std > gam) found as ``subfolder``, otherwise uses the
+            defect calculation folder itself with no subfolder (set
+            ``subfolder = "."`` to enforce this).
+            TODO: Update with flexible filtering
+        bulk_path (PathLike):
+            Path to bulk reference calculation folder. If not specified,
+            searches for folder with name "X_bulk" in the ``output_path``
+            directory (matching the default ``doped`` name for the bulk
+            reference folder). Can be the full path, or the relative path from
+            the ``output_path`` directory.
+
+    Returns:
+        tuple[list[str], PathLike, PathLike, PathLike]:
+            List of calculation folders for parsing, output path, subfolder,
+            and bulk path (the last three of which are the input arguments
+            which may have been updated within this function).
+    """
+    user_specified_subfolder = subfolder is not None
+
+    # determine possible defect calculation folders:
+    possible_defect_folders = [
+        dir
+        for dir in os.listdir(output_path)
+        if any(
+            "vasprun" in file and ".xml" in file
+            for file_list in [tup[2] for tup in os.walk(os.path.join(output_path, dir))]
+            for file in file_list
+        )
+    ]
+
+    if not possible_defect_folders:  # user may have specified the defect folder directly, so check
+        # if we can dynamically determine the defect folder:
+        possible_defect_folders = [
+            dir
+            for dir in os.listdir(os.path.join(output_path, os.pardir))
+            if any(
+                "vasprun" in file and ".xml" in file
+                for file_list in [tup[2] for tup in os.walk(os.path.join(output_path, os.pardir, dir))]
+                for file in file_list
+            )
+            and (
+                os.path.basename(output_path) in dir  # only that defect directory
+                or "bulk" in str(dir).lower()  # or a bulk directory, for later
+                or (bulk_path is not None and str(bulk_path).lower() in str(dir).lower())
+            )
+        ]
+        if possible_defect_folders:  # update output path (otherwise will crash with informative error)
+            output_path = os.path.join(output_path, os.pardir)
+
+    # determine possible bulk calculation folders:
+    possible_bulk_folders = [
+        dir
+        for dir in possible_defect_folders
+        if "bulk" in str(dir).lower()
+        or (bulk_path is not None and str(dir).lower() == str(bulk_path).lower())
+    ]
+
+    if bulk_path is None:  # determine bulk_path to use
+        if len(possible_bulk_folders) == 1:
+            bulk_path = os.path.join(output_path, possible_bulk_folders[0])
+        elif len([dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk")]) == 1:
+            bulk_path = os.path.join(
+                output_path,
+                next(iter(dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk"))),
+            )
+        else:
+            raise ValueError(
+                f"Could not automatically determine bulk supercell calculation folder in "
+                f"{output_path}, found {len(possible_bulk_folders)} folders containing "
+                f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
+                f"specify `bulk_path` manually."
+            )
+    if not os.path.isdir(bulk_path):
+        if len(possible_bulk_folders) == 1:
+            bulk_path = os.path.join(output_path, possible_bulk_folders[0])
+        else:
+            raise FileNotFoundError(f"Could not find bulk supercell calculation folder at '{bulk_path}'!")
+
+    if subfolder is None:  # determine subfolder to use
+        vasp_subfolders = [
+            subdir
+            for possible_defect_folder in possible_defect_folders
+            for subdir in os.listdir(os.path.join(output_path, possible_defect_folder))
+            if os.path.isdir(os.path.join(output_path, possible_defect_folder, subdir))
+            and "vasp_" in subdir
+        ]
+        vasp_type_count_dict = {  # Count Dik
+            i: len([subdir for subdir in vasp_subfolders if i in subdir])
+            for i in ["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam"]
+        }
+        # take first entry with non-zero count, else use defect folder itself:
+        subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
+
+    subfolder = str(subfolder)  # typing
+
+    # update possible defect calculation folders, based on possible bulk calculation folders and subfolder:
+    defect_folders = [
+        dir
+        for dir in possible_defect_folders
+        if dir not in possible_bulk_folders
+        and (subfolder in os.listdir(os.path.join(output_path, dir)) or subfolder == ".")
+    ]
+
+    # determine bulk_path to use:
+    if os.path.isdir(os.path.join(bulk_path, subfolder)) and any(
+        "vasprun" in file and ".xml" in file for file in os.listdir(os.path.join(bulk_path, subfolder))
+    ):  # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is
+        bulk_path = os.path.join(bulk_path, subfolder)
+    elif all("vasprun" not in file or ".xml" not in file for file in os.listdir(bulk_path)):
+        possible_bulk_subfolders = [
+            dir
+            for dir in os.listdir(bulk_path)
+            if os.path.isdir(os.path.join(bulk_path, dir))
+            and any(
+                "vasprun" in file and ".xml" in file for file in os.listdir(os.path.join(bulk_path, dir))
+            )
+        ]
+        if len(possible_bulk_subfolders) == 1 and not user_specified_subfolder:
+            # if only one subfolder with vasprun.xml, and `subfolder` wasn't explicitly set, then use this:
+            bulk_path = os.path.join(bulk_path, possible_bulk_subfolders[0])
+        else:
+            raise FileNotFoundError(
+                f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
+                f"{bulk_path} or subfolder: {subfolder} -- please ensure `vasprun.xml(.gz)` "
+                f"files are present and/or specify `bulk_path` manually."
+            )
+
+    bulk_path = bulk_path.rstrip("/.")  # remove trailing '/.' from bulk_path if present
+
+    return defect_folders, output_path, subfolder, bulk_path
 
 
 def _update_pbar_and_return_warnings_from_parsing(
@@ -1975,7 +2020,7 @@ def _parse_vr_and_poss_procar(
         failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
         if parse_procar:
-            procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
+            procar_path, _multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
             if "PROCAR" in procar_path and parse_projected_eigen is not False:
                 try:
                     procar = get_procar(procar_path)
