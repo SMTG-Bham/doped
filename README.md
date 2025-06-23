@@ -4,6 +4,7 @@
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.06433/status.svg)](https://doi.org/10.21105/joss.06433)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SMTG-Bham/doped)
 
 <a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="150" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner.
 
