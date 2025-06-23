@@ -1099,8 +1099,8 @@ class DefectsParser:
             "bulk_locpot_dict": None,
             "bulk_site_potentials": None,
         }
-        parsed_defect_entries = []
-        parsing_warnings = []
+        parsed_defect_entries: list[DefectEntry] = []
+        parsing_warnings: list[str] = []
 
         mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
         if self.processes is None:  # multiprocessing?
@@ -1200,122 +1200,7 @@ class DefectsParser:
             finally:
                 pbar.close()
 
-        if parsing_warnings := [
-            warning for warning in parsing_warnings if warning  # remove empty strings
-        ]:
-            split_parsing_warnings = [warning.split("\n\n") for warning in parsing_warnings]
-
-            def _mention_bulk_path_subfolder_for_correction_warnings(warning: str) -> str:
-                if "defect & bulk" in warning or "defect or bulk" in warning:
-                    # charge correction file warning, print subfolder and bulk_path:
-                    if self.subfolder == ".":
-                        warning += f"\n(using bulk path: {self.bulk_path} and without defect subfolders)"
-                    else:
-                        warning += (
-                            f"\n(using bulk path {self.bulk_path} and {self.subfolder} defect subfolders)"
-                        )
-
-                return warning
-
-            split_parsing_warnings = [
-                [_mention_bulk_path_subfolder_for_correction_warnings(warning) for warning in warning_list]
-                for warning_list in split_parsing_warnings
-            ]
-            flattened_warnings_list = [
-                warning for warning_list in split_parsing_warnings for warning in warning_list
-            ]
-            duplicate_warnings: dict[str, list[str]] = {
-                warning: []
-                for warning in set(flattened_warnings_list)
-                if flattened_warnings_list.count(warning) > 1 and "Parsing failed for " not in warning
-            }
-            new_parsing_warnings = []
-            parsing_errors_dict: dict[str, list[str]] = {
-                message.split("got error: ")[1]: []
-                for message in set(flattened_warnings_list)
-                if "Parsing failed for " in message
-            }
-            multiple_files_warning_dict: dict[str, list[tuple]] = {
-                "vasprun.xml": [],
-                "OUTCAR": [],
-                "LOCPOT": [],
-            }
-
-            for warnings_list in split_parsing_warnings:
-                failed_warnings = [
-                    warning_message
-                    for warning_message in warnings_list
-                    if "Parsing failed for " in warning_message
-                ]
-                if failed_warnings:
-                    defect_name = failed_warnings[0].split("Parsing failed for ")[1].split(", got ")[0]
-                    error = failed_warnings[0].split("got error: ")[1]
-                    parsing_errors_dict[error].append(defect_name)
-                elif "Warning(s) encountered" in warnings_list[0]:
-                    defect_name = warnings_list[0].split("when parsing ")[1].split(" at")[0]
-                else:
-                    defect_name = None
-
-                new_warnings_list = []
-                for warning in warnings_list:
-                    if warning.startswith("Multiple"):
-                        file_type = warning.split("`")[1]
-                        directory = warning.split("directory: ")[1].split(". Using")[0]
-                        chosen_file = warning.split("Using ")[1].split(" to")[0]
-                        multiple_files_warning_dict[file_type].append((directory, chosen_file))
-
-                    elif warning in duplicate_warnings:
-                        duplicate_warnings[warning].append(defect_name)
-
-                    else:
-                        new_warnings_list.append(warning)
-
-                if [  # if we still have other warnings, keep them for parsing_warnings list
-                    warning
-                    for warning in new_warnings_list
-                    if "Warning(s) encountered" not in warning and "Parsing failed for " not in warning
-                ]:
-                    new_parsing_warnings.append(
-                        "\n".join(
-                            [
-                                warning
-                                for warning in new_warnings_list
-                                if "Parsing failed for " not in warning
-                            ]
-                        )
-                    )
-
-            for error, defect_list in parsing_errors_dict.items():
-                if defect_list:
-                    if len(set(defect_list)) > 1:
-                        warnings.warn(
-                            f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
-                        )
-                    else:
-                        warnings.warn(f"Parsing failed for defect {defect_list[0]} with error:\n{error}")
-
-            for file_type, directory_file_list in multiple_files_warning_dict.items():
-                if directory_file_list:
-                    joined_info_string = "\n".join(
-                        [f"{directory}: {file}" for directory, file in directory_file_list]
-                    )
-                    warnings.warn(
-                        f"Multiple `{file_type}` files found in certain defect directories:\n"
-                        f"(directory: chosen file for parsing):\n"
-                        f"{joined_info_string}\n"
-                        f"{file_type} files are used to "
-                        f"{_vasp_file_parsing_action_dict[file_type]}"
-                    )
-
-            parsing_warnings = new_parsing_warnings
-            if parsing_warnings:
-                warnings.warn("\n\n".join(parsing_warnings))
-
-            for warning, defect_name_list in duplicate_warnings.items():
-                # remove None and don't warn if later encountered parsing error (already warned)
-                defect_set = {defect_name for defect_name in defect_name_list if defect_name}
-                if defect_set:
-                    warnings.warn(f"Defects: {defect_set} each encountered the same warning:\n{warning}")
+        self._process_and_raise_parsing_warnings(parsing_warnings)
 
         if not parsed_defect_entries:
             subfolder_string = f" and `subfolder`: '{self.subfolder}'" if self.subfolder != "." else ""
@@ -1516,9 +1401,9 @@ class DefectsParser:
 
         mismatching_INCAR_warnings = sorted(
             [
-                (name, set(defect_entry.calculation_metadata.get("mismatching_INCAR_tags")))
+                (name, set(defect_entry.calculation_metadata["mismatching_INCAR_tags"]))
                 for name, defect_entry in self.defect_dict.items()
-                if defect_entry.calculation_metadata.get("mismatching_INCAR_tags")
+                if "mismatching_INCAR_tags" in defect_entry.calculation_metadata
             ],
             key=lambda x: (len(x[1]), x[0]),
             reverse=True,
@@ -1537,9 +1422,9 @@ class DefectsParser:
 
         mismatching_kpoints_warnings = sorted(
             [
-                (name, defect_entry.calculation_metadata.get("mismatching_KPOINTS"))
+                (name, defect_entry.calculation_metadata["mismatching_KPOINTS"])
                 for name, defect_entry in self.defect_dict.items()
-                if defect_entry.calculation_metadata.get("mismatching_KPOINTS")
+                if "mismatching_KPOINTS" in defect_entry.calculation_metadata
             ],
             key=lambda x: (len(x[1]), x[0]),
             reverse=True,
@@ -1560,9 +1445,9 @@ class DefectsParser:
 
         mismatching_potcars_warnings = sorted(
             [
-                (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))
+                (name, defect_entry.calculation_metadata["mismatching_POTCAR_symbols"])
                 for name, defect_entry in self.defect_dict.items()
-                if defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols")
+                if "mismatching_POTCAR_symbols" in defect_entry.calculation_metadata
             ],
             key=lambda x: (len(x[1]), x[0]),
             reverse=True,
@@ -1590,7 +1475,7 @@ class DefectsParser:
 
             dumpfn(self.defect_dict, os.path.join(self.output_path, self.json_filename))  # type: ignore
 
-    def _parse_parsing_warnings(self, warnings_string, defect_folder, defect_path):
+    def _parse_parsing_warnings(self, warnings_string: str, defect_folder: str, defect_path: str) -> str:
         if warnings_string:
             split_warnings = warnings_string.split("\n\n")
             if "Parsing failed for " not in warnings_string or len(split_warnings) > 1:
@@ -1613,7 +1498,7 @@ class DefectsParser:
         self,
         defect_entry: DefectEntry,
         warnings_string: str = "",
-        defect_folder: str | None = None,
+        defect_folder: str = "",
         pbar: tqdm = None,
     ):
         if pbar:
@@ -1712,6 +1597,127 @@ class DefectsParser:
             return None
 
         return dp.defect_entry
+
+    def _process_and_raise_parsing_warnings(self, parsing_warnings: list[str]) -> None:
+        """
+        Process and display parsing warnings in an organized manner, grouping
+        duplicate warnings/errors.
+
+        Args:
+            parsing_warnings (list[str]):
+                List of warning strings from defect parsing.
+        """
+        parsing_warnings = [warning for warning in parsing_warnings if warning]  # remove empty strings
+        if not parsing_warnings:
+            return
+
+        split_parsing_warnings = [warning.split("\n\n") for warning in parsing_warnings]
+
+        def _mention_bulk_path_subfolder_for_correction_warnings(warning: str) -> str:
+            if "defect & bulk" in warning or "defect or bulk" in warning:
+                # charge correction file warning, print subfolder and bulk_path:
+                if self.subfolder == ".":
+                    warning += f"\n(using bulk path: {self.bulk_path} and without defect subfolders)"
+                else:
+                    warning += (
+                        f"\n(using bulk path {self.bulk_path} and {self.subfolder} defect subfolders)"
+                    )
+
+            return warning
+
+        split_parsing_warnings = [
+            [_mention_bulk_path_subfolder_for_correction_warnings(warning) for warning in warning_list]
+            for warning_list in split_parsing_warnings
+        ]
+        flattened_warnings_list = [
+            warning for warning_list in split_parsing_warnings for warning in warning_list
+        ]
+        duplicate_warnings: dict[str, list[str]] = {
+            warning: []
+            for warning in set(flattened_warnings_list)
+            if flattened_warnings_list.count(warning) > 1 and "Parsing failed for " not in warning
+        }
+        new_parsing_warnings = []
+        parsing_errors_dict: dict[str, list[str]] = {
+            message.split("got error: ")[1]: []
+            for message in set(flattened_warnings_list)
+            if "Parsing failed for " in message
+        }
+        multiple_files_warning_dict: dict[str, list[tuple]] = {
+            "vasprun.xml": [],
+            "OUTCAR": [],
+            "LOCPOT": [],
+        }
+
+        for warnings_list in split_parsing_warnings:
+            failed_warnings = [
+                warning_message
+                for warning_message in warnings_list
+                if "Parsing failed for " in warning_message
+            ]
+            if failed_warnings:
+                defect_name = failed_warnings[0].split("Parsing failed for ")[1].split(", got ")[0]
+                error = failed_warnings[0].split("got error: ")[1]
+                parsing_errors_dict[error].append(defect_name)
+            elif "Warning(s) encountered" in warnings_list[0]:
+                defect_name = warnings_list[0].split("when parsing ")[1].split(" at")[0]
+            else:
+                defect_name = None
+
+            new_warnings_list = []
+            for warning in warnings_list:
+                if warning.startswith("Multiple"):
+                    file_type = warning.split("`")[1]
+                    directory = warning.split("directory: ")[1].split(". Using")[0]
+                    chosen_file = warning.split("Using ")[1].split(" to")[0]
+                    multiple_files_warning_dict[file_type].append((directory, chosen_file))
+
+                elif warning in duplicate_warnings:
+                    duplicate_warnings[warning].append(defect_name or "N/A")
+
+                else:
+                    new_warnings_list.append(warning)
+
+            if [  # if we still have other warnings, keep them for parsing_warnings list
+                warning
+                for warning in new_warnings_list
+                if "Warning(s) encountered" not in warning and "Parsing failed for " not in warning
+            ]:
+                new_parsing_warnings.append(
+                    "\n".join(
+                        [warning for warning in new_warnings_list if "Parsing failed for " not in warning]
+                    )
+                )
+
+        for error, defect_list in parsing_errors_dict.items():
+            if defect_list:
+                if len(set(defect_list)) > 1:
+                    warnings.warn(
+                        f"Parsing failed for defects: {defect_list} with the same error:\n{error}"
+                    )
+                else:
+                    warnings.warn(f"Parsing failed for defect {defect_list[0]} with error:\n{error}")
+
+        for file_type, directory_file_list in multiple_files_warning_dict.items():
+            if directory_file_list:
+                joined_info_string = "\n".join(
+                    [f"{directory}: {file}" for directory, file in directory_file_list]
+                )
+                warnings.warn(
+                    f"Multiple `{file_type}` files found in certain defect directories:\n"
+                    f"(directory: chosen file for parsing):\n"
+                    f"{joined_info_string}\n"
+                    f"{file_type} files are used to {_vasp_file_parsing_action_dict[file_type]}"
+                )
+
+        if new_parsing_warnings:
+            warnings.warn("\n\n".join(new_parsing_warnings))
+
+        for warning, defect_name_list in duplicate_warnings.items():
+            # remove None and don't warn if later encountered parsing error (already warned)
+            defect_set = {defect_name for defect_name in defect_name_list if defect_name}
+            if defect_set:
+                warnings.warn(f"Defects: {defect_set} each encountered the same warning:\n{warning}")
 
     def get_defect_thermodynamics(
         self,
