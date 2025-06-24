@@ -2435,14 +2435,21 @@ class DefectsGenerator(MSONable):
             return None
 
         # try from database, otherwise print info message and try from electrostatics
-        split_vacancies = self.get_split_vacancies_from_database(
-            verbose="Will use electrostatic analysis to check for candidate low-energy split vacancies. "
-            "Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
-        )
-        if split_vacancies:
-            return split_vacancies
+        try:
+            split_vacancies = self.get_split_vacancies_from_database(
+                verbose=(
+                    "Will use electrostatic analysis to check for candidate low-energy split vacancies. "
+                    "Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
+                )
+            )
+        except Exception as exc:
+            warnings.warn(
+                f"Error getting split vacancies from database: {exc}\nGenerating from electrostatic "
+                f"analysis instead."
+            )
+            split_vacancies = self.get_split_vacancies_from_electrostatics()
 
-        return self.get_split_vacancies_from_electrostatics()
+        return split_vacancies
 
     def get_split_vacancies_from_database(self, verbose: bool | str = False):
         """
