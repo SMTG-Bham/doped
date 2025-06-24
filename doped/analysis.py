@@ -956,6 +956,7 @@ class DefectsParser:
             _get_calculation_folders_for_parsing(self.output_path, self.subfolder, self.bulk_path)
         )
 
+        pbar = tqdm(total=len(self.defect_folders), desc="Parsing bulk reference calculation")
         # parse bulk calculation:
         self.bulk_vr, self.bulk_procar = _parse_vr_and_poss_procar(
             output_path=self.bulk_path,
@@ -969,6 +970,7 @@ class DefectsParser:
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
         # fully ionised charge states):
+        pbar.set_description("Guessing oxidation states in bulk structure")
         self._bulk_oxi_states: Structure | Composition | dict | bool = False
         if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
             self.bulk_vr.final_structure, break_early_if_expensive=True
@@ -988,7 +990,6 @@ class DefectsParser:
         if self.processes is None:  # only multiprocess as much as makes sense, if only few defect folders:
             self.processes = min(max(1, mp.cpu_count() - 1), len(self.defect_folders) - 1)
 
-        pbar = tqdm(total=len(self.defect_folders), desc="Parsing defect calculations")  # progress bar
         if self.processes <= 1:  # no multiprocessing
             parsed_defect_entries_and_processed_warnings = [
                 self._parse_defect_and_handle_warnings(folder, pbar=pbar) for folder in self.defect_folders
@@ -1041,18 +1042,21 @@ class DefectsParser:
                 pbar.set_description("Setting up multiprocessing")
                 if self.processes > 1:
                     with pool_manager(self.processes) as pool:  # parsed_defect_entry, warnings
-                        for parsed_defect_entry, processed_warnings_string in pool.imap_unordered(
-                            self._parse_defect_and_handle_warnings, folders_to_process
+                        pbar.set_description(
+                            f"Parsing {folders_to_process[0]}/{self.subfolder}".replace("/.", "")
+                        )
+                        for i, (parsed_defect_entry, processed_warnings_string) in enumerate(
+                            pool.imap(self._parse_defect_and_handle_warnings, folders_to_process)
                         ):
                             pbar.update()
-                            defect_folder = _get_defect_folder(parsed_defect_entry, self.subfolder)
+                            next_i = min(i + 1, len(folders_to_process) - 1)  # next folder index
                             pbar.set_description(
-                                f"Parsing {defect_folder}/{self.subfolder}".replace("/.", "")
-                            )
+                                f"Parsing {folders_to_process[next_i]}/{self.subfolder}".replace("/.", "")
+                            )  # next folder
                             parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
                             parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
-            # TODO: Compare parsing time to imap
+            # TODO: Compare parsing time to imap_unordered
 
             except Exception as exc:
                 pbar.close()
