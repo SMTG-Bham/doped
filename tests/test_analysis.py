@@ -628,9 +628,9 @@ class DefectsParsingTestCase(unittest.TestCase):
                 subfolder="vasp_std",
             )
         assert (
-            f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std -- please ensure "
-            f"`vasprun.xml(.gz)` files are present and/or specify `bulk_path` manually."
+            f"No files with any of ('vasprun.xml', 'vasprun.xml.gz') in names found under "
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk (subfolder vasp_std). Please ensure bulk supercell "
+            f"calculation files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
@@ -837,9 +837,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=self.YTOS_EXAMPLE_DIR,
                 subfolder="vasp_gam",
             )
+        ytos_example_dir_path = os.path.abspath(self.YTOS_EXAMPLE_DIR)  # remove "tests/../" from path
         assert (
-            f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
-            f"using `bulk_path`: {self.YTOS_EXAMPLE_DIR}/Bulk and `subfolder`: 'vasp_gam'. Please check "
+            f"No defect calculations in `output_path` '{ytos_example_dir_path}' were successfully parsed, "
+            f"using `bulk_path`: {ytos_example_dir_path}/Bulk and `subfolder`: 'vasp_gam'. Please check "
             f"the correct defect/bulk paths and subfolder are being set, and that the folder structure is "
             f"as expected (see `DefectsParser` docstring)." in str(exc.value)
         )
@@ -852,9 +853,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.Sb2Se3_dielectric,
             )
         assert (  # bulk in separate folder so fails
-            f"Could not automatically determine bulk supercell calculation folder in "
-            f"{self.Sb2Se3_DATA_DIR}/defect, found 0 folders containing `vasprun.xml(.gz)` files (in "
-            f"subfolders) and 'bulk' in the folder name" in str(exc.value)
+            f"Could not determine bulk supercell calculation folder in {self.Sb2Se3_DATA_DIR}/defect, "
+            f"found 0 folders containing any of ('vasprun.xml', 'vasprun.xml.gz') in filenames (in "
+            f"subfolders) and 'bulk' in the folder name. Please specify `bulk_path` manually."
+            in str(exc.value)
         )
 
         # no warning about negative corrections with strong anisotropic dielectric:

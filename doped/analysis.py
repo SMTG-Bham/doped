@@ -1535,29 +1535,39 @@ def _get_calculation_folders_for_parsing(
         matching the ``_CALC_OUTPUT_MASK`` filter, recursively, ignoring hidden
         files and folders.
         """
-        files_df = _dataframe_of_files(out_root)  # dataframe of files in folders under ``out_root``
+        files_df = _dataframe_of_files(root)  # dataframe of files in folders under ``out_root``
         pattern = "|".join(map(re.escape, _CALC_OUTPUT_MASK))  # regex filter pattern for output files
-        return files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
+        return (
+            files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
+            if not files_df.empty
+            else pd.DataFrame()
+        )
 
     calc_files_df = _get_calc_files_df(out_root)  # DataFrame of calculation output files
     if calc_files_df.empty:  # user may have specified defect sub-folder directly, so check one level up
         parent_root = out_root.parent
         calc_files_df = _get_calc_files_df(parent_root)
+        files_not_found_error = FileNotFoundError(
+            f"No calculation folders with any of {_CALC_OUTPUT_MASK} in filenames found under "
+            f"{out_root}."
+        )
+        if calc_files_df.empty:  # no calculation output files found
+            raise files_not_found_error
+
         possible_defect_folders = [  # candidate defect folders
             g
             for g in calc_files_df["folder_in_root"].unique()
-            if (out_root.name in g)
-            or (_BULK_FOLDER_PATTERN in g.lower())
+            if out_root.name in g  # only the specific defect directory specified
+            or _BULK_FOLDER_PATTERN in g.lower()  # or a bulk directory, for later
             or (bulk_path and str(bulk_path).lower() in g.lower())
         ]
         if not possible_defect_folders:
-            raise FileNotFoundError(
-                f"No calculation folders with any of {_CALC_OUTPUT_MASK} in filenames found under "
-                f"{out_root}."
-            )
+            raise files_not_found_error
         out_root = parent_root  # shift context to parent directory
 
-    possible_defect_folders = calc_files_df["folder_in_root"].unique().tolist()  # candidate defect folders
+    else:
+        possible_defect_folders = calc_files_df["folder_in_root"].unique().tolist()
+
     subfolder = (
         _determine_subfolder(calc_files_df, possible_defect_folders) if subfolder is None else subfolder
     )
@@ -1656,7 +1666,7 @@ def _resolve_bulk_path(
 
         raise ValueError(
             f"Could not determine bulk supercell calculation folder in {out_root}, found "
-            f"{len(possible_bulk_folders)} containing any of {_CALC_OUTPUT_MASK} in filenames (in "
+            f"{len(possible_bulk_folders)} folders containing any of {_CALC_OUTPUT_MASK} in filenames (in "
             f"subfolders) and '{_BULK_FOLDER_PATTERN}' in the folder name. Please specify `bulk_path` "
             f"manually."
         )
