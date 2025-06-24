@@ -9,10 +9,14 @@ calculations, with publication-quality outputs.
 
 import contextlib
 import os
+import re
 import warnings
 from copy import deepcopy
+from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
 from pymatgen.analysis.defects import core
@@ -95,6 +99,15 @@ _aniso_dielectric_but_using_locpot_warning = (
     "effective isotropic average of the supplied anisotropic dielectric. This could lead to significant "
     "errors for very anisotropic systems and/or relatively small supercells!"
 )
+
+_CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")  # mask for identifying calculation files
+_SUBFOLDER_PRIORITY = [
+    "vasp_ncl",
+    "vasp_std",
+    "vasp_nkred_std",
+    "vasp_gam",
+]  # priority order for subfolders
+_BULK_FOLDER_PATTERN = "bulk"
 
 
 def _convert_dielectric_to_tensor(dielectric: float | np.ndarray | list) -> np.ndarray:
@@ -991,12 +1004,12 @@ class DefectsParser:
             self.processes = min(max(1, mp.cpu_count() - 1), len(self.defect_folders) - 1)
 
         if self.processes <= 1:  # no multiprocessing
-            parsed_defect_entries_and_processed_warnings = [
-                self._parse_defect_and_handle_warnings(folder, pbar=pbar) for folder in self.defect_folders
-            ]
-            parsed_defect_entries, parsing_warnings = map(
-                list, zip(*parsed_defect_entries_and_processed_warnings, strict=False)
-            )  # unpack results
+            for folder in self.defect_folders:
+                parsed_defect_entry, processed_warnings_string = self._parse_defect_and_handle_warnings(
+                    folder, pbar=pbar
+                )
+                parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
+                parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
         else:  # otherwise multiprocessing:
             # here we try to parse one charged defect first, to check if dielectric and charge corrections
@@ -1480,8 +1493,10 @@ class DefectsParser:
 
 
 def _get_calculation_folders_for_parsing(
-    output_path: PathLike = ".", subfolder: PathLike | None = None, bulk_path: PathLike | None = None
-) -> tuple[list[str], PathLike, PathLike, PathLike]:
+    output_path: PathLike = ".",
+    subfolder: PathLike | None = None,
+    bulk_path: PathLike | None = None,
+) -> tuple[list[str], str, str, str]:
     """
     Get calculation folders for parsing.
 
@@ -1490,8 +1505,6 @@ def _get_calculation_folders_for_parsing(
             Path to the output directory containing the calculation folders to
             be parsed. Default is current directory (".").
         subfolder (PathLike | None):
-            Calculation directories
-        subfolder (PathLike):
             Name of subfolder(s) within each calculation folder (in the
             ``output_path`` directory) from which to parse. If not specified
             (default), ``doped`` checks first for ``vasp_ncl``, ``vasp_std``,
@@ -1500,10 +1513,9 @@ def _get_calculation_folders_for_parsing(
             (ncl > std > gam) found as ``subfolder``, otherwise uses the
             defect calculation folder itself with no subfolder (set
             ``subfolder = "."`` to enforce this).
-            TODO: Update with flexible filtering
-        bulk_path (PathLike):
+        bulk_path (PathLike | None):
             Path to bulk reference calculation folder. If not specified,
-            searches for folder with name "X_bulk" in the ``output_path``
+            searches for folder with "bulk" in the name in the ``output_path``
             directory (matching the default ``doped`` name for the bulk
             reference folder). Can be the full path, or the relative path from
             the ``output_path`` directory.
@@ -1514,119 +1526,188 @@ def _get_calculation_folders_for_parsing(
             and bulk path (the last three of which are the input arguments
             which may have been updated within this function).
     """
-    user_specified_subfolder = subfolder is not None
+    out_root = Path(output_path).resolve()
+    user_set_subfolder = subfolder is not None
 
-    # determine possible defect calculation folders:
-    possible_defect_folders = [
-        dir
-        for dir in os.listdir(output_path)
-        if any(
-            "vasprun" in file and ".xml" in file
-            for file_list in [tup[2] for tup in os.walk(os.path.join(output_path, dir))]
-            for file in file_list
-        )
-    ]
+    def _get_calc_files_df(root: Path) -> pd.DataFrame:
+        """
+        Get a DataFrame of calculation output files in folders under ``root``,
+        matching the ``_CALC_OUTPUT_MASK`` filter, recursively, ignoring hidden
+        files and folders.
+        """
+        files_df = _dataframe_of_files(out_root)  # dataframe of files in folders under ``out_root``
+        pattern = "|".join(map(re.escape, _CALC_OUTPUT_MASK))  # regex filter pattern for output files
+        return files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
 
-    if not possible_defect_folders:  # user may have specified the defect folder directly, so check
-        # if we can dynamically determine the defect folder:
-        possible_defect_folders = [
-            dir
-            for dir in os.listdir(os.path.join(output_path, os.pardir))
-            if any(
-                "vasprun" in file and ".xml" in file
-                for file_list in [tup[2] for tup in os.walk(os.path.join(output_path, os.pardir, dir))]
-                for file in file_list
-            )
-            and (
-                os.path.basename(output_path) in dir  # only that defect directory
-                or "bulk" in str(dir).lower()  # or a bulk directory, for later
-                or (bulk_path is not None and str(bulk_path).lower() in str(dir).lower())
-            )
+    calc_files_df = _get_calc_files_df(out_root)  # DataFrame of calculation output files
+    if calc_files_df.empty:  # user may have specified defect sub-folder directly, so check one level up
+        parent_root = out_root.parent
+        calc_files_df = _get_calc_files_df(parent_root)
+        possible_defect_folders = [  # candidate defect folders
+            g
+            for g in calc_files_df["folder_in_root"].unique()
+            if (out_root.name in g)
+            or (_BULK_FOLDER_PATTERN in g.lower())
+            or (bulk_path and str(bulk_path).lower() in g.lower())
         ]
-        if possible_defect_folders:  # update output path (otherwise will crash with informative error)
-            output_path = os.path.join(output_path, os.pardir)
-
-    # determine possible bulk calculation folders:
-    possible_bulk_folders = [
-        dir
-        for dir in possible_defect_folders
-        if "bulk" in str(dir).lower()
-        or (bulk_path is not None and str(dir).lower() == str(bulk_path).lower())
-    ]
-
-    if bulk_path is None:  # determine bulk_path to use
-        if len(possible_bulk_folders) == 1:
-            bulk_path = os.path.join(output_path, possible_bulk_folders[0])
-        elif len([dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk")]) == 1:
-            bulk_path = os.path.join(
-                output_path,
-                next(iter(dir for dir in possible_bulk_folders if str(dir).lower().endswith("_bulk"))),
-            )
-        else:
-            raise ValueError(
-                f"Could not automatically determine bulk supercell calculation folder in "
-                f"{output_path}, found {len(possible_bulk_folders)} folders containing "
-                f"`vasprun.xml(.gz)` files (in subfolders) and 'bulk' in the folder name. Please "
-                f"specify `bulk_path` manually."
-            )
-    if not os.path.isdir(bulk_path):
-        if len(possible_bulk_folders) == 1:
-            bulk_path = os.path.join(output_path, possible_bulk_folders[0])
-        else:
-            raise FileNotFoundError(f"Could not find bulk supercell calculation folder at '{bulk_path}'!")
-
-    if subfolder is None:  # determine subfolder to use
-        vasp_subfolders = [
-            subdir
-            for possible_defect_folder in possible_defect_folders
-            for subdir in os.listdir(os.path.join(output_path, possible_defect_folder))
-            if os.path.isdir(os.path.join(output_path, possible_defect_folder, subdir))
-            and "vasp_" in subdir
-        ]
-        vasp_type_count_dict = {  # Count Dik
-            i: len([subdir for subdir in vasp_subfolders if i in subdir])
-            for i in ["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam"]
-        }
-        # take first entry with non-zero count, else use defect folder itself:
-        subfolder = next((subdir for subdir, count in vasp_type_count_dict.items() if count), ".")
-
-    subfolder = str(subfolder)  # typing
-
-    # update possible defect calculation folders, based on possible bulk calculation folders and subfolder:
-    defect_folders = [
-        dir
-        for dir in possible_defect_folders
-        if dir not in possible_bulk_folders
-        and (subfolder in os.listdir(os.path.join(output_path, dir)) or subfolder == ".")
-    ]
-
-    # determine bulk_path to use:
-    if os.path.isdir(os.path.join(bulk_path, subfolder)) and any(
-        "vasprun" in file and ".xml" in file for file in os.listdir(os.path.join(bulk_path, subfolder))
-    ):  # add subfolder to bulk_path if present with vasprun.xml(.gz), otherwise use bulk_path as is
-        bulk_path = os.path.join(bulk_path, subfolder)
-    elif all("vasprun" not in file or ".xml" not in file for file in os.listdir(bulk_path)):
-        possible_bulk_subfolders = [
-            dir
-            for dir in os.listdir(bulk_path)
-            if os.path.isdir(os.path.join(bulk_path, dir))
-            and any(
-                "vasprun" in file and ".xml" in file for file in os.listdir(os.path.join(bulk_path, dir))
-            )
-        ]
-        if len(possible_bulk_subfolders) == 1 and not user_specified_subfolder:
-            # if only one subfolder with vasprun.xml, and `subfolder` wasn't explicitly set, then use this:
-            bulk_path = os.path.join(bulk_path, possible_bulk_subfolders[0])
-        else:
+        if not possible_defect_folders:
             raise FileNotFoundError(
-                f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-                f"{bulk_path} or subfolder: {subfolder} -- please ensure `vasprun.xml(.gz)` "
-                f"files are present and/or specify `bulk_path` manually."
+                f"No calculation folders with any of {_CALC_OUTPUT_MASK} in filenames found under "
+                f"{out_root}."
             )
+        out_root = parent_root  # shift context to parent directory
 
-    bulk_path = bulk_path.rstrip("/.")  # remove trailing '/.' from bulk_path if present
+    possible_defect_folders = calc_files_df["folder_in_root"].unique().tolist()  # candidate defect folders
+    subfolder = (
+        _determine_subfolder(calc_files_df, possible_defect_folders) if subfolder is None else subfolder
+    )
 
-    return defect_folders, output_path, subfolder, bulk_path
+    possible_bulk_folders = [  # candidate bulk folders
+        g
+        for g in possible_defect_folders
+        if _BULK_FOLDER_PATTERN in str(g).lower()
+        or (bulk_path and str(g).lower() == str(bulk_path).lower())
+    ]
+    defect_folders = [
+        d  # update candidate defect calculation folders, based on bulk calculation folder(s) and subfolder
+        for d in possible_defect_folders
+        if d not in possible_bulk_folders and (subfolder == "." or (out_root / d / subfolder).is_dir())
+    ]
+
+    bulk_path = _resolve_bulk_path(out_root, possible_bulk_folders, bulk_path)  # resolve bulk path
+    bulk_path = _append_subfolder_if_needed(bulk_path, subfolder, user_set_subfolder)
+
+    return defect_folders, str(out_root), str(subfolder), str(bulk_path)
+
+
+def _dataframe_of_files(root: Path) -> pd.DataFrame:
+    """
+    Get a dataframe with one row per file under *root*.
+
+    Args:
+        root (Path):
+            Path to the root directory.
+    """
+    rows: list[dict[str, Any]] = []
+    for f in root.rglob("*"):  # recursively find all files under root, ignoring hidden folders/files
+        if f.is_file():
+            relative_to_root_parts = f.relative_to(root).parts
+            if (
+                any(part.startswith(".") for part in relative_to_root_parts)
+                or len(relative_to_root_parts) < 2
+            ):  # ignore hidden files and folders, and files in root directory itself
+                continue
+            rows.append(
+                {
+                    "filename": f.name,
+                    "full_path": f,
+                    "folder_path": f.parent,
+                    "folder_in_root": f.relative_to(root).parts[0],
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _determine_subfolder(files_df: pd.DataFrame, defect_folders: list[str]) -> str:
+    """
+    Pick the highest-priority calculation subfolder name, or "." if none found.
+
+    Args:
+        files_df (pd.DataFrame):
+            DataFrame with one row per file in folders under ``out_root``.
+        defect_folders (list[str]):
+            List of defect calculation folders (in ``out_root``).
+
+    Returns:
+        str:
+            The highest-priority calculation subfolder name, or "." if none
+            found.
+    """
+    defect_folders_df = files_df[files_df["folder_in_root"].isin(defect_folders)]
+    for subfolder in _SUBFOLDER_PRIORITY:
+        if any(subfolder in p.name for p in defect_folders_df["folder_path"].unique()):
+            return subfolder
+    return "."
+
+
+def _resolve_bulk_path(
+    out_root: Path, possible_bulk_folders: list[str], bulk_path: PathLike | None
+) -> Path:
+    """
+    Return absolute Path to bulk folder (may contain subfolder later).
+
+    Args:
+        out_root (Path):
+            Path to the output directory.
+        possible_bulk_folders (list[str]):
+            List of possible bulk calculation folders (in ``out_root``).
+        bulk_path (str | None):
+            User-provided explicit path to the bulk calculation directory.
+    """
+    if bulk_path is None:
+        if len(possible_bulk_folders) == 1:
+            return out_root / possible_bulk_folders[0]  # only one possible bulk folder, so return it
+
+        suffix_bulk = [
+            d for d in possible_bulk_folders if str(d).lower().endswith(f"_{_BULK_FOLDER_PATTERN}")
+        ]
+        if len(suffix_bulk) == 1:
+            return out_root / next(iter(suffix_bulk))  # only one possible bulk folder, so return it
+
+        raise ValueError(
+            f"Could not determine bulk supercell calculation folder in {out_root}, found "
+            f"{len(possible_bulk_folders)} containing any of {_CALC_OUTPUT_MASK} in filenames (in "
+            f"subfolders) and '{_BULK_FOLDER_PATTERN}' in the folder name. Please specify `bulk_path` "
+            f"manually."
+        )
+
+    bulk_path = Path(bulk_path)
+    if bulk_path and not bulk_path.is_absolute():
+        bulk_path = out_root / bulk_path  # make relative path absolute
+    if bulk_path and not bulk_path.is_dir():
+        raise FileNotFoundError(f"Could not find bulk supercell calculation folder at '{bulk_path}'!")
+
+    return bulk_path
+
+
+def _append_subfolder_if_needed(bulk_path: Path, subfolder: PathLike, user_set: bool) -> Path:
+    """
+    Ensure ``bulk_path`` actually contains calculation files; dive into
+    ``subfolder`` if needed.
+
+    Args:
+        bulk_path (Path):
+            Path to the bulk calculation directory.
+        subfolder (str):
+            Subfolder with calculation output files.
+        user_set (bool):
+            Whether the subfolder was explicitly set by the user.
+
+    Returns:
+        Path:
+            Path to the bulk calculation directory, with subfolder if needed.
+    """
+    if (bulk_path / subfolder).is_dir() and any(
+        k in f.name for k in _CALC_OUTPUT_MASK for f in (bulk_path / subfolder).iterdir()
+    ):  # subfolder contains calculation output files, so add to bulk path
+        return bulk_path / subfolder
+
+    if not any(k in f.name for k in _CALC_OUTPUT_MASK for f in bulk_path.iterdir()):  # no output files
+        possible_bulk_subfolders = [
+            p
+            for p in bulk_path.iterdir()
+            if p.is_dir() and any(k in f.name for k in _CALC_OUTPUT_MASK for f in p.iterdir())
+        ]
+        if len(possible_bulk_subfolders) == 1 and not user_set:
+            # if only one subfolder with calculation outputs, and `subfolder` not explicitly set, use this:
+            return possible_bulk_subfolders[0].resolve()
+
+        raise FileNotFoundError(
+            f"No files with any of {_CALC_OUTPUT_MASK} in names found under {bulk_path} (subfolder "
+            f"{subfolder}). Please ensure bulk supercell calculation files are present and/or specify "
+            f"`bulk_path` manually."
+        )
+    return bulk_path
 
 
 def _process_parsing_warnings(
