@@ -983,58 +983,39 @@ class DefectsParser:
         parsed_defect_entries: list[DefectEntry] = []
         parsing_warnings: list[str] = []
 
+        # set up multiprocessing:
         mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
-        if self.processes is None:  # multiprocessing?
-            # only multiprocess as much as makes sense, if only a handful of defect folders:
+        if self.processes is None:  # only multiprocess as much as makes sense, if only few defect folders:
             self.processes = min(max(1, mp.cpu_count() - 1), len(self.defect_folders) - 1)
 
+        pbar = tqdm(total=len(self.defect_folders), desc="Parsing defect calculations")  # progress bar
         if self.processes <= 1:  # no multiprocessing
-            with tqdm(self.defect_folders, desc="Parsing defect calculations") as pbar:
-                for defect_folder in pbar:
-                    # set tqdm progress bar description to defect folder being parsed:
-                    pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
-                    parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
-                        defect_folder
-                    )
-                    parsing_warnings.append(
-                        _process_parsing_warnings(
-                            warnings_string, defect_folder, f"{defect_folder}/{self.subfolder}"
-                        )
-                    )
-                    if parsed_defect_entry is not None:
-                        parsed_defect_entries.append(parsed_defect_entry)
+            parsed_defect_entries_and_processed_warnings = [
+                self._parse_defect_and_handle_warnings(folder, pbar=pbar) for folder in self.defect_folders
+            ]
+            parsed_defect_entries, parsing_warnings = map(
+                list, zip(*parsed_defect_entries_and_processed_warnings, strict=False)
+            )  # unpack results
 
         else:  # otherwise multiprocessing:
-            # guess a charged defect in defect_folders, to try initially check if dielectric and
-            # corrections correctly set, before multiprocessing with the same settings for all folders:
-            charged_defect_folder = None
+            # here we try to parse one charged defect first, to check if dielectric and charge corrections
+            # are correctly set, and loading the bulk reference data for charge corrections for efficiency,
+            # before then using multiprocessing for the rest of the defect folders, with the same settings:
+            charged_defect_folder = None  # find a charged defect folder to parse first
             for possible_charged_defect_folder in self.defect_folders:
                 with contextlib.suppress(Exception):
                     if abs(int(possible_charged_defect_folder[-1])) > 0:  # likely charged defect
                         charged_defect_folder = possible_charged_defect_folder
 
-            pbar = tqdm(total=len(self.defect_folders))
             try:
                 if charged_defect_folder is not None:
                     # will throw warnings if dielectric is None / charge corrections not possible,
                     # and set self.skip_corrections appropriately
-                    pbar.set_description(  # set this first as desc is only set after parsing in function
-                        f"Parsing {charged_defect_folder}/{self.subfolder}".replace("/.", "")
+                    parsed_defect_entry, processed_warnings_string = (
+                        self._parse_defect_and_handle_warnings(charged_defect_folder, pbar=pbar)
                     )
-                    parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(
-                        charged_defect_folder
-                    )
-                    parsing_warnings.append(
-                        _update_pbar_and_return_warnings_from_parsing(
-                            defect_entry=parsed_defect_entry,
-                            subfolder=self.subfolder,
-                            warnings_string=warnings_string,
-                            defect_folder=charged_defect_folder,
-                            pbar=pbar,
-                        )
-                    )
-                    if parsed_defect_entry is not None:
-                        parsed_defect_entries.append(parsed_defect_entry)
+                    parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
+                    parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
                 # also load the other bulk corrections data if possible:
                 for k, v in self.bulk_corrections_data.items():
@@ -1060,21 +1041,18 @@ class DefectsParser:
                 pbar.set_description("Setting up multiprocessing")
                 if self.processes > 1:
                     with pool_manager(self.processes) as pool:  # parsed_defect_entry, warnings
-                        results = pool.imap_unordered(
+                        for parsed_defect_entry, processed_warnings_string in pool.imap_unordered(
                             self._parse_defect_and_handle_warnings, folders_to_process
-                        )
-                        for result in results:  # result -> (defect_entry, warnings_string, folder)
-                            parsing_warnings.append(
-                                _update_pbar_and_return_warnings_from_parsing(
-                                    defect_entry=result[0],
-                                    subfolder=self.subfolder,
-                                    warnings_string=result[1],
-                                    defect_folder=result[2],
-                                    pbar=pbar,
-                                )
+                        ):
+                            pbar.update()
+                            defect_folder = _get_defect_folder(parsed_defect_entry, self.subfolder)
+                            pbar.set_description(
+                                f"Parsing {defect_folder}/{self.subfolder}".replace("/.", "")
                             )
-                            if result[0] is not None:
-                                parsed_defect_entries.append(result[0])
+                            parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
+                            parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
+
+            # TODO: Compare parsing time to imap
 
             except Exception as exc:
                 pbar.close()
@@ -1083,10 +1061,13 @@ class DefectsParser:
             finally:
                 pbar.close()
 
-        _process_and_raise_parsing_warnings(
+        _format_and_raise_parsing_warnings(  # format and raise any parsing warnings
             parsing_warnings, bulk_path=self.bulk_path, subfolder=self.subfolder
         )
 
+        parsed_defect_entries = [
+            i for i in parsed_defect_entries if i is not None
+        ]  # remove None (failed parsing)
         if not parsed_defect_entries:
             subfolder_string = f" and `subfolder`: '{self.subfolder}'" if self.subfolder != "." else ""
             raise ValueError(
@@ -1114,7 +1095,19 @@ class DefectsParser:
 
     def _parse_single_defect(self, defect_folder: str) -> DefectEntry | None:
         """
-        Parse a single defect calculation, using ``DefectParser.from_paths()``.
+        Parse a single defect calculation at
+        ``{self.output_path}/{defect_folder}/{self.subfolder}``, using
+        ``DefectParser.from_paths()``.
+
+        Args:
+            defect_folder (str):
+                The defect folder to parse in ``self.output_path`` (and using
+                ``self.subfolder``), with ``DefectParser.from_paths()``.
+
+        Returns:
+            DefectEntry | None:
+                The parsed ``DefectEntry`` object, or ``None`` if parsing
+                failed.
         """
         try:
             self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
@@ -1137,21 +1130,17 @@ class DefectsParser:
                 self.skip_corrections = dp.skip_corrections  # set skip_corrections to True if
                 # dielectric is None and there are charged defects present (shows dielectric warning once)
 
-            if (
-                dp.defect_entry.calculation_metadata.get("bulk_locpot_dict") is not None
-                and self.bulk_corrections_data.get("bulk_locpot_dict") is None
-            ):
-                self.bulk_corrections_data["bulk_locpot_dict"] = dp.defect_entry.calculation_metadata[
-                    "bulk_locpot_dict"
-                ]
-
-            if (
-                dp.defect_entry.calculation_metadata.get("bulk_site_potentials") is not None
-                and self.bulk_corrections_data.get("bulk_site_potentials") is None
-            ):
-                self.bulk_corrections_data["bulk_site_potentials"] = (
-                    dp.defect_entry.calculation_metadata
-                )["bulk_site_potentials"]
+            for bulk_correction_data_key in [
+                "bulk_locpot_dict",
+                "bulk_site_potentials",
+            ]:
+                if (
+                    dp.defect_entry.calculation_metadata.get(bulk_correction_data_key) is not None
+                    and self.bulk_corrections_data.get(bulk_correction_data_key) is None
+                ):  # if not already set, update
+                    self.bulk_corrections_data[bulk_correction_data_key] = (
+                        dp.defect_entry.calculation_metadata[bulk_correction_data_key]
+                    )
 
         except Exception as exc:
             warnings.warn(
@@ -1163,18 +1152,25 @@ class DefectsParser:
 
         return dp.defect_entry
 
-    def _parse_defect_and_handle_warnings(self, defect_folder: str) -> tuple:
+    def _parse_defect_and_handle_warnings(self, defect_folder: str, pbar: tqdm | None = None) -> tuple:
         """
         Process defect and catch warnings along the way, so we can print which
         warnings came from which defect together at the end, in a summarised
         output.
 
         Args:
-            defect_folder (str): The defect folder to parse.
+            defect_folder (str):
+                The defect folder to parse in ``self.output_path`` (and using
+                ``self.subfolder``), with ``_parse_single_defect``.
+            pbar (tqdm):
+                ``tqdm`` progress bar to update with parsing progress.
 
         Returns:
-            tuple: (parsed_defect_entry, warnings_string, defect_folder)
+            tuple: (parsed_defect_entry, warnings_string)
         """
+        if pbar:  # set tqdm progress bar description to defect folder being parsed:
+            pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+
         with warnings.catch_warnings(record=True) as captured_warnings:
             parsed_defect_entry = self._parse_single_defect(defect_folder)
 
@@ -1196,7 +1192,17 @@ class DefectsParser:
             if not _check_ignored_message_in_warning(warning.message)
         )
 
-        return parsed_defect_entry, warnings_string, defect_folder
+        defect_path = (
+            parsed_defect_entry.calculation_metadata.get("defect_path", "N/A")
+            if parsed_defect_entry is not None
+            else f"{defect_folder}/{self.subfolder}"
+        )
+        processed_warnings_string = _process_parsing_warnings(warnings_string, defect_folder, defect_path)
+
+        if pbar:
+            pbar.update()
+
+        return parsed_defect_entry, processed_warnings_string
 
     def _handle_charge_correction_errors(self, error_tolerance: float, **kwargs) -> None:
         """
@@ -1619,36 +1625,28 @@ def _get_calculation_folders_for_parsing(
     return defect_folders, output_path, subfolder, bulk_path
 
 
-def _update_pbar_and_return_warnings_from_parsing(
-    defect_entry: DefectEntry,
-    subfolder: str = ".",
+def _process_parsing_warnings(
     warnings_string: str = "",
     defect_folder: str = "",
-    pbar: tqdm = None,
+    defect_path: str = "N/A",
 ) -> str:
     """
-    Update the ``tqdm`` progress bar (and set description), and process any
-    warnings from parsing.
-    """
-    if pbar:
-        pbar.update()
-
-    defect_path = "N/A"
-    if defect_entry is not None:
-        defect_folder = _get_defect_folder(defect_entry, subfolder)
-        defect_path = defect_entry.calculation_metadata.get("defect_path", "N/A")
-        if pbar:
-            pbar.set_description(f"Parsing {defect_folder}/{subfolder}".replace("/.", ""))
-
-    if warnings_string:
-        return _process_parsing_warnings(warnings_string, defect_folder, defect_path)
-
-    return warnings_string  # failed parsing warning if defect_entry is None
-
-
-def _process_parsing_warnings(warnings_string: str, defect_folder: str, defect_path: str) -> str:
-    """
     Process any warnings from parsing.
+
+    Args:
+        warnings_string (str):
+            String containing warnings from parsing, to be processed.
+        defect_folder (str):
+            Name of the defect folder being parsed, for formatting the warning
+            message.
+        defect_path (str):
+            Path to the defect calculation directory, for formatting the
+            warning message. Default is "N/A".
+
+    Returns:
+        str:
+            Processed warnings string, formatted for clarity and readability.
+            If there are no warnings or exceptions, returns an empty string.
     """
     if warnings_string:
         split_warnings = warnings_string.split("\n\n")
@@ -1657,12 +1655,11 @@ def _process_parsing_warnings(warnings_string: str, defect_folder: str, defect_p
             return (  # either only warnings (no exceptions), or warning(s) + exception
                 f"Warning(s) encountered when parsing {defect_folder}{location}:\n\n{warnings_string}"
             )
-        return warnings_string  # only exception, return as is
 
-    return ""
+    return warnings_string  # if exception, return as is, or "" if no warnings
 
 
-def _process_and_raise_parsing_warnings(
+def _format_and_raise_parsing_warnings(
     parsing_warnings: list[str], bulk_path: str = "bulk", subfolder: str = "."
 ) -> None:
     """
@@ -1790,7 +1787,7 @@ def _process_and_raise_parsing_warnings(
 
 def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
     """
-    Get the defect folder name from a ``DefectEntry`` object.
+    Get the defect folder name from which a ``DefectEntry`` object was parsed.
 
     Args:
         entry (DefectEntry):
