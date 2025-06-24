@@ -957,24 +957,14 @@ class DefectsParser:
         )
 
         # parse bulk calculation:
-        bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", self.bulk_path)
-        if multiple:
-            _multiple_files_warning(
-                "vasprun.xml",
-                self.bulk_path,
-                bulk_vr_path,
-                dir_type="bulk",
-            )
-
         self.bulk_vr, self.bulk_procar = _parse_vr_and_poss_procar(
-            bulk_vr_path,
-            parse_projected_eigen=self.parse_projected_eigen,
             output_path=self.bulk_path,
+            parse_projected_eigen=self.parse_projected_eigen,
             label="bulk",
             parse_procar=True,
         )
-        self.parse_projected_eigen = (
-            self.bulk_vr.projected_eigenvalues is not None or self.bulk_procar is not None
+        self.parse_projected_eigen = any(
+            i is not None for i in [self.bulk_vr.projected_eigenvalues, self.bulk_procar]
         )
 
         # try parsing the bulk oxidation states first, for later assigning defect "oxi_state"s (i.e.
@@ -1997,17 +1987,19 @@ def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
 
 
 def _parse_vr_and_poss_procar(
-    vr_path: PathLike,
+    output_path: PathLike,
     parse_projected_eigen: bool | None = None,
-    output_path: PathLike | None = None,
     label: str = "bulk",
     parse_procar: bool = True,
 ):
     procar = None
-
     failed_eig_parsing_warning_message = (
         f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
     )
+
+    vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", output_path)
+    if multiple:
+        _multiple_files_warning("vasprun.xml", output_path, vr_path, dir_type=label)
 
     try:
         vr = get_vasprun(
@@ -2020,7 +2012,9 @@ def _parse_vr_and_poss_procar(
         failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
         if parse_procar:
-            procar_path, _multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
+            procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
+            if multiple:
+                _multiple_files_warning("PROCAR", output_path, procar_path, dir_type=label)
             if "PROCAR" in procar_path and parse_projected_eigen is not False:
                 try:
                     procar = get_procar(procar_path)
@@ -2248,25 +2242,16 @@ class DefectParser:
             "defect_path": os.path.abspath(defect_path),
         }
 
-        if bulk_path is not None and bulk_vr is None:
-            # add bulk simple properties
-            bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", bulk_path)
-            if multiple:
-                _multiple_files_warning(
-                    "vasprun.xml",
-                    bulk_path,
-                    bulk_vr_path,
-                    dir_type="bulk",
-                )
-            bulk_vr, reparsed_bulk_procar = _parse_vr_and_poss_procar(
-                bulk_vr_path,
-                parse_projected_eigen,
-                bulk_path,
+        if bulk_path is not None and bulk_vr is None:  # add bulk simple properties
+            parsed_bulk_vasp_objs = _parse_vr_and_poss_procar(  # (bulk_vr, bulk_procar) if parse_procar
+                output_path=bulk_path,  # else just bulk_vr
+                parse_projected_eigen=parse_projected_eigen,
                 label="bulk",
                 parse_procar=bulk_procar is None,
             )
-            if bulk_procar is None and reparsed_bulk_procar is not None:
-                bulk_procar = reparsed_bulk_procar
+            bulk_vr, bulk_procar = (
+                parsed_bulk_vasp_objs if len(parsed_bulk_vasp_objs) == 2 else (parsed_bulk_vasp_objs, None)
+            )
             parse_projected_eigen = bulk_vr.projected_eigenvalues is not None or bulk_procar is not None
 
         elif bulk_vr is None:
@@ -2274,20 +2259,8 @@ class DefectParser:
         bulk_supercell = bulk_vr.final_structure.copy()
 
         # add defect simple properties
-        (
-            defect_vr_path,
-            multiple,
-        ) = _get_output_files_and_check_if_multiple("vasprun.xml", defect_path)
-        if multiple:
-            _multiple_files_warning(
-                "vasprun.xml",
-                defect_path,
-                defect_vr_path,
-                dir_type="defect",
-            )
-
         defect_vr, defect_procar = _parse_vr_and_poss_procar(
-            defect_vr_path, parse_projected_eigen, defect_path, label="defect"
+            defect_path, parse_projected_eigen=parse_projected_eigen, label="defect", parse_procar=True
         )
         parse_projected_eigen = defect_procar is not None or defect_vr.projected_eigenvalues is not None
 
@@ -2777,36 +2750,16 @@ class DefectParser:
         compatible.
         """
         if not self.bulk_vr:
-            bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
-                "vasprun.xml", self.defect_entry.calculation_metadata["bulk_path"]
-            )
-            if multiple:
-                _multiple_files_warning(
-                    "vasprun.xml",
-                    self.defect_entry.calculation_metadata["bulk_path"],
-                    bulk_vr_path,
-                    dir_type="bulk",
-                )
             self.bulk_vr = _parse_vr_and_poss_procar(
-                bulk_vr_path,
+                output_path=self.defect_entry.calculation_metadata["bulk_path"],
                 parse_projected_eigen=False,  # not needed for DefectEntry metadata
                 label="bulk",
                 parse_procar=False,
             )
 
         if not self.defect_vr:
-            defect_vr_path, multiple = _get_output_files_and_check_if_multiple(
-                "vasprun.xml", self.defect_entry.calculation_metadata["defect_path"]
-            )
-            if multiple:
-                _multiple_files_warning(
-                    "vasprun.xml",
-                    self.defect_entry.calculation_metadata["defect_path"],
-                    defect_vr_path,
-                    dir_type="defect",
-                )
             self.defect_vr = _parse_vr_and_poss_procar(
-                defect_vr_path,
+                output_path=self.defect_entry.calculation_metadata["defect_path"],
                 parse_projected_eigen=False,  # not needed for DefectEntry metadata
                 label="defect",
                 parse_procar=False,
@@ -2926,17 +2879,8 @@ class DefectParser:
                 Materials API key to access database.
         """
         if not self.bulk_vr:
-            bulk_vr_path, multiple = _get_output_files_and_check_if_multiple(
-                "vasprun.xml", self.defect_entry.calculation_metadata["bulk_path"]
-            )
-            if multiple:
-                warnings.warn(
-                    f"Multiple `vasprun.xml` files found in bulk directory: "
-                    f"{self.defect_entry.calculation_metadata['bulk_path']}. Using "
-                    f"{os.path.basename(bulk_vr_path)} to {_vasp_file_parsing_action_dict['vasprun.xml']}."
-                )
             self.bulk_vr = _parse_vr_and_poss_procar(
-                bulk_vr_path,
+                output_path=self.defect_entry.calculation_metadata["bulk_path"],
                 parse_projected_eigen=self.parse_projected_eigen,
                 label="bulk",
                 parse_procar=False,
