@@ -821,7 +821,9 @@ def get_split_vacancies_by_geometry(
                 lattice, vac.site.frac_coords, interstitial_site.frac_coords, return_d2=True
             )
             v1i_dist_squared = v1i_squared_dists[0][0]
-            if v1i_dist_squared < split_vac_dist_tol_squared and v1i_dist_squared > 0:  # d=0 for vac @ int
+            if (
+                v1i_dist_squared < split_vac_dist_tol_squared and v1i_dist_squared > 0.1
+            ):  # d=0 for vac @ int
                 for second_vac in doped_vacancy_generator.generate(
                     structure=vac.defect_structure, **vac_gen_kwargs  # type: ignore
                 ):
@@ -832,7 +834,7 @@ def get_split_vacancies_by_geometry(
                         return_d2=True,
                     )
                     v2i_dist_squared = v2i_squared_dists[0][0]
-                    if v2i_dist_squared < split_vac_dist_tol_squared and v2i_dist_squared > 0:
+                    if v2i_dist_squared < split_vac_dist_tol_squared and v2i_dist_squared > 0.1:
                         v1i_dist = round(np.sqrt(v1i_dist_squared), 3)
                         v2i_dist = round(np.sqrt(v2i_dist_squared), 3)
                         angle = get_angle(vec_1[0][0], vec_2[0][0], units="degrees")
