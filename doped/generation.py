@@ -27,7 +27,6 @@ from pymatgen.analysis.defects.generators import (
     VacancyGenerator,
 )
 from pymatgen.analysis.defects.utils import remove_collisions
-from pymatgen.analysis.ewald import EwaldMinimizer, EwaldSummation
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
@@ -36,7 +35,7 @@ from tabulate import tabulate
 from tqdm import tqdm
 
 from doped import pool_manager
-from doped.complexes import get_split_vacancies_by_geometry
+from doped.complexes import get_split_vacancies_from_electrostatics
 from doped.core import (
     Defect,
     DefectEntry,
@@ -50,7 +49,7 @@ from doped.core import (
 )
 from doped.utils import parsing, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
-from doped.utils.parsing import get_matching_site, reorder_s1_like_s2
+from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name
 
 if TYPE_CHECKING:
@@ -2428,69 +2427,7 @@ class DefectsGenerator(MSONable):
                 )
             return None
 
-        # try from database, otherwise print info message and try from electrostatics
-        try:
-            split_vacancies_dict = self.get_split_vacancies_from_database(
-                verbose=(
-                    "Will use electrostatic analysis to check for candidate low-energy split vacancies. "
-                    "Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
-                )
-            )
-        except Exception as exc:
-            warnings.warn(
-                f"Error getting split vacancies from database: {exc}\nGenerating from electrostatic "
-                f"analysis instead."
-            )
-            split_vacancies_dict = self.get_split_vacancies_from_electrostatics(
-                relative_electrostatic_energy_tol=self.kwargs.get(
-                    "relative_electrostatic_energy_tol", 1.1
-                ),
-                split_vac_dist_tol=self.kwargs.get(
-                    "split_vac_dist_tol", 5
-                ),  # TODO: Note in kwargs docstrings
-                verbose=verbose,
-            )
-
-        return split_vacancies_dict
-
-    def get_split_vacancies_from_database(self, verbose: bool | str = False):
-        """
-        TODO.
-        """
-        raise NotImplementedError("Not implemented yet.")
-
-    def get_split_vacancies_from_electrostatics(
-        self,
-        relative_electrostatic_energy_tol: float | None = None,
-        split_vac_dist_tol: float = 5,
-        verbose: bool = True,
-        ndigits: int = 2,
-        return_all: bool = False,
-    ):
-        """
-        Get candidate split vacancies from electrostatics analysis.
-
-        ndigits (int): Number of decimal places to round energies to (to avoid
-        degenerate configurations).
-        """
-        # TODO: Make these separate standalone functions in doped.complexes, that can be called later by
-        # user alternatively
-        split_vacancies_dict = {}
-        single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
-        bulk_supercell_w_oxi_states = self.bulk_supercell.copy()
-        bulk_supercell_w_oxi_states.add_oxidation_state_by_element(single_valence_oxi_states)
-        cations = {elt for elt in single_valence_oxi_states if single_valence_oxi_states[elt] > 0}
-
-        def estimate_ES_time(num_candidates, cell_size):
-            """
-            Estimated electrostatic estimation compute time per process.
-
-            From fitting and testing with/without multiprocessing over
-            different sizes / compositions, on a Macbook Pro 2021. Quadratic as
-            expected.
-            """
-            return 1.7e-5 * num_candidates * cell_size**2
-
+        combined_split_vacancies_dict = {}
         for cation in cations:
             interstitial_sites = {
                 entry.defect_supercell_site
@@ -2498,211 +2435,48 @@ class DefectsGenerator(MSONable):
                 if entry.name.startswith(f"{cation}_i")
             }
             if not interstitial_sites:
-                raise ValueError(
+                warnings.warn(
                     f"No interstitial sites (from DefectEntry.defect_supercell_site) found for element "
-                    f"{cation} -- required for split vacancy generation."
+                    f"{cation} -- required for split vacancy generation!"
                 )
-
-            # TODO: Make this a separate function perhaps
-            candidate_split_vacancies: dict[frozenset[float] | int, dict] = {}
-            while (
-                not candidate_split_vacancies
-                or estimate_ES_time(len(candidate_split_vacancies), self.bulk_supercell.num_sites)
-                / (4 * 60)  # TODO: Revisit, much faster with EwaldMinimizer?
-                > 10  # will be >10 mins with 4 processes, reduce search space (for v low symmetry cases)
-            ) and split_vac_dist_tol > 0:
-                # generate candidate split vacancies from geometric analysis:
-                try:
-                    candidate_split_vacancies = get_split_vacancies_by_geometry(
-                        bulk_supercell_w_oxi_states,
-                        interstitial_sites,
-                        split_vac_dist_tol=split_vac_dist_tol,
-                        all_species=False,
-                        symprec=self.kwargs.get("symprec", 0.01),
-                    )
-                except Exception as exc:
-                    print(f"Error generating split vacancies for {cation}: {exc}")
-                    break
-
-                split_vac_dist_tol -= 0.5  # reduce search space by 0.5 Å
-
-            if not candidate_split_vacancies:
-                print(f"No candidate split vacancies found for {cation}!")
                 continue
 
-            split_vac_dist_tol += 0.5  # account for last additional reduction after generation in loop
-
-            if verbose:
-                print(
-                    f"{len(candidate_split_vacancies)} candidate split vacancies found for {cation}, "
-                    f"using a vacancy-interstitial distance tolerance of {split_vac_dist_tol} Å (can be "
-                    f"set using `split_vac_dist_tol` in kwargs). Evaluating electrostatic energies..."
+            # try from database, otherwise print info message and try from electrostatics
+            try:
+                split_vacancies_dict = self.get_split_vacancies_from_database(
+                    verbose=(
+                        "Will use electrostatic analysis to check for candidate low-energy split "
+                        "vacancies. Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
+                    )
+                )
+            except Exception as exc:
+                warnings.warn(
+                    f"Error getting split vacancies from database: {exc}\nGenerating from electrostatic "
+                    f"analysis instead."
+                )
+                split_vacancies_dict = get_split_vacancies_from_electrostatics(
+                    bulk_supercell=self.bulk_supercell,
+                    interstitial_sites=interstitial_sites,
+                    bulk_oxi_states=self._bulk_oxi_states,
+                    relative_electrostatic_energy_tol=self.kwargs.get(
+                        "relative_electrostatic_energy_tol", 1.1
+                    ),
+                    split_vac_dist_tol=self.kwargs.get(
+                        "split_vac_dist_tol", 5
+                    ),  # TODO: Note in kwargs docstrings
+                    verbose=verbose,
+                    **self.kwargs,
                 )
 
-            # determine electrostatic energies of candidate split vacancies:
-            # note that here we use a modified implementation of that used in the original work, using
-            # EwaldMinimizer for fast electrostatic energy evaluations (rather than EwaldSummation with
-            # multiprocessing), which results in greater initial pruning of high electrostatic energy
-            # candidates:
-            unique_interstitial_sites = {
-                subdict["interstitial_site"] for subdict in candidate_split_vacancies.values()
-            }
-            unique_interstitial_sites_idx_dict = {
-                len(self.bulk_supercell) + i: interstitial_site
-                for i, interstitial_site in enumerate(unique_interstitial_sites)
-            }
-            bulk_supercell_with_all_interstitial_sites = bulk_supercell_w_oxi_states.copy()
-            for interstitial_site in unique_interstitial_sites_idx_dict.values():
-                bulk_supercell_with_all_interstitial_sites.append(
-                    species=interstitial_site.specie,
-                    coords=interstitial_site.frac_coords,
-                    properties=interstitial_site.properties,
-                )  # idx will be len(bulk_supercell_with_all_interstitial_sites) + i
-            bulk_supercell_with_all_interstitial_sites.add_oxidation_state_by_element(
-                single_valence_oxi_states
-            )
+            combined_split_vacancies_dict[cation] = split_vacancies_dict
 
-            # generate manipulations for EwaldMinimizer; manipulations are of the format:
-            # [oxi_state_multiplication_factor, num_sites_to_place, allowed_site_indices, species]
-            unique_vacancy_sites = {
-                site
-                for d in candidate_split_vacancies.values()
-                for site in (d["vacancy_1_site"], d["vacancy_2_site"])
-            }
-            unique_vacancy_sites_idx_dict = {}
-            for vac_site in unique_vacancy_sites:
-                matching_site = get_matching_site(vac_site, bulk_supercell_w_oxi_states)
-                unique_vacancy_sites_idx_dict[bulk_supercell_w_oxi_states.index(matching_site)] = vac_site
+        return combined_split_vacancies_dict
 
-            base_manipulations = [
-                [0, 0, list(unique_vacancy_sites_idx_dict.keys()), None],  # no vacancies
-                [
-                    0,
-                    len(unique_interstitial_sites_idx_dict),
-                    list(unique_interstitial_sites_idx_dict.keys()),
-                    None,
-                ],  # remove all interstitials
-            ]  # this would correspond to getting the base bulk supercell, no vacancies or interstitials
-            split_vac_manipulations = deepcopy(base_manipulations)
-            split_vac_manipulations[0][1] = 2  # two vacancies per split vac
-            split_vac_manipulations[1][1] = (
-                len(unique_interstitial_sites_idx_dict) - 1
-            )  # remove all but 1 interstitial
-            bulk_w_all_int_matrix = EwaldSummation(
-                bulk_supercell_with_all_interstitial_sites
-            ).total_energy_matrix
-
-            # get bulk ES energy; deepcopy to avoid modifying base_manipulations
-            ewald_m = EwaldMinimizer(bulk_w_all_int_matrix, deepcopy(base_manipulations), num_to_return=1)
-            abs_bulk_es_energy = round(ewald_m.output_lists[0][0], ndigits)
-
-            split_vac_ewald_m = EwaldMinimizer(
-                bulk_w_all_int_matrix,
-                split_vac_manipulations,
-                num_to_return=len(candidate_split_vacancies) * 2,
-            )  # double the number to return to partially account for duplicate generation in
-            #  EwaldMinimizer (should only really affect higher energy configurations, and we later round
-            # to ndigits to prune)
-
-            split_vacancies_energy_dict = {}
-            for output in split_vac_ewald_m.output_lists:
-                int_idx = next(  # interstitial site that wasn't removed (i.e., the one that remains)
-                    i
-                    for i in unique_interstitial_sites_idx_dict
-                    if all(i != manip[0] for manip in output[1])
-                )
-                interstitial_site = unique_interstitial_sites_idx_dict[int_idx]
-                vacancy_indices = [  # get vacancy indices (those not in interstitial sites)
-                    i[0] for i in output[1] if i[0] not in unique_interstitial_sites_idx_dict
-                ]
-                vacancy_sites = {unique_vacancy_sites_idx_dict[i] for i in vacancy_indices}
-
-                split_vacancies_energy_dict[round(output[0], ndigits)] = {
-                    "interstitial_site": interstitial_site,
-                    "vacancy_sites": vacancy_sites,
-                }
-
-            # get single vacancy ES energy:
-            point_vac_manipulations = deepcopy(base_manipulations)
-            point_vac_manipulations[0][1] = 1  # one vacancy
-            point_vac_ewald_m = EwaldMinimizer(
-                bulk_w_all_int_matrix, point_vac_manipulations, num_to_return=1
-            )  # just lowest energy
-            abs_point_vac_es_energy = round(
-                point_vac_ewald_m.output_lists[0][0], ndigits
-            )  # min point vacancy ES energy
-
-            # get interstitial ES energies:
-            int_manipulations = deepcopy(base_manipulations)
-            int_manipulations[1][1] = len(unique_interstitial_sites) - 1  # one interstitial
-            int_ewald_m = EwaldMinimizer(bulk_w_all_int_matrix, int_manipulations, num_to_return=1)
-            abs_int_es_energy = round(
-                int_ewald_m.output_lists[0][0], ndigits
-            )  # min interstitial ES energy
-
-            # get relative ES energies:
-            rel_point_vac_es_energy = abs_point_vac_es_energy - abs_bulk_es_energy
-            rel_int_es_energy = abs_int_es_energy - abs_bulk_es_energy
-            rel_isolated_viv_es_energy = rel_int_es_energy + (rel_point_vac_es_energy * 2)
-            rel_min_split_vac_es_energy = min(split_vacancies_energy_dict) - abs_bulk_es_energy
-
-            if verbose:
-                print(f"Lowest point vacancy electrostatic energy: {rel_point_vac_es_energy:.2f}")
-                print(f"Lowest interstitial electrostatic energy: {rel_int_es_energy:.2f}")
-                print(
-                    f"Lowest isolated vacancy-interstitial-vacancy combination electrostatic energy: "
-                    f"{rel_isolated_viv_es_energy:.2f}"
-                )
-                print(
-                    f"Lowest split-vacancy (vacancy-interstitial-vacancy complex) electrostatic energy: "
-                    f"{rel_min_split_vac_es_energy:.2f}"
-                )
-
-            split_vacancies_energy_dict = {
-                round(energy - abs_bulk_es_energy, ndigits): split_vacancies_energy_dict[energy]
-                for energy in sorted(split_vacancies_energy_dict)
-            }
-            num_lower_energy_split_vacancies = len(
-                [energy for energy in split_vacancies_energy_dict if energy < rel_point_vac_es_energy]
-            )
-            num_split_vacancies_within_tol = len(
-                [
-                    energy
-                    for energy in split_vacancies_energy_dict
-                    if energy < rel_point_vac_es_energy * (relative_electrostatic_energy_tol or 1.1)
-                ]
-            )
-            num_to_store = (
-                (
-                    min(num_split_vacancies_within_tol, 10)
-                    if relative_electrostatic_energy_tol is None
-                    else num_split_vacancies_within_tol
-                )
-                if not return_all
-                else len(split_vacancies_energy_dict)
-            )
-            split_vacancies_energy_dict = dict(sorted(split_vacancies_energy_dict.items())[:num_to_store])
-
-            split_vacancies_dict[cation] = {
-                "split_vacancies_electrostatic_energy_dict": split_vacancies_energy_dict,
-                "min_point_vacancy_electrostatic_formation_energy": rel_point_vac_es_energy,
-                "min_interstitial_electrostatic_formation_energy": rel_int_es_energy,
-                "min_isolated_viv_electrostatic_formation_energy": rel_isolated_viv_es_energy,
-                "min_split_vac_electrostatic_formation_energy": rel_min_split_vac_es_energy,
-                "bulk_supercell_with_oxi_states": bulk_supercell_w_oxi_states,
-                "bulk_supercell_absolute_electrostatic_energy": abs_bulk_es_energy,
-                "num_lower_energy_split_vacancies": num_lower_energy_split_vacancies,
-                "num_split_vacancies_within_tol": num_split_vacancies_within_tol,
-            }
-            if verbose:
-                print(
-                    f"{cation}: Found {num_lower_energy_split_vacancies} lower energy split vacancies, "
-                    f"{num_split_vacancies_within_tol} within {relative_electrostatic_energy_tol or 1.1}x "
-                    f"of the lowest point vacancy electrostatic formation energy. Storing {num_to_store} "
-                    f"split vacancies."
-                )
-
-        return split_vacancies_dict
+    def get_split_vacancies_from_database(self, verbose: bool | str = False):
+        """
+        TODO.
+        """
+        raise NotImplementedError("Not implemented yet.")
 
     def __getattr__(self, attr):
         """
