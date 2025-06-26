@@ -4,12 +4,12 @@ calculations.
 """
 
 import contextlib
-import copy
 import logging
 import operator
 import re
 import warnings
 from collections import defaultdict
+from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain
 from typing import TYPE_CHECKING, Union, cast
@@ -35,12 +35,8 @@ from pymatgen.util.typing import PathLike
 from tabulate import tabulate
 from tqdm import tqdm
 
-from doped import get_mp_processes, pool_manager
-from doped.complexes import (
-    generate_complex_from_defect_sites,
-    get_es_energy,
-    get_split_vacancies_by_geometry,
-)
+from doped import pool_manager
+from doped.complexes import get_split_vacancies_by_geometry
 from doped.core import (
     Defect,
     DefectEntry,
@@ -2081,7 +2077,7 @@ class DefectsGenerator(MSONable):
                 neutral_defect_entry.charge_state_guessing_log = cast("list[dict] | None", None)
 
             for charge in charge_states:
-                defect_entry = copy.deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
+                defect_entry = deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
                 defect_entry.charge_state = charge
                 defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
                 self.defect_entries[defect_entry.name] = defect_entry
@@ -2220,7 +2216,7 @@ class DefectsGenerator(MSONable):
                 if _check_if_name_subset(name, defect_entry_name_wout_charge)
             )
             for charge in charge_states:
-                defect_entry = copy.deepcopy(previous_defect_entry)
+                defect_entry = deepcopy(previous_defect_entry)
                 defect_entry.charge_state = charge
                 defect_entry.name = (
                     f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"
@@ -2468,14 +2464,14 @@ class DefectsGenerator(MSONable):
         relative_electrostatic_energy_tol: float | None = None,
         split_vac_dist_tol: float = 5,
         verbose: bool = True,
-        processes: int | None = None,
+        ndigits: int = 2,
+        return_all: bool = False,
     ):
         """
         Get candidate split vacancies from electrostatics analysis.
 
-        processes (int):  TODO         Number of processes to use for
-        multiprocessing. If not set,         defaults to one less than the
-        number of CPUs available.
+        ndigits (int): Number of decimal places to round energies to (to avoid
+        degenerate configurations).
         """
         # TODO: Make these separate standalone functions in doped.complexes, that can be called later by
         # user alternatively
@@ -2483,7 +2479,6 @@ class DefectsGenerator(MSONable):
         single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
         bulk_supercell_w_oxi_states = self.bulk_supercell.copy()
         bulk_supercell_w_oxi_states.add_oxidation_state_by_element(single_valence_oxi_states)
-        bulk_supercell_es_energy = get_es_energy(bulk_supercell_w_oxi_states)
         cations = {elt for elt in single_valence_oxi_states if single_valence_oxi_states[elt] > 0}
 
         def estimate_ES_time(num_candidates, cell_size):
@@ -2544,39 +2539,27 @@ class DefectsGenerator(MSONable):
                     f"set using `split_vac_dist_tol` in kwargs). Evaluating electrostatic energies..."
                 )
 
-            vacancy_entries = [
-                entry for entry in self.defect_entries.values() if entry.name.startswith(f"v_{cation}_")
-            ]
-            fully_ionised_charge_state = min(
-                [entry.charge_state for entry in vacancy_entries]
-            )  # most negative
-            fully_ionised_vacancy_entries = [
-                entry for entry in vacancy_entries if entry.charge_state == fully_ionised_charge_state
-            ]
-
             # determine electrostatic energies of candidate split vacancies:
             # note that here we use a modified implementation of that used in the original work, using
             # EwaldMinimizer for fast electrostatic energy evaluations (rather than EwaldSummation with
             # multiprocessing), which results in greater initial pruning of high electrostatic energy
             # candidates:
+            unique_interstitial_sites = {
+                subdict["interstitial_site"] for subdict in candidate_split_vacancies.values()
+            }
             unique_interstitial_sites_idx_dict = {
                 len(self.bulk_supercell) + i: interstitial_site
-                for i, interstitial_site in enumerate(
-                    {subdict["interstitial_site"] for subdict in candidate_split_vacancies.values()}
-                )
+                for i, interstitial_site in enumerate(unique_interstitial_sites)
             }
-            bulk_supercell_with_all_interstitial_sites = self.bulk_supercell.copy()
+            bulk_supercell_with_all_interstitial_sites = bulk_supercell_w_oxi_states.copy()
             for interstitial_site in unique_interstitial_sites_idx_dict.values():
                 bulk_supercell_with_all_interstitial_sites.append(
                     species=interstitial_site.specie,
                     coords=interstitial_site.frac_coords,
                     properties=interstitial_site.properties,
                 )  # idx will be len(bulk_supercell_with_all_interstitial_sites) + i
-
-            bulk_supercell_with_all_interstitial_sites = (
-                bulk_supercell_with_all_interstitial_sites.add_oxidation_state_by_element(
-                    single_valence_oxi_states
-                )
+            bulk_supercell_with_all_interstitial_sites.add_oxidation_state_by_element(
+                single_valence_oxi_states
             )
 
             # generate manipulations for EwaldMinimizer; manipulations are of the format:
@@ -2588,142 +2571,135 @@ class DefectsGenerator(MSONable):
             }
             unique_vacancy_sites_idx_dict = {}
             for vac_site in unique_vacancy_sites:
-                matching_site = get_matching_site(vac_site, bulk_supercell_with_all_interstitial_sites)
-                unique_vacancy_sites_idx_dict[
-                    bulk_supercell_with_all_interstitial_sites.index(matching_site)
-                ] = vac_site
+                matching_site = get_matching_site(vac_site, bulk_supercell_w_oxi_states)
+                unique_vacancy_sites_idx_dict[bulk_supercell_w_oxi_states.index(matching_site)] = vac_site
 
-            manipulations = [
-                [0, 2, list(unique_vacancy_sites_idx_dict.keys()), None],  # two vacancies per split vac
+            base_manipulations = [
+                [0, 0, list(unique_vacancy_sites_idx_dict.keys()), None],  # no vacancies
                 [
                     0,
-                    len(unique_interstitial_sites_idx_dict) - 1,
+                    len(unique_interstitial_sites_idx_dict),
                     list(unique_interstitial_sites_idx_dict.keys()),
                     None,
-                ],  # only one interstitial per split vacancy
-            ]
+                ],  # remove all interstitials
+            ]  # this would correspond to getting the base bulk supercell, no vacancies or interstitials
+            split_vac_manipulations = deepcopy(base_manipulations)
+            split_vac_manipulations[0][1] = 2  # two vacancies per split vac
+            split_vac_manipulations[1][1] = (
+                len(unique_interstitial_sites_idx_dict) - 1
+            )  # remove all but 1 interstitial
+            bulk_w_all_int_matrix = EwaldSummation(
+                bulk_supercell_with_all_interstitial_sites
+            ).total_energy_matrix
 
-            matrix = EwaldSummation(bulk_supercell_with_all_interstitial_sites).total_energy_matrix
-            ewald_m = EwaldMinimizer(matrix, manipulations, num_to_return=len(candidate_split_vacancies))
+            # get bulk ES energy; deepcopy to avoid modifying base_manipulations
+            ewald_m = EwaldMinimizer(bulk_w_all_int_matrix, deepcopy(base_manipulations), num_to_return=1)
+            abs_bulk_es_energy = round(ewald_m.output_lists[0][0], ndigits)
+
+            split_vac_ewald_m = EwaldMinimizer(
+                bulk_w_all_int_matrix,
+                split_vac_manipulations,
+                num_to_return=len(candidate_split_vacancies) * 2,
+            )  # double the number to return to partially account for duplicate generation in
+            #  EwaldMinimizer (should only really affect higher energy configurations, and we later round
+            # to ndigits to prune)
 
             split_vacancies_energy_dict = {}
-            for output in ewald_m.output_lists:
-                complex_struct = bulk_supercell_with_all_interstitial_sites.copy()
-                del_indices = [manipulation[0] for manipulation in output[1] if manipulation[1] is None]
-                complex_struct.remove_sites(del_indices)  # remove vacancies and additional interstitials
-                int_idx = next(
-                    iter(
-                        [
-                            i
-                            for i in list(unique_interstitial_sites_idx_dict.keys())
-                            if all(i != manip[0] for manip in output[1])
-                        ]
-                    )
+            for output in split_vac_ewald_m.output_lists:
+                int_idx = next(  # interstitial site that wasn't removed (i.e., the one that remains)
+                    i
+                    for i in unique_interstitial_sites_idx_dict
+                    if all(i != manip[0] for manip in output[1])
                 )
                 interstitial_site = unique_interstitial_sites_idx_dict[int_idx]
-                vacancy_indices = [
-                    i[0] for i in output[1] if i[0] not in list(unique_interstitial_sites_idx_dict.keys())
+                vacancy_indices = [  # get vacancy indices (those not in interstitial sites)
+                    i[0] for i in output[1] if i[0] not in unique_interstitial_sites_idx_dict
                 ]
                 vacancy_sites = {unique_vacancy_sites_idx_dict[i] for i in vacancy_indices}
 
-                split_vacancies_energy_dict[output[0]] = {
-                    "structure": complex_struct,
+                split_vacancies_energy_dict[round(output[0], ndigits)] = {
                     "interstitial_site": interstitial_site,
                     "vacancy_sites": vacancy_sites,
                 }
 
-            # TODO: Use this for other ES energy gen
+            # get single vacancy ES energy:
+            point_vac_manipulations = deepcopy(base_manipulations)
+            point_vac_manipulations[0][1] = 1  # one vacancy
+            point_vac_ewald_m = EwaldMinimizer(
+                bulk_w_all_int_matrix, point_vac_manipulations, num_to_return=1
+            )  # just lowest energy
+            abs_point_vac_es_energy = round(
+                point_vac_ewald_m.output_lists[0][0], ndigits
+            )  # min point vacancy ES energy
 
-            vacancy_defect_supercells = [
-                entry.defect_supercell
-                for entry in fully_ionised_vacancy_entries
-                if entry.defect_supercell is not None  # typing
-            ]
-            for vacancy_defect_supercell in vacancy_defect_supercells:
-                vacancy_defect_supercell.add_oxidation_state_by_element(single_valence_oxi_states)
+            # get interstitial ES energies:
+            int_manipulations = deepcopy(base_manipulations)
+            int_manipulations[1][1] = len(unique_interstitial_sites) - 1  # one interstitial
+            int_ewald_m = EwaldMinimizer(bulk_w_all_int_matrix, int_manipulations, num_to_return=1)
+            abs_int_es_energy = round(
+                int_ewald_m.output_lists[0][0], ndigits
+            )  # min interstitial ES energy
 
-            with pool_manager(
-                int(min(len(fully_ionised_vacancy_entries) / 2, get_mp_processes(processes)))
-            ) as pool:
-                single_vac_es_energies = list(pool.map(get_es_energy, vacancy_defect_supercells))
-
-            if verbose:
-                for i, entry in enumerate(fully_ionised_vacancy_entries):
-                    single_vac_rel_es_energy = single_vac_es_energies[i] - bulk_supercell_es_energy
-                    print(
-                        entry.name,
-                        f"Single vacancy ES energy: {single_vac_rel_es_energy:.2f}",
-                    )
-
-            single_vac_es_energy = min(single_vac_es_energies)
-
-            fully_ionised_interstitial_entries = [
-                entry
-                for entry in self.defect_entries.values()
-                if entry.name.startswith(f"{cation}_i")
-                and entry.charge_state == -fully_ionised_charge_state
-            ]
-            interstitial_defect_supercells = [
-                entry.defect_supercell
-                for entry in fully_ionised_interstitial_entries
-                if entry.defect_supercell is not None  # typing
-            ]
-            for interstitial_defect_supercell in interstitial_defect_supercells:
-                interstitial_defect_supercell.add_oxidation_state_by_element(single_valence_oxi_states)
-
-            with pool_manager(
-                int(min(len(interstitial_defect_supercells) / 2, get_mp_processes(processes)))
-            ) as pool:
-                interstitial_es_energies = list(pool.map(get_es_energy, interstitial_defect_supercells))
-
-            predicted_viv_es_energies = [
-                (energy - bulk_supercell_es_energy) + 2 * (single_vac_es_energy - bulk_supercell_es_energy)
-                for energy in interstitial_es_energies
-            ]
+            # get relative ES energies:
+            rel_point_vac_es_energy = abs_point_vac_es_energy - abs_bulk_es_energy
+            rel_int_es_energy = abs_int_es_energy - abs_bulk_es_energy
+            rel_isolated_viv_es_energy = rel_int_es_energy + (rel_point_vac_es_energy * 2)
+            rel_min_split_vac_es_energy = min(split_vacancies_energy_dict) - abs_bulk_es_energy
 
             if verbose:
-                for i, entry in enumerate(fully_ionised_interstitial_entries):
-                    print(entry.name, f"Interstitial ES energy: {predicted_viv_es_energies[i]:.2f}")
+                print(f"Lowest point vacancy electrostatic energy: {rel_point_vac_es_energy:.2f}")
+                print(f"Lowest interstitial electrostatic energy: {rel_int_es_energy:.2f}")
+                print(
+                    f"Lowest isolated vacancy-interstitial-vacancy combination electrostatic energy: "
+                    f"{rel_isolated_viv_es_energy:.2f}"
+                )
+                print(
+                    f"Lowest split-vacancy (vacancy-interstitial-vacancy complex) electrostatic energy: "
+                    f"{rel_min_split_vac_es_energy:.2f}"
+                )
 
-            if verbose:
-                split_vac_min_rel_es_energy = min(split_vacancies_energy_dict) - bulk_supercell_es_energy
-                print(f"Lowest energy split vacancy ES energy: {split_vac_min_rel_es_energy:.2f}")
-            split_vacancies_energy_dict = dict(sorted(split_vacancies_energy_dict.items()))
-
-            lower_energy_split_vacancies = len(
-                [energy for energy in split_vacancies_energy_dict if energy < min(single_vac_es_energies)]
+            split_vacancies_energy_dict = {
+                round(energy - abs_bulk_es_energy, ndigits): split_vacancies_energy_dict[energy]
+                for energy in sorted(split_vacancies_energy_dict)
+            }
+            num_lower_energy_split_vacancies = len(
+                [energy for energy in split_vacancies_energy_dict if energy < rel_point_vac_es_energy]
             )
-            split_vacancies_within_tol = [
-                energy
-                for energy in split_vacancies_energy_dict
-                if energy - bulk_supercell_es_energy
-                < (min(single_vac_es_energies) - bulk_supercell_es_energy)
-                * (relative_electrostatic_energy_tol or 1.1)
-            ]
-            num_within_tol = len(split_vacancies_within_tol)
+            num_split_vacancies_within_tol = len(
+                [
+                    energy
+                    for energy in split_vacancies_energy_dict
+                    if energy < rel_point_vac_es_energy * (relative_electrostatic_energy_tol or 1.1)
+                ]
+            )
             num_to_store = (
-                min(num_within_tol, 10) if relative_electrostatic_energy_tol is None else num_within_tol
+                (
+                    min(num_split_vacancies_within_tol, 10)
+                    if relative_electrostatic_energy_tol is None
+                    else num_split_vacancies_within_tol
+                )
+                if not return_all
+                else len(split_vacancies_energy_dict)
             )
-            split_vacancies_within_tol = split_vacancies_within_tol[:num_to_store]
-            all_split_vacancy_energies = list(split_vacancies_energy_dict.keys())
-            lean_split_vacancies_dict = dict(sorted(split_vacancies_energy_dict.items())[:num_to_store])
+            split_vacancies_energy_dict = dict(sorted(split_vacancies_energy_dict.items())[:num_to_store])
 
             split_vacancies_dict[cation] = {
-                "split_vacancies_energy_dict": lean_split_vacancies_dict,
-                "single_vac_es_energies": single_vac_es_energies,
-                "predicted_viv_es_energies": predicted_viv_es_energies,
-                "bulk_supercell": self.bulk_supercell,
-                "bulk_supercell_es_energy": bulk_supercell_es_energy,
-                "all_split_vacancy_energies": np.round(all_split_vacancy_energies, 3),
-                "num_lower_energy_split_vacancies": lower_energy_split_vacancies,
-                "num_split_vacancies_within_tol": num_within_tol,
-                "fully_ionised_vacancy_entries": fully_ionised_vacancy_entries,
+                "split_vacancies_electrostatic_energy_dict": split_vacancies_energy_dict,
+                "min_point_vacancy_electrostatic_formation_energy": rel_point_vac_es_energy,
+                "min_interstitial_electrostatic_formation_energy": rel_int_es_energy,
+                "min_isolated_viv_electrostatic_formation_energy": rel_isolated_viv_es_energy,
+                "min_split_vac_electrostatic_formation_energy": rel_min_split_vac_es_energy,
+                "bulk_supercell_with_oxi_states": bulk_supercell_w_oxi_states,
+                "bulk_supercell_absolute_electrostatic_energy": abs_bulk_es_energy,
+                "num_lower_energy_split_vacancies": num_lower_energy_split_vacancies,
+                "num_split_vacancies_within_tol": num_split_vacancies_within_tol,
             }
             if verbose:
                 print(
-                    f"{cation}: Found {lower_energy_split_vacancies} lower energy split vacancies, "
-                    f"{num_within_tol} within {relative_electrostatic_energy_tol}x of the lowest energy "
-                    f"point vacancy. Storing {num_to_store} split vacancies."
+                    f"{cation}: Found {num_lower_energy_split_vacancies} lower energy split vacancies, "
+                    f"{num_split_vacancies_within_tol} within {relative_electrostatic_energy_tol or 1.1}x "
+                    f"of the lowest point vacancy electrostatic formation energy. Storing {num_to_store} "
+                    f"split vacancies."
                 )
 
         return split_vacancies_dict
@@ -2870,24 +2846,6 @@ class DefectsGenerator(MSONable):
             + "\n---------------------------------------------------------\n"
             + self._defect_generator_info()
         )
-
-
-def _generate_complex_from_dict_and_get_es_energy(
-    bulk_supercell: Structure,
-    complex_defect_site_dict: dict[str, PeriodicSite | list[PeriodicSite]],
-    oxi_states: dict[str, int] | None = None,
-):
-    """
-    Helper function to generate a complex defect supercell from a dictionary of
-    constituent sites, and (bulk) supercell structure, and calculate its
-    electrostatic energy.
-
-    Defined here to allow for use in multiprocessing.
-    """
-    complex_defect_supercell = generate_complex_from_defect_sites(
-        bulk_supercell, **complex_defect_site_dict
-    )
-    return get_es_energy(complex_defect_supercell, oxi_states=oxi_states)
 
 
 def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
