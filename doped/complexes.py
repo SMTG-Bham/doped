@@ -165,6 +165,35 @@ def get_es_energy(structure: Structure, oxi_states: dict | None = None) -> float
     return EwaldSummation(structure).total_energy
 
 
+def _estimate_ES_time(num_candidates: int, cell_size: int) -> float:
+    """
+    Convenience function to electrostatic estimation compute time per process,
+    in seconds, using ``EwaldSummation(candidate_structure).total_energy``
+    (i.e. ``get_es_energy()``).
+
+    From fitting and testing with/without multiprocessing over different
+    sizes / compositions, on a Macbook Pro 2021. Quadratic as expected.
+
+    This was previously used to dynamically adjust the search radius for
+    candidate low energy complex defects (e.g. split vacancies), but has been
+    mostly deprecated by the use of ``EwaldMinimizer`` to efficiently estimate
+    the electrostatic energies of many candidate configurations within the same
+    supercell.
+
+    Args:
+        num_candidates (int):
+            The number of candidate structures (with ``cell_size`` sites) to be
+            estimated.
+        cell_size (int):
+            The size of the cell, in number of sites/atoms.
+
+    Returns:
+        float: The estimated time to compute the electrostatic energy of the
+        candidate structures, in seconds.
+    """
+    return 1.7e-5 * num_candidates * cell_size**2
+
+
 def generate_complex_from_defect_sites(
     bulk_supercell: Structure,
     vacancy_sites: Iterable[PeriodicSite] | PeriodicSite | None = None,
@@ -975,46 +1004,26 @@ def get_split_vacancies_from_electrostatics(
     bulk_supercell_w_oxi_states = bulk_supercell.copy()
     bulk_supercell_w_oxi_states.add_oxidation_state_by_element(single_valence_oxi_states)
 
-    def estimate_ES_time(num_candidates, cell_size):
-        """
-        Estimated electrostatic estimation compute time per process.
+    try:  # generate candidate split vacancies from geometric analysis:
+        candidate_split_vacancies = get_split_vacancies_by_geometry(
+            bulk_supercell_w_oxi_states,
+            interstitial_sites,
+            split_vac_dist_tol=split_vac_dist_tol,
+            all_species=False,
+            prune_symmetry_equivalent=prune_symmetry_equivalent,
+            symprec=kwargs.get("symprec", 0.01),
+        )
+    except Exception as exc:
+        print(f"Error generating split vacancies: {exc}")
 
-        From fitting and testing with/without multiprocessing over different
-        sizes / compositions, on a Macbook Pro 2021. Quadratic as expected.
-        """
-        return 1.7e-5 * num_candidates * cell_size**2  # TODO: Update with EwaldMinimizer numbers
-
-    candidate_split_vacancies: dict[frozenset[float] | int, dict] = {}
-    while (
-        not candidate_split_vacancies
-        or estimate_ES_time(len(candidate_split_vacancies), bulk_supercell_w_oxi_states.num_sites)
-        / (4 * 60)  # TODO: Revisit, much faster with EwaldMinimizer?
-        > 10  # will be >10 mins with 4 processes, reduce search space (for v low symmetry cases)
-    ) and split_vac_dist_tol > 0:
-        try:  # generate candidate split vacancies from geometric analysis:
-            candidate_split_vacancies = get_split_vacancies_by_geometry(
-                bulk_supercell_w_oxi_states,
-                interstitial_sites,
-                split_vac_dist_tol=split_vac_dist_tol,
-                all_species=False,
-                symprec=kwargs.get("symprec", 0.01),
-            )
-        except Exception as exc:
-            print(f"Error generating split vacancies: {exc}")
-            break
-
-        split_vac_dist_tol -= 0.5  # reduce search space by 0.5 Å
-
-    split_vac_dist_tol += 0.5  # account for last additional reduction after generation in loop
     if not candidate_split_vacancies:
         print("No candidate split vacancies found!")
         return None
 
     if verbose:
         print(
-            f"{len(candidate_split_vacancies)} candidate split vacancies found, using a "
-            f"vacancy-interstitial distance tolerance of {split_vac_dist_tol} Å (can be set using "
-            "`split_vac_dist_tol` in kwargs). Evaluating electrostatic energies..."
+            f"{len(candidate_split_vacancies)} candidate split vacancies found, with vacancy-interstitial "
+            f"distance tolerance of {split_vac_dist_tol} Å. Evaluating electrostatic energies..."
         )
 
     # determine electrostatic energies of candidate split vacancies:
@@ -1073,10 +1082,9 @@ def get_split_vacancies_from_electrostatics(
     split_vac_ewald_m = EwaldMinimizer(
         bulk_w_all_int_matrix,
         split_vac_manipulations,
-        num_to_return=len(candidate_split_vacancies) * 2,
-    )  # double the number to return to partially account for duplicate generation in
-    #  EwaldMinimizer (should only really affect higher energy configurations, and we later round
-    # to ndigits to prune)
+        num_to_return=len(candidate_split_vacancies) * 10,
+    )  # 10x number to return to partially account for duplicate generation in EwaldMinimizer (should only
+    # really affect higher energy configurations, and we later round to ndigits to prune)
 
     split_vacancies_energy_dict = {}
     for output in split_vac_ewald_m.output_lists:
@@ -1171,3 +1179,10 @@ def get_split_vacancies_from_electrostatics(
         "num_lower_energy_split_vacancies": num_lower_energy_split_vacancies,
         "num_split_vacancies_within_tol": num_split_vacancies_within_tol,
     }
+
+
+def get_split_vacancies_from_database(*args, verbose: bool | str = False):
+    """
+    TODO.
+    """
+    raise NotImplementedError("Not implemented yet.")

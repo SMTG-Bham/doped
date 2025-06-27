@@ -35,7 +35,7 @@ from tabulate import tabulate
 from tqdm import tqdm
 
 from doped import pool_manager
-from doped.complexes import get_split_vacancies_from_electrostatics
+from doped.complexes import get_split_vacancies_from_database, get_split_vacancies_from_electrostatics
 from doped.core import (
     Defect,
     DefectEntry,
@@ -2443,7 +2443,7 @@ class DefectsGenerator(MSONable):
 
             # try from database, otherwise print info message and try from electrostatics
             try:
-                split_vacancies_dict = self.get_split_vacancies_from_database(
+                split_vacancies_dict = get_split_vacancies_from_database(
                     verbose=(
                         "Will use electrostatic analysis to check for candidate low-energy split "
                         "vacancies. Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
@@ -2471,12 +2471,6 @@ class DefectsGenerator(MSONable):
             combined_split_vacancies_dict[cation] = split_vacancies_dict
 
         return combined_split_vacancies_dict
-
-    def get_split_vacancies_from_database(self, verbose: bool | str = False):
-        """
-        TODO.
-        """
-        raise NotImplementedError("Not implemented yet.")
 
     def __getattr__(self, attr):
         """
