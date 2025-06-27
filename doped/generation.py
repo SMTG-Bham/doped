@@ -35,14 +35,12 @@ from tabulate import tabulate
 from tqdm import tqdm
 
 from doped import pool_manager
-from doped.complexes import get_split_vacancies_from_database, get_split_vacancies_from_electrostatics
 from doped.core import (
     Defect,
     DefectEntry,
     Interstitial,
     Substitution,
     Vacancy,
-    _get_single_valence_oxi_states,
     doped_defect_from_pmg_defect,
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
@@ -2388,89 +2386,6 @@ class DefectsGenerator(MSONable):
             ``DefectsGenerator`` object
         """
         return loadfn(filename)
-
-    # TODO: Use check like this to determine whether to call this function in default DefectsGenerator
-    #  workflow
-    # if self.kwargs.get("skip_split_vacancies", False):
-    #     print(
-    #         "Skipping split vacancies as 'skip_split_vacancies' is set to True in kwargs."
-    #     )
-    #     return False
-    # TODO: Should also allow kwarg to give in tolerance of relative electrostatic energy for including
-    #  candidate split vacancies
-    # TODO: Also allow kwarg to control anion split vacancy generation (but off by default as we expect
-    #  a lower prevalence rate?)
-    def get_split_vacancies(self, verbose: bool = True):  # TODO: Use verbose = False in DefectsGen
-        """
-        Todo:
-        Note that this function requires the bulk oxidation states to be set
-        (in the ``DefectsGenerator._bulk_oxi_states`` attribute), which is
-        done automatically in ``DefectsGenerator`` initialisation when oxidation
-        states can be successfully guessed. Additionally, this function assumes
-        single oxidation states for each element in the bulk structure (i.e.
-        does not account for any mixed valence).
-        """
-        if not self._bulk_oxi_states:
-            if verbose:
-                warnings.warn(
-                    "No oxidation states determined for bulk structure, which is required for candidate "
-                    "low-energy split vacancy identification (via electrostatic analysis)!"
-                )
-            return None
-
-        single_valence_oxi_states = _get_single_valence_oxi_states(self._bulk_oxi_states)
-        cations = {elt for elt, oxi in single_valence_oxi_states.items() if oxi > 0}
-        if not cations:  # TODO: And no split anion vacancy allowed
-            if verbose:
-                warnings.warn(
-                    "No cations found in host structure, skipping (cation) split vacancy identification!"
-                )
-            return None
-
-        combined_split_vacancies_dict = {}
-        for cation in cations:
-            interstitial_sites = {
-                entry.defect_supercell_site
-                for entry in self.defect_entries.values()
-                if entry.name.startswith(f"{cation}_i")
-            }
-            if not interstitial_sites:
-                warnings.warn(
-                    f"No interstitial sites (from DefectEntry.defect_supercell_site) found for element "
-                    f"{cation} -- required for split vacancy generation!"
-                )
-                continue
-
-            # try from database, otherwise print info message and try from electrostatics
-            try:
-                split_vacancies_dict = get_split_vacancies_from_database(
-                    verbose=(
-                        "Will use electrostatic analysis to check for candidate low-energy split "
-                        "vacancies. Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
-                    )
-                )
-            except Exception as exc:
-                warnings.warn(
-                    f"Error getting split vacancies from database: {exc}\nGenerating from electrostatic "
-                    f"analysis instead."
-                )
-                split_vacancies_dict = get_split_vacancies_from_electrostatics(
-                    bulk_supercell=self.bulk_supercell,
-                    interstitial_sites=interstitial_sites,
-                    bulk_oxi_states=self._bulk_oxi_states,
-                    relative_electrostatic_energy_tol=self.kwargs.get(
-                        "relative_electrostatic_energy_tol", 1.1
-                    ),
-                    split_vac_dist_tol=self.kwargs.get(
-                        "split_vac_dist_tol", 5
-                    ),  # TODO: Note in kwargs docstrings
-                    verbose=verbose,
-                    **self.kwargs,
-                )
-
-            combined_split_vacancies_dict[cation] = split_vacancies_dict
-
-        return combined_split_vacancies_dict
 
     def __getattr__(self, attr):
         """

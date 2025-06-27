@@ -4,11 +4,12 @@ Code for generating and analysing defect complexes.
 
 import contextlib
 import math
+import warnings
 from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache
 from itertools import combinations, product
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from pymatgen.analysis.ewald import EwaldMinimizer, EwaldSummation
@@ -30,6 +31,9 @@ from doped.utils.symmetry import (
     get_primitive_structure,
     is_periodic_image,
 )
+
+if TYPE_CHECKING:
+    from doped.generation import DefectsGenerator
 
 
 def classify_vacancy_geometry(
@@ -762,6 +766,105 @@ def molecule_from_sites(sites: list[PeriodicSite], anchor_idx: int = 0) -> Molec
     )
 
 
+# TODO: Use check like this to determine whether to call this function in default DefectsGenerator
+#  workflow
+# if self.kwargs.get("skip_split_vacancies", False):
+#     print(
+#         "Skipping split vacancies as 'skip_split_vacancies' is set to True in kwargs."
+#     )
+#     return False
+def get_split_vacancies(
+    defect_gen: "DefectsGenerator",
+    elements: Iterable[str] | str | None = None,
+    bulk_oxi_states: Structure | Composition | dict[str, int] | None = None,
+    relative_electrostatic_energy_tol: float = 1.1,
+    split_vac_dist_tol: float = 5,
+    verbose: bool = True,  # TODO: Use verbose = False in DefectsGen
+    **kwargs,
+):
+    """
+    TODO. Elements can elt strings, "all" or None (cations only).
+
+    Todo:
+    Note that this function requires the bulk oxidation states to be set
+    (in the ``DefectsGenerator._bulk_oxi_states`` attribute), which is
+    done automatically in ``DefectsGenerator`` initialisation when oxidation
+    states can be successfully guessed. Additionally, this function assumes
+    single oxidation states for each element in the bulk structure (i.e.
+    does not account for any mixed valence).
+    """
+    bulk_supercell = defect_gen.bulk_supercell
+    bulk_oxi_states = bulk_oxi_states or defect_gen._bulk_oxi_states
+    if not bulk_oxi_states and (bulk_oxi_states := guess_and_set_oxi_states_with_timeout(bulk_supercell)):
+        print(
+            f"Guessed oxidation states for input structure: "
+            f"{_get_single_valence_oxi_states(bulk_oxi_states)}"
+        )
+
+    if elements is None and bulk_oxi_states is None:
+        raise ValueError(  # TODO: Will need to handle this in DefectsGenerator usage
+            "Elements for split vacancy generation were not explicitly set; the default is to generate "
+            "for cations only, however oxidation states could not be guessed for the input structure. "
+            "Please explicitly provide oxidation states using `bulk_oxi_states`."
+        )
+
+    single_valence_oxi_states = _get_single_valence_oxi_states(bulk_oxi_states)
+    cations = {elt for elt, oxi in single_valence_oxi_states.items() if oxi > 0}
+
+    if elements is None:
+        elements = cations
+    elif elements == "all":
+        elements = set(defect_gen.bulk_supercell.composition.elements)
+    elif isinstance(elements, str):
+        elements = {elements}
+    elif isinstance(elements, Iterable):
+        elements = set(elements)
+    else:
+        raise ValueError(
+            f"Invalid elements input: {elements}. Please provide a list of elements, 'all', or None."
+        )
+
+    combined_split_vacancies_dict = {}
+    for element in elements:
+        interstitial_sites = {
+            entry.defect_supercell_site
+            for entry in defect_gen.defect_entries.values()
+            if entry.name.startswith(f"{element}_i")
+        }
+        if not interstitial_sites:
+            warnings.warn(
+                f"No interstitial sites (from DefectEntry.defect_supercell_site) found for element "
+                f"{element} -- required for split vacancy generation!"
+            )
+            continue
+
+        try:  # try from database, otherwise print info message and try from electrostatics
+            split_vacancies_dict = get_split_vacancies_from_database(
+                verbose=(
+                    "Will use electrostatic analysis to check for candidate low-energy split "
+                    "vacancies. Set skip_split_vacancies=True in DefectsGenerator() to skip this step."
+                )
+            )
+        except Exception as exc:
+            warnings.warn(
+                f"Error getting split vacancies from database: {exc}\nGenerating from electrostatic "
+                f"analysis instead."
+            )
+            split_vacancies_dict = get_split_vacancies_from_electrostatics(
+                bulk_supercell=bulk_supercell,
+                interstitial_sites=interstitial_sites,
+                bulk_oxi_states=bulk_oxi_states,
+                relative_electrostatic_energy_tol=relative_electrostatic_energy_tol,
+                split_vac_dist_tol=split_vac_dist_tol,
+                verbose=verbose,
+                **kwargs,
+            )
+
+        combined_split_vacancies_dict[element] = split_vacancies_dict
+
+    return combined_split_vacancies_dict
+
+
 def get_split_vacancies_by_geometry(
     bulk_supercell: Structure,
     interstitial_sites: Iterable[PeriodicSite] | PeriodicSite,
@@ -892,11 +995,10 @@ def get_split_vacancies_from_electrostatics(
     bulk_supercell: Structure,
     interstitial_sites: Iterable[PeriodicSite] | PeriodicSite,
     bulk_oxi_states: Structure | Composition | dict[str, int] | None = None,
-    relative_electrostatic_energy_tol: float | None = None,
+    relative_electrostatic_energy_tol: float = 1.1,
     split_vac_dist_tol: float = 5,
     verbose: bool = True,
     ndigits: int = 2,
-    return_all: bool = False,
     prune_symmetry_equivalent: bool = True,
     **kwargs,
 ):
@@ -912,11 +1014,9 @@ def get_split_vacancies_from_electrostatics(
     on the VIV distances, rounded to 0.01 Å, and V-I-V bond angle, rounded to
     0.1°). The electrostatic formation energies (i.e. electrostatic energy of
     the split vacancy supercell minus that of the bulk supercell) are then
-    calculated, and only those within a certain tolerance
-    (``relative_electrostatic_energy_tol``) of the lowest point vacancy
-    electrostatic formation energy are returned. By default, this tolerance is
-    set to 1.1x the lowest point vacancy electrostatic formation energy, with a
-    maximum of 10 split vacancies returned.
+    calculated, and only those within ``relative_electrostatic_energy_tol``
+    (default = 1.1) times the lowest point vacancy electrostatic formation
+    energy are returned.
 
     See https://doi.org/10.48550/arXiv.2412.19330 for further details.
 
@@ -930,15 +1030,14 @@ def get_split_vacancies_from_electrostatics(
             The oxidation states of elements to use for electrostatic energy
             evaluations. If not provided, oxidation states will be taken from
             the bulk supercell, or otherwise guessed. Default is ``None``.
-        relative_electrostatic_energy_tol (float | None):
+        relative_electrostatic_energy_tol (float):
             Relative tolerance for selecting candidate split vacancy
             configurations. Split vacancies with electrostatic formation
             energies (i.e. electrostatic energy of the split vacancy supercell
             minus that of the bulk supercell) less than
             ``relative_electrostatic_energy_tol`` times the lowest point
-            vacancy electrostatic formation energy are returned. Default is
-            ``None``, in which case a tolerance of ``1.1`` is used, with a
-            maximum of 10 split vacancy configurations returned.
+            vacancy electrostatic formation energy are returned. Default
+            ``1.1``.
         split_vac_dist_tol (float):
             The maximum distance between vacancy and interstitial sites
             to allow for candidate split vacancies (which are
@@ -950,10 +1049,6 @@ def get_split_vacancies_from_electrostatics(
             The number of decimal places to round the electrostatic formation
             energies to, which is used to avoid degenerate configurations.
             Default is 2.
-        return_all (bool):
-            Whether to return all candidate split vacancies considered, or only
-            those within the ``relative_electrostatic_energy_tol`` tolerance.
-            Default is ``False``.
         prune_symmetry_equivalent (bool):
             Whether to prune symmetry-equivalent split vacancies based on the
             VIV distances and bond angle (see
@@ -1147,25 +1242,18 @@ def get_split_vacancies_from_electrostatics(
         [
             energy
             for energy in split_vacancies_energy_dict
-            if energy < rel_point_vac_es_energy * (relative_electrostatic_energy_tol or 1.1)
+            if energy < rel_point_vac_es_energy * (relative_electrostatic_energy_tol)
         ]
     )
-    num_to_store = (
-        (
-            min(num_split_vacancies_within_tol, 10)
-            if relative_electrostatic_energy_tol is None
-            else num_split_vacancies_within_tol
-        )
-        if not return_all
-        else len(split_vacancies_energy_dict)
+    split_vacancies_energy_dict = dict(
+        sorted(split_vacancies_energy_dict.items())[:num_split_vacancies_within_tol]
     )
-    split_vacancies_energy_dict = dict(sorted(split_vacancies_energy_dict.items())[:num_to_store])
 
     if verbose:
         print(
             f"Found {num_lower_energy_split_vacancies} lower energy split vacancies, "
-            f"{num_split_vacancies_within_tol} within {relative_electrostatic_energy_tol or 1.1}x of the "
-            f"lowest point vacancy electrostatic formation energy. Storing {num_to_store} split vacancies."
+            f"{num_split_vacancies_within_tol} within {relative_electrostatic_energy_tol}x of the "
+            f"lowest point vacancy electrostatic formation energy."
         )
 
     return {
