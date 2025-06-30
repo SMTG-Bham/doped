@@ -55,7 +55,7 @@ def classify_vacancy_geometry(
     is considered a vacancy, and vice versa in comparing the bulk to the defect
     structure is an interstitial. This corresponds to the 2 V_X + X_i
     definition of split vacancies discussed in
-    https://doi.org/10.48550/arXiv.2412.19330
+    https://doi.org/10.1088/2515-7655/ade916
 
     A simple vacancy corresponds to cases where 1 site from the bulk structure
     cannot be matched to the defect structure while all defect structure sites
@@ -63,7 +63,7 @@ def classify_vacancy_geometry(
     other cases.
 
     Inspired by the vacancy geometry classification used in Kumagai et al.
-    `Phys Rev Mater` 2021. See https://doi.org/10.48550/arXiv.2412.19330 for
+    `Phys Rev Mater` 2021. See https://doi.org/10.1088/2515-7655/ade916 for
     further details.
 
     Args:
@@ -732,7 +732,6 @@ def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol
 
 # TODO: In future, should be able to use similar code to generate all possible complexes in a given
 # supercell
-# TODO: Update DOIs here and throughout when published
 # TODO: Tests!!
 
 
@@ -886,7 +885,7 @@ def get_split_vacancies_by_geometry(
     on the VIV distances, rounded to 0.01 Å, and V-I-V bond angle, rounded to
     0.1°).
 
-    See https://doi.org/10.48550/arXiv.2412.19330 for further details.
+    See https://doi.org/10.1088/2515-7655/ade916 for further details.
 
     Args:
         bulk_supercell (Structure):
@@ -1018,7 +1017,7 @@ def get_split_vacancies_from_electrostatics(
     (default = 1.1) times the lowest point vacancy electrostatic formation
     energy are returned.
 
-    See https://doi.org/10.48550/arXiv.2412.19330 for further details.
+    See https://doi.org/10.1088/2515-7655/ade916 for further details.
 
     Args:
         bulk_supercell (Structure):
