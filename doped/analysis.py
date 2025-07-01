@@ -1059,8 +1059,8 @@ class DefectsParser:
                             f"Parsing {folders_to_process[0]}/{self.subfolder}".replace("/.", "")
                         )
                         for i, (parsed_defect_entry, processed_warnings_string) in enumerate(
-                            pool.imap(self._parse_defect_and_handle_warnings, folders_to_process)
-                        ):
+                            pool.imap_unordered(self._parse_defect_and_handle_warnings, folders_to_process)
+                        ):  # TODO: Change back to imap if no significant speed difference
                             pbar.update()
                             next_i = min(i + 1, len(folders_to_process) - 1)  # next folder index
                             pbar.set_description(
@@ -1068,8 +1068,6 @@ class DefectsParser:
                             )  # next folder
                             parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
                             parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
-
-            # TODO: Compare parsing time to imap_unordered
 
             except Exception as exc:
                 pbar.close()
