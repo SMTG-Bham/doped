@@ -2608,7 +2608,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
-                if stdev >= 0.5:
+                if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
                         "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
                         ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
@@ -2685,7 +2685,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
-                if stdev >= 0.5:
+                if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
                         "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
                         ">0.5 Å) in the defect supercell. This likely indicates a mismatch"

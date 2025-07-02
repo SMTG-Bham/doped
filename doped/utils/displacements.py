@@ -21,7 +21,7 @@ from doped.utils.parsing import (
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
     get_matching_site,
-    get_site_mapping_indices,
+    get_site_mappings,
 )
 from doped.utils.symmetry import _round_floats
 
@@ -81,7 +81,7 @@ def calc_site_displacements(
     defect_site = defect_sc_with_site[defect_site_index]
 
     # Map sites in defect supercell to bulk supercell:
-    mappings = get_site_mapping_indices(defect_sc_with_site, bulk_sc, threshold=threshold)
+    mappings = get_site_mappings(defect_sc_with_site, bulk_sc, threshold=threshold)
     mappings_dict = {i[1]: i[2] for i in mappings}  # {defect_sc_index: bulk_sc_index}
 
     disp_dict: dict[str, list] = {  # mapping defect site index (in defect sc) to displacement

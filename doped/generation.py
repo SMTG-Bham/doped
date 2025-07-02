@@ -47,7 +47,7 @@ from doped.core import (
 )
 from doped.utils import parsing, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
-from doped.utils.parsing import reorder_s1_like_s2
+from doped.utils.parsing import reorder_s2_like_s1
 from doped.utils.plotting import format_defect_name
 
 if TYPE_CHECKING:
@@ -1731,7 +1731,7 @@ class DefectsGenerator(MSONable):
             to_unit_cell=True,
         )
         if not self.generate_supercell:  # re-order bulk supercell to match that of input supercell
-            self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
+            self.bulk_supercell = reorder_s2_like_s1(self.structure, self.bulk_supercell)
 
         # get and round (to avoid tiny mismatches, due to rounding in search functions,
         # flagging issues) min image distance of supercell:

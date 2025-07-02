@@ -39,9 +39,10 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
+    _get_site_mapping_from_coords_and_indices,
     _get_unrelaxed_defect_structure,
     _partial_defect_entry_from_structures,
-    get_site_mapping_indices,
+    get_site_mappings,
 )
 
 
@@ -490,11 +491,14 @@ def summed_rms_dist(
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
     # set threshold to a large number to avoid possible site-matching warnings
-    return sum(
-        get_site_mapping_indices(
-            struct_a, struct_b, threshold=1e10, dists_only=True, ignored_species=ignored_species
+    return np.array(
+        get_site_mappings(
+            struct_a,
+            struct_b,
+            threshold=1e10,
+            ignored_species=ignored_species,
         )
-    )
+    )[:, 0].sum()
 
 
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
@@ -3557,6 +3561,9 @@ def is_periodic_image(
     sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
     sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
 
+    if len(sites_1_frac_coords) != len(sites_2_frac_coords):
+        raise ValueError("``is_periodic_image`` requires the same number of sites in both lists!")
+
     if not same_image:
         return len(sites_1_frac_coords) == len(sites_2_frac_coords) and is_coord_subset_pbc(
             sites_1_frac_coords, sites_2_frac_coords
@@ -3573,7 +3580,7 @@ def is_periodic_image(
     site_matches, _ = get_linear_assignment_solution(d_2)  # closest individual periodic image matches
     reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
 
-    pbc_frac_dist = np.subtract(sites_1_frac_coords, reordered_sites_2_frac_coords)
+    pbc_frac_dist = np.subtract(reordered_sites_1_frac_coords, sites_2_frac_coords)
     pbc_frac_diff = pbc_frac_dist - np.round(pbc_frac_dist)
     return np.allclose(  # all sites are periodic images
         pbc_frac_diff, np.zeros(pbc_frac_diff.shape), atol=frac_tol

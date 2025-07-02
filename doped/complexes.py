@@ -23,7 +23,7 @@ from doped.utils.parsing import (
     _get_species_from_composition_diff,
     get_defect_type_and_composition_diff,
     get_matching_site,
-    get_site_mapping_indices,
+    get_site_mappings,
 )
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import (
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 def classify_vacancy_geometry(
     vacancy_supercell: Structure,
     bulk_supercell: Structure,
-    tol: float = 0.5,
+    site_tol: float = 0.5,
     abs_tol: bool = False,
     verbose: bool = False,
 ) -> str:
@@ -50,7 +50,7 @@ def classify_vacancy_geometry(
     Split vacancy geometries are those where 2 vacancies and 1 interstitial
     are found to be present in the defect structure, as determined using
     site-matching between the defect and bulk structures with a fractional
-    distance tolerance (``tol``), such that the absence of any site of
+    distance tolerance (``site_tol``), such that the absence of any site of
     matching species within the distance tolerance to the original bulk site
     is considered a vacancy, and vice versa in comparing the bulk to the defect
     structure is an interstitial. This corresponds to the 2 V_X + X_i
@@ -71,18 +71,18 @@ def classify_vacancy_geometry(
             The defect supercell containing the vacancy to be classified.
         bulk_supercell (Structure):
             The bulk supercell structure to compare against for site-matching.
-        tol (float):
+        site_tol (float):
             The (fractional) tolerance for matching sites between the defect
             and bulk structures. If ``abs_tol`` is ``False`` (default), then
             this value multiplied by the shortest bond length in the bulk
             structure will be used as the distance threshold for matching,
             otherwise the value is used directly (as a length in Å).
-            Default is 0.5.
+            Default is 0.5 (i.e. half the shortest bond length in the bulk
+            structure).
         abs_tol (bool):
-            Whether to use ``tol`` as an absolute distance tolerance (in Å)
-            instead of a fractional tolerance (in terms of the shortest bond
-            length in the structure).
-            Default is ``False``.
+            Whether to use ``site_tol`` as an absolute distance tolerance (in
+            Å) instead of a fractional tolerance (in terms of the shortest bond
+            length in the structure). Default is ``False``.
         verbose (bool):
             Whether to print additional information about the classification
             for non-trivial vacancies.
@@ -99,35 +99,33 @@ def classify_vacancy_geometry(
         vacancy_supercell.remove_oxidation_states()
         bulk_supercell.remove_oxidation_states()
 
-    def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
+    _def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
     old_species = _get_species_from_composition_diff(comp_diff, -1)
     bulk_bond_length = max(min_dist(bulk_supercell), 1)
-    dist_tol = tol * bulk_bond_length if not abs_tol else tol
+    site_dist_tol = site_tol * bulk_bond_length if not abs_tol else site_tol
     num_offsite_bulk_to_defect = np.sum(
         np.array(
-            get_site_mapping_indices(
+            get_site_mappings(
                 bulk_supercell,
                 vacancy_supercell,
                 species=old_species,
-                dists_only=True,
                 allow_duplicates=True,
                 threshold=np.inf,  # don't warn for large detected off-site displacements (e.g. split vacs)
             )
-        )
-        > dist_tol
+        )[:, 0]
+        > site_dist_tol
     )
     num_offsite_defect_to_bulk = np.sum(
         np.array(
-            get_site_mapping_indices(
+            get_site_mappings(
                 vacancy_supercell,
                 bulk_supercell,
                 species=old_species,
-                dists_only=True,
                 allow_duplicates=True,
                 threshold=np.inf,  # don't warn for large detected off-site displacements (e.g. split vacs)
             )
-        )
-        > dist_tol
+        )[:, 0]
+        > site_dist_tol
     )
 
     if num_offsite_bulk_to_defect == 1 and num_offsite_defect_to_bulk == 0:
@@ -732,7 +730,7 @@ def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol
 
 # TODO: In future, should be able to use similar code to generate all possible complexes in a given
 # supercell
-# TODO: Tests!!
+# TODO: Tests!! (See notebooks for draft tests)
 
 
 def molecule_from_sites(sites: list[PeriodicSite], anchor_idx: int = 0) -> Molecule:
