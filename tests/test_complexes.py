@@ -21,6 +21,7 @@ from doped.complexes import (
     classify_vacancy_geometry,
     generate_complex_from_defect_sites,
     get_complex_defect_multiplicity,
+    get_split_vacancies,
 )
 from doped.core import Interstitial, Vacancy
 from doped.generation import DefectsGenerator
@@ -52,8 +53,11 @@ class ComplexDefectGenerationTest(unittest.TestCase):
     def setUp(self):
         self.R3c_Ga2O3 = Structure.from_file(os.path.join(data_dir, "Ga2O3_R3c_POSCAR"))
         self.Ga2O3_defect_gen = DefectsGenerator(self.R3c_Ga2O3, extrinsic="Se")
-        self.Ga2O3_candidate_split_vacs = self.Ga2O3_defect_gen.get_candidate_split_vacancies_for_element(
-            "Ga"
+        self.Ga2O3_candidate_split_vacs = get_split_vacancies(
+            self.Ga2O3_defect_gen,
+            [
+                "Ga",
+            ],
         )
         # self.Ga2O3_C3i_split_vac_dict = next(iter(  # TODO
         #     [vac_dict for vac_dict in self.Ga2O3_candidate_split_vacs.values() if
@@ -292,8 +296,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         periodicity breaking.
         """
         info_dict = self.R3c_Ga2O3_split_vac_info_dict
-        bulk_sga = get_sga(info_dict["bulk_supercell"])
-        bulk_supercell_symm_ops = bulk_sga.get_symmetry_operations()
         bulk_prim = get_primitive_structure(info_dict["bulk_supercell"])
         supercell_over_prim_factor = len(info_dict["bulk_supercell"]) / len(bulk_prim)
         molecule_dict = {}
@@ -349,7 +351,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                 interstitial_sites=[subdict["interstitial_site"]],
                 primitive_structure=bulk_prim,
-                supercell_symm_ops=bulk_supercell_symm_ops,
             )  # same answer with efficiency options
             assert comp_mult == subdict["multiplicity"]
             supercell_comp_mult = get_complex_defect_multiplicity(
@@ -357,7 +358,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                 interstitial_sites=[subdict["interstitial_site"]],
                 primitive_structure=bulk_prim,
-                supercell_symm_ops=bulk_supercell_symm_ops,
                 primitive_cell_multiplicity=False,
             )
             assert supercell_comp_mult == subdict["multiplicity"] * supercell_over_prim_factor
@@ -412,8 +412,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         all Cs, while we have Cs, C2h, C2 and C1 interstitial site symmetries.
         """
         info_dict = self.C2m_Ga2O3_split_vac_info_dict
-        bulk_sga = get_sga(info_dict["bulk_supercell"])
-        bulk_supercell_symm_ops = bulk_sga.get_symmetry_operations()
         bulk_prim = get_primitive_structure(info_dict["bulk_supercell"])
         supercell_over_prim_factor = len(info_dict["bulk_supercell"]) / len(bulk_prim)
         molecule_dict = {}
@@ -470,7 +468,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                 interstitial_sites=[subdict["interstitial_site"]],
                 primitive_structure=bulk_prim,
-                supercell_symm_ops=bulk_supercell_symm_ops,
             )  # same answer with efficiency options
             assert comp_mult == subdict["multiplicity"]
             supercell_comp_mult = get_complex_defect_multiplicity(
@@ -478,7 +475,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                 interstitial_sites=[subdict["interstitial_site"]],
                 primitive_structure=bulk_prim,
-                supercell_symm_ops=bulk_supercell_symm_ops,
                 primitive_cell_multiplicity=False,
             )
             assert supercell_comp_mult == subdict["multiplicity"] * supercell_over_prim_factor
@@ -552,8 +548,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
         formula_mpid_files = [i for i in os.listdir(database_folder) if "Ga2O3" not in i]
         for formula_mpid_file in formula_mpid_files:
             info_dict = loadfn(f"{database_folder}/{formula_mpid_file}")
-            bulk_sga = get_sga(info_dict["bulk_supercell"])
-            bulk_supercell_symm_ops = bulk_sga.get_symmetry_operations()
             bulk_prim = get_primitive_structure(info_dict["bulk_supercell"])
             supercell_over_prim_factor = len(info_dict["bulk_supercell"]) / len(bulk_prim)
             molecule_dict = {}
@@ -609,7 +603,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                     interstitial_sites=[subdict["interstitial_site"]],
                     primitive_structure=bulk_prim,
-                    supercell_symm_ops=bulk_supercell_symm_ops,
                 )  # same answer with efficiency options
                 assert comp_mult == subdict["multiplicity"]
                 supercell_comp_mult = get_complex_defect_multiplicity(
@@ -617,7 +610,6 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                     vacancy_sites=[subdict["vac_defect_1_site"], subdict["vac_defect_2_site"]],
                     interstitial_sites=[subdict["interstitial_site"]],
                     primitive_structure=bulk_prim,
-                    supercell_symm_ops=bulk_supercell_symm_ops,
                     primitive_cell_multiplicity=False,
                 )
                 assert supercell_comp_mult == subdict["multiplicity"] * supercell_over_prim_factor
