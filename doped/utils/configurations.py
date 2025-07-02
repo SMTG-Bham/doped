@@ -93,7 +93,7 @@ def orient_s2_like_s1(
 
     # we see that this rearranges the structure so the atom indices should now match correctly. This should
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
-    def _get_dQ(struct_a, struct_b):
+    def _get_dQ(struct_a: Structure, struct_b: Structure) -> float:
         try:
             return np.sqrt(
                 sum(
@@ -102,7 +102,7 @@ def orient_s2_like_s1(
                 )
             )  # TODO: Make this a public function, with option to reorient if not matching
         except Exception:
-            return "N/A"
+            return np.inf  # if the structures are not matching, return inf
 
     delQ_s1_s2 = _get_dQ(struct1, struct2)
     delQ_s1_s2_like_s1_pmg = _get_dQ(struct1, struct2_like_struct1)
