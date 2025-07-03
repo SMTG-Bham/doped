@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 # Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
 
-_TRANSLATE_REMOVE_CHARGE = str.maketrans("", "", digits + "+-")
+_TRANSLATE_REMOVE_CHARGE = str.maketrans("", "", digits + "+-.")
 
 
 # Composition overrides:
@@ -213,7 +213,7 @@ def _parse_site_species_str(site: Site, wout_charge: bool = False) -> str:
     else:
         raise ValueError(f"Unexpected species type: {type(species)}")
 
-    # remove all digits, + or - from species string, if `wout_charge` is True
+    # remove all digits, +, - or . from species string, if `wout_charge` is True
     return species_string.translate(_TRANSLATE_REMOVE_CHARGE) if wout_charge else species_string
 
 

@@ -405,6 +405,7 @@ def get_defect_type_and_site_indices(
     defect_supercell: Structure,
     site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
     abs_tol: bool = False,
+    use_oxi_states: bool = False,
 ) -> tuple[str, list[int], list[int]]:
     """
     Get the defect type, and indices of defect sites in the bulk (vacancies /
@@ -421,17 +422,23 @@ def get_defect_type_and_site_indices(
         site_tol (float | None):
             The (fractional) tolerance for matching sites between the defect
             and bulk structures. If ``abs_tol`` is ``False`` (default), then
-            this value multiplied by the shortest bond length in the bulk
-            structure will be used as the distance threshold for matching,
-            otherwise the value is used directly (as a length in Å).
+            the distance threshold for matching is set to the product of
+            ``site_tol`` and the shortest bond length in the bulk structure for
+            the given species, otherwise the value is used directly (as a
+            length in Å).
             If set to ``None``, the defect is assumed to be a point defect, and
             the largest site mismatch is assigned as the defect site.
             Default is 0.5 (i.e. half the shortest bond length in the bulk
-            structure).
+            structure for the given species).
         abs_tol (bool):
             Whether to use ``site_tol`` as an absolute distance tolerance (in
             Å) instead of a fractional tolerance (in terms of the shortest bond
             length in the structure). Default is ``False``.
+        use_oxi_states (bool):
+            Whether to use the oxidation states of the sites in the bulk and
+            defect structures when considering matching sites (such that e.g.
+            ``Fe3+`` and ``Fe2+`` would be considered different species).
+            Default is ``False``.
 
     Returns:
         defect_type (str):
@@ -444,13 +451,11 @@ def get_defect_type_and_site_indices(
             Indices of sites in the defect structure that do not match any site
             in the bulk structure (according to ``site_tol`` choice).
     """
-    from doped.utils.supercells import min_dist
-
-    bulk_bond_length = max(min_dist(bulk_supercell), 1)
-    site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * bulk_bond_length
+    bulk_composition = bulk_supercell.composition
+    defect_composition = defect_supercell.composition
 
     try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
+        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_composition, defect_composition)
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
@@ -465,19 +470,21 @@ def get_defect_type_and_site_indices(
             f"sites."
         )
 
-    elt_symbols = {
-        species.symbol
-        for species in bulk_supercell.composition.elements + defect_supercell.composition.elements
-    }
+    elt_symbols = {species.symbol for species in bulk_composition.elements + defect_composition.elements}
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
+    distances = bulk_supercell.distance_matrix.flatten()
+    distances = distances[np.nonzero(distances)[0]]
+
     for elt_symbol in elt_symbols:
         bulk_species_coords, bulk_species_indices = get_coords_and_idx_of_species(
-            bulk_supercell, elt_symbol
+            bulk_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
         defect_species_coords, defect_species_indices = get_coords_and_idx_of_species(
-            defect_supercell, elt_symbol
+            defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
+        species_min_dist = max(min(distances[bulk_species_indices]), 1)
+        site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
 
         site_mapping = _get_site_mapping_from_coords_and_indices(
             bulk_species_coords,
@@ -501,7 +508,10 @@ def get_defect_type_and_site_indices(
 
 
 def get_coords_and_idx_of_species(
-    structure_or_sites: SiteCollection, species_name: str, frac_coords: bool = True
+    structure_or_sites: SiteCollection,
+    species_name: str,
+    frac_coords: bool = True,
+    use_oxi_states: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Get arrays of the coordinates and indices of the given species in the
@@ -512,7 +522,7 @@ def get_coords_and_idx_of_species(
     coords = []
     idx = []
     for i, site in enumerate(structure_or_sites):
-        if _parse_site_species_str(site, wout_charge=True) == species_name:
+        if _parse_site_species_str(site, wout_charge=not use_oxi_states) == species_name:
             coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
 
@@ -944,10 +954,9 @@ def _get_site_mapping_from_coords_and_indices(
     )
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset_fcoords, superset_fcoords, return_d2=True)
     site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
-    min_dists = np.min(np.sqrt(d_2), axis=1)
-    superset_site_indices = [superset_indices[i] for i in site_matches]
+    dists = np.sqrt(d_2)
     site_mapping = [
-        (min_dists[i], subset_indices[i], superset_site_indices[i]) for i in range(len(min_dists))
+        (dists[i, j], subset_indices[i], superset_indices[j]) for i, j in enumerate(site_matches)
     ]
     for missing_index in set(range(len(superset_fcoords))) - set(site_matches):
         site_mapping.append((None, None, superset_indices[missing_index]))  # unmatched sites

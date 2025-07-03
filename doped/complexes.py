@@ -19,12 +19,7 @@ from tqdm import tqdm
 
 from doped.core import _get_single_valence_oxi_states, guess_and_set_oxi_states_with_timeout
 from doped.utils.efficiency import Composition, DopedVacancyGenerator, Molecule, PeriodicSite, Structure
-from doped.utils.parsing import (
-    _get_species_from_composition_diff,
-    get_defect_type_and_composition_diff,
-    get_matching_site,
-    get_site_mappings,
-)
+from doped.utils.parsing import get_defect_type_and_composition_diff, get_matching_site, get_site_mappings
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import (
     get_equiv_frac_coords_in_primitive,
@@ -99,8 +94,11 @@ def classify_vacancy_geometry(
         vacancy_supercell.remove_oxidation_states()
         bulk_supercell.remove_oxidation_states()
 
-    _def_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
-    old_species = _get_species_from_composition_diff(comp_diff, -1)
+    old_species = next(
+        el
+        for el, amt in get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)[1].items()
+        if amt == -1
+    )
     bulk_bond_length = max(min_dist(bulk_supercell), 1)
     site_dist_tol = site_tol * bulk_bond_length if not abs_tol else site_tol
     num_offsite_bulk_to_defect = np.sum(
