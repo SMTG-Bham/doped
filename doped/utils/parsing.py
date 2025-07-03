@@ -9,6 +9,7 @@ import re
 import warnings
 from copy import deepcopy
 from functools import lru_cache, partialmethod
+from typing import cast
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
@@ -399,18 +400,18 @@ def get_defect_type_and_composition_diff(
     return defect_type, composition_diff
 
 
-def get_defect_type_site_idxs_and_unrelaxed_structure(
+def get_defect_type_and_site_indices(
     bulk_supercell: Structure,
     defect_supercell: Structure,
     site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
     abs_tol: bool = False,
-) -> tuple[str, int | None, int | None, Structure]:
+) -> tuple[str, int | None, int | None]:
     """
-    Get the defect type, site (indices in the bulk and defect supercells) and
-    unrelaxed structure, where 'unrelaxed structure' corresponds to the
-    pristine defect supercell structure for vacancies / substitutions (with no
-    relaxation), and the pristine bulk structure with the `final` relaxed
-    interstitial site for interstitials.
+    Get the defect type, and indices of defect sites in the bulk (vacancies /
+    substitutions) and defect (interstitials / substitutions) supercells.
+
+    Defect sites are determined by matching sites in the bulk and defect
+    structures (by element and distances), according to ``site_tol``.
 
     Args:
         bulk_supercell (Structure):
@@ -441,11 +442,6 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             defect site in the defect structure.
         defect_site_idx (int):
             Index of the defect site in the defect structure.
-        unrelaxed_defect_structure (Structure):
-            Pristine defect supercell structure for vacancies/substitutions
-            (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
-            pristine bulk structure with the `final` relaxed interstitial site
-            for interstitials.
     """
 
     def process_substitution(bulk_supercell, defect_supercell, composition_diff, site_dist_tol):
@@ -460,23 +456,19 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
         )
 
         # Get the coords and site index of the defect that was used in the calculation
-        if bulk_new_species_coords.size > 0:  # intrinsic substitution
-            site_mapping = _get_site_mapping_from_coords_and_indices(
-                bulk_new_species_coords,
-                defect_new_species_coords,
-                lattice=bulk_supercell.lattice,
-                s1_indices=bulk_new_species_indices,
-                s2_indices=defect_new_species_indices,
-            )
-            defect_site_mappings = [
-                mapping
-                for mapping in site_mapping
-                if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
-            ]  # TODO: Handle multiple matches for complexes...
-            defect_site_idx = defect_site_mappings[0][-1]
-
-        else:  # extrinsic substitution
-            defect_site_idx = next(iter(defect_new_species_indices))
+        site_mapping = _get_site_mapping_from_coords_and_indices(
+            bulk_new_species_coords,
+            defect_new_species_coords,
+            lattice=bulk_supercell.lattice,
+            s1_indices=bulk_new_species_indices,
+            s2_indices=defect_new_species_indices,
+        )
+        defect_site_mappings = [
+            mapping
+            for mapping in site_mapping
+            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
+        ]  # TODO: Handle multiple matches for complexes...
+        defect_site_idx = defect_site_mappings[0][-1]
 
         # now find the closest old_species site in the bulk structure to the defect site
         bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
@@ -489,14 +481,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             bulk_supercell.lattice,
             return_idx=True,
         )
-        bulk_site_idx = bulk_old_species_idx[bulk_site_arg_idx]
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            bulk_supercell,
-            new_species=new_species,
-            bulk_site_idx=bulk_site_idx,
-            defect_site_idx=defect_site_idx,
-        )
-        return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
+        return bulk_old_species_idx[bulk_site_arg_idx], defect_site_idx
 
     def process_vacancy(bulk_supercell, defect_supercell, composition_diff, site_dist_tol):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
@@ -519,12 +504,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             for mapping in site_mapping
             if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
         ]  # TODO: Handle multiple matches for complexes...
-        bulk_site_idx, defect_site_idx = defect_site_mappings[0][1], None
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            bulk_supercell,
-            bulk_site_idx=bulk_site_idx,
-        )
-        return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
+        return defect_site_mappings[0][1], None
 
     def process_interstitial(bulk_supercell, defect_supercell, composition_diff, site_dist_tol):
         new_species = _get_species_from_composition_diff(composition_diff, 1)
@@ -536,33 +516,19 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             defect_supercell, new_species
         )
 
-        if bulk_new_species_coords.size > 0:  # intrinsic interstitial
-            site_mapping = _get_site_mapping_from_coords_and_indices(
-                bulk_new_species_coords,
-                defect_new_species_coords,
-                lattice=bulk_supercell.lattice,
-                s1_indices=bulk_new_species_indices,
-                s2_indices=defect_new_species_indices,
-            )
-            defect_site_mappings = [
-                mapping
-                for mapping in site_mapping
-                if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
-            ]  # TODO: Handle multiple matches for complexes...
-            defect_site_idx = defect_site_mappings[0][-1]
-
-        else:  # extrinsic interstitial
-            defect_site_idx = next(iter(defect_new_species_indices))
-
-        defect_site_coords = defect_supercell[defect_site_idx].frac_coords  # frac coords of defect site
-        bulk_site_idx = None
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            bulk_supercell,
-            frac_coords=defect_site_coords,
-            new_species=new_species,
-            defect_site_idx=defect_site_idx,
+        site_mapping = _get_site_mapping_from_coords_and_indices(
+            bulk_new_species_coords,
+            defect_new_species_coords,
+            lattice=bulk_supercell.lattice,
+            s1_indices=bulk_new_species_indices,
+            s2_indices=defect_new_species_indices,
         )
-        return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
+        defect_site_mappings = [
+            mapping
+            for mapping in site_mapping
+            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
+        ]  # TODO: Handle multiple matches for complexes...
+        return None, defect_site_mappings[0][-1]
 
     handlers = {
         "substitution": process_substitution,
@@ -590,6 +556,38 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             f"assumption of a point defect. Please set ``site_tol`` to allow parsing of complex defect "
             f"sites."
         )
+
+    elt_symbols = {
+        species.symbol
+        for species in bulk_supercell.composition.elements + defect_supercell.composition.elements
+    }
+    additional_defect_sites = []
+    missing_bulk_sites = []
+    for elt_symbol in elt_symbols:
+        bulk_species_coords, bulk_species_indices = get_coords_and_idx_of_species(
+            bulk_supercell, elt_symbol
+        )
+        defect_species_coords, defect_species_indices = get_coords_and_idx_of_species(
+            defect_supercell, elt_symbol
+        )
+
+        site_mapping = _get_site_mapping_from_coords_and_indices(
+            bulk_species_coords,
+            defect_species_coords,
+            lattice=bulk_supercell.lattice,
+            s1_indices=bulk_species_indices,
+            s2_indices=defect_species_indices,
+        )
+        defect_site_mappings = [
+            mapping
+            for mapping in site_mapping
+            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
+        ]  # TODO: Handle multiple matches for complexes...
+        for mapping in defect_site_mappings:
+            if mapping[1] is not None:  # missing bulk site
+                missing_bulk_sites.append(bulk_supercell[mapping[1]])
+            if mapping[2] is not None:  # additional defect site (may be from same matched tuple if dist
+                additional_defect_sites.append(defect_supercell[mapping[2]])  # greater than site_dist_tol)
 
     return (
         defect_type,
@@ -790,10 +788,10 @@ def find_missing_idx(
 
 def _create_unrelaxed_defect_structure(
     bulk_supercell: Structure,
-    frac_coords: list | np.ndarray | None = None,
-    new_species: str | None = None,
+    defect_supercell: Structure,
     bulk_site_idx: int | None = None,
     defect_site_idx: int | None = None,
+    defect_coords: bool = False,
 ) -> Structure:
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
@@ -806,18 +804,20 @@ def _create_unrelaxed_defect_structure(
 
     Args:
         bulk_supercell (Structure):
-            The bulk supercell structure.
-        frac_coords (Union[list, np.ndarray]):
-            The fractional coordinates of the defect site. Unnecessary if
-            ``bulk_site_idx`` is provided.
-        new_species (str):
-            The species of the defect site. Unnecessary for vacancies.
+            The bulk structure.
+        defect_supercell (Structure):
+            The defect structure.
         bulk_site_idx (int):
             The index of the site in the bulk structure that corresponds to the
             defect site in the defect structure.
         defect_site_idx (int):
             The index of the defect site to use in the unreleaxed defect
             structure. Just for consistency with the relaxed defect structure.
+        defect_coords (bool):
+            Whether to use the fractional coordinates of the defect site in the
+            defect structure, or the bulk structure. Irrelevant for vacancies.
+            Parent functions in ``doped`` use ``True`` for interstitials, and
+            ``False`` for substitutions (i.e. use bulk site coords).
 
     Returns:
         Structure:
@@ -827,17 +827,15 @@ def _create_unrelaxed_defect_structure(
 
     if bulk_site_idx is not None:
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-        defect_coords = bulk_supercell[bulk_site_idx].frac_coords
 
-    else:
-        defect_coords = frac_coords
+    if defect_site_idx is not None:
+        defect_site_in_defect = defect_supercell[defect_site_idx]
+        if not defect_coords and bulk_site_idx is not None:
+            defect_coords = bulk_supercell[bulk_site_idx].frac_coords
+        else:
+            defect_coords = defect_site_in_defect.frac_coords
 
-    if new_species is not None:  # not a vacancy
-        # Place defect in same location as output from calculation
-        defect_site_idx = (
-            defect_site_idx if defect_site_idx is not None else len(unrelaxed_defect_structure)
-        )  # use "is not None" to allow 0 index
-        unrelaxed_defect_structure.insert(defect_site_idx, new_species, defect_coords)
+        unrelaxed_defect_structure.insert(defect_site_idx, defect_site_in_defect.species, defect_coords)
 
     return unrelaxed_defect_structure
 
@@ -996,7 +994,7 @@ def _get_site_mapping_from_coords_and_indices(
     s1_indices: np.ndarray[int] | None = None,
     s2_indices: np.ndarray[int] | None = None,
     lattice: Lattice | None = None,
-) -> list[tuple[float | None, int, int]]:
+) -> list[tuple[float | None, int | None, int | None]]:
     """
     Get the site mapping between two sets of coordinates and indices, based on
     the shortest distances between sites.
@@ -1030,6 +1028,14 @@ def _get_site_mapping_from_coords_and_indices(
         s1_indices = np.arange(len(s1_coords))
     if s2_indices is None:
         s2_indices = np.arange(len(s2_coords))
+    s1_coords = np.array(s1_coords)
+    s2_coords = np.array(s2_coords)
+
+    for empty_coords, indices, tuple_idx in [(s1_coords, s2_indices, 2), (s2_coords, s1_indices, 1)]:
+        if empty_coords.size == 0:  # handly case of empty input coords
+            if indices is None:
+                return [(None, None, None)]
+            return [(None, None if tuple_idx == 2 else i, None if tuple_idx == 1 else i) for i in indices]
 
     s1_is_subset = len(s1_coords) < len(s2_coords)
     subset_fcoords, subset_indices = (s1_coords, s1_indices) if s1_is_subset else (s2_coords, s2_indices)
@@ -1060,7 +1066,7 @@ def get_site_mappings(
     threshold: float = 2.0,
     anonymous: bool = False,
     ignored_species: list[str] | None = None,
-) -> list[tuple[float | None, int, int]]:
+) -> list[tuple[float | None, int | None, int | None]]:
     """
     Get the site mappings between two structures (from ``struct1`` to
     ``struct2``), based on the shortest distances between sites.
@@ -1194,7 +1200,7 @@ def reorder_s2_like_s1(s1_structure: Structure, s2_structure: Structure, thresho
 
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
     mapping = get_site_mappings(s1_structure, s2_structure, threshold=threshold)
-    mapping = sorted(mapping, key=lambda x: x[1])  # sort by s1 index (to match s1 ordering)
+    mapping = sorted(mapping, key=lambda x: cast(int, x[1]))  # sort by s1 index (to match s1 ordering)
 
     # Reorder s2_structure so that it matches the ordering of s1_structure
     reordered_sites = [s2_structure[mapping_tuple[-1]] for mapping_tuple in mapping]

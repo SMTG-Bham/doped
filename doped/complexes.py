@@ -228,6 +228,8 @@ def generate_complex_from_defect_sites(
     Returns:
         Structure: The defect complex supercell structure.
     """
+    # TODO: Combine with _create_unrelaxed_defect_structure, and just make it
+    #  create_defect_structure_from_sites?
     defect_dict = {
         "vacancy_sites": vacancy_sites or [],
         "interstitial_sites": interstitial_sites or [],
