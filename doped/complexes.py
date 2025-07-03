@@ -133,10 +133,10 @@ def classify_vacancy_geometry(
         )
     )
     # ignore indices for other species:
-    missing_bulk_site_indices = missing_bulk_site_indices[
+    missing_bulk_site_indices = np.asarray(missing_bulk_site_indices)[
         np.isin(missing_bulk_site_indices, bulk_species_indices)
     ]
-    additional_defect_site_indices = additional_defect_site_indices[
+    additional_defect_site_indices = np.asarray(additional_defect_site_indices)[
         np.isin(additional_defect_site_indices, vacancy_species_indices)
     ]
 
