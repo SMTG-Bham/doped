@@ -19,8 +19,12 @@ from tqdm import tqdm
 
 from doped.core import _get_single_valence_oxi_states, guess_and_set_oxi_states_with_timeout
 from doped.utils.efficiency import Composition, DopedVacancyGenerator, Molecule, PeriodicSite, Structure
-from doped.utils.parsing import get_defect_type_and_composition_diff, get_matching_site, get_site_mappings
-from doped.utils.supercells import min_dist
+from doped.utils.parsing import (
+    get_coords_and_idx_of_species,
+    get_defect_type_and_composition_diff,
+    get_defect_type_and_site_indices,
+    get_matching_site,
+)
 from doped.utils.symmetry import (
     get_equiv_frac_coords_in_primitive,
     get_primitive_structure,
@@ -32,11 +36,12 @@ if TYPE_CHECKING:
 
 
 def classify_vacancy_geometry(
-    vacancy_supercell: Structure,
     bulk_supercell: Structure,
+    vacancy_supercell: Structure,
     site_tol: float = 0.5,
     abs_tol: bool = False,
     verbose: bool = False,
+    use_oxi_states: bool = False,
 ) -> str:
     """
     Classify the geometry of a given vacancy in a supercell, as either a
@@ -44,28 +49,29 @@ def classify_vacancy_geometry(
 
     Split vacancy geometries are those where 2 vacancies and 1 interstitial
     are found to be present in the defect structure, as determined using
-    site-matching between the defect and bulk structures with a fractional
-    distance tolerance (``site_tol``), such that the absence of any site of
-    matching species within the distance tolerance to the original bulk site
-    is considered a vacancy, and vice versa in comparing the bulk to the defect
+    site-matching between the defect and bulk structures with a distance
+    tolerance (``site_tol``), such that the absence of any site of matching
+    species within the distance tolerance to the original bulk site is
+    considered a vacancy, and vice versa in comparing the bulk to the defect
     structure is an interstitial. This corresponds to the 2 V_X + X_i
-    definition of split vacancies discussed in
+    definition of split vacancies geometries as discussed in
     https://doi.org/10.1088/2515-7655/ade916
 
-    A simple vacancy corresponds to cases where 1 site from the bulk structure
-    cannot be matched to the defect structure while all defect structure sites
-    can be matched to bulk sites, and 'non-trivial' vacancies refer to all
-    other cases.
+    On the other hand, a simple (point) vacancy corresponds to cases where 1
+    site from the bulk structure cannot be matched to the defect structure
+    while all defect structure sites can be matched to bulk sites, and
+    'non-trivial' vacancies refer to all other cases (multiple off-site atoms,
+    which don't match the split vacancy classification).
 
     Inspired by the vacancy geometry classification used in Kumagai et al.
     `Phys Rev Mater` 2021. See https://doi.org/10.1088/2515-7655/ade916 for
     further details.
 
     Args:
-        vacancy_supercell (Structure):
-            The defect supercell containing the vacancy to be classified.
         bulk_supercell (Structure):
             The bulk supercell structure to compare against for site-matching.
+        vacancy_supercell (Structure):
+            The defect supercell containing the vacancy to be classified.
         site_tol (float):
             The (fractional) tolerance for matching sites between the defect
             and bulk structures. If ``abs_tol`` is ``False`` (default), then
@@ -82,6 +88,16 @@ def classify_vacancy_geometry(
             Whether to print additional information about the classification
             for non-trivial vacancies.
             Default is ``False``.
+        use_oxi_states (bool):
+            Whether to use the oxidation states of the sites in the bulk and
+            defect structures when considering matching sites (such that e.g.
+            ``Fe3+`` and ``Fe2+`` would be considered different species).
+            Default is ``False``.
+
+    Returns:
+        str:
+            The classification of the vacancy geometry, which can be one of
+            "Simple Vacancy", "Split Vacancy", or "Non-Trivial".
     """
     # if not all sites in both structures are oxi-state decorated / neutral, then remove oxi states:
     oxi_state_decorated = [
@@ -94,48 +110,46 @@ def classify_vacancy_geometry(
         vacancy_supercell.remove_oxidation_states()
         bulk_supercell.remove_oxidation_states()
 
-    old_species = next(
-        el
-        for el, amt in get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)[1].items()
-        if amt == -1
+    defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
+    if defect_type != "vacancy":
+        warnings.warn(
+            f"Note that based on the defect/bulk structure composition difference ({comp_diff}), the "
+            f"defect supercell is not classified as a vacancy, but as a {defect_type}."
+        )
+    old_species = next(el for el, amt in comp_diff.items() if amt == -1)
+    _, bulk_species_indices = get_coords_and_idx_of_species(
+        bulk_supercell, old_species, use_oxi_states=use_oxi_states
     )
-    bulk_bond_length = max(min_dist(bulk_supercell), 1)
-    site_dist_tol = site_tol * bulk_bond_length if not abs_tol else site_tol
-    num_offsite_bulk_to_defect = np.sum(
-        np.array(
-            get_site_mappings(
-                bulk_supercell,
-                vacancy_supercell,
-                species=old_species,
-                allow_duplicates=True,
-                threshold=np.inf,  # don't warn for large detected off-site displacements (e.g. split vacs)
-            )
-        )[:, 0]
-        > site_dist_tol
-    )
-    num_offsite_defect_to_bulk = np.sum(
-        np.array(
-            get_site_mappings(
-                vacancy_supercell,
-                bulk_supercell,
-                species=old_species,
-                allow_duplicates=True,
-                threshold=np.inf,  # don't warn for large detected off-site displacements (e.g. split vacs)
-            )
-        )[:, 0]
-        > site_dist_tol
+    _, vacancy_species_indices = get_coords_and_idx_of_species(
+        vacancy_supercell, old_species, use_oxi_states=use_oxi_states
     )
 
-    if num_offsite_bulk_to_defect == 1 and num_offsite_defect_to_bulk == 0:
+    defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+        get_defect_type_and_site_indices(
+            bulk_supercell,
+            vacancy_supercell,
+            site_tol=site_tol,
+            abs_tol=abs_tol,
+        )
+    )
+    # ignore indices for other species:
+    missing_bulk_site_indices = missing_bulk_site_indices[
+        np.isin(missing_bulk_site_indices, bulk_species_indices)
+    ]
+    additional_defect_site_indices = additional_defect_site_indices[
+        np.isin(additional_defect_site_indices, vacancy_species_indices)
+    ]
+
+    if len(missing_bulk_site_indices) == 1 and len(additional_defect_site_indices) == 0:
         return "Simple Vacancy"
 
-    if num_offsite_bulk_to_defect == 2 and num_offsite_defect_to_bulk == 1:
+    if len(missing_bulk_site_indices) == 2 and len(additional_defect_site_indices) == 1:
         return "Split Vacancy"
 
-    # otherwise, we have a non-trivial vacancy
-    if verbose:
-        print(f"{num_offsite_defect_to_bulk} offsite atoms in defect compared to bulk")
-        print(f"{num_offsite_bulk_to_defect} offsite atoms in bulk compared to defect")
+    if verbose:  # otherwise, we have a non-trivial vacancy
+        print(f"{len(additional_defect_site_indices)} offsite atoms in defect compared to bulk")
+        print(f"{len(missing_bulk_site_indices)} offsite atoms in bulk compared to defect")
+
     return "Non-Trivial"
 
 

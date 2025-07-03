@@ -473,8 +473,7 @@ def get_defect_type_and_site_indices(
     elt_symbols = {species.symbol for species in bulk_composition.elements + defect_composition.elements}
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
-    distances = bulk_supercell.distance_matrix.flatten()
-    distances = distances[np.nonzero(distances)[0]]
+    distance_matrix = bulk_supercell.distance_matrix
 
     for elt_symbol in elt_symbols:
         bulk_species_coords, bulk_species_indices = get_coords_and_idx_of_species(
@@ -483,7 +482,8 @@ def get_defect_type_and_site_indices(
         defect_species_coords, defect_species_indices = get_coords_and_idx_of_species(
             defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
-        species_min_dist = max(min(distances[bulk_species_indices]), 1)
+        species_distances = distance_matrix[bulk_species_indices]
+        species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
         site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
 
         site_mapping = _get_site_mapping_from_coords_and_indices(
