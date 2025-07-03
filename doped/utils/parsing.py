@@ -18,7 +18,7 @@ from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
+from pymatgen.core.structure import Composition, Lattice, PeriodicSite, SiteCollection, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
@@ -405,7 +405,7 @@ def get_defect_type_and_site_indices(
     defect_supercell: Structure,
     site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
     abs_tol: bool = False,
-) -> tuple[str, int | None, int | None]:
+) -> tuple[str, list[int], list[int]]:
     """
     Get the defect type, and indices of defect sites in the bulk (vacancies /
     substitutions) and defect (interstitials / substitutions) supercells.
@@ -437,105 +437,13 @@ def get_defect_type_and_site_indices(
         defect_type (str):
             The type of defect as a string (``interstitial``, ``vacancy`` or
             ``substitution``).
-        bulk_site_idx (int):
-            Index of the site in the bulk structure that corresponds to the
-            defect site in the defect structure.
-        defect_site_idx (int):
-            Index of the defect site in the defect structure.
+        missing_bulk_site_indices (list[int]):
+            Indices of sites in the bulk structure that do not match any site
+            in the defect structure (according to ``site_tol`` choice).
+        additional_defect_site_indices (list[int]):
+            Indices of sites in the defect structure that do not match any site
+            in the bulk structure (according to ``site_tol`` choice).
     """
-
-    def process_substitution(bulk_supercell, defect_supercell, composition_diff, site_dist_tol):
-        old_species = _get_species_from_composition_diff(composition_diff, -1)
-        new_species = _get_species_from_composition_diff(composition_diff, 1)
-
-        bulk_new_species_coords, bulk_new_species_indices = get_coords_and_idx_of_species(
-            bulk_supercell, new_species
-        )
-        defect_new_species_coords, defect_new_species_indices = get_coords_and_idx_of_species(
-            defect_supercell, new_species
-        )
-
-        # Get the coords and site index of the defect that was used in the calculation
-        site_mapping = _get_site_mapping_from_coords_and_indices(
-            bulk_new_species_coords,
-            defect_new_species_coords,
-            lattice=bulk_supercell.lattice,
-            s1_indices=bulk_new_species_indices,
-            s2_indices=defect_new_species_indices,
-        )
-        defect_site_mappings = [
-            mapping
-            for mapping in site_mapping
-            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
-        ]  # TODO: Handle multiple matches for complexes...
-        defect_site_idx = defect_site_mappings[0][-1]
-
-        # now find the closest old_species site in the bulk structure to the defect site
-        bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
-            bulk_supercell, old_species
-        )
-        defect_site_coords = defect_supercell[defect_site_idx].frac_coords  # frac coords of defect site
-        _bulk_coords, bulk_site_arg_idx = find_nearest_coords(
-            bulk_old_species_coords,
-            defect_site_coords,
-            bulk_supercell.lattice,
-            return_idx=True,
-        )
-        return bulk_old_species_idx[bulk_site_arg_idx], defect_site_idx
-
-    def process_vacancy(bulk_supercell, defect_supercell, composition_diff, site_dist_tol):
-        old_species = _get_species_from_composition_diff(composition_diff, -1)
-        bulk_old_species_coords, bulk_old_species_indices = get_coords_and_idx_of_species(
-            bulk_supercell, old_species
-        )
-        defect_old_species_coords, defect_old_species_indices = get_coords_and_idx_of_species(
-            defect_supercell, old_species
-        )
-
-        site_mapping = _get_site_mapping_from_coords_and_indices(
-            bulk_old_species_coords,
-            defect_old_species_coords,
-            lattice=bulk_supercell.lattice,
-            s1_indices=bulk_old_species_indices,
-            s2_indices=defect_old_species_indices,
-        )
-        defect_site_mappings = [
-            mapping
-            for mapping in site_mapping
-            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
-        ]  # TODO: Handle multiple matches for complexes...
-        return defect_site_mappings[0][1], None
-
-    def process_interstitial(bulk_supercell, defect_supercell, composition_diff, site_dist_tol):
-        new_species = _get_species_from_composition_diff(composition_diff, 1)
-
-        bulk_new_species_coords, bulk_new_species_indices = get_coords_and_idx_of_species(
-            bulk_supercell, new_species
-        )
-        defect_new_species_coords, defect_new_species_indices = get_coords_and_idx_of_species(
-            defect_supercell, new_species
-        )
-
-        site_mapping = _get_site_mapping_from_coords_and_indices(
-            bulk_new_species_coords,
-            defect_new_species_coords,
-            lattice=bulk_supercell.lattice,
-            s1_indices=bulk_new_species_indices,
-            s2_indices=defect_new_species_indices,
-        )
-        defect_site_mappings = [
-            mapping
-            for mapping in site_mapping
-            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
-        ]  # TODO: Handle multiple matches for complexes...
-        return None, defect_site_mappings[0][-1]
-
-    handlers = {
-        "substitution": process_substitution,
-        "vacancy": process_vacancy,
-        "interstitial": process_interstitial,
-    }
-
     from doped.utils.supercells import min_dist
 
     bulk_bond_length = max(min_dist(bulk_supercell), 1)
@@ -561,8 +469,8 @@ def get_defect_type_and_site_indices(
         species.symbol
         for species in bulk_supercell.composition.elements + defect_supercell.composition.elements
     }
-    additional_defect_sites = []
-    missing_bulk_sites = []
+    additional_defect_site_indices = []
+    missing_bulk_site_indices = []
     for elt_symbol in elt_symbols:
         bulk_species_coords, bulk_species_indices = get_coords_and_idx_of_species(
             bulk_supercell, elt_symbol
@@ -582,27 +490,19 @@ def get_defect_type_and_site_indices(
             mapping
             for mapping in site_mapping
             if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
-        ]  # TODO: Handle multiple matches for complexes...
+        ]
         for mapping in defect_site_mappings:
             if mapping[1] is not None:  # missing bulk site
-                missing_bulk_sites.append(bulk_supercell[mapping[1]])
+                missing_bulk_site_indices.append(mapping[1])
             if mapping[2] is not None:  # additional defect site (may be from same matched tuple if dist
-                additional_defect_sites.append(defect_supercell[mapping[2]])  # greater than site_dist_tol)
+                additional_defect_site_indices.append(mapping[2])  # greater than site_dist_tol)
 
-    return (
-        defect_type,
-        *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff, site_dist_tol),
-    )
+    return defect_type, missing_bulk_site_indices, additional_defect_site_indices
 
 
-def _get_species_from_composition_diff(composition_diff, el_change):
-    """
-    Get the species corresponding to the given change in composition.
-    """
-    return next(el for el, amt in composition_diff.items() if amt == el_change)
-
-
-def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=True):
+def get_coords_and_idx_of_species(
+    structure_or_sites: SiteCollection, species_name: str, frac_coords: bool = True
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Get arrays of the coordinates and indices of the given species in the
     structure/list of sites.

@@ -263,11 +263,11 @@ def defect_from_structures(
             ``pymatgen`` ``Structure`` object of the unrelaxed defect
             structure.
     """
-    try:  # Try automatic defect site detection -- this gives us the "unrelaxed" defect structure
-        (
+    try:
+        (  # automatic defect site detection:
             defect_type,
-            bulk_site_idx,
-            defect_site_idx,
+            missing_bulk_site_indices,
+            additional_defect_site_indices,
         ) = get_defect_type_and_site_indices(bulk_supercell, defect_supercell)
 
     except RuntimeError as exc:
@@ -283,6 +283,10 @@ def defect_from_structures(
             f"and this error is not resolved, please report this issue to the developers."
         ) from exc
 
+    # TODO: Add handling of complex defects (multiple bulk/defect sites here). Need ComplexDefect class (
+    # see pmg...)
+    bulk_site_idx = next(iter(missing_bulk_site_indices), None)
+    defect_site_idx = next(iter(additional_defect_site_indices), None)
     if defect_type == "vacancy":
         site_in_bulk = defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
     elif defect_type == "substitution":

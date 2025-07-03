@@ -2153,9 +2153,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert comp_diff == {"F": 1}
         (
             def_type,
-            bulk_site_idx,
-            defect_site_idx,
+            missing_bulk_site_indices,
+            additional_defect_site_indices,
         ) = get_defect_type_and_site_indices(bulk_sc_structure, initial_defect_structure)
+        bulk_site_idx = next(iter(missing_bulk_site_indices), None)
+        defect_site_idx = next(iter(additional_defect_site_indices), None)
         assert bulk_site_idx is None
         assert def_type == "interstitial"
         unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
@@ -2192,10 +2194,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert comp_diff == {"Cd": -1, "U": 1}
         (
             def_type,
-            bulk_site_idx,
-            defect_site_idx,
+            missing_bulk_site_indices,
+            additional_defect_site_indices,
         ) = get_defect_type_and_site_indices(bulk_sc_structure, initial_defect_structure)
         assert def_type == "substitution"
+        bulk_site_idx = next(iter(missing_bulk_site_indices), None)
+        defect_site_idx = next(iter(additional_defect_site_indices), None)
         assert bulk_site_idx == 0
         assert defect_site_idx == 63  # last site in structure
         unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
