@@ -67,6 +67,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- M. A. Fadla et al. **_Tailoring the Electronic Properties of Monoclinic (In<sub>x</sub>Al<sub>1-x</sub>)<sub>2</sub>O<sub>3</sub> Alloys via Substitutional Donors and Acceptors_** [_arXiv_](https://arxiv.org/abs/2507.02805) 2025
 - C. López et al. **_Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers_** [_arXiv_](https://arxiv.org/abs/2504.18089) 2025
 - K. Ogawa et al. **_Defect Tolerance via External Passivation in the Photocatalyst SrTiO<sub>3</sub>:Al_** [_Journal of the American Chemical Society_](https://doi.org/10.1021/jacs.5c07104) 2025
 - M. S. Islam et al. **_Diffusion Characteristics of Ru and Oxygen Vacancies in Ta<sub>2</sub>O<sub>5</sub> for Resistive Random Access Memory Devices: A Density Functional Theory Investigation_** [_Advanced Electronic Materials_](https://doi.org/10.1002/aelm.202500128) 2025
