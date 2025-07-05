@@ -406,6 +406,7 @@ def get_defect_type_and_site_indices(
     site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
     abs_tol: bool = False,
     use_oxi_states: bool = False,
+    use_rms: bool = False,
 ) -> tuple[str, list[int], list[int]]:
     """
     Get the defect type, and indices of defect sites in the bulk (vacancies /
@@ -439,6 +440,11 @@ def get_defect_type_and_site_indices(
             defect structures when considering matching sites (such that e.g.
             ``Fe3+`` and ``Fe2+`` would be considered different species).
             Default is ``False``.
+        use_rms (bool):
+            Site mapping (using linear assignment) -- used to determine defect
+            sites -- will be that which minimises either the summed RMS
+            distances (if ``use_rms`` is ``True``) or just simple linear sum of
+            distances (if ``False``, default) between all paired sites.
 
     Returns:
         defect_type (str):
@@ -470,7 +476,21 @@ def get_defect_type_and_site_indices(
             f"sites."
         )
 
-    elt_symbols = {species.symbol for species in bulk_composition.elements + defect_composition.elements}
+    oxi_state_decorated = [  # if all sites in both structures are not oxi-state decorated / neutral
+        any(i in site.species_string for i in ["+", "-", "0"])
+        for site in [*bulk_supercell.sites, *defect_supercell.sites]
+    ]
+    if len(set(oxi_state_decorated)) > 1 and use_oxi_states:  # not consistent, ignore oxi states:
+        warnings.warn(
+            "`use_oxi_states` was set to `True`, but not all sites in the bulk and defect structures are "
+            "oxidation state decorated. Setting `use_oxi_states` to `False`."
+        )
+        use_oxi_states = False
+
+    elt_symbols = {
+        str(species) if use_oxi_states else species.symbol
+        for species in bulk_composition.elements + defect_composition.elements
+    }
     additional_defect_site_indices = []
     missing_bulk_site_indices = []
     distance_matrix = bulk_supercell.distance_matrix
@@ -492,6 +512,7 @@ def get_defect_type_and_site_indices(
             lattice=bulk_supercell.lattice,
             s1_indices=bulk_species_indices,
             s2_indices=defect_species_indices,
+            use_rms=use_rms,
         )
         defect_site_mappings = [
             mapping
@@ -590,7 +611,7 @@ def get_matching_site(
     # else get closest site in structure, raising error if not within tol Å:
     if isinstance(site, PeriodicSite) and not anonymous:  # reduce to only matching species
         candidate_frac_coords, candidate_indices = get_coords_and_idx_of_species(
-            structure, site.specie.symbol, frac_coords=True
+            structure, site.specie.symbol
         )
     else:
         candidate_frac_coords = structure.frac_coords
@@ -904,6 +925,7 @@ def _get_site_mapping_from_coords_and_indices(
     s1_indices: np.ndarray[int] | None = None,
     s2_indices: np.ndarray[int] | None = None,
     lattice: Lattice | None = None,
+    use_rms: bool = False,
 ) -> list[tuple[float | None, int | None, int | None]]:
     """
     Get the site mapping between two sets of coordinates and indices, based on
@@ -927,6 +949,11 @@ def _get_site_mapping_from_coords_and_indices(
             The lattice of the structures. If ``None``, the identity matrix is
             used (corresponding to the assumption that the input coordinates
             are Cartesian).
+        use_rms (bool):
+            The returned site mapping (using linear assignment) will be that
+            which minimises either the summed RMS distances (if ``use_rms`` is
+            ``True``) or just simple linear sum of distances (if ``False``,
+            default) between all paired sites.
 
     Returns:
         list:
@@ -953,9 +980,9 @@ def _get_site_mapping_from_coords_and_indices(
         (s2_coords, s2_indices) if s1_is_subset else (s1_coords, s1_indices)
     )
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset_fcoords, superset_fcoords, return_d2=True)
-    site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
     dists = np.sqrt(d_2)
-    site_mapping = [
+    site_matches = LinearAssignment(d_2 if use_rms else dists).solution
+    site_mapping = [  # site_matches -> matching superset indices, of len(subset)
         (dists[i, j], subset_indices[i], superset_indices[j]) for i, j in enumerate(site_matches)
     ]
     for missing_index in set(range(len(superset_fcoords))) - set(site_matches):
@@ -975,6 +1002,7 @@ def get_site_mappings(
     threshold: float = 2.0,
     anonymous: bool = False,
     ignored_species: list[str] | None = None,
+    use_rms: bool = False,
 ) -> list[tuple[float | None, int | None, int | None]]:
     """
     Get the site mappings between two structures (from ``struct1`` to
@@ -1010,6 +1038,12 @@ def get_site_mappings(
         ignored_species (list[str]):
             A list of species to ignore when matching sites. Default is no
             species ignored.
+        use_rms (bool):
+            The returned site mapping (using linear assignment -- only
+            applicable when ``allow_duplicates`` is ``False``) will be that
+            which minimises either the summed RMS distances (if ``use_rms`` is
+            ``True``) or just simple linear sum of distances (if ``False``,
+            default) between all paired sites.
 
     Returns:
         list:
@@ -1047,6 +1081,7 @@ def get_site_mappings(
                     lattice=struct1.lattice,
                     s1_indices=s1_indices,
                     s2_indices=s2_indices,
+                    use_rms=use_rms,
                 )
             )
             continue

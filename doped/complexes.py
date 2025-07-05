@@ -99,16 +99,16 @@ def classify_vacancy_geometry(
             The classification of the vacancy geometry, which can be one of
             "Simple Vacancy", "Split Vacancy", or "Non-Trivial".
     """
-    # if not all sites in both structures are oxi-state decorated / neutral, then remove oxi states:
-    oxi_state_decorated = [
-        "+" in site.species_string or "-" in site.species_string or "0" in site.species_string
+    oxi_state_decorated = [  # if all sites in both structures are not oxi-state decorated / neutral
+        any(i in site.species_string for i in ["+", "-", "0"])
         for site in [*vacancy_supercell.sites, *bulk_supercell.sites]
     ]
-    if len(set(oxi_state_decorated)) > 1:  # not consistent with all sites, remove oxi states:
-        vacancy_supercell = vacancy_supercell.copy()
-        bulk_supercell = bulk_supercell.copy()
-        vacancy_supercell.remove_oxidation_states()
-        bulk_supercell.remove_oxidation_states()
+    if len(set(oxi_state_decorated)) > 1 and use_oxi_states:  # not consistent, ignore oxi states:
+        warnings.warn(
+            "`use_oxi_states` was set to `True`, but not all sites in the bulk and defect structures are "
+            "oxidation state decorated. Setting `use_oxi_states` to `False`."
+        )
+        use_oxi_states = False
 
     defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, vacancy_supercell)
     if defect_type != "vacancy":
