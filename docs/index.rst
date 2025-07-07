@@ -16,7 +16,7 @@
 
 .. raw:: html
 
-   <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
+   <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 ``doped`` is a Python software for the generation, pre-/post-processing and analysis of defect supercell
 calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet
@@ -82,6 +82,7 @@ The following literature contain useful discussions of various aspects of defect
 - `Defect Structure Searching – Mosquera-Lois et al. <https://doi.org/10.1038/s41524-023-00973-1>`__
 - `Free Energies of Defects – Mosquera-Lois et al. <https://doi.org/10.1039/D3CS00432E>`__
 - `DeepWiki Code Overview & Workflow <https://deepwiki.com/SMTG-Bham/doped/1-overview>`__
+
 .. TODO: Squires perspective when ready
 
 ``ShakeNBreak``

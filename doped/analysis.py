@@ -451,31 +451,32 @@ def defect_and_info_from_structures(
             not required.
 
     Returns:
-        defect (Defect):
-            ``doped`` ``Defect`` object.
-        defect_site (Site):
-            ``pymatgen`` ``Site`` object of the `relaxed` defect site in the
-            defect supercell.
-        defect_structure_metadata (dict):
-            Dictionary containing metadata about the defect structure,
-            including:
+        tuple[Defect, PeriodicSite, dict]:
+            defect (Defect):
+                ``doped`` ``Defect`` object.
+            defect_site (Site):
+                ``pymatgen`` ``Site`` object of the `relaxed` defect site in
+                the defect supercell.
+            defect_structure_metadata (dict):
+                Dictionary containing metadata about the defect structure,
+                including:
 
-            - ``guessed_initial_defect_structure``: The guessed initial defect
-              structure (before relaxation).
-            - ``guessed_defect_displacement``: Displacement from the guessed
-              initial defect site to the final `relaxed` site (``None`` for
-              vacancies).
-            - ``defect_site_index``: Index of the defect site in the defect
-              supercell (``None`` for vacancies).
-            - ``bulk_site_index``: Index of the defect site in the bulk
-              supercell (``None`` for interstitials).
-            - ``unrelaxed_defect_structure``: The unrelaxed defect structure
-              (similar to ``guessed_initial_defect_structure``, but with
-              interstitials at their final `relaxed` positions, and all bulk
-              atoms at their unrelaxed positions).
-            - ``bulk_site``: The defect site in the bulk supercell (i.e.
-              unrelaxed vacancy/substitution site, or final `relaxed` site for
-              interstitials).
+                - ``guessed_initial_defect_structure``: The guessed initial
+                  defect structure (before relaxation).
+                - ``guessed_defect_displacement``: Displacement from the
+                  guessed initial defect site to the final `relaxed` site
+                  (``None`` for vacancies).
+                - ``defect_site_index``: Index of the defect site in the defect
+                  supercell (``None`` for vacancies).
+                - ``bulk_site_index``: Index of the defect site in the bulk
+                  supercell (``None`` for interstitials).
+                - ``unrelaxed_defect_structure``: The unrelaxed defect
+                  structure (similar to ``guessed_initial_defect_structure``,
+                  but with interstitials at their final `relaxed` positions,
+                  and all bulk atoms at their unrelaxed positions).
+                - ``bulk_site``: The defect site in the bulk supercell (i.e.
+                  unrelaxed vacancy/substitution site, or final `relaxed` site
+                  for interstitials).
     """
     defect_structure_metadata = {}
 

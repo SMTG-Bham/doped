@@ -16,6 +16,37 @@ their specific needs/system.
 
 Interstitials
 -------------------
+Voronoi tessellation is used by default to generate the candidate interstitial sites in ``doped``. We have
+consistently found this approach to be the most robust in identifying all stable/low-energy interstitial
+sites across a wide variety of materials and chemistries, when combined with structure-searching approaches
+such as `ShakeNBreak <https://shakenbreak.readthedocs.io>`__. A nice discussion is given in
+`Kononov et al. J. Phys.: Condens. Matter 2023 <https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf>`_.
+
+.. figure:: Images/doped_Interstitial_Generation_Example.png
+    :align: center
+
+    Workflow for interstitial site generation with Voronoi tessellation defaults in ``doped``, adapted from
+    `JPhys Energy 2025 <https://doi.org/10.1088/2515-7655/ade916>`__.
+
+As with all aspects of the calculation workflow, interstitial site generation is flexible, and you can
+explicitly specify the interstitial sites to generate using the ``interstitial_coords`` (for instance, if
+you only want to investigate one specific known interstitial site, or input a list of candidate sites
+generated from a different algorithm), and/or customise the generation algorithm via
+``interstitial_gen_kwargs``, both of which are input parameters for the ``DefectsGenerator`` class; see the
+`API documentation <https://doped.readthedocs.io/en/latest/doped.generation.html#doped.generation.DefectsGenerator>`_
+for more details.
+
+.. note::
+
+    Charge-density based approaches for interstitial site generation can be useful in some cases and often
+    output fewer candidate sites, but we have found that these are primarily suited to ionic materials (and
+    with fully-ionised defect charge states) where electrostatics primarily govern the energetics. In
+    many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
+    hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
+    ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
+
+Efficient Interstitial Screening
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7nm9qoNg>`__,
 `B站 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__),
 our recommended workflow for calculating interstitial defects is to first generate the set of candidate
@@ -38,7 +69,7 @@ We can then compare the energies of these trial relaxations, and remove candidat
   one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each other,
   this is the case.
 
-See the DeepWiki workflow summary [here](https://deepwiki.com/SMTG-Bham/doped/9-troubleshooting-and-best-practices#best-practices-for-specific-systems).
+See the DeepWiki workflow summary `here <https://deepwiki.com/SMTG-Bham/doped/9-troubleshooting-and-best-practices#best-practices-for-specific-systems>`__.
 
 .. tip::
 
@@ -46,30 +77,6 @@ See the DeepWiki workflow summary [here](https://deepwiki.com/SMTG-Bham/doped/9-
     you should always critically consider the validity of these choices in the context of your specific
     system (for example, considering the charge-state dependence of the interstitial site formation
     energies here).
-
-.. note::
-
-    As mentioned above, by default Voronoi tessellation is used to generate the candidate interstitial
-    sites in ``doped``. We have consistently found this approach to be the most robust in identifying all
-    stable/low-energy interstitial sites across a wide variety of materials and chemistries. A nice
-    discussion is given in
-    `Kononov et al. J. Phys.: Condens. Matter 2023 <https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf>`_.
-
-    As with all aspects of the calculation workflow, interstitial site generation is
-    flexible, and you can explicitly specify the interstitial sites to generate using the
-    ``interstitial_coords`` (for instance, if you only want to investigate one specific known interstitial
-    site, or input a list of candidate sites generated from a different algorithm), and/or customise the
-    generation algorithm via ``interstitial_gen_kwargs``, both of which are input parameters for the
-    ``DefectsGenerator`` class;
-    see the `API documentation <https://doped.readthedocs.io/en/latest/doped.generation.html#doped.generation.DefectsGenerator>`_
-    for more details.
-
-    Charge-density based approaches for interstitial site generation can be useful in some cases and often
-    output fewer candidate sites, but we have found that these are primarily suited to ionic materials (and
-    with fully-ionised defect charge states) where electrostatics primarily govern the energetics. In
-    many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
-    hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
-    ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
 
 
 Performance Bottlenecks
@@ -180,11 +187,11 @@ Following the advice in the warning, we use ``defect_entry.get_kumagai_correctio
 site potential differences for the defect supercell (which is used to obtain the eFNV (Kumagai-Oba)
 anisotropic charge correction):
 
-.. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot.png
+.. image:: Images/Sb2Si2Te6_v_Sb_-3_eFNV_plot.png
     :width: 400px
     :align: left
 
-.. image:: Sb2Si2Te6_v_Sb_-3_VESTA.png
+.. image:: Images/Sb2Si2Te6_v_Sb_-3_VESTA.png
     :width: 240px
     :align: right
 
@@ -226,11 +233,11 @@ the fractional coordinates of the defect site along `a`:
 Below are the two resulting charge correction plots (using ``defect_region_radius`` on the left, and
 ``excluded_indices`` on the right):
 
-.. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_region_radius.png
+.. image:: Images/Sb2Si2Te6_v_Sb_-3_eFNV_plot_region_radius.png
     :height: 320px
     :align: left
 
-.. image:: Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png
+.. image:: Images/Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png
     :height: 320px
     :align: right
 
@@ -316,7 +323,7 @@ we plot the single particle levels for the
 `cadmium vacancy in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__ (`V`\ :sub:`Cd`) in each of
 its charge states (0, -1 and -2); calculated with spin-orbit coupling (SOC) and a 2x2x2 `k`-point mesh:
 
-.. image:: V_Cd_Eigenvalue_Plots.png
+.. image:: Images/V_Cd_Eigenvalue_Plots.png
     :align: center
 
 Here we can see that these plots nicely match the schematic depiction from
@@ -415,10 +422,10 @@ VBM/CBM states between the bulk and defect supercells.
 The plot of the single particle levels is shown below (left), and an example of how you might chose to represent the
 PHS on the transition level diagram with a clear circle is shown on the right.
 
-.. image:: Cu2SiSe3_v_Cu_0_eigenvalue_plot.png
+.. image:: Images/Cu2SiSe3_v_Cu_0_eigenvalue_plot.png
     :width: 325px
     :align: left
-.. image:: Cu2SiSe3_TLD.png
+.. image:: Images/Cu2SiSe3_TLD.png
     :width: 320px
     :align: left
 
