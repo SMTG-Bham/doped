@@ -1503,6 +1503,8 @@ class DefectEntry(thermo.DefectEntry):
             return self._bulk_entry_energy
 
         self._bulk_entry_hash = hash(self.bulk_entry)
+        if self.bulk_entry is None:
+            return None
         self._bulk_entry_energy = self.bulk_entry.energy
 
         return self._bulk_entry_energy
@@ -1521,6 +1523,9 @@ class DefectEntry(thermo.DefectEntry):
             return self._sc_entry_energy
 
         self._sc_entry_hash = hash(self.sc_entry)
+        if self.sc_entry is None:
+            return None
+
         self._sc_entry_energy = self.sc_entry.energy
 
         return self._sc_entry_energy
