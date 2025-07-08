@@ -96,13 +96,11 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
-- Quick run through tutorial notebooks to check code all updated and running.
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout?
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.
 - Stenciling tutorial and tests.
-
 - Tests for configuration coordinate diagram generation code
 - Quick-start tutorial suggested by Alex G
-- Test chempot grid plotting tool.
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)(e.g. Wenzhen Si2Sb2Te6). Can see `get_chempots` in `pmg-analysis-defects` for inspo on this.
+- Automatically detect dimers, check the magnetisation from the calcs, and then warn the user that they may want to try NUPDOWN = 2 (if the magnetisation was singlet)? Do in `DefectsParser` at the end (as part of a 'final-checks' function), so can loop through and check if dimer with magnetisation was calculated at some point for that defect state.

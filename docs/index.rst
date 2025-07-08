@@ -16,7 +16,7 @@
 
 .. raw:: html
 
-   <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
+   <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/develop/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
 
 ``doped`` is a Python software for the generation, pre-/post-processing and analysis of defect supercell
 calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet
@@ -26,9 +26,8 @@ Tutorials showing the code functionality and usage are provided on the :ref:`Tut
 overview of the key advances of the package is given in the
 `JOSS paper <https://doi.org/10.21105/joss.06433>`__.
 
-.. raw:: html
-
-    <a href="https://doi.org/10.21105/joss.06433"><img class="center" width="800" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/JOSS/doped_JOSS_workflow_figure.png"></a>
+.. image:: JOSS/doped_JOSS_workflow_figure.png
+   :target: https://doi.org/10.21105/joss.06433
 
 Key Features
 ============

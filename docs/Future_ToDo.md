@@ -68,6 +68,7 @@
     colour just different linestyles? (or something similar)
 - Implement shallow donor/acceptor binding estimation functions (via effective mass theory)
 - Eigenvalue corrections for the eigenvalue plots, like shown in 10.1103/PhysRevB.109.054106?
+- Use the projected eigenvalues and magnetisation to detect when localised charge is associated with d/f electrons (and/or is multi-polaronic), and warn the user that different choices of NUPDOWN, maybe MAGMOM, should be tested for these defect states? (Like for dimers)
 
 ## Docs
 - Add LDOS plotting, big selling point for defects and disorder!
