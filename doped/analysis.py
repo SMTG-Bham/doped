@@ -1097,6 +1097,8 @@ class DefectsParser:
         self.defect_dict = _name_parsed_defect_entries(parsed_defect_entries, subfolder=self.subfolder)
 
         # handle (and warn) any charge correction errors or calculation parameter mismatches:
+        # TODO: Add these to a separate defect_parsing_checks function, and add in dimer detection with
+        #  info message about checking triplet states
         self._handle_charge_correction_errors(self.error_tolerance, **kwargs)
         _warn_calculation_mismatches(self.defect_dict)  # warn any mismatching defect/bulk calc parameters
 
@@ -2787,19 +2789,24 @@ class DefectParser:
             return None
 
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
-        if bulk_site_potentials is None:
-            total_energies = [
-                self.defect_entry.bulk_entry.energy if self.defect_entry.bulk_entry else None,
+
+        def _get_total_energies(computed_entry=None, vr=None):
+            """
+            Get the total energies from the defect entry or vasprun.
+            """
+            energies = [
                 (
-                    self.bulk_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"]
-                    if self.bulk_vr
-                    else None
+                    computed_entry.energy
+                    if computed_entry
+                    else None(vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"] if vr else None)
                 ),
             ]
+            return [energy for energy in energies if energy is not None]
 
+        if bulk_site_potentials is None:
             bulk_site_potentials = _get_bulk_site_potentials(
                 self.defect_entry.calculation_metadata["bulk_path"],
-                total_energy=[energy for energy in total_energies if energy is not None],
+                total_energy=_get_total_energies(self.defect_entry.bulk_entry, self.bulk_vr),
             )
 
         defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
@@ -2812,18 +2819,10 @@ class DefectParser:
                 defect_outcar_path,
                 dir_type="defect",
             )
-        total_energies = [
-            self.defect_entry.sc_entry.energy,
-            (
-                self.defect_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"]
-                if self.defect_vr
-                else None
-            ),
-        ]
         defect_site_potentials = get_core_potentials_from_outcar(
             defect_outcar_path,
             dir_type="defect",
-            total_energy=[energy for energy in total_energies if energy is not None],
+            total_energy=_get_total_energies(self.defect_entry.sc_entry, self.defect_vr),
         )
 
         self.defect_entry.calculation_metadata.update(
@@ -2841,21 +2840,19 @@ class DefectParser:
         and check if the defect and bulk supercell calculations settings are
         compatible.
         """
-        if not self.bulk_vr:
-            self.bulk_vr = _parse_vr_and_poss_procar(
-                output_path=self.defect_entry.calculation_metadata["bulk_path"],
-                parse_projected_eigen=False,  # not needed for DefectEntry metadata
-                label="bulk",
-                parse_procar=False,
-            )
-
-        if not self.defect_vr:
-            self.defect_vr = _parse_vr_and_poss_procar(
-                output_path=self.defect_entry.calculation_metadata["defect_path"],
-                parse_projected_eigen=False,  # not needed for DefectEntry metadata
-                label="defect",
-                parse_procar=False,
-            )
+        for attr in ["bulk_vr", "defect_vr"]:
+            if not getattr(self, attr, None):
+                label = attr.split("_")[0]  # "bulk" or "defect"
+                setattr(
+                    self,
+                    attr,
+                    _parse_vr_and_poss_procar(
+                        output_path=self.defect_entry.calculation_metadata[f"{label}_path"],
+                        parse_projected_eigen=False,  # not needed for DefectEntry metadata
+                        label=label,  # "bulk" or "defect"
+                        parse_procar=False,
+                    ),
+                )
 
         def _get_vr_dict_without_proj_eigenvalues(vr):
             attributes_to_cut = ["projected_eigenvalues", "projected_magnetisation"]
