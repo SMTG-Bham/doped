@@ -126,10 +126,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
         self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
-        self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
+        self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/Solid_Solution")
         self.CaO_DATA_DIR = os.path.join(self.module_path, "data/CaO")
         self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
-        self.shallow_O_Se_DATA_DIR = os.path.join(self.module_path, "data/shallow_O_Se_+1")
+        self.shallow_O_Se_DATA_DIR = os.path.join(self.module_path, "data/Shallow_O_Se_+1")
         self.Se_dielectric = np.array([0.627551, 0.627551, 0.943432]) + np.array(
             [6.714217, 6.714317, 10.276149]
         )
@@ -503,6 +503,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             json_filename="CdTe_test_defect_dict.json",
         )
         self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
+        assert any(
+            "Defect v_Cd_0 has been detected to have dimer bonds" in str(warning.message) for warning in w
+        )
+
+        # test with reduced dist_tol:
+        # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged:
+        self._check_default_CdTe_DefectsParser_outputs(default_dp, w, dist_tol=0.1)
 
         # test reloading DefectsParser
         reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
@@ -532,8 +539,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=9.13,
             processes=1,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+            rtol=2,  # avoid dimer warning
         )
         self._check_default_CdTe_DefectsParser_outputs(dp, w)
+        assert not any(
+            "Defect v_Cd_0 has been detected to have dimer bonds" in str(warning.message) for warning in w
+        )
 
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
@@ -553,14 +564,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
         return default_thermo.plot(limit="CdTe-Te")
-
-    def test_DefectsParser_CdTe_dist_tol(self):
-        # test with reduced dist_tol:
-        # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
-        dp, w = _create_dp_and_capture_warnings(
-            output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, parse_projected_eigen=False
-        )
-        self._check_default_CdTe_DefectsParser_outputs(dp, w, dist_tol=0.1)
 
     @custom_mpl_image_compare(filename="CdTe_Te_Cd_+1_eigenvalue_plot.png")
     def test_DefectsParser_CdTe_no_dielectric_json(self):
@@ -1263,15 +1266,18 @@ class DefectsParsingTestCase(unittest.TestCase):
         defect and bulk supercells.
         """
         dp, w = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
-        assert len(w) == 1
+        assert len(w) == 2
         assert all(
-            i in str(w[0].message)
+            any(i in str(warning.message) for warning in w)
             for i in [
                 "There are mismatching INCAR tags",
                 ":\n[('NKRED', 1, 2)]\nIn",
+                "Defect vac_1_Zn_0 has been detected to have dimer bonds",
             ]
         )
-        assert str(w[0].message).count(":\n[('NKRED', 1, 2)]\nIn") == 1  # only once
+        assert all(
+            str(warning.message).count(":\n[('NKRED', 1, 2)]\nIn") in [0, 1] for warning in w
+        )  # only warned once
 
         assert len(dp.defect_dict) == 17
         self._check_DefectsParser(dp)

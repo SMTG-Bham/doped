@@ -1273,9 +1273,9 @@ def _compare_incar_tags(
     defect_incar_dict: dict[str, str | int | float],
     fatal_incar_mismatch_tags: dict[str, str | int | float] | None = None,
     ignore_tags: set[str] | None = None,
-    bulk_name: str="bulk",
-    defect_name: str="defect",
-    warn: bool=True,
+    bulk_name: str = "bulk",
+    defect_name: str = "defect",
+    warn: bool = True,
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
@@ -1302,9 +1302,7 @@ def _compare_incar_tags(
         }
     if ignore_tags is not None:
         fatal_incar_mismatch_tags = {
-            key: val
-            for key, val in fatal_incar_mismatch_tags.items()
-            if key not in ignore_tags
+            key: val for key, val in fatal_incar_mismatch_tags.items() if key not in ignore_tags
         }
 
     def _compare_incar_vals(val1, val2):
@@ -1996,3 +1994,43 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, 
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
     )
+
+
+def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[float]]:
+    """
+    Get a dictionary of all homoionic (dimer) bonds in the structure.
+
+    This function uses the ``get_homoionic_bonds`` and
+    ``get_dimer_bond_length`` functions from ``shakenbreak`` to identify dimer
+    bonds in the structure (where any pair of atoms of the same element with
+    distance < ``rtol * get_dimer_bond_length(elt, elt)`` are considered a
+    dimer bond), returning a dictionary of the site names and the dimer bond
+    length.
+
+    Args:
+        structure (Structure): The structure to get the dimer bond lengths for.
+        rtol (float):
+            The relative tolerance to use for classifying bonds as dimer bonds,
+            where distances < ``rtol * get_dimer_bond_length(elt, elt)`` are
+            considered dimer bonds. Default is 1.05.
+
+    Returns:
+        dict[str, list[float]]:
+            A dictionary of element names with values being sub-dictionaries of
+            site names and their homoionic neighbours and distances (in Å)
+            which are classified as dimer bonds.
+            (e.g. {'O': {'O(1)': {'O(3)': '1.44 Å'}}})
+    """
+    from shakenbreak.analysis import get_homoionic_bonds
+    from shakenbreak.distortions import get_dimer_bond_length
+
+    dimer_bond_dict = {
+        str(elt): get_homoionic_bonds(
+            structure=structure,
+            elements=str(elt),
+            radius=rtol * get_dimer_bond_length(elt, elt),
+            verbose=False,
+        )
+        for elt in structure.composition.elements
+    }
+    return {k: v for k, v in dimer_bond_dict.items() if v}

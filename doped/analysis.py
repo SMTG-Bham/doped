@@ -54,6 +54,7 @@ from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
     get_core_potentials_from_outcar,
     get_defect_type_site_idxs_and_unrelaxed_structure,
+    get_dimer_bonds,
     get_locpot,
     get_matching_site,
     get_procar,
@@ -925,15 +926,15 @@ class DefectsParser:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
-                ``point_symmetry_from_defect_entry()`` or
-                ``defect_and_info_from_structures``, including
-                ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
-                ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
-                ``angle_tolerance``, ``user_charges``,
-                ``initial_defect_structure_path`` etc. (see their docstrings);
-                or for controlling shallow defect charge correction error
-                warnings (see ``error_tolerance`` description) with
-                ``shallow_charge_stability_tolerance``.
+                ``point_symmetry_from_defect_entry()``,
+                ``defect_and_info_from_structures`` or ``get_dimer_bonds()``,
+                including ``bulk_locpot_dict``, ``bulk_site_potentials``,
+                ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
+                ``multiplicity``, ``angle_tolerance``, ``user_charges``,
+                ``initial_defect_structure_path``, ``rtol`` etc. (see their
+                docstrings); or for controlling shallow defect charge
+                correction error warnings (see ``error_tolerance`` description)
+                with ``shallow_charge_stability_tolerance``.
                 Note that ``bulk_symprec`` can be supplied as the ``symprec``
                 value to use for determining equivalent sites (and thus defect
                 multiplicities / unrelaxed site symmetries), while an input
@@ -1033,21 +1034,19 @@ class DefectsParser:
                     parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
                 # also load the other bulk corrections data if possible:
+                bulk_corr_kwargs = {
+                    "bulk_path": self.bulk_path,
+                    "quiet": True,
+                }
                 for k, v in self.bulk_corrections_data.items():
                     if v is None:
                         with contextlib.suppress(Exception):
                             if k == "bulk_locpot_dict":
-                                self.bulk_corrections_data[k] = _get_bulk_locpot_dict(
-                                    self.bulk_path, quiet=True
-                                )
+                                self.bulk_corrections_data[k] = _get_bulk_locpot_dict(**bulk_corr_kwargs)
                             elif k == "bulk_site_potentials":
                                 self.bulk_corrections_data[k] = _get_bulk_site_potentials(
-                                    self.bulk_path,
-                                    quiet=True,
-                                    total_energy=[
-                                        self.bulk_vr.final_energy,
-                                        self.bulk_vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"],
-                                    ],
+                                    total_energy=_get_total_energies(None, self.bulk_vr),
+                                    **bulk_corr_kwargs,  # type: ignore
                                 )
 
                 folders_to_process = [
@@ -1096,11 +1095,11 @@ class DefectsParser:
 
         self.defect_dict = _name_parsed_defect_entries(parsed_defect_entries, subfolder=self.subfolder)
 
+        # Parsed defect checks:
         # handle (and warn) any charge correction errors or calculation parameter mismatches:
-        # TODO: Add these to a separate defect_parsing_checks function, and add in dimer detection with
-        #  info message about checking triplet states
-        self._handle_charge_correction_errors(self.error_tolerance, **kwargs)
+        _handle_charge_correction_errors(self.defect_dict, self.error_tolerance, **kwargs)
         _warn_calculation_mismatches(self.defect_dict)  # warn any mismatching defect/bulk calc parameters
+        _check_and_warn_dimer_bonds_spin_states(self.defect_dict, rtol=self.kwargs.get("rtol", 1.05))
 
         if self.json_filename is not False:  # save to json unless json_filename is False:
             if self.json_filename is None:
@@ -1222,111 +1221,6 @@ class DefectsParser:
             pbar.update()
 
         return parsed_defect_entry, processed_warnings_string
-
-    def _handle_charge_correction_errors(self, error_tolerance: float, **kwargs) -> None:
-        """
-        Check for charge correction errors and warn if they exceed the error
-        tolerance.
-
-        Args:
-            error_tolerance (float):
-                The error tolerance threshold for charge corrections (in eV),
-                used to decide whether to trigger a warning.
-            **kwargs:
-                Additional keyword arguments, such as
-                ``shallow_charge_stability_tolerance``.
-        """
-        FNV_correction_errors: list[tuple[str, float]] = []
-        eFNV_correction_errors: list[tuple[str, float]] = []
-        defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_dos_check=True)
-
-        for name, defect_entry in self.defect_dict.items():
-            # first check if it's a stable defect:
-            fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
-
-            if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
-                defect_entry.is_shallow  # as this would require two ``DefectThermodynamics`` inits...
-                and fermi_stability_window
-                < kwargs.get(
-                    "shallow_charge_stability_tolerance",
-                    min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
-                )
-            ):
-                continue  # no charge correction warnings for unstable charge states
-
-            for correction_type, correction_error_list in [
-                ("freysoldt", FNV_correction_errors),
-                ("kumagai", eFNV_correction_errors),
-            ]:
-                if (
-                    defect_entry.corrections_metadata.get(f"{correction_type}_charge_correction_error", 0)
-                    > error_tolerance
-                ):
-                    correction_error_list.append(
-                        (
-                            name,
-                            defect_entry.corrections_metadata[
-                                f"{correction_type}_charge_correction_error"
-                            ],
-                        )
-                    )
-
-        def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
-            long_name = "Freysoldt" if type == "FNV" else "Kumagai"
-            if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
-                error_tol_string = f"{error_tolerance:.3f}"
-                correction_errors_string = "\n".join(
-                    f"{name}: {error:.3f} eV" for name, error in correction_errors
-                )
-            else:  # else give in scientific notation:
-                error_tol_string = f"{error_tolerance:.2e}"
-                correction_errors_string = "\n".join(
-                    f"{name}: {error:.2e} eV" for name, error in correction_errors
-                )
-
-            warnings.warn(
-                f"Estimated error in the {long_name} ({type}) charge correction for certain defects is "
-                f"greater than the `error_tolerance` (= {error_tol_string} eV):"
-                f"\n{correction_errors_string}\n"
-                f"You may want to check the accuracy of the corrections by plotting the site potential "
-                f"differences (using `defect_entry.get_{long_name.lower()}_correction()` with "
-                f"`plot=True`). Large errors are often due to unstable or shallow defect charge states "
-                f"(which can't be accurately modelled with the supercell approach). If these errors are "
-                f"not acceptable, you may need to use a larger supercell for more accurate energies."
-            )
-
-        for correction_errors, type in [
-            (FNV_correction_errors, "FNV"),
-            (eFNV_correction_errors, "eFNV"),
-        ]:
-            if correction_errors:
-                _call_multiple_corrections_tolerance_warning(correction_errors, type=type)
-
-        # check if same type of charge correction was used in each case or not:
-        if (
-            len(
-                {
-                    k
-                    for defect_entry in self.defect_dict.values()
-                    for k in defect_entry.corrections
-                    if k.endswith("_charge_correction")
-                }
-            )
-            > 1
-        ):
-            warnings.warn(
-                "Beware: The Freysoldt (FNV) charge correction scheme has been used for some defects, "
-                "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
-                "this should be fine, and the results should be the same regardless (assuming a "
-                "relatively well-converged supercell size), while for _anisotropic_ materials this could "
-                "lead to some quantitative inaccuracies. You can use the "
-                "`DefectThermodynamics.get_formation_energies()` method to print out the calculated "
-                "charge corrections for all defects, and/or visualise the charge corrections using "
-                "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
-                "check."
-            )
-        # note that we also check if multiple charge corrections have been applied to the same defect
-        # within the charge correction functions (with self._check_if_multiple_finite_size_corrections())
 
     def get_defect_thermodynamics(
         self,
@@ -1903,6 +1797,17 @@ def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
     )
 
 
+def _get_total_energies(computed_entry=None, vr=None):
+    """
+    Get the total energies from the defect entry or vasprun.
+    """
+    energies = [
+        computed_entry.energy if computed_entry else None,
+        vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"] if vr else None,
+    ]
+    return [energy for energy in energies if energy is not None]
+
+
 def _name_parsed_defect_entries(
     parsed_defect_entries: list[DefectEntry], subfolder: str = "."
 ) -> dict[str, DefectEntry]:
@@ -2078,6 +1983,158 @@ def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
             f"which are likely to cause errors in the parsed results (energies). Found the following "
             f"differences:\n(in the format: {mismatch_spec['message'](mismatches)})"
         )
+
+
+def _handle_charge_correction_errors(
+    defect_dict: dict[str, DefectEntry], error_tolerance: float, **kwargs
+) -> None:
+    """
+    Check for charge correction errors and warn if they exceed the error
+    tolerance.
+
+    Args:
+        defect_dict (dict[str, DefectEntry]):
+            The dictionary of defect entries to check and warn if necessary.
+        error_tolerance (float):
+            The error tolerance threshold for charge corrections (in eV),
+            used to decide whether to trigger a warning.
+        **kwargs:
+            Additional keyword arguments, such as
+            ``shallow_charge_stability_tolerance``.
+    """
+    FNV_correction_errors: list[tuple[str, float]] = []
+    eFNV_correction_errors: list[tuple[str, float]] = []
+    defect_thermo = DefectThermodynamics(
+        list(defect_dict.values()), check_compatibility=False, skip_dos_check=True
+    )
+
+    for name, defect_entry in defect_dict.items():
+        # first check if it's a stable defect:
+        fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
+
+        if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
+            defect_entry.is_shallow  # as this would require two ``DefectThermodynamics`` inits...
+            and fermi_stability_window
+            < kwargs.get(
+                "shallow_charge_stability_tolerance",
+                min(error_tolerance, defect_thermo.band_gap * 0.1 if defect_thermo.band_gap else 0.05),
+            )
+        ):
+            continue  # no charge correction warnings for unstable charge states
+
+        for correction_type, correction_error_list in [
+            ("freysoldt", FNV_correction_errors),
+            ("kumagai", eFNV_correction_errors),
+        ]:
+            if (
+                defect_entry.corrections_metadata.get(f"{correction_type}_charge_correction_error", 0)
+                > error_tolerance
+            ):
+                correction_error_list.append(
+                    (
+                        name,
+                        defect_entry.corrections_metadata[f"{correction_type}_charge_correction_error"],
+                    )
+                )
+
+    def _call_multiple_corrections_tolerance_warning(correction_errors, type="FNV"):
+        long_name = "Freysoldt" if type == "FNV" else "Kumagai"
+        if error_tolerance >= 0.01:  # if greater than 10 meV, round energy values to meV:
+            error_tol_string = f"{error_tolerance:.3f}"
+            correction_errors_string = "\n".join(
+                f"{name}: {error:.3f} eV" for name, error in correction_errors
+            )
+        else:  # else give in scientific notation:
+            error_tol_string = f"{error_tolerance:.2e}"
+            correction_errors_string = "\n".join(
+                f"{name}: {error:.2e} eV" for name, error in correction_errors
+            )
+
+        warnings.warn(
+            f"Estimated error in the {long_name} ({type}) charge correction for certain defects is "
+            f"greater than the `error_tolerance` (= {error_tol_string} eV):"
+            f"\n{correction_errors_string}\n"
+            f"You may want to check the accuracy of the corrections by plotting the site potential "
+            f"differences (using `defect_entry.get_{long_name.lower()}_correction()` with "
+            f"`plot=True`). Large errors are often due to unstable or shallow defect charge states "
+            f"(which can't be accurately modelled with the supercell approach). If these errors are "
+            f"not acceptable, you may need to use a larger supercell for more accurate energies."
+        )
+
+    for correction_errors, type in [
+        (FNV_correction_errors, "FNV"),
+        (eFNV_correction_errors, "eFNV"),
+    ]:
+        if correction_errors:
+            _call_multiple_corrections_tolerance_warning(correction_errors, type=type)
+
+    # check if same type of charge correction was used in each case or not:
+    if (
+        len(
+            {
+                k
+                for defect_entry in defect_dict.values()
+                for k in defect_entry.corrections
+                if k.endswith("_charge_correction")
+            }
+        )
+        > 1
+    ):
+        warnings.warn(
+            "Beware: The Freysoldt (FNV) charge correction scheme has been used for some defects, "
+            "while the Kumagai (eFNV) scheme has been used for others. For _isotropic_ materials, "
+            "this should be fine, and the results should be the same regardless (assuming a "
+            "relatively well-converged supercell size), while for _anisotropic_ materials this could "
+            "lead to some quantitative inaccuracies. You can use the "
+            "`DefectThermodynamics.get_formation_energies()` method to print out the calculated "
+            "charge corrections for all defects, and/or visualise the charge corrections using "
+            "`defect_entry.get_freysoldt_correction`/`get_kumagai_correction` with `plot=True` to "
+            "check."
+        )
+    # note that we also check if multiple charge corrections have been applied to the same defect
+    # within the charge correction functions (with _check_if_multiple_finite_size_corrections())
+
+
+def _check_and_warn_dimer_bonds_spin_states(
+    defect_dict: dict[str, DefectEntry], rtol: float = 1.05
+) -> None:
+    """
+    Check for dimer bonds in the parsed defect entries, and warn if they are
+    present and NUPDOWN not set to [0, 1] for any matching defect entry.
+
+    If there are between 1-3 dimer bonds, and NUPDOWN is not set to [0, 1] for
+    any matching defect entry, then warn that the defect may adopt a
+    multiplet spin state, and suggest setting NUPDOWN to 2/3 (or higher) for
+    this defect.
+
+    Args:
+        defect_dict (dict[str, DefectEntry]):
+            The dictionary of defect entries to check and warn if necessary.
+        rtol (float):
+            The relative tolerance to use for dimer bond detection.
+    """
+    for name, defect_entry in defect_dict.items():
+        dimer_bonds_dict = get_dimer_bonds(defect_entry.defect_supercell, rtol=rtol)
+        num_dimer_bonds = sum(len(dimer_subdict) for dimer_subdict in dimer_bonds_dict.values())
+        if (
+            num_dimer_bonds > 0
+            and num_dimer_bonds < 4
+            and not any(  # check if NUPDOWN set to != [0, 1] in any matching defect & charge state
+                entry.calculation_metadata.get("run_metadata", {}).get("INCAR", {}).get("NUPDOWN", 0)
+                not in [0, 1]
+                for entry in defect_dict.values()
+                if entry.defect.name == defect_entry.defect.name
+                and entry.charge_state == defect_entry.charge_state
+            )
+        ):
+            suggested_nupdown = 2 if defect_entry.charge_state % 2 == 0 else 3
+            warnings.warn(
+                f"Defect {name} has been detected to have dimer bonds:\n{dimer_bonds_dict}\n"
+                f"which often adopt multiplet spin states (e.g. triplet O2, Si dimers etc, see "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#magnetization). "
+                f"You may want to test setting `NUPDOWN` to {suggested_nupdown} (or higher) for "
+                f"this defect. You can control this warning with the ``rtol`` kwarg."
+            )
 
 
 def _parse_vr_and_poss_procar(
@@ -2789,19 +2846,6 @@ class DefectParser:
             return None
 
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
-
-        def _get_total_energies(computed_entry=None, vr=None):
-            """
-            Get the total energies from the defect entry or vasprun.
-            """
-            energies = [
-                (
-                    computed_entry.energy
-                    if computed_entry
-                    else None(vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"] if vr else None)
-                ),
-            ]
-            return [energy for energy in energies if energy is not None]
 
         if bulk_site_potentials is None:
             bulk_site_potentials = _get_bulk_site_potentials(
