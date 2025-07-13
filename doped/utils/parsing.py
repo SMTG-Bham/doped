@@ -1141,6 +1141,7 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     return new_structure
 
 
+
 def _compare_potcar_symbols(
     bulk_potcar_symbols,
     defect_potcar_symbols,
@@ -1168,6 +1169,7 @@ def _compare_potcar_symbols(
 
     bulk_mismatch_list = []
     defect_mismatch_list = []
+
     for symbol in symbols_to_check:
         if symbol["titel"] not in [symbol["titel"] for symbol in defect_potcar_symbols]:
             if warn:
@@ -1468,6 +1470,8 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
 
     eigenvalues_and_occs = vasprun.eigenvalues
     kweights = vasprun.actual_kpoints_weights
+    if kweights.sum() != 1:
+        kweights/=kweights.sum()
 
     # product of the sum of occupations over all bands, times the k-point weights:
     nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
@@ -1475,7 +1479,6 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
         nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
     elif not vasprun.parameters.get("LNONCOLLINEAR", False):
         nelect *= 2  # non-spin-polarised or SOC calc
-
     return round(nelect, 2)
 
 

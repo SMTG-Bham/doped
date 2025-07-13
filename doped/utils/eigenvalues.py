@@ -77,14 +77,27 @@ def band_edge_properties_from_vasprun(
         ``BandEdgeProperties`` object.
     """
     is_ncl = vasprun.parameters.get("LNONCOLLINEAR", False)
+
+    # from pymatgen.electronic_structure.core import Spin
+    #print("nelect1", get_nelect_from_vasprun(vasprun))
+    #print("get_eval_from_vrun", eigenvalues_from_vasprun(vasprun))
+    #print("get_magn_from_vrun", get_magnetization_from_vasprun(vasprun))
+    eigenvalues = eigenvalues_from_vasprun(vasprun)
+    nelect = get_nelect_from_vasprun(vasprun)
+    # print("evals shape:", eigenvalues[Spin.up].shape)
+    # print("nelect", nelect)
+
+    print("MAG: ", 0 if is_ncl else get_magnetization_from_vasprun(vasprun))
+
     band_edge_prop = BandEdgeProperties(
-        eigenvalues=eigenvalues_from_vasprun(vasprun),
-        nelect=get_nelect_from_vasprun(vasprun),
+        eigenvalues=eigenvalues,
+        nelect=nelect,
         magnetization=0 if is_ncl else get_magnetization_from_vasprun(vasprun),  # only needed for ISPIN=2
         kpoint_coords=vasprun.actual_kpoints,
         integer_criterion=integer_criterion,
         is_non_collinear=is_ncl,
     )
+
     band_edge_prop.structure = vasprun.final_structure
     return band_edge_prop
 
@@ -244,15 +257,23 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects for the
         bulk VBM and CBM.
     """
+
+    print("get_band_edge_info2")
     band_edge_prop = band_edge_properties_from_vasprun(bulk_vr)
+    print(band_edge_prop.vbm_info)
+    print("here23")
 
     if bulk_procar is not None:
+
+        print("get_band_egde_info4")
         bulk_procar = _parse_procar(bulk_procar)
         pbes = make_perfect_band_edge_state_from_vasp(vasprun=bulk_vr, procar=bulk_procar)
+        print("get_band_egde_info5")
 
     # get defect neighbour indices
     sorted_distances = np.sort(defect_vr.final_structure.distance_matrix.flatten())
     min_distance = sorted_distances[sorted_distances > 0.5][0]
+    print("get_band_egde_info6")
 
     if defect_supercell_site is None:
         defect_struct_info = defect_from_structures(
@@ -271,14 +292,19 @@ def get_band_edge_info(
         for i, site in enumerate(defect_vr.final_structure.sites)
         if defect_supercell_site.distance(site) <= min_distance * neighbor_cutoff_factor
     ]
+    print("get_band_egde_info7")
 
     with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
         if bulk_procar is not None:
             vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
         else:
+            print("get_band_egde_info7a")
             orbs, s = bulk_vr.projected_eigenvalues, bulk_vr.final_structure
+            print("get_band_egde_info7b")
             vbm_info = get_edge_info(band_edge_prop.vbm_info, orbs, s, bulk_vr)
+            print("get_band_egde_info7c")
             cbm_info = get_edge_info(band_edge_prop.cbm_info, orbs, s, bulk_vr)
+        print("get_band_egde_info7d")
 
         band_orb = make_band_edge_orbital_infos(
             defect_vr,
@@ -287,7 +313,7 @@ def get_band_edge_info(
             neighbor_indices=neighbor_indices,
             defect_procar=_parse_procar(defect_procar),
         )
-
+    print("get_band_egde_info8")
     return band_orb, vbm_info, cbm_info
 
 

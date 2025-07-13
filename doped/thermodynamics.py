@@ -826,6 +826,7 @@ class DefectThermodynamics(MSONable):
                 ``Te_i``) and occupy similar sites, which is then used in
                 plotting and transition level analysis.
         """
+        print("DEFECTTHERMODYNAMICS1: ", band_gap)
         if not defect_entries:
             raise ValueError(
                 "No defects found in `defect_entries`. Please check the supplied dictionary is in the "
@@ -917,6 +918,7 @@ class DefectThermodynamics(MSONable):
             defect_entries_dict[entry_name] = entry
 
         sorted_defect_entries_dict = sort_defect_entries(defect_entries_dict)
+
         self._defect_entries = sorted_defect_entries_dict
         self._parse_transition_levels()  # cluster defects and determine transition levels
         if self.check_compatibility:
@@ -1094,6 +1096,10 @@ class DefectThermodynamics(MSONable):
                 defect supercells).
         """
         # determine defect charge transition levels:
+        # print("DEV1: ", list(self.defect_entries.values())[0], type(list(self.defect_entries.values())[0]))
+
+        print("METADATA VBM: ", list(self.defect_entries.values())[0].calculation_metadata.get("vbm"))
+        print("METADATA CBM: ", list(self.defect_entries.values())[0].calculation_metadata.get("cbm"))        
         with warnings.catch_warnings():  # ignore formation energies chempots warning when just parsing TLs
             warnings.filterwarnings("ignore", message="No chemical potentials")
             midgap_formation_energies = [  # without chemical potentials
@@ -1115,6 +1121,11 @@ class DefectThermodynamics(MSONable):
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
         max_y_lim = max(midgap_formation_energies) + 30
+        print("MIN_Y, MAX_Y", min_y_lim, max_y_lim)
+        # min_y_lim, max_y_lim = 10, 20
+
+
+
         limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]  # type: ignore
 
         stable_entries: dict = {}
@@ -1187,7 +1198,14 @@ class DefectThermodynamics(MSONable):
                 [0, 1, -1 * limits[1][1]],
             ]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
+            # midgap_formation_energies = [np.float64(0.1), np.float64(0.1), np.float64(0.1),np.float64(0.1)]
+
+            print("PTL: ", self.band_gap, midgap_formation_energies)
+
             interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
+            print("INT POINT: ", interior_point)
+            interior_point = [np.float64(np.inf), np.float64(0)]
+            print("HYPERPLANES: ", hs_hyperplanes)
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding facets
