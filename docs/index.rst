@@ -110,8 +110,8 @@ Studies using ``doped``, so far
 - J\. Tu et al. **Giant switchable ferroelectric photovoltage in double-perovskite epitaxial films through chemical negative strain** `Science Advances <https://doi.org/10.1126/sciadv.ads4925>`__ 2025
 - Y\. Fu & H. Lohan et al. **Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe₂** `Nature Communications <https://doi.org/10.1038/s41467-024-55254-2>`__ 2025
 - S\. R. Kavanagh et al. **Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics** `Energy & Environmental Science <https://doi.org/10.1039/D4EE04647A>`__ 2025
+- N\. T. Taylor et al. **Instability of oxide perovskite surfaces induced by vacancy formation** `Physical Review B <https://doi.org/10.1103/w683-tvc4>`__ 2025
 - J\. Hu et al. **Enabling ionic transport in Li₃AlP₂ the roles of defects and disorder** `Journal of Materials Chemistry A <https://doi.org/10.1039/D4TA04347B>`__ 2025
-- N\. T. Taylor et al. **Instability of oxide perovskite surfaces induced by vacancy formation** `arXiv <https://arxiv.org/abs/2504.15857>`__ 2025
 - X\. Jiang et al. **Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies** `Journal of Materials Chemistry C <https://doi.org/10.1039/D4TC04558K>`__ 2025
 - M\. R. Khan et al. **Interplay between intrinsic defects and optoelectronic properties of semi-Heusler gapped metals** `Physical Chemistry Chemical Physics <https://doi.org/10.1039/D5CP00673B>`__ 2025
 - F\. Wang et al. **Investigation of hydrogen diffusion in zirconia under extreme conditions** `Physical Chemistry Chemical Physics <https://doi.org/10.1039/D5CP00434A>`__ 2025

@@ -76,8 +76,8 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - Y. Fu & H. Lohan et al. **_Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based
 Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_Nature Communications_](https://doi.org/10.1038/s41467-024-55254-2) 2025
 - S. R. Kavanagh et al. **_Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics_** [_Energy & Environmental Science_](https://doi.org/10.1039/D4EE04647A) 2025
+- N. T. Taylor et al. **_Instability of oxide perovskite surfaces induced by vacancy formation_** [_Physical Review B_](https://doi.org/10.1103/w683-tvc4) 2025
 - J. Hu et al. **_Enabling ionic transport in Li<sub>3</sub>AlP<sub>2</sub> the roles of defects and disorder_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D4TA04347B) 2025
-- N. T. Taylor et al. **_Instability of oxide perovskite surfaces induced by vacancy formation_** [_arXiv_](https://arxiv.org/abs/2504.15857) 2025
 - X. Jiang et al. **_Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies_** [_Journal of Materials Chemistry C_](https://doi.org/10.1039/D4TC04558K) 2025
 - M. R. Khan et al. **_Interplay between intrinsic defects and optoelectronic properties of semi-Heusler gapped metals_** [_Physical Chemistry Chemical Physics_](https://doi.org/10.1039/D5CP00673B) 2025
 - F. Wang et al. **_Investigation of hydrogen diffusion in zirconia under extreme conditions_** [_Physical Chemistry Chemical Physics_](https://doi.org/10.1039/D5CP00434A) 2025
