@@ -43,7 +43,7 @@ _orientational_degeneracy_warning = (
     "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
     "point group symmetries (and thus orientational degeneracies) from being automatically "
     "determined.\n"
-    "This will not affect defect formation energies / transition levels, but is important for "
+    "This will not affect defect formation energies / transition levels, but can be important for "
     "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
     "doi.org/10.1039/D3CS00432E).\n"
     "You can manually check (and edit) the computed defect/bulk point symmetries and "

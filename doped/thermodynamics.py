@@ -3418,10 +3418,10 @@ class DefectThermodynamics(MSONable):
         ):
             mismatching = "band gap" if abs(fdos_band_gap - self.band_gap) > 0.05 else "VBM eigenvalue"
             warnings.warn(
-                f"The {mismatching} of the bulk DOS calculation ({fdos_vbm:.2f} eV, band gap = "
+                f"The {mismatching} of the bulk DOS calculation (VBM = {fdos_vbm:.2f} eV, band gap = "
                 f"{fdos_band_gap:.2f} eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap` "
-                f"({self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the bulk "
-                f"supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
+                f"(VBM = {self.vbm:.2f} eV, band gap = {self.band_gap:.2f} eV; which are taken from the "
+                f"bulk supercell calculation by default, unless `bulk_band_gap_vr` is set during defect "
                 f"parsing). This can cause inaccuracies in thermodynamics & concentration analyses; see "
                 f"https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations "
                 f"for advice.\n"

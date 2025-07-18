@@ -1294,7 +1294,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "The defect supercell has been detected to possibly have a non-scalar matrix expansion",
                 "breaking the cell periodicity",
                 "This will not affect defect formation energies / transition levels,",
-                "but is important for concentrations/doping/Fermi level behaviour",
+                "but can be important for concentrations/doping/Fermi level behaviour",
                 "You can manually check (and edit) the computed defect/bulk point",
             ]
         )

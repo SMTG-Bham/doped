@@ -3254,8 +3254,8 @@ def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     print([str(warn.message) for warn in w])  # for debugging
     assert not output
     assert any(
-        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
-        "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
+        "The VBM eigenvalue of the bulk DOS calculation (VBM = 1.55 eV, band gap = 1.53 eV) differs by "
+        ">0.05 eV from `DefectThermodynamics.vbm/gap` (VBM = 1.65 eV, band gap = 1.50 eV;"
         in str(warn.message)
         for warn in w
     )
@@ -3509,8 +3509,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ]:
             fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             assert any(
-                "The band gap of the bulk DOS calculation (1.45 eV, band gap = 1.71 eV) differs by "
-                ">0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV; "
+                "The band gap of the bulk DOS calculation (VBM = 1.45 eV, band gap = 1.71 eV) differs by "
+                ">0.05 eV from `DefectThermodynamics.vbm/gap` (VBM = 1.65 eV, band gap = 1.50 eV; "
                 in str(warn.message)
                 for warn in w
             )
