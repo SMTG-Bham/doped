@@ -1246,7 +1246,14 @@ def _compare_kpoints(
     )
     # if different symmetry settings used (e.g. for bulk), actual_kpoints can differ but are the same
     # input kpoints, which we assume is fine:
-    kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
+    kpoints_eq = (
+        (
+            bulk_kpoints.kpts == defect_kpoints.kpts
+            and np.allclose(bulk_kpoints.shift, defect_kpoints.shift)
+        )
+        if bulk_kpoints and defect_kpoints
+        else False
+    )
 
     if not (actual_kpoints_eq or kpoints_eq):
         if warn:
