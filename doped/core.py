@@ -417,6 +417,9 @@ class DefectEntry(thermo.DefectEntry):
             **kwargs,
         )
         correction = fnv_correction_output if not plot and filename is None else fnv_correction_output[0]
+
+        print("GETTING FREYSOLDT CORR", correction.correction_energy)
+
         self.corrections.update({"freysoldt_charge_correction": correction.correction_energy})
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"freysoldt_charge_correction": correction.metadata.copy()})
@@ -949,6 +952,10 @@ class DefectEntry(thermo.DefectEntry):
                 "Attempting to compute the energy difference without a defined bulk entry for the "
                 "DefectEntry object!"
             )
+
+        # print("ALL CORRECTIONS: ", self.name, self.corrections)
+        # print("CORR EN, BULK EN", self.corrected_energy, self.bulk_entry_energy)
+
         return self.corrected_energy - self.bulk_entry_energy
 
     @property
@@ -962,6 +969,7 @@ class DefectEntry(thermo.DefectEntry):
         concentration functions.
         """
         self._check_if_multiple_finite_size_corrections()
+
         return self.sc_entry_energy + sum(self.corrections.values())
 
     def _check_if_multiple_finite_size_corrections(self):
@@ -1058,6 +1066,8 @@ class DefectEntry(thermo.DefectEntry):
 
         dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
         chempot_correction = 0 if dft_chempots is None else self._get_chempot_term(dft_chempots)
+        #print("CHEMPOT CORR: ", chempot_correction)
+
         formation_energy = self.get_ediff() + chempot_correction
 
         if vbm is not None:
@@ -1070,7 +1080,6 @@ class DefectEntry(thermo.DefectEntry):
                 "Formation energy will be inaccurate!"
             )
 
-        print("RETURN FORMATION ENERGY 1: ", formation_energy)
         return formation_energy
 
     def _parse_and_set_symmetries_and_degeneracies(
@@ -1472,7 +1481,7 @@ class DefectEntry(thermo.DefectEntry):
         properties, methods = _doped_obj_properties_methods(self)
         return (
             f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: {defect_name}.\n"
-            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
+           # f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
 
     def __eq__(self, other) -> bool:
