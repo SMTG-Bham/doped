@@ -5,6 +5,7 @@ import os
 import sys
 
 from recommonmark.transform import AutoStructify
+
 # -- Path setup --------------------------------------------------------------
 sys.path.insert(0, os.path.abspath(".."))
 
@@ -22,7 +23,7 @@ release = "3.1.0"
 # extensions coming with Sphinx (named "sphinx.ext.*") or your custom
 # ones.
 extensions = [
-    "sphinx.ext.autodoc", # for automatic documentation
+    "sphinx.ext.autodoc",  # for automatic documentation
     "sphinx.ext.coverage",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
@@ -52,8 +53,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 myst_enable_extensions = [
     "html_admonition",
-    "html_image", # to parse html syntax to insert images
-    "dollarmath", #"amsmath", # to parse Latex-style math
+    "html_image",  # to parse html syntax to insert images
+    "dollarmath",  # "amsmath", # to parse Latex-style math
 ]
 
 # -- Options for HTML output -------------------------------------------------
@@ -61,7 +62,7 @@ myst_enable_extensions = [
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "renku" # "sphinx_book_theme"
+html_theme = "renku"  # "sphinx_book_theme"
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
@@ -79,7 +80,7 @@ html_theme_options = {
     "repository_url": "https://github.com/SMTG-Bham/doped",
     "github_repo": "https://github.com/SMTG-Bham/doped",  # renku
     "github_button": True,
-    "github_user": "SMTG-Bham", # Username
+    "github_user": "SMTG-Bham",  # Username
     "description": "Python package for setting up, parsing and analysing charged defect supercell calculations",
     "repository_branch": "develop",
     "path_to_docs": "docs",
@@ -93,11 +94,11 @@ html_theme_options = {
 
 # Adding “Edit Source” links on your Sphinx theme
 html_context = {
-    "display_github": True, # Integrate GitHub
-    "github_user": "SMTG-Bham", # Username
-    "github_repo": "doped", # Repo name
-    "github_version": "main", # Version
-    "conf_py_path": "/docs/", # Path in the checkout to the docs root
+    "display_github": True,  # Integrate GitHub
+    "github_user": "SMTG-Bham",  # Username
+    "github_repo": "doped",  # Repo name
+    "github_version": "main",  # Version
+    "conf_py_path": "/docs/",  # Path in the checkout to the docs root
 }
 
 # -- Options for intersphinx extension ---------------------------------------
@@ -111,20 +112,27 @@ intersphinx_mapping = {
 }
 
 # -- Options for autodoc -----------------------------------------------------
-autoclass_content="both"
+autoclass_content = "both"
 
 # -- Options for nb extension -----------------------------------------------
 nb_execution_mode = "off"
 # nb_render_image_options = {"height": "300",}  # Reduce plots size
-#myst_render_markdown_format = "gfm"
+# myst_render_markdown_format = "gfm"
 myst_heading_anchors = 2
 github_doc_root = "https://github.com/executablebooks/MyST-Parser/tree/master/docs/"
+
+
 def setup(app):
-    app.add_config_value("myst_parser_config", {
+    app.add_config_value(
+        "myst_parser_config",
+        {
             "url_resolver": lambda url: github_doc_root + url,
             "auto_toc_tree_section": "Contents",
-            }, True)
+        },
+        True,
+    )
     app.add_transform(AutoStructify)
+
 
 # ignore non-consecutive level header warnings, and attempted image editing:
 suppress_warnings = ["myst.header", "mystnb.image"]
