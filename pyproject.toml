@@ -138,4 +138,4 @@ wrap-descriptions = 79
 # argument descriptions
 
 [tool.codespell]
-ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll"  # lowercase!
+ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll,atomate"  # lowercase!

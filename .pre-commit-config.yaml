@@ -1,10 +1,13 @@
-exclude: ^(docs|examples|.github|tests/data)
+x-skip-docs: &skip_docs
+  exclude: '^docs/'
+exclude: ^(examples|.github|tests/data)
 repos:
   # Lint and format, isort, docstrings...
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.3.0
     hooks:
       - id: ruff
+        <<: *skip_docs
         args: [--fix]
 
   # Remove trailing whitespace, leave empty line at end of file
@@ -13,19 +16,23 @@ repos:
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer
+        <<: *skip_docs
         exclude: '\.dat$'
       - id: trailing-whitespace
+        <<: *skip_docs
 
   # Code formatting
   - repo: https://github.com/psf/black
     rev: 24.2.0
     hooks:
       - id: black  # max line length 107 specified in pyproject.toml
+        <<: *skip_docs
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.8.0
     hooks:
       - id: mypy
+        <<: *skip_docs
 
   # Check typos:
   - repo: https://github.com/codespell-project/codespell
@@ -35,6 +42,8 @@ repos:
         stages: [commit,commit-msg]
         exclude_types: [html]
         additional_dependencies: [tomli] # needed to read pyproject.toml for python < 3.11
+        args:
+          - --skip=docs/JOSS/JOSS_plots.ipynb,docs/JOSS/paper*
 
   # format docstring length:
   - repo: https://github.com/PyCQA/docformatter

@@ -27,7 +27,7 @@ not available on ``conda``.
    (3) installing ``phonopy<=2.25``  (``pip install phonopy<=2.25``) and then ``doped`` with ``pip``,
    or (4) upgrading your system's ``gcc`` to a more recent version if possible.
 
-It may be desirable to install ``doped`` in a virtual envionment (e.g. if you encounter package dependency
+It may be desirable to install ``doped`` in a virtual environment (e.g. if you encounter package dependency
 conflict warnings during installation etc). You can do this with ``conda`` with:
 
 .. code-block:: bash
