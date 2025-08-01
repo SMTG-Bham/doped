@@ -1,5 +1,5 @@
 """
-    Code to analyse VASP defect calculations.
+Code to analyse VASP defect calculations.
 
 These functions are built from a combination of useful modules from
 ``pymatgen``, alongside substantial modification, in the efforts of making an
@@ -686,6 +686,7 @@ def defect_entry_from_paths(
     skip_corrections: bool = False,
     error_tolerance: float = 0.05,
     bulk_band_gap_vr: PathLike | Vasprun | None = None,
+    code: str | None = None,
     **kwargs,
 ) -> DefectEntry:
     """
@@ -768,7 +769,10 @@ def defect_entry_from_paths(
     Returns:
         Parsed ``DefectEntry`` object.
     """
-    dp = DefectParser.from_paths(
+    if code is None:
+        raise ValueError("Must provide code.")
+
+    dp = DefectParser(code = code.lower()).from_paths(
         defect_path,
         bulk_path,
         dielectric=dielectric,
@@ -838,6 +842,7 @@ class BaseDefectParser(ABC):
 
 
 class DefectsParserVasp:
+    code = 'vasp'
     def __init__(
         self,
         output_path: PathLike = ".",
@@ -1080,11 +1085,9 @@ class DefectsParserVasp:
         try:
             if self.processes <= 1:  # no multiprocessing
                 for folder in self.defect_folders:
-
                     parsed_defect_entry, processed_warnings_string = (
                         self._parse_defect_and_handle_warnings(folder, pbar=pbar)
                     )
-
                     parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
                     parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
@@ -1176,7 +1179,7 @@ class DefectsParserVasp:
         try:
             self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
             assert isinstance(self.subfolder, str)  # typing, converted to str by this point
-            dp = DefectParser.from_paths(
+            dp = DefectParser(self.code).from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
                 bulk_vr=self.bulk_vr,
@@ -2331,7 +2334,7 @@ def _parse_vr_and_poss_procar(
         vr = get_vasprun(vr_path, parse_projected_eigen=False, parse_eigen=label == "bulk")
         failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
 
-        if parse_procar: #run only in case of an exception
+        if parse_procar:
             procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
             if multiple:
                 _multiple_files_warning("PROCAR", output_path, procar_path, dir_type=label)
@@ -2353,6 +2356,8 @@ def _parse_vr_and_poss_procar(
 
 
 class DefectParserVasp:
+    code = "vasp"
+
     def __init__(
         self,
         defect_entry: DefectEntry,
@@ -2549,6 +2554,7 @@ class DefectParserVasp:
         Return:
             ``DefectParser`` object.
         """
+
         _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
 
         calculation_metadata = {
@@ -3446,13 +3452,6 @@ class DefectParserEspresso:
             ``DefectParser`` object.
         """
 
-
-        _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
-        calculation_metadata = {
-            "bulk_path": os.path.abspath(bulk_path) if bulk_path else "bulk Vasprun supplied",
-            "defect_path": os.path.abspath(defect_path),
-        }
-
         def _get_bulk_supercell(bulk_path, bulk_vr, default_filename, parse_projected_eigen, bulk_procar):
             if bulk_path is not None and bulk_vr is None:
                 bulk_vr_path, multiple = _get_output_files_warn_if_multiple(default_filename, bulk_path, dir_type="bulk")
@@ -3475,13 +3474,6 @@ class DefectParserEspresso:
 
             bulk_supercell = bulk_vr.final_structure.copy()
             return bulk_vr, bulk_supercell
-
-        bulk_vr, bulk_supercell = _get_bulk_supercell(bulk_path,
-                                            bulk_vr,
-                                            default_filename,
-                                            parse_projected_eigen,
-                                            bulk_procar)
-
         def _get_defect_vr_procar(default_filename, defect_path, parse_projected_eigen):
             defect_vr_path, multiple = _get_output_files_warn_if_multiple(default_filename, defect_path, dir_type="defect")
 
@@ -3531,6 +3523,20 @@ class DefectParserEspresso:
 
             return possible_defect_name, parsed_charge_state
 
+        _ignore_pmg_warnings()  # ignore unnecessary pymatgen warnings
+        calculation_metadata = {
+            "bulk_path": os.path.abspath(bulk_path) if bulk_path else "bulk Vasprun supplied",
+            "defect_path": os.path.abspath(defect_path),
+        }
+
+        bulk_vr, bulk_supercell = _get_bulk_supercell(bulk_path,
+                                            bulk_vr,
+                                            default_filename,
+                                            parse_projected_eigen,
+                                            bulk_procar)
+
+        defect_vr, defect_procar = _get_defect_vr_procar(default_filename, defect_path, parse_projected_eigen)
+        parse_projected_eigen = defect_procar is not None or defect_vr.projected_eigenvalues is not None
         possible_defect_name, parsed_charge_state = _parse_charge_state(defect_path, defect_vr, pp_folder)
 
         # parse spin degeneracy now, before proj eigenvalues/magnetization are cut (for SOC/NCL calcs):
@@ -3605,6 +3611,8 @@ class DefectParserEspresso:
         for computed_entry in [sc_entry, bulk_entry]:
             computed_entry.parameters = dict(sorted(computed_entry.parameters.items()))
 
+
+        #------------Generate DefectEntry-----------------
         defect_entry = DefectEntry(
             # pmg attributes:
             defect=defect,  # this corresponds to _unrelaxed_ defect
@@ -3622,57 +3630,63 @@ class DefectParserEspresso:
         )
 
 
-        # get orientational degeneracy
-        point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
-            defect_entry,
-            relaxed=True,
-            verbose=kwargs.get("verbose", False),
-            return_periodicity_breaking=True,
-            **{
-                k: v
-                for k, v in kwargs.items()
-                if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
-            },
-        )
-        assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
-        relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
-        bulk_site_point_group = point_symmetry_from_defect_entry(
-            defect_entry,
-            relaxed=False,
-            **{
-                k.replace("bulk_", ""): v
-                for k, v in kwargs.items()
-                if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-            },
-        )  # same symprec used w/interstitial multiplicity for consistency
-        assert isinstance(bulk_site_point_group, str)  # typing (str returned)
-        with contextlib.suppress(ValueError):
-            defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
-                relaxed_point_group=relaxed_point_group,
-                bulk_site_point_group=bulk_site_point_group,
+        def orientational_degeneracy_wrapper(defect_entry, **kwargs):
+            """Wrapper to get orientational degeneracy."""
+
+            point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
+                defect_entry,
+                relaxed=True,
+                verbose=kwargs.get("verbose", False),
+                return_periodicity_breaking=True,
                 **{
                     k: v
                     for k, v in kwargs.items()
-                    if k
-                    in [
-                        "symprec",
-                        "bulk_symprec",
-                        "dist_tol_factor",
-                        "fixed_symprec_and_dist_tol_factor",
-                        "verbose",
-                    ]
+                    if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
                 },
             )
+            assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
+            relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
+            bulk_site_point_group = point_symmetry_from_defect_entry(
+                defect_entry,
+                relaxed=False,
+                **{
+                    k.replace("bulk_", ""): v
+                    for k, v in kwargs.items()
+                    if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+                },
+            )  # same symprec used w/interstitial multiplicity for consistency
+            assert isinstance(bulk_site_point_group, str)  # typing (str returned)
+            with contextlib.suppress(ValueError):
+                defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
+                    relaxed_point_group=relaxed_point_group,
+                    bulk_site_point_group=bulk_site_point_group,
+                    **{
+                        k: v
+                        for k, v in kwargs.items()
+                        if k
+                        in [
+                            "symprec",
+                            "bulk_symprec",
+                            "dist_tol_factor",
+                            "fixed_symprec_and_dist_tol_factor",
+                            "verbose",
+                        ]
+                    },
+                )
 
+
+
+            return relaxed_point_group, periodicity_breaking, bulk_site_point_group
+
+        relaxed_point_group, periodicity_breaking, bulk_site_point_group = orientational_degeneracy_wrapper(defect_entry, **kwargs)
+        
         defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
         defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
         defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
-
-
         check_and_set_defect_entry_name(defect_entry, possible_defect_name)
 
-        # ------CREATE DEFECT PARSER OBJECT----------
+        # ------Feed DefectEntry to DefectParser----------
         dp = cls(
             defect_entry,
             defect_vr=defect_vr,
@@ -3683,72 +3697,85 @@ class DefectParserEspresso:
             **kwargs,
         )
 
+        def to_project_or_not_to_project(dp, defect_vr):
+            """
+            Whether 'tis nobler to seek projected eivenvalues or not
+            """
+            if parse_projected_eigen:
+                try:
+                    dp.defect_entry._load_and_parse_eigenvalue_data(
+                        bulk_vr=bulk_vr,
+                        bulk_procar=bulk_procar,
+                        defect_vr=defect_vr,
+                        defect_procar=defect_procar,
+                    )
 
-        from pymatgen.electronic_structure.core import Spin
-        if parse_projected_eigen:
-            try:
-                dp.defect_entry._load_and_parse_eigenvalue_data(
-                    bulk_vr=bulk_vr,
-                    bulk_procar=bulk_procar,
-                    defect_vr=defect_vr,
-                    defect_procar=defect_procar,
-                )
+                except Exception as exc:
+                    if parse_projected_eigen is True:  # otherwise no warning
+                        warnings.warn(f"Projected eigenvalues/orbitals parsing failed with error: {exc!r}")
 
-            except Exception as exc:
-                if parse_projected_eigen is True:  # otherwise no warning
-                    warnings.warn(f"Projected eigenvalues/orbitals parsing failed with error: {exc!r}")
+                    # these are removed in _load_and_parse_eigenvalue_data, but in case it fails:
+                    defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
+                    defect_vr.projected_magnetisation = (
+                        None  # no longer needed, delete to reduce memory demand
+                    )
+                    defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
 
-                # these are removed in _load_and_parse_eigenvalue_data, but in case it fails:
-                defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
-                defect_vr.projected_magnetisation = (
-                    None  # no longer needed, delete to reduce memory demand
-                )
-                defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
+            return dp, defect_vr
+
+        dp, defect_vr = to_project_or_not_to_project(dp, defect_vr)
 
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
 
         dp.load_bulk_gap_data(bulk_band_gap_vr=bulk_band_gap_vr)  # Load band gap data
+        
+        def to_correct_or_not_to_correct(dp, defect_entry, skip_corrections):
+            """
+            Wrapper. Whether 'tis nobler to proceed uncorrected or not?
+            """
+            if not skip_corrections and defect_entry.charge_state != 0:
+                # no finite-size charge corrections by default for neutral defects
+                skip_corrections = dp._check_and_load_appropriate_charge_correction()
 
-        if not skip_corrections and defect_entry.charge_state != 0:
-            # no finite-size charge corrections by default for neutral defects
-            skip_corrections = dp._check_and_load_appropriate_charge_correction()
+            if not skip_corrections and defect_entry.charge_state != 0:
+                try:
+                    dp.apply_corrections()
 
-        if not skip_corrections and defect_entry.charge_state != 0:
-            try:
-                dp.apply_corrections()
-
-            except Exception as exc:
-                warnings.warn(
-                    f"Got this error message when attempting to apply finite-size charge corrections:"
-                    f"\n{exc}\n"
-                    f"-> Charge corrections will not be applied for this defect."
-                )
-
-            # check that charge corrections are not negative
-            summed_corrections = sum(
-                val
-                for key, val in dp.defect_entry.corrections.items()
-                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
-            )
-            if summed_corrections < -0.08:
-                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
-                # affecting the potential alignment)
-                # how anisotropic is the dielectric?
-                how_aniso = np.diag(
-                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
-                )
-                if np.allclose(how_aniso, 0, atol=0.05):
+                except Exception as exc:
                     warnings.warn(
-                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
-                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
-                        f"relatively isotropic dielectrics (as is the case here) this is usually "
-                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
-                        f"charge occupying the band edge states and not localised at the defect), "
-                        f"affecting the potential alignment, or some error/mismatch in the defect and "
-                        f"bulk calculations. If this defect species is not stable in the formation "
-                        f"energy diagram then this warning can usually be ignored, but if it is, "
-                        f"you should double-check your calculations and parsed results!"
+                        f"Got this error message when attempting to apply finite-size charge corrections:"
+                        f"\n{exc}\n"
+                        f"-> Charge corrections will not be applied for this defect."
                     )
+
+                # check that charge corrections are not negative
+                summed_corrections = sum(
+                    val
+                    for key, val in dp.defect_entry.corrections.items()
+                    if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
+                )
+                if summed_corrections < -0.08:
+                    # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
+                    # affecting the potential alignment)
+                    # how anisotropic is the dielectric?
+                    how_aniso = np.diag(
+                        (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
+                    )
+                    if np.allclose(how_aniso, 0, atol=0.05):
+                        warnings.warn(
+                            f"The calculated finite-size charge corrections for defect at {defect_path} and "
+                            f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
+                            f"relatively isotropic dielectrics (as is the case here) this is usually "
+                            f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
+                            f"charge occupying the band edge states and not localised at the defect), "
+                            f"affecting the potential alignment, or some error/mismatch in the defect and "
+                            f"bulk calculations. If this defect species is not stable in the formation "
+                            f"energy diagram then this warning can usually be ignored, but if it is, "
+                            f"you should double-check your calculations and parsed results!"
+                        )
+            return dp
+
+        dp = to_correct_or_not_to_correct(dp, defect_entry, skip_corrections)
 
         return dp
 
@@ -4463,12 +4490,6 @@ PymatgenEspressoHacks.patch_pwxml_properties() #Allows setters for pwxml objects
 import pandas as pd
 from pathlib import Path
 
-# import inspect
-# def print_call_stack():
-#     stack = inspect.stack()
-#     for frame in reversed(stack[:-1]):  # skip current frame
-#         print(f"{frame.function}() in {frame.filename}:{frame.lineno}")
-
 
 class FolderHandler:
     """
@@ -4743,8 +4764,8 @@ class DefectsParserEspresso(DefectsParserVasp):
             )
 
 
-        # -------Parsers-------
-        #Parse bulk and its oxidations states
+        # -------------------Parsers-------------------
+        #==Parse bulk and its oxidations states
         self.bulk_vr, self.bulk_procar = RunParser('espresso')._parse_run_and_poss_projwfc(
             bulk_vr_path,
             parse_projected_eigen=self.parse_projected_eigen,
@@ -4762,7 +4783,7 @@ class DefectsParserEspresso(DefectsParserVasp):
             # fully ionised charge states):
         self._bulk_oxi_states = self._get_bulk_oxi_states()
 
-        #Parse defects
+        #==Parse defects
         self.defect_dict = {}
         self.bulk_corrections_data = {  # so we only load and parse bulk data once
             "bulk_locpot_dict": None,
@@ -4772,9 +4793,6 @@ class DefectsParserEspresso(DefectsParserVasp):
         parsed_defect_entries, parsing_warnings = self._parse_defect_folders_and_warnings()
         self.defect_dict = self._warn_remove_duplicate_parsed_defect_entries(parsed_defect_entries)
 
-# print("POTCAR_SPEC: ", self.bulk_vr.potcar_spec)
-
-        # print(self.defect_dict.items()[0])
 
         [
         (name, defect_entry.calculation_metadata.get("mismatching_POTCAR_symbols"))

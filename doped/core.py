@@ -417,9 +417,6 @@ class DefectEntry(thermo.DefectEntry):
             **kwargs,
         )
         correction = fnv_correction_output if not plot and filename is None else fnv_correction_output[0]
-
-        print("GETTING FREYSOLDT CORR", correction.correction_energy)
-
         self.corrections.update({"freysoldt_charge_correction": correction.correction_energy})
         self._check_if_multiple_finite_size_corrections()
         self.corrections_metadata.update({"freysoldt_charge_correction": correction.metadata.copy()})
@@ -677,16 +674,6 @@ class DefectEntry(thermo.DefectEntry):
         parsed_vr_procar_dict = {}
         for vr, procar, label in [(bulk_vr, bulk_procar, "bulk"), (defect_vr, defect_procar, "defect")]:
             path = self.calculation_metadata.get(f"{label}_path")
-            #which of the following conditions is true?
-            print([vr is not None and not isinstance(vr, Vasprun),
-                   vr is None or (isinstance(vr, Vasprun) and vr.projected_eigenvalues is None),
-                   vr is None and procar is not None,
-                   not isinstance(vr, Vasprun),
-                   procar is not None and vr.projected_eigenvalues is None,
-                   procar is None and path is not None and vr.projected_eigenvalues is None,
-                   procar is None and (vr is None or vr.projected_eigenvalues is None)
-                   ])
-
             if vr is not None and not isinstance(vr, Vasprun):  # just try loading from vasprun first
                 with contextlib.suppress(Exception):
                     vr = get_vasprun(vr, parse_projected_eigen=True)  # noqa: PLW2901
@@ -717,13 +704,12 @@ class DefectEntry(thermo.DefectEntry):
                     f"No {label} 'vasprun.xml(.gz)' file found (and successfully parsed) in path: "
                     f"{path}. Required for eigenvalue analysis!"
                 )
+
             # try load procar data, to see if projected eigenvalues are available:
             if procar is not None and vr.projected_eigenvalues is None:
-                print("PARSE_PROCAR1")
                 procar = _parse_procar(procar)  # noqa: PLW2901
 
             if procar is None and path is not None and vr.projected_eigenvalues is None:
-                print("PARSE_PROCAR2")
                 # no procar, try parse from directory:
                 try:
                     procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", path)
@@ -736,8 +722,6 @@ class DefectEntry(thermo.DefectEntry):
                         )
                     procar = get_procar(procar_path)  # noqa: PLW2901
 
-                    print("PARSE_PROCAR3")
-
                 except (FileNotFoundError, IsADirectoryError):
                     procar = None  # noqa: PLW2901
 
@@ -749,14 +733,12 @@ class DefectEntry(thermo.DefectEntry):
 
             parsed_vr_procar_dict[label] = (vr, procar)
 
-        print("SKIPPED")
         bulk_vr, bulk_procar = parsed_vr_procar_dict["bulk"]
         defect_vr, defect_procar = parsed_vr_procar_dict["defect"]
 
         from doped.utils.efficiency import cache_species
 
         with cache_species(Structure):
-            print("cache_species1")
             band_orb, vbm_info, cbm_info = get_band_edge_info(
                 bulk_vr=bulk_vr,
                 defect_vr=defect_vr,
@@ -764,7 +746,6 @@ class DefectEntry(thermo.DefectEntry):
                 defect_procar=defect_procar,  # if None, Vasprun.projected_eigenvalues used
                 defect_supercell_site=self.defect_supercell_site,
             )
-            print("cache_species2")
 
         self.calculation_metadata["eigenvalue_data"] = {
             "band_orb": band_orb,
@@ -952,10 +933,6 @@ class DefectEntry(thermo.DefectEntry):
                 "Attempting to compute the energy difference without a defined bulk entry for the "
                 "DefectEntry object!"
             )
-
-        # print("ALL CORRECTIONS: ", self.name, self.corrections)
-        # print("CORR EN, BULK EN", self.corrected_energy, self.bulk_entry_energy)
-
         return self.corrected_energy - self.bulk_entry_energy
 
     @property
@@ -969,7 +946,6 @@ class DefectEntry(thermo.DefectEntry):
         concentration functions.
         """
         self._check_if_multiple_finite_size_corrections()
-
         return self.sc_entry_energy + sum(self.corrections.values())
 
     def _check_if_multiple_finite_size_corrections(self):
@@ -1480,8 +1456,8 @@ class DefectEntry(thermo.DefectEntry):
 
         properties, methods = _doped_obj_properties_methods(self)
         return (
-            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: {defect_name}.\n"
-           # f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
+            f"doped DefectEntry: {self.name}, with bulk composition: {formula} and defect: {defect_name}. "
+            f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
 
     def __eq__(self, other) -> bool:
