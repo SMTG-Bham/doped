@@ -54,38 +54,3 @@ class PymatgenEspressoHacks:
             except Exception as e:
                 print(f"[WARN] Could not patch '{prop}': {e}")
 
-#    @classmethod
-#    def atomic_states_to_projdict(cls, atomic_states):
-#        """
-#        Converts a list of AtomicState objects into a dict[Spin, np.ndarray]
-#        with shape (n_states, nbands, nkpts, n_proj), matching projected_eigenvalues.
-#        
-#        Assumes each atomic_state.projections[spin] has shape (nbands, nkpts, n_proj),
-#        where n_proj = 1 typically per state.
-#        """
-#
-#        print("LEN ATOMIC STATES:", len(atomic_states))
-#
-#        if not atomic_states:
-#            return {}
-#
-#        spin_channels = list(atomic_states[0].projections.keys())
-#        nbands, nkpts = atomic_states[0].projections[spin_channels[0]].shape[:2]
-#        
-#        proj_dict = {spin: [] for spin in spin_channels}
-#
-#        for spin in spin_channels:
-#            for state in atomic_states:
-#                proj = state.projections.get(spin)
-#                if proj is None:
-#                    raise ValueError(f"Missing projection for spin {spin} in state {state.state_i}")
-#                # Ensure 3D shape: (nbands, nkpts, 1)
-#                if proj.ndim == 2:
-#                    proj = proj[..., np.newaxis]
-#                proj_dict[spin].append(proj)
-#
-#            # Stack into shape: (n_states, nbands, nkpts, 1) → transpose if needed
-#            proj_dict[spin] = np.stack(proj_dict[spin], axis=0)
-#
-#        return proj_dict
-#
