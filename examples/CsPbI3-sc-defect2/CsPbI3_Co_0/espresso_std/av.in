@@ -1,9 +1,0 @@
-&input
-    nfile = 1
-    filename(1) = 'v_potential.dat'
-    weight(1) = 1.0
-    npt = 1000
-    idir = 3
-    awin = 0.5
-/
-
