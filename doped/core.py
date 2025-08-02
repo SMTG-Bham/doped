@@ -1042,8 +1042,6 @@ class DefectEntry(thermo.DefectEntry):
 
         dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
         chempot_correction = 0 if dft_chempots is None else self._get_chempot_term(dft_chempots)
-        #print("CHEMPOT CORR: ", chempot_correction)
-
         formation_energy = self.get_ediff() + chempot_correction
 
         if vbm is not None:

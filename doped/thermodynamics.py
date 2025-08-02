@@ -826,9 +826,6 @@ class DefectThermodynamics(MSONable):
                 ``Te_i``) and occupy similar sites, which is then used in
                 plotting and transition level analysis.
         """
-        # print("DEFECTTHERMODYNAMICS1: ", band_gap)
-        # print("DEFECT ENTRIES 1: ", defect_entries)
-
         if not defect_entries:
             raise ValueError(
                 "No defects found in `defect_entries`. Please check the supplied dictionary is in the "
@@ -868,7 +865,6 @@ class DefectThermodynamics(MSONable):
                 for defect_entry in self.defect_entries.values()
             ]
             band_gap_vals = [band_gap for band_gap in band_gap_vals if band_gap is not None]
-            
 
             # get the max difference in VBM & band_gap vals:
             if vbm_vals and max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
@@ -880,7 +876,6 @@ class DefectThermodynamics(MSONable):
                 _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
             elif band_gap_vals and self.band_gap is None:
                 self.band_gap = band_gap_vals[0]
-        
 
         for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:
             if i is None:
@@ -922,7 +917,6 @@ class DefectThermodynamics(MSONable):
             defect_entries_dict[entry_name] = entry
 
         sorted_defect_entries_dict = sort_defect_entries(defect_entries_dict)
-
         self._defect_entries = sorted_defect_entries_dict
         self._parse_transition_levels()  # cluster defects and determine transition levels
         if self.check_compatibility:
@@ -1121,7 +1115,6 @@ class DefectThermodynamics(MSONable):
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
         max_y_lim = max(midgap_formation_energies) + 30
-
         limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]  # type: ignore
 
         stable_entries: dict = {}
@@ -1194,10 +1187,8 @@ class DefectThermodynamics(MSONable):
                 [0, 1, -1 * limits[1][1]],
             ]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
-            # midgap_formation_energies = [np.float64(0.1), np.float64(0.1), np.float64(0.1),np.float64(0.1)]
 
             interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
-           
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding facets
