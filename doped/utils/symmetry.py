@@ -529,8 +529,7 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
-    return (dist_matrix + dist_matrix.T) / 2
+    return np.array(lattice.get_all_distances(fcoords, fcoords))
 
 
 def cluster_coords(
