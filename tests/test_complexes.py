@@ -7,6 +7,7 @@ import os
 import random
 import shutil
 import unittest
+import warnings
 
 import numpy as np
 import pytest
@@ -52,7 +53,7 @@ def if_present_rm(path):
 class ComplexDefectGenerationTest(unittest.TestCase):
     def setUp(self):
         self.R3c_Ga2O3 = Structure.from_file(os.path.join(data_dir, "Ga2O3_R3c_POSCAR"))
-        self.Ga2O3_defect_gen = DefectsGenerator(self.R3c_Ga2O3, extrinsic="Se")
+        self.Ga2O3_defect_gen = DefectsGenerator(self.R3c_Ga2O3, extrinsic="Si")
         self.Ga2O3_candidate_split_vacs = get_split_vacancies(
             self.Ga2O3_defect_gen,
             [
@@ -161,6 +162,32 @@ class ComplexDefectGenerationTest(unittest.TestCase):
     #     """
     #     # TODO
     #     self.Ga2O3_defect_gen
+
+    def test_complex_defect_same_site_warning(self):
+        with warnings.catch_warnings(record=True) as w, pytest.raises(ValueError):
+            generate_complex_from_defect_sites(
+                self.Ga2O3_defect_gen.bulk_supercell,
+                vacancy_sites=[self.Ga2O3_defect_gen["v_Ga_-3"].defect_supercell_site],
+                substitution_sites=[self.Ga2O3_defect_gen["Si_Ga_+1"].defect_supercell_site],
+            )
+
+        assert any(
+            "Some input defect sites are less than 0.1 Å from each other" in str(warning.message)
+            for warning in w
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            generate_complex_from_defect_sites(
+                self.Ga2O3_defect_gen.bulk_supercell,
+                vacancy_sites=[self.Ga2O3_defect_gen["v_Ga_-3"].defect_supercell_site],
+                # using one of the equivalent sites here, to avoid placing V_Ga and Si_Ga at same site:
+                substitution_sites=[self.Ga2O3_defect_gen["Si_Ga_+1"].equivalent_supercell_sites[0]],
+            )
+
+        assert not any(
+            "Some input defect sites are less than 0.1 Å from each other" in str(warning.message)
+            for warning in w
+        )
 
 
 class MoleculeMatcherTest(unittest.TestCase):

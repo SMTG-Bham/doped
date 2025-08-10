@@ -8,7 +8,7 @@ import warnings
 from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache
-from itertools import combinations, product
+from itertools import chain, combinations, product
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -26,6 +26,7 @@ from doped.utils.parsing import (
     get_matching_site,
 )
 from doped.utils.symmetry import (
+    get_distance_matrix,
     get_equiv_frac_coords_in_primitive,
     get_primitive_structure,
     is_periodic_image,
@@ -259,6 +260,16 @@ def generate_complex_from_defect_sites(
                 f"Defect sites input arguments must be a list, set, or tuple of defect sites. Got "
                 f"{type(defect_dict[key])} for {key}."
             )
+
+    # check no sites are the same:
+    frac_coords = [site.frac_coords for site in chain.from_iterable(defect_dict.values())]
+    distance_matrix = get_distance_matrix(frac_coords, bulk_supercell.lattice)
+    np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
+    if np.min(distance_matrix) < 0.1:
+        warnings.warn(
+            "Some input defect sites are less than 0.1 Å from each other, indicating they may be the same "
+            "site, which will prevent complex defect generation!"
+        )
 
     defect_struct = bulk_supercell.copy()
 
