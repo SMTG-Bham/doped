@@ -385,7 +385,7 @@ def get_defect_type_and_composition_diff(
         defect_type = "interstitial"
     elif len(composition_diff) == 1 and next(iter(composition_diff.values())) == -1:
         defect_type = "vacancy"
-    elif len(composition_diff) == 2:
+    elif len(composition_diff) == 2 and all(i in composition_diff.values() for i in [-1, 1]):
         defect_type = "substitution"
     else:
         defect_type = "complex"
@@ -502,9 +502,12 @@ def get_defect_type_and_site_indices(
         defect_species_coords, defect_species_indices = get_coords_and_idx_of_species(
             defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
-        species_distances = distance_matrix[bulk_species_indices]
-        species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
-        site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
+        if bulk_species_indices.size == 0:  # extrinsic species
+            site_dist_tol = None
+        else:
+            species_distances = distance_matrix[bulk_species_indices]
+            species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
+            site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
 
         site_mapping = _get_site_mapping_from_coords_and_indices(
             bulk_species_coords,

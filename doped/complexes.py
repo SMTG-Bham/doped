@@ -600,6 +600,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
                         for site in candidate_equiv_mol.sites
                     ],
                     frac_tol=frac_tol,
+                    same_image=True,
                 )
                 for other_equiv_mol in [*equiv_complex_molecules, *unique_candidate_equiv_molecules]
             ):
