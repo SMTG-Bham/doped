@@ -661,10 +661,11 @@ class DefectThermodynamics(MSONable):
                 defect sites (for plotting, transition level analysis and
                 defect concentration calculations; see ``plot()`` and
                 ``get_fermi_level_and_concentrations()`` for more information).
-                See ``group_defects_by_distance()`` and
-                ``group_defects_by_type_and_distance()`` for more information
-                on clustering strategies -- ``self._clustered_defect_entries``
-                and/or ``self._clustered_defect_entries_by_type`` can also be
+                See the ``dist_tol`` attribute, ``group_defects_by_distance()``
+                and ``group_defects_by_type_and_distance()`` functions for more
+                information on clustering strategies --
+                ``self._clustered_defect_entries`` and/or
+                ``self._clustered_defect_entries_by_type`` can also be
                 manually set with these functions for greater control.
                 (Default: 1.5)
             check_compatibility (bool):
@@ -966,7 +967,10 @@ class DefectThermodynamics(MSONable):
         together (for plotting and transition level analysis) based on the
         minimum distance between (equivalent) defect sites, controlled by
         ``dist_tol`` (1.5 Å by default), to distinguish between different
-        inequivalent sites.
+        inequivalent sites. Each defect group is then named according to the
+        most common name (without charge) for defects in that cluster, with
+        shorter defect names (and lower energies) preferred if this is not a
+        unique choice.
 
         Code for parsing the transition levels was originally templated from
         the pyCDT (pymatgen<=2022.7.25) thermodynamics code (deleted in later
@@ -1105,13 +1109,16 @@ class DefectThermodynamics(MSONable):
                 ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
             )
 
-            # take simplest (shortest) possible defect name, with lowest energy, as the name for that group
+            # the name of each defect cluster is chosen as the most common name (without charge) for
+            # defects in that cluster, otherwise the simplest (shortest) possible name, with lowest energy:
             possible_defect_names_and_energies = [
                 (defect_entry.name.rsplit("_", 1)[0], defect_entry.get_ediff())
                 for defect_entry in sorted_defect_entries
             ]  # names without charge
+            possible_defect_names = [i[0] for i in possible_defect_names_and_energies]
             defect_name_wout_charge = min(
-                possible_defect_names_and_energies, key=lambda x: (len(x[0]), x[1])
+                possible_defect_names_and_energies,
+                key=lambda x: (-possible_defect_names.count(x[0]), len(x[0]), x[1]),
             )[0]
 
             defect_name_wout_charge, output_dicts = _rename_key_and_dicts(
@@ -1573,7 +1580,9 @@ class DefectThermodynamics(MSONable):
         by default) are `mostly` grouped together. If a ``DefectEntry``\'s site
         has a distance less than ``dist_tol`` to multiple sets of equivalent
         sites, then it should be matched to the one with the lowest minimum
-        distance.
+        distance. Each defect group is then named according to the most common
+        name (without charge) for defects in that cluster, with shorter defect
+        names (and lower energies) preferred if this is not a unique choice.
 
         This is used to group together different defect entries (different
         charge states, and/or ground and metastable states (different spin or
@@ -2504,6 +2513,9 @@ class DefectThermodynamics(MSONable):
         level analysis and defect concentrations. This can be adjusted as shown
         in the plotting customisation tutorial:
         https://doped.readthedocs.io/en/latest/plotting_customisation_tutorial.html
+        See the ``dist_tol`` attribute, ``group_defects_by_distance()`` and
+        ``group_defects_by_type_and_distance()`` functions for more information
+        on clustering strategies.
 
         Args:
             chempots (dict):
