@@ -5,8 +5,9 @@
 - Add input file generation for FHI-AIMs, CP2K, Quantum Espresso and CASTEP (using SnB functions),
   point to post-processing tools for these online (in docs/example notebooks, `aiida-defects` for  QE,
   https://github.com/skw32/DefectCorrectionsNotebook for AIMs...),
-  and give example(s) of how to manually generate a `DefectPhaseDiagram` and chempots from the parsed
+  and give example(s) of how to manually generate `DefectThermodynamics` and chempots from the parsed
   energies of these calculations, so the `doped` analysis tools can then be used.
+  - See https://github.com/materialsproject/emmet/pull/242 for CP2k defects stuff
 - For defect complexes, after electrostatics, the next biggest factor in binding energies is the stress field (right)? Then orbital effects after that.
   This means that if we have the distortion field implemented in doped, we should be able to fairly accurately and easily predict if defect complexes are likely? (Via concentrations/formation energies, charges and stress fields?) Nice use case, could mention in JOSS as possible screening application if someone wanted to use it. Deak & Gali Nature Comms (10.1038/s41467-023-36090-2) C-C in Si could be used as a nice test case (neutral so no charge effects)
 - **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
