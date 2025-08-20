@@ -664,8 +664,8 @@ class DefectThermodynamics(MSONable):
                 See the ``dist_tol`` attribute, ``group_defects_by_distance()``
                 and ``group_defects_by_type_and_distance()`` functions for more
                 information on clustering strategies --
-                ``self._clustered_defect_entries`` and/or
-                ``self._clustered_defect_entries_by_type`` can also be
+                ``self.clustered_defect_entries`` and/or
+                ``self.clustered_defect_entries_by_type`` can also be
                 manually set with these functions for greater control.
                 (Default: 1.5)
             check_compatibility (bool):
@@ -735,6 +735,22 @@ class DefectThermodynamics(MSONable):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable.
+            clustered_defect_entries (dict[int, set[DefectEntry]]):
+                Dictionary of defect entries clustered according to the
+                ``dist_tol`` distance tolerance (between symmetry-equivalent
+                sites). This is used to identify defects which occupy similar
+                sites, which is then used in defect concentration calculations
+                for determining site competition.
+            clustered_defect_entries_by_type (dict[str, dict[int, set[DefectEntry]]]):
+                Dictionary of defect entries clustered according to the
+                ``dist_tol`` distance tolerance (between symmetry-equivalent
+                sites), grouped by defect type (i.e. simple defect name, e.g.
+                ``Te_i`` for ``Te_i_Td_Cd2.83_+2``). This is used to group
+                together different defect entries (different charge states,
+                ground and metastable states (e.g. different spin or
+                geometries)) which correspond to the same defect type (e.g.
+                ``Te_i``) and occupy similar sites, which is then used in
+                plotting and transition level analysis.
         """
         if not defect_entries:
             raise ValueError(
@@ -1029,26 +1045,26 @@ class DefectThermodynamics(MSONable):
         all_entries: dict = {}  # similar format to stable_entries, but with all (incl unstable) entries
 
         try:
-            self._clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]] = (
+            self.clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]] = (
                 group_defects_by_distance(
                     list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
                 )
             )  # {cluster index: {DefectEntry, ...}}; dict[int, set[DefectEntry]]
-            self._clustered_defect_entries_by_type = group_defects_by_type_and_distance(
+            self.clustered_defect_entries_by_type = group_defects_by_type_and_distance(
                 list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
             )  # {simple defect name: {cluster index: {DefectEntry, ...}}};
             # dict[str, dict[int, set[DefectEntry]]]
 
         except Exception as e:
-            self._clustered_defect_entries = group_defects_by_name(
+            self.clustered_defect_entries = group_defects_by_name(
                 list(self.defect_entries.values())
             )  # {defect name without charge: [DefectEntry,...]}; dict[str, set[DefectEntry]]
-            self._clustered_defect_entries_by_type = {
+            self.clustered_defect_entries_by_type = {
                 entry.defect.name: defaultdict(set) for entry in self.defect_entries.values()
             }  # {simple defect name: {defect name without charge: {DefectEntry, ...}}};
             # dict[str, dict[str, set[DefectEntry]]]
-            for defect_name_wout_charge, defect_entry_set in self._clustered_defect_entries.items():
-                self._clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
+            for defect_name_wout_charge, defect_entry_set in self.clustered_defect_entries.items():
+                self.clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
                     defect_name_wout_charge  # type: ignore
                 ] = defect_entry_set
 
@@ -1059,7 +1075,7 @@ class DefectThermodynamics(MSONable):
             # parsed with recent doped versions etc
 
         grouped_entries_list: list[list[DefectEntry]] = list(
-            chain(*map(methodcaller("values"), self._clustered_defect_entries_by_type.values()))
+            chain(*map(methodcaller("values"), self.clustered_defect_entries_by_type.values()))
         )  # [[DefectEntry, ...], ...]
 
         for grouped_defect_entries in grouped_entries_list:
@@ -1571,9 +1587,9 @@ class DefectThermodynamics(MSONable):
         ``get_fermi_level_and_concentrations()`` for more information). See
         ``group_defects_by_distance()`` and
         ``group_defects_by_type_and_distance()`` for more information on
-        clustering strategies -- ``self._clustered_defect_entries`` and/or
-        ``self._clustered_defect_entries_by_type`` can also be manually set
-        with these functions for greater control.
+        clustering strategies -- ``self.clustered_defect_entries`` and/or
+        ``self.clustered_defect_entries_by_type`` can also be manually set with
+        these functions for greater control.
 
         With default settings, ``DefectEntry``\s `of the same type` and with
         distances between equivalent defect sites less than ``dist_tol`` (1.5 Å
@@ -3325,7 +3341,7 @@ class DefectThermodynamics(MSONable):
 
                 # this could be refactored if DefectEntry finding became a bottleneck (currently not)
                 cluster_number = next(
-                    k for k, v in self._clustered_defect_entries.items() if defect_entry in v
+                    k for k, v in self.clustered_defect_entries.items() if defect_entry in v
                 )
 
                 charge = (
@@ -3346,7 +3362,7 @@ class DefectThermodynamics(MSONable):
 
         if site_competition:
             with np.errstate(divide="ignore", invalid="ignore"):
-                for cluster_number in self._clustered_defect_entries:
+                for cluster_number in self.clustered_defect_entries:
                     matching_concentration_dicts = [
                         concentration_dict
                         for concentration_dict in energy_concentration_list

@@ -849,14 +849,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print("Finished checking dists")
 
     def _check_dist_tol_equiv_dists(self, defect_thermo):
-        flattened_clustered_defect_entries_by_type = {
+        flattenedclustered_defect_entries_by_type = {
             f"{defect_type}_{cn}": cluster
-            for defect_type, cluster_subdict in (defect_thermo._clustered_defect_entries_by_type.items())
+            for defect_type, cluster_subdict in (defect_thermo.clustered_defect_entries_by_type.items())
             for cn, cluster in cluster_subdict.items()
         }
         for method, cluster_dict in [
-            ("centroid", defect_thermo._clustered_defect_entries),
-            ("single", flattened_clustered_defect_entries_by_type),
+            ("centroid", defect_thermo.clustered_defect_entries),
+            ("single", flattenedclustered_defect_entries_by_type),
         ]:
             print(f"Checking dist_tol for {method} clustering")
             for cluster in cluster_dict.values():
@@ -875,9 +875,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
                     # pick some random entries from other clusters and check distances:
                     other_cluster_dict = (
-                        defect_thermo._clustered_defect_entries
+                        defect_thermo.clustered_defect_entries
                         if method == "centroid"
-                        else defect_thermo._clustered_defect_entries_by_type[entry.defect.name]
+                        else defect_thermo.clustered_defect_entries_by_type[entry.defect.name]
                     )
                     for other_cluster in other_cluster_dict.values():
                         if other_cluster == cluster:
