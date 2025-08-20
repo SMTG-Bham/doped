@@ -104,6 +104,7 @@ Studies using ``doped``, so far
 
 - L\. Tian et al. **Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-bhf0z>`__ 2025
 - M\. A. Fadla et al. **Tailoring the Electronic Properties of Monoclinic (In** :sub:`x` **Al** :sub:`1-x` **)₂O₃ Alloys via Substitutional Donors and Acceptors** `arXiv <https://arxiv.org/abs/2507.02805>`__ 2025
+- M\. E. Turiansky et al. **Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects** `arXiv <https://arxiv.org/abs/2508.09113>`__ 2025
 - C\. López et al. **Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers** `ACS Energy Letters <https://pubs.acs.org/doi/10.1021/acsenergylett.5c01267>`__ 2025
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - K\. Ogawa et al. **Defect Tolerance via External Passivation in the Photocatalyst SrTiO₃:Al** `Journal of the American Chemical Society <https://doi.org/10.1021/jacs.5c07104>`__ 2025
