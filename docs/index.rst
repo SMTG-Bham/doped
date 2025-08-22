@@ -202,6 +202,11 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
 
 .. toctree::
    :hidden:
+
+   Home <self>
+
+.. toctree::
+   :hidden:
    :caption: Usage
    :maxdepth: 4
 

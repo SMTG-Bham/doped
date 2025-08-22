@@ -76,20 +76,20 @@ html_use_smartypants = True
 # If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
 # html_show_sphinx = True
 
-html_theme_options = {
-    "repository_url": "https://github.com/SMTG-Bham/doped",
-    "github_repo": "https://github.com/SMTG-Bham/doped",  # renku
+html_theme_options = {  # renku unsupported options commented out here
+    # "repository_url": "https://github.com/SMTG-Bham/doped",
+    # "github_repo": "https://github.com/SMTG-Bham/doped",
     "github_button": True,
     "github_user": "SMTG-Bham",  # Username
-    "description": "Python package for setting up, parsing and analysing charged defect supercell calculations",
-    "repository_branch": "develop",
-    "path_to_docs": "docs",
-    "use_repository_button": True,
-    "home_page_in_toc": True,
-    "launch_buttons": {
-        "binderhub_url": "https://mybinder.org",
-        "colab_url": "https://colab.research.google.com",
-    },
+    # "description": "Python package for setting up, parsing and analysing charged defect supercell calculations",
+    # "repository_branch": "develop",
+    # "path_to_docs": "docs",
+    # "use_repository_button": True,
+    # "home_page_in_toc": True,
+    # "launch_buttons": {
+    #     "binderhub_url": "https://mybinder.org",
+    #     "colab_url": "https://colab.research.google.com",
+    # },
 }
 
 # Adding “Edit Source” links on your Sphinx theme
