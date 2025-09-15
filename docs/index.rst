@@ -102,6 +102,9 @@ the
 Studies using ``doped``, so far
 ===============================
 
+- P\. Deng et al. **Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy** `Advanced Theory and Simulations <https://doi.org/10.1002/adts.202501088>`__ 2025
+- P\. Panagis Filippatos, A. Chroneos and N. Kelaidis **A first-principles investigation of halogen doped diamond and its application to quantum technologies** `Journal of Applied Physics <https://doi.org/10.1063/5.0279139>`__ 2025
+- P\. Panagis Filippatos, T. J. P. Irons and K. Inzani **Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN** `arXiv <http://dx.doi.org/10.48550/arXiv.2509.09002>`__ 2025
 - L\. Tian et al. **Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-bhf0z>`__ 2025
 - M\. A. Fadla et al. **Tailoring the Electronic Properties of Monoclinic (In** :sub:`x` **Al** :sub:`1-x` **)₂O₃ Alloys via Substitutional Donors and Acceptors** `arXiv <https://arxiv.org/abs/2507.02805>`__ 2025
 - M\. E. Turiansky et al. **Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects** `arXiv <https://arxiv.org/abs/2508.09113>`__ 2025

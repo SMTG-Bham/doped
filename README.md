@@ -67,6 +67,9 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- P. Deng et al. **_Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy_** [_Advanced Theory and Simulations_](https://doi.org/10.1002/adts.202501088) 2025
+- P. Panagis Filippatos, T. J. P. Irons and K. Inzani **_Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN_** [_arXiv_](http://dx.doi.org/10.48550/arXiv.2509.09002) 2025
+- P. Panagis Filippatos, A. Chroneos and N. Kelaidis **_A first-principles investigation of halogen doped diamond and its application to quantum technologies_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0279139) 2025
 - L. Tian et al. **_Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-bhf0z) 2025
 - M. A. Fadla et al. **_Tailoring the Electronic Properties of Monoclinic (In<sub>x</sub>Al<sub>1-x</sub>)<sub>2</sub>O<sub>3</sub> Alloys via Substitutional Donors and Acceptors_** [_arXiv_](https://arxiv.org/abs/2507.02805) 2025
 - M. E. Turiansky et al. **_Machine Learning Phonon Spectra for
