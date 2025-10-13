@@ -340,7 +340,8 @@ analyse shallow defect states.
 Certain point defects form shallow (hydrogen-like) donor or acceptor states, known as perturbed host
 states (PHS). These states typically have wavefunctions distributed over many unit cells in real space,
 requiring exceptionally large supercells or dense reciprocal space sampling to properly capture their
-physics (see `this review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`_).
+physics (see `this review <https://journals.aps.org/rmp/abstract/10.1103/RevModPhys.50.797>`__ or this
+`paper <https://www.nature.com/articles/s41524-020-00448-7>`__).
 This weak attraction of the electron/hole to the defect site corresponds to a relatively small
 donor/acceptor binding energy (i.e. energetic separation of the corresponding charge transition level to
 the nearby band edge), which is typically <100 meV.
@@ -360,12 +361,17 @@ located near the corresponding band edge. An example of this is given in
 
     .. math::
 
-       E_b = \text{13.6 eV} \times \frac{\bar{m}}{\epsilon^2}
+       E_b = Ry \times \frac{\bar{m}}{\epsilon^2}
 
     where :math:`\bar{m}` is the harmonic mean (i.e. conductivity) effective mass of the relevant
     charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
-    (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and 13.6 eV is the Rydberg constant
-    (i.e. binding energy of an electron in a hydrogen atom).
+    (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and ``Ry`` is the Rydberg constant
+    (i.e. binding energy of an electron in a hydrogen atom; ~13.6 eV).
+    This formula is used in the ``shallow_dopant_binding_energy`` convenience function provided in
+    ``doped.analysis``, with example usage shown
+    `here in the advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#estimate-dopant-acceptor-binding-energy>`__.
+    As shown in the tutorial example, this formula can also be used to estimate the Wannier-Mott exciton
+    binding energy, when the reduced mass of the electron-hole pair is used for the effective mass.
 
 As discussed in the section above, we employ the methodology of
 `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ to analyse the orbital character and
