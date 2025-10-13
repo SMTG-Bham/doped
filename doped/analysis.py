@@ -2596,7 +2596,7 @@ class DefectParser:
 
                 # these are removed in _load_and_parse_eigenvalue_data, but in case it fails:
                 defect_vr.projected_eigenvalues = None  # no longer needed, delete to reduce memory demand
-                defect_vr.projected_magnetisation = (
+                defect_vr.projected_magnetization = (
                     None  # no longer needed, delete to reduce memory demand
                 )
                 defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
@@ -2899,7 +2899,7 @@ class DefectParser:
                 )
 
         def _get_vr_dict_without_proj_eigenvalues(vr):
-            attributes_to_cut = ["projected_eigenvalues", "projected_magnetisation"]
+            attributes_to_cut = ["projected_eigenvalues", "projected_magnetization"]
             orig_values = {}
             for attribute in attributes_to_cut:
                 orig_values[attribute] = getattr(vr, attribute)

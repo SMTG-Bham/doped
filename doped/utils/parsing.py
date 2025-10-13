@@ -16,7 +16,7 @@ import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import LinearAssignment, pbc_shortest_vectors
+from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
@@ -752,7 +752,7 @@ def find_missing_idx(
     # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
     # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
-    site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
+    site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
 
     return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
 
@@ -937,7 +937,7 @@ def check_atom_mapping_far_from_defect(
             else (bulk_species_outside_near_ws_coords, defect_species_outside_ws_coords)
         )
         vecs, d_2 = pbc_shortest_vectors(bulk_supercell.lattice, subset, superset, return_d2=True)
-        site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
+        site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
         matching_vecs = vecs[np.arange(len(site_matches)), site_matches]
         displacements = np.linalg.norm(matching_vecs, axis=1)
         far_from_defect_disps[species.name].extend(
@@ -1232,10 +1232,10 @@ def _compare_kpoints(
 ):
     """
     Check bulk and defect KPOINTS are the same, using the
-    Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
+    ``Vasprun.actual_kpoints`` lists (i.e. the VASP IBZKPTs essentially).
 
-    Returns True if the KPOINTS match, otherwise returns a list of the KPOINTS
-    for the bulk and defect calculations.
+    Returns ``True`` if the KPOINTS match, otherwise returns a list of the
+    KPOINTS for the bulk and defect calculations.
     """
     # sort kpoints, in case same KPOINTS just different ordering:
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
@@ -1249,7 +1249,7 @@ def _compare_kpoints(
     kpoints_eq = (
         (
             bulk_kpoints.kpts == defect_kpoints.kpts
-            and np.allclose(bulk_kpoints.shift, defect_kpoints.shift)
+            and np.allclose(bulk_kpoints.kpts_shift, defect_kpoints.kpts_shift)
         )
         if bulk_kpoints and defect_kpoints
         else False
@@ -1431,10 +1431,10 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
         # non-spin-polarised or NCL calculation:
         if not vasprun.parameters.get("LNONCOLLINEAR", False):
             return 0  # non-spin polarised calculation
-        if getattr(vasprun, "projected_magnetisation", None) is None:
+        if getattr(vasprun, "projected_magnetization", None) is None:
             raise RuntimeError(
                 "Cannot determine magnetization from non-collinear Vasprun calculation, as this requires "
-                "the `Vasprun.projected_magnetisation` attribute, which is parsed with "
+                "the `Vasprun.projected_magnetization` attribute, which is parsed with "
                 "`Vasprun(parse_projected_eigen=True)` (default in `doped`)."
             )
 
@@ -1447,11 +1447,11 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
         )  # avoid division by zero, by setting any zero values to 1
         normalisation_factors = 1 / summed_orbital_projections
 
-        # vasprun.projected_magnetisation.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
+        # vasprun.projected_magnetization.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
         # sum the projected magnetization over atoms and orbitals, then multiply by per-band/kpoint
         # normalisation factors:
         normalised_proj_mag_per_kpoint_band_direction = (
-            vasprun.projected_magnetisation.sum(axis=(-3, -2)) * normalisation_factors[..., None]
+            vasprun.projected_magnetization.sum(axis=(-3, -2)) * normalisation_factors[..., None]
         )  # [..., None] adds new axis, which allows broadcasting (i.e.
         # (nkpoints, nbands, 3) * (nkpoints, nbands, 1) -- adding the "(...,1 )" dimension)
 

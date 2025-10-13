@@ -1,4 +1,4 @@
-x-skip-docs: &skip_docs
+x-skip-docs: &skip_docs  # causes pre-commit warning but can be safely ignored
   exclude: '^docs/'
 exclude: ^(examples|.github|tests/data)
 repos:

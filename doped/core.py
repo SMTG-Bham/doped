@@ -602,7 +602,7 @@ class DefectEntry(thermo.DefectEntry):
         present in the ``calculation_metadata``.
 
         Note that this function sets the ``eigenvalues``,
-        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
+        ``projected_eigenvalues`` and ``projected_magnetization`` attributes
         to ``None`` to reduce memory demand (as these properties are not
         required in later stages of ``doped`` analysis workflows), if
         ``clear_attributes`` is ``True`` (default).
@@ -647,7 +647,7 @@ class DefectEntry(thermo.DefectEntry):
                 already present in the ``calculation_metadata``.
             clear_attributes (bool):
                 If ``True`` (default), sets the ``eigenvalues``,
-                ``projected_eigenvalues`` and ``projected_magnetisation``
+                ``projected_eigenvalues`` and ``projected_magnetization``
                 attributes to ``None`` to reduce memory demand (as these
                 properties are not required in later stages of ``doped``
                 analysis workflows).
@@ -758,7 +758,7 @@ class DefectEntry(thermo.DefectEntry):
             # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
             # collection and thus reduce memory:
             defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
-            defect_vr.projected_magnetisation = (
+            defect_vr.projected_magnetization = (
                 None  # but keep for bulk_vr as this is likely being re-used
             )
             defect_vr.eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
@@ -799,7 +799,7 @@ class DefectEntry(thermo.DefectEntry):
         ``pydefect`` paper: 10.1103/PhysRevMaterials.5.123803
 
         Note that this function sets the ``eigenvalues``,
-        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
+        ``projected_eigenvalues`` and ``projected_magnetization`` attributes
         to ``None`` to reduce memory demand (as these properties are not
         required in later stages of ``doped`` analysis workflows), if
         ``clear_attributes`` is ``True`` (default).
@@ -860,7 +860,7 @@ class DefectEntry(thermo.DefectEntry):
                 already present in the ``calculation_metadata``.
             clear_attributes (bool):
                 If ``True`` (default), sets the ``eigenvalues``,
-                ``projected_eigenvalues`` and ``projected_magnetisation``
+                ``projected_eigenvalues`` and ``projected_magnetization``
                 attributes to ``None`` to reduce memory demand (as these
                 properties are not required in later stages of ``doped``
                 analysis workflows).
