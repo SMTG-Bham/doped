@@ -67,6 +67,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- V. Watson et al. **_Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr<sub>3–3x</sub>La<sub>2x</sub>V<sub>2</sub>O<sub>8</sub> via Increased Tetrahedral Distortion and Cation Vacancies_** [_Chemistry of Materials_](https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856) 2025
 - P. Deng et al. **_Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy_** [_Advanced Theory and Simulations_](https://doi.org/10.1002/adts.202501088) 2025
 - P. Panagis Filippatos, T. J. P. Irons and K. Inzani **_Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN_** [_arXiv_](http://dx.doi.org/10.48550/arXiv.2509.09002) 2025
 - P. Panagis Filippatos, A. Chroneos and N. Kelaidis **_A first-principles investigation of halogen doped diamond and its application to quantum technologies_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0279139) 2025
