@@ -295,25 +295,22 @@ def get_neighbour_distances_and_symbols(
             # previous n (and the same element as the previous n):
             neighbour_tuples[i]
             for i in range(len(neighbour_tuples))
-            if neighbour_tuples[i][0] > min_dist
-            and i == 0
-            or neighbour_tuples[i][0] - neighbour_tuples[i - 1][0] > 0.02
+            if (neighbour_tuples[i][0] > min_dist and i == 0)
+            or (neighbour_tuples[i][0] - neighbour_tuples[i - 1][0] > 0.02)
             or (
                 neighbour_tuples[i][1] != neighbour_tuples[i - 1][1]
-                and neighbour_tuples[  # check no prev occurrence of this elt within 0.02 Å (e.g. XdYdXd)
-                    i
-                ][0]
-                - max(
-                    [
-                        neighbour_tuple[0]
-                        for neighbour_tuple in neighbour_tuples[:i]
-                        if neighbour_tuple[1] == neighbour_tuples[i][1]
-                    ]
-                    or [
-                        0,
-                    ]
+                and (
+                    neighbour_tuples[i][0]
+                    - max(
+                        [
+                            neighbour_tuple[0]
+                            for neighbour_tuple in neighbour_tuples[:i]
+                            if neighbour_tuple[1] == neighbour_tuples[i][1]
+                        ]
+                        or [0]
+                    )
+                    > 0.02
                 )
-                > 0.02
             )
         ][:n]
 
@@ -1462,13 +1459,14 @@ class DefectsGenerator(MSONable):
                 (default = False)).
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to ``get_interstitial_sites()``
-                (such as ``min_dist`` (0.9 Å), ``clustering_tol`` (0.8 Å),
-                ``symmetry_preference`` (0.1 Å), ``stol`` (0.32),
-                ``tight_stol`` (0.02), ``symprec`` (0.01), ``vacuum_radius``
-                (1.5 * bulk bond length) -- see its docstring, parentheses
-                indicate default values), or ``InterstitialGenerator`` if
-                ``interstitial_coords`` is specified. If set to ``False``,
-                interstitial generation will be skipped entirely.
+                (such as ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen),
+                ``clustering_tol`` (0.8 Å), ``symmetry_preference`` (0.1 Å),
+                ``stol`` (0.32), ``tight_stol`` (0.02), ``symprec`` (0.01),
+                ``vacuum_radius`` (1.5 * bulk bond length) -- see its
+                docstring, parentheses indicate default values), or
+                ``InterstitialGenerator`` if ``interstitial_coords`` is
+                specified. If set to ``False``, interstitial generation will be
+                skipped entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these
                 fractional coordinates in the generated supercells. Default is
@@ -1861,9 +1859,29 @@ class DefectsGenerator(MSONable):
                     )
 
                 self.defects["interstitials"] = []
-                ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
-                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
                 for el in self.kwargs.get("interstitial_elements", self._element_list):
+                    if (
+                        el == "H"
+                        and "min_dist" not in self.interstitial_gen_kwargs
+                        and not self.interstitial_coords
+                    ):
+                        # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
+                        # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
+                        ig = InterstitialGenerator(min_dist=0.5)
+                        H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
+                            host_structure=self.primitive_structure,
+                            interstitial_gen_kwargs={"min_dist": 0.5, **self.interstitial_gen_kwargs},
+                        )
+                        cand_sites, multiplicity, equiv_fpos = zip(
+                            *H_sorted_sites_mul_and_equiv_fpos, strict=False
+                        )
+
+                    else:
+                        ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+                        cand_sites, multiplicity, equiv_fpos = zip(
+                            *sorted_sites_mul_and_equiv_fpos, strict=False
+                        )
+
                     inter_generator = ig.generate(
                         self.primitive_structure,
                         insertions={el: cand_sites},
@@ -2750,6 +2768,7 @@ def get_interstitial_sites(
     The logic for picking interstitial sites is as follows:
 
     - Generate all candidate sites using (efficient) Voronoi analysis
+    - If vacuum volume present, include adsorbate sites as candidate sites
     - Remove any sites which are within ``min_dist`` of any host atoms
     - Cluster the remaining sites using a tolerance of ``clustering_tol`` and
       symmetry-preference of ``symmetry_preference``
@@ -2781,7 +2800,9 @@ def get_interstitial_sites(
     when performing defect relaxations!
 
     You can see what Cartesian distance the chosen ``stol`` corresponds to
-    using the ``get_stol_equiv_dist`` function.
+    using the ``get_stol_equiv_dist`` function. Note that you will likely want
+    to reduce ``min_dist`` for hydrogen interstitials! (This is done by default
+    with ``DefectsGenerator``, reducing it to 0.5 Å for Hydrogen.)
 
     Args:
         host_structure (Structure): Host structure.
