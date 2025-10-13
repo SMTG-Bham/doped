@@ -2113,6 +2113,7 @@ def _check_and_warn_dimer_bonds_spin_states(
         rtol (float):
             The relative tolerance to use for dimer bond detection.
     """
+    defect_dimer_dict = {}
     for name, defect_entry in defect_dict.items():
         dimer_bonds_dict = get_dimer_bonds(defect_entry.defect_supercell, rtol=rtol)
         num_dimer_bonds = sum(len(dimer_subdict) for dimer_subdict in dimer_bonds_dict.values())
@@ -2127,14 +2128,18 @@ def _check_and_warn_dimer_bonds_spin_states(
                 and entry.charge_state == defect_entry.charge_state
             )
         ):
-            suggested_nupdown = 2 if defect_entry.charge_state % 2 == 0 else 3
-            warnings.warn(
-                f"Defect {name} has been detected to have dimer bonds:\n{dimer_bonds_dict}\n"
-                f"which often adopt multiplet spin states (e.g. triplet O2, Si dimers etc, see "
-                f"https://doped.readthedocs.io/en/latest/Tips.html#magnetization). "
-                f"You may want to test setting `NUPDOWN` to {suggested_nupdown} (or higher) for "
-                f"this defect. You can control this warning with the ``rtol`` kwarg."
-            )
+            defect_dimer_dict[name] = dimer_bonds_dict
+
+    if defect_dimer_dict:
+        dimer_bonds_str = "\n".join(str(subdict) for subdict in defect_dimer_dict.values())
+        warnings.warn(
+            f"Defects {', '.join(defect_dimer_dict.keys())} have been detected to have dimer bonds:\n"
+            f"{dimer_bonds_str}\n"
+            "which often adopt multiplet spin states (e.g. triplet O2, Si dimers etc, see "
+            "https://doped.readthedocs.io/en/latest/Tips.html#magnetization). "
+            "You may want to test setting `NUPDOWN` to 2 / 3 (for even / odd charge states) or higher "
+            "for this defect. You can control this warning with the ``rtol`` kwarg."
+        )
 
 
 def _parse_vr_and_poss_procar(
