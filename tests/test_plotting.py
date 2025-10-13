@@ -616,29 +616,6 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
 
         return defect_thermo.plot(self.CdTe_chempots, limit="Cd-rich")
 
-    @custom_mpl_image_compare(filename="Se_duplicate_entry_names_old_plot.png")
-    def test_handling_duplicate_entry_names_ext_Se_old_names(self):
-        """
-        Test renaming behaviour when defect entries with the same names are
-        provided.
-
-        In this case, the defect folder/entry names match the old ``doped``
-        format, with e.g. ``sub_1_Br_on_Se_-1`` and ``inter_2_O_0`` etc.
-
-        We have some duplicates (``inter_1_O_0`` and ``inter_2_O_0``) which
-        are removed by including site info, but some (``inter_11_H_X``) which
-        aren't, so ``_a`` & ``_b`` are appended to those names.
-        """
-        thermo = deepcopy(self.Se_ext_no_pnict_thermo)  # don't overwrite
-        thermo.dist_tol = 1.45  # keeps O_i sites separate but merges F/Cl/Br_i
-        fig = thermo.plot()
-        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
-        print(legend_txt)
-        for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$"]:
-            assert i in legend_txt
-
-        return fig
-
     @custom_mpl_image_compare(filename="Se_pnictogen_plot.png")
     def test_plotting_ext_Se_new_names(self):
         """
@@ -673,10 +650,10 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
         print(legend_txt)
         for i in [
-            "O$_{i_{1}}$",
+            "O$_{i_{2}}$",
             "Te$_{Se_{1}}$",
-            "H$_{i_{11}}$$_{-a}$",
-            "H$_{i_{11}}$$_{-b}$",
+            "H$_{i_{11}}$",
+            "H$_{i_{12}}$",
             "F$_{i_{1}}$",
         ]:
             assert i in legend_txt
@@ -729,8 +706,19 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         Test plotting behaviour with non-pnictogen impurities in Se, with
         ``unstable_entries=False`` (no shallow within default tol, and no non
         in-gap stable).
+
+        Here we also test the renaming behaviour when defect clusters with the
+        same (representative) name occur.
         """
-        return self.Se_ext_no_pnict_thermo.plot(unstable_entries=False, ylim=(0, 2.5))
+        thermo = deepcopy(self.Se_ext_no_pnict_thermo)  # don't overwrite
+        thermo.dist_tol = 1.45  # keeps O_i sites separate but merges F/Br_i, not Cl_i
+        fig = thermo.plot(unstable_entries=False, ylim=(0, 2.5))
+        legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
+        print(legend_txt)
+        for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$", "Br$_i$"]:
+            assert i in legend_txt
+
+        return fig
 
     def test_unstable_entries_error(self):
         """

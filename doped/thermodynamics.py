@@ -538,6 +538,75 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
     return grouped_entries
 
 
+def name_defect_cluster(entry_list: list[DefectEntry]) -> str:
+    """
+    Given a list of ``DefectEntry`` objects (assumed to be a 'defect
+    cluster/group'), determines and returns a representative name for the
+    cluster.
+
+    The representative name is chosen by identifying the most common defect
+    name (excluding the charge state) among the lowest energy entries (within
+    a 25 meV noise threshold) for each charge state. If this does not yield a
+    unique choice, the shortest name is preferred, followed by lexicographical
+    order (sorting by name), then by frequency among the `exact` minimum energy
+    entries (without noise threshold), and finally by whether the entry is the
+    lowest-energy state at the lowest absolute charge state present in the
+    cluster.
+
+    Args:
+        entry_list (list[DefectEntry]):
+            List of ``DefectEntry`` objects constituting the defect cluster.
+
+    Returns:
+        str: Representative defect name (without charge) for the cluster.
+    """
+    sorted_defect_entries = sorted(
+        entry_list, key=lambda x: (-x.charge_state, x.get_ediff(), x.name)
+    )  # sort by charge (most positive first), then energy, then name
+
+    # take first of each charge state to get min energies:
+    min_energy_by_charge = {
+        defect_entry.charge_state: defect_entry.get_ediff() for defect_entry in sorted_defect_entries[::-1]
+    }  # reversed order, last (first) entry overwrites energy
+    min_energy_defects_by_charge = {
+        charge: [
+            defect_entry.name.rsplit("_", 1)[0]
+            for defect_entry in sorted_defect_entries
+            if defect_entry.get_ediff() - min_energy < 0.025  # 25 meV noise threshold
+            and defect_entry.charge_state == charge
+        ]
+        for charge, min_energy in min_energy_by_charge.items()
+    }
+    min_energy_defects_by_charge_no_noise = {
+        charge: [
+            defect_entry.name.rsplit("_", 1)[0]
+            for defect_entry in sorted_defect_entries
+            if defect_entry.get_ediff() == min_energy  # no noise threshold
+            and defect_entry.charge_state == charge
+        ]
+        for charge, min_energy in min_energy_by_charge.items()
+    }
+    min_energy_min_abs_charge_entry = next(
+        iter(min_energy_defects_by_charge_no_noise[min(min_energy_defects_by_charge_no_noise, key=abs)])
+    )
+    possible_defect_names = [
+        defect_entry.name.rsplit("_", 1)[0] for defect_entry in sorted_defect_entries
+    ]  # names without charge
+
+    return max(
+        possible_defect_names,
+        key=lambda x: (
+            sum(1 for charge, name_list in min_energy_defects_by_charge.items() if x in name_list),
+            -len(x),
+            x,
+            sum(
+                1 for charge, name_list in min_energy_defects_by_charge_no_noise.items() if x in name_list
+            ),
+            x == min_energy_min_abs_charge_entry,
+        ),
+    )
+
+
 class DefectThermodynamics(MSONable):
     """
     Class for analysing the calculated thermodynamics of defects in solids.
@@ -1125,18 +1194,7 @@ class DefectThermodynamics(MSONable):
                 ints_and_facets_filter, key=lambda int_and_facet: int_and_facet[0][0]
             )
 
-            # the name of each defect cluster is chosen as the most common name (without charge) for
-            # defects in that cluster, otherwise the simplest (shortest) possible name, with lowest energy:
-            possible_defect_names_and_energies = [
-                (defect_entry.name.rsplit("_", 1)[0], defect_entry.get_ediff())
-                for defect_entry in sorted_defect_entries
-            ]  # names without charge
-            possible_defect_names = [i[0] for i in possible_defect_names_and_energies]
-            defect_name_wout_charge = min(
-                possible_defect_names_and_energies,
-                key=lambda x: (-possible_defect_names.count(x[0]), len(x[0]), x[1]),
-            )[0]
-
+            defect_name_wout_charge = name_defect_cluster(sorted_defect_entries)
             defect_name_wout_charge, output_dicts = _rename_key_and_dicts(
                 defect_name_wout_charge,
                 [transition_level_map, all_entries, stable_entries, defect_charge_map],
