@@ -3414,7 +3414,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # individual checks first:
         # bulk NCL:
         vr = get_vasprun(f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml.gz", parse_projected_eigen=True)
-        assert np.allclose(get_magnetization_from_vasprun(vr), 0, atol=0.02)
+        assert np.allclose(get_magnetization_from_vasprun(vr), 0, atol=0.02)  # allclose for NCL
         assert spin_degeneracy_from_vasprun(vr) == 1
 
         # -1 ncl:
@@ -3476,6 +3476,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.defect_dict["v_Cd_C2v_Bipolaron_S0_0"].degeneracy_factors["spin degeneracy"] == 1
         assert dp.defect_dict["v_Cd_C2v_Bipolaron_S1_0"].degeneracy_factors["spin degeneracy"] == 3
         self._check_DefectsParser(dp)
+
+        # previously caused an error, with magnetization being parsed as negative value due to
+        # N_spin_down > N_spin_up, now spin degeneracy correctly determined from absolute magnetization
+        vr = get_vasprun(f"{self.data_dir}/Magnetization_Tests/Co_Zn_0/vasprun.xml.gz")
+        assert np.isclose(get_magnetization_from_vasprun(vr), -3, atol=0.02)
+        assert spin_degeneracy_from_vasprun(vr) == 4
 
     def test_bulk_symprec_and_periodicity_breaking_checks(self):
         """

@@ -1848,7 +1848,7 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
 
         # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
         # i.e. number of electrons, as in VASP):
-        return magnetization + 1
+        return abs(magnetization) + 1
 
     except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization:
         return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))  # guess from charge
