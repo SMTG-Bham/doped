@@ -7,6 +7,13 @@ Installation
 
    pip install doped  # install doped and dependencies
 
+If you want to install the latest development version of ``doped``, this can be done following the
+:ref:`developer-installation` instructions, or with:
+
+.. code-block:: bash
+
+    pip install https://github.com/SMTG-Bham/doped/archive/develop.zip
+
 Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 
 .. code-block:: bash
@@ -32,7 +39,7 @@ conflict warnings during installation etc). You can do this with ``conda`` with:
 
 .. code-block:: bash
 
-   conda create -n doped python=3.12
+   conda create -n doped python=3.13
    conda activate doped
    pip install doped
 
@@ -98,6 +105,8 @@ If you use ``doped`` in your research, please cite:
 - Kavanagh et al. `doped: Python toolkit for robust and repeatable charged defect supercell calculations <https://doi.org/10.21105/joss.06433>`__. *Journal of Open Source Software* 9 (96), 6433, **2024**
 
 
+.. _developer-installation:
+
 Developer Installation
 -----------------------
 If you want to use the example files from the tutorials or run the package tests, you will need to clone
@@ -109,11 +118,12 @@ the ``doped`` GitHub repository:
 
    git clone https://github.com/SMTG-Bham/doped
 
-#. Navigate to root directory:
+#. Navigate to root directory and checkout `develop` branch:
 
 .. code-block:: bash
 
    cd doped
+   git checkout develop
 
 #. Install the code, using the command:
 

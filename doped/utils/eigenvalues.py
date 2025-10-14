@@ -636,7 +636,7 @@ def get_eigenvalue_analysis(
         fig = emp.plt.gcf()
         ax = fig.gca()
         if ylims is None:
-            ymin, ymax = 0, 0
+            ymin, ymax = vbm, cbm
             for spin in emp._energies_and_occupations:
                 for kpoint in spin:
                     ymin = min(ymin, *(x[0] for x in kpoint))

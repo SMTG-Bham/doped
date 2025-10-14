@@ -1257,13 +1257,15 @@ def _compare_kpoints(
 
     if not (actual_kpoints_eq or kpoints_eq):
         if warn:
-            warnings.warn(
+            formatted_defect_kpts = [[float(kpt) for kpt in kpoints] for kpoints in sorted_defect_kpoints]
+            formatted_bulk_kpts = [[float(kpt) for kpt in kpoints] for kpoints in sorted_bulk_kpoints]
+            warnings.warn(  # list form is more readable
                 f"The KPOINTS for your {defect_name} and {bulk_name} calculations do not match, which is "
                 f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
                 f"{defect_name} calculation:"
-                f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"  # list form is more readable
+                f"\n{formatted_defect_kpts}\n"
                 f"and in the {bulk_name} calculation:"
-                f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"
+                f"\n{formatted_bulk_kpts}\n"
                 f"In general, the same KPOINTS settings should be used for all final calculations for "
                 f"accurate results!"
             )

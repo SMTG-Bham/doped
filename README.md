@@ -34,6 +34,13 @@ displacements from DFT supercell calculations. See the [JOSS paper](https://doi.
 pip install doped  # install doped and dependencies
 ```
 
+If you want to install the latest development version of `doped`, this can be done following the
+[Developer Installation](https://doped.readthedocs.io/en/latest/Installation.html#developer-installation) instructions,
+or with:
+```bash
+pip install https://github.com/SMTG-Bham/doped/archive/develop.zip
+```
+
 Alternatively if desired, `doped` can also be installed from `conda` with:
 
 ```bash

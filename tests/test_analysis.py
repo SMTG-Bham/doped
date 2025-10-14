@@ -505,7 +505,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
         assert any(
-            "Defect v_Cd_0 has been detected to have dimer bonds" in str(warning.message) for warning in w
+            "Defects v_Cd_0, Int_Te_3_2, Int_Te_3_1, Int_Te_3_Unperturbed_1 have been detected to have "
+            "dimer bonds" in str(warning.message)
+            for warning in w
         )
 
         # test with reduced dist_tol:
@@ -733,6 +735,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "In general, the same KPOINTS settings should be used",
         ]:
+            print(i)
             assert any(i in str(warn.message) for warn in w)
         dp.get_defect_thermodynamics()  # test thermo generation works fine
 
@@ -1273,7 +1276,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for i in [
                 "There are mismatching INCAR tags",
                 ":\n[('NKRED', 1, 2)]\nIn",
-                "Defect vac_1_Zn_0 has been detected to have dimer bonds",
+                "Defects vac_1_Zn_0 have been detected to have dimer bonds",
             ]
         )
         assert all(

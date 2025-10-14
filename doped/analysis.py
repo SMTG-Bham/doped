@@ -1954,7 +1954,10 @@ def _warn_calculation_mismatches(defect_dict: dict[str, DefectEntry]) -> None:
             ),
         },
         "mismatching_KPOINTS": {
-            "transform": lambda v: v,  # no change
+            "transform": lambda defect_and_bulk_kpoints_lists: [
+                [[float(kpt) for kpt in kpoints] for kpoints in kpoints_list]
+                for kpoints_list in defect_and_bulk_kpoints_lists
+            ],
             "message": lambda lst: (
                 "(defect kpoints, bulk kpoints)):\n" + "\n".join(f"{n}: {m}" for n, m in lst) + "\n"
                 "In general, the same KPOINTS settings should be used for all final calculations for "
