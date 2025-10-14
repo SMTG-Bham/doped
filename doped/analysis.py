@@ -1431,7 +1431,7 @@ def _get_calculation_folders_for_parsing(
         matching the ``_CALC_OUTPUT_MASK`` filter, recursively, ignoring hidden
         files and folders.
         """
-        files_df = _dataframe_of_files(root)  # dataframe of files in folders under ``out_root``
+        files_df = _dataframe_of_files(root)  # dataframe of files in folders under ``root``
         pattern = "|".join(map(re.escape, _CALC_OUTPUT_MASK))  # regex filter pattern for output files
         return (
             files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
@@ -1480,7 +1480,12 @@ def _get_calculation_folders_for_parsing(
         if d not in possible_bulk_folders and (subfolder == "." or (out_root / d / subfolder).is_dir())
     ]
 
-    bulk_path = _resolve_bulk_path(out_root, possible_bulk_folders, bulk_path)  # resolve bulk path
+    if bulk_path is not None and not _get_calc_files_df(Path(bulk_path)).empty:
+        bulk_path = Path(bulk_path).resolve()
+
+    else:
+        bulk_path = _resolve_bulk_path(out_root, possible_bulk_folders, bulk_path)  # resolve bulk path
+
     bulk_path = _append_subfolder_if_needed(bulk_path, subfolder, user_set_subfolder)
 
     return defect_folders, str(out_root), str(subfolder), str(bulk_path)
@@ -1567,11 +1572,17 @@ def _resolve_bulk_path(
             f"manually."
         )
 
-    bulk_path = Path(bulk_path)
-    if bulk_path and not bulk_path.is_absolute():
-        bulk_path = out_root / bulk_path  # make relative path absolute
-    if bulk_path and not bulk_path.is_dir():
-        raise FileNotFoundError(f"Could not find bulk supercell calculation folder at '{bulk_path}'!")
+    if bulk_path is not None:
+        bulk_path = Path(bulk_path)
+
+        if not bulk_path.is_dir():
+            bulk_path = out_root / bulk_path
+            if not bulk_path.is_dir():
+                raise FileNotFoundError(
+                    f"Could not find bulk supercell calculation folder at '{bulk_path}'!"
+                )
+
+        bulk_path = bulk_path.resolve()  # convert to absolute path
 
     return bulk_path
 
