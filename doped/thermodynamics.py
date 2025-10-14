@@ -2463,6 +2463,10 @@ class DefectThermodynamics(MSONable):
         stabilities; particularly when reasonable supercell sizes, DFT
         functionals and structure searching are used).
 
+        Note that this can affect the defect clustering (and thus naming in
+        plotting/concentration analyses) slightly, by removing some defects and
+        potentially breaking apart some clusters as a result.
+
         Args:
             unstable_entries (bool, str):
                 Controls the pruning of unstable/shallow defect states; allowed

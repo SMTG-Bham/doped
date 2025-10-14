@@ -710,12 +710,17 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         Here we also test the renaming behaviour when defect clusters with the
         same (representative) name occur.
         """
-        thermo = deepcopy(self.Se_ext_no_pnict_thermo)  # don't overwrite
-        thermo.dist_tol = 1.45  # keeps O_i sites separate but merges F/Br_i, not Cl_i
-        fig = thermo.plot(unstable_entries=False, ylim=(0, 2.5))
+        fig = self.Se_ext_no_pnict_thermo.plot(unstable_entries=False, ylim=(0, 2.5))
         legend_txt = [t.get_text() for t in fig.get_axes()[0].get_legend().get_texts()]
         print(legend_txt)
-        for i in ["O$_{i_{1}}$", "O$_{i_{2}}$", "H$_i$$_{-a}$", "H$_i$$_{-b}$", "Br$_i$"]:
+        for i in [
+            "O$_i$",
+            "H$_i$$_{-a}$",
+            "H$_i$$_{-b}$",
+            "Br$_i$",
+            "F$_i$$_{-a}$",
+            "F$_i$$_{-b}$",
+        ]:
             assert i in legend_txt
 
         return fig
