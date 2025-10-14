@@ -26,7 +26,7 @@ dependencies = [
     "shakenbreak>=3.4.2",  # doped StructureMatcher efficiency updates (using ``StructureMatcher_scan_stol``)
     "ase",  # required by ShakeNBreak anyway
     "pandas",
-    "pydefect>=0.8.1",  # for Kumagai (eFNV) correction & PHS analysis
+    "pydefect>=0.9.9",  # eigenvalue parsing updates
     "filelock",
     "vise>=0.9.0",  # for eigenvalue analysis, >=0.9.0 required for SOC compatibility
     "cmcrameri>=1.4",  # for colour-maps; >=1.4 required for cmcrameri.cm.cmaps definition
