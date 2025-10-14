@@ -1,7 +1,18 @@
 Change Log
 ==========
 
-..  Release checklist: Version bump, update changelog, possibly update pytest timings if significant new tests added, check tutorials run
+..  Release checklist: Version bump, update changelog, possibly update pytest timings if significant new tests added, check tutorials run, update SnB?
+
+v.3.2.0
+----------
+- Add `fast` chempot heatmap plotting for arbitrary dimension systems; see https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+- Modularise `DefectsParser` in preparation for additional code support (Quantum Espresso; https://github.com/SMTG-Bham/doped/pull/133)
+- Automatically identify dimer bonds in defect supercells and inform user of potential spin polarisation
+- Detect cases of matching kpoint grids but mismatching shifts
+- Update defect clustering naming behaviour (https://doped.readthedocs.io/en/latest/doped.thermodynamics.html#doped.thermodynamics.name_defect_cluster)
+- Updates to be fully compatible with latest ``pymatgen`` (https://github.com/SMTG-Bham/doped/issues/144)
+- ``numpy`` v2 (and v1) compatibility
+- Various robustness updates and improvements.
 
 v.3.1.0
 ----------
