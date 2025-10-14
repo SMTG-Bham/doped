@@ -14,7 +14,7 @@
   - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in `pymatgen-analysis-defects` chempots plotting, and our chempot heatmap plotting)
   - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
   - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
-  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!  
+  - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!
   - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?
   - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this
 - Charge corrections for polarons; code there, just need to allow inputs of bare calculation outputs (and then can extend to allow polaron input file generation and parsing/plotting). Then update ``ShakeNBreak_Polaron_Workflow`` example with this too.
@@ -96,13 +96,11 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
-- Quick run through tutorial notebooks to check code all updated and running.
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout?
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.
 - Stenciling tutorial and tests.
-
 - Tests for configuration coordinate diagram generation code
 - Quick-start tutorial suggested by Alex G
-- Test chempot grid plotting tool.
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)(e.g. Wenzhen Si2Sb2Te6). Can see `get_chempots` in `pmg-analysis-defects` for inspo on this.
+- Automatically detect dimers, check the magnetisation from the calcs, and then warn the user that they may want to try NUPDOWN = 2 (if the magnetisation was singlet)? Do in `DefectsParser` at the end (as part of a 'final-checks' function), so can loop through and check if dimer with magnetisation was calculated at some point for that defect state.

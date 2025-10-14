@@ -17,8 +17,8 @@ from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import (
     ElementComparator,
-    LinearAssignment,
     StructureMatcher,
+    get_linear_assignment_solution,
     pbc_shortest_vectors,
 )
 from pymatgen.core.operations import SymmOp
@@ -3531,7 +3531,7 @@ def is_periodic_image(
     # first need to match sites with their closest (individual) periodic images, to account for order /
     # permutation invariance:
     vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
-    site_matches = LinearAssignment(d_2).solution  # closest individual periodic image matches
+    site_matches, _ = get_linear_assignment_solution(d_2)  # closest individual periodic image matches
     reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
 
     pbc_frac_dist = np.subtract(sites_1_frac_coords, reordered_sites_2_frac_coords)

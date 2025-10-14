@@ -26,6 +26,7 @@ from doped.analysis import (
     defect_entry_from_paths,
     defect_from_structures,
     defect_name_from_structures,
+    shallow_dopant_binding_energy,
 )
 from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
@@ -126,10 +127,10 @@ class DefectsParsingTestCase(unittest.TestCase):
         self.V2O5_DATA_DIR = os.path.join(self.module_path, "data/V2O5")
         self.SrTiO3_DATA_DIR = os.path.join(self.module_path, "data/SrTiO3")
         self.ZnS_DATA_DIR = os.path.join(self.module_path, "data/ZnS")
-        self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/solid_solution")
+        self.SOLID_SOLUTION_DATA_DIR = os.path.join(self.module_path, "data/Solid_Solution")
         self.CaO_DATA_DIR = os.path.join(self.module_path, "data/CaO")
         self.BiOI_DATA_DIR = os.path.join(self.module_path, "data/BiOI")
-        self.shallow_O_Se_DATA_DIR = os.path.join(self.module_path, "data/shallow_O_Se_+1")
+        self.shallow_O_Se_DATA_DIR = os.path.join(self.module_path, "data/Shallow_O_Se_+1")
         self.Se_dielectric = np.array([0.627551, 0.627551, 0.943432]) + np.array(
             [6.714217, 6.714317, 10.276149]
         )
@@ -503,6 +504,15 @@ class DefectsParsingTestCase(unittest.TestCase):
             json_filename="CdTe_test_defect_dict.json",
         )
         self._check_default_CdTe_DefectsParser_outputs(default_dp, w)
+        assert any(
+            "Defects v_Cd_0, Int_Te_3_2, Int_Te_3_1, Int_Te_3_Unperturbed_1 have been detected to have "
+            "dimer bonds" in str(warning.message)
+            for warning in w
+        )
+
+        # test with reduced dist_tol:
+        # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged:
+        self._check_default_CdTe_DefectsParser_outputs(default_dp, w, dist_tol=0.1)
 
         # test reloading DefectsParser
         reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
@@ -532,8 +542,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=9.13,
             processes=1,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+            rtol=2,  # avoid dimer warning
         )
         self._check_default_CdTe_DefectsParser_outputs(dp, w)
+        assert not any(
+            "Defect v_Cd_0 has been detected to have dimer bonds" in str(warning.message) for warning in w
+        )
 
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
@@ -553,14 +567,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         # integration test using parsed CdTe thermo and chempots for plotting:
         default_thermo = dp.get_defect_thermodynamics(chempots=self.CdTe_chempots)
         return default_thermo.plot(limit="CdTe-Te")
-
-    def test_DefectsParser_CdTe_dist_tol(self):
-        # test with reduced dist_tol:
-        # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged
-        dp, w = _create_dp_and_capture_warnings(
-            output_path=self.CdTe_EXAMPLE_DIR, dielectric=9.13, parse_projected_eigen=False
-        )
-        self._check_default_CdTe_DefectsParser_outputs(dp, w, dist_tol=0.1)
 
     @custom_mpl_image_compare(filename="CdTe_Te_Cd_+1_eigenvalue_plot.png")
     def test_DefectsParser_CdTe_no_dielectric_json(self):
@@ -628,9 +634,9 @@ class DefectsParsingTestCase(unittest.TestCase):
                 subfolder="vasp_std",
             )
         assert (
-            f"`vasprun.xml(.gz)` files (needed for defect parsing) not found in bulk folder at: "
-            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk or subfolder: vasp_std -- please ensure "
-            f"`vasprun.xml(.gz)` files are present and/or specify `bulk_path` manually."
+            f"No files with any of ('vasprun.xml', 'vasprun.xml.gz') in names found under "
+            f"{self.CdTe_EXAMPLE_DIR}/CdTe_bulk (subfolder vasp_std). Please ensure bulk supercell "
+            f"calculation files are present and/or specify `bulk_path` manually."
         ) in str(exc.value)
 
     def test_DefectsParser_CdTe_skip_corrections(self):
@@ -729,6 +735,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "Int_Te_3_Unperturbed_1: [[[0.0, 0.0, 0.0], [0.0, 0.0, 0.5],",
             "In general, the same KPOINTS settings should be used",
         ]:
+            print(i)
             assert any(i in str(warn.message) for warn in w)
         dp.get_defect_thermodynamics()  # test thermo generation works fine
 
@@ -837,9 +844,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=self.YTOS_EXAMPLE_DIR,
                 subfolder="vasp_gam",
             )
+        ytos_example_dir_path = os.path.abspath(self.YTOS_EXAMPLE_DIR)  # remove "tests/../" from path
         assert (
-            f"No defect calculations in `output_path` '{self.YTOS_EXAMPLE_DIR}' were successfully parsed, "
-            f"using `bulk_path`: {self.YTOS_EXAMPLE_DIR}/Bulk and `subfolder`: 'vasp_gam'. Please check "
+            f"No defect calculations in `output_path` '{ytos_example_dir_path}' were successfully parsed, "
+            f"using `bulk_path`: {ytos_example_dir_path}/Bulk and `subfolder`: 'vasp_gam'. Please check "
             f"the correct defect/bulk paths and subfolder are being set, and that the folder structure is "
             f"as expected (see `DefectsParser` docstring)." in str(exc.value)
         )
@@ -852,9 +860,10 @@ class DefectsParsingTestCase(unittest.TestCase):
                 dielectric=self.Sb2Se3_dielectric,
             )
         assert (  # bulk in separate folder so fails
-            f"Could not automatically determine bulk supercell calculation folder in "
-            f"{self.Sb2Se3_DATA_DIR}/defect, found 0 folders containing `vasprun.xml(.gz)` files (in "
-            f"subfolders) and 'bulk' in the folder name" in str(exc.value)
+            f"Could not determine bulk supercell calculation folder in {self.Sb2Se3_DATA_DIR}/defect, "
+            f"found 0 folders containing any of ('vasprun.xml', 'vasprun.xml.gz') in filenames (in "
+            f"subfolders) and 'bulk' in the folder name. Please specify `bulk_path` manually."
+            in str(exc.value)
         )
 
         # no warning about negative corrections with strong anisotropic dielectric:
@@ -1261,15 +1270,18 @@ class DefectsParsingTestCase(unittest.TestCase):
         defect and bulk supercells.
         """
         dp, w = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
-        assert len(w) == 1
+        assert len(w) == 2
         assert all(
-            i in str(w[0].message)
+            any(i in str(warning.message) for warning in w)
             for i in [
                 "There are mismatching INCAR tags",
                 ":\n[('NKRED', 1, 2)]\nIn",
+                "Defects vac_1_Zn_0 have been detected to have dimer bonds",
             ]
         )
-        assert str(w[0].message).count(":\n[('NKRED', 1, 2)]\nIn") == 1  # only once
+        assert all(
+            str(warning.message).count(":\n[('NKRED', 1, 2)]\nIn") in [0, 1] for warning in w
+        )  # only warned once
 
         assert len(dp.defect_dict) == 17
         self._check_DefectsParser(dp)
@@ -1286,7 +1298,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "The defect supercell has been detected to possibly have a non-scalar matrix expansion",
                 "breaking the cell periodicity",
                 "This will not affect defect formation energies / transition levels,",
-                "but is important for concentrations/doping/Fermi level behaviour",
+                "but can be important for concentrations/doping/Fermi level behaviour",
                 "You can manually check (and edit) the computed defect/bulk point",
             ]
         )
@@ -3405,7 +3417,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # individual checks first:
         # bulk NCL:
         vr = get_vasprun(f"{self.CdTe_BULK_DATA_DIR}/vasprun.xml.gz", parse_projected_eigen=True)
-        assert np.allclose(get_magnetization_from_vasprun(vr), 0, atol=0.02)
+        assert np.allclose(get_magnetization_from_vasprun(vr), 0, atol=0.02)  # allclose for NCL
         assert spin_degeneracy_from_vasprun(vr) == 1
 
         # -1 ncl:
@@ -3467,6 +3479,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert dp.defect_dict["v_Cd_C2v_Bipolaron_S0_0"].degeneracy_factors["spin degeneracy"] == 1
         assert dp.defect_dict["v_Cd_C2v_Bipolaron_S1_0"].degeneracy_factors["spin degeneracy"] == 3
         self._check_DefectsParser(dp)
+
+        # previously caused an error, with magnetization being parsed as negative value due to
+        # N_spin_down > N_spin_up, now spin degeneracy correctly determined from absolute magnetization
+        vr = get_vasprun(f"{self.data_dir}/Magnetization_Tests/Co_Zn_0/vasprun.xml.gz")
+        assert np.isclose(get_magnetization_from_vasprun(vr), -3, atol=0.02)
+        assert spin_degeneracy_from_vasprun(vr) == 4
 
     def test_bulk_symprec_and_periodicity_breaking_checks(self):
         """
@@ -3704,3 +3722,40 @@ class ReorderedParsingTestCase(unittest.TestCase):
         assert np.isclose(
             sum(parsed_v_cd_m2_orig.corrections.values()), sum(parsed_v_cd_m2_alt2.corrections.values())
         )
+
+
+def test_shallow_dopant_binding_energy():
+    """
+    Test the shallow dopant binding energy convenience function in
+    ``doped.analysis``.
+
+    Using examples from the advanced analysis tutorial.
+    """
+    cu2sise3_conductivity_eff_mass = 1 / np.mean([1 / 0.92, 1 / 1.87, 1 / 0.18])
+    # (If we knew the degeneracy of these different crystal directions we should account for that here)
+
+    cu2sise3_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
+        eff_mass=cu2sise3_conductivity_eff_mass,
+        dielectric=[[8.73, 0, -0.48], [0.0, 7.78, 0], [-0.48, 0, 10.11]],
+    )
+    assert np.isclose(cu2sise3_shallow_acceptor_binding_energy, 0.0739, atol=0.001)
+
+    # another quick example; Cs₂TiBr₆ using values from https://doi.org/10.1021/acs.jpclett.2c02436
+    assert np.isclose(shallow_dopant_binding_energy((2.7 * 0.9) / (2.7 + 0.9), 3.84), 0.62, atol=0.01)
+
+    cdte_m_h_eff = 1 / np.mean(
+        [1 / 0.88, 1 / 0.11]
+    )  # harmonic mean of light and heavy hole masses in CdTe
+    cdte_m_e_eff = 0.095
+    # taken from https://scholar.google.com/citations?view_op=view_citation&citation_for_view=P-7ICrQAAAAJ:O3NaXMp0MMsC
+
+    cdte_shallow_acceptor_binding_energy = shallow_dopant_binding_energy(
+        eff_mass=cdte_m_h_eff, dielectric=9.13
+    )
+    cdte_exciton_binding_energy = shallow_dopant_binding_energy(
+        eff_mass=(cdte_m_h_eff * cdte_m_e_eff)
+        / (cdte_m_h_eff + cdte_m_e_eff),  # reduced e-h mass for exciton binding
+        dielectric=9.13,
+    )
+    assert np.isclose(cdte_shallow_acceptor_binding_energy, 0.0319, atol=0.001)
+    assert np.isclose(cdte_exciton_binding_energy, 0.0104, atol=0.001)

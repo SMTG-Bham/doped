@@ -28,7 +28,13 @@ if TYPE_CHECKING:
     from doped.utils.parsing import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # type: ignore
-        from pydefect.analyzer.band_edge_states import BandEdgeStates
+        try:
+            from pydefect.analyzer.band_edge_states import BandEdgeStates
+        except ImportError:
+            warnings.warn(
+                "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, "
+                "and can be installed with `pip install pydefect`."
+            )
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 
@@ -37,7 +43,7 @@ _orientational_degeneracy_warning = (
     "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
     "point group symmetries (and thus orientational degeneracies) from being automatically "
     "determined.\n"
-    "This will not affect defect formation energies / transition levels, but is important for "
+    "This will not affect defect formation energies / transition levels, but can be important for "
     "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
     "doi.org/10.1039/D3CS00432E).\n"
     "You can manually check (and edit) the computed defect/bulk point symmetries and "
@@ -141,8 +147,8 @@ class DefectEntry(thermo.DefectEntry):
 
     # doped attributes:
     name: str = ""
-    calculation_metadata: dict = field(default_factory=dict)
-    degeneracy_factors: dict = field(default_factory=dict)
+    calculation_metadata: dict[str, Any] = field(default_factory=dict)
+    degeneracy_factors: dict[str, float] = field(default_factory=dict)
     conventional_structure: Structure | None = None
     conv_cell_frac_coords: np.ndarray | None = None
     equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
@@ -596,7 +602,7 @@ class DefectEntry(thermo.DefectEntry):
         present in the ``calculation_metadata``.
 
         Note that this function sets the ``eigenvalues``,
-        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
+        ``projected_eigenvalues`` and ``projected_magnetization`` attributes
         to ``None`` to reduce memory demand (as these properties are not
         required in later stages of ``doped`` analysis workflows), if
         ``clear_attributes`` is ``True`` (default).
@@ -641,7 +647,7 @@ class DefectEntry(thermo.DefectEntry):
                 already present in the ``calculation_metadata``.
             clear_attributes (bool):
                 If ``True`` (default), sets the ``eigenvalues``,
-                ``projected_eigenvalues`` and ``projected_magnetisation``
+                ``projected_eigenvalues`` and ``projected_magnetization``
                 attributes to ``None`` to reduce memory demand (as these
                 properties are not required in later stages of ``doped``
                 analysis workflows).
@@ -752,7 +758,7 @@ class DefectEntry(thermo.DefectEntry):
             # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
             # collection and thus reduce memory:
             defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
-            defect_vr.projected_magnetisation = (
+            defect_vr.projected_magnetization = (
                 None  # but keep for bulk_vr as this is likely being re-used
             )
             defect_vr.eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
@@ -793,7 +799,7 @@ class DefectEntry(thermo.DefectEntry):
         ``pydefect`` paper: 10.1103/PhysRevMaterials.5.123803
 
         Note that this function sets the ``eigenvalues``,
-        ``projected_eigenvalues`` and ``projected_magnetisation`` attributes
+        ``projected_eigenvalues`` and ``projected_magnetization`` attributes
         to ``None`` to reduce memory demand (as these properties are not
         required in later stages of ``doped`` analysis workflows), if
         ``clear_attributes`` is ``True`` (default).
@@ -854,7 +860,7 @@ class DefectEntry(thermo.DefectEntry):
                 already present in the ``calculation_metadata``.
             clear_attributes (bool):
                 If ``True`` (default), sets the ``eigenvalues``,
-                ``projected_eigenvalues`` and ``projected_magnetisation``
+                ``projected_eigenvalues`` and ``projected_magnetization``
                 attributes to ``None`` to reduce memory demand (as these
                 properties are not required in later stages of ``doped``
                 analysis workflows).
@@ -1313,8 +1319,8 @@ class DefectEntry(thermo.DefectEntry):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.26434/chemrxiv-2025-j44qd) where ``i`` runs
-                over all defects which occupy the same site as the defect of
+                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                all defects which occupy the same site as the defect of
                 interest. Otherwise, uses the standard dilute limit
                 approximation. Note that when used with
                 ``DefectEntry.equilibrium_concentration()`` here, only this

@@ -5,8 +5,9 @@
 - Add input file generation for FHI-AIMs, CP2K, Quantum Espresso and CASTEP (using SnB functions),
   point to post-processing tools for these online (in docs/example notebooks, `aiida-defects` for  QE,
   https://github.com/skw32/DefectCorrectionsNotebook for AIMs...),
-  and give example(s) of how to manually generate a `DefectPhaseDiagram` and chempots from the parsed
+  and give example(s) of how to manually generate `DefectThermodynamics` and chempots from the parsed
   energies of these calculations, so the `doped` analysis tools can then be used.
+  - See https://github.com/materialsproject/emmet/pull/242 for CP2k defects stuff
 - For defect complexes, after electrostatics, the next biggest factor in binding energies is the stress field (right)? Then orbital effects after that.
   This means that if we have the distortion field implemented in doped, we should be able to fairly accurately and easily predict if defect complexes are likely? (Via concentrations/formation energies, charges and stress fields?) Nice use case, could mention in JOSS as possible screening application if someone wanted to use it. Deak & Gali Nature Comms (10.1038/s41467-023-36090-2) C-C in Si could be used as a nice test case (neutral so no charge effects)
 - **Optical transitions:** Functions for generating input files, parsing (with GKFO correction) and
@@ -18,7 +19,7 @@
 - `doped`/`SnB`/`easyunfold` (virtual) workshop? Just noting as a possibility, could be MCC-supported.
 
 ## Chemical Potentials
-- Overhaul chemical potentials code, dealing with all `TODO`s in that module. 
+- Overhaul chemical potentials code, dealing with all `TODO`s in that module.
   - Particularly: About the current extrinsic chempot algorithm: "SK: I don't think this is right. Here it's just getting the extrinsic chempots at the intrinsic chempot limits, but actually it should be recalculating the chempot limits with the extrinsic competing phases, then reducing _these_ facets down to those with only one extrinsic competing phase bordering".
 - Once happy all required functionality is in the new `chemical_potentials.py` code (need more rigorous tests, see original pycdt tests for this and make sure all works with new code), showcase all functionality in the example notebook, and compare with old code from `vasp.py` (to ensure all functionality present).
 - Currently inputting multiple extrinsic `sub_species` will assume you are co-doping, and will output competing phases for this (e.g. K and In with BaSnO3 will output KInO2), default should not be to do this, but have an optional argument for co-doping treatment.
@@ -66,10 +67,9 @@
   - In these cases, will also want to be able to plot these in a smart manner on the defect TLD.
     Separate lines to the stoichiometrically-equivalent (unperturbed) point defect, but with the same
     colour just different linestyles? (or something similar)
-- Implement shallow donor/acceptor binding estimation functions (via effective mass theory)
 - Eigenvalue corrections for the eigenvalue plots, like shown in 10.1103/PhysRevB.109.054106?
+- Use the projected eigenvalues and magnetisation to detect when localised charge is associated with d/f electrons (and/or is multi-polaronic), and warn the user that different choices of NUPDOWN, maybe MAGMOM, should be tested for these defect states? (Like for dimers)
 
 ## Docs
 - Add LDOS plotting, big selling point for defects and disorder!
 - Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454).
-

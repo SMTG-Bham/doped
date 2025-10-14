@@ -231,7 +231,7 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
         _corr, fig = get_freysoldt_correction(self.v_Cd_dict["v_Cd_-2"], 9.13, plot=True)
 
         # add logo to fig:
-        doped_logo = mpl.pyplot.imread(f"{module_path}/../docs/doped_v2_logo.png")
+        doped_logo = mpl.pyplot.imread(f"{module_path}/../docs/Images/doped_v2_logo.png")
         im = OffsetImage(doped_logo, zoom=0.05)
         ab = AnnotationBbox(im, (1, 0.3), xycoords="axes fraction", box_alignment=(1.1, -0.1))
         fig.gca().add_artist(ab)

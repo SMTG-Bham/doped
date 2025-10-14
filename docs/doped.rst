@@ -1,6 +1,9 @@
 doped
 =============
 
+See the `doped DeepWiki <https://deepwiki.com/SMTG-Bham/doped/1-overview>`__ site for an overview of the
+codebase and workflow diagrams.
+
 Module contents
 ---------------
 .. automodule:: doped

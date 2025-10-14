@@ -134,8 +134,7 @@ def make_band_edge_orbital_infos(
         vbm (float): VBM eigenvalue in eV.
         cbm (float): CBM eigenvalue in eV.
         eigval_shift (float):
-            Shift eigenvalues down by this value (to set VBM at 0 eV).
-            Default is 0.0.
+            Shift eigenvalues by this value in eV. Default is 0.0.
         neighbor_indices (list[int]):
             Indices of neighboring atoms to the defect site, for localisation
             analysis. Default is ``None``.
@@ -284,7 +283,6 @@ def get_band_edge_info(
             defect_vr,
             vbm_info.orbital_info.energy,
             cbm_info.orbital_info.energy,
-            eigval_shift=-vbm_info.orbital_info.energy,
             neighbor_indices=neighbor_indices,
             defect_procar=_parse_procar(defect_procar),
         )
@@ -618,6 +616,8 @@ def get_eigenvalue_analysis(
                         for i in range(len(child.get_facecolor()))
                     )
 
+        emp.axs[0].set_ylabel("Eigenvalue (eV)")
+
         if len(emp.axs) > 1:
             emp.axs[0].set_title("Spin Up")
             emp.axs[1].set_title("Spin Down")
@@ -636,7 +636,7 @@ def get_eigenvalue_analysis(
         fig = emp.plt.gcf()
         ax = fig.gca()
         if ylims is None:
-            ymin, ymax = 0, 0
+            ymin, ymax = vbm, cbm
             for spin in emp._energies_and_occupations:
                 for kpoint in spin:
                     ymin = min(ymin, *(x[0] for x in kpoint))

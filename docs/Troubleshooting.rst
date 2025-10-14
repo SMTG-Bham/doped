@@ -118,7 +118,7 @@ that it is rebuilt with the new ``numpy`` C API:
 
 .. code:: bash
 
-  pip install --force --no-cache-dir numpy==1.23
+  pip install --force --no-cache-dir numpy
   pip uninstall pymatgen
   pip install pymatgen
 

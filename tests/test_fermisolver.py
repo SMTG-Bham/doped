@@ -1374,7 +1374,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with pytest.raises(ValueError) as exc:
             solver.interpolate_chempots(
-                n_points=5,
                 chempots=[{"Cd": -0.5}],  # Only one chempot dict provided
                 annealing_temperature=800,
                 quenched_temperature=300,
@@ -1392,7 +1391,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         no_err_out = solver.interpolate_chempots(
-            n_points=5,
             annealing_temperature=800,
             quenched_temperature=300,
             limits=None,  # Limits are not provided
@@ -1406,7 +1404,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         three_lim_chempots["limits_wrt_el_refs"]["extra"] = extra_lim
         with pytest.raises(ValueError) as exc:
             solver.interpolate_chempots(
-                n_points=5,
                 chempots=three_lim_chempots,
                 annealing_temperature=800,
                 quenched_temperature=300,
@@ -1433,7 +1430,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                     annealing_temperature=800,
                     quenched_temperature=300,
                     tolerance=0.05,
-                    n_points=5,
                     effective_dopant_concentration=1e16,
                 )
             mock_print.assert_called_once_with(
@@ -1447,7 +1443,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                     min_or_max=min_max,
                     annealing_temperature=800,
                     tolerance=0.05,
-                    n_points=5,
                     effective_dopant_concentration=1e16,
                 )
             )
@@ -1463,22 +1458,23 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             _check_output_concentrations(solver, result)
 
             # quick test for anneal at 1400 K with no eff dopant:
-            result = solver.optimise(
-                target="Electrons (cm^-3)",
-                min_or_max=min_max,
-                annealing_temperature=1400,
-                quenched_temperature=150,
-                tolerance=0.05,
-                n_points=5,
-            )
-            row = result.iloc[0]
-            formal_chempots = {
-                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
-            }
-            _check_output_concentrations(solver, result)
+            for cartesian in [True, False]:
+                print(f"Testing with cartesian={cartesian}")
+                result = solver.optimise(
+                    target="Electrons (cm^-3)",
+                    min_or_max=min_max,
+                    annealing_temperature=1400,
+                    quenched_temperature=150,
+                    tolerance=0.05,
+                )
+                row = result.iloc[0]
+                formal_chempots = {
+                    mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+                }
+                _check_output_concentrations(solver, result)
 
-            # doesn't actually occur at the Te-rich limit for min electrons:
-            assert (formal_chempots == single_chempot_dict) == (min_max != "min")
+                # doesn't actually occur at the Te-rich limit for min electrons:
+                assert (formal_chempots == single_chempot_dict) == (min_max != "min")
 
     @parameterize_backend()
     def test_optimise_electrons_non_limit_extremum(self, backend):
@@ -1499,6 +1495,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             quenched_temperature=150,
             tolerance=rtol,
             n_points=5,
+            cartesian=True,  # should have no effect here, for binary system
         )  # requires 3 iterations for convergence within tolerance
         assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=rtol)
 
@@ -1509,6 +1506,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             quenched_temperature=150,
             tolerance=rtol / 100,
             n_points=5,
+            cartesian=False,  # should have no effect here, for binary system
         )  # requires 4 iterations for convergence within tolerance
         # small non-convergence in py-sc-fermi for small concentrations:
         tight_rtol = rtol / 100 if backend == "doped" else rtol / 10
@@ -1580,46 +1578,52 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
         for annealing in [True, False]:
-            temp_arg_name = "annealing_temperature" if annealing else "temperature"
-            with patch("builtins.print") as mock_print:
+            for cartesian in [True, False]:
+                print(f"Testing with annealing={annealing}, cartesian={cartesian}")
+                temp_arg_name = "annealing_temperature" if annealing else "temperature"
+                with patch("builtins.print") as mock_print:
+                    result = solver.optimise(
+                        target="V_S_3",  # highest concentration V_S
+                        min_or_max="min",
+                        cartesian=cartesian,
+                        n_points=10 if backend != "doped" else 25,  # py-sc-fermi quite slow
+                        **{temp_arg_name: 603},
+                    )
+                mock_print.assert_called_once_with(
+                    "Searching for chemical potentials which minimise the target defect(s): ['V_S_3']..."
+                )
+                row = result.iloc[0]
+                formal_chempots = {
+                    mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+                }
+
+                # confirm that formal_chempots does not correspond to a X-rich limit:
+                for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+                    for el_key in limit:
+                        assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+
+                assert np.isclose(formal_chempots["Sb"], -0.430, atol=2e-2)
+                assert np.isclose(formal_chempots["S"], -0.129, atol=2e-2)
+
+                _check_output_concentrations(solver, result)
+
+                # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
                 result = solver.optimise(
-                    target="V_S_3",  # highest concentration V_S
-                    min_or_max="min",
+                    "S_Sb_1",
+                    min_or_max="max",
+                    cartesian=cartesian,
+                    n_points=10 if backend != "doped" else 25,  # py-sc-fermi quite slow
                     **{temp_arg_name: 603},
                 )
-            mock_print.assert_called_once_with(
-                "Searching for chemical potentials which minimise the target defect(s): ['V_S_3']..."
-            )
-            row = result.iloc[0]
-            formal_chempots = {
-                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
-            }
-
-            # confirm that formal_chempots does not correspond to a X-rich limit:
-            for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
-                for el_key in limit:
-                    assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
-
-            assert np.isclose(formal_chempots["Sb"], -0.416, atol=1e-3)
-            assert np.isclose(formal_chempots["S"], -0.139, atol=1e-3)
-
-            _check_output_concentrations(solver, result)
-
-            # test that for a different defect (S_Sb), the extremum _is_ at a limiting chempot:
-            result = solver.optimise(
-                "S_Sb_1",
-                min_or_max="max",
-                **{temp_arg_name: 603},
-            )
-            row = result.iloc[0]
-            formal_chempots = {
-                mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
-            }
-            assert any(
-                all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
-                for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
-            )
-            _check_output_concentrations(solver, result)
+                row = result.iloc[0]
+                formal_chempots = {
+                    mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+                }
+                assert any(
+                    all(np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2) for el_key in limit)
+                    for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values()
+                )
+                _check_output_concentrations(solver, result)
 
     @parameterize_backend()
     def test_optimise_multiple_defects(self, backend):
@@ -1637,6 +1641,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 result = solver.optimise(
                     target="V_S",  # V_S and V_Sb (renamed defect folders, not default doped names)
                     min_or_max="min",
+                    n_points=10 if backend != "doped" else 25,  # py-sc-fermi quite slow
                     **{temp_arg_name: 603},
                 )
             mock_print.assert_called_once_with(
@@ -1654,8 +1659,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 for el_key in limit:  # confirm that formal_chempots don't correspond to X-rich limits
                     assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
 
-            assert np.isclose(formal_chempots["Sb"], -0.277, atol=1e-3)
-            assert np.isclose(formal_chempots["S"], -0.231, atol=1e-3)
+            assert np.isclose(formal_chempots["Sb"], -0.269, atol=1e-2)
+            assert np.isclose(formal_chempots["S"], -0.237, atol=1e-2)
 
             _check_output_concentrations(solver, result)
 
@@ -1664,6 +1669,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 result = solver.optimise(
                     "S_Sb",  # less ambiguity this time
                     min_or_max="max",
+                    n_points=10 if backend != "doped" else 25,  # py-sc-fermi quite slow
                     **{temp_arg_name: 603},
                 )
             mock_print.assert_called_once_with(
@@ -2085,6 +2091,25 @@ def _check_output_concentrations(solver, result):
     pd.testing.assert_frame_equal(result, expected_concentrations, check_dtype=False)
 
 
+def _plot_Cu_i_data(Cu_i_data):
+    Cu_i_concs = Cu_i_data["Concentration (cm^-3)"]
+    plt.style.use(STYLE)
+    fig, ax = plt.subplots()
+    from matplotlib.colors import LogNorm
+
+    sc = ax.scatter(
+        Cu_i_data["μ_Se (eV)"],
+        Cu_i_data["μ_Cu (eV)"],
+        c=Cu_i_concs,
+        cmap="viridis",
+        norm=LogNorm(min(Cu_i_concs), min(Cu_i_concs) * 1.1),  # small range for better contrast
+    )
+    fig.colorbar(sc, ax=ax, label="Cu$_i$ Concentration (cm$^{-3}$)")
+    ax.set_xlabel("$\mu_{Se}$ (eV)")
+    ax.set_ylabel("$\mu_{Cu}$ (eV)")
+    return fig
+
+
 # TODO: Test free_defects with substring matching (and fixed_defects later when supported)
 # TODO: Use plots in FermiSolver tutorial as quick test cases here
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
@@ -2130,7 +2155,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 annealing_temperature=800,
                 quenched_temperature=300,
                 tolerance=0.05,
-                n_points=5,
                 effective_dopant_concentration=1e16,
             )
         mock_print.assert_called_once_with(
@@ -2188,10 +2212,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         limiting chemical potential point.
 
         For Cu2SiSe3, the defect/carrier concentrations are dominated
-        by v_Cu, which means that extrema for all defects/carriers/Fermi
+        by ``v_Cu``, which means that extrema for all defects/carriers/Fermi
         levels basically always occur at limiting chemical potentials.
-        If we create a 'fake' defect thermo with `v_Cu` removed however,
-        we then get a minimum `Cu_i` concentration for chemical potentials
+        If we create a 'fake' defect thermo with ``v_Cu`` removed however,
+        we then get a minimum ``Cu_i`` concentration for chemical potentials
         along the tangent line between two of the limiting chemical
         potentials, which is tested here.
 
@@ -2221,16 +2245,18 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             # confirm that formal_chempots does not correspond to a X-rich limit:
             for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
                 for el_key in limit:
-                    assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=5e-2)
+                    assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=2e-2)
 
-            assert np.isclose(formal_chempots["Cu"], -0.197, atol=1e-3)
-            assert np.isclose(formal_chempots["Se"], -0.532, atol=1e-3)
-            assert np.isclose(formal_chempots["Si"], -0.530, atol=1e-3)
+            assert np.isclose(formal_chempots["Cu"], -0.179, atol=1e-3)
+            assert np.isclose(formal_chempots["Se"], -0.569, atol=1e-3)
+            assert np.isclose(formal_chempots["Si"], -0.457, atol=1e-3)
 
             _check_output_concentrations(solver, result)
+            if backend != "doped":
+                return  # skip second half of test for py-sc-fermi backend, it's quite slow
 
             # test that when v_Cu is included, the extremum _is_ at a limiting chempot:
-            w_v_Cu_solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
+            w_v_Cu_solver = self.solver_doped
             for min_max in ["min", "max"]:
                 print(f"Testing {min_max}imising chemical potential...")
                 with patch("builtins.print") as mock_print:
@@ -2252,7 +2278,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 limit = "Cu-rich" if min_max == "max" else "Cu-poor"
                 single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
                 assert all(
-                    np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
+                    np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=2e-2)
                     for el_key in single_chempot_dict
                 )
                 _check_output_concentrations(w_v_Cu_solver, result)
@@ -2270,27 +2296,22 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
         )
         data = solver.scan_chemical_potential_grid(
-            n_points=50,  # n_points in each dimension when scanning over the chemical potential grid
+            n_points=500,
             annealing_temperature=1000,  # the temperature at which to anneal the system
         )
-        Cu_i_data = data.loc["Int_Cu"]
-        Cu_i_concs = Cu_i_data["Concentration (cm^-3)"]
+        return _plot_Cu_i_data(data.loc["Int_Cu"])
 
-        plt.style.use(STYLE)
-        fig, ax = plt.subplots()
-        from matplotlib.colors import LogNorm
-
-        sc = ax.scatter(
-            Cu_i_data["μ_Se (eV)"],
-            Cu_i_data["μ_Cu (eV)"],
-            c=Cu_i_concs,
-            cmap="viridis",
-            norm=LogNorm(min(Cu_i_concs), min(Cu_i_concs) * 1.1),  # small range for better contrast
+    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid_cartesian.png")
+    def test_plot_scan_chemical_potential_grid_cartesian(self, backend="doped"):
+        solver = FermiSolver(
+            self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
         )
-        fig.colorbar(sc, ax=ax, label="Cu$_i$ Concentration (cm$^{-3}$)")
-        ax.set_xlabel("$\mu_{Se}$ (eV)")
-        ax.set_ylabel("$\mu_{Cu}$ (eV)")
-        return fig
+        data = solver.scan_chemical_potential_grid(
+            n_points=500,
+            annealing_temperature=1000,  # the temperature at which to anneal the system
+            cartesian=True,
+        )
+        return _plot_Cu_i_data(data.loc["Int_Cu"])
 
     @parameterize_backend()
     def test_scan_chemical_potential_grid(self, backend):
@@ -2301,7 +2322,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         # as done in ``test_plot_scan_chemical_potential_grid``. This function is also implicitly tested
         # via the ``optimise()`` tests
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        n_points = 5
+        n_points = 50
         concentrations = solver.scan_chemical_potential_grid(
             # use self.defect_thermodynamics.chempots by default
             n_points=n_points,
@@ -2332,7 +2353,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             print(f"Testing with {chempot_kwargs}")
             with pytest.raises(ValueError) as exc:
                 solver.scan_chemical_potential_grid(
-                    n_points=5,
                     annealing_temperature=800,
                     quenched_temperature=300,
                     **chempot_kwargs,

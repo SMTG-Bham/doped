@@ -673,6 +673,7 @@ def StructureMatcher_scan_stol(
             - "get_rms_dist"
             - "fit"
             - "fit_anonymous"
+            - "get_rms_anonymous"
         min_stol (float):
             Minimum ``stol`` value to try. Default is to use ``doped``\s
             ``get_min_stol_for_s1_s2()`` function to estimate the minimum
@@ -714,7 +715,11 @@ def StructureMatcher_scan_stol(
 
         sm = StructureMatcher(stol=stol, **sm_kwargs)
         result = getattr(sm, func_name)(struct1, struct2)
-        if result is not None:
+        if (
+            result is not None
+            and result is not False
+            and not (isinstance(result, tuple) and result[0] is None)  # for ``get_rms_anonymous()``
+        ):
             return result
 
         stol *= 1 + stol_factor

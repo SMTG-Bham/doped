@@ -507,15 +507,14 @@ def calc_displacements_ellipsoid(
 
     Returns:
         tuple:
-
-        - (``ellipsoid_center``, ``ellipsoid_radii``, ``ellipsoid_rotation``,
-          ``anisotropy_df``):
-            A tuple containing the ellipsoid's center, radii, rotation matrix,
-            and a dataframe of anisotropy information, or
-            ``(None, None, None, None)`` if fitting was unsuccessful.
-        - (``disp_df`` and ``points``):
-            If ``return_extras=True``, also returns ``disp_df`` and the points
-            used to fit the ellipsoid, appended to the return tuple.
+            - (``ellipsoid_center``, ``ellipsoid_radii``,
+              ``ellipsoid_rotation``, ``anisotropy_df``):
+              A tuple containing the ellipsoid's center, radii, rotation
+              matrix, and a dataframe of anisotropy information, or
+              ``(None, None, None, None)`` if fitting was unsuccessful.
+            - (``disp_df`` and ``points``):
+              If ``return_extras=True``, also returns ``disp_df`` and the
+              points used to fit the ellipsoid, appended to the return tuple.
     """
 
     def _get_minimum_volume_ellipsoid(P, tolerance=5e-4):
@@ -569,17 +568,7 @@ def calc_displacements_ellipsoid(
         # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
         # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
         # with the positive octant (i.e. along [1, 1, 1]):
-        # dots_111 = R.T @ np.array([1.0, 1.0, 1.0])  # shape (3,)
-        # signs = np.where(dots_111 < -tolerance*2, -1.0, 1.0)  # shape (3,), either -1 or +1
-        # R *= signs  # broadcast over rows
-        print(rotation)
-        print(np.dot(rotation, [1, 1, 1]))
-        print(np.dot(rotation, [1, 1, 1])[:, None] < 0)
-        print(np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1))
-        # rotation = _canonical_axes(rotation)
         rotation *= np.where(np.dot(rotation, [1, 1, 1])[:, None] < -tolerance * 2, -1, 1)
-        print(rotation)
-        print(np.dot(rotation, [1, 1, 1]))
         radii = 1.0 / np.sqrt(s)
 
         return center, radii, rotation

@@ -16,7 +16,7 @@ import numpy as np
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import LinearAssignment, pbc_shortest_vectors
+from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
@@ -752,7 +752,7 @@ def find_missing_idx(
     # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
     # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
-    site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
+    site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
 
     return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
 
@@ -937,7 +937,7 @@ def check_atom_mapping_far_from_defect(
             else (bulk_species_outside_near_ws_coords, defect_species_outside_ws_coords)
         )
         vecs, d_2 = pbc_shortest_vectors(bulk_supercell.lattice, subset, superset, return_d2=True)
-        site_matches = LinearAssignment(d_2).solution  # matching superset indices, of len(subset)
+        site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
         matching_vecs = vecs[np.arange(len(site_matches)), site_matches]
         displacements = np.linalg.norm(matching_vecs, axis=1)
         far_from_defect_disps[species.name].extend(
@@ -1232,10 +1232,10 @@ def _compare_kpoints(
 ):
     """
     Check bulk and defect KPOINTS are the same, using the
-    Vasprun.actual_kpoints lists (i.e. the VASP IBZKPTs essentially).
+    ``Vasprun.actual_kpoints`` lists (i.e. the VASP IBZKPTs essentially).
 
-    Returns True if the KPOINTS match, otherwise returns a list of the KPOINTS
-    for the bulk and defect calculations.
+    Returns ``True`` if the KPOINTS match, otherwise returns a list of the
+    KPOINTS for the bulk and defect calculations.
     """
     # sort kpoints, in case same KPOINTS just different ordering:
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
@@ -1246,17 +1246,26 @@ def _compare_kpoints(
     )
     # if different symmetry settings used (e.g. for bulk), actual_kpoints can differ but are the same
     # input kpoints, which we assume is fine:
-    kpoints_eq = bulk_kpoints.kpts == defect_kpoints.kpts if bulk_kpoints and defect_kpoints else True
+    kpoints_eq = (
+        (
+            bulk_kpoints.kpts == defect_kpoints.kpts
+            and np.allclose(bulk_kpoints.kpts_shift, defect_kpoints.kpts_shift)
+        )
+        if bulk_kpoints and defect_kpoints
+        else False
+    )
 
     if not (actual_kpoints_eq or kpoints_eq):
         if warn:
-            warnings.warn(
+            formatted_defect_kpts = [[float(kpt) for kpt in kpoints] for kpoints in sorted_defect_kpoints]
+            formatted_bulk_kpts = [[float(kpt) for kpt in kpoints] for kpoints in sorted_bulk_kpoints]
+            warnings.warn(  # list form is more readable
                 f"The KPOINTS for your {defect_name} and {bulk_name} calculations do not match, which is "
                 f"likely to cause errors in the parsed results. Found the following KPOINTS in the "
                 f"{defect_name} calculation:"
-                f"\n{[list(kpoints) for kpoints in sorted_defect_kpoints]}\n"  # list form is more readable
+                f"\n{formatted_defect_kpts}\n"
                 f"and in the {bulk_name} calculation:"
-                f"\n{[list(kpoints) for kpoints in sorted_bulk_kpoints]}\n"
+                f"\n{formatted_bulk_kpts}\n"
                 f"In general, the same KPOINTS settings should be used for all final calculations for "
                 f"accurate results!"
             )
@@ -1269,12 +1278,13 @@ def _compare_kpoints(
 
 
 def _compare_incar_tags(
-    bulk_incar_dict,
-    defect_incar_dict,
-    fatal_incar_mismatch_tags=None,
-    bulk_name="bulk",
-    defect_name="defect",
-    warn=True,
+    bulk_incar_dict: dict[str, str | int | float],
+    defect_incar_dict: dict[str, str | int | float],
+    fatal_incar_mismatch_tags: dict[str, str | int | float] | None = None,
+    ignore_tags: set[str] | None = None,
+    bulk_name: str = "bulk",
+    defect_name: str = "defect",
+    warn: bool = True,
 ):
     """
     Check bulk and defect INCAR tags (that can affect energies) are the same.
@@ -1297,6 +1307,11 @@ def _compare_incar_tags(
             "PRECFOCK": "Normal",  # default Normal
             "LDAU": False,  # default False
             "NKRED": 1,  # default 1
+            "LSORBIT": False,  # default False
+        }
+    if ignore_tags is not None:
+        fatal_incar_mismatch_tags = {
+            key: val for key, val in fatal_incar_mismatch_tags.items() if key not in ignore_tags
         }
 
     def _compare_incar_vals(val1, val2):
@@ -1418,10 +1433,10 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
         # non-spin-polarised or NCL calculation:
         if not vasprun.parameters.get("LNONCOLLINEAR", False):
             return 0  # non-spin polarised calculation
-        if getattr(vasprun, "projected_magnetisation", None) is None:
+        if getattr(vasprun, "projected_magnetization", None) is None:
             raise RuntimeError(
                 "Cannot determine magnetization from non-collinear Vasprun calculation, as this requires "
-                "the `Vasprun.projected_magnetisation` attribute, which is parsed with "
+                "the `Vasprun.projected_magnetization` attribute, which is parsed with "
                 "`Vasprun(parse_projected_eigen=True)` (default in `doped`)."
             )
 
@@ -1434,11 +1449,11 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
         )  # avoid division by zero, by setting any zero values to 1
         normalisation_factors = 1 / summed_orbital_projections
 
-        # vasprun.projected_magnetisation.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
+        # vasprun.projected_magnetization.shape -> (nkpoints, nbands, natoms, norbitals, 3 -- x/y/z)
         # sum the projected magnetization over atoms and orbitals, then multiply by per-band/kpoint
         # normalisation factors:
         normalised_proj_mag_per_kpoint_band_direction = (
-            vasprun.projected_magnetisation.sum(axis=(-3, -2)) * normalisation_factors[..., None]
+            vasprun.projected_magnetization.sum(axis=(-3, -2)) * normalisation_factors[..., None]
         )  # [..., None] adds new axis, which allows broadcasting (i.e.
         # (nkpoints, nbands, 3) * (nkpoints, nbands, 1) -- adding the "(...,1 )" dimension)
 
@@ -1835,7 +1850,7 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
 
         # spin multiplicity = 2S + 1 = 2(mag/2) + 1 = mag + 1 (where mag is in Bohr magnetons
         # i.e. number of electrons, as in VASP):
-        return magnetization + 1
+        return abs(magnetization) + 1
 
     except (RuntimeError, TypeError):  # NCL calculation without parsed projected magnetization:
         return _simple_spin_degeneracy_from_num_electrons(int(num_electrons))  # guess from charge
@@ -1988,3 +2003,43 @@ def _multiple_files_warning(file_type, directory, chosen_filepath, action=None, 
         f"Multiple `{file_type}` files found in {dir_type} directory: {directory}. Using {filename} to "
         f"{action}"
     )
+
+
+def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[float]]:
+    """
+    Get a dictionary of all homoionic (dimer) bonds in the structure.
+
+    This function uses the ``get_homoionic_bonds`` and
+    ``get_dimer_bond_length`` functions from ``shakenbreak`` to identify dimer
+    bonds in the structure (where any pair of atoms of the same element with
+    distance < ``rtol * get_dimer_bond_length(elt, elt)`` are considered a
+    dimer bond), returning a dictionary of the site names and the dimer bond
+    length.
+
+    Args:
+        structure (Structure): The structure to get the dimer bond lengths for.
+        rtol (float):
+            The relative tolerance to use for classifying bonds as dimer bonds,
+            where distances < ``rtol * get_dimer_bond_length(elt, elt)`` are
+            considered dimer bonds. Default is 1.05.
+
+    Returns:
+        dict[str, list[float]]:
+            A dictionary of element names with values being sub-dictionaries of
+            site names and their homoionic neighbours and distances (in Å)
+            which are classified as dimer bonds.
+            (e.g. {'O': {'O(1)': {'O(3)': '1.44 Å'}}})
+    """
+    from shakenbreak.analysis import get_homoionic_bonds
+    from shakenbreak.distortions import get_dimer_bond_length
+
+    dimer_bond_dict = {
+        str(elt): get_homoionic_bonds(
+            structure=structure,
+            elements=str(elt),
+            radius=rtol * get_dimer_bond_length(elt, elt),
+            verbose=False,
+        )
+        for elt in structure.composition.elements
+    }
+    return {k: v for k, v in dimer_bond_dict.items() if v}

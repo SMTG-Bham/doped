@@ -295,25 +295,22 @@ def get_neighbour_distances_and_symbols(
             # previous n (and the same element as the previous n):
             neighbour_tuples[i]
             for i in range(len(neighbour_tuples))
-            if neighbour_tuples[i][0] > min_dist
-            and i == 0
-            or neighbour_tuples[i][0] - neighbour_tuples[i - 1][0] > 0.02
+            if (neighbour_tuples[i][0] > min_dist and i == 0)
+            or (neighbour_tuples[i][0] - neighbour_tuples[i - 1][0] > 0.02)
             or (
                 neighbour_tuples[i][1] != neighbour_tuples[i - 1][1]
-                and neighbour_tuples[  # check no prev occurrence of this elt within 0.02 Å (e.g. XdYdXd)
-                    i
-                ][0]
-                - max(
-                    [
-                        neighbour_tuple[0]
-                        for neighbour_tuple in neighbour_tuples[:i]
-                        if neighbour_tuple[1] == neighbour_tuples[i][1]
-                    ]
-                    or [
-                        0,
-                    ]
+                and (
+                    neighbour_tuples[i][0]
+                    - max(
+                        [
+                            neighbour_tuple[0]
+                            for neighbour_tuple in neighbour_tuples[:i]
+                            if neighbour_tuple[1] == neighbour_tuples[i][1]
+                        ]
+                        or [0]
+                    )
+                    > 0.02
                 )
-                > 0.02
             )
         ][:n]
 
@@ -493,6 +490,7 @@ def _get_neutral_defect_entry(
     conventional_structure,
     _BilbaoCS_conv_cell_vector_mapping,
     wyckoff_label_dict,
+    symprec=0.01,
 ):
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Not all sites")
@@ -534,6 +532,7 @@ def _get_neutral_defect_entry(
                 symmetry.get_conv_cell_site(neutral_defect_entry).frac_coords,
                 conventional_structure,
                 equiv_sites=True,
+                symprec=symprec,
             )
             conv_cell_coord_list = [
                 np.mod(symmetry._vectorized_custom_round(site.frac_coords), 1) for site in conv_cell_sites
@@ -1460,13 +1459,14 @@ class DefectsGenerator(MSONable):
                 (default = False)).
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to ``get_interstitial_sites()``
-                (such as ``min_dist`` (0.9 Å), ``clustering_tol`` (0.8 Å),
-                ``symmetry_preference`` (0.1 Å), ``stol`` (0.32),
-                ``tight_stol`` (0.02), ``symprec`` (0.01), ``vacuum_radius``
-                (1.5 * bulk bond length) -- see its docstring, parentheses
-                indicate default values), or ``InterstitialGenerator`` if
-                ``interstitial_coords`` is specified. If set to ``False``,
-                interstitial generation will be skipped entirely.
+                (such as ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen),
+                ``clustering_tol`` (0.8 Å), ``symmetry_preference`` (0.1 Å),
+                ``stol`` (0.32), ``tight_stol`` (0.02), ``symprec`` (0.01),
+                ``vacuum_radius`` (1.5 * bulk bond length) -- see its
+                docstring, parentheses indicate default values), or
+                ``InterstitialGenerator`` if ``interstitial_coords`` is
+                specified. If set to ``False``, interstitial generation will be
+                skipped entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these
                 fractional coordinates in the generated supercells. Default is
@@ -1477,15 +1477,22 @@ class DefectsGenerator(MSONable):
                 defaults to one less than the number of CPUs available.
             **kwargs:
                 Additional keyword arguments for defect generation. Options:
-                ``{defect}_elements`` where ``{defect}`` is ``vacancy``,
-                ``substitution``, or ``interstitial``, in which cases only
-                those defects of the specified elements will be generated
-                (where ``{defect}_elements`` is a list of element symbol
-                strings). Setting ``{defect}_elements`` to an empty list will
-                skip defect generation for that defect type entirely.
-                ``{defect}_charge_states`` to specify the charge states to use
-                for all defects of that type (as a list of integers).
-                ``neutral_only`` to only generate neutral charge states.
+
+                - ``{defect}_elements`` where ``{defect}`` is ``vacancy``,
+                  ``substitution``, or ``interstitial``, in which cases only
+                  those defects of the specified elements will be generated
+                  (where ``{defect}_elements`` is a list of element symbol
+                  strings). Setting ``{defect}_elements`` to an empty list will
+                  skip defect generation for that defect type entirely.
+                - ``{defect}_charge_states`` to specify the charge states to use
+                  for all defects of that type (as a list of integers).
+                - ``neutral_only`` to only generate neutral charge states.
+                - ``symprec`` for ``get_sga_and_symprec()``,
+                  ``get_primitive_structure``, defect object initialisation
+                  etc. Default is ``0.01``.
+                - Keyword arguments for ``get_all_equiv_sites``, such as
+                  ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
+                  and ``verbose``.
 
         Key attributes:
             defect_entries (dict):
@@ -1511,6 +1518,7 @@ class DefectsGenerator(MSONable):
 
             ``DefectsGenerator`` input parameters are also set as attributes.
         """
+        # TODO: Modularise this function for easier extensibility
         self.defects: dict[str, list[Defect]] = {}  # {defect_type: [Defect, ...]}
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         if isinstance(structure, str | PathLike):
@@ -1572,7 +1580,9 @@ class DefectsGenerator(MSONable):
         try:  # put code in try/except block so progress bar always closed if interrupted
             # Reduce structure to primitive cell for efficient defect generation
             # same symprec as defect generators in pymatgen-analysis-defects:
-            sga, symprec = symmetry.get_sga_and_symprec(self.structure)
+            sga, symprec = symmetry.get_sga_and_symprec(
+                self.structure, symprec=self.kwargs.get("symprec", 0.01)
+            )
             if sga.get_space_group_number() == 1:  # print sanity check message
                 print(
                     "Note that the detected symmetry of the input structure is P1 (i.e. only "
@@ -1631,7 +1641,7 @@ class DefectsGenerator(MSONable):
                     self.primitive_structure,
                     self.supercell_matrix,
                 ) = symmetry._get_supercell_matrix_and_possibly_redefine_prim(
-                    primitive_structure, self.structure, sga=sga
+                    primitive_structure, self.structure, sga=sga, symprec=symprec
                 )
 
                 self.primitive_structure, self._T = symmetry.get_clean_structure(
@@ -1701,7 +1711,10 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Generating vacancies")
             vac_generator_obj = VacancyGenerator()
             vac_generator = vac_generator_obj.generate(
-                self.primitive_structure, oxi_state=0, rm_species=self.kwargs.get("vacancy_elements", None)
+                self.primitive_structure,
+                oxi_state=0,
+                rm_species=self.kwargs.get("vacancy_elements", None),
+                symprec=self.kwargs.get("symprec", 0.01),
             )  # set oxi_state using doped functions; more robust and efficient
             self.defects["vacancies"] = [
                 Vacancy._from_pmg_defect(vac, bulk_oxi_states=self._bulk_oxi_states)
@@ -1750,7 +1763,9 @@ class DefectsGenerator(MSONable):
             else:
                 pbar.set_description("Generating substitutions")
                 antisite_generator_obj = AntiSiteGenerator()
-                as_generator = antisite_generator_obj.generate(self.primitive_structure, oxi_state=0)
+                as_generator = antisite_generator_obj.generate(
+                    self.primitive_structure, oxi_state=0, symprec=self.kwargs.get("symprec", 0.01)
+                )
                 self.defects["substitutions"] = [
                     Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
                     for anti in as_generator
@@ -1775,7 +1790,10 @@ class DefectsGenerator(MSONable):
 
                 if substitutions:
                     sub_generator = substitution_generator_obj.generate(
-                        self.primitive_structure, substitution=substitutions, oxi_state=0
+                        self.primitive_structure,
+                        substitution=substitutions,
+                        oxi_state=0,
+                        symprec=self.kwargs.get("symprec", 0.01),
                     )
                     sub_defects = [
                         Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
@@ -1820,6 +1838,12 @@ class DefectsGenerator(MSONable):
                             primitive=self.primitive_structure,
                             supercell=self.structure,
                             equiv_coords=True,
+                            symprec=self.kwargs.get("symprec", 0.01),
+                            dist_tol_factor=self.kwargs.get("dist_tol_factor", 1.0),
+                            fixed_symprec_and_dist_tol_factor=self.kwargs.get(
+                                "fixed_symprec_and_dist_tol_factor", False
+                            ),
+                            verbose=self.kwargs.get("verbose", False),
                         )
                         self.prim_interstitial_coords.append(
                             (equiv_prim_coords[0], len(equiv_prim_coords), equiv_prim_coords)
@@ -1835,15 +1859,36 @@ class DefectsGenerator(MSONable):
                     )
 
                 self.defects["interstitials"] = []
-                ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
-                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
                 for el in self.kwargs.get("interstitial_elements", self._element_list):
+                    if (
+                        el == "H"
+                        and "min_dist" not in self.interstitial_gen_kwargs
+                        and not self.interstitial_coords
+                    ):
+                        # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
+                        # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
+                        ig = InterstitialGenerator(min_dist=0.5)
+                        H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
+                            host_structure=self.primitive_structure,
+                            interstitial_gen_kwargs={"min_dist": 0.5, **self.interstitial_gen_kwargs},
+                        )
+                        cand_sites, multiplicity, equiv_fpos = zip(
+                            *H_sorted_sites_mul_and_equiv_fpos, strict=False
+                        )
+
+                    else:
+                        ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+                        cand_sites, multiplicity, equiv_fpos = zip(
+                            *sorted_sites_mul_and_equiv_fpos, strict=False
+                        )
+
                     inter_generator = ig.generate(
                         self.primitive_structure,
                         insertions={el: cand_sites},
                         multiplicities={el: multiplicity},
                         equivalent_positions={el: equiv_fpos},
                         oxi_state=0,
+                        symprec=self.kwargs.get("symprec", 0.01),
                     )
                     self.defects["interstitials"].extend(
                         [
@@ -1894,6 +1939,7 @@ class DefectsGenerator(MSONable):
                 conventional_structure=self.conventional_structure,
                 _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
                 wyckoff_label_dict=wyckoff_label_dict,
+                symprec=self.kwargs.get("symprec", 0.01),
             )
 
             if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
@@ -2562,7 +2608,7 @@ def _element_sort_func(element_str: str) -> tuple[int, int]:
     return (group, elt.Z)
 
 
-def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None) -> dict | list:
+def sort_defect_entries(defect_entries: dict | list, element_list: list | None = None):
     """
     Sort defect entries for deterministic behaviour; for output and when
     reloading ``DefectsGenerator`` objects, with ``DefectThermodynamics``
@@ -2722,6 +2768,7 @@ def get_interstitial_sites(
     The logic for picking interstitial sites is as follows:
 
     - Generate all candidate sites using (efficient) Voronoi analysis
+    - If vacuum volume present, include adsorbate sites as candidate sites
     - Remove any sites which are within ``min_dist`` of any host atoms
     - Cluster the remaining sites using a tolerance of ``clustering_tol`` and
       symmetry-preference of ``symmetry_preference``
@@ -2753,7 +2800,9 @@ def get_interstitial_sites(
     when performing defect relaxations!
 
     You can see what Cartesian distance the chosen ``stol`` corresponds to
-    using the ``get_stol_equiv_dist`` function.
+    using the ``get_stol_equiv_dist`` function. Note that you will likely want
+    to reduce ``min_dist`` for hydrogen interstitials! (This is done by default
+    with ``DefectsGenerator``, reducing it to 0.5 Å for Hydrogen.)
 
     Args:
         host_structure (Structure): Host structure.

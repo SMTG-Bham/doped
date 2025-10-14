@@ -849,14 +849,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print("Finished checking dists")
 
     def _check_dist_tol_equiv_dists(self, defect_thermo):
-        flattened_clustered_defect_entries_by_type = {
+        flattenedclustered_defect_entries_by_type = {
             f"{defect_type}_{cn}": cluster
-            for defect_type, cluster_subdict in (defect_thermo._clustered_defect_entries_by_type.items())
+            for defect_type, cluster_subdict in (defect_thermo.clustered_defect_entries_by_type.items())
             for cn, cluster in cluster_subdict.items()
         }
         for method, cluster_dict in [
-            ("centroid", defect_thermo._clustered_defect_entries),
-            ("single", flattened_clustered_defect_entries_by_type),
+            ("centroid", defect_thermo.clustered_defect_entries),
+            ("single", flattenedclustered_defect_entries_by_type),
         ]:
             print(f"Checking dist_tol for {method} clustering")
             for cluster in cluster_dict.values():
@@ -875,9 +875,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
                     # pick some random entries from other clusters and check distances:
                     other_cluster_dict = (
-                        defect_thermo._clustered_defect_entries
+                        defect_thermo.clustered_defect_entries
                         if method == "centroid"
-                        else defect_thermo._clustered_defect_entries_by_type[entry.defect.name]
+                        else defect_thermo.clustered_defect_entries_by_type[entry.defect.name]
                     )
                     for other_cluster in other_cluster_dict.values():
                         if other_cluster == cluster:
@@ -2817,8 +2817,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_prune_to_stable_entries(self):
         # test default; "not shallow":
-        assert len(self.Se_ext_no_pnict_thermo) == 80
-        assert len(self.Se_ext_no_pnict_thermo.transition_level_map) == 15
+        assert len(self.Se_ext_no_pnict_thermo) == 86
+        assert len(self.Se_ext_no_pnict_thermo.transition_level_map) == 17
         print(self.Se_ext_no_pnict_thermo.transition_level_map)
         assert (
             len(
@@ -2834,8 +2834,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert i in self.Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
 
         pruned_Se_ext_no_pnict_thermo = self.Se_ext_no_pnict_thermo.prune_to_stable_entries()
-        assert len(pruned_Se_ext_no_pnict_thermo) == 70
-        assert len(pruned_Se_ext_no_pnict_thermo.transition_level_map) == 15
+        assert len(pruned_Se_ext_no_pnict_thermo) == 76
+        assert len(pruned_Se_ext_no_pnict_thermo.transition_level_map) == 17
         for i in ["sub_1_Te_on_Se_1", "sub_1_S_on_Se_1", "sub_1_O_on_Se_1", "inter_5_S_1"]:
             assert i not in pruned_Se_ext_no_pnict_thermo.defect_entries, f"Checking {i}"
         assert (
@@ -2853,7 +2853,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         pruned_Se_ext_no_pnict_thermo_dt10 = self.Se_ext_no_pnict_thermo.prune_to_stable_entries(
             dist_tol=10
         )
-        assert len(pruned_Se_ext_no_pnict_thermo_dt10.transition_level_map) == 14
+        assert len(pruned_Se_ext_no_pnict_thermo_dt10.transition_level_map) == 16
         assert (
             len(
                 [
@@ -3254,8 +3254,8 @@ def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     print([str(warn.message) for warn in w])  # for debugging
     assert not output
     assert any(
-        "The VBM eigenvalue of the bulk DOS calculation (1.55 eV, band gap = 1.53 eV) differs "
-        "by >0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV;"
+        "The VBM eigenvalue of the bulk DOS calculation (VBM = 1.55 eV, band gap = 1.53 eV) differs by "
+        ">0.05 eV from `DefectThermodynamics.vbm/gap` (VBM = 1.65 eV, band gap = 1.50 eV;"
         in str(warn.message)
         for warn in w
     )
@@ -3509,8 +3509,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ]:
             fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             assert any(
-                "The band gap of the bulk DOS calculation (1.45 eV, band gap = 1.71 eV) differs by "
-                ">0.05 eV from `DefectThermodynamics.vbm/gap` (1.65 eV, band gap = 1.50 eV; "
+                "The band gap of the bulk DOS calculation (VBM = 1.45 eV, band gap = 1.71 eV) differs by "
+                ">0.05 eV from `DefectThermodynamics.vbm/gap` (VBM = 1.65 eV, band gap = 1.50 eV; "
                 in str(warn.message)
                 for warn in w
             )
