@@ -20,9 +20,7 @@ from pymatgen.io.vasp.sets import BadInputSetWarning
 try:
     import vise.util.logger
 
-    vise.util.logger.get_logger = (
-        logging.getLogger
-    )  # to avoid repeated vise INFO messages with Parallel code
+    vise.util.logger.get_logger = logging.getLogger  # avoid repeated vise INFO messages with Parallel code
 except ImportError:
     warnings.warn(
         "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "

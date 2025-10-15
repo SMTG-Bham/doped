@@ -16,12 +16,7 @@ import pandas as pd
 import spglib
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import (
-    ElementComparator,
-    StructureMatcher,
-    get_linear_assignment_solution,
-    pbc_shortest_vectors,
-)
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
@@ -3575,9 +3570,14 @@ def is_periodic_image(
 
     # first need to match sites with their closest (individual) periodic images, to account for order /
     # permutation invariance:
-    vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
-    site_matches, _ = get_linear_assignment_solution(d_2)  # closest individual periodic image matches
-    reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
+    site_mapping = _get_site_mapping_from_coords_and_indices(
+        sites_1_frac_coords, sites_2_frac_coords, lattice=lattice
+    )  # list of tuples of (dist, s1_index, s2_index)
+    reordered_sites_1_frac_coords = [
+        sites_1_frac_coords[mapping_tuple[1]]
+        for mapping_tuple in site_mapping
+        if mapping_tuple[1] is not None
+    ]
 
     pbc_frac_dist = np.subtract(reordered_sites_1_frac_coords, sites_2_frac_coords)
     pbc_frac_diff = pbc_frac_dist - np.round(pbc_frac_dist)
