@@ -952,7 +952,8 @@ class DefectsParser:
         """
         self.output_path = output_path
         self.dielectric = dielectric
-        self.skip_corrections = skip_corrections
+        self.skip_corrections = skip_corrections or self.dielectric is None
+        # warned later if no dielectric, skip_corrections = False and charge defects present
         self.error_tolerance = error_tolerance
         self.bulk_path = bulk_path
         self.subfolder = subfolder
@@ -992,11 +993,22 @@ class DefectsParser:
         ):
             self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
 
+        # load and parse bulk corrections data once for efficiency:
+        self.bulk_corrections_data = {}
+        if not skip_corrections:
+            bulk_corr_kwargs = {
+                "bulk_path": self.bulk_path,
+                "quiet": True,
+            }
+            with contextlib.suppress(Exception):
+                self.bulk_corrections_data["bulk_locpot_dict"] = _get_bulk_locpot_dict(**bulk_corr_kwargs)
+            with contextlib.suppress(Exception):
+                self.bulk_corrections_data["bulk_site_potentials"] = _get_bulk_site_potentials(
+                    total_energy=_get_total_energies(None, self.bulk_vr),
+                    **bulk_corr_kwargs,  # type: ignore
+                )
+
         self.defect_dict = {}
-        self.bulk_corrections_data = {  # so we only load and parse bulk data once
-            "bulk_locpot_dict": None,
-            "bulk_site_potentials": None,
-        }
         parsed_defect_entries: list[DefectEntry] = []
         parsing_warnings: list[str] = []
 
@@ -1005,61 +1017,24 @@ class DefectsParser:
         if self.processes is None:  # only multiprocess as much as makes sense, if only few defect folders:
             self.processes = min(max(1, mp.cpu_count() - 1), len(self.defect_folders) - 1)
 
-        if self.processes <= 1:  # no multiprocessing
-            for folder in self.defect_folders:
-                parsed_defect_entry, processed_warnings_string = self._parse_defect_and_handle_warnings(
-                    folder, pbar=pbar
-                )
-                parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
-                parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
-
-        else:  # otherwise multiprocessing:
-            # here we try to parse one charged defect first, to check if dielectric and charge corrections
-            # are correctly set, and loading the bulk reference data for charge corrections for efficiency,
-            # before then using multiprocessing for the rest of the defect folders, with the same settings:
-            charged_defect_folder = None  # find a charged defect folder to parse first
-            for possible_charged_defect_folder in self.defect_folders:
-                with contextlib.suppress(Exception):
-                    if abs(int(possible_charged_defect_folder[-1])) > 0:  # likely charged defect
-                        charged_defect_folder = possible_charged_defect_folder
-
-            try:
-                if charged_defect_folder is not None:
-                    # will throw warnings if dielectric is None / charge corrections not possible,
-                    # and set self.skip_corrections appropriately
+        try:
+            if self.processes <= 1:  # no multiprocessing
+                for folder in self.defect_folders:
                     parsed_defect_entry, processed_warnings_string = (
-                        self._parse_defect_and_handle_warnings(charged_defect_folder, pbar=pbar)
+                        self._parse_defect_and_handle_warnings(folder, pbar=pbar)
                     )
                     parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
                     parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
-                # also load the other bulk corrections data if possible:
-                bulk_corr_kwargs = {
-                    "bulk_path": self.bulk_path,
-                    "quiet": True,
-                }
-                for k, v in self.bulk_corrections_data.items():
-                    if v is None:
-                        with contextlib.suppress(Exception):
-                            if k == "bulk_locpot_dict":
-                                self.bulk_corrections_data[k] = _get_bulk_locpot_dict(**bulk_corr_kwargs)
-                            elif k == "bulk_site_potentials":
-                                self.bulk_corrections_data[k] = _get_bulk_site_potentials(
-                                    total_energy=_get_total_energies(None, self.bulk_vr),
-                                    **bulk_corr_kwargs,  # type: ignore
-                                )
-
-                folders_to_process = [
-                    folder for folder in self.defect_folders if folder != charged_defect_folder
-                ]
+            else:  # otherwise multiprocessing:
                 pbar.set_description("Setting up multiprocessing")
                 if self.processes > 1:
                     with pool_manager(self.processes) as pool:  # parsed_defect_entry, warnings
                         pbar.set_description(
-                            f"Parsing {folders_to_process[0]}/{self.subfolder}".replace("/.", "")
+                            f"Parsing {self.defect_folders[0]}/{self.subfolder}".replace("/.", "")
                         )
                         for parsed_defect_entry, processed_warnings_string in pool.imap_unordered(
-                            self._parse_defect_and_handle_warnings, folders_to_process
+                            self._parse_defect_and_handle_warnings, self.defect_folders
                         ):
                             pbar.update()
                             if parsed_defect_entry is not None:
@@ -1070,13 +1045,10 @@ class DefectsParser:
                             parsing_warnings.append(processed_warnings_string)  # parsing warnings/errors
                             parsed_defect_entries.append(parsed_defect_entry)  # None if failed parsing
 
-            except Exception as exc:
-                pbar.close()
-                raise exc
+        finally:
+            pbar.close()
 
-            finally:
-                pbar.close()
-
+        # checks and warnings:
         _format_and_raise_parsing_warnings(  # format and raise any parsing warnings
             parsing_warnings, bulk_path=self.bulk_path, subfolder=self.subfolder
         )
@@ -1091,6 +1063,18 @@ class DefectsParser:
                 f"using `bulk_path`: {self.bulk_path}{subfolder_string}. Please check the correct "
                 f"defect/bulk paths and subfolder are being set, and that the folder structure is as "
                 f"expected (see `DefectsParser` docstring)."
+            )
+
+        # check if any charged defects present, no dielectric but skip_corrections not set to False:
+        charged_defects_present = any(
+            defect_entry.charge_state != 0 for defect_entry in parsed_defect_entries
+        )
+        if charged_defects_present and self.dielectric is None and not skip_corrections:
+            warnings.warn(
+                "The dielectric constant (`dielectric`) is needed to compute finite-size charge "
+                "corrections, but none was provided, so charge corrections have been skipped "
+                "(`skip_corrections = True`). Formation energies and transition levels of charged defects "
+                "will likely be very inaccurate without charge corrections!"
             )
 
         self.defect_dict = _name_parsed_defect_entries(parsed_defect_entries, subfolder=self.subfolder)
@@ -1143,22 +1127,6 @@ class DefectsParser:
                 parse_projected_eigen=self.parse_projected_eigen,
                 **self.kwargs,
             )
-
-            if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
-                self.skip_corrections = dp.skip_corrections  # set skip_corrections to True if
-                # dielectric is None and there are charged defects present (shows dielectric warning once)
-
-            for bulk_correction_data_key in [
-                "bulk_locpot_dict",
-                "bulk_site_potentials",
-            ]:
-                if (
-                    dp.defect_entry.calculation_metadata.get(bulk_correction_data_key) is not None
-                    and self.bulk_corrections_data.get(bulk_correction_data_key) is None
-                ):  # if not already set, update
-                    self.bulk_corrections_data[bulk_correction_data_key] = (
-                        dp.defect_entry.calculation_metadata[bulk_correction_data_key]
-                    )
 
         except Exception as exc:
             warnings.warn(

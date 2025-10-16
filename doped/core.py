@@ -41,15 +41,13 @@ mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
     "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
-    "point group symmetries (and thus orientational degeneracies) from being automatically "
-    "determined.\n"
+    "point group symmetries (and thus orientational degeneracies) from being automatically determined.\n"
     "This will not affect defect formation energies / transition levels, but can be important for "
     "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
     "doi.org/10.1039/D3CS00432E).\n"
-    "You can manually check (and edit) the computed defect/bulk point symmetries and "
-    "corresponding orientational degeneracy factors by inspecting/editing the "
-    "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
-    "degeneracy_factors['orientational degeneracy'] attributes."
+    "You can manually check (and edit) the computed defect point symmetries and corresponding "
+    "orientational degeneracy factors by inspecting/editing the calculation_metadata['relaxed point "
+    "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
 )
 
 

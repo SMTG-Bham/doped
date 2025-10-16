@@ -2047,10 +2047,6 @@ class DefectsGenerator(MSONable):
             if not isinstance(pbar, MagicMock) and pbar.total - pbar.n > 0:
                 pbar.update(pbar.total - pbar.n)  # 100%
 
-        except Exception as e:
-            pbar.close()
-            raise e
-
         finally:
             pbar.close()
 

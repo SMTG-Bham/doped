@@ -317,10 +317,6 @@ def get_defect_in_supercell(
 
         pbar.update(pbar.total - pbar.n)  # set to 100% of progress bar
 
-    except Exception as e:
-        pbar.close()
-        raise e
-
     finally:
         pbar.close()
 

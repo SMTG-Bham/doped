@@ -1896,7 +1896,7 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
         int or None:
             The total charge state, or ``None`` if it cannot be determined.
     """
-    if nelect := vasprun.incar.get("NELECT") is None:
+    if (nelect := vasprun.incar.get("NELECT")) is None:
         return 0  # neutral if NELECT not specified
 
     auto_charge = None
