@@ -2156,12 +2156,130 @@ def _check_and_warn_dimer_bonds_spin_states(
         )
 
 
+def _parse_charge_state(
+    defect_vr: Vasprun,
+    possible_defect_name: str,
+    expected_charge_state: int | None = None,
+) -> int:
+    """
+    Determine the defect charge state from the ``Vasprun`` object, folder name,
+    and/or ``expected_charge_state``.
+    """
+    parsed_charge_state: int | None = total_charge_from_vasprun(defect_vr)
+
+    if expected_charge_state is None:  # expected charge state not provided
+        if parsed_charge_state is None:  # charge-state determination failed
+            charge_error = RuntimeError(
+                "System charge cannot be automatically determined from the calculation outputs. "
+                "This is typically due to POTCARs not being setup with pymatgen (see "
+                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-"
+                "project-api). Please specify charge state manually using the `charge_state` "
+                "argument with ``DefectParser.from_paths()``, or set up POTCARs with pymatgen."
+            )
+            # try to determine from folder name -- must have "-" or "+" at end of name for this
+            charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
+            if charge_state_suffix[0] not in ["-", "+"]:
+                raise ValueError(
+                    f"Could not guess charge state from folder name ({possible_defect_name}), must "
+                    f"end in '_+X' or '_-X' where +/-X is the charge state."
+                ) from charge_error
+
+            parsed_charge_state = int(charge_state_suffix)
+            if abs(parsed_charge_state) >= 9:
+                raise ValueError(
+                    f"Guessed charge state from folder name was {parsed_charge_state:+} which is "
+                    f"almost certainly unphysical"
+                ) from charge_error
+
+        if parsed_charge_state is not None and abs(parsed_charge_state) >= 10:  # extreme charge predicted
+            raise RuntimeError(
+                f"Auto-determined system charge q={int(parsed_charge_state):+} is unreasonably large. "
+                f"Please specify system charge manually using the `charge` argument."
+            )
+
+        return parsed_charge_state
+
+    # otherwise charge state provided:
+    if (  # check match
+        parsed_charge_state is not None
+        and int(expected_charge_state) != int(parsed_charge_state)
+        and abs(parsed_charge_state) < 8
+    ):
+        warnings.warn(
+            f"Auto-determined system charge q={int(parsed_charge_state):+} does not match specified "
+            f"charge q={int(expected_charge_state):+}. Will continue with specified charge_state, "
+            f"but beware!"
+        )
+
+    return expected_charge_state  # if charge state provided, we defer to this regardless
+
+
+def _parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
+    """
+    Determine the unrelaxed ('bulk') and relaxed defect point symmetries for
+    the input ``DefectEntry``, whether there is any periodicity-breaking in the
+    supercell, and the corresponding orientational degeneracy factor.
+
+    Results are stored in the ``calculation_metadata`` and
+    ``degeneracy_factors`` property dicts of the ``DefectEntry``.
+    """
+    point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
+        defect_entry,
+        relaxed=True,
+        verbose=kwargs.get("verbose", False),
+        return_periodicity_breaking=True,
+        **{
+            k: v
+            for k, v in kwargs.items()
+            if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
+        },
+    )
+    assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
+    relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
+    bulk_site_point_group = point_symmetry_from_defect_entry(
+        defect_entry,
+        relaxed=False,
+        **{
+            k.replace("bulk_", ""): v
+            for k, v in kwargs.items()
+            if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
+        },
+    )  # same symprec used w/interstitial multiplicity for consistency
+    assert isinstance(bulk_site_point_group, str)  # typing (str returned)
+    with contextlib.suppress(ValueError):
+        defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
+            relaxed_point_group=relaxed_point_group,
+            bulk_site_point_group=bulk_site_point_group,
+            **{
+                k: v
+                for k, v in kwargs.items()
+                if k
+                in [
+                    "symprec",
+                    "bulk_symprec",
+                    "dist_tol_factor",
+                    "fixed_symprec_and_dist_tol_factor",
+                    "verbose",
+                ]
+            },
+        )
+    defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
+    defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
+    defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
+
+
 def _parse_vr_and_poss_procar(
     output_path: PathLike,
     parse_projected_eigen: bool | None = None,
     label: str = "bulk",
     parse_procar: bool = True,
 ):
+    """
+    Parse the ``vasprun.xml(.gz)`` file at ``output_path``, and possibly a
+    ``PROCAR`` file if both ``parse_procar`` and ``parse_projected_eigen`` are
+    ``True`` and  projected eigenvalues cannot be parsed from the
+    ``vasprun.xml(.gz)`` file.
+    """
     procar = None
     failed_eig_parsing_warning_message = (
         f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
@@ -2208,7 +2326,6 @@ class DefectParser:
         defect_entry: DefectEntry,
         defect_vr: Vasprun | None = None,
         bulk_vr: Vasprun | None = None,
-        skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         parse_projected_eigen: bool | None = None,
         **kwargs,
@@ -2231,10 +2348,6 @@ class DefectParser:
             bulk_vr (Vasprun):
                 ``pymatgen`` ``Vasprun`` object for the reference bulk
                 supercell calculation.
-            skip_corrections (bool):
-                Whether to skip calculation and application of finite-size
-                charge corrections to the defect energy (not recommended in
-                most cases). Default is ``False``.
             error_tolerance (float):
                 If the estimated error in the defect charge correction, based
                 on the variance of the potential in the sampling region is
@@ -2276,7 +2389,6 @@ class DefectParser:
         self.defect_entry: DefectEntry = defect_entry
         self.defect_vr = defect_vr
         self.bulk_vr = bulk_vr
-        self.skip_corrections = skip_corrections
         self.error_tolerance = error_tolerance
         self.kwargs = kwargs or {}
         self.parse_projected_eigen = parse_projected_eigen
@@ -2412,6 +2524,7 @@ class DefectParser:
             "defect_path": os.path.abspath(defect_path),
         }
 
+        # parse bulk reference cell output files:
         if bulk_path is not None and bulk_vr is None:  # add bulk simple properties
             parsed_bulk_vasp_objs = _parse_vr_and_poss_procar(  # (bulk_vr, bulk_procar) if parse_procar
                 output_path=bulk_path,  # else just bulk_vr
@@ -2428,84 +2541,35 @@ class DefectParser:
             raise ValueError("Either `bulk_path` or `bulk_vr` must be provided!")
         bulk_supercell = bulk_vr.final_structure.copy()
 
-        # add defect simple properties
+        # parse defect supercell output files:
         defect_vr, defect_procar = _parse_vr_and_poss_procar(
             defect_path, parse_projected_eigen=parse_projected_eigen, label="defect", parse_procar=True
         )
         parse_projected_eigen = defect_procar is not None or defect_vr.projected_eigenvalues is not None
 
+        # parse (possible) defect name and charge state
         possible_defect_name = os.path.basename(
             defect_path.rstrip("/.").rstrip("/")  # remove any trailing slashes to ensure correct name
         )  # set equal to folder name
         if "vasp" in possible_defect_name:  # get parent directory name:
             possible_defect_name = os.path.basename(os.path.dirname(defect_path))
 
-        try:
-            parsed_charge_state: int = total_charge_from_vasprun(defect_vr, charge_state)
-        except RuntimeError as orig_exc:  # auto charge guessing failed and charge_state not provided,
-            # try to determine from folder name -- must have "-" or "+" at end of name for this
-            try:
-                charge_state_suffix = possible_defect_name.rsplit("_", 1)[-1]
-                if charge_state_suffix[0] not in ["-", "+"]:
-                    raise ValueError(
-                        f"Could not guess charge state from folder name ({possible_defect_name}), must "
-                        f"end in '_+X' or '_-X' where +/-X is the charge state."
-                    )
+        charge_state = _parse_charge_state(defect_vr, possible_defect_name, charge_state)
 
-                parsed_charge_state = int(charge_state_suffix)
-                if abs(parsed_charge_state) >= 7:
-                    raise ValueError(
-                        f"Guessed charge state from folder name was {parsed_charge_state:+} which is "
-                        f"almost certainly unphysical"
-                    )
-            except Exception as next_exc:
-                raise orig_exc from next_exc
-
-        # parse spin degeneracy now, before proj eigenvalues/magnetization are cut (for SOC/NCL calcs):
-        degeneracy_factors = {
-            "spin degeneracy": spin_degeneracy_from_vasprun(defect_vr, charge_state=parsed_charge_state)
-            / spin_degeneracy_from_vasprun(bulk_vr, charge_state=0)
-        }
-
-        if dielectric is None and not skip_corrections and parsed_charge_state != 0:
-            warnings.warn(
-                "The dielectric constant (`dielectric`) is needed to compute finite-size charge "
-                "corrections, but none was provided, so charge corrections will be skipped "
-                "(`skip_corrections = True`). Formation energies and transition levels of charged "
-                "defects will likely be very inaccurate without charge corrections!"
-            )
-            skip_corrections = True
-
-        if dielectric is not None:
-            dielectric = _convert_dielectric_to_tensor(dielectric)
-            calculation_metadata["dielectric"] = dielectric
-
-        # Add defect structure to calculation_metadata, so it can be pulled later on (e.g. for eFNV)
-        defect_structure = defect_vr.final_structure.copy()
-        calculation_metadata["defect_structure"] = defect_structure
-
-        # check if the bulk and defect supercells are the same size:
-        if not np.isclose(defect_structure.volume, bulk_supercell.volume, rtol=1e-2):
-            warnings.warn(
-                f"The defect and bulk supercells are not the same size, having volumes of "
-                f"{defect_structure.volume:.1f} and {bulk_supercell.volume:.1f} Å^3 respectively. This "
-                f"may cause errors in parsing and/or output energies. In most cases (unless looking at "
-                f"extremely high doping concentrations) the same fixed supercell (ISIF = 2) should be "
-                f"used for both the defect and bulk calculations! (i.e. assuming the dilute limit)"
-            )
-
+        # parse structural info and Defect object:
+        defect_supercell = defect_vr.final_structure.copy()
         (
             defect,
             defect_site,
             defect_structure_metadata,
         ) = defect_and_info_from_structures(
             bulk_supercell,
-            defect_structure.copy(),
+            defect_supercell,
             **{
                 k.replace("bulk_", ""): v
                 for k, v in kwargs.items()
                 if k
-                in [
+                in [  # allowed kwargs for Defect initialisation
                     "oxi_state",
                     "multiplicity",
                     "symprec",
@@ -2529,10 +2593,11 @@ class DefectParser:
         for computed_entry in [sc_entry, bulk_entry]:
             computed_entry.parameters = dict(sorted(computed_entry.parameters.items()))
 
+        # generate DefectEntry object:
         defect_entry = DefectEntry(
             # pmg attributes:
             defect=defect,  # this corresponds to _unrelaxed_ defect
-            charge_state=parsed_charge_state,
+            charge_state=charge_state,
             sc_entry=sc_entry,
             sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
             bulk_entry=bulk_entry,
@@ -2542,68 +2607,21 @@ class DefectParser:
             defect_supercell=defect_vr.final_structure,
             bulk_supercell=bulk_vr.final_structure,
             calculation_metadata=calculation_metadata,
-            degeneracy_factors=degeneracy_factors,
-        )
-        # get orientational degeneracy
-        point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
-            defect_entry,
-            relaxed=True,
-            verbose=kwargs.get("verbose", False),
-            return_periodicity_breaking=True,
-            **{
-                k: v
-                for k, v in kwargs.items()
-                if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
-            },
-        )
-        assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
-        relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
-        bulk_site_point_group = point_symmetry_from_defect_entry(
-            defect_entry,
-            relaxed=False,
-            **{
-                k.replace("bulk_", ""): v
-                for k, v in kwargs.items()
-                if k in ["bulk_symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
-            },
-        )  # same symprec used w/interstitial multiplicity for consistency
-        assert isinstance(bulk_site_point_group, str)  # typing (str returned)
-        with contextlib.suppress(ValueError):
-            defect_entry.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
-                relaxed_point_group=relaxed_point_group,
-                bulk_site_point_group=bulk_site_point_group,
-                **{
-                    k: v
-                    for k, v in kwargs.items()
-                    if k
-                    in [
-                        "symprec",
-                        "bulk_symprec",
-                        "dist_tol_factor",
-                        "fixed_symprec_and_dist_tol_factor",
-                        "verbose",
-                    ]
-                },
-            )
-        defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
-        defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
-        defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
-
-        check_and_set_defect_entry_name(defect_entry, possible_defect_name)
-
-        dp = cls(
-            defect_entry,
-            defect_vr=defect_vr,
-            bulk_vr=bulk_vr,
-            skip_corrections=skip_corrections,
-            error_tolerance=error_tolerance,
-            parse_projected_eigen=parse_projected_eigen,
-            **kwargs,
         )
 
+        # determine symmetries and degeneracy factors
+        # parse spin degeneracy now, before proj eigenvalues/magnetization are cut (for SOC/NCL calcs):
+        defect_entry.degeneracy_factors = {
+            "spin degeneracy": spin_degeneracy_from_vasprun(defect_vr, charge_state=charge_state)
+            / spin_degeneracy_from_vasprun(bulk_vr, charge_state=0)
+        }
+        _parse_symmetry_and_degeneracy_metadata(defect_entry, **kwargs)  # get orientational degeneracy
+        check_and_set_defect_entry_name(defect_entry, possible_defect_name)  # needs symmetry information
+
+        # parse eigenvalue data and then remove unnecessary large data arrays:
         if parse_projected_eigen is not False:
             try:
-                dp.defect_entry._load_and_parse_eigenvalue_data(
+                defect_entry._load_and_parse_eigenvalue_data(
                     bulk_vr=bulk_vr,
                     bulk_procar=bulk_procar,
                     defect_vr=defect_vr,
@@ -2620,52 +2638,41 @@ class DefectParser:
                 )
                 defect_vr.eigenvalues = None  # no longer needed, delete to reduce memory demand
 
+        dp = cls(
+            defect_entry,
+            defect_vr=defect_vr,
+            bulk_vr=bulk_vr,
+            error_tolerance=error_tolerance,
+            parse_projected_eigen=parse_projected_eigen,
+            **kwargs,
+        )
+
         dp.load_and_check_calculation_metadata()  # Load standard defect metadata
         dp.load_bulk_gap_data(bulk_band_gap_vr=bulk_band_gap_vr)  # Load band gap data
 
+        # check if charge corrections are possible, and apply if so (and ``skip_corrections = False``):
+        if dielectric is not None:
+            dp.defect_entry.calculation_metadata["dielectric"] = _convert_dielectric_to_tensor(dielectric)
+
+        elif not skip_corrections and charge_state != 0:
+            warnings.warn(
+                "The dielectric constant (`dielectric`) is needed to compute finite-size charge "
+                "corrections, but none was provided, so charge corrections will be skipped "
+                "(`skip_corrections = True`). Formation energies and transition levels of charged "
+                "defects will likely be very inaccurate without charge corrections!"
+            )
+            skip_corrections = True
+
         if not skip_corrections and defect_entry.charge_state != 0:
             # no finite-size charge corrections by default for neutral defects
-            skip_corrections = dp._check_and_load_appropriate_charge_correction()
+            skip_corrections = dp._check_and_load_appropriate_charge_correction_data()
 
         if not skip_corrections and defect_entry.charge_state != 0:
-            try:
-                dp.apply_corrections()
-            except Exception as exc:
-                warnings.warn(
-                    f"Got this error message when attempting to apply finite-size charge corrections:"
-                    f"\n{exc}\n"
-                    f"-> Charge corrections will not be applied for this defect."
-                )
-
-            # check that charge corrections are not negative
-            summed_corrections = sum(
-                val
-                for key, val in dp.defect_entry.corrections.items()
-                if any(i in key.lower() for i in ["freysoldt", "kumagai", "fnv", "charge"])
-            )
-            if summed_corrections < -0.08:
-                # usually unphysical for _isotropic_ dielectrics (suggests over-delocalised charge,
-                # affecting the potential alignment)
-                # how anisotropic is the dielectric?
-                how_aniso = np.diag(
-                    (dielectric - np.mean(np.diag(dielectric))) / np.mean(np.diag(dielectric))
-                )
-                if np.allclose(how_aniso, 0, atol=0.05):
-                    warnings.warn(
-                        f"The calculated finite-size charge corrections for defect at {defect_path} and "
-                        f"bulk at {bulk_path} sum to a _negative_ value of {summed_corrections:.3f}. For "
-                        f"relatively isotropic dielectrics (as is the case here) this is usually "
-                        f"unphyical, and can indicate 'false charge state' behaviour (with the supercell "
-                        f"charge occupying the band edge states and not localised at the defect), "
-                        f"affecting the potential alignment, or some error/mismatch in the defect and "
-                        f"bulk calculations. If this defect species is not stable in the formation "
-                        f"energy diagram then this warning can usually be ignored, but if it is, "
-                        f"you should double-check your calculations and parsed results!"
-                    )
+            dp.apply_corrections()
 
         return dp
 
-    def _check_and_load_appropriate_charge_correction(self):
+    def _check_and_load_appropriate_charge_correction_data(self):
         skip_corrections = False
         dielectric = self.defect_entry.calculation_metadata["dielectric"]
         bulk_path = self.defect_entry.calculation_metadata["bulk_path"]
@@ -2975,6 +2982,21 @@ class DefectParser:
         )
         self.defect_entry.calculation_metadata.update({"run_metadata": run_metadata.copy()})
 
+        # check if the bulk and defect supercells are the same size:
+        if not np.isclose(
+            self.defect_entry.sc_entry.structure.volume,
+            self.defect_entry.bulk_entry.structure.volume,
+            rtol=1e-2,
+        ):
+            warnings.warn(
+                f"The defect and bulk supercells are not the same size, having volumes of "
+                f"{self.defect_entry.sc_entry.structure.volume:.1f} and"
+                f" {self.defect_entry.bulk_entry.structure.volume:.1f} Å^3 respectively. This may cause "
+                f"errors in parsing and/or output energies. In most cases (unless looking at extremely "
+                f"high doping concentrations) the same fixed supercell (ISIF = 2) should be used for "
+                f"both the defect and bulk calculations! (i.e. assuming the dilute limit)"
+            )
+
     def load_bulk_gap_data(
         self,
         bulk_band_gap_vr: PathLike | Vasprun | None = None,
@@ -3134,8 +3156,18 @@ class DefectParser:
     def apply_corrections(self):
         """
         Get and apply defect corrections, and warn if likely to be
-        inappropriate.
+        inappropriate (based on error tolerances).
         """
+        try:
+            self._apply_corrections()
+        except Exception as exc:
+            warnings.warn(
+                f"Got this error message when attempting to apply finite-size charge corrections:"
+                f"\n{exc}\n"
+                f"-> Charge corrections will not be applied for this defect."
+            )
+
+    def _apply_corrections(self):
         if not self.defect_entry.charge_state:  # no charge correction if charge is zero
             return
 
