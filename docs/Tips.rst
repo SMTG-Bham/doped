@@ -133,14 +133,14 @@ underlying calculation and/or extreme forces.
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
-    - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All`), if
-      electronic convergence seems to be causing issues.
+    - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All` and :code:`ISEARCH` to
+      :code:`1`), if electronic convergence seems to be causing issues.
     - Tightening/reducing the electronic convergence criterion (e.g. change :code:`EDIFF` to :code:`1e-7`)
 
 - If instead the calculation is crashing due to an error and/or extreme forces, a common culprit is the
   :code:`EDWAV` error in the output file, which can often be avoided by reducing :code:`NCORE` and/or
   :code:`KPAR`. If this doesn't fix it, switching the electronic minimisation algorithm (e.g. change
-  :code:`ALGO` to :code:`All`) can sometimes help.
+  :code:`ALGO` to :code:`All` and :code:`ISEARCH` to :code:`1`) can sometimes help.
 
     - If some relaxations are still not converging after multiple continuations, you should check the
       calculation output files to see if this requires fixing. Often this may require changing a
