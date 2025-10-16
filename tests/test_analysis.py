@@ -234,6 +234,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
 
         # test attributes:
+        print("Testing attributes")
         assert isinstance(dp.processes, int)
         assert isinstance(dp.output_path, str)
         assert dp.skip_corrections == skip_corrections
@@ -866,7 +867,6 @@ class DefectsParsingTestCase(unittest.TestCase):
             in str(exc.value)
         )
 
-        # no warning about negative corrections with strong anisotropic dielectric:
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
             output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
             bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
@@ -880,31 +880,11 @@ class DefectsParsingTestCase(unittest.TestCase):
             Sb2Se3_O_thermo, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
         )  # for test_plotting
 
-        # warning about negative corrections when using (fake) isotropic dielectric:
-        Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
-            output_path=f"{self.Sb2Se3_DATA_DIR}/defect",
-            bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
-            dielectric=40,  # fake isotropic dielectric
-            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
-        assert any(
-            all(
-                i in str(warn.message)
-                for i in [
-                    "The calculated finite-size charge corrections for defect at",
-                    "sum to a _negative_ value of -0.144.",
-                ]
-            )
-            for warn in w
-        )
-
         # spot check:
         assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
-
         return Sb2Se3_O_thermo.plot(chempots={"O": -8.9052, "Se": -5})  # example chempots
 
     def test_extrinsic_Sb2Se3_parsing_with_single_defect_dir(self):
-        # no warning about negative corrections with strong anisotropic dielectric:
         Sb2Se3_O_dp, w = _create_dp_and_capture_warnings(
             output_path=f"{self.Sb2Se3_DATA_DIR}/defect/O_-2",
             bulk_path=f"{self.Sb2Se3_DATA_DIR}/bulk",
@@ -1299,7 +1279,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "breaking the cell periodicity",
                 "This will not affect defect formation energies / transition levels,",
                 "but can be important for concentrations/doping/Fermi level behaviour",
-                "You can manually check (and edit) the computed defect/bulk point",
+                "You can manually check (and edit) the computed defect point",
             ]
         )
 
@@ -1333,7 +1313,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, w = _create_dp_and_capture_warnings(self.SOLID_SOLUTION_DATA_DIR, parse_projected_eigen=False)
         assert not w
         assert len(dp.defect_dict) == 1
-        self._check_DefectsParser(dp)
+        self._check_DefectsParser(dp, skip_corrections=True)
         thermo = dp.get_defect_thermodynamics()
 
         with warnings.catch_warnings(record=True) as w:

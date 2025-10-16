@@ -1784,6 +1784,8 @@ def _get_total_energies(computed_entry=None, vr=None):
         computed_entry.energy if computed_entry else None,
         vr.ionic_steps[-1]["electronic_steps"][-1]["e_0_energy"] if vr else None,
     ]
+    with contextlib.suppress(Exception):
+        energies.append(vr.final_energy if vr else None)
     return [energy for energy in energies if energy is not None]
 
 
