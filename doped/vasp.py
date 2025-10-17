@@ -129,7 +129,7 @@ class DopedKpoints(Kpoints):
         error handling.
         """
         try:
-            with open("/dev/null", "w") as f:
+            with open(os.devnull, "w") as f:  # os.devnull for cross-platform null device
                 f.write(self.comment)  # breaks if encoding error will occur, so we rewrite
             return super().__repr__()
 
