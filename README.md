@@ -74,6 +74,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- P. Russell et al. **_Computational prediction of Y-doped Cd<sub>2</sub>Sb<sub>2</sub>O<sub>7</sub> as a competitive Sb-based n-type Transparent Conducting Oxide_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-c1r3l) 2025
 - A. Lannerd et al. **_Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La<sub>0.5</sub>Sr<sub>0.5</sub>CoO<sub>3-δ</sub>_** [_arXiv_](https://arxiv.org/abs/2510.05323) 2025
 - V. Watson et al. **_Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr<sub>3–3x</sub>La<sub>2x</sub>V<sub>2</sub>O<sub>8</sub> via Increased Tetrahedral Distortion and Cation Vacancies_** [_Chemistry of Materials_](https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856) 2025
 - P. Deng et al. **_Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy_** [_Advanced Theory and Simulations_](https://doi.org/10.1002/adts.202501088) 2025

@@ -102,6 +102,7 @@ the
 Studies using ``doped``, so far
 ===============================
 
+- P\. Russell et al. **Computational prediction of Y-doped Cd** :sub:`2` **Sb** :sub:`2` **O** :sub:`7` **as a competitive Sb-based n-type Transparent Conducting Oxide** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-c1r3l>`__ 2025
 - A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ**` `arXiv <https://arxiv.org/abs/2510.05323>`__ 2025
 - V\. Watson et al. **Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr** :sub:`3–3x` **La** :sub:`2x` **V₂O₈ via Increased Tetrahedral Distortion and Cation Vacancies** `Chemistry of Materials <https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856>`__ 2025
 - P\. Deng et al. **Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy** `Advanced Theory and Simulations <https://doi.org/10.1002/adts.202501088>`__ 2025
