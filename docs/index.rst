@@ -171,6 +171,22 @@ Studies using ``doped``, so far
 .. Sykes Magnetic oxide polarons
 .. Kat YTOS
 
+Open Science and Reproducibility
+================================
+Robust, open and reproducible science greatly strengthens the impact of research. This is especially true 
+for computational defect modelling, given the many steps and complexities involved -- see 
+`Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+for discussion.
+
+``doped`` has been built to aid robustness and reproducibility for computational defect studies. 
+**We highly recommend** that the ``doped``/``ShakeNBreak`` class objects, which store key metadata and can 
+be directly output to lightweight ``json(.gz)`` files be shared in open-access repositories upon 
+publication, along with relevant raw computational data. It is also helpful to use the ``doped`` summary 
+functions to tabulate key quantities in Supplementary Information files. See the 
+`Open Science <https://doped.readthedocs.io/en/latest/Tips.html#open-science-and-reproducibility>`__
+section of the docs Tips page for details.
+
+
 Acknowledgements
 ================
 
@@ -181,7 +197,7 @@ Direct contributors are listed in the GitHub ``Contributors`` sidebar; including
 Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya
 Aggarwal.
 
-`doped` was originally based on the excellent ``PyCDT`` (no longer maintained), but transformed and morphed
+``doped`` was originally based on the excellent ``PyCDT`` (no longer maintained), but transformed and morphed
 over time as more and more functionality was added. After breaking changes in ``pymatgen``, the package
 was entirely refactored and rewritten, to work with the new ``pymatgen-analysis-defects`` package.
 

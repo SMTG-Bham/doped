@@ -136,6 +136,19 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh **_Rapid Recombination by Cadmium Vacancies in CdTe_** [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
 - C. J. Krajewska et al. **_Enhanced visible light absorption in layered Cs<sub>3</sub>Bi<sub>2</sub>Br<sub>9</sub> through mixed-valence Sn(II)/Sn(IV) doping_** [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
 
+## Open Science and Reproducibility
+Robust, open and reproducible science greatly strengthens the impact of research. This is especially true for
+computational defect modelling, given the many steps and complexities involved -- see
+[_Guidelines for robust and reproducible point defect simulations in crystals_](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
+for discussion.
+
+`doped` has been built to aid robustness and reproducibility for computational defect studies.
+**We highly recommend** that the `doped`/`ShakeNBreak` class objects, which store key metadata and can be directly
+output to lightweight `json(.gz)` files be shared in open-access repositories upon publication, along with relevant raw
+computational data. It is also helpful to use the `doped` summary functions to tabulate key quantities in Supplementary
+Information files. See the [Open Science](https://doped.readthedocs.io/en/latest/Tips.html#open-science-and-reproducibility)
+section of the docs Tips page for details.
+
 ## Acknowledgments
 `doped` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular
 members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including [Seán Kavanagh](https://sam-lab.net),

@@ -38,35 +38,22 @@
 
 - Docs:
   - Barebones tutorial workflow, as suggested by Alex G.
-  - Add note about `NUPDOWN` for triplet states (bipolarons or dimers (e.g. C-C in Si apparently has ~0.5 eV energy splitting (10.1038/s41467-023-36090-2), and 0.4 eV for O-O in STO from Kanta, but smaller for VCd bipolaron in CdTe))).
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
   - Show on chemical potentials docs how chempots can be later set as attribute for ``DefectThermodynamics`` (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
   - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple ``DefectThermodynamics`` objects
-  - Note that bandfilling corrections are no longer supported, as in most cases they shouldn't be used anyway, and if you have band occupation in your supercell then the energies aren't accurate anyway as it's a resonant/shallow defect, and this is just lowering the energy so it sits near the band edge (leads to false charge state behaviour being a bit more common etc). If the user wants to add bandfilling corrections, they can still doing this by calculating it themselves and adding to the `corrections` attribute. (Link our code in old `pymatgen` for doing this)
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
     with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
     and/or if it's known from other work for your chosen functional etc.)
-  - Show our workflow for calculating interstitials (see docs Tips page, i.e. `vasp_gam` relaxations first (can point to defects tutorial for this)) -> Need to mention this in the defects tutorial, and point to discussion in Tips docs page.
   - `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`, possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
+    - Worth noting that for metals it may sometimes be preferable to use a larger cell with reduced kpoints, due to memory limitations.
   - Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
-  - Worth noting that for metals it may sometimes be preferable to use a larger cell with reduced kpoints, due to memory limitations.
   - Readily-usable in conjunction with `atomate`, `AiiDA`(-defects), `vise`, `CarrierCapture`, and give some
     quick examples? Add as optional dependencies.
   - Setting `LREAL = Auto` can sometimes be worth doing if you have a very large supercell for speed up, _but_ it's important to do a final calculation with `LREAL = False` for accurate energies/forces, so only do if you're a power user and have a very large supercell.
   - Show usage of `get_conv_cell_site` in notebooks/docs (in an advanced analysis tutorial with other possibly useful functions being showcased?)
-  - Note in docs that `spglib` convention used for Wyckoff labels and conventional structure definition.
-    Primitive structure can change, as can supercell / supercell matrix (depending on input structure,
-    `generate_supercell` etc), but conventional cell should always be the same (`spglib` convention).
-  - Add examples of extending to
-    non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
-    `sumo` to get the DOS plot of a defect calc, and why this is useful.
-  -
-  - Should have recommendation somewhere about open science practices. The doped defect dict and thermo jsons should always be shared in e.g. Zenodo when publishing, as contains all info on the parsed defect data in a lean format. Also using the `get_formation_energies` etc. functions for SI tables is recommended.
-  - 
-  - 
   - Add our general rule-of-thumbs/expectations regarding charge corrections:
     - Potential alignment terms should rarely ever be massive
     - In general, the correction terms should follow somewhat consistent trends (for a given charge state, across defects), so if you see a large outlier in the corrections, it's implying something odd is happening there. This is can be fairly easily scanned with `get_formation_energies`.
@@ -77,7 +64,7 @@
     oxidation states and can fail in weird cases. As always please consider if these charge states are
     reasonable for the defects in your system. (i.e. low-symmetry, amphoteric, mixed-valence cases etc!)
     - Note cases where we expect default charge states to not be appropriate (e.g. mixed ionic-covalent systems, low-symmetry systems and/or with amphoteric species), often better to test more than necessary to be thorough! (And link Xinwei stuff, Ke F_i +1 (also found with our Se and Alex's Ba2BiO6)) – i.e.
-      use your f*cking head!
+      use your head!
     - And particularly when you've calculated your initial set of defect results! E.g. with Sb2Se3, all antisites and interstitials amphoteric, so suggests you should re-check amphotericity for all vacancies
   - Note about rare cases where `vasp_gam` pre-relaxation can fail (e.g. Wenzhen's case); extremely disperse bands with small bandgaps, where low k-point sampling can induce a phase transition in the bulk structure. In these cases, using a special k-point is advised for the pre-relaxations. You can get the corresponding k-point for your supercell (given the primitive cell special k-point) using the `get_K_from_k` function from `easyunfold`, with the `doped` `supercell_matrix`.
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
@@ -91,9 +78,8 @@
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout?
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.
+  - Tests for configuration coordinate diagram generation code
 - Stenciling tutorial and tests.
-- Tests for configuration coordinate diagram generation code
 - Quick-start tutorial suggested by Alex G
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)(e.g. Wenzhen Si2Sb2Te6). Can see `get_chempots` in `pmg-analysis-defects` for inspo on this.
-- Automatically detect dimers, check the magnetisation from the calcs, and then warn the user that they may want to try NUPDOWN = 2 (if the magnetisation was singlet)? Do in `DefectsParser` at the end (as part of a 'final-checks' function), so can loop through and check if dimer with magnetisation was calculated at some point for that defect state.

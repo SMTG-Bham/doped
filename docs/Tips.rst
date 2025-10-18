@@ -595,11 +595,12 @@ bipolaron/multi-polaron state (e.g. for `V`\ :sub:`Cd`\ :sup:`0*` in
 `CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__, `V`\ :sub:`Se`\ :sup:`0` in
 `t-Se <https://pubs.rsc.org/en/content/articlelanding/2025/ee/d4ee04647a>`__, or `V`\ :sub:`P`\ :sup:`-1`
 in `NaP <https://journals.aps.org/prxenergy/abstract/10.1103/PRXEnergy.2.043002>`__), a molecular
-dimer-like state (such as O\ :sub:`2` species in oxides or
-`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__), defects involving
-multiple localised `d`/`f` electrons, or orbital-degenerate/correlated defects where Hund's rule implies
-open-shell solutions (such as the highly-studied
-`NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
+dimer-like state (such as O\ :sub:`2` species in 
+`oxides <https://pubs.acs.org/doi/full/10.1021/acsenergylett.4c01307>`__ or 
+`carbon pairs in silicon <https://www.nature.com/articles/s41467-023-36090-2>`__) -- for which ``doped`` 
+has an automated warning upon parsing, defects involving multiple localised `d`/`f` electrons, or 
+orbital-degenerate/correlated defects where Hund's rule implies open-shell solutions (such as the 
+highly-studied `NV centre in diamond <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.104.235301>`__
 or `transition metal impurities in silicon <https://journals.aps.org/prmaterials/abstract/10.1103/PhysRevMaterials.6.L053201>`__).
 If you encounter defect states like these and/or suspect that alternative spin configurations may be
 possible, you should test the different possibilities by setting ``NUPDOWN`` (and possibly ``MAGMOM``,
@@ -681,8 +682,28 @@ etc.).
     ``USE_MAGNETIC_SYMMETRY=1`` (i.e. ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
 
-Serialization & Data Provenance (``JSON``/``csv``)
---------------------------------------------------
+Open Science and Reproducibility
+--------------------------------
+Robust, open and reproducible science greatly strengthens the impact of research. This is especially true 
+for computational defect modelling, given the many steps and complexities involved -- see 
+`Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__ 
+for discussion.
+
+:code:`doped` has been built to aid robustness and reproducibility for computational defect studies. 
+**We highly recommend** that the :code:`doped`/:code:`ShakeNBreak` class objects, which store key metadata 
+and can be directly output to lightweight :code:`json(.gz)` files (such as :code:`DefectThermodynamics`, 
+:code:`DefectsGenerator`, :code:`Distortions` :code:`CompetingPhasesAnalyzer`) be shared in open-access 
+repositories (e.g. Zenodo, Materials Cloud, Figshare) upon publication, along with relevant raw 
+computational data. It is also helpful to use the summary functions such as :code:`DefectThermodynamics.get_formation_energies()`, :code:`DefectThermodynamics.get_symmetries_and_degeneracies()`, :code:`CompetingPhasesAnalyzer.get_formation_energy_df()`,  :code:`CompetingPhasesAnalyzer.calculate_chempots()`, :code:`CompetingPhasesAnalyzer.to_LaTeX_table()` etc -- which output :code:`pandas` :code:`DataFrame`s which can be output to csv (with :code:`.to_csv()`, see tutorials) and imported to Microsoft Word / converted to LaTeX (`Tables Generator <https://www.tablesgenerator.com>`__) -- to summarise key quantities in Supplementary Information files.
+
+Examples of these practices are shown in 
+`Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics <https://doi.org/10.1039/D4EE04647A>`__ 
+& `Defect Tolerance via External Passivation in the Photocatalyst SrTiO₃:Al <https://pubs.acs.org/doi/10.1021/jacs.5c07104>`__.
+Further details on serialisation and data provenance utilities in :code:`doped` are given below.
+
+
+Serialisation & Data Provenance (``JSON``/``csv``)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 To aid calculation reproducibility, data provenance and easy sharing/comparison of pre- and post-processing
 stages of the defect workflow, ``doped`` objects have been made fully serializable, meaning they can be
 easily saved and (re-)loaded from compact, lightweight ``.json`` files. As demonstrated at
