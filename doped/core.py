@@ -43,12 +43,12 @@ _orientational_degeneracy_warning = (
     "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
     "point group symmetries (and thus orientational degeneracies) from being automatically determined.\n"
     "This will not affect defect formation energies / transition levels, but can be important for "
-    "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
-    "doi.org/10.1039/D3CS00432E).\n"
+    "concentrations/doping/Fermi level behaviour (10.1039/D2FD00043A, 10.1039/D3CS00432E, "
+    "10.26434/chemrxiv-2025-3lb5k ...).\n"
     "You can manually check (and edit) the computed defect point symmetries and corresponding "
     "orientational degeneracy factors by inspecting/editing the calculation_metadata['relaxed point "
     "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
-)
+)  # TODO: Update link when published
 
 
 @dataclass
@@ -86,7 +86,8 @@ class DefectEntry(thermo.DefectEntry):
             A dictionary of degeneracy factors contributing to the total
             degeneracy of the defect species (such as spin and configurational
             degeneracy etc). This is an important factor in the defect
-            concentration equation (see https://doi.org/10.1039/D2FD00043A and
+            concentration equation (https://doi.org/10.1039/D2FD00043A,
+            https://doi.org/10.26434/chemrxiv-2025-3lb5k,
             https://doi.org/10.1039/D3CS00432E), and so affects the output of
             the defect concentration / Fermi level functions. Spin and
             configurational (geometry) degeneracy factors are automatically
@@ -1223,8 +1224,9 @@ class DefectEntry(thermo.DefectEntry):
         defect concentration equation, affecting the final concentration by up
         to 2 orders of magnitude. This factor is taken from the product of the
         ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes. See discussion in:
-        https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
+        ``defect_entry.degeneracy_factors`` attributes. Discussion in:
+        https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k...
 
         Args:
             temperature (float):
@@ -1317,7 +1319,8 @@ class DefectEntry(thermo.DefectEntry):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site as the defect of
                 interest. Otherwise, uses the standard dilute limit
                 approximation. Note that when used with
@@ -1346,8 +1349,8 @@ class DefectEntry(thermo.DefectEntry):
                 "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
                 "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
                 "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
-                "(see discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E). This will "
-                "affect the computed defect concentration / Fermi level!\n"
+                "(discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.26434/chemrxiv-2025-3lb5k ...)."
+                "This will affect the computed defect concentration / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
                 "'spin degeneracy' in the degeneracy_factors attribute(s) -- usually 2 for odd-electron "
                 "defect species and 1 for even-electron)."
@@ -1360,11 +1363,11 @@ class DefectEntry(thermo.DefectEntry):
             warnings.warn(
                 "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
                 "attribute (for this vacancy/substitution defect). This factor contributes to the "
-                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- see "
-                "discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E) and is "
-                "automatically computed when parsing with doped if possible (if the defect supercell "
-                "doesn't break the host periodicity). This will affect the computed defect concentrations "
-                "/ Fermi level!\n"
+                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- "
+                "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.26434/chemrxiv-2025-3lb5k ... "
+                "-- and is automatically computed when parsing with doped if possible (if the defect "
+                "supercell doesn't break the host periodicity). This will affect the computed defect "
+                "concentrations / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
             )

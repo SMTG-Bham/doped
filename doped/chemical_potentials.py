@@ -1364,7 +1364,12 @@ class CompetingPhases:
                 f"k-point convergence testing, as Γ-only sampling is sufficient."
             )
 
-    # TODO: Add vasp_ncl_setup()
+    # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
+    #  chemical potentials (-> Guidelines perspective)
+    # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
+    # same composition (oxidation states), to good accuracy, so do this for pre-screening
+    # Also, can use symmetry with SOC total energy calculations, have tested this.
+
     def vasp_std_setup(
         self,
         kpoints_metals=200,

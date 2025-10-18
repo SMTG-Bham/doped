@@ -21,6 +21,9 @@
 ``doped`` is a Python software for the generation, pre-/post-processing and analysis of defect supercell
 calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet
 powerful and fully-customisable manner.
+``doped`` is open-source, developed by members of the `Simulation of Advanced Materials <https://sam-lab.net>`__ 
+lab at Cambridge, the Scanlon group at Birmingham, the Walsh group at Imperial College and contributors 
+from across the globe.
 
 Tutorials showing the code functionality and usage are provided on the :ref:`Tutorials` page, and an
 overview of the key advances of the package is given in the
@@ -76,13 +79,14 @@ Literature
 The following literature contain useful discussions of various aspects of defect calculations:
 
 - `Quick-Start Guide on Defect Calculations – Kim et al. <https://doi.org/10.1088/2515-7655/aba081>`__
+- `Guidelines for Defect Simulations – Squires et al. <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
 - `Large Review on Defect Calculations – Freysoldt et al. <https://doi.org/10.1103/RevModPhys.86.253>`__
 - `Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai <https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams>`__
 - `Defect Structure Searching – Mosquera-Lois et al. <https://doi.org/10.1038/s41524-023-00973-1>`__
 - `Free Energies of Defects – Mosquera-Lois et al. <https://doi.org/10.1039/D3CS00432E>`__
 - `DeepWiki Code Overview & Workflow <https://deepwiki.com/SMTG-Bham/doped/1-overview>`__
 
-.. TODO: Squires perspective when ready
+.. TODO: Update Guidelines perspective link when published
 
 ``ShakeNBreak``
 ================
@@ -106,7 +110,7 @@ Studies using ``doped``, so far
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-h3gsc>`__ 2025
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - P\. Russell et al. **Computational prediction of Y-doped Cd₂Sb₂O₇ as a competitive Sb-based n-type Transparent Conducting Oxide** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-c1r3l>`__ 2025
-- A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ**` `arXiv <https://arxiv.org/abs/2510.05323>`__ 2025
+- A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ` **` `arXiv <https://arxiv.org/abs/2510.05323>`__ 2025
 - V\. Watson et al. **Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr** :sub:`3–3x` **La** :sub:`2x` **V₂O₈ via Increased Tetrahedral Distortion and Cation Vacancies** `Chemistry of Materials <https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856>`__ 2025
 - P\. Deng et al. **Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy** `Advanced Theory and Simulations <https://doi.org/10.1002/adts.202501088>`__ 2025
 - P\. Panagis Filippatos, A. Chroneos and N. Kelaidis **A first-principles investigation of halogen doped diamond and its application to quantum technologies** `Journal of Applied Physics <https://doi.org/10.1063/5.0279139>`__ 2025
@@ -166,7 +170,6 @@ Studies using ``doped``, so far
 .. Kumagai collab paper
 .. Sykes Magnetic oxide polarons
 .. Kat YTOS
-.. Squires (and mention benchmark test against AIRSS? See Slack message)
 
 Acknowledgements
 ================
@@ -174,9 +177,9 @@ Acknowledgements
 ``doped`` (née ``DefectsWithTheBoys``) has benefitted from feedback from many users, in particular
 members of the `Scanlon <http://davidscanlon.com/>`_ and
 `Walsh <https://wmd-group.github.io/>`_ research groups who have / are using it in their work.
-Direct contributors are listed in the GitHub ``Contributors`` sidebar; including Seán Kavanagh,
-Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine
-Hachmioune and Savya Aggarwal.
+Direct contributors are listed in the GitHub ``Contributors`` sidebar; including `Seán Kavanagh <https://sam-lab.net>`__,
+Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya
+Aggarwal.
 
 `doped` was originally based on the excellent ``PyCDT`` (no longer maintained), but transformed and morphed
 over time as more and more functionality was added. After breaking changes in ``pymatgen``, the package

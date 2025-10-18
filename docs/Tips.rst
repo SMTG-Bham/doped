@@ -14,6 +14,11 @@ their specific needs/system.
     ranges, interstitial site pruning, ``MAGMOM`` initialisation etc.) in the context of your specific
     host system.
 
+See the :ref:`Literature <https://doped.readthedocs.io/en/latest/Tutorials.html#literature>` section on the
+tutorials page for recommended literature on defect calculations, in particular we strongly recommend
+`Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+which addresses many of the common pitfalls and best practices for defect simulations.
+
 Interstitials
 -------------------
 Voronoi tessellation is used by default to generate the candidate interstitial sites in ``doped``. We have
@@ -346,11 +351,13 @@ This weak attraction of the electron/hole to the defect site corresponds to a re
 donor/acceptor binding energy (i.e. energetic separation of the corresponding charge transition level to
 the nearby band edge), which is typically <100 meV.
 
-Current supercell correction schemes can not accurately account for finite-size errors obtained when
-calculating the energies of PHS (shallow defect states) in moderate supercells, so it is recommended to
-denote such shallow defects as PHS and conclude only `qualitatively` that their transition level is
+As discussed in this `Guidelines for Defect Simulations <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+perspective, current supercell correction schemes cannot accurately account for finite-size errors obtained
+when calculating the energies of PHS (shallow defect states) in moderate supercells, so it is recommended
+to denote such shallow defects as PHS and conclude only `qualitatively` that their transition level is
 located near the corresponding band edge. An example of this is given in
 `Kikuchi et al. Chem. Mater. 2020 <https://doi.org/10.1021/acs.chemmater.1c00075>`_.
+As discussed below, this is performed automatically in ``doped``.
 
 .. tip::
 

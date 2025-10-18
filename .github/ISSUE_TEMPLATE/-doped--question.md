@@ -16,6 +16,7 @@ Before taking developer time, I have searched the following curated resources fo
 
 If your question is about general defect calculation methodology (rather than specific to `doped`), please refer to the following papers, and other relevant literature:
 - [Quick-Start Guide on Defect Calculations – Kim et al.](https://doi.org/10.1088/2515-7655/aba081)
+- [Guidelines for Defect Simulations – Squires et al.](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
 - [Large Review on Defect Calculations – Freysoldt et al.](https://doi.org/10.1103/RevModPhys.86.253)
 - [Defect Structure Searching – Mosquera-Lois et al.](https://doi.org/10.1038/s41524-023-00973-1)
 - [Free Energies of Defects – Mosquera-Lois et al.](https://doi.org/10.1039/D3CS00432E)

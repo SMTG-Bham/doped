@@ -12,6 +12,10 @@ Literature
 - **General Defect Modelling Tutorial Video**: `Modelling Point Defects in Semiconductors with VASP <https://www.youtube.com/watch?v=FWz7nm9qoNg&ab_channel=Se%C3%A1nR.Kavanagh>`__
     - **B站 (Bilibili), 有中文字幕**: `使用VASP理解与计算半导体中的缺陷 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__
 - **ShakeNBreak Documentation**: `ShakeNBreak Documentation <https://shakenbreak.readthedocs.io/en/latest/>`__
+- **Guidelines for Defect Simulations**: A\. G. Squires et al. `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__ **2025**
+
+See the :ref:`Literature <https://doped.readthedocs.io/en/latest/index.html#literature>` section on the 
+main page for further recommended literature on defect simulations.
 
 .. note that oddly, the Bilibili links don't seem to work on MacOS Chrome (but do if you click the address
 .. in the address bar and press enter, weird), and works fine on everything else...

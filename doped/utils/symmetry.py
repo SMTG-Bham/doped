@@ -2673,8 +2673,9 @@ def point_symmetry_from_defect_entry(
     while for interstitials it is the point symmetry of the `final relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
-    concentrations and Fermi level behaviour (see e.g.
-    https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
+    concentrations and Fermi level behaviour (discussion in
+    https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+    https://doi.org/10.26434/chemrxiv-2025-3lb5k...).
 
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
@@ -3377,8 +3378,9 @@ def get_orientational_degeneracy(
     while for interstitials it is the point symmetry of the `final relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
-    concentrations and Fermi level behaviour (see e.g.
-    https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
+    concentrations and Fermi level behaviour (discussion in
+    https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+    https://doi.org/10.26434/chemrxiv-2025-3lb5k...).
 
     Args:
         defect_entry (DefectEntry):

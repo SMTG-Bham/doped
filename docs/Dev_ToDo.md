@@ -63,17 +63,10 @@
   - Add examples of extending to
     non-radiative carrier capture calcs with `CarrierCapture.jl` and `nonrad`. Show example of using
     `sumo` to get the DOS plot of a defect calc, and why this is useful.
-  - Note about SOC for chemical potential calculations ([FERE paper](https://doi.org/10.1103/PhysRevB.
-    85.115104) suggests that the SOC effects on total energy cancel out for chemical potential
-    calculations, but only the case when the occupation of the SOC-affected orbitals is constant
-    (typically not the case)) Better to do consistently (link Emily SOC work and/or thesis).
-    - But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the same composition (oxidation states), to good accuracy.
-    - Also, can use symmetry with SOC total energy calculations, have tested this.
-  - Link to Irea review, saying that while spin and configurational degeneracies are accounted for
-    automatically in `doped`, excited-state degeneracy (e.g. with bipolarons/dimers with single and triplet
-    states) are not, so the user should manually account for this if present. Also note that
-    temperature effects can be important in certain cases so see this review if that's the case.
+  -
   - Should have recommendation somewhere about open science practices. The doped defect dict and thermo jsons should always be shared in e.g. Zenodo when publishing, as contains all info on the parsed defect data in a lean format. Also using the `get_formation_energies` etc. functions for SI tables is recommended.
+  - 
+  - 
   - Add our general rule-of-thumbs/expectations regarding charge corrections:
     - Potential alignment terms should rarely ever be massive
     - In general, the correction terms should follow somewhat consistent trends (for a given charge state, across defects), so if you see a large outlier in the corrections, it's implying something odd is happening there. This is can be fairly easily scanned with `get_formation_energies`.

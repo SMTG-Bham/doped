@@ -2837,7 +2837,8 @@ class DefectThermodynamics(MSONable):
         By default, only returns the thermodynamic ground-state transition
         levels (i.e. those visible on the defect formation energy diagram), not
         including metastable defect states -- which can be important for
-        recombination, migration, degeneracy/concentrations etc., see e.g.
+        recombination, migration, degeneracy/concentrations etc.;
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
@@ -2965,6 +2966,7 @@ class DefectThermodynamics(MSONable):
         levels (i.e. those visible on the defect formation energy diagram), not
         including metastable defect states -- which can be important for
         recombination, migration, degeneracy/concentrations etc., see e.g.
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
         e.g. negative-U defects will show the 2-electron transition level
         (N+1/N-1) rather than (N+1/N) and (N/N-1).
@@ -3075,9 +3077,9 @@ class DefectThermodynamics(MSONable):
         bulk site, while for interstitials it is the point symmetry of the
         `final relaxed` interstitial site when placed in the (unrelaxed) bulk
         structure. The degeneracy factor is used in the calculation of
-        defect/carrier concentrations and Fermi level behaviour (see e.g.
-        https://doi.org/10.1039/D2FD00043A,
-        https://doi.org/10.1039/D3CS00432E).
+        defect/carrier concentrations and Fermi level behaviour (e.g.
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+        https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E).
 
         Args:
             skip_formatting (bool):
@@ -3243,7 +3245,8 @@ class DefectThermodynamics(MSONable):
         defect concentration equation, affecting the final concentration by up
         to 2 orders of magnitude. This factor is taken from the product of the
         ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes. See discussion in:
+        ``defect_entry.degeneracy_factors`` attributes. Discussion in:
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
 
         Note that the ``FermiSolver`` class implements a number of convenience
@@ -3336,7 +3339,8 @@ class DefectThermodynamics(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
@@ -3558,7 +3562,8 @@ class DefectThermodynamics(MSONable):
         defect concentration equation, affecting the final concentration by up
         to 2 orders of magnitude. This factor is taken from the product of the
         ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes. See discussion in:
+        ``defect_entry.degeneracy_factors`` attributes. Discussion in:
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
 
         Note that the ``FermiSolver`` class implements a number of convenience
@@ -3676,7 +3681,8 @@ class DefectThermodynamics(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
@@ -3775,9 +3781,9 @@ class DefectThermodynamics(MSONable):
         temperature, and then assuming the total concentration of each defect
         is fixed to this value, but that the relative populations of defect
         charge states (and the Fermi level) can re-equilibrate at the lower
-        (room) temperature. See https://doi.org/10.1039/D3CS00432E (brief
-        discussion), https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and
-        ``doped``/``py-sc-fermi`` tutorials for more information. In certain
+        (room) temperature. See https://doi.org/10.26434/chemrxiv-2025-3lb5k
+        (brief discussion), https://doi.org/10.1016/j.cpc.2019.06.017 (detailed)
+        and ``doped`` tutorials for more information. In certain
         cases (such as Li-ion battery materials or extremely slow charge
         capture/emission), these approximations may have to be adjusted such
         that some defects/charge states are considered fixed and some are
@@ -3803,7 +3809,8 @@ class DefectThermodynamics(MSONable):
         defect concentration equation, affecting the final concentration by up
         to 2 orders of magnitude. This factor is taken from the product of the
         ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes. See discussion in:
+        ``defect_entry.degeneracy_factors`` attributes. Discussion in:
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
 
         Note that, in addition to finer-grained control over constraints and
@@ -3949,7 +3956,8 @@ class DefectThermodynamics(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
@@ -4963,9 +4971,11 @@ class FermiSolver(MSONable):
                 here to additionally account for configurational degeneracies
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
-                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]`` where
-                ``i`` runs over all defects which occupy the same site.
-                If ``False``, uses the standard dilute limit approximation.
+                ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                all defects which occupy the same site. If ``False``, uses the
+                standard dilute limit approximation.
 
         Returns:
             tuple[float, float, float]: A tuple containing:
@@ -5105,7 +5115,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 If ``False``, uses the standard dilute limit approximation.
 
@@ -5256,17 +5267,17 @@ class FermiSolver(MSONable):
         concentrations at the annealing temperature, and then assuming the
         total concentration of each defect is fixed to this value, but that the
         relative populations of defect charge states (and the Fermi level) can
-        re-equilibrate at the lower (room) temperature. See discussion in
-        https://doi.org/10.1039/D3CS00432E (brief),
-        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and ``doped`` /
-        ``py-sc-fermi`` tutorials for more information. In certain cases (such
-        as Li-ion battery materials or extremely slow charge capture/emission),
-        these approximations may have to be adjusted such that some defects /
-        charge states are considered fixed and some are allowed to
-        re-equilibrate (e.g. highly mobile Li vacancies/interstitials).
-        Modelling these specific cases can be achieved using the
-        ``free_defects`` and/or ``fix_charge_states`` options, as demonstrated
-        in: https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html.
+        re-equilibrate at the lower (room) temperature. Discussion in
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k (brief),
+        https://doi.org/10.1016/j.cpc.2019.06.017 (detailed) and ``doped``
+        tutorials. In certain cases (such as Li-ion battery materials or
+        extremely slow charge capture/emission), these approximations may
+        have to be adjusted such that some defects / charge states are
+        considered fixed and some are allowed to re-equilibrate (e.g.
+        highly mobile Li vacancies/interstitials). Modelling these specific
+        cases can be achieved using the ``free_defects`` and/or
+        ``fix_charge_states`` options, as demonstrated in:
+        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html.
 
         This function works by calculating the self-consistent Fermi level and
         total concentration of each defect at the annealing temperature, then
@@ -5290,6 +5301,7 @@ class FermiSolver(MSONable):
         ``defect_entry.defect.multiplicity`` and
         ``defect_entry.degeneracy_factors`` attributes which are automatically
         determined during ``doped`` defect calculation parsing. Discussion in:
+        https://doi.org/10.26434/chemrxiv-2025-3lb5k,
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
 
         Args:
@@ -5386,7 +5398,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
@@ -5774,7 +5787,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
@@ -5995,7 +6009,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
@@ -6207,7 +6222,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
@@ -6438,7 +6454,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
@@ -6628,7 +6645,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
@@ -6866,7 +6884,8 @@ class FermiSolver(MSONable):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site.
                 Note that this option is only supported for the ``doped``
                 backend. If ``False`` (or using the ``py-sc-fermi`` backend),
