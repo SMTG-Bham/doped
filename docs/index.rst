@@ -110,7 +110,7 @@ Studies using ``doped``, so far
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-h3gsc>`__ 2025
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - P\. Russell et al. **Computational prediction of Y-doped Cd₂Sb₂O₇ as a competitive Sb-based n-type Transparent Conducting Oxide** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-c1r3l>`__ 2025
-- A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ` **` `arXiv <https://arxiv.org/abs/2510.05323>`__ 2025
+- A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ` `arXiv <https://arxiv.org/abs/2510.05323>`__ 2025
 - V\. Watson et al. **Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr** :sub:`3–3x` **La** :sub:`2x` **V₂O₈ via Increased Tetrahedral Distortion and Cation Vacancies** `Chemistry of Materials <https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856>`__ 2025
 - P\. Deng et al. **Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy** `Advanced Theory and Simulations <https://doi.org/10.1002/adts.202501088>`__ 2025
 - P\. Panagis Filippatos, A. Chroneos and N. Kelaidis **A first-principles investigation of halogen doped diamond and its application to quantum technologies** `Journal of Applied Physics <https://doi.org/10.1063/5.0279139>`__ 2025

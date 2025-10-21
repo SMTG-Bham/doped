@@ -694,7 +694,13 @@ for discussion.
 and can be directly output to lightweight :code:`json(.gz)` files (such as :code:`DefectThermodynamics`, 
 :code:`DefectsGenerator`, :code:`Distortions` :code:`CompetingPhasesAnalyzer`) be shared in open-access 
 repositories (e.g. Zenodo, Materials Cloud, Figshare) upon publication, along with relevant raw 
-computational data. It is also helpful to use the summary functions such as :code:`DefectThermodynamics.get_formation_energies()`, :code:`DefectThermodynamics.get_symmetries_and_degeneracies()`, :code:`CompetingPhasesAnalyzer.get_formation_energy_df()`,  :code:`CompetingPhasesAnalyzer.calculate_chempots()`, :code:`CompetingPhasesAnalyzer.to_LaTeX_table()` etc -- which output :code:`pandas` :code:`DataFrame`s which can be output to csv (with :code:`.to_csv()`, see tutorials) and imported to Microsoft Word / converted to LaTeX (`Tables Generator <https://www.tablesgenerator.com>`__) -- to summarise key quantities in Supplementary Information files.
+computational data. It is also helpful to use the summary functions such as
+:code:`DefectThermodynamics.get_formation_energies()`, :code:`DefectThermodynamics.get_symmetries_and_degeneracies()`,
+:code:`CompetingPhasesAnalyzer.get_formation_energy_df()`,  :code:`CompetingPhasesAnalyzer.calculate_chempots()`,
+:code:`CompetingPhasesAnalyzer.to_LaTeX_table()` etc -- which output :code:`pandas` :code:`DataFrame`\s which can be
+output to csv (with :code:`.to_csv()`, see tutorials) and imported to Microsoft Word / converted to LaTeX
+(`Tables Generator <https://www.tablesgenerator.com>`__) -- to summarise key quantities in Supplementary Information
+files.
 
 Examples of these practices are shown in 
 `Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics <https://doi.org/10.1039/D4EE04647A>`__ 
