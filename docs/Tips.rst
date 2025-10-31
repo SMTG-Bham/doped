@@ -14,7 +14,7 @@ their specific needs/system.
     ranges, interstitial site pruning, ``MAGMOM`` initialisation etc.) in the context of your specific
     host system.
 
-See the :ref:`Literature <https://doped.readthedocs.io/en/latest/Tutorials.html#literature>` section on the
+See the `Literature <https://doped.readthedocs.io/en/latest/Tutorials.html#literature>`__ section on the
 tutorials page for recommended literature on defect calculations, in particular we strongly recommend
 `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
 which addresses many of the common pitfalls and best practices for defect simulations.
@@ -37,9 +37,8 @@ As with all aspects of the calculation workflow, interstitial site generation is
 explicitly specify the interstitial sites to generate using the ``interstitial_coords`` (for instance, if
 you only want to investigate one specific known interstitial site, or input a list of candidate sites
 generated from a different algorithm), and/or customise the generation algorithm via
-``interstitial_gen_kwargs``, both of which are input parameters for the ``DefectsGenerator`` class; see the
-`API documentation <https://doped.readthedocs.io/en/latest/doped.generation.html#doped.generation.DefectsGenerator>`_
-for more details.
+``interstitial_gen_kwargs``, both of which are input parameters for the :class:`~doped.generation.DefectsGenerator`
+class.
 
 .. note::
 
