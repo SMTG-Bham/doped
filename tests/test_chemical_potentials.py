@@ -221,6 +221,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {cp_settings}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
+                cp.convergence_setup()  # test methods
+                cp.vasp_std_setup()  # test methods
             print([str(warning.message) for warning in w])  # for debugging
             if cp_settings.get("full_phase_diagram"):
                 assert len(cp.entries) == 172
@@ -243,11 +245,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {kwargs}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**kwargs)
+                cp.convergence_setup()  # test methods
+                cp.vasp_std_setup()  # test methods
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
-                w[-1].message
+                w[0].message
             )
+            assert (
+                "Structure for entry Cu2SiSe4 not available; input files will not be generated for "
+                "this entry."
+            ) in str(w[-1].message)
             if kwargs.get("full_phase_diagram"):
                 assert len(cp.entries) == 29
             elif kwargs.get("energy_above_hull") == 0.0:
@@ -258,7 +266,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
 
-            # TODO: Test file generation functions for an unknown host!
+            # TODO: (Explicitly) Test file generation functions for an unknown host!
 
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=self.api_key)

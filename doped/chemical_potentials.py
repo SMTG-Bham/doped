@@ -1273,6 +1273,28 @@ class CompetingPhases:
         """
         return [entry for entry in self.entries if entry.data.get("molecule")]
 
+    def _iter_entries_with_types(self) -> Iterable[tuple[ComputedEntry, str]]:
+        """
+        Yield tuples ``(entry, type)`` for non-metallic, metallic and molecular
+        entries in ``self.entries``.
+
+        Centralises the unknown-structure warning/skip logic so callers only
+        handle valid entries.
+        """
+        for entry_list, type in [
+            (self.nonmetallic_entries, "non-metals"),
+            (self.metallic_entries, "metals"),
+            (self.molecular_entries, "molecules"),
+        ]:
+            for entry in entry_list:
+                if not hasattr(entry, "structure"):
+                    warnings.warn(
+                        f"Structure for entry {entry.name} not available; input files will not be "
+                        f"generated for this entry."
+                    )
+                    continue
+                yield entry, type
+
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
     # TODO: Have option to only write extrinsic files to output (in case regenerated when adding calcs
@@ -1320,42 +1342,42 @@ class CompetingPhases:
         # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
+        kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
 
-        for entry_list, type in [
-            (self.nonmetallic_entries, "non-metals"),
-            (self.metallic_entries, "metals"),
-        ]:  # no molecular entries as they don't need convergence testing
-            # kpoints should be set as (min, max, step):
-            min_k, max_k, step_k = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}[type]
-            for entry in entry_list:
-                uis = copy.deepcopy(base_incar_settings or {})
-                self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
-                if type == "metals":
-                    self._set_default_metal_smearing(uis, user_incar_settings or {})
+        for entry, type in self._iter_entries_with_types():
+            if "molecule" in type:
+                continue  # no molecular entries as they don't need convergence testing
 
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                    dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                        structure=entry.structure,
-                        user_incar_settings=uis,
-                        user_kpoints_settings={"reciprocal_density": min_k},
-                        user_potcar_settings=user_potcar_settings or {},
-                        user_potcar_functional=user_potcar_functional,
-                        force_gamma=True,
+            # kpoints should be set as (min, max, step)
+            min_k, max_k, step_k = kpoints_by_metallicity[type]
+            uis = copy.deepcopy(base_incar_settings or {})
+            self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
+            if type == "metals":
+                self._set_default_metal_smearing(uis, user_incar_settings or {})
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                    structure=entry.structure,
+                    user_incar_settings=uis,
+                    user_kpoints_settings={"reciprocal_density": min_k},
+                    user_potcar_settings=user_potcar_settings or {},
+                    user_potcar_functional=user_potcar_functional,
+                    force_gamma=True,
+                )
+
+                for kpoint in range(min_k, max_k, step_k):
+                    dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                    kname = (
+                        "k"
+                        + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                        + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                     )
-
-                    for kpoint in range(min_k, max_k, step_k):
-                        dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                        kname = (
-                            "k"
-                            + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
-                            + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                        )
-                        fname = (
-                            f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
-                            f"/{kname}"
-                        )
-                        dict_set.write_input(fname, **kwargs)
+                    fname = (
+                        f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
+                        f"/{kname}"
+                    )
+                    dict_set.write_input(fname, **kwargs)
 
         if self.molecular_entries:
             print(
@@ -1421,45 +1443,40 @@ class CompetingPhases:
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
-        for entry_list, type in [
-            (self.nonmetallic_entries, "non-metals"),
-            (self.metallic_entries, "metals"),
-            (self.molecular_entries, "molecules"),
-        ]:
-            if type == "molecules":
+        for entry, type in self._iter_entries_with_types():
+            if "molecule" in type:
                 user_kpoints_settings = Kpoints().from_dict(
                     {
                         "comment": "Gamma-only kpoints for molecule-in-a-box",
                         "generation_style": "Gamma",
                     }
                 )
-            elif type == "non-metals":
+            elif "non-metals" in type:
                 user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
             else:  # metals
                 user_kpoints_settings = {"reciprocal_density": kpoints_metals}
 
-            for entry in entry_list:
-                uis = copy.deepcopy(base_incar_settings or {})
-                if type == "molecules":
-                    uis["ISIF"] = 2  # can't change the volume
-                    uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
-                self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
-                if type == "metals":
-                    self._set_default_metal_smearing(uis, user_incar_settings or {})
+            uis = copy.deepcopy(base_incar_settings or {})
+            if type == "molecules":
+                uis["ISIF"] = 2  # can't change the volume
+                uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
+            self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
+            if type == "metals":
+                self._set_default_metal_smearing(uis, user_incar_settings or {})
 
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                    dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                        structure=entry.structure,
-                        user_incar_settings=uis,
-                        user_kpoints_settings=user_kpoints_settings,
-                        user_potcar_settings=user_potcar_settings or {},
-                        user_potcar_functional=user_potcar_functional,
-                        force_gamma=True,
-                    )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                    structure=entry.structure,
+                    user_incar_settings=uis,
+                    user_kpoints_settings=user_kpoints_settings,
+                    user_potcar_settings=user_potcar_settings or {},
+                    user_potcar_functional=user_potcar_functional,
+                    force_gamma=True,
+                )
 
-                    fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
-                    dict_set.write_input(fname, **kwargs)
+                fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
+                dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """
