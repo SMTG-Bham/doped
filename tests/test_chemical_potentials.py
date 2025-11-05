@@ -221,8 +221,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {cp_settings}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
-                cp.convergence_setup()  # test methods
-                cp.vasp_std_setup()  # test methods
+                cp.convergence_setup(potcar_spec=True)  # test methods
+                cp.vasp_std_setup(potcar_spec=True)  # test methods
             print([str(warning.message) for warning in w])  # for debugging
             if cp_settings.get("full_phase_diagram"):
                 assert len(cp.entries) == 172
@@ -245,8 +245,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {kwargs}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**kwargs)
-                cp.convergence_setup()  # test methods
-                cp.vasp_std_setup()  # test methods
+                cp.convergence_setup(potcar_spec=True)  # test methods
+                cp.vasp_std_setup(potcar_spec=True)  # test methods
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
