@@ -20,12 +20,21 @@ from pymatgen.io.vasp.sets import BadInputSetWarning
 
 try:
     import vise.util.logger
-    vise.util.logger.get_logger = logging.getLogger  # to avoid repeated vise INFO messages with Parallel code
+
+    vise.util.logger.get_logger = (
+        logging.getLogger
+    )  # to avoid repeated vise INFO messages with Parallel code
 except ImportError:
     warnings.warn(
         "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "
         "be installed with `pip install pydefect`."
     )
+
+# set __version__ for older users who use this convention:
+try:
+    __version__ = version("doped")  # from package metadata (pyproject.toml)
+except PackageNotFoundError:
+    __version__ = "No version found"  # fallback for local development or if package isn't installed
 
 
 def _check_pmg_compatibility():
