@@ -43,7 +43,7 @@ All features and functionality are fully-customisable:
 - **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
 - **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials, full inclusion of metastable states etc.
 - **Plotting**: Generate publication-quality plots of defect formation energies, chemical potential limits, defect/carrier concentrations, Fermi levels, charge corrections, etc.
-- ``Python`` **Interface**: Fully-customisable and modular ``Python`` API, being plug-and-play with `ShakeNBreak`_ for `defect structure-searching <https://www.nature.com/articles/s41524-023-00973-1>`_, `easyunfold <https://smtg-bham.github.io/easyunfold/>`__ for band unfolding, `CarrierCapture.jl <https://github.com/WMD-group/CarrierCapture.jl>`__/`nonrad <https://nonrad.readthedocs.io/en/latest/>`__ for non-radiative recombination etc.
+- ``Python`` **Interface**: Fully-customisable and modular ``Python`` API, being plug-and-play with |ShakeNBreak| for `defect structure-searching <https://www.nature.com/articles/s41524-023-00973-1>`_, `easyunfold <https://smtg-bham.github.io/easyunfold/>`__ for band unfolding, `CarrierCapture.jl <https://github.com/WMD-group/CarrierCapture.jl>`__/`nonrad <https://nonrad.readthedocs.io/en/latest/>`__ for non-radiative recombination etc.
 - Reproducibility, tabulation, automated compatibility/sanity checking, strain/displacement analysis, shallow defect / eigenvalue analysis, high-throughput compatibility, Wyckoff analysis...
 
 Performance and Example Outputs
@@ -74,6 +74,8 @@ If you use ``doped`` in your research, please cite:
 
 - S\. R. Kavanagh et al. `doped: Python toolkit for robust and repeatable charged defect supercell calculations <https://doi.org/10.21105/joss.06433>`__. *Journal of Open Source Software* 9 (96), 6433, **2024**
 
+.. _literature:
+
 Literature
 ==========
 The following literature contain useful discussions of various aspects of defect calculations:
@@ -84,20 +86,18 @@ The following literature contain useful discussions of various aspects of defect
 - `Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai <https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams>`__
 - `Defect Structure Searching – Mosquera-Lois et al. <https://doi.org/10.1038/s41524-023-00973-1>`__
 - `Free Energies of Defects – Mosquera-Lois et al. <https://doi.org/10.1039/D3CS00432E>`__
-- `DeepWiki Code Overview & Workflow <https://deepwiki.com/SMTG-Bham/doped/1-overview>`__
+- |DeepWiki|
 
 .. TODO: Update Guidelines perspective link when published
 
 ``ShakeNBreak``
 ================
-As shown in the tutorials, it is highly recommended to use the `ShakeNBreak`_ approach when calculating
+As shown in the tutorials, it is highly recommended to use the |ShakeNBreak| approach when calculating
 point defects in solids, to ensure you have identified the ground-state structures of your defects. As
 detailed in the `theory paper`_, skipping this step can result in drastically incorrect formation
 energies, transition levels, carrier capture (basically any property associated with defects). This
 approach is followed in the :ref:`tutorials <Tutorials>`, with a more in-depth explanation and tutorial
-given on
-the
-`ShakeNBreak`_ docs.
+given on the |ShakeNBreakDocs|.
 
 .. _theory paper: https://www.nature.com/articles/s41524-023-00973-1
 
@@ -178,11 +178,10 @@ Open Science and Reproducibility
 ================================
 Robust, open and reproducible science greatly strengthens the impact of research. This is especially true 
 for computational defect modelling, given the many steps and complexities involved -- see 
-`Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
-for discussion.
+|Guidelines Perspective| for discussion.
 
 ``doped`` has been built to aid robustness and reproducibility for computational defect studies. 
-**We highly recommend** that the ``doped``/``ShakeNBreak`` class objects, which store key metadata and can 
+**We highly recommend** that the ``doped``/|ShakeNBreak| class objects, which store key metadata and can 
 be directly output to lightweight ``json(.gz)`` files be shared in open-access repositories upon 
 publication, along with relevant raw computational data. It is also helpful to use the ``doped`` summary 
 functions to tabulate key quantities in Supplementary Information files. See the 
@@ -208,7 +207,6 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
 `YouTube tutorials <https://youtu.be/FWz7nm9qoNg>`__ with Chinese subtitles to
 `Bilibili <https://www.bilibili.com/list/6073855/?sid=4603908>`__!
 
-.. _ShakeNBreak: https://shakenbreak.readthedocs.io
 
 .. raw:: html
 
@@ -244,7 +242,7 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
    Python API <doped>
    Tutorials
    Tips
-   Code Overview & Workflow Diagrams <https://deepwiki.com/SMTG-Bham/doped/1-overview>
+   Code Overview & Workflow Diagrams <https://deepwiki.com/SMTG-Bham/doped>
    Troubleshooting
 
 .. toctree::

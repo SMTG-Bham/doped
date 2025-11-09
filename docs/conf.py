@@ -27,6 +27,7 @@ extensions = [
     "sphinx.ext.coverage",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
     "sphinx_click",
@@ -105,10 +106,8 @@ html_context = {
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/3.12", None),
-    "numpy": ("http://docs.scipy.org/doc/numpy/", None),
     "pymatgen": ("http://pymatgen.org/", None),
-    "matplotlib": ("http://matplotlib.org", None),
+    "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------
@@ -128,3 +127,13 @@ def setup(app):
 
 # ignore non-consecutive level header warnings, and attempted image editing:
 suppress_warnings = ["myst.header", "mystnb.image"]
+
+# -- Global substitutions for external links ------------------------------------
+# These substitutions are available in all RST files
+rst_prolog = """
+.. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
+.. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
+.. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
+.. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
+.. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+"""

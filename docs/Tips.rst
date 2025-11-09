@@ -14,17 +14,16 @@ their specific needs/system.
     ranges, interstitial site pruning, ``MAGMOM`` initialisation etc.) in the context of your specific
     host system.
 
-See the `Literature <https://doped.readthedocs.io/en/latest/Tutorials.html#literature>`__ section on the
-tutorials page for recommended literature on defect calculations, in particular we strongly recommend
-`Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
-which addresses many of the common pitfalls and best practices for defect simulations.
+See the :ref:`tutorials-literature` section on the tutorials page for recommended literature on
+defect calculations, in particular we strongly recommend |Guidelines Perspective| which addresses many of 
+the common pitfalls and best practices for defect simulations.
 
 Interstitials
 -------------------
 Voronoi tessellation is used by default to generate the candidate interstitial sites in ``doped``. We have
 consistently found this approach to be the most robust in identifying all stable/low-energy interstitial
 sites across a wide variety of materials and chemistries, when combined with structure-searching approaches
-such as `ShakeNBreak <https://shakenbreak.readthedocs.io>`__. A nice discussion is given in
+such as |ShakeNBreak|. A nice discussion is given in
 `Kononov et al. J. Phys.: Condens. Matter 2023 <https://iopscience.iop.org/article/10.1088/1361-648X/acd3cf>`_.
 
 .. figure:: Images/doped_Interstitial_Generation_Example.png
@@ -37,8 +36,8 @@ As with all aspects of the calculation workflow, interstitial site generation is
 explicitly specify the interstitial sites to generate using the ``interstitial_coords`` (for instance, if
 you only want to investigate one specific known interstitial site, or input a list of candidate sites
 generated from a different algorithm), and/or customise the generation algorithm via
-``interstitial_gen_kwargs``, both of which are input parameters for the :class:`~doped.generation.DefectsGenerator`
-class.
+``interstitial_gen_kwargs``, both of which are input parameters for the
+:class:`~doped.generation.DefectsGenerator` class.
 
 .. note::
 
@@ -47,21 +46,23 @@ class.
     with fully-ionised defect charge states) where electrostatics primarily govern the energetics. In
     many systems (particularly those with some presence of (ionic-)covalent bonding) where orbital
     hybridisation plays a role, this approach can often miss the ground-state interstitial site(s).
-    ..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
+    
+..  If you are limited with computational resources and are working with (relatively simple) ionic compound(s), this approach may be worth considering.
 
 Efficient Interstitial Screening
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7nm9qoNg>`__,
 `B站 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__),
 our recommended workflow for calculating interstitial defects is to first generate the set of candidate
-interstitial sites for your structure using ``DefectsGenerator`` (which uses Voronoi tessellation
-for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) for each
-charge state of the generated interstitial candidates, and then pruning some of the candidate sites based
-on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the defect
-generation tutorial, and then run the ``ShakeNBreak`` ``vasp_gam`` relaxations for the ``Unperturbed`` and
-``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate the
-``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in ``DefectsSet.write_files()`` -- this
-will rattle the output structures by default to break symmetry (controlled by the ``rattle`` option).
+interstitial sites for your structure using :class:`~doped.generation.DefectsGenerator` (which uses Voronoi 
+tessellation for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) 
+for each charge state of the generated interstitial candidates, and then pruning some of the candidate sites 
+based on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the 
+defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the ``Unperturbed`` 
+and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate 
+the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
+:class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- this will rattle 
+the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
 We can then compare the energies of these trial relaxations, and remove candidates that either:
 
@@ -73,7 +74,7 @@ We can then compare the energies of these trial relaxations, and remove candidat
   one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each other,
   this is the case.
 
-See the DeepWiki workflow summary `here <https://deepwiki.com/SMTG-Bham/doped/9-troubleshooting-and-best-practices#best-practices-for-specific-systems>`__.
+See the workflow summary on |DeepWiki|.
 
 .. tip::
 
@@ -107,9 +108,10 @@ For defect calculation parsing, this can be slowed down in the case of large sup
 sizes of the output ``vasprun.xml(.gz)`` files. Again, ``doped`` has been heavily-optimised to expedite this
 process, and will use multiprocessing by default to accelerate when multiple CPUs are available. The main
 bottleneck here is the loading and parsing of ``vasprun.xml(.gz)`` files. Parsing only has to be run once
-however, and we encourage the saving of parsed outputs to ``json.gz`` files as shown in the tutorials (and
-automatically performed by ``DefectsParser``). Future improvements in the efficiency of the ``pymatgen``
-``Vasprun`` parser for large files would be very beneficial here.
+however, and we encourage the saving of parsed outputs to ``json.gz`` files as shown in the tutorials
+(and automatically performed by :class:`~doped.analysis.DefectsParser`). Future improvements in the
+efficiency of the ``pymatgen`` :class:`~pymatgen.io.vasp.outputs.Vasprun` parser for large files would be 
+very beneficial here.
 
 
 Difficult Structural Relaxations
@@ -128,17 +130,18 @@ underlying calculation and/or extreme forces.
     - Often (but not always) this indicates that the structure may be stuck around a `saddle point` or
       shallow local minimum on the potential energy surface (PES), so it's important to make sure
       that you have performed structure-searching (PES scanning) with an approach such as
-      `ShakeNBreak <https://shakenbreak.readthedocs.io>`_ (``SnB``) to avoid this. You may want to try
+      |ShakeNBreak| (``SnB``) to avoid this. You may want to try
       'rattling' the structure to break symmetry in case this is an issue, as detailed in
       `this part <https://shakenbreak.readthedocs.io/en/latest/Tips.html#bulk-phase-transformations>`_
       of the ``SnB`` docs.
 
-    - `Alternatively (if you have already performed SnB structure-searching), convergence of the forces can be aided by:`
+    - `Alternatively (if you have already performed SnB structure-searching), convergence of the forces
+      can be aided by:`
     - Switching the ionic relaxation algorithm back and forth (i.e. change :code:`IBRION` to :code:`1` or
       :code:`3` and back).
     - Reducing the ionic step width (e.g. change :code:`POTIM` to :code:`0.02` in the :code:`INCAR`)
-    - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All` and :code:`ISEARCH` to
-      :code:`1`), if electronic convergence seems to be causing issues.
+    - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All` and
+      :code:`ISEARCH` to :code:`1`), if electronic convergence seems to be causing issues.
     - Tightening/reducing the electronic convergence criterion (e.g. change :code:`EDIFF` to :code:`1e-7`)
 
 - If instead the calculation is crashing due to an error and/or extreme forces, a common culprit is the
@@ -155,30 +158,31 @@ underlying calculation and/or extreme forces.
 -------------------
 
 For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
-`ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
+|ShakeNBreakDocs|.
 
 Layered / Low Dimensional Materials
 --------------------------------------
 Layered and low-dimensional materials introduce complications for defect analysis. One point is that
 typically such lower-symmetry materials exhibit higher rates of energy-lowering defect reconstructions
 (e.g. `4-electron negative-U centres in Sb₂Se₃ <https://doi.org/10.1103/PhysRevB.108.134102>`_,
-`vacancies in low-dimensional chalcogenides <https://doi.org/10.1038/s41524-024-01303-9>`_ etc), as a result of
-having more complex energy landscapes, and so use of structure-searching strategies like
-`ShakeNBreak <https://shakenbreak.readthedocs.io>`__ can be particularly important.
+`vacancies in low-dimensional chalcogenides <https://doi.org/10.1038/s41524-024-01303-9>`_ etc), as a 
+result of having more complex energy landscapes, and so use of structure-searching strategies like
+|ShakeNBreak| can be particularly important.
 
 Another is that often the application of charge correction schemes to supercell calculations with layered
 materials may require some fine-tuning for converged results. To illustrate, for Sb₂Si₂Te₆ (
-`a promising layered thermoelectric material <https://doi.org/10.26434/chemrxiv-2024-hm6vh>`_),
+`a promising layered thermoelectric material <https://pubs.acs.org/doi/10.1021/jacs.4c01838>`_),
 when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) gave this warning:
 
 .. code-block::
 
-        Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. which is
-        greater than the ``error_tolerance``: 0.050 eV). You may want to check the accuracy of the correction by
-        plotting the site potential differences (using ``defect_entry.get_kumagai_correction()`` with ``plot=True``).
-        Large errors are often due to unstable or shallow defect charge states (which can't be accurately modelled
-        with the supercell approach). If this error is not acceptable, you may need to use a larger supercell
-        for more accurate energies.
+        Estimated error in the Kumagai (eFNV) charge correction for defect v_Sb_-3 is 0.067 eV (i.e. which 
+        is greater than the ``error_tolerance``: 0.050 eV). You may want to check the accuracy of the 
+        correction by plotting the site potential differences (using 
+        ``defect_entry.get_kumagai_correction()`` with ``plot=True``). Large errors are often due to 
+        unstable or shallow defect charge states (which can't be accurately modelled with the supercell 
+        approach). If this error is not acceptable, you may need to use a larger supercell for more 
+        accurate energies.
 
 .. note::
 
@@ -187,9 +191,10 @@ when parsing the intrinsic defects, the -3 charge antimony vacancy (``v_Sb-3``) 
     defect site), and multiplying by the defect charge. This gives a lower bound estimate of the true
     error in the charge correction for a given supercell.
 
-Following the advice in the warning, we use ``defect_entry.get_kumagai_correction(plot=True)`` to plot the
-site potential differences for the defect supercell (which is used to obtain the eFNV (Kumagai-Oba)
-anisotropic charge correction):
+Following the advice in the warning, we use the :class:`~doped.core.DefectEntry`
+:meth:`~doped.core.DefectEntry.get_kumagai_correction()` method with ``plot=True`` to plot the site 
+potential differences for the defect supercell (which is used to obtain the eFNV (Kumagai-Oba) anisotropic 
+charge correction):
 
 .. image:: Images/Sb2Si2Te6_v_Sb_-3_eFNV_plot.png
     :width: 400px
@@ -202,7 +207,7 @@ anisotropic charge correction):
 From the eFNV plot, we can see that there appears to be two distinct sets of site potentials, with one
 curving up from ~-0.4 V to ~0.1 V, and another mostly constant set at ~0.3 V. We can understand this by
 considering the structure of our defect (shown on the right), where the location of the Sb vacancy (hidden
-by the projection along the plane) is circled in green – we can see the displacement of the Sb atoms on
+by the projection along the plane) is circled in green -- we can see the displacement of the Sb atoms on
 either side.
 
 Due to the layered structure, the charge and strain associated with the defect is mostly confined to the
@@ -215,12 +220,13 @@ defective layer (circled in orange) which are causing the variance in the potent
 the error in the charge correction.
 
 To fix this, we can use the optional ``defect_region_radius`` or ``excluded_indices`` parameters in
-``get_kumagai_correction``, to exclude those points from the sampling. For ``defect_region_radius``, we
-can just set this to 8.75 Å here to avoid those sites in the defective layer. Often it may not be so simple
-to exclude the intra-layer sites in this way (depending on the supercell), and so alternatively we can use
-``excluded_indices`` for more fine-grained control. As we can see in the structure image above, the `a`
-lattice vector is aligned along the inter-layer direction, so we can determine the intra-layer sites using
-the fractional coordinates of the defect site along `a`:
+:class:`~doped.core.DefectEntry` :meth:`~doped.core.DefectEntry.get_kumagai_correction()`, to exclude those
+points from the sampling. For ``defect_region_radius``, we can just set this to 8.75 Å here to avoid those 
+sites in the defective layer. Often it may not be so simple to exclude the intra-layer sites in this way 
+(depending on the supercell), and so alternatively we can use ``excluded_indices`` for more fine-grained 
+control. As we can see in the structure image above, the `a` lattice vector is aligned along the 
+inter-layer direction, so we can determine the intra-layer sites using the fractional coordinates of the 
+defect site along `a`:
 
 .. code-block:: python
 
@@ -229,7 +235,7 @@ the fractional coordinates of the defect site along `a`:
         i for i, site in enumerate(defect_entry.defect_supercell)
         if abs(site.frac_coords[0] - defect_entry.defect_supercell_site.frac_coords[0]) < 0.2
     ]
-    correction, fig =  dp.defect_dict["v_Sb-3"].get_kumagai_correction(
+    correction, fig = dp.defect_dict["v_Sb-3"].get_kumagai_correction(
         excluded_indices=sites_in_layer, plot=True
     )  # note that this updates the DefectEntry.corrections value, so the updated correction
     # is used in later formation energy / concentration calculations
@@ -254,12 +260,14 @@ related to the implementation of finite-size charge corrections. For a detailed 
 `Kumagai Phys Rev B 2024 <https://doi.org/10.1103/PhysRevB.109.054106>`__.
 
 In these cases, defects can be generated using a similar workflow as for 3D materials, where now our input
-host system to ``DefectsGenerator`` should be a slab structure with a converged vacuum size. ``doped`` will
-automatically generate all symmetry-inequivalent defects in this slab, and relevant properties such as
-distance to surface can be readily calculated through the site information and ``pymatgen`` ``Structure``\s
-stored with the ``doped`` ``DefectEntry`` / ``Defect`` objects.
+host system to :class:`~doped.generation.DefectsGenerator` should be a slab structure with a converged
+vacuum size. ``doped`` will automatically generate all symmetry-inequivalent defects in this slab, and
+relevant properties such as distance to surface can be readily calculated through the site information and
+``pymatgen`` :class:`~pymatgen.core.structure.Structure`\s stored with the ``doped`` 
+:class:`~doped.core.DefectEntry` / :class:`~doped.core.Defect` objects.
 The calculation inputs can then be generated as before, along with ``ShakeNBreak`` distortions
-(recommended), and then parsed with ``doped``'s ``DefectsParser`` class similar to 3D materials.
+(recommended), and then parsed with ``doped``'s :class:`~doped.analysis.DefectsParser` class similar to 3D
+materials.
 
 For charge corrections however, it is recommended to use the advanced finite-size corrections adapted for
 2D materials (to correctly model the distance-dependent dielectric profile in vacuum). Possible approaches
@@ -274,9 +282,10 @@ self-consistent potential correction (SCPC) method introduced by
 implementation details `here <https://github.com/aradi/SCPC-Method>`__.
 
 Thus it is recommended to set ``skip_corrections = False`` when parsing defects in 2D materials / surface
-defects with ``DefectsParser`` (to avoid automatic application of 3D charge corrections), and then update
-the ``DefectEntry`` charge corrections with the externally-calculated 2D values, before continuing your
-analyses. For example, the ``DefectEntry`` charge corrections can be updated like this:
+defects with :class:`~doped.analysis.DefectsParser` (to avoid automatic application of 3D charge
+corrections), and then update the :class:`~doped.core.DefectEntry` charge corrections with the
+externally-calculated 2D values, before continuing your analyses. For example, the
+:class:`~doped.core.DefectEntry` charge corrections can be updated like this:
 
 .. code-block:: python
 
@@ -303,20 +312,22 @@ analyses. For example, the ``DefectEntry`` charge corrections can be updated lik
 
 Eigenvalue / Electronic Structure Analysis
 ------------------------------------------
-In ``doped``, we can use the ``DefectEntry.get_eigenvalue_analysis()`` method to analyse the orbital
-character and localisation of single-particle eigenstates from the underlying electronic structure
-calculations. For this, we employ the methodology of
+In ``doped``, we can use the :class:`~doped.core.DefectEntry`
+:meth:`~doped.core.DefectEntry.get_eigenvalue_analysis` method to analyse the orbital character and
+localisation of single-particle eigenstates from the underlying electronic structure calculations. For this,
+we employ the methodology of
 `Kumagai et al. <https://doi.org/10.1103/PhysRevMaterials.5.123803>`_ (through an interface with
 ``pydefect``), which allows in-depth analysis of localised/deep in-gap defect states and their effects on
-the band edges, as well as the automated identification of shallow / perturbed host states (PHS) – see
+the band edges, as well as the automated identification of shallow / perturbed host states (PHS) -- see
 the following section for an example of this analysis. The
 `easyunfold <https://smtg-bham.github.io/easyunfold/>`__ package for band structure unfolding can also be
 quite useful for extending this electronic structure analysis.
 
-The optional argument ``parse_projected_eigen`` in ``DefectsParser`` (``True`` by default) controls whether
-to load the projected eigenvalues & orbitals, which then allows ``DefectEntry.get_eigenvalue_analysis()``
-to be called – returning information about the nature of the band edge and in-gap states, allowing defect
-states (and whether they are deep or shallow/PHS) to be automatically identified and characterised.
+The optional argument ``parse_projected_eigen`` in :class:`~doped.analysis.DefectsParser` (``True`` by
+default) controls whether to load the projected eigenvalues & orbitals, which then allows
+:meth:`~doped.core.DefectEntry.get_eigenvalue_analysis` to be called -- returning information about the
+nature of the band edge and in-gap states, allowing defect states (and whether they are deep or
+shallow/PHS) to be automatically identified and characterised.
 Furthermore, a plot of the single-particle electronic eigenvalues is returned (if ``plot = True``;
 default). Note that for VASP to output the necessary data for this analysis, your ``INCAR`` file needs to
 include ``LORBIT > 10`` (to obtain the projected orbitals).
@@ -373,8 +384,8 @@ As discussed below, this is performed automatically in ``doped``.
     charge-carrier (electron/hole), :math:`\epsilon` is the total dielectric constant
     (:math:`\epsilon = \epsilon_{\text{ionic}} + \epsilon_{\infty}`) and ``Ry`` is the Rydberg constant
     (i.e. binding energy of an electron in a hydrogen atom; ~13.6 eV).
-    This formula is used in the ``shallow_dopant_binding_energy`` convenience function provided in
-    ``doped.analysis``, with example usage shown
+    This formula is used in the :func:`~doped.analysis.shallow_dopant_binding_energy()` convenience
+    function, with example usage shown
     `here in the advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#estimate-dopant-acceptor-binding-energy>`__.
     As shown in the tutorial example, this formula can also be used to estimate the Wannier-Mott exciton
     binding energy, when the reduced mass of the electron-hole pair is used for the effective mass.
@@ -388,9 +399,14 @@ In the example below, the neutral copper vacancy in `Cu₂SiSe₃ <https://doi.o
 determined to be a PHS. This was additionally confirmed by performing calculations in larger
 supercells and plotting the charge density. Important terms include:
 
-1. ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1 indicates a localised state.
+1. ``P-ratio``: The ratio of the summed projected orbital contributions of the defect & neighbouring sites
+   to the total sum of orbital contributions from all atoms to that electronic state. A value close to 1
+   indicates a localised state.
 2. ``Occupation``: Occupation of the electronic state / orbital.
-3. ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified. Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)`` refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a PHS (but you should use your own judgement of course).
+3. ``vbm has acceptor phs``/``cbm has donor phs``: Whether a PHS has been automatically identified.
+   Depends on how VBM-like/CBM-like the defect states are and the occupancy of the state. ``(X vs. 0.2)``
+   refers to the hole/electron occupancy at the band edge vs the default threshold of 0.2 for flagging as a
+   PHS (but you should use your own judgement of course).
 4. ``Localized Orbital(s)``: Information about localised defect states, if present.
 
 Additionally, ``Index`` refers to the band/eigenvalue index in the DFT calculation, ``Energy`` is its
@@ -445,12 +461,12 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 
     The classification of electronic states as band edges or localized orbitals is based on the similarity
     of orbital projections and eigenvalues between the defect and bulk cell calculations (see
-    docstrings/python API for ``get_eigenvalue_analysis``). You may want to adjust the default values of
-    the ``similar_orb/energy_criterion`` keyword arguments, as the defaults may not be appropriate in all
-    cases. In particular, the P-ratio values can give useful insight, revealing the level of
-    (de)localisation of the states.
-    It is recommended to additionally manually check the real-space charge density (i.e. ``PARCHG``) of
-    the defect state when possible, to confirm the identification of a PHS.
+    the :class:`~doped.core.DefectEntry` :meth:`~doped.core.DefectEntry.get_eigenvalue_analysis()` 
+    docstring). You may want to adjust the default values of the ``similar_orb/energy_criterion`` keyword 
+    arguments, as the defaults may not be appropriate in all cases. In particular, the P-ratio values can 
+    give useful insight, revealing the level of (de)localisation of the states. It is recommended to 
+    additionally manually check the real-space charge density (i.e. ``PARCHG``) of the defect state when 
+    possible, to confirm the identification of a PHS.
 
 .. note::
 
@@ -463,9 +479,10 @@ PHS on the transition level diagram with a clear circle is shown on the right.
 
 In ``doped``, this eigenvalue analysis is performed automatically, and shallow/unstable defect charge
 states can be omitted from plotting and analysis using the ``unstable_entries`` argument and/or
-``DefectThermodynamics.prune_to_stable_entries()`` method. By default, parsed defect entries which are
-detected to be shallow ('perturbed host') states and unstable for Fermi levels in the band gap are omitted
-from plotting for clarity & accuracy.
+the :class:`~doped.thermodynamics.DefectThermodynamics`
+:meth:`~doped.thermodynamics.DefectThermodynamics.prune_to_stable_entries` method. By default, parsed
+defect entries which are detected to be shallow ('perturbed host') states and unstable for Fermi levels in 
+the band gap are omitted from plotting for clarity & accuracy.
 
 Density of States (DOS) Calculations
 ------------------------------------
@@ -490,10 +507,13 @@ The bulk DOS (``bulk_dos``) calculation should be a static calculation with the 
 
 
 If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
-and bulk/defect supercell calculations (stored as ``DefectThermodynamics.vbm/gap``), this can lead to
-inaccuracies in the thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it
-will throw a warning like:
-``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from `DefectThermodynamics.vbm/gap`...``.
+and bulk/defect supercell calculations (stored as the 
+:attr:`~doped.thermodynamics.DefectThermodynamics.vbm`/ 
+:attr:`~doped.thermodynamics.DefectThermodynamics.gap` attributes of 
+:class:`~doped.thermodynamics.DefectThermodynamics`), this can lead to inaccuracies in the
+thermodynamics & concentration analyses. If ``doped`` detects this to be the case, it will throw a warning
+like: ``The band gap / VBM eigenvalue of the bulk DOS calculation (... eV) differs by >0.05 eV from
+DefectThermodynamics.vbm/gap...``.
 
 This can arise for a number of reasons:
 
@@ -519,11 +539,12 @@ This can arise for a number of reasons:
     - Assuming the `k`-point sampling of the DOS calculation is sufficiently dense, then the issue is just
       that the VBM eigenvalue and band gap of the bulk supercell calculation is not accurate. This can be
       rectified by using the ``bulk_band_gap_vr`` option during defect parsing (see
-      `DefectsParser docstring <https://doped.readthedocs.io/en/latest/doped.analysis.html#doped.analysis.DefectsParser>`__)
-      to set the bulk band gap and VBM eigenvalue to the correct values.
+      :class:`~doped.analysis.DefectsParser` docstring) to set the bulk band gap and VBM eigenvalue to
+      the correct values.
     - In this case, the absolute values of predictions should not be affected as the eigenvalue references
       in the calculations are consistent, just the reported Fermi levels will be referenced to
-      ``DefectThermodynamics.vbm`` which may not be the exact VBM position here.
+      the :attr:`~doped.thermodynamics.DefectThermodynamics.vbm` attribute which may not be the exact VBM
+      position here.
 
 - Small numerical inaccuracies in determining the VBM eigenvalue or band gap directly from the DOS
   spectrum.
@@ -535,7 +556,8 @@ This can arise for a number of reasons:
       be significantly affected.
 
 .. note::
-    The Fermi level will be always referenced to ``DefectThermodynamics.vbm``.
+    The Fermi level will be always referenced to the :attr:`~doped.thermodynamics.DefectThermodynamics.vbm`
+    attribute of :class:`~doped.thermodynamics.DefectThermodynamics`.
 
 
 Magnetization
@@ -638,18 +660,22 @@ for multiple defects.
 
 When parsing defect calculations, ``doped`` will automatically extract the total magnetization from the
 ``VASP`` output files, in order to determine the spin multiplicity. This value is stored in
-``DefectEntry.degeneracy_factors["spin degeneracy"]`` (and printed in
-``DefectThermodynamics.get_symmetries_and_degeneracies()``) and used in thermodynamic analyses. See the
-`spin_degeneracy_from_vasprun <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.parsing.spin_degeneracy_from_vasprun>`__
-API docs for details.
+the :attr:`~doped.core.DefectEntry.degeneracy_factors` :class:`~doped.core.DefectEntry` attribute 
+(``DefectEntry.degeneracy_factors["spin degeneracy"]``, and printed in the 
+:class:`~doped.thermodynamics.DefectThermodynamics` 
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()` method) and used in
+thermodynamic analyses. See the :func:`~doped.utils.parsing.spin_degeneracy_from_vasprun()` function for 
+details.
 
 Symmetry Precision (``symprec``)
 --------------------------------
 When computing the symmetries of structures, a threshold parameter has to be set in order to distinguish
-structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and
+structural/positional noise from distinct site differences. In ``doped`` as in ``spglib`` (and 
 ``pymatgen``), this can be controlled with the ``symprec`` parameter (which can be set in
-``DefectsParser``, ``DefectParser``, all ``DefectThermodynamics`` symmetry/concentration functions,
-``get_orientational_degeneracy()``, ``point_symmetry_from_defect_entry()`` and others).
+:class:`~doped.analysis.DefectsParser`, :class:`~doped.analysis.DefectParser`, all
+:class:`~doped.thermodynamics.DefectThermodynamics` symmetry/concentration functions,
+:func:`~doped.utils.symmetry.get_orientational_degeneracy()`,
+:func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()` and others).
 
 By default, ``doped`` uses a value of ``symprec = 0.01`` for unrelaxed/bulk structures (matching the
 ``pymatgen`` default), and a larger ``symprec = 0.1`` for determining the point symmetries (and thus
@@ -660,18 +686,16 @@ etc.).
 
 .. tip::
 
-    Note that you can directly use the ``point_symmetry_from_structure`` function from
-    ``doped.utils.symmetry`` (see the
-    `docstring <https://doped.readthedocs.io/en/latest/doped.utils.html#doped.utils.symmetry.point_symmetry_from_structure>`__
-    in the python API docs) to obtain the relaxed or unrelaxed (bulk site) point symmetries of a given
-    defect supercell, directly from just the relaxed structures, regardless of whether these defects were
-    generated/parsed with ``doped``.
+    Note that you can directly use the :func:`~doped.utils.symmetry.point_symmetry_from_structure()`
+    function from ``doped.utils.symmetry`` to obtain the relaxed or unrelaxed (bulk site) point symmetries 
+    of a given defect supercell, directly from just the relaxed structures, regardless of whether these 
+    defects were generated/parsed with ``doped``.
 
 .. note::
 
     Wyckoff letters for lattice sites can depend on the ordering of elements in the conventional standard
-    structure, for which doped uses the ``spglib`` convention (e.g. in the ``DefectsGenerator`` info
-    output).
+    structure, for which doped uses the ``spglib`` convention (e.g. in the 
+    :class:`~doped.generation.DefectsGenerator` info output).
 
 .. note::
 
@@ -685,20 +709,25 @@ Open Science and Reproducibility
 --------------------------------
 Robust, open and reproducible science greatly strengthens the impact of research. This is especially true 
 for computational defect modelling, given the many steps and complexities involved -- see 
-`Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__ 
-for discussion.
+|Guidelines Perspective| for discussion.
 
-:code:`doped` has been built to aid robustness and reproducibility for computational defect studies. 
-**We highly recommend** that the :code:`doped`/:code:`ShakeNBreak` class objects, which store key metadata 
-and can be directly output to lightweight :code:`json(.gz)` files (such as :code:`DefectThermodynamics`, 
-:code:`DefectsGenerator`, :code:`Distortions` :code:`CompetingPhasesAnalyzer`) be shared in open-access 
-repositories (e.g. Zenodo, Materials Cloud, Figshare) upon publication, along with relevant raw 
-computational data. It is also helpful to use the summary functions such as
-:code:`DefectThermodynamics.get_formation_energies()`, :code:`DefectThermodynamics.get_symmetries_and_degeneracies()`,
-:code:`CompetingPhasesAnalyzer.get_formation_energy_df()`,  :code:`CompetingPhasesAnalyzer.calculate_chempots()`,
-:code:`CompetingPhasesAnalyzer.to_LaTeX_table()` etc -- which output :code:`pandas` :code:`DataFrame`\s which can be
-output to csv (with :code:`.to_csv()`, see tutorials) and imported to Microsoft Word / converted to LaTeX
-(`Tables Generator <https://www.tablesgenerator.com>`__) -- to summarise key quantities in Supplementary Information
+:code:`doped` has been built to aid robustness and reproducibility for computational defect studies.
+**We highly recommend** that the :code:`doped`/:code:`ShakeNBreak` class objects, which store key metadata
+and can be directly output to lightweight :code:`json(.gz)` files (such as
+:class:`~doped.thermodynamics.DefectThermodynamics`, :class:`~doped.generation.DefectsGenerator`,
+:class:`~shakenbreak.input.Distortions`, :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`) be 
+shared in open-access repositories (e.g. Zenodo, Materials Cloud, Figshare) upon publication, along with 
+relevant raw computational data. It is also helpful to use the summary functions such as the 
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies()` and
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()` methods for 
+:class:`~doped.thermodynamics.DefectThermodynamics`,
+the :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.get_formation_energy_df`,
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots` and
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.to_LaTeX_table` methods for 
+:class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` etc -- which output :code:`pandas` 
+:code:`DataFrame`\s which can be output to csv (with :code:`.to_csv()`, see tutorials) and imported to 
+Microsoft Word / converted to LaTeX (`Tables Generator <https://www.tablesgenerator.com>`__) -- to 
+summarise key quantities in Supplementary Information
 files.
 
 Examples of these practices are shown in 
@@ -713,8 +742,10 @@ To aid calculation reproducibility, data provenance and easy sharing/comparison 
 stages of the defect workflow, ``doped`` objects have been made fully serializable, meaning they can be
 easily saved and (re-)loaded from compact, lightweight ``.json`` files. As demonstrated at
 various stages in the tutorials, this can be achieved using the ``dumpfn``/``loadfn`` functions from
-``monty.serialization``, or with the ``to_json``/``from_json`` methods provided for ``Defect``,
-``DefectEntry``, ``DefectsGenerator`` and ``DefectThermodynamics`` objects:
+``monty.serialization``, or with the :meth:`~doped.core.Defect.to_json()`/
+:meth:`~doped.core.Defect.from_json()` methods provided for the :class:`~doped.core.Defect`,
+:class:`~doped.core.DefectEntry`, :class:`~doped.generation.DefectsGenerator` and
+:class:`~doped.thermodynamics.DefectThermodynamics` classes:
 
 .. code-block:: python
 
@@ -744,36 +775,45 @@ various stages in the tutorials, this can be achieved using the ``dumpfn``/``loa
 In the typical defect calculation workflow with ``doped`` (exemplified in the tutorials), the following
 ``JSON`` files are automatically written to file:
 
-- The ``DefectsGenerator`` object or ``defect_entries`` dictionary that is input to ``DefectsSet``, when
-  writing ``VASP`` input files with ``DefectsSet.write_files(output_path=".")`` – written to
+- The :class:`~doped.generation.DefectsGenerator` object or ``defect_entries`` dictionary that is input to
+  :class:`~doped.vasp.DefectsSet`, when writing ``VASP`` input files with
+  :class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- written to
   ``output_path``. Additionally, for each calculation directory generated, the corresponding
-  ``DefectEntry`` object is written to a ``{DefectEntry.name}.json`` file in the directory so that all
-  information on the generated defect structure, charge state etc. is preserved in the calculation
-  directory.
-- The parsed defect entries dict (``DefectsParser.defect_dict``) when defect calculations are parsed with
-  ``DefectsParser(output_path=".")`` – written to ``output_path``. The JSON filename can be set with e.g.
-  ``DefectsParser(json_filename="custom_name.json")``, but the default is
-  ``{Host Chemical Formula}_defect_dict.json``.
+  :class:`~doped.core.DefectEntry` object is written to a ``{DefectEntry.name}.json`` file in the directory 
+  so that all information on the generated defect structure, charge state etc. is preserved in the 
+  calculation directory.
+- The parsed defect entries dict (:attr:`~doped.analysis.DefectsParser.defect_dict`) when defect
+  calculations are parsed with :class:`~doped.analysis.DefectsParser` -- written to ``output_path``. The 
+  JSON filename can be set with e.g. ``DefectsParser(json_filename="custom_name.json")``, but the default 
+  is ``{Host Chemical Formula}_defect_dict.json.gz``.
 
 - Additionally, if following the recommended structure-searching approach with ``ShakeNBreak`` as shown in
   the tutorials, ``distortion_metadata.json`` files will be written to the top directory (``output_path``,
   containing distortion information about all defects) and to each defect directory (containing just the
-  distortion information for that defect) when running ``Dist.write_vasp_files(output_path=".")``.
+  distortion information for that defect) when running ``Distortions.write_vasp_files(output_path=".")``
+  (see the :class:`~shakenbreak.input.Distortions` class docstring).
 
-In most cases it is also recommended to save the ``DefectThermodynamics`` object to file once generated
-(using ``DefectThermodynamics.to_json()``), to avoid having to re-parse at any later stage, however this
-is not done automatically.
+In most cases it is also recommended to save the :class:`~doped.thermodynamics.DefectThermodynamics`
+object to file once generated (using the :meth:`~doped.thermodynamics.DefectThermodynamics.to_json()` 
+method), to avoid having to re-parse at any later stage, however this is not done automatically.
 
 ``DataFrame`` Outputs
 ^^^^^^^^^^^^^^^^^^^^^
 Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as the result, such as the
-``get_symmetries_and_degeneracies()``, ``get_formation_energies()``, ``get_equilibrium_concentrations()``,
-``get_fermi_level_and_concentrations``, ``get_dopability_limits()``, ``get_doping_windows()`` and
-``get_transition_levels()`` methods for ``DefectThermodynamics`` objects, and the ``formation_energy_df``
-attribute and ``calculate_chempots()`` method for ``CompetingPhasesAnalyzer``. As mentioned in the
-tutorials, these ``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the
-``pandas`` API docs `here <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__) using
-the ``to_csv``/``to_json`` methods:
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_symmetries_and_degeneracies()`,
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies()`,
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_equilibrium_concentrations()`,
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_fermi_level_and_concentrations()`,
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_dopability_limits()`,
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_doping_windows()` and
+:meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels()` methods for
+:class:`~doped.thermodynamics.DefectThermodynamics` objects, and the
+:attr:`~doped.chemical_potentials.CompetingPhasesAnalyzer.formation_energy_df` attribute and
+:meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots()` method for
+:class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`. As mentioned in the tutorials, these
+``DataFrame`` objects can be output to ``csv`` (or ``json``, ``xlsx`` etc., see the ``pandas`` API docs
+`here <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.html>`__) using the ``to_csv``/
+``to_json`` methods:
 
 .. code-block:: python
 
@@ -782,8 +822,9 @@ the ``to_csv``/``to_json`` methods:
 
 These ``csv`` files can easily be used as data tables when writing up results, by directly importing to
 Microsoft Word or converting to LaTeX format using `Tables Generator <https://www.tablesgenerator.com>`__.
-``CompetingPhasesAnalyzer`` can also be reinitialised from a saved ``csv`` formation energies file with the
-``from_csv()`` method.
+:class:`~doped.chemical_potentials.CompetingPhasesAnalyzer` can also be reinitialised from a saved ``csv``
+formation energies file with the :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.from_csv()` 
+method.
 
 .. note::
 

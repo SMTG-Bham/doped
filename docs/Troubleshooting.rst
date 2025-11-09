@@ -144,7 +144,7 @@ Typically this can be fixed by updating to ``spglib>=2.5`` with ``pip install --
 -------------------
 
 For issues relating to the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
-`ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
+|ShakeNBreakDocs|.
 
 Installation
 ------------
