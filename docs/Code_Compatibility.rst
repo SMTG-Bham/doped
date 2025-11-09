@@ -11,15 +11,9 @@ Python Package Compatibility
 
    pip install --upgrade pymatgen doped
 
-In particular, there were some major breaking changes in the underlying ``pymatgen`` defect functions in
-July 2022, such that major refactoring was undertaken to make the code compatible with
-``pymatgen > 2022.7.25`` (and by consequence is no longer compatible with older versions of ``pymatgen``
-< ``2022.7.25``).
-
 .. note::
-  If you run into any errors when using ``doped``, please check the
-  :ref:`Troubleshooting <troubleshooting>` docs page, where any known issues with codes (such as ``numpy``,
-  ``scipy`` or ``spglib``) are detailed.
+  If you run into any errors when using ``doped``, please check the :ref:`Troubleshooting` page, where any 
+  known issues with codes (such as ``numpy``, ``scipy`` or ``spglib``) are detailed.
 
 Energy Calculator (DFT/ML) Compatibility
 ----------------------------------------
@@ -27,9 +21,10 @@ The vast majority of the code in :code:`doped` is agnostic to the underlying ene
 structure (i.e. DFT/ML) code used to calculate the raw energies of defect supercells. However, as
 demonstrated in the tutorials, direct I/O support is currently provided for the ``VASP`` DFT code, while
 structure files for essentially all DFT/ML codes can be easily generated using the
-`pymatgen <https://pymatgen.org/pymatgen.core.html#pymatgen.core.structure.IStructure.to>`__ or
-`ase <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__ I/O methods, with the ``pymatgen``
-``Structure`` objects used for crystal structures in ``doped``.
+:meth:`~pymatgen.core.structure.IStructure.to()` method for ``pymatgen`` 
+:class:`~pymatgen.core.structure.Structure`\s or
+`ase I/O methods <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__, with the
+:class:`~pymatgen.core.structure.Structure` objects used for crystal structures in ``doped``.
 
 Direct I/O capabilities for other codes is a goal (such as ``Quantum Espresso``, ``CP2K`` and/or
 ``FHI-aims``), accompanied by an update publication, so please get in touch with the developers if you

@@ -131,6 +131,14 @@ suppress_warnings = ["myst.header", "mystnb.image"]
 # -- Global substitutions for external links ------------------------------------
 # These substitutions are available in all RST files
 rst_prolog = """
+.. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
+.. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
+.. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
+.. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
+.. |Defect| replace:: :class:`~doped.core.Defect`
+.. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
+.. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
+
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__

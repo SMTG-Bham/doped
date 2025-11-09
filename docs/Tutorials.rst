@@ -16,8 +16,8 @@ Literature
 - **ShakeNBreak Documentation**: |ShakeNBreakDocs|
 - **Guidelines for Defect Simulations**: A\. G. Squires et al. `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__ **2025**
 
-See the :ref:`literature <index:literature>` section on the main page for further recommended literature on 
-defect simulations.
+See the :ref:`Literature` section on the main page for further recommended literature on defect 
+simulations.
 
 .. note that oddly, the Bilibili links don't seem to work on MacOS Chrome (but do if you click the address
 .. in the address bar and press enter, weird), and works fine on everything else...

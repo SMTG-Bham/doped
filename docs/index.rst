@@ -96,7 +96,7 @@ As shown in the tutorials, it is highly recommended to use the |ShakeNBreak| app
 point defects in solids, to ensure you have identified the ground-state structures of your defects. As
 detailed in the `theory paper`_, skipping this step can result in drastically incorrect formation
 energies, transition levels, carrier capture (basically any property associated with defects). This
-approach is followed in the :ref:`tutorials <Tutorials>`, with a more in-depth explanation and tutorial
+approach is followed in the :ref:`Tutorials`, with a more in-depth explanation and tutorial
 given on the |ShakeNBreakDocs|.
 
 .. _theory paper: https://www.nature.com/articles/s41524-023-00973-1

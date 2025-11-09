@@ -1,8 +1,7 @@
 doped
 =============
 
-See the |DeepWiki| site for an overview of the
-codebase and workflow diagrams.
+See the |DeepWiki| site for an overview of the codebase and workflow diagrams.
 
 Module contents
 ---------------

@@ -28,9 +28,9 @@ Parsing Errors
 If errors occur during parsing of defect calculations, ``doped`` will try to informatively warn you about
 the origin of the parsing failure (e.g. ``Parsing failed for [...] with the same error: ...``).
 Depending on what the error is, this error message on its own may not be very helpful. In these cases, it's
-worth trying to parse one or two of these failing defect calculations individually, using
-``DefectParser.from_paths(defect_path="...", bulk_path="...", ...)``, which should give a more verbose
-error traceback.
+worth trying to parse one or two of these failing defect calculations individually, using the
+|DefectsParser| :meth:`~doped.analysis.DefectParser.from_paths()` method
+(``defect_path="...", bulk_path="...", ...``), which should give a more verbose error traceback.
 
 .. note::
 
