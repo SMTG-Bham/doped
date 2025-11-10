@@ -1427,8 +1427,8 @@ class DefectsGenerator(MSONable):
                 ``interstitial_coords`` not specified) is to automatically
                 generate interstitial sites using Voronoi tessellation.
                 The input ``interstitial_coords`` are converted to
-                ``DefectsGenerator.prim_interstitial_coords``, which are the
-                corresponding fractional coordinates in
+                ``DefectsGenerator.prim_interstitial_coords_mult_and_equiv_coords``,
+                which are the corresponding fractional coordinates in
                 ``DefectsGenerator.primitive_structure`` (which is used for
                 defect generation), along with the multiplicity and equivalent
                 coordinates, sorted according to the ``doped`` convention.
@@ -1513,12 +1513,14 @@ class DefectsGenerator(MSONable):
                 Conventional cell structure of the host according to the Bilbao
                 Crystallographic Server (BCS) definition, used to determine
                 defect site Wyckoff labels and multiplicities.
-            prim_interstitial_coords (list):
-                List of interstitial coordinates in the primitive cell.
+            prim_interstitial_coords_mult_and_equiv_coords (list):
+                List of interstitial coordinates in the primitive cell, their
+                multiplicity and the equivalent fractional coordinates, as a
+                list of tuples.
 
             ``DefectsGenerator`` input parameters are also set as attributes.
         """
-        # TODO: Modularise this function for easier extensibility
+        # attribute setup:
         self.defects: dict[str, list[Defect]] = {}  # {defect_type: [Defect, ...]}
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         if isinstance(structure, str | PathLike):
@@ -1544,7 +1546,7 @@ class DefectsGenerator(MSONable):
         else:
             self.interstitial_coords = []
 
-        self.prim_interstitial_coords = None
+        self.prim_interstitial_coords_mult_and_equiv_coords: list[tuple] = []
         self.generate_supercell = generate_supercell
         self.charge_state_gen_kwargs = (
             charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
@@ -1563,487 +1565,64 @@ class DefectsGenerator(MSONable):
         self.target_frac_coords = target_frac_coords if target_frac_coords is not None else [0.5, 0.5, 0.5]
         specified_min_image_distance = self.supercell_gen_kwargs["min_image_distance"]
 
-        if len(self.structure) == 1 and not self.generate_supercell:
-            # raise error if only one atom in primitive cell and no supercell generated, as vacancy will
-            # give empty structure
-            raise ValueError(
-                "Input structure has only one site, so cannot generate defects without supercell (i.e. "
-                "with generate_supercell=False)! Vacancy defect will give empty cell!"
-            )
-
+        # setup progress bar:
         pbar = tqdm(
             total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
-        )  # tqdm progress
-        # bar. 100% is completion
-        pbar.set_description("Getting primitive structure")
+        )  # tqdm progress bar. 100% is completion
 
         try:  # put code in try/except block so progress bar always closed if interrupted
-            # Reduce structure to primitive cell for efficient defect generation
-            # same symprec as defect generators in pymatgen-analysis-defects:
-            sga, symprec = symmetry.get_sga_and_symprec(
-                self.structure, symprec=self.kwargs.get("symprec", 0.01)
-            )
-            if sga.get_space_group_number() == 1:  # print sanity check message
-                print(
-                    "Note that the detected symmetry of the input structure is P1 (i.e. only "
-                    "translational symmetry). If this is not expected (i.e. host system is not "
-                    "disordered/defective), then you should check your input structure!"
-                )
-            if symprec != 0.01:  # default
-                warnings.warn(
-                    f"\nSymmetry determination failed for the default symprec value of 0.01, "
-                    f"but succeeded with symprec = {symprec}, which will be used for symmetry "
-                    f"determination functions here."
-                )
-
-            prim_struct = symmetry.get_primitive_structure(self.structure, symprec=symprec)
-            primitive_structure = symmetry._round_struct_coords(
-                prim_struct if prim_struct.num_sites < self.structure.num_sites else self.structure,
-                to_unit_cell=True,  # wrap to unit cell
-            )  # if primitive cell is the same as input structure, use input structure to avoid rotations
-
+            primitive_structure, sga = self._sanity_checks_and_symmetry_determination(
+                pbar
+            )  # sets self.symprec
             pbar.update(5)  # 5% of progress bar
 
-            # check if input structure is already greater than ``min_image_distance`` Å in each direction:
-            input_min_image_distance = supercells.get_min_image_distance(self.structure)
+            self._supercell_generation_and_checks(
+                primitive_structure=primitive_structure,
+                specified_min_image_distance=specified_min_image_distance,
+                pbar=pbar,
+                sga=sga,
+            )  # sets self.primitive_structure and self.supercell_matrix
 
-            if self.generate_supercell:
-                # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
-                # same supercell is used for each defect and bulk calculation
-                pbar.set_description("Generating simulation supercell")
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
-                    supercell_matrix = get_ideal_supercell_matrix(
-                        structure=primitive_structure,
-                        pbar=pbar,
-                        **self.supercell_gen_kwargs,  # type: ignore
-                    )
+            self._get_and_set_bulk_oxi_states(
+                pbar
+            )  # sets self._bulk_oxi_states, may overwrite self.primitive_structure
 
-            if not self.generate_supercell or (
-                input_min_image_distance >= specified_min_image_distance
-                and (primitive_structure * supercell_matrix).num_sites
-                >= self.structure.num_sites
-                >= self.supercell_gen_kwargs["min_atoms"]
-            ):
-                if input_min_image_distance < 10:
-                    # input structure is <10 Å in at least one direction, and generate_supercell=False,
-                    # so use input structure but warn user:
-                    warnings.warn(
-                        f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
-                        f"{input_min_image_distance:.2f} Å, which is usually too "
-                        f"small for accurate defect calculations, but generate_supercell = False, so "
-                        f"using input structure as defect & bulk supercells. Caution advised!"
-                    )
-
-                # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
-                # doped supercell, so use input structure:
-                (
-                    self.primitive_structure,
-                    self.supercell_matrix,
-                ) = symmetry._get_supercell_matrix_and_possibly_redefine_prim(
-                    primitive_structure, self.structure, sga=sga, symprec=symprec
-                )
-
-                self.primitive_structure, self._T = symmetry.get_clean_structure(
-                    self.primitive_structure, return_T=True
-                )  # T maps orig prim struct to new prim struct; T * Orig = New -> Orig = T^-1 * New
-                # supercell matrix P was: P * Orig = Super -> P * T^-1 * New = Super -> P' = P * T^-1
-
-                self.supercell_matrix = np.matmul(self.supercell_matrix, np.linalg.inv(self._T))
-
-            else:
-                self.primitive_structure = primitive_structure
-                self.supercell_matrix = supercell_matrix
-
-            self.supercell_matrix = np.rint(self.supercell_matrix).astype(int)  # round to nearest integer
-            self.primitive_structure = Structure.from_sites(
-                [site.to_unit_cell() for site in self.primitive_structure]
-            )
-
-            # get oxidation states:
-            self._bulk_oxi_states: Structure | Composition | dict | bool = False
-            # if input structure was oxi-state-decorated, use these oxi states for defect generation:
-            if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
-                isinstance(site.specie.oxi_state, int | float) for site in self.structure.sites
-            ):
-                self._bulk_oxi_states = self.primitive_structure
-
-            else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
-                pbar.set_description("Guessing oxidation states")
-                if prim_struct_w_oxi := guess_and_set_oxi_states_with_timeout(self.primitive_structure):
-                    self.primitive_structure = self._bulk_oxi_states = prim_struct_w_oxi
-                else:
-                    warnings.warn(
-                        "\nOxidation states could not be guessed for the input structure. This is "
-                        "required for charge state guessing, so defects will still be generated but "
-                        "all charge states will be set to -1, 0, +1. You can manually edit these "
-                        "with the add/remove_charge_states methods (see tutorials), or you can set "
-                        "the oxidation states of the input structure (e.g. using "
-                        "structure.add_oxidation_state_by_element()) and re-initialize "
-                        "DefectsGenerator()."
-                    )
-
-            self.bulk_supercell = symmetry._round_struct_coords(
-                (self.primitive_structure * self.supercell_matrix).get_sorted_structure(),
-                to_unit_cell=True,
-            )
-            if not generate_supercell:  # re-order bulk supercell to match that of input supercell
-                self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
-
-            # get and round (to avoid tiny mismatches, due to rounding in search functions,
-            # flagging issues) min image distance of supercell:
-            self.min_image_distance = np.round(supercells.get_min_image_distance(self.bulk_supercell), 3)
-
-            # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
-            if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
-                raise ValueError(
-                    f"Error in supercell generation! Auto-generated supercell is less than chosen minimum "
-                    f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
-                    f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
-                    f"If you used force_cubic or force_diagonal, you may need to relax these constraints "
-                    f"to find an appropriate supercell -- otherwise please report this to the developers!"
-                )
-
+            self._define_bulk_supercell_and_check_min_image_distance(
+                specified_min_image_distance=specified_min_image_distance
+            )  # sets self.bulk_supercell and updates self.min_image_distance
             pbar.update(10)  # 15% of progress bar
 
             # Generate defects
-            # Vacancies:
-            pbar.set_description("Generating vacancies")
-            vac_generator_obj = VacancyGenerator()
-            vac_generator = vac_generator_obj.generate(
-                self.primitive_structure,
-                oxi_state=0,
-                rm_species=self.kwargs.get("vacancy_elements", None),
-                symprec=self.kwargs.get("symprec", 0.01),
-            )  # set oxi_state using doped functions; more robust and efficient
-            self.defects["vacancies"] = [
-                Vacancy._from_pmg_defect(vac, bulk_oxi_states=self._bulk_oxi_states)
-                for vac in vac_generator
-            ]
+            self._generate_vacancies(pbar)  # sets self.defects["vacancies"]
             pbar.update(5)  # 20% of progress bar
 
-            # determine which, if any, extrinsic elements are present:
-            if isinstance(self.extrinsic, str):
-                extrinsic_elements = [self.extrinsic]
-            elif isinstance(self.extrinsic, list):
-                extrinsic_elements = self.extrinsic
-            elif isinstance(self.extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
-                # convert to flattened list of extrinsic elements:
-                extrinsic_elements = list(
-                    chain(*[i if isinstance(i, list) else [i] for i in self.extrinsic.values()])
-                )
-                extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
-            else:
-                extrinsic_elements = []
+            self.host_element_list, self.extrinsic_elements = self._get_host_and_extrinsic_elements()
+            self._generate_substitutions(pbar)  # sets self.defects["substitutions"]
 
-            host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
-            # if any "extrinsic" elements are actually host elements, remove them and warn user:
-            if any(el in host_element_list for el in extrinsic_elements) and not isinstance(
-                self.extrinsic,
-                dict,  # don't warn if ``extrinsic`` was supplied as a dict
-            ):
-                warnings.warn(
-                    f"\nSpecified 'extrinsic' elements "
-                    f"{[el for el in extrinsic_elements if el in host_element_list]} are present in "
-                    f"the host structure, so should not need to be specified as 'extrinsic' in "
-                    f"DefectsGenerator(). These will be ignored. You can input `extrinsic` as a "
-                    f"dictionary e.g. {{'Cd': ['Zn', 'Mg']}} to override this behaviour and force "
-                    f"treatment as 'extrinsic species'."
-                )
-
-            # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
-            extrinsic_elements = sorted(
-                [el for el in extrinsic_elements if el not in host_element_list],
-                key=_element_sort_func,
-            )
-
-            # Antisites:
-            if self.kwargs.get("substitution_elements", False) == []:  # skip substitutions
-                pbar.update(10)  # 30% of progress bar
-            else:
-                pbar.set_description("Generating substitutions")
-                antisite_generator_obj = AntiSiteGenerator()
-                as_generator = antisite_generator_obj.generate(
-                    self.primitive_structure, oxi_state=0, symprec=self.kwargs.get("symprec", 0.01)
-                )
-                self.defects["substitutions"] = [
-                    Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
-                    for anti in as_generator
-                ]
-                pbar.update(5)  # 25% of progress bar
-
-                # Substitutions:
-                substitution_generator_obj = SubstitutionGenerator()
-                if isinstance(self.extrinsic, str | list):  # substitute all host elements:
-                    substitutions = {
-                        el.symbol: extrinsic_elements
-                        for el in self.primitive_structure.composition.elements
-                    }
-                elif isinstance(self.extrinsic, dict):  # substitute only specified host elements
-                    substitutions = self.extrinsic
-                else:
-                    warnings.warn(
-                        f"Invalid `extrinsic` defect input. Got type {type(self.extrinsic)}, but string "
-                        f"or list or dict required. No extrinsic defects will be generated."
-                    )
-                    substitutions = {}
-
-                if substitutions:
-                    sub_generator = substitution_generator_obj.generate(
-                        self.primitive_structure,
-                        substitution=substitutions,
-                        oxi_state=0,
-                        symprec=self.kwargs.get("symprec", 0.01),
-                    )
-                    sub_defects = [
-                        Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
-                        for sub in sub_generator
-                    ]
-                    if "substitutions" in self.defects:
-                        self.defects["substitutions"].extend(sub_defects)
-                    else:
-                        self.defects["substitutions"] = sub_defects
-
-                if sub_elts := self.kwargs.get("substitution_elements", False):
-                    # filter out substitutions for elements not in ``substitution_elements``:
-                    self.defects["substitutions"] = [
-                        sub
-                        for sub in self.defects["substitutions"]
-                        if any(sub.name.startswith(sub_elt) for sub_elt in sub_elts)
-                    ]
-
-                if not self.defects[
-                    "substitutions"
-                ]:  # no substitutions, single-element system, no extrinsic
-                    del self.defects["substitutions"]  # remove empty list
-                pbar.update(5)  # 30% of progress bar
-
-            # Interstitials:
-            self._element_list = host_element_list + extrinsic_elements  # all elements in system
-            if (
-                self.interstitial_gen_kwargs is not False
-                and self.kwargs.get("interstitial_elements", True) != []
-            ):  # skip interstitials
-                self.interstitial_gen_kwargs = (
-                    self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
-                )
-                pbar.set_description("Generating interstitials")
-                if self.interstitial_coords:
-                    # map interstitial coords to primitive structure, and get multiplicities
-                    self.prim_interstitial_coords = []
-
-                    for interstitial_frac_coords in self.interstitial_coords:
-                        equiv_prim_coords = symmetry.get_equiv_frac_coords_in_primitive(
-                            frac_coords=interstitial_frac_coords,
-                            primitive=self.primitive_structure,
-                            supercell=self.structure,
-                            equiv_coords=True,
-                            symprec=self.kwargs.get("symprec", 0.01),
-                            dist_tol_factor=self.kwargs.get("dist_tol_factor", 1.0),
-                            fixed_symprec_and_dist_tol_factor=self.kwargs.get(
-                                "fixed_symprec_and_dist_tol_factor", False
-                            ),
-                            verbose=self.kwargs.get("verbose", False),
-                        )
-                        self.prim_interstitial_coords.append(
-                            (equiv_prim_coords[0], len(equiv_prim_coords), equiv_prim_coords)
-                        )
-
-                    sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords
-
-                else:
-                    # Generate interstitial sites using Voronoi tessellation
-                    sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                        host_structure=self.primitive_structure,
-                        interstitial_gen_kwargs=self.interstitial_gen_kwargs,
-                    )
-
-                self.defects["interstitials"] = []
-                for el in self.kwargs.get("interstitial_elements", self._element_list):
-                    if (
-                        el == "H"
-                        and "min_dist" not in self.interstitial_gen_kwargs
-                        and not self.interstitial_coords
-                    ):
-                        # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
-                        # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
-                        ig = InterstitialGenerator(min_dist=0.5)
-                        H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                            host_structure=self.primitive_structure,
-                            interstitial_gen_kwargs={"min_dist": 0.5, **self.interstitial_gen_kwargs},
-                        )
-                        cand_sites, multiplicity, equiv_fpos = zip(
-                            *H_sorted_sites_mul_and_equiv_fpos, strict=False
-                        )
-
-                    else:
-                        ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
-                        cand_sites, multiplicity, equiv_fpos = zip(
-                            *sorted_sites_mul_and_equiv_fpos, strict=False
-                        )
-
-                    inter_generator = ig.generate(
-                        self.primitive_structure,
-                        insertions={el: cand_sites},
-                        multiplicities={el: multiplicity},
-                        equivalent_positions={el: equiv_fpos},
-                        oxi_state=0,
-                        symprec=self.kwargs.get("symprec", 0.01),
-                    )
-                    self.defects["interstitials"].extend(
-                        [
-                            Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
-                            for inter in inter_generator
-                        ]
-                    )
-
-                    # check if any manually-specified interstitials were skipped due to min_dist and
-                    # warn user:
-                    if self.interstitial_coords and len(self.interstitial_coords) > len(
-                        self.defects["interstitials"]
-                    ):
-                        warnings.warn(
-                            f"\nNote that some manually-specified interstitial sites were skipped due to "
-                            f"being too close to host lattice sites (minimum distance = `min_dist` = "
-                            f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
-                            f"reason you still want to include these sites, you can adjust `min_dist` ("
-                            f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
-                            f"for generating interstitials (by not setting the `interstitial_coords` "
-                            f"argument)."
-                        )
-
+            self._element_list = self.host_element_list + self.extrinsic_elements  # all elements in system
+            self._generate_interstitials(
+                pbar
+            )  # sets self.defects["interstitials"], self.prim_interstitial_coords_mult_and_equiv_coords
             pbar.update(15)  # 45% of progress bar, generating interstitials typically takes the longest
 
             # Generate DefectEntry objects:
-            pbar.set_description("Determining Wyckoff sites")
-            defect_list: list[Defect] = reduce(operator.iconcat, self.defects.values(), [])
-            num_defects = len(defect_list)
-
-            # get BCS conventional structure and lattice vector swap array:
-            conv_struct_results = symmetry.get_BCS_conventional_structure(
-                self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
-            )
-            assert len(conv_struct_results) == 3  # with return_wyckoff_dict=True, for typing
-            (
-                self.conventional_structure,
-                self._BilbaoCS_conv_cell_vector_mapping,
-                wyckoff_label_dict,
-            ) = conv_struct_results
-
-            # process defects into defect entries:
-            partial_func = partial(
-                _get_neutral_defect_entry,
-                supercell_matrix=self.supercell_matrix,
-                target_frac_coords=self.target_frac_coords,
-                bulk_supercell=self.bulk_supercell,
-                conventional_structure=self.conventional_structure,
-                _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
-                wyckoff_label_dict=wyckoff_label_dict,
-                symprec=self.kwargs.get("symprec", 0.01),
-            )
-
-            if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
-                _pbar_increment_per_defect = max(
-                    0, min((1 / num_defects) * ((pbar.total * 0.9) - pbar.n), pbar.total - pbar.n)
-                )  # up to 90% of progress bar
-            else:
-                _pbar_increment_per_defect = 0
-
-            defect_entry_list = []
-            if len(self.primitive_structure) > 8 and processes != 1:
-                # skip for small systems as comms overhead / process init outweighs speedup
-                with pool_manager(processes) as pool:
-                    for result in pool.imap_unordered(partial_func, defect_list):
-                        defect_entry_list.append(result)
-                        pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
-
-            else:
-                for defect in defect_list:
-                    defect_entry_list.append(partial_func(defect))
-                    pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
-
-            pbar.set_description("Generating DefectEntry objects")
-            # sort defect_entry_list by _frac_coords_sort_func applied to the conv_cell_frac_coords,
-            # in order for naming and defect generation output info to be deterministic
-            defect_entry_list.sort(key=lambda x: symmetry._frac_coords_sort_func(x.conv_cell_frac_coords))
-
-            # redefine defects dict with DefectEntry.defect objects (as attributes have been updated in
-            # _get_neutral_defect_entry):
-            self.defects = {
-                "vacancies": [
-                    defect_entry.defect
-                    for defect_entry in defect_entry_list
-                    if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "vacancies"
-                ],
-                "substitutions": [
-                    defect_entry.defect
-                    for defect_entry in defect_entry_list
-                    if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "substitutions"
-                ],
-                "interstitials": [
-                    defect_entry.defect
-                    for defect_entry in defect_entry_list
-                    if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "interstitials"
-                ],
-            }
-            # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
-            self.defects = {k: v for k, v in self.defects.items() if v}
-
-            named_defect_dict = name_defect_entries(
-                defect_entry_list,
-                element_list=self._element_list,
-            )
+            pbar.set_description("Determining conventional structure and Wyckoff labels")
+            self._get_conventional_structure_and_wyckoff_label_dict(
+                pbar
+            )  # self.conventional_structure, self._BilbaoCS_conv_cell_vector_mapping, self._wyckoff_dict
+            pbar.set_description("Generating DefectEntry objects and symmetry information")
+            defect_entry_dict = self._generate_neutral_defect_entries(pbar, processes)
+            self._set_defects_attr_dict(defect_entry_dict)  # sets self.defects
             pbar.update(5)  # 95% of progress bar
-            if not isinstance(pbar, MagicMock):
-                _pbar_increment_per_defect = max(
-                    0, min((1 / num_defects) * (pbar.total - pbar.n) * 0.999, pbar.total - pbar.n)
-                )  # multiply by 0.999 to avoid rounding errors, overshooting the 100% limit and getting
-                # warnings from tqdm
 
-            Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
-            for defect_name_wout_charge, neutral_defect_entry in named_defect_dict.items():
-                type_name = _defect_type_key_from_pmg_type(neutral_defect_entry.defect.defect_type)
-                if self.kwargs.get("neutral_only", False):
-                    charge_states = [
-                        0,
-                    ]  # only neutral
-                    neutral_defect_entry.charge_state_guessing_log = {}
-
-                elif charge_states := self.kwargs.get(f"{type_name}_charge_states", []):
-                    neutral_defect_entry.charge_state_guessing_log = {}
-
-                elif self._bulk_oxi_states is not False:
-                    charge_state_guessing_output = guess_defect_charge_states(
-                        neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
-                    )
-                    charge_state_guessing_output = cast(
-                        tuple[list[int], list[dict]], charge_state_guessing_output
-                    )  # for correct type checking; guess_defect_charge_states can return different types
-                    # depending on return_log
-                    charge_states, charge_state_guessing_log = charge_state_guessing_output
-                    neutral_defect_entry.charge_state_guessing_log = charge_state_guessing_log
-
-                else:
-                    charge_states = [-1, 0, 1]  # no oxi states, so can't guess charge states
-                    neutral_defect_entry.charge_state_guessing_log = {}
-
-                for charge in charge_states:
-                    defect_entry = (
-                        copy.deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
-                    )
-                    defect_entry.charge_state = charge
-                    # set name attribute:
-                    defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
-                    self.defect_entries[defect_entry.name] = defect_entry
-
-                pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
+            self._guess_and_set_charge_states(defect_entry_dict, pbar)  # sets self.defect_entries
+            # pbar now 100%
 
             # sort defects and defect entries for deterministic behaviour:
             self.defects = _sort_defects(self.defects, element_list=self._element_list)
-            self.defect_entries = sort_defect_entries(
-                self.defect_entries, element_list=self._element_list
-            )  # type:ignore
+            self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
+            # clean up progress bar:
             if not isinstance(pbar, MagicMock) and pbar.total - pbar.n > 0:
                 pbar.update(pbar.total - pbar.n)  # 100%
 
@@ -2051,6 +1630,480 @@ class DefectsGenerator(MSONable):
             pbar.close()
 
         self.defect_generator_info()
+
+    def _sanity_checks_and_symmetry_determination(
+        self, pbar: tqdm
+    ) -> tuple[Structure, symmetry.SpacegroupAnalyzer]:
+        if len(self.structure) == 1 and not self.generate_supercell:
+            # raise error if only one atom in primitive cell and no supercell being generated:
+            raise ValueError(
+                "Input structure has only one site, so cannot generate defects without supercell (i.e. "
+                "with generate_supercell=False)! Vacancy defect will give empty cell!"
+            )
+
+        # Reduce structure to primitive cell for efficient defect generation
+        # same symprec as defect generators in pymatgen-analysis-defects:
+        pbar.set_description("Getting primitive structure")
+        sga, self.symprec = symmetry.get_sga_and_symprec(
+            self.structure, symprec=self.kwargs.get("symprec", 0.01)
+        )
+        if sga.get_space_group_number() == 1:  # print sanity check message
+            print(
+                "Note that the detected symmetry of the input structure is P1 (i.e. only "
+                "translational symmetry). If this is not expected (i.e. host system is not "
+                "disordered/defective), then you should check your input structure!"
+            )
+        if self.symprec != self.kwargs.get("symprec", 0.01):  # default
+            input_symprec = self.kwargs.get("symprec", 0.01)
+            warnings.warn(
+                f"\nSymmetry determination failed for the input symprec value of {input_symprec}, "
+                f"but succeeded with symprec = {self.symprec}, which will be used for symmetry "
+                f"determination functions here."
+            )
+
+        prim_struct = symmetry.get_primitive_structure(self.structure, symprec=self.symprec)
+        primitive_structure = symmetry._round_struct_coords(
+            prim_struct if prim_struct.num_sites < self.structure.num_sites else self.structure,
+            to_unit_cell=True,  # wrap to unit cell
+        )  # if primitive cell is the same as input structure, use input structure to avoid rotations
+
+        return primitive_structure, sga
+
+    def _supercell_generation_and_checks(
+        self,
+        primitive_structure: Structure,
+        specified_min_image_distance: float,
+        pbar: tqdm,
+        sga: symmetry.SpacegroupAnalyzer | None = None,
+    ):
+        # check if input structure is already greater than ``min_image_distance`` Å in each direction:
+        input_min_image_distance = supercells.get_min_image_distance(self.structure)
+
+        if self.generate_supercell:
+            # Generate supercell once, so this isn't redundantly rerun for each defect, and ensures the
+            # same supercell is used for each defect and bulk calculation
+            pbar.set_description("Generating simulation supercell")
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="The 'warn' method is deprecated")
+                supercell_matrix = get_ideal_supercell_matrix(
+                    structure=primitive_structure,
+                    pbar=pbar,
+                    **self.supercell_gen_kwargs,  # type: ignore
+                )
+
+        if not self.generate_supercell or (
+            input_min_image_distance >= specified_min_image_distance
+            and (primitive_structure * supercell_matrix).num_sites
+            >= self.structure.num_sites
+            >= self.supercell_gen_kwargs["min_atoms"]
+        ):
+            if input_min_image_distance < 10:
+                # input structure is <10 Å in at least one direction, and generate_supercell=False,
+                # so use input structure but warn user:
+                warnings.warn(
+                    f"\nInput structure is <10 Å in at least one direction (minimum image distance = "
+                    f"{input_min_image_distance:.2f} Å, which is usually too "
+                    f"small for accurate defect calculations, but generate_supercell = False, so "
+                    f"using input structure as defect & bulk supercells. Caution advised!"
+                )
+
+            # ``generate_supercell=False`` or input structure has fewer or same number of atoms as
+            # doped supercell, so use input structure:
+            (
+                self.primitive_structure,
+                self.supercell_matrix,
+            ) = symmetry._get_supercell_matrix_and_possibly_redefine_prim(
+                primitive_structure, self.structure, sga=sga, symprec=self.symprec
+            )
+
+            self.primitive_structure, self._T = symmetry.get_clean_structure(
+                self.primitive_structure, return_T=True
+            )  # T maps orig prim struct to new prim struct; T * Orig = New -> Orig = T^-1 * New
+            # supercell matrix P was: P * Orig = Super -> P * T^-1 * New = Super -> P' = P * T^-1
+
+            self.supercell_matrix = np.matmul(self.supercell_matrix, np.linalg.inv(self._T))
+
+        else:
+            self.primitive_structure = primitive_structure
+            self.supercell_matrix = supercell_matrix
+
+        self.supercell_matrix = np.rint(self.supercell_matrix).astype(int)  # round to nearest integer
+        self.primitive_structure = Structure.from_sites(
+            [site.to_unit_cell() for site in self.primitive_structure]
+        )
+
+    def _get_and_set_bulk_oxi_states(self, pbar: tqdm):
+        self._bulk_oxi_states: Structure | Composition | dict | bool = False
+        # if input structure was oxi-state-decorated, use these oxi states for defect generation:
+        if all(hasattr(site.specie, "oxi_state") for site in self.structure.sites) and all(
+            isinstance(site.specie.oxi_state, int | float) for site in self.structure.sites
+        ):
+            self._bulk_oxi_states = self.primitive_structure
+
+        else:  # guess & set oxidation states now, to speed up oxi state handling in defect generation
+            pbar.set_description("Guessing oxidation states")
+            if prim_struct_w_oxi := guess_and_set_oxi_states_with_timeout(self.primitive_structure):
+                self.primitive_structure = self._bulk_oxi_states = prim_struct_w_oxi
+            else:
+                warnings.warn(
+                    "\nOxidation states could not be guessed for the input structure. This is "
+                    "required for charge state guessing, so defects will still be generated but "
+                    "all charge states will be set to -1, 0, +1. You can manually edit these "
+                    "with the add/remove_charge_states methods (see tutorials), or you can set "
+                    "the oxidation states of the input structure (e.g. using "
+                    "structure.add_oxidation_state_by_element()) and re-initialize "
+                    "DefectsGenerator()."
+                )
+
+    def _define_bulk_supercell_and_check_min_image_distance(self, specified_min_image_distance: float):
+        self.bulk_supercell = symmetry._round_struct_coords(
+            (self.primitive_structure * self.supercell_matrix).get_sorted_structure(),
+            to_unit_cell=True,
+        )
+        if not self.generate_supercell:  # re-order bulk supercell to match that of input supercell
+            self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
+
+        # get and round (to avoid tiny mismatches, due to rounding in search functions,
+        # flagging issues) min image distance of supercell:
+        self.min_image_distance = np.round(supercells.get_min_image_distance(self.bulk_supercell), 3)
+
+        # check that generated supercell is greater than ``min_image_distance``` Å in each direction:
+        if self.min_image_distance < specified_min_image_distance and self.generate_supercell:
+            raise ValueError(
+                f"Error in supercell generation! Auto-generated supercell is less than chosen minimum "
+                f"image distance ({specified_min_image_distance:.2f} Å) in at least one direction ("
+                f"minimum image distance = {self.min_image_distance:.2f} Å), which should not happen. "
+                f"If you used force_cubic or force_diagonal, you may need to relax these constraints "
+                f"to find an appropriate supercell -- otherwise please report this to the developers!"
+            )
+
+    def _generate_vacancies(self, pbar: tqdm):
+        pbar.set_description("Generating vacancies")
+        vac_generator_obj = VacancyGenerator()
+        vac_generator = vac_generator_obj.generate(
+            self.primitive_structure,
+            oxi_state=0,
+            rm_species=self.kwargs.get("vacancy_elements", None),
+            symprec=self.symprec,
+        )  # set oxi_state using doped functions; more robust and efficient
+        self.defects["vacancies"] = [
+            Vacancy._from_pmg_defect(vac, bulk_oxi_states=self._bulk_oxi_states) for vac in vac_generator
+        ]
+
+    def _get_host_and_extrinsic_elements(self) -> tuple[list[str], list[str]]:
+        # determine which, if any, extrinsic elements are present:
+        if isinstance(self.extrinsic, str):
+            extrinsic_elements = [self.extrinsic]
+        elif isinstance(self.extrinsic, list):
+            extrinsic_elements = self.extrinsic
+        elif isinstance(self.extrinsic, dict):  # dict of host: extrinsic elements, as lists or strings
+            # convert to flattened list of extrinsic elements:
+            extrinsic_elements = list(
+                chain(*[i if isinstance(i, list) else [i] for i in self.extrinsic.values()])
+            )
+            extrinsic_elements = list(set(extrinsic_elements))  # get only unique elements
+        else:
+            extrinsic_elements = []
+
+        host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
+        # if any "extrinsic" elements are actually host elements, remove them and warn user:
+        if any(el in host_element_list for el in extrinsic_elements) and not isinstance(
+            self.extrinsic,
+            dict,  # don't warn if ``extrinsic`` was supplied as a dict
+        ):
+            warnings.warn(
+                f"\nSpecified 'extrinsic' elements "
+                f"{[el for el in extrinsic_elements if el in host_element_list]} are present in "
+                f"the host structure, so should not need to be specified as 'extrinsic' in "
+                f"DefectsGenerator(). These will be ignored. You can input `extrinsic` as a "
+                f"dictionary e.g. {{'Cd': ['Zn', 'Mg']}} to override this behaviour and force "
+                f"treatment as 'extrinsic species'."
+            )
+
+        # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
+        extrinsic_elements = sorted(
+            [el for el in extrinsic_elements if el not in host_element_list],
+            key=_element_sort_func,
+        )
+        return host_element_list, extrinsic_elements
+
+    def _generate_substitutions(self, pbar: tqdm):
+        """
+        Generate substitutions, including antisites.
+        """
+        if self.kwargs.get("substitution_elements", False) == []:  # skip substitutions
+            pbar.update(10)  # 30% of progress bar
+            return
+
+        pbar.set_description("Generating substitutions")
+        antisite_generator_obj = AntiSiteGenerator()
+        as_generator = antisite_generator_obj.generate(
+            self.primitive_structure, oxi_state=0, symprec=self.symprec
+        )
+        self.defects["substitutions"] = [
+            Substitution._from_pmg_defect(anti, bulk_oxi_states=self._bulk_oxi_states)
+            for anti in as_generator
+        ]
+        pbar.update(5)  # 25% of progress bar
+
+        # Substitutions:
+        substitution_generator_obj = SubstitutionGenerator()
+        if isinstance(self.extrinsic, str | list):  # substitute all host elements:
+            substitutions = {
+                el.symbol: self.extrinsic_elements for el in self.primitive_structure.composition.elements
+            }
+        elif isinstance(self.extrinsic, dict):  # substitute only specified host elements
+            substitutions = self.extrinsic
+        else:
+            warnings.warn(
+                f"Invalid `extrinsic` defect input. Got type {type(self.extrinsic)}, but string "
+                f"or list or dict required. No extrinsic defects will be generated."
+            )
+            substitutions = {}
+
+        if substitutions:
+            sub_generator = substitution_generator_obj.generate(
+                self.primitive_structure,
+                substitution=substitutions,
+                oxi_state=0,
+                symprec=self.symprec,
+            )
+            sub_defects = [
+                Substitution._from_pmg_defect(sub, bulk_oxi_states=self._bulk_oxi_states)
+                for sub in sub_generator
+            ]
+            if "substitutions" in self.defects:
+                self.defects["substitutions"].extend(sub_defects)
+            else:
+                self.defects["substitutions"] = sub_defects
+
+        if sub_elts := self.kwargs.get("substitution_elements", False):
+            # filter out substitutions for elements not in ``substitution_elements``:
+            self.defects["substitutions"] = [
+                sub
+                for sub in self.defects["substitutions"]
+                if any(sub.name.startswith(sub_elt) for sub_elt in sub_elts)
+            ]
+
+        if not self.defects["substitutions"]:  # no substitutions, single-element system, no extrinsic
+            del self.defects["substitutions"]  # remove empty list
+        pbar.update(5)  # 30% of progress bar
+
+    def _generate_interstitials(self, pbar: tqdm):
+        if (
+            self.interstitial_gen_kwargs is False or self.kwargs.get("interstitial_elements", True) == []
+        ):  # skip interstitials
+            return
+
+        self.interstitial_gen_kwargs = (
+            self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
+        )
+        self.interstitial_gen_kwargs["symprec"] = self.symprec
+
+        pbar.set_description("Generating interstitials")
+        if self.interstitial_coords:
+            # map interstitial coords to primitive structure, and get multiplicities
+            for interstitial_frac_coords in self.interstitial_coords:
+                equiv_prim_coords = symmetry.get_equiv_frac_coords_in_primitive(
+                    frac_coords=interstitial_frac_coords,
+                    primitive=self.primitive_structure,
+                    supercell=self.structure,
+                    equiv_coords=True,
+                    symprec=self.symprec,
+                    dist_tol_factor=self.kwargs.get("dist_tol_factor", 1.0),
+                    fixed_symprec_and_dist_tol_factor=self.kwargs.get(
+                        "fixed_symprec_and_dist_tol_factor", False
+                    ),
+                    verbose=self.kwargs.get("verbose", False),
+                )
+                self.prim_interstitial_coords_mult_and_equiv_coords.append(
+                    (equiv_prim_coords[0], len(equiv_prim_coords), equiv_prim_coords)
+                )
+
+            sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords_mult_and_equiv_coords
+
+        else:
+            # Generate interstitial sites using Voronoi tessellation
+            sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
+                host_structure=self.primitive_structure,
+                interstitial_gen_kwargs=self.interstitial_gen_kwargs,
+            )
+
+        self.defects["interstitials"] = []
+        for el in self.kwargs.get("interstitial_elements", self._element_list):
+            if (
+                el == "H"
+                and "min_dist" not in self.interstitial_gen_kwargs
+                and not self.interstitial_coords
+            ):
+                # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
+                # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
+                ig = InterstitialGenerator(min_dist=0.5)
+                H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
+                    host_structure=self.primitive_structure,
+                    interstitial_gen_kwargs={"min_dist": 0.5, **self.interstitial_gen_kwargs},
+                )
+                cand_sites, multiplicity, equiv_fpos = zip(
+                    *H_sorted_sites_mul_and_equiv_fpos, strict=False
+                )
+
+            else:
+                ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+                cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
+
+            inter_generator = ig.generate(
+                self.primitive_structure,
+                insertions={el: cand_sites},
+                multiplicities={el: multiplicity},
+                equivalent_positions={el: equiv_fpos},
+                oxi_state=0,
+                symprec=self.symprec,
+            )
+            self.defects["interstitials"].extend(
+                [
+                    Interstitial._from_pmg_defect(inter, bulk_oxi_states=self._bulk_oxi_states)
+                    for inter in inter_generator
+                ]
+            )
+
+            # check if any manually-specified interstitials were skipped due to min_dist and
+            # warn user:
+            if self.interstitial_coords and len(self.interstitial_coords) > len(
+                self.defects["interstitials"]
+            ):
+                warnings.warn(
+                    f"\nNote that some manually-specified interstitial sites were skipped due to "
+                    f"being too close to host lattice sites (minimum distance = `min_dist` = "
+                    f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
+                    f"reason you still want to include these sites, you can adjust `min_dist` ("
+                    f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
+                    f"for generating interstitials (by not setting the `interstitial_coords` "
+                    f"argument)."
+                )
+
+    def _get_conventional_structure_and_wyckoff_label_dict(self, pbar: tqdm):
+        # get BCS conventional structure, lattice vector swap array, and Wyckoff label dict:
+        conv_struct_results = symmetry.get_BCS_conventional_structure(
+            self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
+        )
+        assert len(conv_struct_results) == 3  # with return_wyckoff_dict=True, for typing
+        (
+            self.conventional_structure,
+            self._BilbaoCS_conv_cell_vector_mapping,
+            self._wyckoff_dict,
+        ) = conv_struct_results
+
+    def _generate_neutral_defect_entries(
+        self, pbar: tqdm, processes: int | None
+    ) -> dict[str, DefectEntry]:
+        # process defects into defect entries:
+        partial_func = partial(
+            _get_neutral_defect_entry,
+            supercell_matrix=self.supercell_matrix,
+            target_frac_coords=self.target_frac_coords,
+            bulk_supercell=self.bulk_supercell,
+            conventional_structure=self.conventional_structure,
+            _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
+            wyckoff_label_dict=self._wyckoff_dict,
+            symprec=self.symprec,
+        )
+
+        defect_list: list[Defect] = reduce(operator.iconcat, self.defects.values(), [])
+        num_defects = len(defect_list)
+        if not isinstance(pbar, MagicMock):  # to allow tqdm to be mocked for testing
+            _pbar_increment_per_defect = max(
+                0, min((1 / num_defects) * ((pbar.total * 0.9) - pbar.n), pbar.total - pbar.n)
+            )  # up to 90% of progress bar
+        else:
+            _pbar_increment_per_defect = 0
+
+        defect_entry_list = []
+        if len(self.primitive_structure) > 8 and processes != 1:
+            # skip for small systems as comms overhead / process init outweighs speedup
+            with pool_manager(processes) as pool:
+                for result in pool.imap_unordered(partial_func, defect_list):
+                    defect_entry_list.append(result)
+                    pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
+
+        else:
+            for defect in defect_list:
+                defect_entry_list.append(partial_func(defect))
+                pbar.update(_pbar_increment_per_defect)  # 90% of progress bar
+
+        # sort defect_entry_list by _frac_coords_sort_func applied to the conv_cell_frac_coords,
+        # in order for naming and defect generation output info to be deterministic
+        defect_entry_list.sort(key=lambda x: symmetry._frac_coords_sort_func(x.conv_cell_frac_coords))
+        return name_defect_entries(  # named defect entry dict
+            defect_entry_list,
+            element_list=self._element_list,
+        )
+
+    def _set_defects_attr_dict(self, defect_entry_dict: dict[str, DefectEntry]):
+        # redefine defects dict with DefectEntry.defect objects (as attributes have been updated in
+        # _get_neutral_defect_entry):
+        self.defects = {
+            "vacancies": [
+                defect_entry.defect
+                for defect_entry in defect_entry_dict.values()
+                if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "vacancies"
+            ],
+            "substitutions": [
+                defect_entry.defect
+                for defect_entry in defect_entry_dict.values()
+                if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "substitutions"
+            ],
+            "interstitials": [
+                defect_entry.defect
+                for defect_entry in defect_entry_dict.values()
+                if _defect_dict_key_from_pmg_type(defect_entry.defect.defect_type) == "interstitials"
+            ],
+        }
+        # remove empty defect lists: (e.g. single-element systems with no antisite substitutions)
+        self.defects = {k: v for k, v in self.defects.items() if v}
+
+    def _guess_and_set_charge_states(self, defect_entry_dict: dict[str, DefectEntry], pbar: tqdm):
+        pbar.set_description("Guessing charge states")
+        if not isinstance(pbar, MagicMock):
+            _pbar_increment_per_defect = max(
+                0, min((1 / len(defect_entry_dict)) * (pbar.total - pbar.n) * 0.999, pbar.total - pbar.n)
+            )  # multiply by 0.999 to avoid rounding errors, overshooting the 100% limit and getting
+            # warnings from tqdm
+
+        Structure.__deepcopy__ = lambda x, y: x.copy()  # faster deepcopying, shallow copy fine
+        for defect_name_wout_charge, neutral_defect_entry in defect_entry_dict.items():
+            type_name = _defect_type_key_from_pmg_type(neutral_defect_entry.defect.defect_type)
+            if self.kwargs.get("neutral_only", False):
+                charge_states = [
+                    0,
+                ]  # only neutral
+                neutral_defect_entry.charge_state_guessing_log = cast("list[dict] | None", None)
+
+            elif charge_states := self.kwargs.get(f"{type_name}_charge_states", []):
+                neutral_defect_entry.charge_state_guessing_log = cast("list[dict] | None", None)
+
+            elif self._bulk_oxi_states is not False:
+                charge_state_guessing_output = guess_defect_charge_states(
+                    neutral_defect_entry.defect, return_log=True, **self.charge_state_gen_kwargs
+                )
+                charge_state_guessing_output = cast(
+                    "tuple[list[int], list[dict]]", charge_state_guessing_output
+                )  # type checking; guess_defect_charge_states return type depends on ``return_log``
+                charge_states, charge_state_guessing_log = charge_state_guessing_output
+                neutral_defect_entry.charge_state_guessing_log = cast(
+                    "list[dict] | None", charge_state_guessing_log
+                )
+
+            else:
+                charge_states = [-1, 0, 1]  # no oxi states, so can't guess charge states
+                neutral_defect_entry.charge_state_guessing_log = cast("list[dict] | None", None)
+
+            for charge in charge_states:
+                defect_entry = copy.deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
+                defect_entry.charge_state = charge
+                defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
+                self.defect_entries[defect_entry.name] = defect_entry
+
+            pbar.update(_pbar_increment_per_defect)  # 100% of progress bar
 
     def defect_generator_info(self):
         """

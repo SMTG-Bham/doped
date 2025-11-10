@@ -153,7 +153,7 @@ class DefectEntry(thermo.DefectEntry):
     equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
     _BilbaoCS_conv_cell_vector_mapping: list[int] = field(default_factory=lambda: [0, 1, 2])
     wyckoff: str | None = None
-    charge_state_guessing_log: dict = field(default_factory=dict)
+    charge_state_guessing_log: list[dict] | None = None
     defect_supercell: Structure | None = None
     defect_supercell_site: PeriodicSite | None = None  # TODO: Add `from_structures` method to
     # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
