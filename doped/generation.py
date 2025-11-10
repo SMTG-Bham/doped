@@ -7,6 +7,7 @@ import contextlib
 import copy
 import logging
 import operator
+import re
 import warnings
 from collections import defaultdict
 from functools import partial, reduce
@@ -680,6 +681,17 @@ def name_defect_entries(
                 return handle_repeated_name(defect_naming_dict, full_defect_name)
             n += 1
 
+    def string_until_last_number(string: str) -> str:
+        """
+        Return the input string, truncated at the last numeric character.
+
+        e.g. "Ga_i_C3i_O2.83aa" -> "Ga_i_C3i_O2.83"
+        """
+        match = re.search(r"\d(?!.*\d)", string)
+        if match:
+            return string[: match.end()]
+        return string
+
     def handle_repeated_name(defect_naming_dict, full_defect_name):
         defect_name = None
         for name in list(defect_naming_dict.keys()):
@@ -688,13 +700,22 @@ def name_defect_entries(
                 defect_naming_dict[f"{name}a"] = prev_defect_entry
                 defect_name = f"{full_defect_name}b"
                 break
-            if full_defect_name == name[:-1] and not Element("H").is_valid_symbol(name.split("_")[-1]):
-                # if name is a subset barring the last letter, and last underscore split is not an Element
-                # (i.e. ``v_Cl`` not being matched with ``v_C``)
-                last_letters = [name[-1] for name in defect_naming_dict if name[:-1] == full_defect_name]
-                last_letters.sort()
-                new_letter = chr(ord(last_letters[-1]) + 1)
-                defect_name = full_defect_name + new_letter
+            name_until_last_number = string_until_last_number(name)
+            if full_defect_name == name_until_last_number:
+                last_letters = sorted(
+                    [
+                        name.removeprefix(name_until_last_number)
+                        for name in defect_naming_dict
+                        if string_until_last_number(name) == full_defect_name
+                    ],
+                    key=lambda x: (len(x), x),
+                )
+                if last_letters[-1][-1] == "z":  # we go again
+                    defect_name = full_defect_name + ("a" * (len(last_letters[-1]) + 1))
+                    break
+
+                new_letter = chr(ord(last_letters[-1][-1]) + 1)
+                defect_name = full_defect_name + last_letters[-1][:-1] + new_letter
                 break
 
         if defect_name is None:
@@ -778,6 +799,7 @@ def get_oxi_probabilities(element_symbol: str) -> dict:
         }
 
     element_obj = Element(element_symbol)
+    # TODO: Use this function in most_common_oxi, and figure out what we do for extrinsic currently
     if element_obj.common_oxidation_states:
         return {
             int(k): 1 / len(element_obj.common_oxidation_states)
@@ -2132,26 +2154,24 @@ class DefectsGenerator(MSONable):
                     for defect_entry_name, defect_entry in self.defect_entries.items()
                     if defect_entry.defect.defect_type == defect_type
                 }
-                seen = set()
-                matching_type_names_wout_charge = [
-                    defect_entry_name.rsplit("_", 1)[0]
-                    for defect_entry_name in matching_defect_types
-                    if defect_entry_name.rsplit("_", 1)[0] not in seen
-                    and not seen.add(defect_entry_name.rsplit("_", 1)[0])  # track unique defect names
-                    # w/out charge
-                ]
-                for defect_name in matching_type_names_wout_charge:
+                matching_type_names_wout_charge = []
+                for defect_entry_name in matching_defect_types:
+                    defect_name_wout_charge = defect_entry_name.rsplit("_", 1)[0]
+                    if defect_name_wout_charge not in matching_type_names_wout_charge:
+                        matching_type_names_wout_charge.append(defect_name_wout_charge)
+
+                for defect_name_wout_charge in matching_type_names_wout_charge:
                     charges = [
-                        name.rsplit("_", 1)[1]
-                        for name in self.defect_entries
-                        if _check_if_name_subset(name, defect_name)
-                    ]  # so e.g. Te_i_m1 doesn't match with Te_i_m1b
+                        defect_entry_name.rsplit("_", 1)[1]
+                        for defect_entry_name in matching_defect_types
+                        if defect_entry_name.rsplit("_", 1)[0] == defect_name_wout_charge
+                    ]
                     # convert list of strings to one string with comma-separated charges
                     charges = "[" + ",".join(charges) + "]"
                     defect_entry = next(
                         entry
-                        for name, entry in self.defect_entries.items()
-                        if _check_if_name_subset(name, defect_name)
+                        for name, entry in matching_defect_types.items()
+                        if name.rsplit("_", 1)[0] == defect_name_wout_charge
                     )
                     frac_coords_string = (
                         "N/A"
@@ -2159,7 +2179,7 @@ class DefectsGenerator(MSONable):
                         else ",".join(f"{x:.3f}" for x in defect_entry.conv_cell_frac_coords)
                     )
                     row = [
-                        defect_name,
+                        defect_name_wout_charge,
                         charges,
                         f"[{frac_coords_string}]",
                         defect_entry.wyckoff,
