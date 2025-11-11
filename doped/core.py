@@ -1850,42 +1850,75 @@ def guess_and_set_oxi_states_with_timeout(
     return structure_with_oxi
 
 
-# TODO: Cut ``most_common_oxi`` from SnB dev and import
-# TODO: And TODO in generation.py
+def get_oxi_probabilities(element_symbol: str) -> dict:
+    """
+    Get a dictionary of oxidation states and their probabilities for an
+    element.
+
+    Tries to get the probabilities from the ``pymatgen`` tabulated ICSD
+    oxidation state probabilities, and if not available, uses the common
+    oxidation states of the element.
+
+    Args:
+        element_symbol (str): Element symbol.
+
+    Returns:
+        dict:
+            Dictionary of oxidation states (ints) and their probabilities
+            (floats).
+    """
+    comp_obj = Composition(element_symbol)
+    comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
+    if oxi_probabilities := {
+        k.oxi_state: v
+        for k, v in comp_obj.oxi_prob.items()
+        if k.element.symbol == element_symbol and k.oxi_state != 0
+    }:  # not empty
+        normalised_oxi_probabilities = {
+            int(k): round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()
+        }
+        return dict(  # sorted by value, descending (max probability first)
+            sorted(normalised_oxi_probabilities.items(), key=lambda item: item[1], reverse=True)
+        )
+    # Note that most_common_oxi() relies on the ordering of the oxi probability dicts here!
+
+    element_obj = Element(element_symbol)
+    if element_obj.common_oxidation_states:
+        return {
+            int(k): 1 / len(element_obj.common_oxidation_states)
+            for k in element_obj.common_oxidation_states
+        }  # known common oxidation states
+
+    # no known _common_ oxidation state, make guess and warn user
+    if element_obj.oxidation_states:
+        oxi_states = {
+            int(k): 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
+        }  # known oxidation states
+    else:
+        oxi_states = {0: 1}  # no known oxidation states, return 0 with 100% probability
+
+    warnings.warn(
+        f"No known common oxidation states in pymatgen/ICSD dataset for element "
+        f"{element_obj.name}. If this results in unreasonable charge states, you "
+        f"should manually edit the defect charge states."
+    )
+
+    return oxi_states
 
 
-def most_common_oxi(element) -> int:
+def most_common_oxi(element_symbol: str) -> int:
     """
     Convenience function to get the most common oxidation state of an element,
     using elemental data from ``pymatgen``.
 
     Args:
-        element (:obj:`str`):
-            Element symbol.
+        element_symbol (str): Element symbol.
 
     Returns:
         Most common oxidation state of the element.
     """
-    comp_obj = Composition("O")
-    comp_obj.add_charges_from_oxi_state_guesses()
-    element_obj = Element(element)
-    oxi_probabilities = [(k, v) for k, v in comp_obj.oxi_prob.items() if k.element == element_obj]
-    if oxi_probabilities:  # not empty
-        most_common = max(oxi_probabilities, key=lambda x: x[1])[0]  # breaks if icsd oxi states is empty
-        return int(most_common.oxi_state)
-
-    if element_obj.common_oxidation_states:
-        return int(element_obj.common_oxidation_states[0])  # known common oxidation state
-
-    # no known common oxidation state, make guess and warn user
-    guess_oxi = element_obj.oxidation_states[0] if element_obj.oxidation_states else 0
-
-    warnings.warn(
-        f"No known common oxidation states in pymatgen/ICSD dataset for element {element_obj.name}, "
-        f"guessing as {guess_oxi:+}. This may be unreasonable!"
-    )
-
-    return int(guess_oxi)
+    # Note this relies on ordering conventions in ``get_oxi_probabilities``!
+    return next(iter(get_oxi_probabilities(element_symbol).keys()))
 
 
 def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):

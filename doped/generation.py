@@ -42,6 +42,7 @@ from doped.core import (
     Substitution,
     Vacancy,
     doped_defect_from_pmg_defect,
+    get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
 )
 from doped.utils import parsing, supercells, symmetry
@@ -768,59 +769,6 @@ def name_defect_entries(
             f"Please report this issue to the developers."
         )
     return defect_naming_dict
-
-
-def get_oxi_probabilities(element_symbol: str) -> dict:
-    """
-    Get a dictionary of oxidation states and their probabilities for an
-    element.
-
-    Tries to get the probabilities from the ``pymatgen`` tabulated ICSD
-    oxidation state probabilities, and if not available, uses the common
-    oxidation states of the element.
-
-    Args:
-        element_symbol (str): Element symbol.
-
-    Returns:
-        dict:
-            Dictionary of oxidation states (ints) and their probabilities
-            (floats).
-    """
-    comp_obj = Composition(element_symbol)
-    comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
-    if oxi_probabilities := {
-        k.oxi_state: v
-        for k, v in comp_obj.oxi_prob.items()
-        if k.element.symbol == element_symbol and k.oxi_state != 0
-    }:  # not empty
-        return {
-            int(k): round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()
-        }
-
-    element_obj = Element(element_symbol)
-    # TODO: Use this function in most_common_oxi, and figure out what we do for extrinsic currently
-    if element_obj.common_oxidation_states:
-        return {
-            int(k): 1 / len(element_obj.common_oxidation_states)
-            for k in element_obj.common_oxidation_states
-        }  # known common oxidation states
-
-    # no known _common_ oxidation state, make guess and warn user
-    if element_obj.oxidation_states:
-        oxi_states = {
-            int(k): 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
-        }  # known oxidation states
-    else:
-        oxi_states = {0: 1}  # no known oxidation states, return 0 with 100% probability
-
-    warnings.warn(
-        f"No known common oxidation states in pymatgen/ICSD dataset for element "
-        f"{element_obj.name}. If this results in unreasonable charge states, you "
-        f"should manually edit the defect charge states."
-    )
-
-    return oxi_states
 
 
 def charge_state_probability(
