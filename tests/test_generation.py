@@ -886,6 +886,9 @@ N_C_Cs_C1.54N1.54         [+1,0,-1]          [0.055,0.111,0.333]  9b
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of C215N.\n"
         )
+        self.Ga2O3_R3c_v_Ga_defect_supercell = Structure.from_file(
+            f"{self.data_dir}/Ga2O3_R3c_v_Ga_defect_supercell_POSCAR"
+        )
 
         self.zn3p2 = Structure.from_file(f"{self.data_dir}/Zn3P2_POSCAR")
         self.sb2se3 = Structure.from_file(f"{self.data_dir}/Sb2Se3_bulk_supercell_POSCAR")
@@ -1229,7 +1232,9 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             defect_gen[random_defect_entry_name] = fd_up_random_defect_entry
         assert "Value must have the same supercell as the DefectsGenerator object," in str(e.value)
 
-    def _generate_and_test_no_warnings(self, structure, min_image_distance=None, **kwargs):
+    def _generate_and_test_no_warnings(
+        self, structure, min_image_distance=None, return_warnings=False, **kwargs
+    ):
         original_stdout = sys.stdout  # Save a reference to the original standard output
         sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
         w = None
@@ -1244,6 +1249,9 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
         if w:
             print([str(warning.message) for warning in w])  # for debugging
         print(output)  # for debugging
+
+        if return_warnings:
+            return defect_gen, output, w
 
         if min_image_distance is None:
             assert not w
@@ -3166,31 +3174,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         if not self.heavy_tests:
             pytest.skip("Skipping heavy test on GH Actions")
 
-        original_stdout = sys.stdout  # Save a reference to the original standard output
-        sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-        try:
-            with warnings.catch_warnings(record=True) as w:
-                warnings.resetwarnings()
-                N_diamond_defect_gen = DefectsGenerator(
-                    self.N_doped_diamond_supercell, interstitial_gen_kwargs=False
-                )
-                assert len(w) == 1
-                assert (
-                    "\nOxidation states could not be guessed for the input structure. This is "
-                    "required for charge state guessing, so defects will still be generated but all "
-                    "charge states will be set to -1, 0, +1. You can manually edit these with the "
-                    "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
-                    "states of the input structure (e.g. using "
-                    "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
-                    in str(w[-1].message)
-                )
-                assert N_diamond_defect_gen.interstitial_gen_kwargs is False  # check attribute set
-
-                output = sys.stdout.getvalue()  # Return a str containing the printed output
-
-        finally:
-            sys.stdout = original_stdout  # Reset standard output to its original value.
-
+        N_diamond_defect_gen, output, w = self._generate_and_test_no_warnings(
+            self.N_doped_diamond_supercell, interstitial_gen_kwargs=False, return_warnings=True
+        )
+        assert len(w) == 1
+        assert (
+            "\nOxidation states could not be guessed for the input structure. This is "
+            "required for charge state guessing, so defects will still be generated but all "
+            "charge states will be set to -1, 0, +1. You can manually edit these with the "
+            "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
+            "states of the input structure (e.g. using "
+            "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
+            in str(w[-1].message)
+        )
+        assert N_diamond_defect_gen.interstitial_gen_kwargs is False  # check attribute set
         assert self.N_diamond_defect_gen_info in output
         assert "_i_" not in output  # no interstitials generated
 
@@ -3202,6 +3199,27 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_N_diamond_defect_gen.to_json(
             f"{self.data_dir}/N_diamond_defect_gen.json"
         )  # test in test_vasp.py
+
+    def test_v_Ga_complex_supercell_mixed_oxi_states(self):
+        # test generating (complex) defects in a defect supercell
+        # notably, due to (guessed) mixed oxidation / valence states, this previously duplicated O_i
+        # defects, but fixed now -- tested here
+        if not self.heavy_tests:
+            pytest.skip("Skipping heavy test on GH Actions")
+
+        complex_defect_gen, _output = self._generate_and_test_no_warnings(
+            self.Ga2O3_R3c_v_Ga_defect_supercell
+        )
+        assert complex_defect_gen._element_list == ["Ga", "O"]  # only one O
+        assert complex_defect_gen.bulk_supercell.composition.as_dict() == {
+            "Ga3+": 47.0,
+            "O-": 3.0,
+            "O2-": 69.0,
+        }
+        assert len([i for i in complex_defect_gen if "Ga_i" in i and i.endswith("_0")]) == len(
+            [i for i in complex_defect_gen if "O_i" in i and i.endswith("_0")]
+        )
+        self._general_defect_gen_check(complex_defect_gen)
 
     def compare_doped_charges(self, tld_stable_charges, defect_gen):
         """

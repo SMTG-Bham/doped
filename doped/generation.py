@@ -259,7 +259,7 @@ def get_neighbour_distances_and_symbols(
         closest neighbours to the input ``site``.
     """
     if element_list is None:
-        element_list = [el.symbol for el in structure.composition.elements]
+        element_list = list(dict.fromkeys(el.symbol for el in structure.composition.elements))
 
     neighbour_tuples: list[tuple[float, str]] = []
     while len(neighbour_tuples) < n:
@@ -1827,7 +1827,9 @@ class DefectsGenerator(MSONable):
         else:
             extrinsic_elements = []
 
-        host_element_list = [el.symbol for el in self.primitive_structure.composition.elements]
+        host_element_list = list(
+            dict.fromkeys(el.symbol for el in self.primitive_structure.composition.elements)
+        )
         # if any "extrinsic" elements are actually host elements, remove them and warn user:
         if any(el in host_element_list for el in extrinsic_elements) and not isinstance(
             self.extrinsic,
@@ -2268,9 +2270,7 @@ class DefectsGenerator(MSONable):
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
-        self.defect_entries = sort_defect_entries(
-            self.defect_entries, element_list=self._element_list
-        )  # type:ignore
+        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def remove_charge_states(self, defect_entry_name: str, charge_states: list | int):
         r"""
@@ -2293,9 +2293,7 @@ class DefectsGenerator(MSONable):
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
-        self.defect_entries = sort_defect_entries(
-            self.defect_entries, element_list=self._element_list
-        )  # type:ignore
+        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def as_dict(self):
         """
@@ -2520,9 +2518,7 @@ class DefectsGenerator(MSONable):
 
         # sort defects and defect entries for deterministic behaviour:
         self.defects = _sort_defects(self.defects, element_list=self._element_list)
-        self.defect_entries = sort_defect_entries(
-            self.defect_entries, element_list=self._element_list
-        )  # type:ignore
+        self.defect_entries = sort_defect_entries(self.defect_entries, element_list=self._element_list)
 
     def __delitem__(self, key):
         """
@@ -2594,7 +2590,9 @@ def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
     """
 
     def _get_single_defect_element_list(single_defect):
-        element_list = [el.symbol for el in single_defect.structure.composition.elements]
+        element_list = list(
+            dict.fromkeys(el.symbol for el in single_defect.structure.composition.elements)
+        )
         defect_element = single_defect.defect_site.specie.symbol  # possibly extrinsic
         if defect_element not in element_list:
             element_list.append(defect_element)
@@ -2616,7 +2614,9 @@ def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
         )
         for entry_or_defect in defect_list
     ]
-    host_element_list = [el.symbol for el in next(iter(defect_list)).structure.composition.elements]
+    host_element_list = list(
+        dict.fromkeys(el.symbol for el in next(iter(defect_list)).structure.composition.elements)
+    )
     extrinsic_element_list: list[str] = []
     for single_defect in defect_list:
         extrinsic_element_list.append(single_defect.defect_site.specie.symbol)  # possibly extrinsic
