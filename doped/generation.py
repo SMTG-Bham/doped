@@ -1629,11 +1629,11 @@ class DefectsGenerator(MSONable):
 
             # Generate DefectEntry objects:
             pbar.set_description("Determining conventional structure and Wyckoff labels")
-            self._get_conventional_structure_and_wyckoff_label_dict(
+            wyckoff_dict = self._get_conventional_structure_and_wyckoff_label_dict(
                 pbar
-            )  # self.conventional_structure, self._BilbaoCS_conv_cell_vector_mapping, self._wyckoff_dict
+            )  # self.conventional_structure, self._BilbaoCS_conv_cell_vector_mapping
             pbar.set_description("Generating DefectEntry objects and symmetry information")
-            defect_entry_dict = self._generate_neutral_defect_entries(pbar, processes)
+            defect_entry_dict = self._generate_neutral_defect_entries(pbar, processes, wyckoff_dict)
             self._set_defects_attr_dict(defect_entry_dict)  # sets self.defects
             pbar.update(5)  # 95% of progress bar
 
@@ -1768,13 +1768,12 @@ class DefectsGenerator(MSONable):
                 self.primitive_structure = self._bulk_oxi_states = prim_struct_w_oxi
             else:
                 warnings.warn(
-                    "\nOxidation states could not be guessed for the input structure. This is "
-                    "required for charge state guessing, so defects will still be generated but "
-                    "all charge states will be set to -1, 0, +1. You can manually edit these "
-                    "with the add/remove_charge_states methods (see tutorials), or you can set "
-                    "the oxidation states of the input structure (e.g. using "
-                    "structure.add_oxidation_state_by_element()) and re-initialize "
-                    "DefectsGenerator()."
+                    "\nOxidation states could not be guessed for the input structure. This is required "
+                    "for charge state guessing, so defects will still be generated but all charge states "
+                    "will be set to -1, 0, +1. You can manually edit these with the "
+                    "add/remove_charge_states methods (see tutorials), or you can set the oxidation "
+                    "states of the input structure (e.g. using structure.add_oxidation_state_by_element("
+                    ")) and re-initialize DefectsGenerator()."
                 )
 
     def _define_bulk_supercell_and_check_min_image_distance(self, specified_min_image_distance: float):
@@ -2005,7 +2004,7 @@ class DefectsGenerator(MSONable):
                     f"argument)."
                 )
 
-    def _get_conventional_structure_and_wyckoff_label_dict(self, pbar: tqdm):
+    def _get_conventional_structure_and_wyckoff_label_dict(self, pbar: tqdm) -> dict:
         # get BCS conventional structure, lattice vector swap array, and Wyckoff label dict:
         conv_struct_results = symmetry.get_BCS_conventional_structure(
             self.primitive_structure, pbar=pbar, return_wyckoff_dict=True
@@ -2014,11 +2013,13 @@ class DefectsGenerator(MSONable):
         (
             self.conventional_structure,
             self._BilbaoCS_conv_cell_vector_mapping,
-            self._wyckoff_dict,
+            wyckoff_dict,
         ) = conv_struct_results
 
+        return wyckoff_dict
+
     def _generate_neutral_defect_entries(
-        self, pbar: tqdm, processes: int | None
+        self, pbar: tqdm, processes: int | None, wyckoff_dict: dict | None
     ) -> dict[str, DefectEntry]:
         # process defects into defect entries:
         partial_func = partial(
@@ -2028,7 +2029,7 @@ class DefectsGenerator(MSONable):
             bulk_supercell=self.bulk_supercell,
             conventional_structure=self.conventional_structure,
             _BilbaoCS_conv_cell_vector_mapping=self._BilbaoCS_conv_cell_vector_mapping,
-            wyckoff_label_dict=self._wyckoff_dict,
+            wyckoff_label_dict=wyckoff_dict or {},
             symprec=self.symprec,
         )
 
@@ -2087,6 +2088,7 @@ class DefectsGenerator(MSONable):
 
     def _guess_and_set_charge_states(self, defect_entry_dict: dict[str, DefectEntry], pbar: tqdm):
         pbar.set_description("Guessing charge states")
+        _pbar_increment_per_defect = 1
         if not isinstance(pbar, MagicMock):
             _pbar_increment_per_defect = max(
                 0, min((1 / len(defect_entry_dict)) * (pbar.total - pbar.n) * 0.999, pbar.total - pbar.n)

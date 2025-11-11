@@ -266,8 +266,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
 
-            # TODO: (Explicitly) Test file generation functions for an unknown host!
-
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=self.api_key)
         # potcar spec doesn't need potcars set up for pmg and it still works

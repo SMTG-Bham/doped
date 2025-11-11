@@ -50,6 +50,14 @@ _orientational_degeneracy_warning = (
     "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
 )  # TODO: Update link when published
 
+_falling_back_to_common_oxi_states_warning = (
+    "Oxidation states could not be guessed. The most common oxidation state for each element will be "
+    "used, which may not be appropriate! Oxidation states are used in charge state guessing. You can "
+    "manually edit charge states with the add/remove_charge_states methods (see tutorials), or you can "
+    "set the oxidation states of the input structure (e.g. using "
+    "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
+)
+
 
 @dataclass
 class DefectEntry(thermo.DefectEntry):
@@ -1653,7 +1661,7 @@ def _get_dft_chempots(chempots: dict | None, el_refs: dict | None = None, limit:
     return chempots
 
 
-def _guess_and_set_struct_oxi_states(structure):
+def _guess_and_set_struct_oxi_states(structure: Structure) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, using
     the ``pymatgen`` ``BVAnalyzer`` class.
@@ -1691,7 +1699,9 @@ def _guess_and_set_struct_oxi_states(structure):
     return False  # if oxi states could not be guessed
 
 
-def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=False):
+def _guess_and_set_struct_oxi_states_icsd_prob(
+    structure: Structure, try_without_max_sites: bool = False
+) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, using
     the ``pymatgen``-tabulated ICSD oxidation state probabilities.
@@ -1723,10 +1733,8 @@ def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=
         attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
         while (  # check oxi_states assigned and not all zero:
-            attempt < 3
-            and all(specie.oxi_state == 0 for specie in structure.species)
-            or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
-        ):
+            attempt < 3 and all(specie.oxi_state == 0 for specie in structure.species)
+        ) or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
             attempt += 1
             if attempt == 1:
                 structure.add_oxidation_state_by_guess(max_sites=-1, all_oxi_states=True)
@@ -1743,7 +1751,7 @@ def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=
     return False
 
 
-def guess_and_set_struct_oxi_states(structure, try_without_max_sites=False):
+def guess_and_set_struct_oxi_states(structure: Structure, try_without_max_sites: bool = False):
     """
     Tries to guess (and set) the oxidation states of the input structure, first
     using the ``pymatgen`` ``BVAnalyzer`` class, and if that fails, using the
@@ -1770,8 +1778,12 @@ def guess_and_set_struct_oxi_states(structure, try_without_max_sites=False):
 
 
 def guess_and_set_oxi_states_with_timeout(
-    structure, timeout_1=10, timeout_2=15, break_early_if_expensive=False
-) -> bool:
+    structure: Structure,
+    timeout_1: float = 10,
+    timeout_2: float = 15,
+    break_early_if_expensive: bool = False,
+    common_oxi_states: bool = True,
+) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, with
     a timeout catch for cases where the structure is complex and oxi state
@@ -1797,6 +1809,11 @@ def guess_and_set_oxi_states_with_timeout(
             attempt (with ``BVAnalyzer``) fails and the cost estimate for the
             ICSD probability guessing is high (expected to take a long time;
             > 10 seconds). Default is ``False``.
+        common_oxi_states (bool):
+            Whether to allow falling back to just using the most common
+            oxidation states for the elements present (with a warning), if
+            other oxidation state guessing routines fail.
+            Default is ``True``.
 
     Returns:
         Structure:
@@ -1812,12 +1829,63 @@ def guess_and_set_oxi_states_with_timeout(
         )  # if in a daemon process, can't spawn new `Process`s
         and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
     ):
-        return False
+        structure_with_oxi = False
 
     if mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
-        return _guess_and_set_struct_oxi_states_icsd_prob(structure)
+        structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure)
 
-    return _guess_and_set_oxi_states_with_timeout_icsd_prob(structure, timeout_1, timeout_2)
+    else:
+        structure_with_oxi = _guess_and_set_oxi_states_with_timeout_icsd_prob(
+            structure, timeout_1, timeout_2
+        )
+
+    if not structure_with_oxi and common_oxi_states:
+        warnings.warn(_falling_back_to_common_oxi_states_warning)
+        oxi_dec_structure = structure.copy()  # don't modify original structure
+        oxi_dec_structure.add_oxidation_state_by_element(
+            {elt.symbol: most_common_oxi(elt.symbol) for elt in structure.elements}
+        )
+        return oxi_dec_structure
+
+    return structure_with_oxi
+
+
+# TODO: Cut ``most_common_oxi`` from SnB dev and import
+# TODO: And TODO in generation.py
+
+
+def most_common_oxi(element) -> int:
+    """
+    Convenience function to get the most common oxidation state of an element,
+    using elemental data from ``pymatgen``.
+
+    Args:
+        element (:obj:`str`):
+            Element symbol.
+
+    Returns:
+        Most common oxidation state of the element.
+    """
+    comp_obj = Composition("O")
+    comp_obj.add_charges_from_oxi_state_guesses()
+    element_obj = Element(element)
+    oxi_probabilities = [(k, v) for k, v in comp_obj.oxi_prob.items() if k.element == element_obj]
+    if oxi_probabilities:  # not empty
+        most_common = max(oxi_probabilities, key=lambda x: x[1])[0]  # breaks if icsd oxi states is empty
+        return int(most_common.oxi_state)
+
+    if element_obj.common_oxidation_states:
+        return int(element_obj.common_oxidation_states[0])  # known common oxidation state
+
+    # no known common oxidation state, make guess and warn user
+    guess_oxi = element_obj.oxidation_states[0] if element_obj.oxidation_states else 0
+
+    warnings.warn(
+        f"No known common oxidation states in pymatgen/ICSD dataset for element {element_obj.name}, "
+        f"guessing as {guess_oxi:+}. This may be unreasonable!"
+    )
+
+    return int(guess_oxi)
 
 
 def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):
@@ -1838,7 +1906,7 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     structure,
     timeout_1: float = 10,
     timeout_2: float = 15,
-) -> bool:
+) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure using
     the ICSD oxidation state probabilities approach, with a timeout catch for

@@ -988,10 +988,12 @@ class DefectsParser:
         # fully ionised charge states):
         pbar.set_description("Guessing oxidation states in bulk structure")
         self._bulk_oxi_states: Structure | Composition | dict | bool = False
-        if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
-            self.bulk_vr.final_structure, break_early_if_expensive=True
-        ):
-            self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
+        with warnings.catch_warnings():  # ignore warnings if issues in guessing, this is not so important
+            warnings.filterwarnings("ignore", message="Oxidation states could not be guessed")
+            if bulk_struct_w_oxi := guess_and_set_oxi_states_with_timeout(
+                self.bulk_vr.final_structure, break_early_if_expensive=True
+            ):
+                self.bulk_vr.final_structure = self._bulk_oxi_states = bulk_struct_w_oxi
 
         # load and parse bulk corrections data once for efficiency:
         self.bulk_corrections_data = {}
