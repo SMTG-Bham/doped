@@ -2133,6 +2133,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             chempots=cls.Cu2SiSe3_thermo.chempots,
         )
 
+        cls.Y_doped_Cd2Sb2O7_thermo = loadfn(
+            os.path.join(data_dir, "Y_doped_Cd2Sb2O7_thermo_w_DOS.json.gz")
+        )
+
     def setUp(self):
         self.Cu2SiSe3_thermo.bulk_dos = self.Cu2SiSe3_fermi_dos
         self.solver_py_sc_fermi = FermiSolver(
@@ -2201,6 +2205,36 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
             for el_key in single_chempot_dict
         )
+
+        _check_output_concentrations(solver, result)
+
+    def test_optimise_maximize_electrons_Y_doped_Cd2Sb2O7_fixed_elements(self):
+        """
+        Test ``optimise`` method to maximize electron concentration.
+
+        Previously reported by Peter Russell to fail, which was due to rounding
+        errors. Fixed now, with ``fixed_elements`` input supported.
+        """
+        solver = FermiSolver(defect_thermodynamics=self.Y_doped_Cd2Sb2O7_thermo, backend="doped")
+        result = solver.optimise(
+            target="Electrons (cm^-3)",
+            min_or_max="max",
+            fixed_elements={"O": -1.32},
+        )
+        row = result.iloc[0]
+        formal_chempots = {
+            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
+        }
+
+        # confirm that formal_chempots does not correspond to a X-rich limit:
+        for limit in solver.defect_thermodynamics.chempots["limits_wrt_el_refs"].values():
+            for el_key in limit:
+                assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=2e-2)
+
+        assert np.isclose(formal_chempots["O"], -1.32, atol=1e-2)
+        assert np.isclose(formal_chempots["Sb"], -2.2163672, atol=1e-3)
+        assert np.isclose(formal_chempots["Cd"], -1.126243, atol=1e-3)
+        assert np.isclose(formal_chempots["Y"], -7.979636, atol=1e-3)
 
         _check_output_concentrations(solver, result)
 
@@ -2312,6 +2346,20 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             cartesian=True,
         )
         return _plot_Cu_i_data(data.loc["Int_Cu"])
+
+    def test_scan_chemical_potential_grid_Y_doped_Cd2Sb2O7_fixed_elements(self):
+        solver = FermiSolver(defect_thermodynamics=self.Y_doped_Cd2Sb2O7_thermo, backend="doped")
+        concentrations = solver.scan_chemical_potential_grid(
+            annealing_temperature=800,
+            quenched_temperature=300,
+            effective_dopant_concentration=1e16,
+            fixed_elements={"O": -1.32},
+        )
+        assert len(concentrations) > 0
+        unique_chempot_sets = concentrations[
+            [f"μ_{el} (eV)" for el in self.Y_doped_Cd2Sb2O7_thermo.chempots["elemental_refs"]]
+        ].drop_duplicates()
+        assert len(unique_chempot_sets) > 0
 
     @parameterize_backend()
     def test_scan_chemical_potential_grid(self, backend):

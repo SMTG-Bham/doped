@@ -6523,6 +6523,7 @@ class FermiSolver(MSONable):
         delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
+        fixed_elements: dict[str, float] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
         cartesian: bool = False,
@@ -6630,6 +6631,11 @@ class FermiSolver(MSONable):
                 be excluded from high-temperature concentration fixing (e.g.
                 ``"v_"`` will match all vacancy defects with
                 ``doped``\-formatted names). Defaults to ``None``.
+            fixed_elements (dict):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{column_name: value}``; e.g. ``{"Li": -2}``). See
+                :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_constrained_grid`.
+                Only possible with >=4D chemical spaces.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge
                 states (``True``) or allow charge states to vary while keeping
@@ -6676,7 +6682,9 @@ class FermiSolver(MSONable):
         """
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
-        grid = ChemicalPotentialGrid(chempots).get_grid(n_points=n_points, cartesian=cartesian)
+        grid = ChemicalPotentialGrid(chempots).get_grid(
+            n_points=n_points, cartesian=cartesian, fixed_elements=fixed_elements
+        )
         chempot_dict_list = [
             {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
             for _idx, chempot_series in grid.iterrows()
@@ -6741,6 +6749,7 @@ class FermiSolver(MSONable):
         delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
+        fixed_elements: dict[str, float] | None = None,
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
         cartesian: bool = False,
@@ -6869,6 +6878,11 @@ class FermiSolver(MSONable):
                 be excluded from high-temperature concentration fixing (e.g.
                 ``"v_"`` will match all vacancy defects with
                 ``doped``\-formatted names). Defaults to ``None``.
+            fixed_elements (dict):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{column_name: value}``; e.g. ``{"Li": -2}``). See
+                :meth:`~doped.chemical_potentials.ChemicalPotentialGrid.get_constrained_grid`.
+                Only possible with >=4D chemical spaces.
             fix_charge_states (bool):
                 Whether to fix the concentrations of individual defect charge
                 states (``True``) or allow charge states to vary while keeping
@@ -6925,12 +6939,13 @@ class FermiSolver(MSONable):
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         # TODO: Add option of just specifying an element, to min/max its summed defect concentrations
         # TODO: When per-charge option added, test setting target to a defect species (with charge)
+        # TODO: Low-priority; support fixed_elements for 3D chempot spaces?
 
         if len(el_refs) == 2:
             optimise_func = self._optimise_line
         else:
             optimise_func = self._optimise_grid
-            kwargs.update({"cartesian": cartesian})
+            kwargs.update({"cartesian": cartesian, "fixed_elements": fixed_elements})
 
         return optimise_func(
             target=target,
@@ -7127,6 +7142,7 @@ class FermiSolver(MSONable):
         fix_charge_states: bool = False,
         site_competition: bool | str = True,
         cartesian: bool = False,
+        fixed_elements: dict[str, float] | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         r"""
@@ -7144,7 +7160,10 @@ class FermiSolver(MSONable):
             chempots_dict_list = [
                 {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
                 for _idx, chempot_series in chempots_grid.get_grid(
-                    n_points=n_points, cartesian=cartesian
+                    n_points=n_points,
+                    cartesian=cartesian,
+                    fixed_elements=fixed_elements,
+                    decimal_places=8,
                 ).iterrows()
             ]
             target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(
