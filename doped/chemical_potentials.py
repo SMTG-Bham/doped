@@ -1715,6 +1715,7 @@ class ChemicalPotentialGrid:
     def get_grid(
         self,
         n_points: int | None = None,
+        fixed_elements: dict[str, float] | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
@@ -1747,6 +1748,11 @@ class ChemicalPotentialGrid:
                 polytope is much slower).
                 Note that large values (>= 1e5) with multinary systems can
                 explode, crashing system memory.
+            fixed_elements (dict | None):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{column_name: value}``; e.g. ``{"Li": -2}``), if a reduced /
+                constrained chemical potential grid is desired. If provided,
+                the ``get_constrained_grid`` method is used.
             cartesian (bool):
                 Whether to generate the grid in Cartesian coordinates. If
                 ``False`` (default), the grid is generated in barycentric
@@ -1762,7 +1768,7 @@ class ChemicalPotentialGrid:
                 points in the generated grid from overlapping simplices. If
                 duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
-                speed up runtime.
+                speed up runtime. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
@@ -1772,6 +1778,11 @@ class ChemicalPotentialGrid:
                 A ``DataFrame`` containing the points within the convex hull.
                 Each row represents a point in the grid.
         """
+        if fixed_elements is not None:
+            return self.get_constrained_grid(
+                fixed_elements, n_points, cartesian, decimal_places, drop_duplicates, include_vertices
+            )
+
         n_points = n_points or (1000 if not cartesian else 100)
         dependent_variable = self.vertices.columns[-1]
         dependent_var = self.vertices[dependent_variable].to_numpy()
@@ -1836,6 +1847,7 @@ class ChemicalPotentialGrid:
         n_points: int | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
+        drop_duplicates: bool = True,
         include_vertices: bool = True,
     ) -> pd.DataFrame:
         r"""
@@ -1876,6 +1888,13 @@ class ChemicalPotentialGrid:
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Default is 4.
+            drop_duplicates (bool):
+                Whether to drop duplicate points in the generated grid. With
+                barycentric coordinate generation, there can be duplicate
+                points in the generated grid from overlapping simplices. If
+                duplicates are acceptable (likely true for most downstream
+                usages; e.g. plotting etc) then this can be set to ``False`` to
+                speed up runtime. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
@@ -1928,19 +1947,25 @@ class ChemicalPotentialGrid:
         # these are our new constrained vertices, now we generate the grid (without the fixed element):
         input_constrained_vertices = constrained_vertices.drop(columns=list(fixed_elements.keys()))
         constrained_grid = ChemicalPotentialGrid.from_dataframe(input_constrained_vertices)
-        return constrained_grid.get_grid(
+        grid_df = constrained_grid.get_grid(
             n_points=n_points,
             cartesian=cartesian,
             decimal_places=decimal_places,
+            drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
         ).dropna()
+
+        for element_col_name, value in fixed_elements.items():  # add fixed-element values to the grid
+            grid_df[element_col_name] = [value] * len(grid_df)
+
+        return grid_df
 
 
 def _intersect_hull_with_plane(
     vertices: np.ndarray,
     axis: int,
     value: float,
-    tol: float = 1e-10,
+    tol: float = 1e-6,
 ) -> np.ndarray:
     """
     Intersect the convex hull with a plane defined by a fixed value of a given
@@ -3193,6 +3218,10 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
+        # TODO: The same required information should be accessible directly from
+        # DefectThermodynamics.chempots (from which we can generate the ChemicalPotentialGrid), with some
+        # restructuring here. Worth supporting? Means we can generate the heatmap directly from
+        # DefectThermodynamics json files without needing CompetingPhasesAnalyzer etc...
         # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
         # Note that we could also add option to instead plot competing phases lines coloured,
         # with a legend added giving the composition of each competing phase line (as in the SI of
