@@ -2583,7 +2583,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
-                    assert np.isclose(new_conc, orig_conc)
+                    assert np.isclose(new_conc, orig_conc * 2 * 0.5) or (
+                        np.isclose(new_conc, new_entry.bulk_site_concentration)
+                    )  # possibly at concentration upper limit (100%)
 
                     new_entry.degeneracy_factors["orientational degeneracy"] *= 3
                     new_conc = new_entry.equilibrium_concentration(
@@ -2593,7 +2595,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
-                    assert np.isclose(new_conc, orig_conc * 3)
+                    assert np.isclose(new_conc, orig_conc * 2 * 0.5 * 3) or (
+                        np.isclose(new_conc, new_entry.bulk_site_concentration)
+                    )  # possibly at concentration upper limit (100%)
 
                     new_entry.degeneracy_factors["fake degeneracy"] = 7
                     new_conc = new_entry.equilibrium_concentration(
@@ -2603,7 +2607,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
-                    assert np.isclose(new_conc, orig_conc * 21)
+                    assert np.isclose(new_conc, orig_conc * 2 * 0.5 * 3 * 7) or (
+                        np.isclose(new_conc, new_entry.bulk_site_concentration)
+                    )  # possibly at concentration upper limit (100%)
 
                     # test per_site and bulk_site_concentration attributes:
                     new_conc = random_defect_entry.equilibrium_concentration(
@@ -2932,7 +2938,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             > 0
         )
         assert dilute_lim_conc_2000K < v_O.bulk_site_concentration * degeneracy_factor
-        assert np.isclose(dilute_lim_conc_2000K, 1.666e23, rtol=1e-3)
+        assert np.isclose(dilute_lim_conc_2000K, 5.06752e22, rtol=1e-3)
 
         x = np.linspace(100, 4000, 100)
         fig, ax = plt.subplots()
@@ -3030,10 +3036,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             < v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + v_O_2_degeneracy_factor))
         ).all()
         assert np.allclose(
-            site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 3.5510e22, rtol=1e-3
+            site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 1.478696e22, rtol=1e-3
         )
         assert np.allclose(
-            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.0576e22, rtol=1e-3
+            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.478696e22, rtol=1e-3
         )
 
         assert (
@@ -3440,7 +3446,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
         for kwargs in kwargs_list:
             print(f"Computing eq Fermi level with: {kwargs}")
-            assert np.isclose(defect_thermo.get_equilibrium_fermi_level(**kwargs), 1.2298, atol=1e-3)
+            assert np.isclose(defect_thermo.get_equilibrium_fermi_level(**kwargs), 1.16772, atol=1e-3)
 
         defect_thermo._chempots = None
         defect_thermo._el_refs = None

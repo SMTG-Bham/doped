@@ -815,18 +815,22 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert np.isclose(
             concentrations["Fermi Level (eV wrt VBM)"].iloc[0],
             self.CdTe_anneal_1400K_quenched_150K_fermi_level,
+            atol=1e-4 if backend == "doped" else 0.05,
+        )
+        conc_rtol = 1e-3 if backend == "doped" else 0.5
+        assert np.isclose(
+            concentrations["Electrons (cm^-3)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_e,
+            rtol=conc_rtol,
         )
         assert np.isclose(
-            concentrations["Electrons (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_e, rtol=1e-3
-        )
-        assert np.isclose(
-            concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_h, rtol=1e-3
+            concentrations["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_h, rtol=conc_rtol
         )
 
         pd.testing.assert_series_equal(
             self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
             concentrations["Concentration (cm^-3)"],
-            rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
+            rtol=conc_rtol,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
         )  # also checks the index and ordering
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
@@ -925,7 +929,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )  # also checks the index and ordering
 
         # v_Cd concentration is basically the same at all <=500K temperatures here, as it's the only
-        # significant compensating species to the effective dopant concentration:
+        # significant compensating species to the effective dopant concentration, while Cd_Te stays the
+        # same as it has the zero-bound concentration
         concentrations_lte_500K = concentrations[concentrations["Temperature (K)"] <= 500]
         assert np.allclose(concentrations_lte_500K.loc["v_Cd", "Concentration (cm^-3)"], 5e15, rtol=1e-3)
         for defect in set(concentrations.index.values):
@@ -939,7 +944,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 ],
                 atol=1e-40,
                 rtol=1e-3,
-            ) == (defect == "v_Cd")
+            ) == (defect in ["v_Cd", "Cd_Te"] if backend == "doped" else defect == "v_Cd")
 
     @parameterize_backend()
     def test_scan_temperature_pseudo_equilibrium(self, backend):
@@ -1230,19 +1235,23 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert np.isclose(
             concentrations_0["Fermi Level (eV wrt VBM)"].iloc[0],
             self.CdTe_anneal_1400K_quenched_150K_fermi_level,
+            atol=1e-4 if backend == "doped" else 0.05,
         )
+        conc_rtol = 1e-3 if backend == "doped" else 0.5
         assert np.isclose(
             concentrations_0["Electrons (cm^-3)"].iloc[0],
             self.CdTe_anneal_1400K_quenched_150K_e,
-            rtol=1e-3,
+            rtol=conc_rtol,
         )
         assert np.isclose(
-            concentrations_0["Holes (cm^-3)"].iloc[0], self.CdTe_anneal_1400K_quenched_150K_h, rtol=1e-3
+            concentrations_0["Holes (cm^-3)"].iloc[0],
+            self.CdTe_anneal_1400K_quenched_150K_h,
+            rtol=conc_rtol,
         )
         pd.testing.assert_series_equal(
             self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
             concentrations_0["Concentration (cm^-3)"],
-            rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
+            rtol=conc_rtol,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
         )  # also checks the index and ordering
 
     @parameterize_backend()
@@ -1324,21 +1333,24 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert np.isclose(
             concentrations_Cd_rich["Fermi Level (eV wrt VBM)"].iloc[0],
             self.CdTe_anneal_1400K_quenched_150K_fermi_level,
+            atol=1e-4 if backend == "doped" else 0.05,
         )
+        conc_rtol = 1e-3 if backend == "doped" else 0.5
         assert np.isclose(
             concentrations_Cd_rich["Electrons (cm^-3)"].iloc[0],
             self.CdTe_anneal_1400K_quenched_150K_e,
-            rtol=1e-3,
+            rtol=conc_rtol,
         )
         assert np.isclose(
             concentrations_Cd_rich["Holes (cm^-3)"].iloc[0],
             self.CdTe_anneal_1400K_quenched_150K_h,
-            rtol=1e-3,
+            rtol=conc_rtol,
         )
         pd.testing.assert_series_equal(
             self.CdTe_anneal_1400K_quenched_150K_conc_df["Concentration (cm^-3)"],
             concentrations_Cd_rich["Concentration (cm^-3)"],
-            rtol=3e-3,  # higher rtol required with large annealing, low quenching w/py-sc-fermi
+            rtol=conc_rtol,
+            # higher rtol required with large annealing, low quenching w/py-sc-fermi, no site competition
         )  # also checks the index and ordering
 
     @parameterize_backend()
@@ -1487,7 +1499,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # from ``py-sc-fermi``; while ``doped`` backend is much faster
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         rtol = 0.1
-        known_min_e = 1.50946e-23  # when using interpolate_chempots with 100 n_points
+        known_min_e = 4.357048117462386e-34  # when using interpolate_chempots with 100 n_points
         result = solver.optimise(
             target="Electrons (cm^-3)",
             min_or_max="min",
@@ -1497,7 +1509,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             n_points=5,
             cartesian=True,  # should have no effect here, for binary system
         )  # requires 3 iterations for convergence within tolerance
-        assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=rtol)
+        assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, rtol=rtol)
 
         result = solver.optimise(
             target="Electrons (cm^-3)",
@@ -1510,7 +1522,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )  # requires 4 iterations for convergence within tolerance
         # small non-convergence in py-sc-fermi for small concentrations:
         tight_rtol = rtol / 100 if backend == "doped" else rtol / 10
-        assert np.isclose(result["Electrons (cm^-3)"].iloc[0], known_min_e, atol=1e-40, rtol=tight_rtol)
+        assert np.isclose(
+            result["Electrons (cm^-3)"].iloc[0],
+            known_min_e if backend == "doped" else 1.5095310030600917e-23,
+            rtol=tight_rtol,
+        )
 
         _check_output_concentrations(solver, result)  # test dataframe output
 

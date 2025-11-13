@@ -1398,11 +1398,11 @@ class DefectEntry(thermo.DefectEntry):
             )
             # set minimum per-site concentration for numerical stability; 1e-50 roughly corresponds to one
             # defect in an Earth volume (~10^27 cm^3, with ~10^23 sites per cm^3 ~> 10^50 sites per Earth)
-            per_site_concentration = max(exp_factor * degeneracy_factor, 1e-50)
+            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-50)
             if site_competition:
                 per_site_concentration /= 1 + per_site_concentration
             else:  # cap max at 100% site concentration (though obvs unphysical)
-                per_site_concentration = min(per_site_concentration, 1)
+                per_site_concentration = np.minimum(per_site_concentration, 1)
 
             if per_site:
                 return per_site_concentration

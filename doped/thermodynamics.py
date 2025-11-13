@@ -3728,11 +3728,12 @@ class DefectThermodynamics(MSONable):
             )
             return qd_tot
 
-        eq_fermi_level: float = brentq(_get_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
+        assert isinstance(self.band_gap, float)  # typing
+        assert isinstance(self.vbm, float)  # typing
+        eq_fermi_level: float = brentq(_get_total_q, -4.0, self.band_gap + 4.0)
+
         if return_concs:
-            e_conc, h_conc = get_e_h_concs(
-                self.bulk_dos, eq_fermi_level + self.vbm, temperature  # type: ignore
-            )
+            e_conc, h_conc = get_e_h_concs(self.bulk_dos, eq_fermi_level + self.vbm, temperature)
             return eq_fermi_level, e_conc, h_conc
 
         return eq_fermi_level
@@ -4080,17 +4081,17 @@ class DefectThermodynamics(MSONable):
                 temperature=quenched_temperature,
             )
 
-        eq_fermi_level: float = brentq(_get_constrained_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
-        e_conc, h_conc = get_e_h_concs(
-            orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature  # type: ignore
-        )
+        assert isinstance(self.band_gap, float)  # typing
+        assert isinstance(self.vbm, float)  # typing
+        eq_fermi_level: float = brentq(_get_constrained_total_q, -4.0, self.band_gap + 4.0)
+        e_conc, h_conc = get_e_h_concs(orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature)
         conc_df = get_constrained_concentrations(eq_fermi_level)  # not lean for output
 
         if not return_annealing_values:
             return (eq_fermi_level, e_conc, h_conc, conc_df)
 
         annealing_e_conc, annealing_h_conc = get_e_h_concs(
-            annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature  # type: ignore
+            annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature
         )
         annealing_defect_concentrations = get_constrained_concentrations(
             annealing_fermi_level, temperature=annealing_temperature
