@@ -39,7 +39,6 @@ from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
-from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
@@ -1802,7 +1801,6 @@ class ChemicalPotentialGrid:
         hull_idx = hull.vertices  # indices of the hull points
         coords_hull = independent_vars.to_numpy()[hull_idx]
         values_hull = dependent_var[hull_idx]
-        delaunay_tri = Delaunay(coords_hull)
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             # hull volume (in N-D) times grid density = num points:
@@ -1820,16 +1818,12 @@ class ChemicalPotentialGrid:
             grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
 
             # Delaunay triangulation to get points inside the convex hull
-            inside_hull = delaunay_tri.find_simplex(grid_points) >= 0
-            points_inside = grid_points[inside_hull]
-            values_inside = griddata(  # interpolate values to get the dependent chemical potential
-                independent_vars.to_numpy(), dependent_var, points_inside, method="linear"
+            grid_with_values = _griddata_linear_in_hull(
+                coords_hull, values_hull, grid_points, tol=10 ** (-decimal_places)
             )
-            # Combine points with their corresponding interpolated values:
-            grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
-            grid_with_values = _lattice_in_hull(delaunay_tri, values_hull, n_points=n_points)
+            grid_with_values = _lattice_in_hull(coords_hull, values_hull, n_points=n_points)
 
         if include_vertices:  # Ensure vertices are in the grid
             grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
@@ -1920,6 +1914,7 @@ class ChemicalPotentialGrid:
                     vertices,
                     list(independent_vars.columns).index(element),
                     value,
+                    tol=10 ** (-decimal_places),
                 )
             except ValueError as e:
                 if "does not meet the hull" in str(e):
@@ -1932,13 +1927,9 @@ class ChemicalPotentialGrid:
                 raise e
 
         # Interpolate the values to get the dependent chemical potential
-        values_inside = griddata(independent_vars.to_numpy(), dependent_var, vertices, method="linear")
-
-        # Combine points with their corresponding interpolated values
-        grid_with_values = np.hstack((vertices, values_inside.reshape(-1, 1)))
-
-        # remove nan values and round
-        grid_with_values = grid_with_values[~np.isnan(grid_with_values[:, -1])].round(decimal_places + 1)
+        grid_with_values = _griddata_linear_in_hull(
+            independent_vars.to_numpy(), dependent_var, vertices, tol=10 ** (-decimal_places)
+        )
 
         constrained_vertices = pd.DataFrame(
             grid_with_values,
@@ -1997,7 +1988,7 @@ def _intersect_hull_with_plane(
         d_j = v_j[axis] - value  # vector from plane to vertex j, along axis
 
         if d_i * d_j < 0:  # opposite signs in vectors -> crossing
-            t = d_i / (d_i - d_j)  # 0 < t < 1
+            t = d_i / (d_i - d_j)  # 0 < t < 1  (fraction along path)
             pts.append(v_i + t * (v_j - v_i))  # intersection point
 
         else:  # check if endpoint is on plane:
@@ -2009,7 +2000,10 @@ def _intersect_hull_with_plane(
 
 
 def _lattice_in_hull(
-    delaunay_tri: Delaunay, dependent_var: np.ndarray | None = None, n_points: int = 1000
+    vertices: np.ndarray,
+    Y: np.ndarray | None = None,
+    n_points: int = 1000,
+    qhull_options: str = "QJ Qbb Qc",
 ) -> np.ndarray:
     """
     Generate a grid of points inside the convex hull of the given vertices,
@@ -2024,19 +2018,23 @@ def _lattice_in_hull(
     ``n_points`` until convergence.
 
     Args:
-        delaunay_tri (Delaunay):
-            A Delaunay triangulation object representing the convex hull of
-            the vertices.
-        dependent_var (np.ndarray | None):
-            Values of the dependent variable (e.g. chemical potential) at the
-            vertices. If provided, the function will also interpolate the
+        vertices (np.ndarray):
+            (n, k) float array of data points to interpolate between.
+        Y (np.ndarray):
+            (n,) float array of values at ``vertices``. This should be the
+            values of the dependent variable (e.g. chemical potential) at the
+            given vertices. If provided, the function will also interpolate the
             dependent variable values at the generated points inside the convex
-            hull -- must have the same order as the vertices in
-            ``delaunay_tri``! Default is ``None``.
+            hull. Default is ``None``.
         n_points (int):
             `Minimum` number of grid points to generate. The output grid will
             contain at least this many points, regularly spaced in barycentric
             space. Default is 1000.
+        qhull_options (str):
+            Options to pass to ``QHull`` via ``~scipy.spatial.Delaunay``.
+            Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
+            precision problems, "Qbb" scales coordinates for better
+            conditioning, and "Qc" keeps coplanar points.
 
     Returns:
         np.ndarray:
@@ -2044,10 +2042,10 @@ def _lattice_in_hull(
             The shape of the array is (M, k), where M is the number of points
             in the grid.
     """
-    vertices = delaunay_tri.points  # vertices of the convex hull
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
 
+    delaunay_tri = Delaunay(vertices, qhull_options=qhull_options)  # setup Delaunay triangulation
     # vertices defines the polytope (k-D polyhedron) of the convex hull; shape (N, k)
     # we then tessellate the hull with Delaunay triangulation, which breaks the polytope into a set of
     # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
@@ -2100,14 +2098,74 @@ def _lattice_in_hull(
 
     # Vectorised Cartesian coordinates (and interpolated values if dependent_var is provided):
     # points_inside: (S, L, k) -> reshape -> (S*L, k)
-    points_inside = np.einsum("lK,sKm->slm", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
-    if dependent_var is None:
+    points_inside = np.einsum("LK,SKk->SLk", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
+    if Y is None:
         return points_inside
 
-    vals_per_simplex = dependent_var[delaunay_tri.simplices]  # (S, k+1)
+    vals_per_simplex = Y[delaunay_tri.simplices]  # (S, k+1)
     # values_inside: (S, L) -> reshape -> (S*L,)
-    values_inside = np.einsum("lK,sK->sl", bary_coords, vals_per_simplex).ravel()
-    return np.hstack((points_inside, values_inside.reshape(-1, 1)))
+    Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
+    return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
+
+
+def _griddata_linear_in_hull(
+    X: np.ndarray, Y: np.ndarray, xi: np.ndarray, tol: float = 1e-6, qhull_options: str = "QJ Qbb Qc"
+):
+    """
+    Linear ND interpolation of ``xi``, using input data ``X`` and ``Y``, which
+    also returns values `on` the convex hull boundary (which ``griddata`` often
+    fails to do), and NaN for points truly outside the convex hull.
+
+    Args:
+        X (np.ndarray):
+            (n, k) float array of data points to interpolate between.
+        Y (np.ndarray):
+            (n,) float array of values at ``X``.
+        xi (np.ndarray):
+            (L, k) float array of query points to interpolate values for.
+        tol (float):
+            Tolerance for including boundary points as inside. Default is
+            1e-6.
+        qhull_options (str):
+            Options to pass to ``QHull`` via ``~scipy.spatial.Delaunay``.
+            Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
+            precision problems, "Qbb" scales coordinates for better
+            conditioning, and "Qc" keeps coplanar points.
+
+    Returns:
+         np.ndarray: (m,) float array of interpolated values within the
+         convex hull, with NaN values outside the hull.
+    """
+    _n, k = np.shape(X)
+    # Delaunay triangulation breaks our k-D polyhedron (polytope) of the convex hull into k-D
+    # simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
+    # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc):
+    delaunay_tri = Delaunay(X, qhull_options=qhull_options)  # setup Delaunay triangulation
+    simplex_indices = delaunay_tri.find_simplex(xi, tol=tol)  # simplex indices; (L,), where L is len(xi)
+    inside_hull = simplex_indices >= 0  # outside = -1; tol treats near-edge as inside; (L,)
+    if not inside_hull.any():  # no inside points, return array of NaNs of shape (L,)
+        raise ValueError("No points found inside convex hull (of chemical potentials)")
+
+    X_inside = xi[inside_hull]  # (N, k) where N is number of points inside hull; N <= L
+    # k is the xi dimension (k-D chemical potential space)
+    # inside_hull_simplex_indices = simplex_indices[inside_hull]  # (N,)
+
+    # Linear interpolation via barycentric coordinates:
+    # SciPy exposes an affine map from x to barycentric coords via tri.transform:
+    #   For each simplex i:  T_i c = x - r_i, with c[:-1] first d barycentric coordinates,
+    #   and c_last = 1 - sum(c[:-1])
+    # (This mirrors what ``LinearNDInterpolator`` does under the hood)
+    Ti = delaunay_tri.transform[simplex_indices[inside_hull]]  # (N, k+1, k)
+    Xdif = X_inside - Ti[:, -1, :]  # x - r, shape (N, k)
+    lam = np.einsum("Nij,Nj->Ni", Ti[:, :k, :], Xdif)  # first k barycentrics; (N, k)
+    bary_coords = np.concatenate([lam, 1.0 - lam.sum(axis=1, keepdims=True)], axis=1)  # (N, k+1)
+
+    vertex_indices_of_simplices = delaunay_tri.simplices[simplex_indices[inside_hull]]  # (N, k+1)
+    # where delaunay_tri.simplices is (S, k+1))
+    vertex_values_of_simplices = Y[vertex_indices_of_simplices]  # (N, k+1)
+    values_inside = np.einsum("Ni,Ni->N", bary_coords, vertex_values_of_simplices)  # N
+    # combine input xi points (which are inside hull) with interpolated values for returned output:
+    return np.hstack((X_inside, values_inside.reshape(-1, 1)))  # (N, k+1)
 
 
 class CompetingPhasesAnalyzer(MSONable):
@@ -3284,14 +3342,17 @@ class CompetingPhasesAnalyzer(MSONable):
         ]
 
         # Generate grid data
-        grid_kwargs: dict[str, Any] = {"n_points": 1000, "cartesian": False}
+        grid_kwargs: dict[str, Any] = {
+            "n_points": 1000,
+            "cartesian": False,
+            "fixed_elements": fixed_elements,
+        }
         grid_kwargs.update(kwargs)
-        if fixed_elements:
-            grid_data = cpg.get_constrained_grid(fixed_elements, **grid_kwargs)
-        else:
-            grid_data = cpg.get_grid(**grid_kwargs)
+        grid_data = cpg.get_grid(**grid_kwargs)
         values_inside = grid_data[dependent_element.symbol].to_numpy()
-        points_inside = grid_data.drop(columns=[dependent_element.symbol]).to_numpy()
+        points_inside = grid_data.drop(  # only independent (X) points, no dependent or fixed elements
+            columns=[*list(fixed_elements.keys()), dependent_element.symbol]
+        ).to_numpy()
         tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
 
         # Create plot
@@ -3377,24 +3438,29 @@ class CompetingPhasesAnalyzer(MSONable):
                 continue
 
             # Get domain points that match host domains
-            domain_pts = [
-                chempot_coords
-                for chempot_coords in pts
-                if np.any(np.all(np.isclose(host_domains, chempot_coords), axis=1))  # (M, k)
-            ]
-            if len(domain_pts) < 2:
+            domain_pts = np.array(
+                [
+                    chempot_coords
+                    for chempot_coords in pts
+                    if np.any(np.all(np.isclose(host_domains, chempot_coords), axis=1))  # (M, k)
+                ]
+            )
+            if domain_pts.size < 2:
                 continue  # not a stable bordering phase
 
             try:
-                domain_pts = self._apply_fixed_element_constraints(
-                    domain_pts, fixed_elements, cpd.elements
-                )  # handle fixed elements by intersecting with planes
+                for element, value in fixed_elements.items():
+                    domain_pts = _intersect_hull_with_plane(
+                        domain_pts,
+                        cpd.elements.index(Element(element)),
+                        value,
+                    )  # handle fixed elements by intersecting with planes
             except ValueError:
                 continue  # no intersection with plane, skip to next phase
 
             # Fit line function
-            formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
-            formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
+            formula_x_vals = domain_pts[:, cpd.elements.index(independent_elts[0])]
+            formula_y_vals = domain_pts[:, cpd.elements.index(independent_elts[1])]
             if np.isclose(min(formula_x_vals), max(formula_x_vals), atol=5e-5):  # vertical line
                 m = np.inf
                 b = formula_x_vals[0]
@@ -3437,21 +3503,6 @@ class CompetingPhasesAnalyzer(MSONable):
                 y_range=abs(y_max - y_min),
                 label_positions=label_positions,
             )
-
-    def _apply_fixed_element_constraints(
-        self, domain_pts: list, fixed_elements: dict[str, float], elements: list[Element]
-    ) -> np.ndarray:
-        """
-        Apply fixed element constraints by intersecting with planes.
-        """
-        domain_pts = np.array(domain_pts)
-        for element, value in fixed_elements.items():
-            domain_pts = _intersect_hull_with_plane(
-                domain_pts,
-                elements.index(Element(element)),
-                value,
-            )
-        return domain_pts
 
     def _plot_single_phase_line(
         self,

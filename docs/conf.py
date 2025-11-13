@@ -108,6 +108,7 @@ html_context = {
 intersphinx_mapping = {
     "pymatgen": ("http://pymatgen.org/", None),
     "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------
@@ -138,7 +139,10 @@ rst_prolog = """
 .. |Defect| replace:: :class:`~doped.core.Defect`
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
 .. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
-
+.. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
+.. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
+.. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
+.. |Vasprun| replace:: :class:`~pymatgen.io.vasp.outputs.Vasprun`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__

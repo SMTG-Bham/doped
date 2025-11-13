@@ -2222,6 +2222,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             fixed_elements={"O": -1.32},
         )
         row = result.iloc[0]
+        assert np.isclose(row["Electrons (cm^-3)"], 2.0775e18, rtol=0.01)
         formal_chempots = {
             mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
         }
@@ -2232,9 +2233,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 assert not np.isclose(formal_chempots[el_key], limit[el_key], atol=2e-2)
 
         assert np.isclose(formal_chempots["O"], -1.32, atol=1e-2)
-        assert np.isclose(formal_chempots["Sb"], -2.2163672, atol=1e-3)
-        assert np.isclose(formal_chempots["Cd"], -1.126243, atol=1e-3)
-        assert np.isclose(formal_chempots["Y"], -7.979636, atol=1e-3)
+        assert np.isclose(formal_chempots["Sb"], -2.0659, atol=1e-3)
+        assert np.isclose(formal_chempots["Cd"], -1.2767, atol=1e-3)
+        assert np.isclose(formal_chempots["Y"], -8.0855, atol=1e-3)
 
         _check_output_concentrations(solver, result)
 

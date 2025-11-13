@@ -6683,7 +6683,7 @@ class FermiSolver(MSONable):
         self._check_temperature_settings(annealing_temperature, temperature, quenched_temperature)
         chempots, el_refs = self._parse_and_check_grid_like_chempots(chempots)
         grid = ChemicalPotentialGrid(chempots).get_grid(
-            n_points=n_points, cartesian=cartesian, fixed_elements=fixed_elements
+            n_points=n_points, cartesian=cartesian, fixed_elements=fixed_elements, decimal_places=6
         )
         chempot_dict_list = [
             {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
@@ -7163,7 +7163,7 @@ class FermiSolver(MSONable):
                     n_points=n_points,
                     cartesian=cartesian,
                     fixed_elements=fixed_elements,
-                    decimal_places=8,
+                    decimal_places=6,
                 ).iterrows()
             ]
             target_df, current_value, target_chempot, converged = self._scan_chempots_and_compare(

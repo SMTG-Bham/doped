@@ -1163,11 +1163,11 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             assert np.isclose(min(grid_df["μ_Cu (eV)"]), -0.463558, atol=1e-2)
             assert np.isclose(min(grid_df["μ_Si (eV)"]), -1.708951, atol=1e-2)
             assert np.isclose(min(grid_df["μ_Se (eV)"]), -0.758105, atol=1e-2)
-            assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.1966, atol=1e-3 if cart else 2e-2)
-            assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94906, atol=1e-3 if cart else 2e-1)
+            assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.19776, atol=1e-3 if cart else 2e-2)
+            assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94740, atol=1e-3 if cart else 2e-1)
             assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 7e-2)
 
-            assert len(grid_df) == (3792 if cart else 3744)
+            assert len(grid_df) == (3905 if cart else 3744)
 
     def test_chempot_heatmap_3D_w_fixed_elements_error(self):
         with pytest.raises(ValueError) as exc:
@@ -1355,12 +1355,14 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
 def _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.05):
     # get the average Fe and P chempots, then plot a heatmap plot of the others at these fixed values:
-    mean_mu_Fe = grid_df["μ_Fe (eV)"].mean()
-    mean_mu_P = grid_df["μ_P (eV)"].mean()
+    middle_mu_Fe = (
+        grid_df["μ_Fe (eV)"].min() + (grid_df["μ_Fe (eV)"].max() - grid_df["μ_Fe (eV)"].min()) / 2
+    )
+    middle_mu_P = grid_df["μ_P (eV)"].min() + (grid_df["μ_P (eV)"].max() - grid_df["μ_P (eV)"].min()) / 2
 
     fixed_chempot_df = grid_df[
-        (np.isclose(grid_df["μ_Fe (eV)"], mean_mu_Fe, atol=atol))
-        & (np.isclose(grid_df["μ_P (eV)"], mean_mu_P, atol=atol))
+        (np.isclose(grid_df["μ_Fe (eV)"], middle_mu_Fe, atol=atol))
+        & (np.isclose(grid_df["μ_P (eV)"], middle_mu_P, atol=atol))
     ]
 
     fig, ax = plt.subplots()
