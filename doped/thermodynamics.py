@@ -4074,12 +4074,11 @@ class DefectThermodynamics(MSONable):
             )
             # Defect/Charge not set as index w/lean=True (default), for speed
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            qd_tot += get_doping(  # use orig fermi dos for quenched temperature
+            return qd_tot + get_doping(  # use orig fermi dos for quenched temperature
                 fermi_dos=orig_fermi_dos,
                 fermi_level=fermi_level + self.vbm,
                 temperature=quenched_temperature,
             )
-            return qd_tot
 
         eq_fermi_level: float = brentq(_get_constrained_total_q, -1.0, self.band_gap + 1.0)  # type: ignore
         e_conc, h_conc = get_e_h_concs(
