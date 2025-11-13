@@ -110,6 +110,7 @@ Studies using ``doped``, so far
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-h3gsc>`__ 2025
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - K\. Talit et al. **Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO₃** `Physical Review Materials <https://doi.org/10.1103/hww6-snlj>`__ 2025
+- I\. Mosquera-Lois and A. Walsh **Dynamic Vacancy Levels in CsPbCl₃ Obey Equilibrium Defect Thermodynamics** `PRX Energy <https://doi.org/10.1103/dxmb-8s96>`__ 2025
 - B\. I. J. Johnston et al. **Enhanced cycling stability of LiNiO₂ cathodes through a Mg/W dual-cation modification strategy** `Journal of Materials Chemistry A <https://doi.org/10.1039/D5TA05316A>`__ 2025
 - Z\. Li and A. Walsh **Thermodynamics of Sulfur Vacancy Formation in the Chalcogenide Perovskite BaZrS₃** `Journal of Physical Chemistry C <https://pubs.acs.org/doi/10.1021/acs.jpcc.5c00828>`__ 2025
 - P\. Russell et al. **Computational prediction of Y-doped Cd₂Sb₂O₇ as a competitive Sb-based n-type Transparent Conducting Oxide** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-c1r3l>`__ 2025
@@ -130,6 +131,7 @@ Studies using ``doped``, so far
 - N\. T. Taylor et al. **Instability of oxide perovskite surfaces induced by vacancy formation** `Physical Review B <https://doi.org/10.1103/w683-tvc4>`__ 2025
 - J\. Hu et al. **Enabling ionic transport in Li₃AlP₂ the roles of defects and disorder** `Journal of Materials Chemistry A <https://doi.org/10.1039/D4TA04347B>`__ 2025
 - X\. Jiang et al. **Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies** `Journal of Materials Chemistry C <https://doi.org/10.1039/D4TC04558K>`__ 2025
+- G\. Kalemai et al. **Flexible Inorganic/Organic Memristor Based on W-Doped MoOx/Poly(methyl methacrylate) Heterostructure** `Nanomaterials <https://doi.org/10.3390/nano15221707>`__ 2025
 - M\. R. Khan et al. **Interplay between intrinsic defects and optoelectronic properties of semi-Heusler gapped metals** `Physical Chemistry Chemical Physics <https://doi.org/10.1039/D5CP00673B>`__ 2025
 - F\. Wang et al. **Investigation of hydrogen diffusion in zirconia under extreme conditions** `Physical Chemistry Chemical Physics <https://doi.org/10.1039/D5CP00434A>`__ 2025
 - R\. Chinnappan **First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN** `Physica Scripta <https://doi.org/10.1088/1402-4896/adca71>`__ 2025

@@ -82,6 +82,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-h3gsc)
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
 - K. Talit et al. **_Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO<sub>3</sub>_** [_Physical Review Materials_](https://doi.org/10.1103/hww6-snlj) 2025
+- I. Mosquera-Lois and A. Walsh **_Dynamic Vacancy Levels in CsPbCl<sub>3</sub> Obey Equilibrium Defect Thermodynamics_** [_PRX Energy_](https://doi.org/10.1103/dxmb-8s96) 2025
 - B. I. J. Johnston et al. **_Enhanced cycling stability of LiNiO<sub>2</sub> cathodes through a Mg/W dual-cation modification strategy_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D5TA05316A) 2025
 - Z. Li and A. Walsh **_Thermodynamics of Sulfur Vacancy Formation in the Chalcogenide Perovskite BaZrS<sub>3</sub>_** [_Journal of Physical Chemistry C_](https://pubs.acs.org/doi/10.1021/acs.jpcc.5c00828) 2025
 - P. Russell et al. **_Computational prediction of Y-doped Cd<sub>2</sub>Sb<sub>2</sub>O<sub>7</sub> as a competitive Sb-based n-type Transparent Conducting Oxide_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-c1r3l) 2025
@@ -102,6 +103,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - N. T. Taylor et al. **_Instability of oxide perovskite surfaces induced by vacancy formation_** [_Physical Review B_](https://doi.org/10.1103/w683-tvc4) 2025
 - J. Hu et al. **_Enabling ionic transport in Li<sub>3</sub>AlP<sub>2</sub> the roles of defects and disorder_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D4TA04347B) 2025
 - X. Jiang et al. **_Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies_** [_Journal of Materials Chemistry C_](https://doi.org/10.1039/D4TC04558K) 2025
+- G. Kalemai et al. **_Flexible Inorganic/Organic Memristor Based on W-Doped MoOx/Poly(methyl methacrylate) Heterostructure_** [_Nanomaterials_](https://doi.org/10.3390/nano15221707) 2025
 - M. R. Khan et al. **_Interplay between intrinsic defects and optoelectronic properties of semi-Heusler gapped metals_** [_Physical Chemistry Chemical Physics_](https://doi.org/10.1039/D5CP00673B) 2025
 - F. Wang et al. **_Investigation of hydrogen diffusion in zirconia under extreme conditions_** [_Physical Chemistry Chemical Physics_](https://doi.org/10.1039/D5CP00434A) 2025
 - R. Chinnappan **_First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN_** [_Physica Scripta_](https://doi.org/10.1088/1402-4896/adca71) 2025
