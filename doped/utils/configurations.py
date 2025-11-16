@@ -60,7 +60,8 @@ def orient_s2_like_s1(
     if abs(struct1.volume - struct2.volume) > 1:
         warnings.warn(
             f"Volumes of the two input structures differ: {struct1.volume} Å³ vs {struct2.volume} Å³. "
-            f"In most cases (defect NEB, CC diagrams...) this is not desirable!"
+            f"In most cases (defect NEB, CC diagrams...) this is not desirable! The output structure "
+            f"volume will match that of ``struct1``."
         )
 
     if sm_kwargs.get("primitive_cell", False):
@@ -248,7 +249,7 @@ def get_path_structures(
             key = f"0{i}" if displacements is None else f"delQ_{disps[i]}"  # type: ignore
             disp_dict[key] = struct
 
-    return disp_1_dict, disp_2_dict if disp_2_dict else disp_1_dict
+    return (disp_1_dict, disp_2_dict) if disp_2_dict else disp_1_dict
 
 
 def _smart_round(
