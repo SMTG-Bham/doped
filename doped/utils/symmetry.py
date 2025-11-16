@@ -28,7 +28,7 @@ from pymatgen.transformations.standard_transformations import SupercellTransform
 from pymatgen.util.coord import is_coord_subset_pbc
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
-from sympy import Eq, simplify, solve, symbols
+from sympy import Eq, Expr, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
@@ -2253,7 +2253,7 @@ def swap_axes(structure: Structure, axes: list[int] | tuple[int, ...]) -> Struct
     return transformation.apply_transformation(structure)
 
 
-def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[float]]]:
+def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[Expr]]]:
     """
     Get dictionary of ``{Wyckoff label: coordinates}`` for a given space group
     number.

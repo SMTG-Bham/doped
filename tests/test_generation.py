@@ -23,6 +23,7 @@ from monty.json import MontyDecoder
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import ElementComparator
+from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Species
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.entries.computed_entries import ComputedStructureEntry
@@ -3687,8 +3688,9 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, interstitial_gen_kwargs={"unrecognised_kwarg": 1})
 
-        assert "Invalid interstitial_gen_kwargs supplied!" in str(exc.value)
-        assert "only the following keys are supported:" in str(exc.value)
+        assert "get_interstitial_sites() got an unexpected keyword argument 'unrecognised_kwarg'" in str(
+            exc.value
+        )
 
         with pytest.raises(TypeError) as exc:
             DefectsGenerator(self.prim_cdte, charge_state_gen_kwargs={"unrecognised_kwarg": 1})
@@ -3818,3 +3820,74 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         ]:
             print(i)
             assert i in output
+
+    def test_include_unique_wyckoffs_interstitial_generation(self):
+        """
+        Test the inclusion of unique Wyckoff positions in the set of candidate
+        interstitial sites, when ``include_unique_wyckoffs`` is set to
+        ``True``.
+        """
+        bcc_fe = Structure(
+            lattice=Lattice.cubic(2.86),
+            species=["Fe", "Fe"],
+            coords=[[0, 0, 0], [0.5, 0.5, 0.5]],
+            coords_are_cartesian=False,
+        )
+        defect_gen, output = self._generate_and_test_no_warnings(
+            bcc_fe,
+            generate_supercell=False,
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+            min_image_distance=2.86,
+        )
+
+        bcc_default_voronoi_site = "H_i_D2d          [0]                [0.000,0.250,0.500]  12d"
+        bcc_distorted_oct_site = "H_i_D4h          [0]                [0.000,0.000,0.500]  6b"
+        bcc_D3d_site = "H_i_D3d          [0]                [0.250,0.250,0.250]  8c"
+
+        # by default, only D2d site generated, which relaxes to the stable octahedral site anyway (point
+        # of support for our default settings; https://github.com/SMTG-Bham/doped/issues/140):
+        assert len(defect_gen.defect_entries) == 1
+        assert bcc_default_voronoi_site in output
+
+        # test enforcing inclusion of unique Wyckoff positions; canonical distorted octahedral site now
+        # included, along with D3d site:
+        defect_gen, output = self._generate_and_test_no_warnings(
+            bcc_fe,
+            generate_supercell=False,
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+            interstitial_gen_kwargs={"include_unique_wyckoffs": True},
+            min_image_distance=2.86,
+        )
+
+        assert len(defect_gen.defect_entries) == 2
+        assert bcc_default_voronoi_site not in output
+        assert bcc_distorted_oct_site in output
+        assert bcc_D3d_site in output
+
+        # test including unique Wyckoff positions and a tighter symmetry preference distance factor;
+        # now D2d site preferred over distorted-octahedral (D4h) site ;
+        # distorted-octahedral D4h site has max coordination/symmetry; 1.43 Å distance to host, and is
+        # 0.72 Å from the Voronoi site which has max distance-to-host of 1.6 Å (0.17 Å more), and so they
+        # are within the clustering range with the default ``clustering_tol`` of 0.8 Å (indeed they relax
+        # to the same site as expected), so D2d site only preferred when symm_pref_dist_factor is >= 90%
+        defect_gen, output = self._generate_and_test_no_warnings(
+            bcc_fe,
+            generate_supercell=False,
+            interstitial_elements=["H"],
+            substitution_elements=[],
+            vacancy_elements=[],
+            neutral_only=True,
+            interstitial_gen_kwargs={"include_unique_wyckoffs": True, "symm_pref_dist_factor": 0.9},
+            min_image_distance=2.86,
+        )
+
+        assert len(defect_gen.defect_entries) == 2
+        assert bcc_default_voronoi_site in output
+        assert bcc_D3d_site in output
+        assert bcc_distorted_oct_site not in output

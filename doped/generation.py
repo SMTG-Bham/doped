@@ -12,7 +12,7 @@ import warnings
 from collections import defaultdict
 from functools import partial, reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Union, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -1428,15 +1428,16 @@ class DefectsGenerator(MSONable):
                 supercell output (default = False), or ``force_diagonal``
                 (default = False)).
             interstitial_gen_kwargs (dict, bool):
-                Keyword arguments to be passed to ``get_interstitial_sites()``
-                (such as ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen),
-                ``clustering_tol`` (0.8 Å), ``symm_pref_dist_factor`` (0.85),
-                ``stol`` (0.32), ``tight_stol`` (0.02), ``symprec`` (0.01),
-                ``vacuum_radius`` (1.5 * bulk bond length) -- see its
-                docstring, parentheses indicate default values), or
-                ``InterstitialGenerator`` if ``interstitial_coords`` is
-                specified. If set to ``False``, interstitial generation will be
-                skipped entirely.
+                Keyword arguments to be passed to
+                :func:`~doped.generation.get_interstitial_sites()` (such as
+                ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen), ``clustering_tol``
+                (0.8 Å), ``symm_pref_dist_factor`` (0.85), ``stol`` (0.32),
+                ``tight_stol`` (0.02), ``symprec`` (0.01), ``vacuum_radius``
+                (1.5 * bulk bond length), ``include_unique_wyckoffs`` (False)
+                -- see its docstring, parentheses indicate default values), or
+                ``InterstitialGenerator`` (where only ``min_dist`` is used) if
+                ``interstitial_coords`` is specified. If set to ``False``,
+                interstitial generation will be skipped entirely.
             target_frac_coords (list):
                 Defects are placed at the closest equivalent site to these
                 fractional coordinates in the generated supercells. Default is
@@ -1897,7 +1898,7 @@ class DefectsGenerator(MSONable):
             # Generate interstitial sites using Voronoi tessellation
             sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
                 host_structure=self.primitive_structure,
-                interstitial_gen_kwargs=self.interstitial_gen_kwargs,
+                **self.interstitial_gen_kwargs,  # type: ignore
             )
 
         self.defects["interstitials"] = []
@@ -1912,7 +1913,8 @@ class DefectsGenerator(MSONable):
                 ig = InterstitialGenerator(min_dist=0.5)
                 H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
                     host_structure=self.primitive_structure,
-                    interstitial_gen_kwargs={"min_dist": 0.5, **self.interstitial_gen_kwargs},
+                    min_dist=0.5,
+                    **self.interstitial_gen_kwargs,  # type: ignore
                 )
                 cand_sites, multiplicity, equiv_fpos = zip(
                     *H_sorted_sites_mul_and_equiv_fpos, strict=False
@@ -2766,7 +2768,15 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
 
 
 def get_interstitial_sites(
-    host_structure: Structure, interstitial_gen_kwargs: dict[str, Any] | None = None
+    host_structure: Structure,
+    min_dist: float = 0.9,
+    clustering_tol: float = 0.8,
+    symm_pref_dist_factor: float = 0.85,
+    stol: float = 0.32,
+    tight_stol: float = 0.02,
+    symprec: float = 0.01,
+    vacuum_radius: float | None = None,
+    include_unique_wyckoffs: bool = False,
 ) -> list:
     """
     Generate candidate interstitial sites using Voronoi analysis.
@@ -2825,33 +2835,40 @@ def get_interstitial_sites(
 
     Args:
         host_structure (Structure): Host structure.
-        interstitial_gen_kwargs (dict):
-            Keyword arguments for interstitial generation. Supported kwargs:
+        min_dist (float):
+            Minimum distance from host atoms for interstitial sites.
+            Defaults to 0.9 Å.
+        clustering_tol (float):
+            Tolerance for clustering interstitial sites. Defaults to 0.8 Å.
+        symm_pref_dist_factor (float):
+            Minimum acceptable ratio of distance to host atoms for
+            symmetry-favoured sites vs distance-to-host-favoured sites, for
+            which to prefer symmetry-favoured sites. Defaults to 0.85.
+        stol (float):
+            Structure matcher tolerance for looser site matching. Defaults
+            to 0.32.
+        tight_stol (float):
+            Structure matcher tolerance for tighter site matching. Defaults
+            to 0.02.
+        symprec (float):
+            Symmetry precision for (symmetry-)equivalent site
+            determination. Defaults to 0.01.
+        vacuum_radius (float):
+            Tolerance radius for determining if a significant vacuum volume
+            is present in the structure (if any Voronoi node has a minimum
+            distance to a host atom greater than this value), in which case
+            adsorbate sites will also be included for interstitial
+            generation. Defaults to ``None``, in which case it is set to 1.5
+            times the minimum bulk bond length.
+        include_unique_wyckoffs (bool):
+            Include unique Wyckoff positions (those with no free variables)
+            in the set of candidate interstitial sites. This can help
+            ensure that expected canonical interstitial sites (e.g.
+            distorted tetrahedral and octahedral in BCC crystals) are included,
+            but will increase the number of candidate interstitials and is
+            not expected to locate lower-energy sites compared to the default
+            Voronoi approach in most cases. Defaults to ``False``.
 
-            - min_dist (float):
-                Minimum distance from host atoms for interstitial sites.
-                Defaults to 0.9 Å.
-            - clustering_tol (float):
-                Tolerance for clustering interstitial sites. Defaults to 0.8 Å.
-            - symm_pref_dist_factor (float):
-                Minimum acceptable ratio of distance to host atoms for
-                symmetry-favoured sites vs distance-to-host-favoured sites, for
-                which to prefer symmetry-favoured sites. Defaults to 0.85.
-            - stol (float):
-                Structure matcher tolerance for looser site matching. Defaults
-                to 0.32.
-            - tight_stol (float):
-                Structure matcher tolerance for tighter site matching. Defaults
-                to 0.02.
-            - symprec (float):
-                Symmetry precision for (symmetry-)equivalent site
-                determination. Defaults to 0.01.
-            - vacuum_radius (float):
-                Tolerance radius for determining if a significant vacuum volume
-                is present in the structure (if any Voronoi node has a minimum
-                distance to a host atom greater than this value), in which case
-                adsorbate sites will also be included for interstitial
-                generation. Defaults to 1.5 times the bulk bond length.
 
     Returns:
         list: List of interstitial sites as fractional coordinates
@@ -2860,24 +2877,6 @@ def get_interstitial_sites(
     # but, this is slightly more likely to be stuck in local minima, compared to the (nearby)
     # lower symmetry interstitial sites... avoided by using ShakeNBreak, other structure-searching
     # approaches, or rattling the output structures (default in ``doped.vasp``)
-
-    interstitial_gen_kwargs = interstitial_gen_kwargs or {}
-    supported_interstitial_gen_kwargs = {
-        "min_dist",
-        "clustering_tol",
-        "symm_pref_dist_factor",
-        "stol",
-        "tight_stol",
-        "symprec",
-        "vacuum_radius",
-    }
-    if any(  # check interstitial_gen_kwargs and warn if any missing:
-        i not in supported_interstitial_gen_kwargs for i in interstitial_gen_kwargs
-    ):
-        raise TypeError(
-            f"Invalid interstitial_gen_kwargs supplied!\nGot: {interstitial_gen_kwargs}\nbut "
-            f"only the following keys are supported: {supported_interstitial_gen_kwargs}"
-        )
     top = DopedTopographyAnalyzer(host_structure)
     if not top.vnodes:
         warnings.warn("No interstitial sites found in host structure!")
@@ -2886,10 +2885,12 @@ def get_interstitial_sites(
     sites_list = [v.frac_coords for v in top.vnodes]
 
     bulk_min_bond_length = supercells.min_dist(host_structure)
+    if vacuum_radius is None:
+        vacuum_radius = max(bulk_min_bond_length * 1.5, 2.5)
     vacuum_sites = remove_collisions(
         sites_list,
         structure=host_structure,
-        min_dist=interstitial_gen_kwargs.get("vacuum_radius", max(bulk_min_bond_length * 1.5, 2.5)),
+        min_dist=vacuum_radius,
     )
     if vacuum_sites.size > 0:  # low-dimensional structure with significant vacuum, include adsorbate sites
         asf = AdsorbateSiteFinder(host_structure)
@@ -2898,7 +2899,20 @@ def get_interstitial_sites(
             [host_structure.lattice.get_fractional_coords(i) for i in adsorption_sites]
         )
 
-    min_dist = interstitial_gen_kwargs.get("min_dist", 0.9)
+    if include_unique_wyckoffs:
+        sga = symmetry.get_sga(host_structure, symprec=symprec)
+        wyckoff_label_dict = symmetry.get_wyckoff_dict_from_sgn(sga.get_space_group_number())
+        wyckoff_candidate_frac_coords = np.unique(
+            [
+                np.mod(np.array([float(f) for f in coords]), 1)
+                for label, coords_list in wyckoff_label_dict.items()
+                if np.all([coord.is_constant() for coord in coords_list[0]])
+                for coords in coords_list
+            ],
+            axis=0,
+        )
+        sites_list.extend(wyckoff_candidate_frac_coords)
+
     sites_array = remove_collisions(sites_list, structure=host_structure, min_dist=min_dist)
     if sites_array.size == 0:
         warnings.warn(
@@ -2909,14 +2923,12 @@ def get_interstitial_sites(
     site_frac_coords_array: np.ndarray = symmetry.doped_cluster_frac_coords(
         sites_array,
         host_structure,
-        tol=interstitial_gen_kwargs.get("clustering_tol", 0.8),
-        symm_pref_dist_factor=interstitial_gen_kwargs.get("symm_pref_dist_factor", 0.85),
+        tol=clustering_tol,
+        symm_pref_dist_factor=symm_pref_dist_factor,
     )
 
     label_equiv_fpos_dict: dict[int, list[np.ndarray[float]]] = {}
-    tight_dist = get_stol_equiv_dist(
-        interstitial_gen_kwargs.get("tight_stol", 0.02), host_structure
-    )  # 0.06 Å for CdTe, Sb2Si2Te6
+    tight_dist = get_stol_equiv_dist(tight_stol, host_structure)  # 0.06 Å for CdTe, Sb2Si2Te6
 
     # this now depends on symprec in `get_all_equiv_sites` (doesn't matter in most cases,
     # but e.g. changes results in Ag2Se where we have some slight differences in site coordinations)
@@ -2933,7 +2945,7 @@ def get_interstitial_sites(
                 for site in symmetry.get_all_equiv_sites(
                     frac_coords,
                     host_structure,
-                    symprec=interstitial_gen_kwargs.get("symprec", 0.01),
+                    symprec=symprec,
                     return_symprec_and_dist_tol_factor=False,
                 )
             ]
@@ -2950,7 +2962,7 @@ def get_interstitial_sites(
     ]
 
     loose_dist = get_stol_equiv_dist(
-        interstitial_gen_kwargs.get("stol", 0.32),  # matches pymatgen-analysis-defects default
+        stol,  # matches pymatgen-analysis-defects default
         host_structure,  # ~1 Å for CdTe, Sb2Si2Te6
     )
     looser_site_matched_dict: dict[int, list] = defaultdict(list)
@@ -3031,7 +3043,7 @@ def get_interstitial_sites(
                             axis=1,
                         )
                     )
-                    < interstitial_gen_kwargs.get("symm_pref_dist_factor", 0.85)
+                    < symm_pref_dist_factor
                 )
                 else symmetry_favoured_site_mul_and_equiv_fpos
             )
