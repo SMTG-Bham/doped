@@ -590,7 +590,7 @@ def cluster_coords(
     return fcluster(z, dist_tol, criterion=criterion)
 
 
-def _doped_cluster_frac_coords(
+def doped_cluster_frac_coords(
     fcoords: np.typing.ArrayLike,
     structure: Structure,
     tol: float = 0.55,
@@ -634,7 +634,8 @@ def _doped_cluster_frac_coords(
             which to prefer symmetry-favoured sites. Default is 0.85.
         method (str):
             Clustering algorithm to use with ``linkage()`` (default:
-            ``"single"``).
+            ``"centroid"``, better than the ``scipy`` default of ``"single``
+            for interstitial generation to avoid daisy-chaining clusters).
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
             linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
@@ -648,7 +649,7 @@ def _doped_cluster_frac_coords(
         return _vectorized_custom_round(np.mod(_vectorized_custom_round(fcoords, 5), 1), 4)  # to unit cell
 
     lattice = structure.lattice
-    cn = cluster_coords(fcoords, structure, dist_tol=tol)
+    cn = cluster_coords(fcoords, structure, dist_tol=tol, method=method, criterion=criterion)
     unique_fcoords = []
 
     # cn is an array of cluster numbers, of length ``len(fcoords)``, so we take the set of cluster numbers

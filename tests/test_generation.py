@@ -495,7 +495,7 @@ O_i_D4h          [0,-1,-2]              [0.000,0.000,0.500]  2b
 
         self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
         self.lmno_defect_gen_string = (
-            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 152 defect "
+            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 167 defect "
             "entries created."
         )
         self.lmno_defect_gen_info = (
@@ -527,19 +527,23 @@ O_Ni             [0,-1,-2,-3,-4]        [0.625,0.625,0.625]  4b
 
 Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
-Li_i_C1          [+1,0]             [0.021,0.278,0.258]  24e
+Li_i_C1_Ni1.82   [+1,0]             [0.021,0.278,0.258]  24e
+Li_i_C1_O1.78    [+1,0]             [0.233,0.492,0.492]  24e
 Li_i_C2          [+1,0]             [0.074,0.375,0.324]  12d
 Li_i_C3          [+1,0]             [0.497,0.497,0.497]  8c
 Li_i_D3          [+1,0]             [0.125,0.125,0.125]  4a
-Mn_i_C1          [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Mn_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Mn_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
 Mn_i_C2          [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
 Mn_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
 Mn_i_D3          [+4,+3,+2,+1,0]    [0.125,0.125,0.125]  4a
-Ni_i_C1          [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Ni_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
+Ni_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
 Ni_i_C2          [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
 Ni_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
 Ni_i_D3          [+4,+3,+2,+1,0]    [0.125,0.125,0.125]  4a
-O_i_C1           [0,-1,-2]          [0.021,0.278,0.258]  24e
+O_i_C1_Ni1.82    [0,-1,-2]          [0.021,0.278,0.258]  24e
+O_i_C1_O1.78     [0,-1,-2]          [0.233,0.492,0.492]  24e
 O_i_C2           [0,-1,-2]          [0.074,0.375,0.324]  12d
 O_i_C3           [0,-1,-2]          [0.497,0.497,0.497]  8c
 O_i_D3           [0,-1,-2]          [0.125,0.125,0.125]  4a
@@ -958,25 +962,27 @@ Se_Ag_C2_Ag2.85  [+3,+2,+1,0,-1,-2,-3]  [0.615,0.500,0.500]  2b
 
 Interstitials                Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------------------  -----------------  -------------------  ---------
-Ag_i_C1                      [+2,+1,0]          [0.435,0.123,0.251]  4e
+Ag_i_C1_Ag2.05               [+2,+1,0]          [0.570,0.589,0.250]  4e
+Ag_i_C1_Ag2.09               [+2,+1,0]          [0.435,0.123,0.251]  4e
 Ag_i_C2_Ag1.95Se1.95Ag2.98a  [+2,+1,0]          [0.500,0.250,0.668]  2d
 Ag_i_C2_Ag1.95Se1.95Ag2.98b  [+2,+1,0]          [0.500,0.750,0.171]  2d
 Ag_i_C2_Ag2.01Se2.01Ag2.31   [+2,+1,0]          [0.341,0.500,0.500]  2b
 Ag_i_C2_Ag2.01Se2.01Ag2.33   [+2,+1,0]          [0.665,0.000,0.000]  2a
 Ag_i_C2_Ag2.02               [+2,+1,0]          [0.500,0.250,0.184]  2d
 Ag_i_C2_Ag2.03               [+2,+1,0]          [0.500,0.250,0.319]  2d
-Ag_i_C2_Ag2.37               [+2,+1,0]          [0.000,0.750,0.002]  2c
-Ag_i_C2_Ag2.45               [+2,+1,0]          [0.899,0.000,0.000]  2a
+Ag_i_C2_Ag2.45Ag3.05         [+2,+1,0]          [0.000,0.250,0.502]  2c
+Ag_i_C2_Ag2.45Se2.45         [+2,+1,0]          [0.899,0.000,0.000]  2a
 Ag_i_C2_Ag2.48               [+2,+1,0]          [0.091,0.500,0.500]  2b
-Se_i_C1                      [0,-1,-2]          [0.435,0.123,0.251]  4e
+Se_i_C1_Ag2.05               [0,-1,-2]          [0.570,0.589,0.250]  4e
+Se_i_C1_Ag2.09               [0,-1,-2]          [0.435,0.123,0.251]  4e
 Se_i_C2_Ag1.95Se1.95Ag2.98a  [0,-1,-2]          [0.500,0.250,0.668]  2d
 Se_i_C2_Ag1.95Se1.95Ag2.98b  [0,-1,-2]          [0.500,0.750,0.171]  2d
 Se_i_C2_Ag2.01Se2.01Ag2.31   [0,-1,-2]          [0.341,0.500,0.500]  2b
 Se_i_C2_Ag2.01Se2.01Ag2.33   [0,-1,-2]          [0.665,0.000,0.000]  2a
 Se_i_C2_Ag2.02               [0,-1,-2]          [0.500,0.250,0.184]  2d
 Se_i_C2_Ag2.03               [0,-1,-2]          [0.500,0.250,0.319]  2d
-Se_i_C2_Ag2.37               [0,-1,-2]          [0.000,0.750,0.002]  2c
-Se_i_C2_Ag2.45               [0,-1,-2]          [0.899,0.000,0.000]  2a
+Se_i_C2_Ag2.45Ag3.05         [0,-1,-2]          [0.000,0.250,0.502]  2c
+Se_i_C2_Ag2.45Se2.45         [0,-1,-2]          [0.899,0.000,0.000]  2a
 Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
@@ -2623,7 +2629,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert len(lmno_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(lmno_defect_gen.defects["vacancies"]) == 5
         assert len(lmno_defect_gen.defects["substitutions"]) == 15
-        assert len(lmno_defect_gen.defects["interstitials"]) == 16
+        assert len(lmno_defect_gen.defects["interstitials"]) == 20
 
         # explicitly test some relevant defect attributes
         assert lmno_defect_gen.defects["vacancies"][0].name == "v_Li"
@@ -2639,7 +2645,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # prim = conv cell in LMNO
 
         # explicitly test defect entries
-        assert len(lmno_defect_gen.defect_entries) == 152
+        assert len(lmno_defect_gen.defect_entries) == 167
         assert str(lmno_defect_gen) == self.lmno_defect_gen_string  # __str__()
         # __repr__() tested in other tests, skipped here due to slight difference in rounding behaviour
         # between local and GH Actions

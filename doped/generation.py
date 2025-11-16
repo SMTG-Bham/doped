@@ -2791,7 +2791,7 @@ def get_interstitial_sites(
     - Remove any sites which are within ``min_dist`` of any host atoms
     - Cluster the remaining sites using a tolerance of ``clustering_tol`` and
       symmetry-preference of ``symm_pref_dist_factor``
-      (see ``_doped_cluster_frac_coords``)
+      (see ``doped_cluster_frac_coords``)
     - Determine the multiplicities and symmetry-equivalent coordinates of the
       clustered sites using ``doped`` symmetry functions.
     - Group the clustered sites by symmetry using (looser) site matching as
@@ -2906,7 +2906,7 @@ def get_interstitial_sites(
         )
         return []
 
-    site_frac_coords_array: np.ndarray = symmetry._doped_cluster_frac_coords(
+    site_frac_coords_array: np.ndarray = symmetry.doped_cluster_frac_coords(
         sites_array,
         host_structure,
         tol=interstitial_gen_kwargs.get("clustering_tol", 0.8),

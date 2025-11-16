@@ -878,7 +878,7 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
 
 @lru_cache(maxsize=int(1e2))
 def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
-    from doped.utils.symmetry import _doped_cluster_frac_coords, get_primitive_structure
+    from doped.utils.symmetry import doped_cluster_frac_coords, get_primitive_structure
 
     # map all sites to the unit cell; 0 ≤ xyz < 1.
     structure = Structure.from_sites(structure, to_unit_cell=True)
@@ -890,7 +890,7 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     # remove nodes less than 0.5 Å from sites in the structure
     voronoi_coords = remove_collisions(voronoi_coords, structure=prim_structure, min_dist=0.5)
     # cluster nodes within 0.2 Å of each other:
-    prim_vnodes: np.ndarray = _doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
+    prim_vnodes: np.ndarray = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
 
     # map back to the supercell
     sm = StructureMatcher(primitive_cell=False, attempt_supercell=True)
