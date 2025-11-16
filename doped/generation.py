@@ -1430,7 +1430,7 @@ class DefectsGenerator(MSONable):
             interstitial_gen_kwargs (dict, bool):
                 Keyword arguments to be passed to ``get_interstitial_sites()``
                 (such as ``min_dist`` (0.9 Å, or 0.5 Å for Hydrogen),
-                ``clustering_tol`` (0.8 Å), ``symmetry_preference`` (0.1 Å),
+                ``clustering_tol`` (0.8 Å), ``symm_pref_dist_factor`` (0.85),
                 ``stol`` (0.32), ``tight_stol`` (0.02), ``symprec`` (0.01),
                 ``vacuum_radius`` (1.5 * bulk bond length) -- see its
                 docstring, parentheses indicate default values), or
@@ -1579,7 +1579,7 @@ class DefectsGenerator(MSONable):
             pbar.set_description("Determining conventional structure and Wyckoff labels")
             wyckoff_dict = self._get_conventional_structure_and_wyckoff_label_dict(
                 pbar
-            )  # self.conventional_structure, self._BilbaoCS_conv_cell_vector_mapping
+            )  # sets self.conventional_structure, self._BilbaoCS_conv_cell_vector_mapping
             pbar.set_description("Generating DefectEntry objects and symmetry information")
             defect_entry_dict = self._generate_neutral_defect_entries(pbar, processes, wyckoff_dict)
             self._set_defects_attr_dict(defect_entry_dict)  # sets self.defects
@@ -2790,7 +2790,7 @@ def get_interstitial_sites(
     - If vacuum volume present, include adsorbate sites as candidate sites
     - Remove any sites which are within ``min_dist`` of any host atoms
     - Cluster the remaining sites using a tolerance of ``clustering_tol`` and
-      symmetry-preference of ``symmetry_preference``
+      symmetry-preference of ``symm_pref_dist_factor``
       (see ``_doped_cluster_frac_coords``)
     - Determine the multiplicities and symmetry-equivalent coordinates of the
       clustered sites using ``doped`` symmetry functions.
@@ -2798,8 +2798,8 @@ def get_interstitial_sites(
       controlled by ``stol``.
     - From each group, pick the site with the highest symmetry and furthest
       distance from the host atoms, if its ``min_dist`` is no more than
-      ``symmetry_preference`` (0.1 Å by default) smaller than the site with the
-      largest ``min_dist`` (to the host atoms).
+      no more than ``symm_pref_dist_factor`` (0.85 by default) times the largest
+      possible ``min_dist`` (distanceto the host atoms).
 
     (Parameters mentioned here can be supplied via ``interstitial_gen_kwargs``
     as noted in the args section below.)
@@ -2833,9 +2833,10 @@ def get_interstitial_sites(
                 Defaults to 0.9 Å.
             - clustering_tol (float):
                 Tolerance for clustering interstitial sites. Defaults to 0.8 Å.
-            - symmetry_preference (float):
-                Symmetry preference for interstitial site selection. Defaults
-                to 0.1 Å.
+            - symm_pref_dist_factor (float):
+                Minimum acceptable ratio of distance to host atoms for
+                symmetry-favoured sites vs distance-to-host-favoured sites, for
+                which to prefer symmetry-favoured sites. Defaults to 0.85.
             - stol (float):
                 Structure matcher tolerance for looser site matching. Defaults
                 to 0.32.
@@ -2864,7 +2865,7 @@ def get_interstitial_sites(
     supported_interstitial_gen_kwargs = {
         "min_dist",
         "clustering_tol",
-        "symmetry_preference",
+        "symm_pref_dist_factor",
         "stol",
         "tight_stol",
         "symprec",
@@ -2909,7 +2910,7 @@ def get_interstitial_sites(
         sites_array,
         host_structure,
         tol=interstitial_gen_kwargs.get("clustering_tol", 0.8),
-        symmetry_preference=interstitial_gen_kwargs.get("symmetry_preference", 0.1),
+        symm_pref_dist_factor=interstitial_gen_kwargs.get("symm_pref_dist_factor", 0.85),
     )
 
     label_equiv_fpos_dict: dict[int, list[np.ndarray[float]]] = {}
@@ -2977,7 +2978,6 @@ def get_interstitial_sites(
             looser_site_matched_dict[i].append(tight_cand_site_mul_and_equiv_fpos)
 
     cand_site_mul_and_equiv_fpos_list = []
-    symmetry_preference = interstitial_gen_kwargs.get("symmetry_preference", 0.1)
     for tight_cand_site_mul_and_equiv_fpos_sublist in looser_site_matched_dict.values():
         if len(tight_cand_site_mul_and_equiv_fpos_sublist) == 1:
             cand_site_mul_and_equiv_fpos_list.append(tight_cand_site_mul_and_equiv_fpos_sublist[0])
@@ -3017,19 +3017,21 @@ def get_interstitial_sites(
             cand_site_mul_and_equiv_fpos_list.append(
                 dist_favoured_site_mul_and_equiv_fpos
                 if (
-                    np.min(
-                        host_structure.lattice.get_all_distances(
-                            dist_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
-                        ),
-                        axis=1,
+                    (
+                        np.min(
+                            host_structure.lattice.get_all_distances(
+                                symmetry_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
+                            ),
+                            axis=1,
+                        )
+                        / np.min(
+                            host_structure.lattice.get_all_distances(
+                                dist_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
+                            ),
+                            axis=1,
+                        )
                     )
-                    < np.min(
-                        host_structure.lattice.get_all_distances(
-                            symmetry_favoured_site_mul_and_equiv_fpos[0], host_structure.frac_coords
-                        ),
-                        axis=1,
-                    )
-                    - symmetry_preference
+                    < interstitial_gen_kwargs.get("symm_pref_dist_factor", 0.85)
                 )
                 else symmetry_favoured_site_mul_and_equiv_fpos
             )
