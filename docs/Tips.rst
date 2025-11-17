@@ -110,7 +110,7 @@ process, and will use multiprocessing by default to accelerate when multiple CPU
 bottleneck here is the loading and parsing of ``vasprun.xml(.gz)`` files. Parsing only has to be run once
 however, and we encourage the saving of parsed outputs to ``json.gz`` files as shown in the tutorials
 (and automatically performed by |DefectsParser|). Future improvements in the
-efficiency of the ``pymatgen`` :class:`~pymatgen.io.vasp.outputs.Vasprun` parser for large files would be 
+efficiency of the ``pymatgen`` |Vasprun| parser for large files would be 
 very beneficial here.
 
 
@@ -263,7 +263,7 @@ In these cases, defects can be generated using a similar workflow as for 3D mate
 host system to |DefectsGenerator| should be a slab structure with a converged
 vacuum size. ``doped`` will automatically generate all symmetry-inequivalent defects in this slab, and
 relevant properties such as distance to surface can be readily calculated through the site information and
-``pymatgen`` :class:`~pymatgen.core.structure.Structure`\s stored with the ``doped`` 
+``pymatgen`` |Structure|s stored with the ``doped`` 
 |DefectEntry| / |Defect| objects.
 The calculation inputs can then be generated as before, along with ``ShakeNBreak`` distortions
 (recommended), and then parsed with ``doped``'s |DefectsParser| class similar to 3D

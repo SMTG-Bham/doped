@@ -22,9 +22,8 @@ structure (i.e. DFT/ML) code used to calculate the raw energies of defect superc
 demonstrated in the tutorials, direct I/O support is currently provided for the ``VASP`` DFT code, while
 structure files for essentially all DFT/ML codes can be easily generated using the
 :meth:`~pymatgen.core.structure.IStructure.to()` method for ``pymatgen`` 
-:class:`~pymatgen.core.structure.Structure`\s or
-`ase I/O methods <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__, with the
-:class:`~pymatgen.core.structure.Structure` objects used for crystal structures in ``doped``.
+|Structure|\s or `ase I/O methods <https://wiki.fysik.dtu.dk/ase/ase/io/io.html#ase.io.write>`__, with the
+|Structure| objects used for crystal structures in ``doped``.
 
 Direct I/O capabilities for other codes is a goal (such as ``Quantum Espresso``, ``CP2K`` and/or
 ``FHI-aims``), accompanied by an update publication, so please get in touch with the developers if you
