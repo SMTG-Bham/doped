@@ -1211,7 +1211,7 @@ class DefectEntry(thermo.DefectEntry):
         per_site: bool = False,
         symprec: float | None = None,
         formation_energy: float | None = None,
-        site_competition: bool = True,
+        site_competition: bool | None = True,
         **kwargs,
     ) -> float:
         r"""
@@ -1235,6 +1235,10 @@ class DefectEntry(thermo.DefectEntry):
         ``defect_entry.degeneracy_factors`` attributes. Discussion in:
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
         https://doi.org/10.26434/chemrxiv-2025-3lb5k...
+
+        Note that this function sets lower and upper bounds on the per-site
+        defect concentrations of 1e-50 and 1 (the latter only applying when
+        ``site_competition = False``).
 
         Args:
             temperature (float):
@@ -1340,10 +1344,13 @@ class DefectEntry(thermo.DefectEntry):
                 ``DefectThermodynamics.get_fermi_level_and_concentrations()``
                 (recommended) then all defects in the system occupying the same
                 lattice site are considered.
+                If set to ``None`` (primarily intended for internal usage), the
+                standard dilute limit is used without capping the defect
+                concentration at the bulk site concentration.
             **kwargs:
                 Additional keyword arguments to pass to
                 ``_parse_and_set_symmetries_and_degeneracies``, such as
-                ``bulk_symprec``, ``symprec``, ``dist_tol_factor`` etc.
+                ``bulk_symprec``, ``dist_tol_factor`` etc.
 
         Returns:
             float:
@@ -1401,7 +1408,11 @@ class DefectEntry(thermo.DefectEntry):
             per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-50)
             if site_competition:
                 per_site_concentration /= 1 + per_site_concentration
-            else:  # cap max at 100% site concentration (though obvs unphysical)
+            elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
+                # this point anyway, this just makes it less so and stabilises some numerics)
+                # note that this sets the max at N_sites, rather than N_site * g_config,
+                # as this theoretical limit assumes that different configurations of the same site cannot
+                # be simultaneously occupied (i.e. gives an entropy boost but not site number boost)
                 per_site_concentration = np.minimum(per_site_concentration, 1)
 
             if per_site:

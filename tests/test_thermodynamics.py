@@ -2584,7 +2584,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc * 2 * 0.5) or (
-                        np.isclose(new_conc, new_entry.bulk_site_concentration)
+                        np.isclose(new_conc, new_entry.bulk_site_concentration * 2)  # multiplicity 2x'd
                     )  # possibly at concentration upper limit (100%)
 
                     new_entry.degeneracy_factors["orientational degeneracy"] *= 3
@@ -2596,7 +2596,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc * 2 * 0.5 * 3) or (
-                        np.isclose(new_conc, new_entry.bulk_site_concentration)
+                        np.isclose(new_conc, new_entry.bulk_site_concentration * 2)  # multiplicity 2x'd
                     )  # possibly at concentration upper limit (100%)
 
                     new_entry.degeneracy_factors["fake degeneracy"] = 7
@@ -2608,7 +2608,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
                     assert np.isclose(new_conc, orig_conc * 2 * 0.5 * 3 * 7) or (
-                        np.isclose(new_conc, new_entry.bulk_site_concentration)
+                        np.isclose(new_conc, new_entry.bulk_site_concentration * 2)  # multiplicity 2x'd
                     )  # possibly at concentration upper limit (100%)
 
                     # test per_site and bulk_site_concentration attributes:
@@ -3036,10 +3036,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             < v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + v_O_2_degeneracy_factor))
         ).all()
         assert np.allclose(
-            site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 1.478696e22, rtol=1e-3
+            site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 3.5510e22, rtol=1e-3
         )
         assert np.allclose(
-            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.478696e22, rtol=1e-3
+            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.0576e22, rtol=1e-3
         )
 
         assert (
@@ -3074,7 +3074,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ).all()
 
         fig, ax = plt.subplots()
-        x = np.linspace(100, 4000, 100)
+        x = np.concatenate((np.linspace(10, 400, 100), np.linspace(400, 4000, 500)))
 
         for i, T in enumerate(x):
             conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(

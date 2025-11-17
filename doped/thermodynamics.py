@@ -3397,8 +3397,8 @@ class DefectThermodynamics(MSONable):
                     temperature=temperature,
                     per_site=False,  # only concentration in cm^-3 here
                     formation_energy=formation_energy,  # reduce compute times
-                    site_competition=False,  # only rescale after, if site_competition = True
-                )
+                    site_competition=None if site_competition else False,
+                )  # use standard dilute limit here, rescaling with site competition below if ``True``
                 per_site_concentration = (
                     raw_concentration / defect_entry.bulk_site_concentration
                     if (site_competition or per_site)

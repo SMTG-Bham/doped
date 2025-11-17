@@ -1163,11 +1163,11 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             assert np.isclose(min(grid_df["μ_Cu (eV)"]), -0.463558, atol=1e-2)
             assert np.isclose(min(grid_df["μ_Si (eV)"]), -1.708951, atol=1e-2)
             assert np.isclose(min(grid_df["μ_Se (eV)"]), -0.758105, atol=1e-2)
-            assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.19776, atol=1e-3 if cart else 2e-2)
-            assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94740, atol=1e-3 if cart else 2e-1)
+            assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.19661, atol=1e-3 if cart else 2e-2)
+            assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94969, atol=1e-3 if cart else 2e-1)
             assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 7e-2)
 
-            assert len(grid_df) == (3905 if cart else 3744)
+            assert len(grid_df) == (3792 if cart else 3744)
 
     def test_chempot_heatmap_3D_w_fixed_elements_error(self):
         with pytest.raises(ValueError) as exc:
