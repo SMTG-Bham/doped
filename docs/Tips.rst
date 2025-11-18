@@ -56,11 +56,11 @@ As described in the defect calculation tutorial (`YouTube <https://youtu.be/FWz7
 our recommended workflow for calculating interstitial defects is to first generate the set of candidate
 interstitial sites for your structure using |DefectsGenerator| (which uses Voronoi 
 tessellation for this, see note below), and then perform Gamma-point-only relaxations (using ``vasp_gam``) 
-for each charge state of the generated interstitial candidates, and then pruning some of the candidate sites 
-based on the criteria below. Typically the easiest way to do this is to follow the workflow shown in the 
-defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the ``Unperturbed`` 
-and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, you can generate 
-the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
+for each charge state of the generated interstitial candidates, and then pruning some of the candidate 
+sites based on the criteria below. Typically the easiest way to do this is to follow the workflow shown in 
+the defect generation tutorial, and then run the |ShakeNBreak| ``vasp_gam`` relaxations for the 
+``Unperturbed`` and ``Bond_Distortion_0.0%``/``Rattled`` directories of each charge state. Alternatively, 
+you can generate the ``vasp_gam`` relaxation input files by setting ``vasp_gam = True`` in
 :class:`~doped.vasp.DefectsSet` :meth:`~doped.vasp.DefectsSet.write_files()` -- this will rattle 
 the output structures by default to break symmetry (controlled by the ``rattle`` option).
 
@@ -71,8 +71,8 @@ We can then compare the energies of these trial relaxations, and remove candidat
 - Relax to the same final structure/energy as other interstitial sites (despite different initial
   positions) in each charge state, and so are unnecessary to calculate. This can happen due to interstitial
   migration within the relaxation calculation, from an unfavourable higher energy site, to a lower energy
-  one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each other,
-  this is the case.
+  one. Typically if the energy from the test ``vasp_gam`` relaxations are within a couple of meV of each 
+  other, this is the case.
 
 See the workflow summary on |DeepWiki|.
 
@@ -82,6 +82,12 @@ See the workflow summary on |DeepWiki|.
     you should always critically consider the validity of these choices in the context of your specific
     system (for example, considering the charge-state dependence of the interstitial site formation
     energies here).
+
+.. tip::
+
+    If computational resources are limited, this screening step can often be accelerated without 
+    significantly compromising accuracy by just considering the fully-ionised and neutral charge states of 
+    each interstitial site, and pruning based on those results.
 
 
 Performance Bottlenecks
