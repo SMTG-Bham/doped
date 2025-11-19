@@ -1293,7 +1293,7 @@ def _compare_incar_tags(
     the mismatching tags.
     """
     if fatal_incar_mismatch_tags is None:
-        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults
+        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults in VASP
             "AEXX": 0.25,  # default 0.25
             "ENCUT": 0,
             "LREAL": False,  # default False

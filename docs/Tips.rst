@@ -120,8 +120,8 @@ efficiency of the ``pymatgen`` |Vasprun| parser for large files would be
 very beneficial here.
 
 
-Difficult Structural Relaxations
---------------------------------
+Difficult Structural Relaxations & Energy/Force Convergence Issues
+------------------------------------------------------------------
 
 If defect supercell relaxations do not converge after multiple continuation calculations
 (i.e. ``cp``-ing ``CONTCAR`` to ``POSCAR`` and resubmitting the job), this is likely due to small
@@ -149,6 +149,12 @@ underlying calculation and/or extreme forces.
     - Switching the electronic minimisation algorithm (e.g. change :code:`ALGO` to :code:`All` and
       :code:`ISEARCH` to :code:`1`), if electronic convergence seems to be causing issues.
     - Tightening/reducing the electronic convergence criterion (e.g. change :code:`EDIFF` to :code:`1e-7`)
+    - Switching to reciprocal space projection operators (e.g. change :code:`LREAL` to :code:`False`) can
+      give slightly more accurate forces and avoid some convergence issues, `but note that this can cause a 
+      systematic energy shift` (typically on the order of 1 meV/atom), and so if switching this for 
+      relaxation convergence, a `final total-energy calculation should be performed with the original 
+      settings` (consistent with the bulk/other defect calculations) to obtain reliable relative 
+      (formation) energies.
 
 - If instead the calculation is crashing due to an error and/or extreme forces, a common culprit is the
   :code:`EDWAV` error in the output file, which can often be avoided by reducing :code:`NCORE` and/or
