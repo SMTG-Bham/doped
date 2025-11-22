@@ -24,13 +24,13 @@ from pymatgen.core.structure import PeriodicSite
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
+from doped import suppress_logging
 from doped.analysis import defect_from_structures
 from doped.core import DefectEntry, _parse_procar
 from doped.utils.parsing import (
     _partial_defect_entry_from_structures,
     get_magnetization_from_vasprun,
     get_nelect_from_vasprun,
-    suppress_logging,
 )
 from doped.utils.plotting import _get_backend
 
@@ -583,7 +583,6 @@ def get_eigenvalue_analysis(
     style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
-    EigenvalueMplPlotter._add_eigenvalues = _add_eigenvalues  # faster monkey-patch for adding eigenvalues
     with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
         emp = EigenvalueMplPlotter(
             title="Eigenvalues",
@@ -592,6 +591,7 @@ def get_eigenvalue_analysis(
             supercell_cbm=cbm,
             y_range=[vbm - 3, cbm + 3],
         )
+        emp._add_eigenvalues = _add_eigenvalues  # faster monkey-patch for adding eigenvalues
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12

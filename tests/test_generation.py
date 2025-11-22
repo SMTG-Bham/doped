@@ -3601,7 +3601,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
             for translation in [True, False]:
                 sga = SpacegroupAnalyzer(initial_structure)
                 print(f"Initial space group info: {initial_structure.get_space_group_info()}")
-                symm_ops = sga.get_symmetry_operations(cartesian=False)  # default ooption
+                symm_ops = sga.get_symmetry_operations(cartesian=False)  # default option
                 for symm_op in random.sample(symm_ops, 5):
                     print(
                         f"Testing transformed supercell input for {initial_structure.formula}, "

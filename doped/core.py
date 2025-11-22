@@ -25,7 +25,7 @@ from doped.utils.efficiency import Composition, Element, PeriodicSite, Structure
 if TYPE_CHECKING:
     from matplotlib.pyplot import Figure
 
-    from doped.utils.parsing import suppress_logging
+    from doped import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # type: ignore
         try:
@@ -258,7 +258,7 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             ``DefectEntry`` object
         """
-        from doped.utils.parsing import suppress_logging
+        from doped import suppress_logging
 
         with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression:
             return super().from_dict(d)

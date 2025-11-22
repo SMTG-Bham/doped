@@ -693,7 +693,8 @@ def StructureMatcher_scan_stol(
         ``None`` if no match is found.
     """
     # use doped efficiency tools to make structure-matching as fast as possible:
-    StructureMatcher._get_atomic_disps = _sm_get_atomic_disps  # monkey-patch ``StructureMatcher`` for SnB
+    if func_name == "_get_atomic_disps":  # only used by SnB; add get-atomic-disps method:
+        StructureMatcher._get_atomic_disps = _sm_get_atomic_disps
 
     if "comparator" not in sm_kwargs:
         sm_kwargs["comparator"] = ElementComparator()
@@ -731,9 +732,6 @@ def StructureMatcher_scan_stol(
         # close to the necessary value anyway.
 
     return None
-
-
-StructureMatcher._get_atomic_disps = _sm_get_atomic_disps  # monkey-patch ``StructureMatcher`` for SnB
 
 
 class DopedTopographyAnalyzer:

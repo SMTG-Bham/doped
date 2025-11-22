@@ -14,7 +14,6 @@ import multiprocessing
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
-from packaging.version import parse
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
@@ -37,32 +36,17 @@ except PackageNotFoundError:
     __version__ = "No version found"  # fallback for local development or if package isn't installed
 
 
-def _check_pmg_compatibility():
+@contextlib.contextmanager
+def suppress_logging(level=logging.CRITICAL):
+    """
+    Context manager to catch and suppress logging messages.
+    """
+    previous_level = logging.root.manager.disable  # store the current logging level
+    logging.disable(level)  # disable logging at the specified level
     try:
-        v_pmg_def = version("pymatgen-analysis-defects")
-    except PackageNotFoundError:
-        v_pmg_def = False
-
-    try:
-        v_pmg = version("pymatgen")
-    except Exception:
-        v_pmg = False
-
-    if not v_pmg_def:
-        raise TypeError(
-            "You do not have the `pymatgen-analysis-defects` package installed, which is required by "
-            "`doped`. Please install `pymatgen-analysis-defects` (with `pip install "
-            "pymatgen-analysis-defects`) and restart the kernel."
-        )
-
-    if parse(v_pmg) < parse("2022.7.25"):
-        raise TypeError(
-            f"You have the version {v_pmg} of `pymatgen` installed, which is incompatible with `doped`. "
-            f"Please update (with `pip install --upgrade pymatgen`) and restart the kernel."
-        )
-
-
-_check_pmg_compatibility()
+        yield
+    finally:
+        logging.disable(previous_level)  # restore the original logging level
 
 
 def _ignore_pmg_warnings():

@@ -4,7 +4,6 @@ Helper functions for parsing defect supercell calculations.
 
 import contextlib
 import itertools
-import logging
 import os
 import re
 import warnings
@@ -31,19 +30,6 @@ from doped.core import DefectEntry, remove_site_oxi_state
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
-
-
-@contextlib.contextmanager
-def suppress_logging(level=logging.CRITICAL):
-    """
-    Context manager to catch and suppress logging messages.
-    """
-    previous_level = logging.root.manager.disable  # store the current logging level
-    logging.disable(level)  # disable logging at the specified level
-    try:
-        yield
-    finally:
-        logging.disable(previous_level)  # restore the original logging level
 
 
 def find_archived_fname(fname, raise_error=True):

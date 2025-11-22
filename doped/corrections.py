@@ -439,7 +439,7 @@ def get_kumagai_correction(
         metadata), and the ``matplotlib`` ``Figure`` object if ``plot`` is
         ``True``.
     """
-    from doped.utils.parsing import suppress_logging
+    from doped import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
         try:
