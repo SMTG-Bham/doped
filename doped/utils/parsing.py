@@ -816,9 +816,9 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     Calculates the Wigner-Seitz radius of the structure, which corresponds to
     the maximum radius of a sphere fitting inside the cell.
 
-    Uses the ``calc_max_sphere_radius`` function from ``pydefect``, with a
-    wrapper to avoid unnecessary logging output and warning suppression from
-    ``vise``.
+    Templated on the ``calc_max_sphere_radius`` function from ``pydefect``,
+    but rewritten to avoid calling ``vise`` which causes hanging on Windows.
+    (https://github.com/SMTG-Bham/doped/issues/147).
 
     Args:
         lattice (Union[Structure,Lattice]):
@@ -830,21 +830,12 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
             The Wigner-Seitz radius of the structure.
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
-
-    # avoid vise/pydefect warning suppression and INFO messages:
-    with suppress_logging(), warnings.catch_warnings():
-        try:
-            from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
-
-            return calc_max_sphere_radius(lattice_matrix)
-
-        except ImportError:  # vise/pydefect not installed
-            distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
-            for i in range(3):
-                a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
-                a_k = lattice_matrix[i]
-                distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
-            return max(distances) / 2.0
+    distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4; avoid vise issues
+    for i in range(3):
+        a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
+        a_k = lattice_matrix[i]
+        distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
+    return max(distances) / 2.0
 
 
 def check_atom_mapping_far_from_defect(

@@ -61,6 +61,7 @@ from doped.utils.parsing import (
     _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
     get_locpot,
+    get_wigner_seitz_radius,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
 
@@ -444,7 +445,6 @@ def get_kumagai_correction(
         try:
             from pydefect.analyzer.calc_results import CalcResults
             from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
-            from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
             from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
             from pydefect.corrections.ewald import Ewald
             from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
@@ -506,7 +506,7 @@ def get_kumagai_correction(
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
         if defect_region_radius is None:
-            defect_region_radius = calc_max_sphere_radius(lattice.matrix)
+            defect_region_radius = get_wigner_seitz_radius(lattice.matrix)
 
         for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:
