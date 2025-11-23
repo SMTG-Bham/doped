@@ -1430,6 +1430,37 @@ def get_equiv_frac_coords_in_primitive(
     return prim_coord_list if equiv_coords else prim_coord_list[0]
 
 
+def are_equivalent_lattices(
+    lattice_1: Lattice | Structure,
+    lattice_2: Lattice | Structure,
+    ltol: float = 5e-3,
+    atol: float = 1,
+) -> bool:
+    """
+    Check if two lattices are (symmetry-)equivalent, allowing for different
+    cell sizes.
+
+    Args:
+        lattice_1 (Lattice | Structure):
+            The first lattice to check for equivalence.
+        lattice_2 (Lattice | Structure):
+            The second lattice to check for equivalence.
+        ltol (float):
+            Fractional tolerance for matching lattice vector lengths.
+            Defaults to 5e-3 (i.e. 0.5% tolerance).
+        atol (float):
+            Tolerance for matching angles. Defaults to 1 degree.
+
+    Returns:
+        bool:
+            ``True`` if the two lattices are (symmetry-)equivalent, ``False``
+            otherwise.
+    """
+    lattice_1 = lattice_1 if isinstance(lattice_1, Lattice) else lattice_1.lattice
+    lattice_2 = lattice_2 if isinstance(lattice_2, Lattice) else lattice_2.lattice
+    return lattice_1.find_mapping(lattice_2, ltol=ltol, atol=atol, skip_rotation_matrix=True) is not None
+
+
 def _rotate_and_get_supercell_matrix(
     prim_struct: Structure, target_struct: Structure, ltol: float = 1e-5, atol: float = 1
 ) -> tuple[Structure, np.ndarray]:
@@ -2236,7 +2267,9 @@ def get_conv_cell_site(defect_entry: DefectEntry) -> PeriodicSite | None:
     return conv_cell_site
 
 
-def swap_axes(structure: Structure, axes: list[int] | tuple[int, ...]) -> Structure:
+def swap_axes(
+    structure: Structure, axes: list[int] | tuple[int, ...], swap_cols: bool = False
+) -> Structure:
     """
     Swap axes of the given structure.
 
@@ -2246,7 +2279,10 @@ def swap_axes(structure: Structure, axes: list[int] | tuple[int, ...]) -> Struct
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
 
     for i, axis in enumerate(axes):
-        transformation_matrix[i][axis] = 1
+        if swap_cols:
+            transformation_matrix[axis][i] = 1
+        else:
+            transformation_matrix[i][axis] = 1
 
     transformation = SupercellTransformation(transformation_matrix)
 
