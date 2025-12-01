@@ -3250,7 +3250,7 @@ class DefectParserEspresso:
         skip_corrections: bool = False,
         error_tolerance: float = 0.05,
         parse_projected_eigen: bool | None = None,
-        default_filename: str = "espresso.xml",
+        filename: str = "espresso.xml",
         **kwargs,
     ):
         """
@@ -3320,7 +3320,7 @@ class DefectParserEspresso:
         self.error_tolerance = error_tolerance
         self.kwargs = kwargs or {}
         self.parse_projected_eigen = parse_projected_eigen
-        self.default_filename = default_filename
+        self.filename = filename
 
     @classmethod
     def from_paths(
@@ -3335,7 +3335,7 @@ class DefectParserEspresso:
         error_tolerance: float = 0.05,
         bulk_band_gap_vr: PathLike | Vasprun | None = None,
         parse_projected_eigen: bool | None = None,
-        default_filename = 'espresso.xml',
+        filename = 'espresso.xml',
         occu_tol: float = 1e-8,
         pp_folder: PathLike = None,
         **kwargs,
@@ -3452,9 +3452,9 @@ class DefectParserEspresso:
             ``DefectParser`` object.
         """
 
-        def _get_bulk_supercell(bulk_path, bulk_vr, default_filename, parse_projected_eigen, bulk_procar):
+        def _get_bulk_supercell(bulk_path, bulk_vr, filename, parse_projected_eigen, bulk_procar):
             if bulk_path is not None and bulk_vr is None:
-                bulk_vr_path, multiple = _get_output_files_warn_if_multiple(default_filename, bulk_path, dir_type="bulk")
+                bulk_vr_path, multiple = _get_output_files_warn_if_multiple(filename, bulk_path, dir_type="bulk")
 
                 bulk_vr, reparsed_bulk_procar = RunParser('espresso')._parse_run_and_poss_projwfc(
                     bulk_vr_path,
@@ -3474,13 +3474,14 @@ class DefectParserEspresso:
 
             bulk_supercell = bulk_vr.final_structure.copy()
             return bulk_vr, bulk_supercell
-        def _get_defect_vr_procar(default_filename, defect_path, parse_projected_eigen):
-            defect_vr_path, multiple = _get_output_files_warn_if_multiple(default_filename, defect_path, dir_type="defect")
+        def _get_defect_vr_procar(filename, defect_path, parse_projected_eigen):
+            defect_vr_path, multiple = _get_output_files_warn_if_multiple(filename, defect_path, dir_type="defect")
 
             defect_vr, defect_procar = RunParser('espresso')._parse_run_and_poss_projwfc(
                 defect_vr_path, parse_projected_eigen, defect_path, label="defect"
             )
             defect_vr = RunParser('espresso').ensure_band_edges(defect_vr, occu_tol, backend = 'pymatgen')         ### bandgap for bulk_vr
+
             return defect_vr, defect_procar
 
 
@@ -3531,11 +3532,10 @@ class DefectParserEspresso:
 
         bulk_vr, bulk_supercell = _get_bulk_supercell(bulk_path,
                                             bulk_vr,
-                                            default_filename,
+                                            filename,
                                             parse_projected_eigen,
                                             bulk_procar)
-
-        defect_vr, defect_procar = _get_defect_vr_procar(default_filename, defect_path, parse_projected_eigen)
+        defect_vr, defect_procar = _get_defect_vr_procar(filename, defect_path, parse_projected_eigen)
         parse_projected_eigen = defect_procar is not None or defect_vr.projected_eigenvalues is not None
         possible_defect_name, parsed_charge_state = _parse_charge_state(defect_path, defect_vr, pp_folder)
 
@@ -3801,7 +3801,6 @@ class DefectParserEspresso:
             # exception?
                 # try to load FNV data()
                 # exception? sorry couldn't apply any correction. Let's just skip_corrections.
-        print("READING EFNV FOR", self.defect_entry.name)
 
         if _file_in_folder(defect_path, "cube") and _file_in_folder(bulk_path, "cube"):
             try:
@@ -3810,7 +3809,6 @@ class DefectParserEspresso:
 
                 pass
             except Exception as kumagai_exc:
-                print("\tEXCEPTION RAISED FOR", self.defect_entry.name)
                 try:
                     #load fnv
                     self.load_FNV_data()
@@ -4003,7 +4001,6 @@ class DefectParserEspresso:
             return None
 
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
-        # print("BULK_SITE_POTENTIALS: ", bulk_site_potentials)
         bulk_site_potentials_dict = {}
         if bulk_site_potentials is None:
 
@@ -4067,7 +4064,6 @@ class DefectParserEspresso:
         #     total_energy=[energy for energy in total_energies if energy is not None],
         # )
 
-        # print("\t", bulk_site_potentials_dict['site_potentials'])
 
         self.defect_entry.calculation_metadata.update(
             {
@@ -4075,7 +4071,6 @@ class DefectParserEspresso:
                 "defect_site_potentials": defect_site_potentials_dict['site_potentials'],
             }
         )
-        print("\tINSIDE LOAD EFNV DATA6 - MULTIPLY BY -1???")
         bulk_site_potentials = -np.array(bulk_site_potentials)
         return bulk_site_potentials
 
@@ -4096,7 +4091,6 @@ class DefectParserEspresso:
                     bulk_vr_path,
                     dir_type="bulk",
                 )
-            print("LOAD _ AND _ CHECK")
             self.bulk_vr = _parse_vr_and_poss_projwfc(
                 bulk_vr_path,
                 parse_projected_eigen=False,  # not needed for DefectEntry metadata
@@ -4595,7 +4589,7 @@ class FolderHandler:
         return df_sub.loc[mask, "grandparent"].drop_duplicates().tolist()
 
     @classmethod
-    def _determine_bulk_path(cls, output_path, possible_bulk_folders, bulk_path=None):
+    def _determine_bulk_path(cls, folderdf):
         """
         Determine the bulk_path from a filtered DataFrame.
 
@@ -4607,37 +4601,54 @@ class FolderHandler:
         Returns:
             str: Absolute path to resolved bulk folder.
         """
-        output_path = Path(output_path)
 
-        if bulk_path is None:
-            if len(possible_bulk_folders) == 1:
-                resolved_bulk = output_path / possible_bulk_folders[0]
-            else:
-                # Try to find a folder ending with "_bulk"
-                bulk_candidates = [folder for folder in possible_bulk_folders if str(folder).lower().endswith("_bulk")]
-                if len(bulk_candidates) == 1:
-                    resolved_bulk = output_path / bulk_candidates[0]
-                else:
-                    raise ValueError(
-                        f"Could not automatically determine bulk supercell calculation folder in "
-                        f"{output_path}. Found {len(possible_bulk_folders)} folders with `vasprun.xml` and 'bulk' in name. "
-                        f"Please specify bulk_path manually."
-                    )
-        else:
-            resolved_bulk = Path(bulk_path)
 
-        # Final existence check
-        if not resolved_bulk.is_dir():
-            if len(possible_bulk_folders) == 1:
-                fallback_path = output_path / possible_bulk_folders[0]
-                if fallback_path.is_dir():
-                    return str(fallback_path)
+        # output_path = Path(output_path)
+
+        # if bulk_path is None:
+        #     if len(possible_bulk_folders) == 1:
+        #         resolved_bulk = output_path / possible_bulk_folders[0]
+        #     else:
+        #         # Try to find a folder ending with "_bulk"
+        #         bulk_candidates = [folder for folder in possible_bulk_folders if str(folder).lower().endswith("_bulk")]
+        #         if len(bulk_candidates) == 1:
+        #             resolved_bulk = output_path / bulk_candidates[0]
+        #         else:
+        #             raise ValueError(
+        #                 f"Could not automatically determine bulk supercell calculation folder in "
+        #                 f"{output_path}. Found {len(possible_bulk_folders)} folders with `vasprun.xml` and 'bulk' in name. "
+        #                 f"Please specify bulk_path manually."
+        #             )
+        # else:
+        #     resolved_bulk = Path(bulk_path)
+
+        # # Final existence check
+        # if not resolved_bulk.is_dir():
+        #     if len(possible_bulk_folders) == 1:
+        #         fallback_path = output_path / possible_bulk_folders[0]
+        #         if fallback_path.is_dir():
+        #             return str(fallback_path)
+        #     raise FileNotFoundError(
+        #         f"Could not find bulk supercell calculation folder at '{resolved_bulk}'!"
+        #     )
+
+        df_bulk = folderdf[folderdf['grandparent'].str.contains('bulk', case=False, na=False)] #Find the files which have a grandparent containing bulk
+        bulks = df_bulk['grandparent'].unique()
+
+        if len(bulks) == 1:
+            resolved_bulk = df_bulk['parentdir'].iloc[0].parent
+            bulk_vr_path = df_bulk[df_bulk['filename'].str.contains('xml')]['full_file_path'].iloc[0]
+
+        elif len(bulks) == 0:
             raise FileNotFoundError(
                 f"Could not find bulk supercell calculation folder at '{resolved_bulk}'!"
             )
+        else:
+            raise FileNotFoundError(
+                f"Too many bulk calculations found '{bulks}'!"
+            )
 
-        return str(resolved_bulk)
-
+        return str(resolved_bulk), str(bulk_vr_path)
     @classmethod
     def _validate_bulk_subpath(cls, df, bulk_path, subfolder, root_path, code_xml):
         """
@@ -4689,13 +4700,14 @@ class FolderHandler:
 
     @classmethod
     def _determine_defect_folders(cls,possible_defect_folders, possible_bulk_folders, subfolder, output_path ):
-        defect_folders = [dir
-                            for dir in possible_defect_folders
-                            if dir not in possible_bulk_folders
-                            and (
-                                subfolder in os.listdir(os.path.join(output_path, dir)) or subfolder == "."
-                                )
-        ]
+        defect_folders = []
+        for dir in possible_defect_folders:
+            try:
+                if dir not in possible_bulk_folders and subfolder in os.listdir(os.path.join(output_path, dir)) or subfolder == ".":
+                    defect_folders.append(dir)
+            except:
+                continue
+
         return defect_folders
 
 class DefectsParserEspresso(DefectsParserVasp):
@@ -4738,30 +4750,20 @@ class DefectsParserEspresso(DefectsParserVasp):
         self.bulk_vr = None  # loaded later
         self.kwargs = kwargs
 
-        code_xml =  r'(?=.*espresso)(?=.*xml)'
+        # code_xml =  r'(?=.*espresso)(?=.*xml)'
+        code_xml =  r'(?=.*xml)'
 
         #-------Determine bulk, defect folders-------
         self._df = FolderHandler._folder_to_dataframe(self.output_path)
+
         possible_defect_folders = FolderHandler._find_possible_defect_folders(self._df, code_xml)
         self.subfolder = FolderHandler._determine_subfolder(self._df, possible_defect_folders, code = 'espresso')
         possible_bulk_folders = FolderHandler._find_possible_bulk_folders(self._df,
                                                            subset_col = 'grandparent',
                                                            using = possible_defect_folders,
                                                            bulk_path = None)
-        self.bulk_path = FolderHandler._determine_bulk_path(self.output_path, possible_bulk_folders)
-        self.bulk_path = FolderHandler._validate_bulk_subpath(self._df, self.bulk_path, self.subfolder, self.output_path, code_xml)
-
+        self.bulk_path, bulk_vr_path = FolderHandler._determine_bulk_path(self._df)
         self.defect_folders = FolderHandler._determine_defect_folders(possible_defect_folders, possible_bulk_folders, self.subfolder, self.output_path)
-
-
-        bulk_vr_path, multiple = _get_output_files_and_check_if_multiple("espresso.xml", self.bulk_path)
-        if multiple:
-            _multiple_files_warning(
-                "espresso.xml",
-                self.bulk_path,
-                bulk_vr_path,
-                dir_type="bulk",
-            )
 
 
         # -------------------Parsers-------------------
@@ -4791,6 +4793,7 @@ class DefectsParserEspresso(DefectsParserVasp):
         }
 
         parsed_defect_entries, parsing_warnings = self._parse_defect_folders_and_warnings()
+
         self.defect_dict = self._warn_remove_duplicate_parsed_defect_entries(parsed_defect_entries)
 
 
@@ -4896,7 +4899,6 @@ class DefectsParserEspresso(DefectsParserVasp):
         defect_thermo = self.get_defect_thermodynamics(check_compatibility=False, skip_dos_check=True)
 
         for name, defect_entry in self.defect_dict.items():
-            # print("CHARGE_CORRECTION: ", name, defect_entry)
             # first check if it's a stable defect:
             fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
 
@@ -5087,6 +5089,7 @@ class DefectsParserEspresso(DefectsParserVasp):
 
     def _parse_defect_folders_and_warnings(self):
         parsed_defect_entries, parsing_warnings = self._parse_defect_folders()
+
         parsing_warnings = self._process_parsing_warnings(parsing_warnings)
 
         if not parsed_defect_entries:
@@ -5219,10 +5222,11 @@ class DefectsParserEspresso(DefectsParserVasp):
 
         # Serial processing
         if self.processes <= 1:
-            # print("SERIAL:")
             with tqdm(self.defect_folders, desc="Parsing defect calculations") as pbar:
+
                 for defect_folder in pbar:
                     pbar.set_description(f"Parsing {defect_folder}/{self.subfolder}".replace("/.", ""))
+
                     parsed_defect_entry, warnings_string, _folder = self._parse_defect_and_handle_warnings(defect_folder)
                     parsing_warnings.append(
                         self._parse_parsing_warnings(warnings_string, defect_folder, f"{defect_folder}/{self.subfolder}")
@@ -5231,7 +5235,6 @@ class DefectsParserEspresso(DefectsParserVasp):
                         parsed_defect_entries.append(parsed_defect_entry)
         # Multiprocessing
         else:
-
             charged_defect_folder = None
             for folder in self.defect_folders:
                 with contextlib.suppress(Exception):
@@ -5339,6 +5342,9 @@ class DefectsParserEspresso(DefectsParserVasp):
             self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
             defect_path = os.path.join(self.output_path, defect_folder, self.subfolder)
 
+            df = FolderHandler._folder_to_dataframe(defect_path)
+            filename = df[df.filename.str.endswith('xml')]['filename'].iloc[0]
+
             dp = DefectParser(code=self.code).from_paths(
                 defect_path=defect_path,
                 bulk_path=self.bulk_path,
@@ -5350,11 +5356,10 @@ class DefectsParserEspresso(DefectsParserVasp):
                 bulk_band_gap_vr=self.bulk_band_gap_vr,
                 oxi_state=self.kwargs.get("oxi_state") if self._bulk_oxi_states else "Undetermined",
                 parse_projected_eigen=self.parse_projected_eigen,
-                default_filename = "espresso.xml",
+                filename = filename,
                 pp_folder = self.pp_folder,
                 **self.kwargs
             )
-
             if dp.skip_corrections and dp.defect_entry.charge_state != 0 and self.dielectric is None:
                 self.skip_corrections = dp.skip_corrections  # set skip_corrections to True if
                 # dielectric is None and there are charged defects present (shows dielectric warning once)

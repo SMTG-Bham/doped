@@ -2204,8 +2204,12 @@ class RunParserEspresso():
                     line = line.strip()
                     if "z_valence" in line:
                         if "=" in line:
-                            val = line.split("=")[1].split()[0]
-                            return float(val.strip('"'))
+                            m = re.search(r'z_valence\s*=\s*"([^"]*)"', line)
+                            if not m:
+                                return None  # or raise error
+                            
+                            raw = m.group(1).strip().replace(" ", "")
+                            return float(raw)
                         elif "<z_valence>" in line:
                             val = line.split(">")[1].split("<")[0]
                             return float(val.strip('"'))
