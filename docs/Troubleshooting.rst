@@ -20,8 +20,8 @@ If this does not solve your issue, please check the specific cases noted below.
 The next recommended step is to search through the ``doped``
 `GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ (use the GitHub search bar on the top
 right) to see if your issue/question has been asked before. If your problem is still not solved, then
-please contact the developers through the
-`GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
+please post your issue on the `doped MatSci community forum <https://matsci.org/c/doped/70>`__; see
+`instructions here <https://matsci.org/t/questions-related-to-doped/66448>`__.
 
 Parsing Errors
 --------------
@@ -201,7 +201,8 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 .. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
 
 .. NOTE::
-    If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
-    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
+    If you run into any issues using ``doped`` that aren't addressed above, please post your issue on the
+    `doped MatSci community forum <https://matsci.org/c/doped/70>`__; see
+    `instructions here <https://matsci.org/t/questions-related-to-doped/66448>`__.
 
 .. _Installation: https://doped.readthedocs.io/en/latest/Installation.html

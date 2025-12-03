@@ -10,7 +10,9 @@
 `doped` is open-source, developed by members of the [Simulation of Advanced Materials](https://sam-lab.net) lab at
 Cambridge, the Scanlon group at Birmingham, the Walsh group at Imperial College and contributors from across the globe.
 
-[**Documentation site here!**](https://doped.readthedocs.io)
+- [**`doped` Documentation Site**](https://doped.readthedocs.io)
+- [**Questions Related to `doped`**](https://matsci.org/c/doped/70) and [Instructions](https://matsci.org/t/questions-related-to-doped/66448)
+
 Tutorials showing the code functionality and usage are provided on the [docs](https://doped.readthedocs.io/en/latest/) site, and an overview of the key advances of the package is given in the [JOSS paper](https://doi.org/10.21105/joss.06433).
 
 ![https://joss.theoj.org/papers/10.21105/joss.06433](docs/JOSS/doped_JOSS_workflow_figure.png)

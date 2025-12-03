@@ -28,6 +28,9 @@ from across the globe.
 Tutorials showing the code functionality and usage are provided on the :ref:`Tutorials` page, and an
 overview of the key advances of the package is given in the
 `JOSS paper <https://doi.org/10.21105/joss.06433>`__.
+For questions related to `doped`, please post on the 
+`doped MatSci community forum <https://matsci.org/c/doped/70>`__, and see 
+`instructions here <https://matsci.org/t/questions-related-to-doped/66448>`__.
 
 .. image:: JOSS/doped_JOSS_workflow_figure.png
    :target: https://doi.org/10.21105/joss.06433
