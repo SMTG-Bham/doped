@@ -16,6 +16,7 @@ import os
 import warnings
 from collections import defaultdict
 from itertools import zip_longest
+from types import MethodType
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -290,55 +291,6 @@ def get_band_edge_info(
     return band_orb, vbm_info, cbm_info
 
 
-def _add_eigenvalues(
-    self,
-    occupied_color=(0.22, 0.325, 0.643),
-    unoccupied_color=(0.98, 0.639, 0.086),
-    partial_color=(0.0, 0.5, 0.0),
-):
-    """
-    Add eigenvalues to plot.
-
-    Refactored from implementation in ``pydefect`` to avoid calling
-    ``ax.scatter`` individually many times when we have many kpoints and bands,
-    which can make the plotting quite slow (>10 seconds), and allow setting
-    custom colors for occupied, unoccupied, and partially occupied states.
-    """
-    for _spin_idx, (eo_by_spin, ax) in enumerate(
-        zip(self._energies_and_occupations, self.axs, strict=False)
-    ):
-        kpt_indices = []
-        energies = []
-        color_list = []
-        annotations = []
-        for kpt_idx, eo_by_k_idx in enumerate(eo_by_spin):
-            for band_idx, eo_by_band in enumerate(eo_by_k_idx):
-                energy, occup = eo_by_band
-                color_list.append(
-                    occupied_color if occup > 0.9 else unoccupied_color if occup < 0.1 else partial_color
-                )
-                kpt_indices.append(kpt_idx)
-                energies.append(energy)
-
-                try:
-                    higher_band_e = eo_by_k_idx[band_idx + 1][0]
-                    lower_band_e = eo_by_k_idx[band_idx - 1][0]
-                except IndexError:
-                    continue
-
-                if self._add_band_idx(energy, higher_band_e, lower_band_e):
-                    annotations.append((kpt_idx + 0.05, energy, band_idx + self._lowest_band_idx + 1))
-
-        ax.scatter(kpt_indices, energies, c=color_list, s=self._mpl_defaults.circle_size)
-        for annotation in annotations:
-            ax.annotate(
-                annotation[2],
-                (annotation[0], annotation[1]),
-                va="center",
-                fontsize=self._mpl_defaults.tick_label_size,
-            )
-
-
 def get_eigenvalue_analysis(
     defect_entry: DefectEntry | None = None,
     plot: bool = True,
@@ -591,7 +543,60 @@ def get_eigenvalue_analysis(
             supercell_cbm=cbm,
             y_range=[vbm - 3, cbm + 3],
         )
-        emp._add_eigenvalues = _add_eigenvalues  # faster monkey-patch for adding eigenvalues
+
+        def _add_eigenvalues(
+            self,
+            occupied_color=(0.22, 0.325, 0.643),
+            unoccupied_color=(0.98, 0.639, 0.086),
+            partial_color=(0.0, 0.5, 0.0),
+        ):
+            """
+            Add eigenvalues to plot.
+
+            Refactored from implementation in ``pydefect`` to avoid calling
+            ``ax.scatter`` individually many times when we have many kpoints and bands,
+            which can make the plotting quite slow (>10 seconds), and allow setting
+            custom colors for occupied, unoccupied, and partially occupied states.
+            """
+            for _spin_idx, (eo_by_spin, ax) in enumerate(
+                zip(self._energies_and_occupations, self.axs, strict=False)
+            ):
+                kpt_indices = []
+                energies = []
+                color_list = []
+                annotations = []
+                for kpt_idx, eo_by_k_idx in enumerate(eo_by_spin):
+                    for band_idx, eo_by_band in enumerate(eo_by_k_idx):
+                        energy, occup = eo_by_band
+                        color_list.append(
+                            occupied_color
+                            if occup > 0.9
+                            else unoccupied_color if occup < 0.1 else partial_color
+                        )
+                        kpt_indices.append(kpt_idx)
+                        energies.append(energy)
+
+                        try:
+                            higher_band_e = eo_by_k_idx[band_idx + 1][0]
+                            lower_band_e = eo_by_k_idx[band_idx - 1][0]
+                        except IndexError:
+                            continue
+
+                        if self._add_band_idx(energy, higher_band_e, lower_band_e):
+                            annotations.append(
+                                (kpt_idx + 0.05, energy, band_idx + self._lowest_band_idx + 1)
+                            )
+
+                ax.scatter(kpt_indices, energies, c=color_list, s=self._mpl_defaults.circle_size)
+                for annotation in annotations:
+                    ax.annotate(
+                        annotation[2],
+                        (annotation[0], annotation[1]),
+                        va="center",
+                        fontsize=self._mpl_defaults.tick_label_size,
+                    )
+
+        emp._add_eigenvalues = MethodType(_add_eigenvalues, emp)  # faster monkey-patch for eigenvalues
 
     with plt.style.context(style_file):
         plt.rcParams["axes.titlesize"] = 12
@@ -599,7 +604,7 @@ def get_eigenvalue_analysis(
 
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message=".*glyph.*")
-            emp.construct_plot()
+            emp.construct_plot()  # calls ``self._add_eigenvalues()``
 
         partial = False
         for axes in emp.axs:

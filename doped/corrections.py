@@ -501,12 +501,11 @@ def get_kumagai_correction(
                 coord = calc_results.structure[d].frac_coords
                 rel_coords.append([x - y for x, y in zip(coord, defect_coords, strict=False)])
 
-        lattice = calc_results.structure.lattice
         ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
         if defect_region_radius is None:
-            defect_region_radius = get_wigner_seitz_radius(lattice.matrix)
+            defect_region_radius = get_wigner_seitz_radius(lattice)
 
         for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:
