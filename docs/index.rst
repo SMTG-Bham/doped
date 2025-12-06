@@ -141,6 +141,7 @@ Studies using ``doped``, so far
 - R\. Chinnappan **First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN** `Physica Scripta <https://doi.org/10.1088/1402-4896/adca71>`__ 2025
 - R\. Desai et al. **Exploring the Defect Landscape and Dopability of Chalcogenide Perovskite BaZrS₃** `Journal of Physical Chemistry C <https://doi.org/10.1021/acs.jpcc.5c01597>`__ 2025
 - C\. Kaewmeechai, J. Strand & A. Shluger **Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga₂O₃** `Physica Status Solidi B <https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652>`__ 2025
+- Y\. Gong Wang et al. **Influence of Vanadium and Chromium Doping on the Thermoelectric Performance of AgSbTe₂** `Physica Scripta <https://doi.org/10.1088/1402-4896/ae26ec>`__ 2025
 - W\. Gierlotka et al. **Thermodynamics of point defects in the AlSb phase and its influence on phase equilibrium** `Computational Materials Science <https://doi.org/10.1016/j.commatsci.2025.113934>`__ 2025
 - M\. Biswas et al. **Unified Graph-based Interatomic Potential for Perovskite Structure Optimization** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-g9sb9>`__ 2025
 - X\. Wang et al. **Sulfur vacancies limit the open-circuit voltage of Sb₂S₃ solar cells** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.4c02722>`__ 2024
@@ -173,12 +174,7 @@ Studies using ``doped``, so far
 - S\. R. Kavanagh, D. O. Scanlon, A. Walsh **Rapid Recombination by Cadmium Vacancies in CdTe** `ACS Energy Letters <https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380>`__ 2021
 - C\. J. Krajewska et al. **Enhanced visible light absorption in layered Cs₃Bi₂Br₉ through mixed-valence Sn(II)/Sn(IV) doping** `Chemical Science <https://doi.org/10.1039/D1SC03775G>`__ 2021
 
-.. Kanta
 .. Oba book
-.. BiOI
-.. Kumagai collab paper
-.. Sykes Magnetic oxide polarons
-.. Kat YTOS
 
 Open Science and Reproducibility
 ================================

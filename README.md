@@ -112,6 +112,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - R. Chinnappan **_First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN_** [_Physica Scripta_](https://doi.org/10.1088/1402-4896/adca71) 2025
 - R. Desai et al. **_Exploring the Defect Landscape and Dopability of Chalcogenide Perovskite BaZrS<sub>3</sub>_** [_Journal of Physical Chemistry C_](https://doi.org/10.1021/acs.jpcc.5c01597) 2025
 - C. Kaewmeechai, J. Strand & A. Shluger **_Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga<sub>2</sub>O<sub>3</sub>_** [_Physica Status Solidi B_](https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652) 2025 <!-- though didn't cite properly SnB or doped code papers... -->
+- Y. Gong Wang et al. **_Influence of Vanadium and Chromium Doping on the Thermoelectric Performance of AgSbTe<sub>2</sub>_** [_Physica Scripta_](https://doi.org/10.1088/1402-4896/ae26ec) 2025
 - W. Gierlotka et al. **_Thermodynamics of point defects in the AlSb phase and its influence on phase equilibrium_** [_Computational Materials Science_](https://doi.org/10.1016/j.commatsci.2025.113934) 2025 <!-- didn't cite SnB code paper... -->
 - M. Biswas et al. **_Unified Graph-based Interatomic Potential for Perovskite Structure Optimization_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-g9sb9) 2025
 - X. Wang et al. **_Sulfur Vacancies Limit the Open-circuit Voltage of Sb<sub>2</sub>S<sub>3</sub> Solar Cells_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.4c02722) 2024
