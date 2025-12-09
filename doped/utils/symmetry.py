@@ -2267,9 +2267,7 @@ def get_conv_cell_site(defect_entry: DefectEntry) -> PeriodicSite | None:
     return conv_cell_site
 
 
-def swap_axes(
-    structure: Structure, axes: list[int] | tuple[int, ...], swap_cols: bool = False
-) -> Structure:
+def swap_axes(structure: Structure, axes: list[int] | tuple[int, ...]) -> Structure:
     """
     Swap axes of the given structure.
 
@@ -2279,10 +2277,7 @@ def swap_axes(
     transformation_matrix = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
 
     for i, axis in enumerate(axes):
-        if swap_cols:
-            transformation_matrix[axis][i] = 1
-        else:
-            transformation_matrix[i][axis] = 1
+        transformation_matrix[i][axis] = 1
 
     transformation = SupercellTransformation(transformation_matrix)
 

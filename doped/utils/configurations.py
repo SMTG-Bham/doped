@@ -18,7 +18,7 @@ from doped.utils.symmetry import are_equivalent_lattices
 def orient_s2_like_s1(
     struct1: Structure,
     struct2: Structure,
-    struct1_lattice: bool | None = None,
+    new_lattice: str | None = None,
     verbose: bool = False,
     **sm_kwargs,
 ):
@@ -50,14 +50,16 @@ def orient_s2_like_s1(
     Args:
         struct1 (Structure): Initial structure.
         struct2 (Structure): Final structure.
-        struct1_lattice (Structure):
-            If ``True``, then the lattice of ``struct1`` is used for the
-            re-oriented structure, otherwise the output lattice of
-            ``StructureMatcher.get_s2_like_s1`` (a symmetry-equivalent version
-            of ``struct2.lattice``) is used. Default is ``None``, where
-            ``struct1_lattice`` is set to ``True`` if ``struct1`` and
-            ``struct2`` have equivalent lattices (expected to be the case for
-            defect NEBs/CC diagrams), and ``False`` otherwise.
+        new_lattice (str | None):
+            If ``"struct1"``, then the lattice of ``struct1`` is used for the
+            re-oriented structure, if ``"struct2"``, then the lattice of
+            ``struct2`` is used, or if ``"s2_like_s1"``, then the output
+            lattice of ``StructureMatcher.get_s2_like_s1`` (a
+            symmetry-equivalent version of ``struct2.lattice``) is used.
+            Default is ``None``, where ``new_lattice`` is set to ``"struct1"``
+            if ``struct1`` and ``struct2`` have equivalent lattices (expected
+            to be the case for defect NEBs/CC diagrams), and ``"s2_like_s1"``
+            otherwise.
         verbose (bool):
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
@@ -78,15 +80,15 @@ def orient_s2_like_s1(
             "This is usually not desirable for defect NEBs/CC diagrams, but may be the case for e.g. "
             "NEBs between polymorphs. "
         )
-        if struct1_lattice is None:
+        if new_lattice is None:
             warnings.warn(
                 "Note that the lattice definitions may differ between the output structure and "
                 "``struct1``. See the NEB/CC diagram tutorial for details."
             )
-            struct1_lattice = False
+            new_lattice = "s2_like_s1"
 
-    elif struct1_lattice is None:
-        struct1_lattice = True
+    elif new_lattice is None:
+        new_lattice = "struct1"
 
     if sm_kwargs.get("primitive_cell", False):
         raise ValueError(
@@ -107,7 +109,21 @@ def orient_s2_like_s1(
             f"and lattices:\nstruct1: {struct1.lattice}\nstruct2: {struct2.lattice}"
         )
 
-    lattice = struct1.lattice if struct1_lattice else struct2_like_struct1.lattice
+    lattice = (
+        struct1.lattice
+        if new_lattice == "struct1"
+        else (
+            struct2_like_struct1.lattice
+            if new_lattice == "s2_like_s1"
+            else struct2.lattice if new_lattice == "struct2" else None
+        )
+    )
+    if lattice is None:
+        raise ValueError(
+            f"Invalid value for ``new_lattice``: {new_lattice}. Must be one of ``'struct1'``, "
+            f"``'struct2'``, or ``'s2_like_s1'``."
+        )
+
     struct2_really_like_struct1 = Structure.from_sites(
         [  # sometimes this get_s2_like_s1 doesn't fully work as desired, giving different (but equivalent)
             PeriodicSite(  # lattice vectors (e.g. a=(010) instead of (100) etc.), so we redefine with the
@@ -123,23 +139,10 @@ def orient_s2_like_s1(
 
     # we see that this rearranges the structure so the atom indices should now match correctly. This should
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
-    def _get_dQ(struct_a: Structure, struct_b: Structure) -> float:
-        try:
-            return np.sqrt(
-                sum(
-                    (a.distance(b) ** 2) * a.specie.atomic_mass
-                    for a, b in zip(struct_a, struct_b, strict=False)
-                )
-            )  # TODO: Make this a public function, with option to reorient if not matching?
-            # Should then match output of when using get_linear_assignment_solution or
-            # get_site_mapping_indices (TODO: use in tests)
-        except Exception:
-            return np.inf  # if the structures are not matching, return inf
-
-    delQ_s1_s2 = _get_dQ(struct1, struct2)
-    delQ_s1_s2_like_s1_pmg = _get_dQ(struct1, struct2_like_struct1)
-    delQ_s2_like_s1_s2 = _get_dQ(struct2_really_like_struct1, struct2)
-    delQ_s1_s2_like_s1 = _get_dQ(struct1, struct2_really_like_struct1)
+    delQ_s1_s2 = get_dQ(struct1, struct2)
+    delQ_s1_s2_like_s1_pmg = get_dQ(struct1, struct2_like_struct1)
+    delQ_s2_like_s1_s2 = get_dQ(struct2_really_like_struct1, struct2)
+    delQ_s1_s2_like_s1 = get_dQ(struct1, struct2_really_like_struct1)
 
     if (
         not sm_kwargs.get("allow_subset")
@@ -167,6 +170,34 @@ def orient_s2_like_s1(
 
 
 get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
+
+
+def get_dQ(struct_a: Structure, struct_b: Structure) -> float:
+    """
+    Get the mass-weighted displacement (ΔQ in amu^(1/2)Å) between two
+    structures, assuming matched atomic indices.
+
+    Args:
+        struct_a (Structure): Initial structure.
+        struct_b (Structure): Final structure.
+
+    Returns:
+        float:
+            The mass-weighted displacement (ΔQ in amu^(1/2)Å) between the two
+            structures, assuming matched atomic indices. Returns ``np.inf`` if
+            the structures are not matching.
+    """
+    try:
+        return np.sqrt(
+            sum(
+                (a.distance(b) ** 2) * a.specie.atomic_mass
+                for a, b in zip(struct_a, struct_b, strict=False)
+            )
+        )  # TODO: Make this a public function, with option to reorient if not matching?
+        # Should then match output of when using get_linear_assignment_solution or
+        # get_site_mapping_indices (TODO: use in tests)
+    except Exception:
+        return np.inf  # if the structures are not matching, return inf
 
 
 def get_path_structures(
