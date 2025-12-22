@@ -493,7 +493,6 @@ class DefectDictSet(DopedDictSet):
         charge state.
         """
         neutral_nelect = super().nelect
-        print("NEUTRAL NELECT::::", neutral_nelect)
         return neutral_nelect - self.charge_state
 
     def _check_user_potcars(self, poscar: bool = False, snb: bool = False) -> bool:

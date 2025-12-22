@@ -77,12 +77,9 @@ def band_edge_properties_from_vasprun(
         ``BandEdgeProperties`` object.
     """
     is_ncl = vasprun.parameters.get("LNONCOLLINEAR", False)
-    eigenvalues = eigenvalues_from_vasprun(vasprun)
-    nelect = get_nelect_from_vasprun(vasprun)
-
     band_edge_prop = BandEdgeProperties(
-        eigenvalues=eigenvalues,
-        nelect=nelect,
+        eigenvalues=eigenvalues_from_vasprun(vasprun),
+        nelect=get_nelect_from_vasprun(vasprun),
         magnetization=0 if is_ncl else get_magnetization_from_vasprun(vasprun),  # only needed for ISPIN=2
         kpoint_coords=vasprun.actual_kpoints,
         integer_criterion=integer_criterion,

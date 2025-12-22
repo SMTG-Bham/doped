@@ -1187,7 +1187,6 @@ class DefectThermodynamics(MSONable):
                 [0, 1, -1 * limits[1][1]],
             ]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
-
             interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
