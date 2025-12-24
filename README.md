@@ -81,8 +81,10 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
-- R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-h3gsc)
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
+- R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-h3gsc)
+- T. Oikawa et al. **_Semi-automated estimation of hydrogenic initial states for localized Wannier functions_** [_arXiv_](https://arxiv.org/abs/2512.19900) 2025
+- J. Zhou et al. **_Breaking the 800 mV open-circuit voltage barrier in antimony sulfide photovoltaics_** [_arXiv_](https://doi.org/10.48550/arXiv.2512.18100) 2025
 - K. Talit et al. **_Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO<sub>3</sub>_** [_Physical Review Materials_](https://doi.org/10.1103/hww6-snlj) 2025
 - I. Mosquera-Lois and A. Walsh **_Dynamic Vacancy Levels in CsPbCl<sub>3</sub> Obey Equilibrium Defect Thermodynamics_** [_PRX Energy_](https://doi.org/10.1103/dxmb-8s96) 2025
 - B. I. J. Johnston et al. **_Enhanced cycling stability of LiNiO<sub>2</sub> cathodes through a Mg/W dual-cation modification strategy_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D5TA05316A) 2025
