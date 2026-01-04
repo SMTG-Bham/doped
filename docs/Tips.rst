@@ -275,8 +275,7 @@ In these cases, defects can be generated using a similar workflow as for 3D mate
 host system to |DefectsGenerator| should be a slab structure with a converged
 vacuum size. ``doped`` will automatically generate all symmetry-inequivalent defects in this slab, and
 relevant properties such as distance to surface can be readily calculated through the site information and
-``pymatgen`` |Structure|s stored with the ``doped`` 
-|DefectEntry| / |Defect| objects.
+``pymatgen`` |Structure|\s stored with the ``doped`` |DefectEntry| / |Defect| objects.
 The calculation inputs can then be generated as before, along with ``ShakeNBreak`` distortions
 (recommended), and then parsed with ``doped``'s |DefectsParser| class similar to 3D
 materials.
