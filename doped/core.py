@@ -1403,9 +1403,11 @@ class DefectEntry(thermo.DefectEntry):
             degeneracy_factor = (
                 np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
             )
-            # set minimum per-site concentration for numerical stability; 1e-50 roughly corresponds to one
-            # defect in an Earth volume (~10^27 cm^3, with ~10^23 sites per cm^3 ~> 10^50 sites per Earth)
-            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-50)
+            # set minimum per-site concentration for numerical stability; 1e-100 roughly corresponds to one
+            # 1e-50 defects per Earth volume (~10^27 cm^3); ~10^23 sites per cm^3 ~> 10^50 sites per Earth
+            # setting to 1e-50 can cause some oddities with the site competition routine (doesn't affect
+            # main results as it only affects low concentration defects though)
+            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-100)
             if site_competition:
                 per_site_concentration /= 1 + per_site_concentration
             elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
