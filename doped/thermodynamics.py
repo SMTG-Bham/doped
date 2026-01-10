@@ -950,37 +950,41 @@ class DefectThermodynamics(MSONable):
         Returns:
             ``DefectThermodynamics`` object
         """
-        warnings.filterwarnings(
-            "ignore", "Use of properties is"
-        )  # `message` only needs to match start of message
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", "Use of properties is"
+            )  # `message` only needs to match start of message
 
-        def _get_defect_entry(entry_dict):
-            if isinstance(entry_dict, DefectEntry):
-                return entry_dict
-            return DefectEntry.from_dict(entry_dict)
+            def _get_defect_entry(entry_dict):
+                if isinstance(entry_dict, DefectEntry):
+                    return entry_dict
+                return DefectEntry.from_dict(entry_dict)
 
-        if isinstance(d.get("defect_entries"), list):
-            d["defect_entries"] = [_get_defect_entry(entry_dict) for entry_dict in d.get("defect_entries")]
-        else:
-            d["defect_entries"] = {
-                name: _get_defect_entry(entry_dict) for name, entry_dict in d.get("defect_entries").items()
-            }
+            if isinstance(d.get("defect_entries"), list):
+                d["defect_entries"] = [
+                    _get_defect_entry(entry_dict) for entry_dict in d.get("defect_entries")
+                ]
+            else:
+                d["defect_entries"] = {
+                    name: _get_defect_entry(entry_dict)
+                    for name, entry_dict in d.get("defect_entries").items()
+                }
 
-        return cls(
-            defect_entries=d.get("defect_entries"),
-            chempots=d.get("chempots"),
-            el_refs=d.get("el_refs"),
-            vbm=d.get("vbm"),
-            band_gap=d.get("band_gap"),
-            dist_tol=d.get("dist_tol", 1.5),
-            check_compatibility=d.get("check_compatibility", True),
-            bulk_dos=(
-                FermiDos.from_dict(d["bulk_dos"])
-                if isinstance(d.get("bulk_dos"), dict)
-                else d.get("bulk_dos")
-            ),
-            skip_dos_check=d.get("skip_dos_check", False),
-        )
+            return cls(
+                defect_entries=d.get("defect_entries"),
+                chempots=d.get("chempots"),
+                el_refs=d.get("el_refs"),
+                vbm=d.get("vbm"),
+                band_gap=d.get("band_gap"),
+                dist_tol=d.get("dist_tol", 1.5),
+                check_compatibility=d.get("check_compatibility", True),
+                bulk_dos=(
+                    FermiDos.from_dict(d["bulk_dos"])
+                    if isinstance(d.get("bulk_dos"), dict)
+                    else d.get("bulk_dos")
+                ),
+                skip_dos_check=d.get("skip_dos_check", False),
+            )
 
     def to_json(self, filename: PathLike | None = None):
         """
@@ -4899,10 +4903,13 @@ class FermiSolver(MSONable):
             warnings.warn(
                 f"The detected volume ratio ({ms:.3f}) between the defect supercells and the DOS "
                 f"calculation cell is non-integer, indicating that they correspond to (slightly) "
-                f"different unit cell volumes. This can cause quantitative errors of a similar "
-                f"relative magnitude in the predicted defect/carrier concentrations!"
+                f"different unit cell volumes, or that the DOS calculation was not performed in the "
+                f"primitive unit cell. The former can cause quantitative errors of a similar relative "
+                f"magnitude in the predicted defect/carrier concentrations!"
             )
-        self.multiplicity_scaling = round(ms)
+        else:
+            ms = round(ms)
+        self.multiplicity_scaling = ms
 
     def _check_required_backend_and_error(self, required_backend: str):
         """
