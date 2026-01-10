@@ -4866,10 +4866,11 @@ class FermiSolver(MSONable):
             )
 
     def _activate_py_sc_fermi_backend(self, error_message: str | None = None):
+        orig_showwarning = warnings.showwarning
         try:
             from py_sc_fermi.defect_charge_state import DefectChargeState
             from py_sc_fermi.defect_species import DefectSpecies
-            from py_sc_fermi.defect_system import DefectSystem
+            from py_sc_fermi.defect_system import DefectSystem  # warning suppression with this import
             from py_sc_fermi.dos import DOS
         except ImportError as exc:  # py-sc-fermi activation attempted but not installed
             finishing_message = (
@@ -4882,6 +4883,8 @@ class FermiSolver(MSONable):
                 else "The py-sc-fermi backend was attempted to be activated" + finishing_message
             )
             raise ImportError(message) from exc
+        finally:  # avoid py-sc-fermi warning suppression; github.com/bjmorgan/py-sc-fermi/issues/50
+            warnings.showwarning = orig_showwarning
 
         self._DefectSystem = DefectSystem
         self._DefectSpecies = DefectSpecies
