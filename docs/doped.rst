@@ -22,6 +22,7 @@ Submodules
    doped.core
    doped.corrections
    doped.generation
+   doped.gpaw
    doped.thermodynamics
    doped.utils
    doped.vasp
