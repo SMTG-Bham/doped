@@ -149,49 +149,61 @@ print(f"Final Energy: {{atoms.get_potential_energy()}} eV")
 """
         return script
 
-def get_gpaw_site_potentials(gpw_file: str) -> np.ndarray:
+def _get_site_potentials_from_calc(calc) -> np.ndarray:
     """
-    Extracts atomic site potentials from a GPAW .gpw file.
-    In GPAW, we can get the electrostatic potential on a grid and then
-    average it at atomic positions.
+    Helper to extract site potentials from a GPAW calculator.
     """
-    from gpaw import GPAW
-    calc = GPAW(gpw_file)
     atoms = calc.get_atoms()
-    
-    # Get electrostatic potential on grid
     v_ext = calc.get_electrostatic_potential()
-    
-    # Grid info
     gd = calc.hamiltonian.finegd
     
     site_potentials = []
     for atom in atoms:
-        # Get position in grid coordinates
         indices = gd.get_nearest_grid_point(atom.position)
         val = v_ext[tuple(indices % gd.N_c)]
         site_potentials.append(val)
         
     return np.array(site_potentials)
 
-def get_gpaw_planar_averaged_potential(gpw_file: str) -> Dict[str, np.ndarray]:
+def _get_planar_averaged_potential_from_calc(calc) -> Dict[str, np.ndarray]:
     """
-    Extracts planar-averaged potential from a GPAW .gpw file.
-    Needed for Freysoldt (FNV) correction.
+    Helper to extract planar-averaged potentials from a GPAW calculator.
     """
-    from gpaw import GPAW
-    calc = GPAW(gpw_file)
     v_ext = calc.get_electrostatic_potential()
-    
-    # Grid info
-    gd = calc.hamiltonian.finegd
-    
     planar_averages = {}
     for i in range(3):
-        # Average over the other two dimensions
         axes = [0, 1, 2]
         axes.remove(i)
         planar_averages[str(i)] = v_ext.mean(axis=tuple(axes))
+        
+    return planar_averages
+
+def get_gpaw_site_potentials(gpw_file: str) -> np.ndarray:
+    """
+    Extracts atomic site potentials from a GPAW .gpw file.
+    """
+    from gpaw import GPAW
+    calc = GPAW(gpw_file)
+    site_potentials = _get_site_potentials_from_calc(calc)
+    
+    if hasattr(calc, "close"):
+        calc.close()
+    
+    if hasattr(calc, "atoms") and calc.atoms:
+        calc.atoms.calc = None
+        
+    return site_potentials
+
+def get_gpaw_planar_averaged_potential(gpw_file: str) -> Dict[str, np.ndarray]:
+    """
+    Extracts planar-averaged potential from a GPAW .gpw file.
+    """
+    from gpaw import GPAW
+    calc = GPAW(gpw_file)
+    planar_averages = _get_planar_averaged_potential_from_calc(calc)
+    
+    if hasattr(calc, "close"):
+        calc.close()
         
     return planar_averages
 
@@ -227,13 +239,13 @@ class GPAWParser:
         """
         Returns atomic site potentials.
         """
-        return get_gpaw_site_potentials(self.gpw_file)
+        return _get_site_potentials_from_calc(self.calc)
 
     def get_locpot_dict(self) -> Dict[str, np.ndarray]:
         """
         Returns planar-averaged potential dictionary.
         """
-        return get_gpaw_planar_averaged_potential(self.gpw_file)
+        return _get_planar_averaged_potential_from_calc(self.calc)
 
     def get_eigenvalue_properties(self) -> tuple:
         """
@@ -256,18 +268,37 @@ class GPAWParser:
         
         return band_gap, cbm, vbm, efermi
 
+    def close(self):
+        """
+        Closes the underlying GPAW calculator.
+        """
+        if hasattr(self.calc, "close"):
+            self.calc.close()
+        
+        # Break reference cycle
+        if self.atoms:
+            self.atoms.calc = None
+        self.calc = None
+        self.atoms = None
+
+
 def get_gpaw_defect_entry(
     defect_path: str, 
     bulk_path: str, 
     dielectric: Optional[Union[float, np.ndarray]] = None,
-    charge_state: int = 0
+    charge_state: int = 0,
+    bulk_parser: Optional[GPAWParser] = None,
 ) -> DefectEntry:
     """
     Convenience function to create a DefectEntry from GPAW directories.
     Assumes 'relaxed.gpw' exists in both directories.
     """
     defect_parser = GPAWParser(os.path.join(defect_path, "relaxed.gpw"))
-    bulk_parser = GPAWParser(os.path.join(bulk_path, "relaxed.gpw"))
+    
+    close_bulk = False
+    if bulk_parser is None:
+        bulk_parser = GPAWParser(os.path.join(bulk_path, "relaxed.gpw"))
+        close_bulk = True
 
     # Identify defect
     defect = defect_from_structures(bulk_parser.structure, defect_parser.structure)
@@ -298,6 +329,10 @@ def get_gpaw_defect_entry(
             "efermi": efermi,
         }
     )
+
+    defect_parser.close()
+    if close_bulk:
+        bulk_parser.close()
 
     return defect_entry
 
@@ -343,6 +378,9 @@ class GPAWDefectsParser:
         # Exclude bulk folder
         defect_folders = [f for f in folders if os.path.abspath(os.path.join(self.output_path, f)) != os.path.abspath(self.bulk_path)]
         
+        # Instantiate bulk parser once
+        bulk_parser = GPAWParser(os.path.join(self.bulk_path, "relaxed.gpw"))
+        
         for folder in defect_folders:
             defect_dir = os.path.join(self.output_path, folder)
             if self.subfolder:
@@ -367,7 +405,8 @@ class GPAWDefectsParser:
                     defect_dir, 
                     self.bulk_path, 
                     dielectric=self.dielectric, 
-                    charge_state=charge_state
+                    charge_state=charge_state,
+                    bulk_parser=bulk_parser,
                 )
                 
                 # Apply Kumagai correction if possible
@@ -380,5 +419,7 @@ class GPAWDefectsParser:
                 defect_dict[defect_entry.name] = defect_entry
             except Exception as e:
                 print(f"Failed to parse {folder}: {e}")
+        
+        bulk_parser.close()
                 
         return defect_dict

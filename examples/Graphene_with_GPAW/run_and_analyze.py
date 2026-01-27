@@ -21,6 +21,11 @@ def run_calculation(folder):
         print(f"  relaxed.gpw exists, skipping calculation.")
         return
 
+    # Check if failed/non-conserving (gpaw_output.txt exists but relaxed.gpw doesn't)
+    if os.path.exists(os.path.join(folder, "gpaw_output.txt")):
+        print(f"  gpaw_output.txt exists but relaxed.gpw does not. Skipping likely non-conserving/failed calculation.")
+        return
+
     if not os.path.exists(relax_script):
         print(f"  relax.py not found in {folder}, skipping.")
         return
@@ -95,3 +100,5 @@ except Exception as e:
     traceback.print_exc()
 
 print("\nFull Automation Test Complete.")
+
+
