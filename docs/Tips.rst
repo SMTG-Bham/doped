@@ -372,7 +372,7 @@ This weak attraction of the electron/hole to the defect site corresponds to a re
 donor/acceptor binding energy (i.e. energetic separation of the corresponding charge transition level to
 the nearby band edge), which is typically <100 meV.
 
-As discussed in this `Guidelines for Defect Simulations <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+As discussed in this `Guidelines for Defect Simulations <https://doi.org/10.1038/s41578-025-00879-y>`__
 perspective, current supercell correction schemes cannot accurately account for finite-size errors obtained
 when calculating the energies of PHS (shallow defect states) in moderate supercells, so it is recommended
 to denote such shallow defects as PHS and conclude only `qualitatively` that their transition level is

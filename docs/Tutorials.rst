@@ -14,7 +14,7 @@ Literature
 - **General Defect Modelling Tutorial Video**: `Modelling Point Defects in Semiconductors with VASP <https://www.youtube.com/watch?v=FWz7nm9qoNg&ab_channel=Se%C3%A1nR.Kavanagh>`__
     - **B站 (Bilibili), 有中文字幕**: `使用VASP理解与计算半导体中的缺陷 <https://www.bilibili.com/list/6073855/?sid=4603908&oid=113988666990435&bvid=BV1V5KVeYEMn>`__
 - **ShakeNBreak Documentation**: |ShakeNBreakDocs|
-- **Guidelines for Defect Simulations**: A\. G. Squires et al. `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__ **2025**
+- **Guidelines for Defect Simulations**: A\. G. Squires et al. |Guidelines Perspective| `Nature Reviews Materials` **2026**
 
 See the :ref:`Literature` section on the main page for further recommended literature on defect 
 simulations.

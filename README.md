@@ -65,13 +65,12 @@ If you use `doped` in your research, please cite:
 ## Literature
 The following literature contain useful discussions of various aspects of defect calculations:
 - [Quick-Start Guide on Defect Calculations – Kim et al.](https://doi.org/10.1088/2515-7655/aba081)
-- [Guidelines for Defect Simulations – Squires et al.](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
+- [Guidelines for Defect Simulations – Squires et al.](https://doi.org/10.1038/s41578-025-00879-y)
 - [Large Review on Defect Calculations – Freysoldt et al.](https://doi.org/10.1103/RevModPhys.86.253)
 - [Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai](https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams)
 - [Defect Structure Searching – Mosquera-Lois et al.](https://doi.org/10.1038/s41524-023-00973-1)
 - [Free Energies of Defects – Mosquera-Lois et al.](https://doi.org/10.1039/D3CS00432E)
 - [DeepWiki Code Overview & Workflow](https://deepwiki.com/SMTG-Bham/doped)
-<!--- TODO: Update Guidelines perspective link when published (and in issue template, throughout) --->
 
 ## `ShakeNBreak`
 As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://doi.org/10.1038/s41524-023-00973-1), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped defect generation tutorial](https://doped.readthedocs.io/en/latest/generation_tutorial.html), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
@@ -80,9 +79,9 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
 - A. Abudulimu et al. **_Radiative Defects in Chloride-Activated CdSe Thin Films_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.5c03191) 2026  <!-- SI cite though unfortunately, likely also used SnB -->
 - H. Ma, J. E. McLeod and C. Stampfl **_Toward tunable carrier polarity in monolayer ZrS<sub>2</sub>: A hybrid functional study of intrinsic and extrinsic defects_** [_Physical Review B_](https://doi.org/10.1103/spjk-wj13) 2026
-- A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
 - R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-h3gsc)
 - T. Oikawa et al. **_Semi-automated estimation of hydrogenic initial states for localized Wannier functions_** [_arXiv_](https://arxiv.org/abs/2512.19900) 2025
@@ -153,7 +152,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Open Science and Reproducibility
 Robust, open and reproducible science greatly strengthens the impact of research. This is especially true for
 computational defect modelling, given the many steps and complexities involved -- see
-[_Guidelines for robust and reproducible point defect simulations in crystals_](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
+[_Guidelines for robust and reproducible point defect simulations in crystals_](https://doi.org/10.1038/s41578-025-00879-y)
 for discussion.
 
 `doped` has been built to aid robustness and reproducibility for computational defect studies.

@@ -84,14 +84,13 @@ Literature
 The following literature contain useful discussions of various aspects of defect calculations:
 
 - `Quick-Start Guide on Defect Calculations – Kim et al. <https://doi.org/10.1088/2515-7655/aba081>`__
-- `Guidelines for Defect Simulations – Squires et al. <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+- `Guidelines for Defect Simulations – Squires et al. <https://doi.org/10.1038/s41578-025-00879-y>`__
 - `Large Review on Defect Calculations – Freysoldt et al. <https://doi.org/10.1103/RevModPhys.86.253>`__
 - `Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai <https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams>`__
 - `Defect Structure Searching – Mosquera-Lois et al. <https://doi.org/10.1038/s41524-023-00973-1>`__
 - `Free Energies of Defects – Mosquera-Lois et al. <https://doi.org/10.1039/D3CS00432E>`__
 - |DeepWiki|
 
-.. TODO: Update Guidelines perspective link when published
 
 ``ShakeNBreak``
 ================
@@ -111,7 +110,7 @@ Studies using ``doped``, so far
 
 - A\. Abudulimu et al. **Radiative Defects in Chloride-Activated CdSe Thin Films** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.5c03191>`__ 2026
 - H\. Ma, J. E. McLeod and C. Stampfl **Toward tunable carrier polarity in monolayer ZrS₂: A hybrid functional study of intrinsic and extrinsic defects** `Physical Review B <https://doi.org/10.1103/spjk-wj13>`__ 2026
-- A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__ 2025
+- A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-h3gsc>`__ 2025
 - T\. Oikawa et al. **Semi-automated estimation of hydrogenic initial states for localized Wannier functions** `arXiv <https://arxiv.org/abs/2512.19900>`__ 2025

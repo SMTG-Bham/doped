@@ -147,5 +147,5 @@ rst_prolog = """
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
 .. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
-.. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+.. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
 """
