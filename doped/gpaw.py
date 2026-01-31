@@ -41,13 +41,17 @@ class GPAWDefectRelaxSet:
                     "kpts": {"size": (2, 2, 2), "gamma": True},
                     "txt": "gpaw_output.txt"
                 }
+            **kwargs:
+                Additional keyword arguments.
         """
         self.defect_entry = defect_entry
         self.charge_state = charge_state
         if self.charge_state is None and isinstance(self.defect_entry, DefectEntry):
-             self.charge_state = self.defect_entry.charge_state
+            self.charge_state = self.defect_entry.charge_state
 
         self.gpaw_settings = gpaw_settings or {}
+        self.kwargs = kwargs
+        self.poscar_comment = kwargs.get("poscar_comment", None)
 
         if isinstance(self.defect_entry, Structure):
             self.defect_supercell = self.defect_entry
@@ -65,14 +69,14 @@ class GPAWDefectRelaxSet:
         """
         if make_dir_if_not_present:
             os.makedirs(output_path, exist_ok=True)
-        
+
         # Write structure to a file
         structure_filename = "structure.cif"
         self.defect_supercell.to(filename=os.path.join(output_path, structure_filename), fmt="cif")
-        
+
         # Generate Python script
         script_content = self._generate_script(structure_filename)
-        
+
         with open(os.path.join(output_path, filename), "w") as f:
             f.write(script_content)
 
@@ -80,7 +84,7 @@ class GPAWDefectRelaxSet:
         """
         Generates the content of the GPAW script.
         """
-        
+
         settings = self.gpaw_settings.copy()
 
         # Extract known parameters
@@ -89,13 +93,13 @@ class GPAWDefectRelaxSet:
         kpts = settings.pop("kpts", {"size": (1, 1, 1), "gamma": True})
         txt = settings.pop("txt", "gpaw_output.txt")
         convergence = settings.pop("convergence", {})
-        
+
         # Determine charge
         charge = self.charge_state or 0
-        
+
         # Determine spinpol (default True for defects if not specified)
         spinpol = settings.pop("spinpol", True)
-        
+
         # Relaxation params
         fmax = settings.pop("fmax", 0.05)
 
@@ -106,7 +110,7 @@ class GPAWDefectRelaxSet:
             mode_str = f"{name.upper()}({args})"
         else:
             mode_str = repr(mode_params)
-            
+
         # Prepare other settings
         other_kwargs = ""
         if settings:
@@ -114,7 +118,7 @@ class GPAWDefectRelaxSet:
 
         script = f"""
 from ase.io import read
-from gpaw import GPAW, PW
+from gpaw import GPAW, PW, LCAO, FD
 from ase.optimize import BFGS
 import json
 
