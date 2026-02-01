@@ -50,3 +50,6 @@ examples/MgO/SnB/*/*/*.cmdx
 examples/MgO/SnB/*.sh
 examples/MgO/Bulk_relax/*INCAR
 examples/MgO/Bulk_relax/*KPOINTS
+
+# Cursor files
+.cursor/

@@ -80,6 +80,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
+- G. Arora et al. **_Development of interatomic potential and effect of ordering on defect properties in CrMnV_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0302848) 2025
 - A. Abudulimu et al. **_Radiative Defects in Chloride-Activated CdSe Thin Films_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.5c03191) 2026  <!-- SI cite though unfortunately, likely also used SnB -->
 - H. Ma, J. E. McLeod and C. Stampfl **_Toward tunable carrier polarity in monolayer ZrS<sub>2</sub>: A hybrid functional study of intrinsic and extrinsic defects_** [_Physical Review B_](https://doi.org/10.1103/spjk-wj13) 2026
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025

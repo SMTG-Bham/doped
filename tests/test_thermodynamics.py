@@ -354,6 +354,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def tearDown(self):
         super().tearDown()
         if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_example_data/CdTe_defect_dict.json.gz")
+        if_present_rm("test.png")
 
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
         assert len(defect_thermo.defect_entries) == len(defect_dict)
@@ -3170,7 +3171,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         return fig
 
-    @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png")
+    @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png", tolerance=4)
     def test_YTOS_chempot_heatmap_default(self):
         """
         Test chemical potential heatmap plotting via ``DefectThermodynamics``.

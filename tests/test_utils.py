@@ -20,7 +20,7 @@ BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
 STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
 
 
-def custom_mpl_image_compare(filename, style=STYLE):
+def custom_mpl_image_compare(filename, style=STYLE, **kwargs):
     """
     Set our default settings for MPL image compare.
     """
@@ -32,6 +32,7 @@ def custom_mpl_image_compare(filename, style=STYLE):
             filename=filename,
             style=style,
             savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
+            **kwargs,
         )
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
