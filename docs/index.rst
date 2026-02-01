@@ -112,6 +112,7 @@ Studies using ``doped``, so far
 - G\. Arora et al. **Development of interatomic potential and effect of ordering on defect properties in CrMnV** `Journal of Applied Physics <https://doi.org/10.1063/5.0302848>`__ 2025
 - A\. Abudulimu et al. **Radiative Defects in Chloride-Activated CdSe Thin Films** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.5c03191>`__ 2026
 - H\. Ma, J. E. McLeod and C. Stampfl **Toward tunable carrier polarity in monolayer ZrS₂: A hybrid functional study of intrinsic and extrinsic defects** `Physical Review B <https://doi.org/10.1103/spjk-wj13>`__ 2026
+- E\. I. Jaffal et al. **Investigating mechanical properties through defect chemistry in hard binary phosphide material Ta₃P** `Solid State Communications <https://doi.org/10.1016/j.ssc.2025.116250>`__ 2026
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-h3gsc>`__ 2025
 - T\. Oikawa et al. **Semi-automated estimation of hydrogenic initial states for localized Wannier functions** `arXiv <https://arxiv.org/abs/2512.19900>`__ 2025

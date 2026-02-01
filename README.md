@@ -83,6 +83,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - G. Arora et al. **_Development of interatomic potential and effect of ordering on defect properties in CrMnV_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0302848) 2025
 - A. Abudulimu et al. **_Radiative Defects in Chloride-Activated CdSe Thin Films_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.5c03191) 2026  <!-- SI cite though unfortunately, likely also used SnB -->
 - H. Ma, J. E. McLeod and C. Stampfl **_Toward tunable carrier polarity in monolayer ZrS<sub>2</sub>: A hybrid functional study of intrinsic and extrinsic defects_** [_Physical Review B_](https://doi.org/10.1103/spjk-wj13) 2026
+- E. I. Jaffal et al. **_Investigating mechanical properties through defect chemistry in hard binary phosphide material Ta<sub>3</sub>P_** [_Solid State Communications_](https://doi.org/10.1016/j.ssc.2025.116250) 2026
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
 - R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-h3gsc)
 - T. Oikawa et al. **_Semi-automated estimation of hydrogenic initial states for localized Wannier functions_** [_arXiv_](https://arxiv.org/abs/2512.19900) 2025
