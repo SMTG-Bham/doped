@@ -2,14 +2,12 @@
 Tests for the `doped.utils.displacements` module.
 """
 
-import os
-import shutil
 import unittest
 
 import matplotlib as mpl
 import numpy as np
 import pytest
-from test_thermodynamics import custom_mpl_image_compare, data_dir
+from test_utils import STYLE, custom_mpl_image_compare, data_dir
 
 from doped.core import DefectEntry
 from doped.utils.displacements import (
@@ -19,25 +17,10 @@ from doped.utils.displacements import (
 )
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
-module_path = os.path.dirname(os.path.abspath(__file__))
-STYLE = f"{module_path}/../doped/utils/displacement.mplstyle"
-
-
-def if_present_rm(path):
-    """
-    Remove file or directory if it exists.
-    """
-    if os.path.exists(path):
-        if os.path.isfile(path):
-            os.remove(path)
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
 
 
 class DefectDisplacementsTestCase(unittest.TestCase):
     def setUp(self):
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
         self.v_Cd_0_defect_entry = DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
         self.v_Cd_m1_defect_entry = DefectEntry.from_json(f"{data_dir}/v_Cd_m1_defect_entry.json.gz")
         self.F_i_m1_defect_entry = DefectEntry.from_json(f"{data_dir}/YTOS_Int_F_-1_defect_entry.json.gz")

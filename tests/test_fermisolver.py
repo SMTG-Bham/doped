@@ -23,14 +23,8 @@ import pandas as pd
 import pytest
 from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
-from test_thermodynamics import (
-    STYLE,
-    anneal_temperatures,
-    belas_linear_fit,
-    custom_mpl_image_compare,
-    data_dir,
-    reduced_anneal_temperatures,
-)
+from test_thermodynamics import anneal_temperatures, belas_linear_fit, reduced_anneal_temperatures
+from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare, data_dir
 
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -43,8 +37,6 @@ from doped.thermodynamics import (
 from doped.utils.plotting import format_defect_name
 
 py_sc_fermi_available = bool(find_spec("py_sc_fermi"))
-module_path = os.path.dirname(os.path.abspath(__file__))
-EXAMPLE_DIR = os.path.join(module_path, "../examples")
 
 
 class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
@@ -1019,7 +1011,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 el_refs=el_refs,
                 free_defects=["v_Cd"],
             )
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert not w
 
         assert isinstance(concentrations, pd.DataFrame)
@@ -1807,7 +1799,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         with warnings.catch_warnings(record=True) as w:
             solver.optimise(target="cm^-3")
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert (
             "Multiple columns with the name 'cm^-3' found in the results DataFrame! Choosing the first "
             "match"
@@ -1903,7 +1895,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = deepcopy(self.solver_doped if backend == "doped" else self.solver_py_sc_fermi)
         solver.defect_thermodynamics.bulk_dos = os.path.join(
-            module_path, "data/CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
+            data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz"
         )
 
         quenched_fermi_levels = []

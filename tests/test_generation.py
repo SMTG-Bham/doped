@@ -9,7 +9,6 @@ import filecmp
 import gzip
 import os
 import random
-import shutil
 import sys
 import unittest
 import warnings
@@ -28,6 +27,15 @@ from pymatgen.core.structure import Species
 from pymatgen.core.surface import SlabGenerator
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Poscar
+from test_utils import (
+    EXAMPLE_DIR,
+    _compare_attributes,
+    _compare_prim_interstitial_coords,
+    _potcars_available,
+    _print_warning_info,
+    data_dir,
+    if_present_rm,
+)
 
 from doped.core import (
     Defect,
@@ -48,77 +56,6 @@ from doped.utils.symmetry import (
     translate_structure,
 )
 from doped.vasp import DefectsSet
-
-
-def if_present_rm(path):
-    """
-    Remove the file/folder if it exists.
-    """
-    if os.path.exists(path):
-        if os.path.isfile(path):
-            os.remove(path)
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
-
-
-def _potcars_available() -> bool:
-    """
-    Check if the POTCARs are available for the tests (i.e. testing locally).
-    """
-    from doped.vasp import _test_potcar_functional_choice
-
-    try:
-        _test_potcar_functional_choice("PBE")
-        return True
-    except ValueError:
-        return False
-
-
-def _compare_attributes(obj1, obj2, exclude=None):
-    """
-    Check that two objects are equal by comparing their public
-    attributes/properties.
-    """
-    if exclude is None:
-        exclude = set()  # Create an empty set if no exclusions
-
-    for attr in dir(obj1):
-        if attr.startswith("_") or attr in exclude or callable(getattr(obj1, attr)):
-            continue  # Skip private, excluded, and callable attributes
-
-        print(attr)
-        val1 = getattr(obj1, attr)
-        val2 = getattr(obj2, attr)
-
-        if isinstance(val1, np.ndarray):
-            assert np.allclose(val1, val2)
-        elif attr == "prim_interstitial_coords_mult_and_equiv_coords":
-            _compare_prim_interstitial_coords(val1, val2)
-        elif attr == "defects" and any(len(i.defect_structure) == 0 for i in val1["vacancies"]):
-            continue  # StructureMatcher comparison breaks for empty structures, which we can have with
-            # our 1-atom primitive Cu input
-        elif isinstance(val1, list | tuple) and all(isinstance(i, np.ndarray) for i in val1):
-            assert all(
-                np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)
-            ), "List of arrays do not match"
-        else:
-            assert val1 == val2
-
-
-def _compare_prim_interstitial_coords(result, expected):  # check attribute set
-    if result is None:
-        assert expected is None
-        return
-
-    assert len(result) == len(expected), "Lengths do not match"
-
-    for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected, strict=False):
-        assert np.array_equal(r_coord, e_coord), "Coordinates do not match"
-        assert r_num == e_num, "Number of coordinates do not match"
-        assert all(
-            np.array_equal(r, e) for r, e in zip(r_list, e_list, strict=False)
-        ), "List of arrays do not match"
-
 
 default_supercell_gen_kwargs = {
     "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)
@@ -391,10 +328,8 @@ class DefectsGeneratorTest(unittest.TestCase):
         # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
         self.heavy_tests = bool(_potcars_available())
 
-        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
-        self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
-        self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
+        self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
+        self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         sga = SpacegroupAnalyzer(self.prim_cdte)
         self.conv_cdte = sga.get_conventional_standard_structure()
         self.fd_up_sc_entry = ComputedStructureEntry(self.conv_cdte, 420, correction=0.0)  # for testing
@@ -431,7 +366,7 @@ Te_i_Td_Te2.83   [+4,+3,+2,+1,0,-1,-2]  [0.500,0.500,0.500]  4b
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of CdTe.\n"
         )
 
-        self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
+        self.ytos_bulk_supercell = Structure.from_file(f"{EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
         self.ytos_defect_gen_string = (
             "DefectsGenerator for input composition Y2Ti2S2O5, space group I4/mmm with 221 defect "
             "entries created."
@@ -494,7 +429,7 @@ O_i_D4h          [0,-1,-2]              [0.000,0.000,0.500]  2b
             "conventional ('conv.') unit cell, which comprises 2 formula unit(s) of Y2Ti2S2O5.\n"
         )
 
-        self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
+        self.lmno_primitive = Structure.from_file(f"{data_dir}/Li2Mn3NiO8_POSCAR")
         self.lmno_defect_gen_string = (
             "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 167 defect "
             "entries created."
@@ -553,7 +488,7 @@ O_i_D3           [0,-1,-2]          [0.125,0.125,0.125]  4a
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
         )
 
-        self.non_diagonal_ZnS = Structure.from_file(f"{self.data_dir}/non_diagonal_ZnS_supercell_POSCAR")
+        self.non_diagonal_ZnS = Structure.from_file(f"{data_dir}/non_diagonal_ZnS_supercell_POSCAR")
         self.zns_defect_gen_string = (
             "DefectsGenerator for input composition ZnS, space group F-43m with 44 defect entries "
             "created."
@@ -582,7 +517,7 @@ S_i_Td_Zn2.35    [+2,+1,0,-1,-2]    [0.750,0.750,0.750]  4d
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of ZnS.\n"
         )
 
-        self.prim_cu = Structure.from_file(f"{self.data_dir}/Cu_prim_POSCAR")
+        self.prim_cu = Structure.from_file(f"{data_dir}/Cu_prim_POSCAR")
         self.cu_defect_gen_string = (
             "DefectsGenerator for input composition Cu, space group Fm-3m with 9 defect entries created."
         )
@@ -774,7 +709,7 @@ Te_i_Cs_Te2.83Cd3.27Te5.42e   [+4,+3,+2,+1,0,-1,-2]  [0.555,0.111,0.278]  9b
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of Cd28Te27.\n"
         )
 
-        self.N_doped_diamond_supercell = Structure.from_file(f"{self.data_dir}/N_C_diamond_POSCAR")
+        self.N_doped_diamond_supercell = Structure.from_file(f"{data_dir}/N_C_diamond_POSCAR")
 
         self.N_diamond_defect_gen_info = (
             """Vacancies                 Guessed Charges     Conv. Cell Coords    Wyckoff
@@ -899,11 +834,11 @@ N_C_Cs_C1.54N1.54         [+1,0,-1,-2,-3,-4,-5,-6,-7]  [0.055,0.111,0.333]  9b
             "conventional ('conv.') unit cell, which comprises 3 formula unit(s) of C215N.\n"
         )
         self.Ga2O3_R3c_v_Ga_defect_supercell = Structure.from_file(
-            f"{self.data_dir}/Ga2O3_R3c_v_Ga_defect_supercell_POSCAR"
+            f"{data_dir}/Ga2O3_R3c_v_Ga_defect_supercell_POSCAR"
         )
 
-        self.zn3p2 = Structure.from_file(f"{self.data_dir}/Zn3P2_POSCAR")
-        self.sb2se3 = Structure.from_file(f"{self.data_dir}/Sb2Se3_bulk_supercell_POSCAR")
+        self.zn3p2 = Structure.from_file(f"{data_dir}/Zn3P2_POSCAR")
+        self.sb2se3 = Structure.from_file(f"{data_dir}/Sb2Se3_bulk_supercell_POSCAR")
         self.sb2se3_defect_gen_info = (
             """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
 --------------  -----------------  -------------------  ---------
@@ -945,7 +880,7 @@ Se_i_Cs_Se2.38   [+4,+3,+2,+1,0,-1,-2]        [0.293,0.750,0.263]  4c
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
             "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Sb2Se3.\n"
         )
-        self.ag2se = Structure.from_file(f"{self.data_dir}/Ag2Se_POSCAR")
+        self.ag2se = Structure.from_file(f"{data_dir}/Ag2Se_POSCAR")
         self.ag2se_defect_gen_info = (
             """Vacancies       Guessed Charges    Conv. Cell Coords    Wyckoff
 --------------  -----------------  -------------------  ---------
@@ -989,7 +924,7 @@ Se_i_C2_Ag2.48               [0,-1,-2]          [0.091,0.500,0.500]  2b
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in "
             "the conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Ag2Se.\n"
         )
-        self.sb2si2te6 = Structure.from_file(f"{self.data_dir}/Sb2Si2Te6_POSCAR")
+        self.sb2si2te6 = Structure.from_file(f"{data_dir}/Sb2Si2Te6_POSCAR")
 
         self.sb2si2te6_defect_gen_info = (
             """Vacancies    Guessed Charges    Conv. Cell Coords    Wyckoff
@@ -1033,16 +968,16 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             "SiSbTe3.\n"
         )
 
-        self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
-        self.liga5o8 = Structure.from_file(f"{self.data_dir}/LiGa5O8_CONTCAR")
-        self.conv_si = Structure.from_file(f"{self.data_dir}/Si_MP_conv_POSCAR")
-        self.cspbcl3_supercell = Structure.from_file(f"{self.data_dir}/CsPbCl3_supercell_POSCAR")
-        self.se_supercell = Structure.from_file(f"{self.data_dir}/Se_supercell_POSCAR")
-        self.sn5o6 = Structure.from_file(f"{self.data_dir}/Sn5O6_POSCAR")
-        self.navcdo4_supercell = Structure.from_file(f"{self.data_dir}/NaVCdO4_supercell_POSCAR")
+        self.sqs_agsbte2 = Structure.from_file(f"{data_dir}/AgSbTe2_SQS_POSCAR")
+        self.liga5o8 = Structure.from_file(f"{data_dir}/LiGa5O8_CONTCAR")
+        self.conv_si = Structure.from_file(f"{data_dir}/Si_MP_conv_POSCAR")
+        self.cspbcl3_supercell = Structure.from_file(f"{data_dir}/CsPbCl3_supercell_POSCAR")
+        self.se_supercell = Structure.from_file(f"{data_dir}/Se_supercell_POSCAR")
+        self.sn5o6 = Structure.from_file(f"{data_dir}/Sn5O6_POSCAR")
+        self.navcdo4_supercell = Structure.from_file(f"{data_dir}/NaVCdO4_supercell_POSCAR")
         # load CoH12(BrO3)2-mp-510271 from JSON to keep the MAGMOM info, which is what makes spglib
         # symmetry determination tricky:
-        self.coh12_bro3_2 = loadfn(f"{self.data_dir}/CoH12(BrO3)2-mp-510271_Structure.json")
+        self.coh12_bro3_2 = loadfn(f"{data_dir}/CoH12(BrO3)2-mp-510271_Structure.json")
 
     def _save_defect_gen_jsons(self, defect_gen, heavy=False):
         defect_gen.to_json()  # test default
@@ -1261,7 +1196,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
             sys.stdout = original_stdout  # Reset standard output to its original value.
 
         if w:
-            print([str(warning.message) for warning in w])  # for debugging
+            _print_warning_info(w)
         print(output)  # for debugging
 
         if return_warnings:
@@ -2259,7 +2194,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         self.CdTe_defect_gen_check(CdTe_defect_gen)
         self._load_and_test_defect_gen_jsons(CdTe_defect_gen)
 
-        CdTe_defect_gen.to_json(f"{self.data_dir}/CdTe_defect_gen.json")  # for testing in test_vasp.py
+        CdTe_defect_gen.to_json(f"{data_dir}/CdTe_defect_gen.json")  # for testing in test_vasp.py
 
         # test get_defect_name_from_entry relaxed/unrelaxed warnings:
         with warnings.catch_warnings(record=True) as w:
@@ -2569,7 +2504,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                     get_defect_name_from_entry(defect_entry),
                 )
         if w:
-            print([str(warning.message) for warning in w])  # for debugging
+            _print_warning_info(w)
         # assert len(w) == 1  # printed each time
         assert all(
             "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has detected "
@@ -2580,9 +2515,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # save reduced defect gen to json
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
 
-        reduced_ytos_defect_gen.to_json(
-            f"{self.data_dir}/ytos_defect_gen.json"
-        )  # for testing in test_vasp.py
+        reduced_ytos_defect_gen.to_json(f"{data_dir}/ytos_defect_gen.json")  # for testing in test_vasp.py
 
     def test_ytos_no_generate_supercell(self):
         if not self.heavy_tests:  # skip one of the YTOS tests if on GH Actions
@@ -2603,7 +2536,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
 
         reduced_ytos_defect_gen.to_json(
-            f"{self.data_dir}/ytos_defect_gen_supercell.json"
+            f"{data_dir}/ytos_defect_gen_supercell.json"
         )  # for testing in test_vasp.py
 
     def lmno_defect_gen_check(self, lmno_defect_gen, generate_supercell=True):
@@ -2718,9 +2651,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # save reduced defect gen to json
         reduced_lmno_defect_gen = self._reduce_to_one_defect_each(lmno_defect_gen)
 
-        reduced_lmno_defect_gen.to_json(
-            f"{self.data_dir}/lmno_defect_gen.json"
-        )  # for testing in test_vasp.py
+        reduced_lmno_defect_gen.to_json(f"{data_dir}/lmno_defect_gen.json")  # for testing in test_vasp.py
 
     def test_lmno_no_generate_supercell(self):
         # test inputting a non-diagonal supercell structure with a lattice vector <10 Å with
@@ -2944,7 +2875,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         self.cu_defect_gen_check(cu_defect_gen)
 
-        cu_defect_gen.to_json(f"{self.data_dir}/cu_defect_gen.json")  # for testing in test_vasp.py
+        cu_defect_gen.to_json(f"{data_dir}/cu_defect_gen.json")  # for testing in test_vasp.py
 
     def test_cu_no_generate_supercell(self):
         # test inputting a single-element single-atom primitive cell -> zero oxidation states
@@ -3063,7 +2994,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         self.agcu_defect_gen_check(agcu_defect_gen)
 
-        agcu_defect_gen.to_json(f"{self.data_dir}/agcu_defect_gen.json")  # for testing in test_vasp.py
+        agcu_defect_gen.to_json(f"{data_dir}/agcu_defect_gen.json")  # for testing in test_vasp.py
 
     def test_agcu_no_generate_supercell(self):
         # test high-symmetry intermetallic with generate_supercell = False
@@ -3183,7 +3114,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_cd_i_defect_gen = self._reduce_to_one_defect_each(cd_i_defect_gen)
 
         reduced_cd_i_defect_gen.to_json(
-            f"{self.data_dir}/cd_i_supercell_defect_gen.json"
+            f"{data_dir}/cd_i_supercell_defect_gen.json"
         )  # for testing in test_vasp.py
 
         # don't need to test generate_supercell = False with this one. Already takes long enough as is,
@@ -3210,7 +3141,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_N_diamond_defect_gen = self._reduce_to_one_defect_each(N_diamond_defect_gen)
 
         reduced_N_diamond_defect_gen.to_json(
-            f"{self.data_dir}/N_diamond_defect_gen.json"
+            f"{data_dir}/N_diamond_defect_gen.json"
         )  # test in test_vasp.py
 
     def test_v_Ga_complex_supercell_mixed_oxi_states(self):
@@ -3733,7 +3664,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
             os.environ["USE_MAGNETIC_SYMMETRY"] = "1"  # use magnetic symmetry
             defect_gen = DefectsGenerator(self.coh12_bro3_2)
 
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         self._general_defect_gen_check(defect_gen)
         assert (
             "Symmetry determination failed for the input symprec value of 0.01, but succeeded with "
@@ -3746,7 +3677,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
             defect_gen = DefectsGenerator(self.coh12_bro3_2)
 
         self._general_defect_gen_check(defect_gen)
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert not w  # no warnings with default (ignoring magnetic symmetry)
 
     def test_gen_spaced_structure(self):
@@ -3771,7 +3702,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         generates adsorbate interstitials in low-dimensional structures (e.g.
         2D or 1D materials).
         """
-        Te_layer_struct = Structure.from_file(f"{self.data_dir}/Te_Layer_POSCAR")
+        Te_layer_struct = Structure.from_file(f"{data_dir}/Te_Layer_POSCAR")
         defect_gen, output = self._generate_and_test_no_warnings(
             Te_layer_struct * [4, 4, 1], generate_supercell=False, interstitial_elements=["Na"]
         )

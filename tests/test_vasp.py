@@ -18,7 +18,14 @@ from ase.build import bulk, make_supercell
 from monty.serialization import loadfn
 from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
-from test_generation import _compare_attributes, if_present_rm
+from test_utils import (
+    EXAMPLE_DIR,
+    _compare_attributes,
+    _potcars_available,
+    _print_warning_info,
+    data_dir,
+    if_present_rm,
+)
 
 from doped.generation import DefectsGenerator
 from doped.utils.efficiency import Structure, StructureMatcher
@@ -28,24 +35,10 @@ from doped.vasp import (
     DefectsSet,
     DopedDictSet,
     DopedKpoints,
-    _test_potcar_functional_choice,
     default_defect_relax_set,
     default_potcar_dict,
     singleshot_incar_settings,
 )
-
-
-def _potcars_available() -> bool:
-    """
-    Check if the POTCARs are available for the tests (i.e. testing locally).
-
-    If not (testing on GitHub Actions), POTCAR testing will be skipped.
-    """
-    try:
-        _test_potcar_functional_choice("PBE")
-        return True
-    except ValueError:
-        return False
 
 
 def _check_potcar_dir_not_setup_warning_error(dds, message, poscar=True):
@@ -85,21 +78,19 @@ class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
         # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
         self.heavy_tests = bool(_potcars_available())
-        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
-        self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
-        self.prim_cdte = Structure.from_file(f"{self.example_dir}/CdTe/relaxed_primitive_POSCAR")
+        self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
+        self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         self.CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
-        self.ytos_bulk_supercell = Structure.from_file(f"{self.example_dir}/YTOS/Bulk/POSCAR")
-        self.lmno_primitive = Structure.from_file(f"{self.data_dir}/Li2Mn3NiO8_POSCAR")
-        self.prim_cu = Structure.from_file(f"{self.data_dir}/Cu_prim_POSCAR")
-        self.N_doped_diamond_supercell = Structure.from_file(f"{self.data_dir}/N_C_diamond_POSCAR")
+        self.ytos_bulk_supercell = Structure.from_file(f"{EXAMPLE_DIR}/YTOS/Bulk/POSCAR")
+        self.lmno_primitive = Structure.from_file(f"{data_dir}/Li2Mn3NiO8_POSCAR")
+        self.prim_cu = Structure.from_file(f"{data_dir}/Cu_prim_POSCAR")
+        self.N_doped_diamond_supercell = Structure.from_file(f"{data_dir}/N_C_diamond_POSCAR")
         # AgCu:
         atoms = bulk("Cu")
         atoms = make_supercell(atoms, [[2, 0, 0], [0, 2, 0], [0, 0, 2]])
         atoms.set_chemical_symbols(["Cu", "Ag"] * 4)
         self.agcu = Structure.from_ase_atoms(atoms)
-        self.sqs_agsbte2 = Structure.from_file(f"{self.data_dir}/AgSbTe2_SQS_POSCAR")
+        self.sqs_agsbte2 = Structure.from_file(f"{data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {
             "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
@@ -278,7 +269,7 @@ class DefectDictSetTest(unittest.TestCase):
     def _generate_and_check_dds(self, struct, incar_check=True, **dds_kwargs):
         with warnings.catch_warnings(record=True) as w:
             dds = DefectDictSet(struct, **dds_kwargs)  # fine for bulk prim input as well
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         self._check_dds(dds, struct, incar_check=incar_check, **dds_kwargs)
         return dds
 
@@ -376,7 +367,7 @@ class DefectDictSetTest(unittest.TestCase):
             )
             _incar_pop = dds.incar  # get KPAR warning
 
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert any(
             "Cannot find Whoops from your user_incar_settings in the list of INCAR flags"
             in str(warning.message)
@@ -594,10 +585,10 @@ class DefectRelaxSetTest(unittest.TestCase):
         self.dds_test.setUp()  # get attributes from DefectDictSetTest
         DefectDictSetTest.setUp(self)  # get attributes from DefectDictSetTest
 
-        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
+        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{data_dir}/CdTe_defect_gen.json")
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LCHARG": False}
 
-        self.prim_MgO = Structure.from_file(f"{self.example_dir}/MgO/Bulk_relax/CONTCAR")
+        self.prim_MgO = Structure.from_file(f"{EXAMPLE_DIR}/MgO/Bulk_relax/CONTCAR")
 
     def tearDown(self):
         self.dds_test.tearDown()  # use tearDown from DefectDictSetTest
@@ -763,7 +754,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             elif defect_gen_name == "SQS AgSbTe2 defect_gen":
                 defect_gen = DefectsGenerator(self.sqs_agsbte2, generate_supercell=False)
             else:
-                defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+                defect_gen = DefectsGenerator.from_json(f"{data_dir}/{defect_gen_name}.json")
 
             # randomly choose a defect entry from the defect_gen dict:
             defect_entry = random.choice(list(defect_gen.values()))
@@ -801,7 +792,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cu_defect_gen",
         ]:
             print(f"Testing: {defect_gen_name}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json")
+            defect_gen = DefectsGenerator.from_json(f"{data_dir}/{defect_gen_name}.json")
             defect_entry = random.choice(list(defect_gen.values()))
             print(f"Testing DefectRelaxSet with: {defect_entry.name}")
             drs = DefectRelaxSet(defect_entry)
@@ -897,7 +888,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             "cd_i_supercell_defect_gen",
         ]:
             defect_gen_test_list.append(
-                (DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"), defect_gen_name)
+                (DefectsGenerator.from_json(f"{data_dir}/{defect_gen_name}.json"), defect_gen_name)
             )
 
         for defect_gen, defect_gen_name in defect_gen_test_list:
@@ -958,7 +949,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             assert not drs.bulk_vasp_ncl
 
         # Test manually turning _on_ SOC and making vasp_gam _not_ converged:
-        defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/lmno_defect_gen.json")
+        defect_gen = DefectsGenerator.from_json(f"{data_dir}/lmno_defect_gen.json")
         defect_entries = random.sample(list(defect_gen.values()), min(5, len(defect_gen)))
 
         for defect_entry in defect_entries:
@@ -990,7 +981,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         defect_gen_test_list = [
             (
-                DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_name}.json"),
+                DefectsGenerator.from_json(f"{data_dir}/{defect_gen_name}.json"),
                 defect_gen_name,
             )
             for defect_gen_name in [
@@ -1057,7 +1048,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             if _potcars_available():  # need to write files without error for charged defects
                 defect_set.write_files()
 
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
         assert not non_potcar_warnings  # no warnings about LHFCALC / SOC
 
@@ -1067,7 +1058,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             print(f"Testing: {defect_name}")
             with warnings.catch_warnings(record=True) as w:
                 defect_set.defect_sets[defect_name].write_nkred_std()
-            print([str(warning.message) for warning in w])  # for debugging
+            _print_warning_info(w)
             assert (
                 "`LHFCALC` is set to `False` in user_incar_settings, so `vasp_nkred_std` is None"
                 in str(w[0].message)
@@ -1075,7 +1066,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
             with warnings.catch_warnings(record=True) as w:
                 defect_set.defect_sets[defect_name].write_ncl()
-            print([str(warning.message) for warning in w])  # for debugging
+            _print_warning_info(w)
             assert (
                 "DefectRelaxSet.soc is False, so `vasp_ncl` is None (i.e. no `vasp_ncl` input files "
                 in str(w[0].message)
@@ -1102,7 +1093,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             if _potcars_available():  # need to write files without error for charged defects
                 defect_set.write_files()
 
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
         assert not non_potcar_warnings  # no warnings about LHFCALC / SOC
 
@@ -1110,7 +1101,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             print(f"Testing: {defect_name}")
             with warnings.catch_warnings(record=True) as w:
                 defect_set.defect_sets[defect_name].write_ncl()
-            print([str(warning.message) for warning in w])  # for debugging
+            _print_warning_info(w)
             non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
             assert not non_potcar_warnings
 
@@ -1124,7 +1115,7 @@ class DefectsSetTest(unittest.TestCase):
         self.drs_test = DefectRelaxSetTest()
         self.drs_test.setUp()
 
-        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/CdTe_defect_gen.json")
+        self.CdTe_defect_gen = DefectsGenerator.from_json(f"{data_dir}/CdTe_defect_gen.json")
         self.structure_matcher = StructureMatcher(
             comparator=ElementComparator(), primitive_cell=False
         )  # ignore oxidation states when comparing structures
@@ -1505,7 +1496,7 @@ class DefectsSetTest(unittest.TestCase):
 
         def initialise_and_write_files(defect_gen_json):
             print(f"Initialising and testing: {defect_gen_json}")
-            defect_gen = DefectsGenerator.from_json(f"{self.data_dir}/{defect_gen_json}.json")
+            defect_gen = DefectsGenerator.from_json(f"{data_dir}/{defect_gen_json}.json")
             defects_set = DefectsSet(defect_gen)
             if _potcars_available():
                 defects_set.write_files()
@@ -1552,7 +1543,7 @@ class DefectsSetTest(unittest.TestCase):
         defect_supercell = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"].sc_entry.structure
         with warnings.catch_warnings(record=True) as w:
             dds = DefectDictSet(defect_supercell, charge_state=0)
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
         assert not non_potcar_warnings  # no warnings with DDS generation
         if _potcars_available():
@@ -1589,7 +1580,7 @@ class DefectsSetTest(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             dds = DefectDictSet(defect_supercell, charge_state=+2)
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
         assert not non_potcar_warnings  # no warnings with DDS generation
 
@@ -1603,7 +1594,7 @@ class DefectsSetTest(unittest.TestCase):
         defect_entry = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"]
         with warnings.catch_warnings(record=True) as w:
             drs = DefectRelaxSet(defect_entry)
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
         assert not non_potcar_warnings  # no warnings with DRS generation
 

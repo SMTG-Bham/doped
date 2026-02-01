@@ -3,11 +3,11 @@ Tests for the ``doped.utils.stenciling`` module.
 """
 
 import os
-import shutil
 import unittest
 import warnings
 
 from pymatgen.analysis.structure_matcher import ElementComparator
+from test_utils import EXAMPLE_DIR, _potcars_available, _print_warning_info, if_present_rm
 
 from doped.thermodynamics import DefectThermodynamics
 
@@ -17,38 +17,11 @@ from doped.utils.stenciling import _check_min_dist, get_defect_in_supercell
 from doped.utils.supercells import min_dist
 
 
-def if_present_rm(path):
-    """
-    Remove the file/folder if it exists.
-    """
-    if os.path.exists(path):
-        if os.path.isfile(path):
-            os.remove(path)
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
-
-
-def _potcars_available() -> bool:
-    """
-    Check if the POTCARs are available for the tests (i.e. testing locally).
-    """
-    from doped.vasp import _test_potcar_functional_choice
-
-    try:
-        _test_potcar_functional_choice("PBE")
-        return True
-    except ValueError:
-        return False
-
-
 class DefectStencilingTest(unittest.TestCase):
     def setUp(self):
         # don't run heavy tests on GH Actions, these are run locally
         self.heavy_tests = bool(_potcars_available())
-        self.data_dir = os.path.join(os.path.dirname(__file__), "data")
-        self.CdTe_data_dir = os.path.join(self.data_dir, "CdTe")
-        self.example_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
-        self.Se_example_dir = os.path.join(self.example_dir, "Se")
+        self.Se_example_dir = os.path.join(EXAMPLE_DIR, "Se")
         self.Se_20A_bulk_supercell = Structure.from_file(f"{self.Se_example_dir}/Se_20Å_Supercell_POSCAR")
         self.Se_222_expanded_supercell = Structure.from_file(
             f"{self.Se_example_dir}/Se_222_Expanded_Supercell_POSCAR"
@@ -95,7 +68,7 @@ class DefectStencilingTest(unittest.TestCase):
                         defect_entry,
                         self.Se_20A_bulk_supercell,
                     )
-                print([str(warning.message) for warning in w])  # for debugging
+                _print_warning_info(w)
                 assert all(
                     "Note that the atomic position basis of the generated defect/bulk supercell differs"
                     in str(warning.message)
@@ -158,7 +131,7 @@ class DefectStencilingTest(unittest.TestCase):
                         defect_entry,
                         self.Se_222_expanded_supercell,
                     )
-                print([str(warning.message) for warning in w])  # for debugging
+                _print_warning_info(w)
                 assert not any("Note that the atomic position" in str(warning.message) for warning in w)
 
                 _check_min_dist(
