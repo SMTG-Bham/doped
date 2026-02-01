@@ -1654,7 +1654,7 @@ class ChemicalPotentialGrid:
     chemical potential space.
     """
 
-    def __init__(self, chempots: dict[str, Any]):
+    def __init__(self, chempots: dict[str, Any], format_chempot_labels: bool = True):
         r"""
         Initializes the ``ChemicalPotentialGrid`` with chemical potential data.
 
@@ -1678,18 +1678,22 @@ class ChemicalPotentialGrid:
                 chemical potentials `with respect to the elemental reference
                 energies` will be used (i.e.
                 ``chempots["limits_wrt_el_refs"]``)!
+            format_chempot_labels (bool):
+                Whether to format the elemental chemical potential labels as
+                "µ_{elt} (eV)" (default) or just "{elt}" (if ``False``).
         """
-        unformatted_chempots_dict = chempots.get("limits_wrt_el_refs", chempots)
-        test_elt = Element("H")
-        formatted_chempots_dict = {
-            limit: {
-                f"μ_{k} (eV)" if test_elt.is_valid_symbol(k) else k: v
-                for (k, v) in unformatted_chempots_subdict.items()
+        chempots_dict = chempots.get("limits_wrt_el_refs", chempots)  # unformatted chempots dict
+        if format_chempot_labels:
+            test_elt = Element("H")
+            chempots_dict = {
+                limit: {
+                    f"μ_{k} (eV)" if test_elt.is_valid_symbol(k) else k: v
+                    for (k, v) in unformatted_chempots_subdict.items()
+                }
+                for limit, unformatted_chempots_subdict in chempots_dict.items()
             }
-            for limit, unformatted_chempots_subdict in unformatted_chempots_dict.items()
-        }
 
-        self.vertices = pd.DataFrame.from_dict(formatted_chempots_dict, orient="index")
+        self.vertices = pd.DataFrame.from_dict(chempots_dict, orient="index")
 
     @classmethod
     def from_dataframe(cls, vertices: pd.DataFrame) -> "ChemicalPotentialGrid":
