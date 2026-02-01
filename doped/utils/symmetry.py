@@ -28,7 +28,7 @@ from pymatgen.transformations.standard_transformations import SupercellTransform
 from pymatgen.util.coord import is_coord_subset_pbc
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
-from sympy import Eq, simplify, solve, symbols
+from sympy import Eq, Expr, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
@@ -590,11 +590,13 @@ def cluster_coords(
     return fcluster(z, dist_tol, criterion=criterion)
 
 
-def _doped_cluster_frac_coords(
+def doped_cluster_frac_coords(
     fcoords: np.typing.ArrayLike,
     structure: Structure,
     tol: float = 0.55,
-    symmetry_preference: float = 0.1,
+    symm_pref_dist_factor: float = 0.85,
+    method: str = "centroid",
+    criterion: str = "distance",
 ) -> np.typing.NDArray:
     """
     Cluster fractional coordinates that are within a certain distance tolerance
@@ -605,15 +607,15 @@ def _doped_cluster_frac_coords(
     in the cluster `and` the cluster midpoint (average position). Of these
     sites, the site with the highest symmetry, and then largest ``min_dist``
     (distance to any host lattice site), is chosen -- if its ``min_dist`` is
-    no more than ``symmetry_preference`` (0.1 Å by default) smaller than
-    the site with the largest ``min_dist``. This is because we want to favour
-    the higher symmetry interstitial sites (as these are typically the more
-    intuitive sites for placement, cleaner, easier for analysis etc, and work
-    well when combined with ``ShakeNBreak`` or other structure-searching
-    techniques to account for symmetry-breaking), but also interstitials are
-    often lowest-energy when furthest from host atoms (i.e. in the largest
-    interstitial voids -- particularly for fully-ionised charge states), and
-    so this approach tries to strike a balance between these two goals.
+    no more than ``symm_pref_dist_factor`` (0.85 by default) times the largest
+    possible ``min_dist``. This is because we want to favour the higher
+    symmetry interstitial sites (as these are typically the more intuitive
+    sites for placement, cleaner, easier for analysis etc, and work well when
+    combined with ``ShakeNBreak`` or other structure-searching techniques to
+    account for symmetry-breaking), but also interstitials are often
+    lowest-energy when furthest from host atoms (i.e. in the largest
+    interstitial voids -- particularly for fully-ionised charge states), and so
+    this approach tries to strike a balance between these two goals.
 
     In ``pymatgen-analysis-defects``, the average cluster position is used,
     which breaks symmetries and is less easy to manipulate in the following
@@ -626,10 +628,17 @@ def _doped_cluster_frac_coords(
             The host structure.
         tol (float):
             Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
-        symmetry_preference (float):
-            Distance preference for symmetry over minimum distance to host
-            atoms, as detailed in docstring above.
-            Default is 0.1 Å.
+        symm_pref_dist_factor (float):
+            Minimum acceptable ratio of distance to host atoms for
+            symmetry-favoured sites vs distance-to-host-favoured sites, for
+            which to prefer symmetry-favoured sites. Default is 0.85.
+        method (str):
+            Clustering algorithm to use with ``linkage()`` (default:
+            ``"centroid"``, better than the ``scipy`` default of ``"single``
+            for interstitial generation to avoid daisy-chaining clusters).
+        criterion (str):
+            Criterion to use for flattening hierarchical clusters from the
+            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
 
     Returns:
         np.typing.NDArray: Clustered fractional coordinates.
@@ -640,7 +649,7 @@ def _doped_cluster_frac_coords(
         return _vectorized_custom_round(np.mod(_vectorized_custom_round(fcoords, 5), 1), 4)  # to unit cell
 
     lattice = structure.lattice
-    cn = cluster_coords(fcoords, structure, dist_tol=tol)
+    cn = cluster_coords(fcoords, structure, dist_tol=tol, method=method, criterion=criterion)
     unique_fcoords = []
 
     # cn is an array of cluster numbers, of length ``len(fcoords)``, so we take the set of cluster numbers
@@ -673,10 +682,9 @@ def _doped_cluster_frac_coords(
         )[0][0]
 
         if (
-            np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
-            < np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
-            - symmetry_preference
-        ):
+            np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
+            / np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
+        ) < symm_pref_dist_factor:
             unique_fcoords.append(dist_favoured_site)
         else:  # prefer symmetry over distance if difference is sufficiently small
             unique_fcoords.append(symmetry_favoured_site)
@@ -1420,6 +1428,37 @@ def get_equiv_frac_coords_in_primitive(
     if return_symprec_and_dist_tol_factor:
         return (prim_coord_list if equiv_coords else prim_coord_list[0]), symprec, dist_tol_factor
     return prim_coord_list if equiv_coords else prim_coord_list[0]
+
+
+def are_equivalent_lattices(
+    lattice_1: Lattice | Structure,
+    lattice_2: Lattice | Structure,
+    ltol: float = 5e-3,
+    atol: float = 1,
+) -> bool:
+    """
+    Check if two lattices are (symmetry-)equivalent, allowing for different
+    cell sizes.
+
+    Args:
+        lattice_1 (Lattice | Structure):
+            The first lattice to check for equivalence.
+        lattice_2 (Lattice | Structure):
+            The second lattice to check for equivalence.
+        ltol (float):
+            Fractional tolerance for matching lattice vector lengths.
+            Defaults to 5e-3 (i.e. 0.5% tolerance).
+        atol (float):
+            Tolerance for matching angles. Defaults to 1 degree.
+
+    Returns:
+        bool:
+            ``True`` if the two lattices are (symmetry-)equivalent, ``False``
+            otherwise.
+    """
+    lattice_1 = lattice_1 if isinstance(lattice_1, Lattice) else lattice_1.lattice
+    lattice_2 = lattice_2 if isinstance(lattice_2, Lattice) else lattice_2.lattice
+    return lattice_1.find_mapping(lattice_2, ltol=ltol, atol=atol, skip_rotation_matrix=True) is not None
 
 
 def _rotate_and_get_supercell_matrix(
@@ -2245,7 +2284,7 @@ def swap_axes(structure: Structure, axes: list[int] | tuple[int, ...]) -> Struct
     return transformation.apply_transformation(structure)
 
 
-def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[float]]]:
+def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[Expr]]]:
     """
     Get dictionary of ``{Wyckoff label: coordinates}`` for a given space group
     number.
@@ -2275,7 +2314,7 @@ def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[float]]]:
     def _coord_string_to_array(coord_string):
         # Split string into substrings, parse each as a sympy expression,
         # then convert to list of sympy expressions
-        return [cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
+        return np.array([cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")])
 
     for element in wyckoff["letters"]:
         label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
@@ -2673,8 +2712,9 @@ def point_symmetry_from_defect_entry(
     while for interstitials it is the point symmetry of the `final relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
-    concentrations and Fermi level behaviour (see e.g.
-    https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
+    concentrations and Fermi level behaviour (discussion in
+    https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+    https://doi.org/10.26434/chemrxiv-2025-3lb5k...).
 
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
@@ -3377,8 +3417,9 @@ def get_orientational_degeneracy(
     while for interstitials it is the point symmetry of the `final relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
-    concentrations and Fermi level behaviour (see e.g.
-    https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
+    concentrations and Fermi level behaviour (discussion in
+    https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+    https://doi.org/10.26434/chemrxiv-2025-3lb5k...).
 
     Args:
         defect_entry (DefectEntry):

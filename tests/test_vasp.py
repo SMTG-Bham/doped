@@ -502,6 +502,7 @@ class DefectDictSetTest(unittest.TestCase):
             dds_incar_without_comments = dds.incar.copy()
             dds_incar_without_comments["ICORELEVEL"] = 0
             dds_incar_without_comments["ISYM"] = 0
+            dds_incar_without_comments["ISEARCH"] = 1
             dds_incar_without_comments["ALGO"] = (
                 "Normal"
                 if "normal" in dds_incar_without_comments.get("ALGO", "normal").lower()

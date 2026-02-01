@@ -4,7 +4,6 @@ Helper functions for parsing defect supercell calculations.
 
 import contextlib
 import itertools
-import logging
 import os
 import re
 import warnings
@@ -31,19 +30,6 @@ from doped.core import DefectEntry, remove_site_oxi_state
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
     return loadfn(POTCAR_STATS_PATH)
-
-
-@contextlib.contextmanager
-def suppress_logging(level=logging.CRITICAL):
-    """
-    Context manager to catch and suppress logging messages.
-    """
-    previous_level = logging.root.manager.disable  # store the current logging level
-    logging.disable(level)  # disable logging at the specified level
-    try:
-        yield
-    finally:
-        logging.disable(previous_level)  # restore the original logging level
 
 
 def find_archived_fname(fname, raise_error=True):
@@ -816,9 +802,9 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     Calculates the Wigner-Seitz radius of the structure, which corresponds to
     the maximum radius of a sphere fitting inside the cell.
 
-    Uses the ``calc_max_sphere_radius`` function from ``pydefect``, with a
-    wrapper to avoid unnecessary logging output and warning suppression from
-    ``vise``.
+    Templated on the ``calc_max_sphere_radius`` function from ``pydefect``,
+    but rewritten to avoid calling ``vise`` which causes hanging on Windows.
+    (https://github.com/SMTG-Bham/doped/issues/147).
 
     Args:
         lattice (Union[Structure,Lattice]):
@@ -830,21 +816,12 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
             The Wigner-Seitz radius of the structure.
     """
     lattice_matrix = lattice.matrix if isinstance(lattice, Lattice) else lattice.lattice.matrix
-
-    # avoid vise/pydefect warning suppression and INFO messages:
-    with suppress_logging(), warnings.catch_warnings():
-        try:
-            from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
-
-            return calc_max_sphere_radius(lattice_matrix)
-
-        except ImportError:  # vise/pydefect not installed
-            distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4
-            for i in range(3):
-                a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
-                a_k = lattice_matrix[i]
-                distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
-            return max(distances) / 2.0
+    distances = np.zeros(3, dtype=float)  # copied over from pydefect v0.9.4; avoid vise issues
+    for i in range(3):
+        a_i_a_j = np.cross(lattice_matrix[i - 2], lattice_matrix[i - 1])
+        a_k = lattice_matrix[i]
+        distances[i] = abs(np.dot(a_i_a_j, a_k)) / np.linalg.norm(a_i_a_j)
+    return max(distances) / 2.0
 
 
 def check_atom_mapping_far_from_defect(
@@ -1293,7 +1270,7 @@ def _compare_incar_tags(
     the mismatching tags.
     """
     if fatal_incar_mismatch_tags is None:
-        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults
+        fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults in VASP
             "AEXX": 0.25,  # default 0.25
             "ENCUT": 0,
             "LREAL": False,  # default False
@@ -1502,7 +1479,7 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     return round(nelect, 2)
 
 
-def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int | float:
+def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int:
     """
     Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
     corresponding to a neutral charge state for the structure.
@@ -1516,7 +1493,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             engineer ``NELECT`` using the ``DefectDictSet``.
 
     Returns:
-        int or float:
+        int:
             The number of electrons in the system for a neutral charge state.
     """
     nelect = None
@@ -1547,7 +1524,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             )
 
     if nelect is not None:
-        return nelect
+        return int(nelect)
 
     # else try reverse engineer NELECT using DefectDictSet
     from doped.vasp import DefectDictSet
@@ -1556,11 +1533,13 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
     potcar_settings = {symbol.split("_")[0]: symbol for symbol in potcar_symbols}
     with warnings.catch_warnings():  # ignore POTCAR warnings if not available
         warnings.simplefilter("ignore", UserWarning)
-        return DefectDictSet(
-            vasprun.structures[-1],
-            charge_state=0,
-            user_potcar_settings=potcar_settings,
-        ).nelect
+        return int(
+            DefectDictSet(
+                vasprun.structures[-1],
+                charge_state=0,
+                user_potcar_settings=potcar_settings,
+            ).nelect
+        )
 
 
 def _get_bulk_supercell(defect_entry: DefectEntry):
@@ -1875,81 +1854,38 @@ def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
     return int(num_electrons % 2 + 1)
 
 
-def total_charge_from_vasprun(vasprun: Vasprun, charge_state: int | None) -> int:
+def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
     """
     Determine the total charge state of a system from the vasprun, and compare
     to the expected charge state if provided.
+
+    Note that if the system is charged, then this function relies on access to
+    ``POTCAR`` data, which can be setup with ``pymatgen`` as detailed on the
+    installation page here:
+    https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
 
     Args:
         vasprun (Vasprun):
             ``pymatgen`` ``Vasprun`` object for which to determine the total
             charge.
-        charge_state (int):
-            Expected charge state, to check if it matches the auto-determined
-            charge state.
 
     Returns:
-        int: The auto-determined charge state.
+        int or None:
+            The total charge state, or ``None`` if it cannot be determined.
     """
+    if (nelect := vasprun.incar.get("NELECT")) is None:
+        return 0  # neutral if NELECT not specified
+
     auto_charge = None
+    with contextlib.suppress(Exception):  # otherwise determine neutral NELECT from vasprun & POTCARs:
+        neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
+        auto_charge = -1 * (nelect - neutral_nelect)
 
-    try:
-        if vasprun.incar.get("NELECT") is None:
-            auto_charge = 0  # neutral if NELECT not specified
-
-        else:
-            nelect = vasprun.parameters.get("NELECT")
-            neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
-
+        if abs(auto_charge) >= 10:
+            neutral_nelect = get_neutral_nelect_from_vasprun(vasprun, skip_potcar_init=True)
             auto_charge = -1 * (nelect - neutral_nelect)
 
-            if auto_charge is None or abs(auto_charge) >= 10:
-                neutral_nelect = get_neutral_nelect_from_vasprun(vasprun, skip_potcar_init=True)
-                try:
-                    auto_charge = -1 * (nelect - neutral_nelect)
-
-                except Exception as e:
-                    auto_charge = None
-                    if charge_state is None:
-                        raise RuntimeError(
-                            "System charge cannot be automatically determined as POTCARs have not been "
-                            "setup with pymatgen (see Step 2 at "
-                            "https://github.com/SMTG-Bham/doped#installation). Please specify charge "
-                            "state manually using the `charge_state` argument, or set up POTCARs with "
-                            "pymatgen."
-                        ) from e
-
-            if auto_charge is not None and abs(auto_charge) >= 10:  # crazy charge state predicted
-                raise RuntimeError(
-                    f"Auto-determined system charge q={int(auto_charge):+} is unreasonably large. "
-                    f"Please specify system charge manually using the `charge` argument."
-                )
-
-        if (
-            charge_state is not None
-            and auto_charge is not None
-            and int(charge_state) != int(auto_charge)
-            and abs(auto_charge) < 5
-        ):
-            warnings.warn(
-                f"Auto-determined system charge q={int(auto_charge):+} does not match specified charge "
-                f"q={int(charge_state):+}. Will continue with specified charge_state, but beware!"
-            )
-
-        if charge_state is None and auto_charge is not None:
-            charge_state = auto_charge
-
-    except Exception as e:
-        if charge_state is None:
-            raise e
-
-    if charge_state is None:
-        raise RuntimeError(
-            "System charge could not be automatically determined from the calculation outputs. "
-            "Please manually specify charge state using the `charge_state` argument."
-        )
-
-    return charge_state
+    return auto_charge
 
 
 def _get_bulk_locpot_dict(bulk_path, quiet=False):

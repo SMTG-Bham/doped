@@ -7,6 +7,11 @@
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SMTG-Bham/doped)
 
 <a href="https://doped.readthedocs.io/en/latest/"><img align="right" width="150" src="https://raw.githubusercontent.com/SMTG-Bham/doped/main/docs/Images/doped_v2_logo.png" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping."></a>`doped` is a Python software for the generation, pre-/post-processing and analysis of defect supercell calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet powerful and fully-customisable manner.
+`doped` is open-source, developed by members of the [Simulation of Advanced Materials](https://sam-lab.net) lab at
+Cambridge, the Scanlon group at Birmingham, the Walsh group at Imperial College and contributors from across the globe.
+
+- [**`doped` Documentation Site**](https://doped.readthedocs.io)
+- [**Questions Related to `doped`**](https://matsci.org/c/doped/70) and [Instructions](https://matsci.org/t/questions-related-to-doped/66448)
 
 Tutorials showing the code functionality and usage are provided on the [docs](https://doped.readthedocs.io/en/latest/) site, and an overview of the key advances of the package is given in the [JOSS paper](https://doi.org/10.21105/joss.06433).
 
@@ -60,12 +65,13 @@ If you use `doped` in your research, please cite:
 ## Literature
 The following literature contain useful discussions of various aspects of defect calculations:
 - [Quick-Start Guide on Defect Calculations – Kim et al.](https://doi.org/10.1088/2515-7655/aba081)
+- [Guidelines for Defect Simulations – Squires et al.](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
 - [Large Review on Defect Calculations – Freysoldt et al.](https://doi.org/10.1103/RevModPhys.86.253)
 - [Guide to Understanding Formation Energy / Transition Level Diagrams – Gorai](https://3d-materials-lab.gitbook.io/3dmaterialslab-tutorials/defects/interpreting-defect-and-energy-level-diagrams)
 - [Defect Structure Searching – Mosquera-Lois et al.](https://doi.org/10.1038/s41524-023-00973-1)
 - [Free Energies of Defects – Mosquera-Lois et al.](https://doi.org/10.1039/D3CS00432E)
-- [DeepWiki Code Overview & Workflow](https://deepwiki.com/SMTG-Bham/doped/1-overview)
-<!--- TODO: Squires perspective when ready --->
+- [DeepWiki Code Overview & Workflow](https://deepwiki.com/SMTG-Bham/doped)
+<!--- TODO: Update Guidelines perspective link when published (and in issue template, throughout) --->
 
 ## `ShakeNBreak`
 As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNBreak`](https://shakenbreak.readthedocs.io/en/latest/) approach when calculating point defects in solids, to ensure you have identified the groundstate structures of your defects. As detailed in the [theory paper](https://doi.org/10.1038/s41524-023-00973-1), skipping this step can result in drastically incorrect formation energies, transition levels, carrier capture (basically any property associated with defects). This approach is followed in the [doped defect generation tutorial](https://doped.readthedocs.io/en/latest/generation_tutorial.html), with a more in-depth explanation and tutorial given on the [ShakeNBreak](https://shakenbreak.readthedocs.io/en/latest/) website.
@@ -74,31 +80,43 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- H. Ma, J. E. McLeod and C. Stampfl **_Toward tunable carrier polarity in monolayer ZrS<sub>2</sub>: A hybrid functional study of intrinsic and extrinsic defects_** [_Physical Review B_](https://doi.org/10.1103/spjk-wj13) 2026
+- A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
+- S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
+- R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-h3gsc)
+- T. Oikawa et al. **_Semi-automated estimation of hydrogenic initial states for localized Wannier functions_** [_arXiv_](https://arxiv.org/abs/2512.19900) 2025
+- J. Zhou et al. **_Breaking the 800 mV open-circuit voltage barrier in antimony sulfide photovoltaics_** [_arXiv_](https://doi.org/10.48550/arXiv.2512.18100) 2025
+- K. Talit et al. **_Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO<sub>3</sub>_** [_Physical Review Materials_](https://doi.org/10.1103/hww6-snlj) 2025
+- I. Mosquera-Lois and A. Walsh **_Dynamic Vacancy Levels in CsPbCl<sub>3</sub> Obey Equilibrium Defect Thermodynamics_** [_PRX Energy_](https://doi.org/10.1103/dxmb-8s96) 2025
+- B. I. J. Johnston et al. **_Enhanced cycling stability of LiNiO<sub>2</sub> cathodes through a Mg/W dual-cation modification strategy_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D5TA05316A) 2025
+- Z. Li and A. Walsh **_Thermodynamics of Sulfur Vacancy Formation in the Chalcogenide Perovskite BaZrS<sub>3</sub>_** [_Journal of Physical Chemistry C_](https://pubs.acs.org/doi/10.1021/acs.jpcc.5c00828) 2025
+- P. Russell et al. **_Computational prediction of Y-doped Cd<sub>2</sub>Sb<sub>2</sub>O<sub>7</sub> as a competitive Sb-based n-type Transparent Conducting Oxide_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-c1r3l) 2025
 - A. Lannerd et al. **_Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La<sub>0.5</sub>Sr<sub>0.5</sub>CoO<sub>3-δ</sub>_** [_arXiv_](https://arxiv.org/abs/2510.05323) 2025
 - V. Watson et al. **_Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr<sub>3–3x</sub>La<sub>2x</sub>V<sub>2</sub>O<sub>8</sub> via Increased Tetrahedral Distortion and Cation Vacancies_** [_Chemistry of Materials_](https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856) 2025
+- P. Deng et al. **_Temperature and Doping Dependence of Carbon Interstitial Diffusion in 4H-SiC from First Principles_** [_Advanced Electronic Materials_](https://doi.org/10.1002/aelm.202500467) 2025
 - P. Deng et al. **_Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy_** [_Advanced Theory and Simulations_](https://doi.org/10.1002/adts.202501088) 2025
+- P. Panagis Filippatos et al. **_Ab initio investigation of the Cr substitutional defect in α-quartz for quantum applications_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0303245) 2025
 - P. Panagis Filippatos, T. J. P. Irons and K. Inzani **_Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN_** [_arXiv_](http://dx.doi.org/10.48550/arXiv.2509.09002) 2025
 - P. Panagis Filippatos, A. Chroneos and N. Kelaidis **_A first-principles investigation of halogen doped diamond and its application to quantum technologies_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0279139) 2025
 - L. Tian et al. **_Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-bhf0z) 2025
-- M. A. Fadla et al. **_Tailoring the Electronic Properties of Monoclinic (In<sub>x</sub>Al<sub>1-x</sub>)<sub>2</sub>O<sub>3</sub> Alloys via Substitutional Donors and Acceptors_** [_arXiv_](https://arxiv.org/abs/2507.02805) 2025
-- M. E. Turiansky et al. **_Machine Learning Phonon Spectra for
-Fast and Accurate Optical Lineshapes of Defects_** [_arXiv_](https://arxiv.org/abs/2508.09113) 2025
+- M. A. Fadla et al. **_Tailoring the Electronic Properties of Monoclinic (In<sub>x</sub>Al<sub>1-x</sub>)<sub>2</sub>O<sub>3</sub> Alloys via Substitutional Donors and Acceptors_** [_Physical Review Materials_](https://doi.org/10.1103/78f8-j9m2) 2025
+- M. E. Turiansky et al. **_Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects_** [_arXiv_](https://arxiv.org/abs/2508.09113) 2025
 - C. López et al. **_Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers_** [_ACS Energy Letters_](https://pubs.acs.org/doi/10.1021/acsenergylett.5c01267) 2025
-- S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
 - K. Ogawa et al. **_Defect Tolerance via External Passivation in the Photocatalyst SrTiO<sub>3</sub>:Al_** [_Journal of the American Chemical Society_](https://doi.org/10.1021/jacs.5c07104) 2025
 - M. S. Islam et al. **_Diffusion Characteristics of Ru and Oxygen Vacancies in Ta<sub>2</sub>O<sub>5</sub> for Resistive Random Access Memory Devices: A Density Functional Theory Investigation_** [_Advanced Electronic Materials_](https://doi.org/10.1002/aelm.202500128) 2025
 - J. Tu et al. **_Giant switchable ferroelectric photovoltage in double-perovskite epitaxial films through chemical negative strain_** [_Science Advances_](https://doi.org/10.1126/sciadv.ads4925) 2025
-- Y. Fu & H. Lohan et al. **_Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based
-Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_Nature Communications_](https://doi.org/10.1038/s41467-024-55254-2) 2025
+- Y. Fu & H. Lohan et al. **_Factors Enabling Delocalized Charge-Carriers in Pnictogen-Based Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_Nature Communications_](https://doi.org/10.1038/s41467-024-55254-2) 2025
 - S. R. Kavanagh et al. **_Intrinsic point defect tolerance in selenium for indoor and tandem photovoltaics_** [_Energy & Environmental Science_](https://doi.org/10.1039/D4EE04647A) 2025
 - N. T. Taylor et al. **_Instability of oxide perovskite surfaces induced by vacancy formation_** [_Physical Review B_](https://doi.org/10.1103/w683-tvc4) 2025
 - J. Hu et al. **_Enabling ionic transport in Li<sub>3</sub>AlP<sub>2</sub> the roles of defects and disorder_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D4TA04347B) 2025
 - X. Jiang et al. **_Carrier lifetime killer in 4H-SiC: carrier capture path via carbon vacancies_** [_Journal of Materials Chemistry C_](https://doi.org/10.1039/D4TC04558K) 2025
+- G. Kalemai et al. **_Flexible Inorganic/Organic Memristor Based on W-Doped MoOx/Poly(methyl methacrylate) Heterostructure_** [_Nanomaterials_](https://doi.org/10.3390/nano15221707) 2025
 - M. R. Khan et al. **_Interplay between intrinsic defects and optoelectronic properties of semi-Heusler gapped metals_** [_Physical Chemistry Chemical Physics_](https://doi.org/10.1039/D5CP00673B) 2025
 - F. Wang et al. **_Investigation of hydrogen diffusion in zirconia under extreme conditions_** [_Physical Chemistry Chemical Physics_](https://doi.org/10.1039/D5CP00434A) 2025
 - R. Chinnappan **_First-principles study of defect energetics and magnetic properties of Cr, Ru and Rh doped AlN_** [_Physica Scripta_](https://doi.org/10.1088/1402-4896/adca71) 2025
 - R. Desai et al. **_Exploring the Defect Landscape and Dopability of Chalcogenide Perovskite BaZrS<sub>3</sub>_** [_Journal of Physical Chemistry C_](https://doi.org/10.1021/acs.jpcc.5c01597) 2025
 - C. Kaewmeechai, J. Strand & A. Shluger **_Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga<sub>2</sub>O<sub>3</sub>_** [_Physica Status Solidi B_](https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652) 2025 <!-- though didn't cite properly SnB or doped code papers... -->
+- Y. Gong Wang et al. **_Influence of Vanadium and Chromium Doping on the Thermoelectric Performance of AgSbTe<sub>2</sub>_** [_Physica Scripta_](https://doi.org/10.1088/1402-4896/ae26ec) 2025
 - W. Gierlotka et al. **_Thermodynamics of point defects in the AlSb phase and its influence on phase equilibrium_** [_Computational Materials Science_](https://doi.org/10.1016/j.commatsci.2025.113934) 2025 <!-- didn't cite SnB code paper... -->
 - M. Biswas et al. **_Unified Graph-based Interatomic Potential for Perovskite Structure Optimization_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-g9sb9) 2025
 - X. Wang et al. **_Sulfur Vacancies Limit the Open-circuit Voltage of Sb<sub>2</sub>S<sub>3</sub> Solar Cells_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.4c02722) 2024
@@ -131,9 +149,23 @@ Solar Absorbers: In-depth Investigation into CuSbSe<sub>2</sub>_** [_Nature Comm
 - S. R. Kavanagh, D. O. Scanlon, A. Walsh **_Rapid Recombination by Cadmium Vacancies in CdTe_** [_ACS Energy Letters_](https://pubs.acs.org/doi/full/10.1021/acsenergylett.1c00380) 2021
 - C. J. Krajewska et al. **_Enhanced visible light absorption in layered Cs<sub>3</sub>Bi<sub>2</sub>Br<sub>9</sub> through mixed-valence Sn(II)/Sn(IV) doping_** [_Chemical Science_](https://doi.org/10.1039/D1SC03775G) 2021
 
+## Open Science and Reproducibility
+Robust, open and reproducible science greatly strengthens the impact of research. This is especially true for
+computational defect modelling, given the many steps and complexities involved -- see
+[_Guidelines for robust and reproducible point defect simulations in crystals_](https://doi.org/10.26434/chemrxiv-2025-3lb5k)
+for discussion.
+
+`doped` has been built to aid robustness and reproducibility for computational defect studies.
+**We highly recommend** that the `doped`/`ShakeNBreak` class objects, which store key metadata and can be directly
+output to lightweight `json(.gz)` files be shared in open-access repositories upon publication, along with relevant raw
+computational data. It is also helpful to use the `doped` summary functions to tabulate key quantities in Supplementary
+Information files. See the [Open Science](https://doped.readthedocs.io/en/latest/Tips.html#open-science-and-reproducibility)
+section of the docs Tips page for details.
+
 ## Acknowledgments
 `doped` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular
-members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including Seán Kavanagh, Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya Aggarwal.
+members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including [Seán Kavanagh](https://sam-lab.net),
+Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya Aggarwal.
 
 `doped` was originally based on the excellent `PyCDT` (no longer maintained), but transformed and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.

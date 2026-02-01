@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # -- Project information -----------------------------------------------------
 project = "doped"
 copyright = "2023, Seán R. Kavanagh"
-author = "Seán R. Kavanagh"
+author = "Seán R. Kavanagh"  # https://sam-lab.net
 
 # The full version, including alpha/beta/rc tags
 release = "3.1.0"
@@ -27,6 +27,7 @@ extensions = [
     "sphinx.ext.coverage",
     "sphinx.ext.napoleon",
     "sphinx.ext.mathjax",
+    "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
     "sphinx_click",
@@ -49,7 +50,7 @@ templates_path = ["_templates"]
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "JOSS"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "JOSS", "Dev_ToDo.md", "Future_ToDo.md"]
 
 myst_enable_extensions = [
     "html_admonition",
@@ -105,10 +106,9 @@ html_context = {
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/3.12", None),
-    "numpy": ("http://docs.scipy.org/doc/numpy/", None),
     "pymatgen": ("http://pymatgen.org/", None),
-    "matplotlib": ("http://matplotlib.org", None),
+    "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
+    "scipy": ("https://docs.scipy.org/doc/scipy/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------
@@ -119,20 +119,33 @@ nb_execution_mode = "off"
 # nb_render_image_options = {"height": "300",}  # Reduce plots size
 # myst_render_markdown_format = "gfm"
 myst_heading_anchors = 2
-github_doc_root = "https://github.com/executablebooks/MyST-Parser/tree/master/docs/"
 
 
 def setup(app):
-    app.add_config_value(
-        "myst_parser_config",
-        {
-            "url_resolver": lambda url: github_doc_root + url,
-            "auto_toc_tree_section": "Contents",
-        },
-        True,
-    )
+    app.add_config_value("myst_parser_config", {"auto_toc_tree_section": "Contents"}, True)
     app.add_transform(AutoStructify)
 
 
 # ignore non-consecutive level header warnings, and attempted image editing:
 suppress_warnings = ["myst.header", "mystnb.image"]
+
+# -- Global substitutions for external links ------------------------------------
+# These substitutions are available in all RST files
+rst_prolog = """
+.. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
+.. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
+.. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
+.. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
+.. |Defect| replace:: :class:`~doped.core.Defect`
+.. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
+.. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
+.. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
+.. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
+.. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
+.. |Vasprun| replace:: :class:`~pymatgen.io.vasp.outputs.Vasprun`
+.. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
+.. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
+.. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
+.. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
+.. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.26434/chemrxiv-2025-3lb5k>`__
+"""

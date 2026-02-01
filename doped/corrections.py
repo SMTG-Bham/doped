@@ -61,6 +61,7 @@ from doped.utils.parsing import (
     _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
     get_locpot,
+    get_wigner_seitz_radius,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
 
@@ -438,13 +439,12 @@ def get_kumagai_correction(
         metadata), and the ``matplotlib`` ``Figure`` object if ``plot`` is
         ``True``.
     """
-    from doped.utils.parsing import suppress_logging
+    from doped import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
         try:
             from pydefect.analyzer.calc_results import CalcResults
             from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
-            from pydefect.cli.vasp.make_efnv_correction import calc_max_sphere_radius
             from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
             from pydefect.corrections.ewald import Ewald
             from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
@@ -501,7 +501,6 @@ def get_kumagai_correction(
                 coord = calc_results.structure[d].frac_coords
                 rel_coords.append([x - y for x, y in zip(coord, defect_coords, strict=False)])
 
-        lattice = calc_results.structure.lattice
         ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 

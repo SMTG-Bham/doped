@@ -8,32 +8,39 @@ import os
 import warnings
 
 import numpy as np
-from pymatgen.analysis.structure_matcher import Structure
+from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.util.typing import PathLike
 
 from doped.utils.efficiency import StructureMatcher_scan_stol
+from doped.utils.symmetry import are_equivalent_lattices
 
 
 def orient_s2_like_s1(
     struct1: Structure,
     struct2: Structure,
+    new_lattice: str | None = None,
     verbose: bool = False,
     **sm_kwargs,
 ):
     """
-    Re-orient ``struct2`` to a fully symmetry-equivalent orientation (i.e.
-    **without changing the actual geometry**) to match the orientation of
-    ``struct1`` as closely as possible , with matching atomic indices as needed
-    for VASP NEB calculations and other structural transformation analyses
-    (e.g. configuration coordinate (CC) diagrams via ``nonrad``,
-    ``CarrierCapture.jl`` etc.).
+    Re-orient ``struct2`` to match the orientation of ``struct1`` as closely as
+    possible , with matching atomic indices as needed for VASP NEB calculations
+    and other structural transformation analyses (e.g. configuration coordinate
+    (CC) diagrams via ``nonrad``, ``CarrierCapture.jl`` etc.).
 
-    This corresponds to minimising the root-mean-square displacement from the
-    shortest `linear` path to transform from ``struct1`` to a symmetry-
-    equivalent definition of ``struct2``)... (TODO) Uses the
-    ``StructureMatcher.get_s2_like_s1()`` method from ``pymatgen``, but
-    extended to ensure the correct atomic indices matching and lattice vector
-    definitions.
+    This will give a fully symmetry-equivalent orientation (i.e. **will not
+    change the actual geometry**) of ``struct2``, except if ``struct1`` and
+    ``struct2`` have different inequivalent lattices (e.g. different space
+    groups) `and` ``struct1_lattice`` is ``True``.
+
+    This corresponds to minimising the root-mean-square displacement for the
+    shortest `linear` path from ``struct1`` to a symmetry-equivalent definition
+    of ``struct2``, with matched atomic indices and lattices as required by
+    VASP NEB and ``nonrad`` functions. This function uses an accelerated
+    version of the
+    :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
+    method, extended to ensure the correct atomic indices matching and lattice
+    vector definitions.
 
     If ``verbose=True``, information about the mass-weighted displacement (ΔQ
     in amu^(1/2)Å) between the input and re-oriented structures is printed.
@@ -43,6 +50,16 @@ def orient_s2_like_s1(
     Args:
         struct1 (Structure): Initial structure.
         struct2 (Structure): Final structure.
+        new_lattice (str | None):
+            If ``"struct1"``, then the lattice of ``struct1`` is used for the
+            re-oriented structure, if ``"struct2"``, then the lattice of
+            ``struct2`` is used, or if ``"s2_like_s1"``, then the output
+            lattice of ``StructureMatcher.get_s2_like_s1`` (a
+            symmetry-equivalent version of ``struct2.lattice``) is used.
+            Default is ``None``, where ``new_lattice`` is set to ``"struct1"``
+            if ``struct1`` and ``struct2`` have equivalent lattices (expected
+            to be the case for defect NEBs/CC diagrams), and ``"s2_like_s1"``
+            otherwise.
         verbose (bool):
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
@@ -57,11 +74,21 @@ def orient_s2_like_s1(
 
         # TODO: Option to return RMSD, just displacement, anything else?
     """
-    if abs(struct1.volume - struct2.volume) > 1:
+    if not are_equivalent_lattices(struct1.lattice, struct2.lattice):
         warnings.warn(
-            f"Volumes of the two input structures differ: {struct1.volume} Å³ vs {struct2.volume} Å³. "
-            f"In most cases (defect NEB, CC diagrams...) this is not desirable!"
+            "The lattices of the two input structures have been detected to be (symmetry-)inequivalent. "
+            "This is usually not desirable for defect NEBs/CC diagrams, but may be the case for e.g. "
+            "NEBs between polymorphs. "
         )
+        if new_lattice is None:
+            warnings.warn(
+                "Note that the lattice definitions may differ between the output structure and "
+                "``struct1``. See the NEB/CC diagram tutorial for details."
+            )
+            new_lattice = "s2_like_s1"
+
+    elif new_lattice is None:
+        new_lattice = "struct1"
 
     if sm_kwargs.get("primitive_cell", False):
         raise ValueError(
@@ -82,32 +109,40 @@ def orient_s2_like_s1(
             f"and lattices:\nstruct1: {struct1.lattice}\nstruct2: {struct2.lattice}"
         )
 
-    # ``get_s2_like_s1`` usually doesn't work as desired due to different (but equivalent) lattice vectors
-    # (e.g. a=(010) instead of (100) etc.), so here we ensure the lattice definition is the same:
-    struct2_really_like_struct1 = Structure(
-        struct1.lattice,
-        struct2_like_struct1.species,
-        struct2_like_struct1.frac_coords,
-        site_properties=struct2_like_struct1.site_properties,
+    lattice = (
+        struct1.lattice
+        if new_lattice == "struct1"
+        else (
+            struct2_like_struct1.lattice
+            if new_lattice == "s2_like_s1"
+            else struct2.lattice if new_lattice == "struct2" else None
+        )
+    )
+    if lattice is None:
+        raise ValueError(
+            f"Invalid value for ``new_lattice``: {new_lattice}. Must be one of ``'struct1'``, "
+            f"``'struct2'``, or ``'s2_like_s1'``."
+        )
+
+    struct2_really_like_struct1 = Structure.from_sites(
+        [  # sometimes this get_s2_like_s1 doesn't fully work as desired, giving different (but equivalent)
+            PeriodicSite(  # lattice vectors (e.g. a=(010) instead of (100) etc.), so we redefine with the
+                site.specie,  # chosen lattice to be sure
+                site.frac_coords,
+                lattice,
+                properties=site.properties,
+                to_unit_cell=True,
+            )
+            for site in struct2_like_struct1.sites
+        ]
     )
 
     # we see that this rearranges the structure so the atom indices should now match correctly. This should
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
-    def _get_dQ(struct_a: Structure, struct_b: Structure) -> float:
-        try:
-            return np.sqrt(
-                sum(
-                    (a.distance(b) ** 2) * a.specie.atomic_mass
-                    for a, b in zip(struct_a, struct_b, strict=False)
-                )
-            )  # TODO: Make this a public function, with option to reorient if not matching
-        except Exception:
-            return np.inf  # if the structures are not matching, return inf
-
-    delQ_s1_s2 = _get_dQ(struct1, struct2)
-    delQ_s1_s2_like_s1_pmg = _get_dQ(struct1, struct2_like_struct1)
-    delQ_s2_like_s1_s2 = _get_dQ(struct2_really_like_struct1, struct2)
-    delQ_s1_s2_like_s1 = _get_dQ(struct1, struct2_really_like_struct1)
+    delQ_s1_s2 = get_dQ(struct1, struct2)
+    delQ_s1_s2_like_s1_pmg = get_dQ(struct1, struct2_like_struct1)
+    delQ_s2_like_s1_s2 = get_dQ(struct2_really_like_struct1, struct2)
+    delQ_s1_s2_like_s1 = get_dQ(struct1, struct2_really_like_struct1)
 
     if (
         not sm_kwargs.get("allow_subset")
@@ -135,6 +170,34 @@ def orient_s2_like_s1(
 
 
 get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
+
+
+def get_dQ(struct_a: Structure, struct_b: Structure) -> float:
+    """
+    Get the mass-weighted displacement (ΔQ in amu^(1/2)Å) between two
+    structures, assuming matched atomic indices.
+
+    Args:
+        struct_a (Structure): Initial structure.
+        struct_b (Structure): Final structure.
+
+    Returns:
+        float:
+            The mass-weighted displacement (ΔQ in amu^(1/2)Å) between the two
+            structures, assuming matched atomic indices. Returns ``np.inf`` if
+            the structures are not matching.
+    """
+    try:
+        return np.sqrt(
+            sum(
+                (a.distance(b) ** 2) * a.specie.atomic_mass
+                for a, b in zip(struct_a, struct_b, strict=False)
+            )
+        )  # TODO: Make this a public function, with option to reorient if not matching?
+        # Should then match output of when using get_linear_assignment_solution or
+        # get_site_mapping_indices (TODO: use in tests)
+    except Exception:
+        return np.inf  # if the structures are not matching, return inf
 
 
 def get_path_structures(
@@ -248,7 +311,7 @@ def get_path_structures(
             key = f"0{i}" if displacements is None else f"delQ_{disps[i]}"  # type: ignore
             disp_dict[key] = struct
 
-    return disp_1_dict, disp_2_dict if disp_2_dict else disp_1_dict
+    return (disp_1_dict, disp_2_dict) if disp_2_dict else disp_1_dict
 
 
 def _smart_round(
@@ -393,7 +456,7 @@ def write_path_structures(
     """
     path_structs = get_path_structures(struct1, struct2, n_images, displacements, displacements2)
     path_struct_dicts = [path_structs] if isinstance(path_structs, dict) else list(path_structs)
-    output_dir = output_dir or "Configuration_Coordinate" if displacements is not None else "NEB"
+    output_dir = output_dir or ("Configuration_Coordinate" if displacements is not None else "NEB")
 
     for i, path_struct_dict in enumerate(path_struct_dicts):
         for folder, struct in path_struct_dict.items():
@@ -404,9 +467,4 @@ def write_path_structures(
 
 
 # TODO: Quick tests
-# TODO: Show example parsing and plotting in tutorials
-# CC PES example:
-# displacements = np.linspace(-0.4, 0.4, 9)
-#     displacements = np.append(np.array([-1.5, -1.2, -1.0, -0.8, -0.6]), displacements)
-#     displacements = np.append(displacements, np.array([0.6, 0.8, 1.0, 1.2, 1.5]))
 # TODO: Re-orient directly in generation functions, but with option not to?

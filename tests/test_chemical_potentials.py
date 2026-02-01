@@ -221,6 +221,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {cp_settings}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
+                cp.convergence_setup(potcar_spec=True)  # test methods
+                cp.vasp_std_setup(potcar_spec=True)  # test methods
             print([str(warning.message) for warning in w])  # for debugging
             if cp_settings.get("full_phase_diagram"):
                 assert len(cp.entries) == 172
@@ -243,11 +245,17 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {kwargs}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**kwargs)
+                cp.convergence_setup(potcar_spec=True)  # test methods
+                cp.vasp_std_setup(potcar_spec=True)  # test methods
             print([str(warning.message) for warning in w])  # for debugging
             assert len(w) == 1
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
-                w[-1].message
+                w[0].message
             )
+            assert (
+                "Structure for entry Cu2SiSe4 not available; input files will not be generated for "
+                "this entry."
+            ) in str(w[-1].message)
             if kwargs.get("full_phase_diagram"):
                 assert len(cp.entries) == 29
             elif kwargs.get("energy_above_hull") == 0.0:
@@ -257,8 +265,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
-
-            # TODO: Test file generation functions for an unknown host!
 
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=self.api_key)
@@ -1157,8 +1163,8 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             assert np.isclose(min(grid_df["μ_Cu (eV)"]), -0.463558, atol=1e-2)
             assert np.isclose(min(grid_df["μ_Si (eV)"]), -1.708951, atol=1e-2)
             assert np.isclose(min(grid_df["μ_Se (eV)"]), -0.758105, atol=1e-2)
-            assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.1966, atol=1e-3 if cart else 2e-2)
-            assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94906, atol=1e-3 if cart else 2e-1)
+            assert np.isclose(np.mean(grid_df["μ_Cu (eV)"]), -0.19661, atol=1e-3 if cart else 2e-2)
+            assert np.isclose(np.mean(grid_df["μ_Si (eV)"]), -0.94969, atol=1e-3 if cart else 2e-1)
             assert np.isclose(np.mean(grid_df["μ_Se (eV)"]), -0.39294, atol=1e-3 if cart else 7e-2)
 
             assert len(grid_df) == (3792 if cart else 3744)
@@ -1349,12 +1355,14 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
 def _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.05):
     # get the average Fe and P chempots, then plot a heatmap plot of the others at these fixed values:
-    mean_mu_Fe = grid_df["μ_Fe (eV)"].mean()
-    mean_mu_P = grid_df["μ_P (eV)"].mean()
+    middle_mu_Fe = (
+        grid_df["μ_Fe (eV)"].min() + (grid_df["μ_Fe (eV)"].max() - grid_df["μ_Fe (eV)"].min()) / 2
+    )
+    middle_mu_P = grid_df["μ_P (eV)"].min() + (grid_df["μ_P (eV)"].max() - grid_df["μ_P (eV)"].min()) / 2
 
     fixed_chempot_df = grid_df[
-        (np.isclose(grid_df["μ_Fe (eV)"], mean_mu_Fe, atol=atol))
-        & (np.isclose(grid_df["μ_P (eV)"], mean_mu_P, atol=atol))
+        (np.isclose(grid_df["μ_Fe (eV)"], middle_mu_Fe, atol=atol))
+        & (np.isclose(grid_df["μ_P (eV)"], middle_mu_P, atol=atol))
     ]
 
     fig, ax = plt.subplots()

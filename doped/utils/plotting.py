@@ -290,7 +290,8 @@ def format_defect_name(
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
 
     if not isinstance(defect_species, str):  # Check inputs
-        raise (TypeError(f"`defect_species` {defect_species} should be a string"))
+        raise TypeError(f"`defect_species` {defect_species} should be a string")
+
     try:
         charge = int(defect_species.split("_")[-1])  # charge comes last
         charge_string = f"{charge:+}" if charge > 0 else f"{charge}"
@@ -378,7 +379,7 @@ def format_defect_name(
     with contextlib.suppress(IndexError):
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
-            i not in defect_species for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as"]  # no As_...
+            i not in pre_charge_name for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as_"]  # no As_
         ):
             # from 2nd underscore to last underscore (before charge state) is site info
             # convert point group symbol to formatted version (e.g. C1 -> C_1):
@@ -681,11 +682,13 @@ def format_defect_name(
         for i in range(len(trimmed_pre_charge_name))
         if len(trimmed_pre_charge_name[i : i + 2]) == 2
     ]
-    possible_two_character_elements = [
-        two_char_string
-        for two_char_string in two_character_pairs_in_name
-        if dummy_h.is_valid_symbol(two_char_string)
-    ]
+    possible_two_character_elements = []
+    for two_char_string in two_character_pairs_in_name:
+        if (
+            dummy_h.is_valid_symbol(two_char_string)
+            and two_char_string not in possible_two_character_elements
+        ):
+            possible_two_character_elements.append(two_char_string)
 
     if possible_two_character_elements:
         defect_name = _defect_name_from_matching_elements(
@@ -697,11 +700,11 @@ def format_defect_name(
 
         if defect_name is None and len(possible_two_character_elements) == 1:
             # possibly one single-character element and one two-character element
-            possible_one_character_elements = [
-                character
-                for character in trimmed_pre_charge_name.replace(possible_two_character_elements[0], "")
-                if dummy_h.is_valid_symbol(character)
-            ]
+            possible_one_character_elements = []
+            for character in trimmed_pre_charge_name.replace(possible_two_character_elements[0], ""):
+                if dummy_h.is_valid_symbol(character) and character not in possible_one_character_elements:
+                    possible_one_character_elements.append(character)
+
             if possible_one_character_elements:
                 # in this case, we don't know the order of the 1-character vs 2-character elements in
                 # the name, so we try both orderings:
@@ -721,12 +724,11 @@ def format_defect_name(
 
     if defect_name is None:
         # try single-character element match
-        possible_one_character_elements = [
-            character
-            for character in trimmed_pre_charge_name  # trimmed_pre_charge_name name for finding
-            # elements, pre_charge_name for matching defect format
-            if dummy_h.is_valid_symbol(character)
-        ]
+        possible_one_character_elements = []
+        for character in trimmed_pre_charge_name:  # trimmed_pre_charge_name name for finding elements,
+            # pre_charge_name for matching defect format
+            if dummy_h.is_valid_symbol(character) and character not in possible_one_character_elements:
+                possible_one_character_elements.append(character)
 
         if possible_one_character_elements:
             defect_name = _defect_name_from_matching_elements(

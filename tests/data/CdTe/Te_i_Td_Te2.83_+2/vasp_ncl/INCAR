@@ -8,6 +8,7 @@ HFSCREEN = 0.208
 IBRION = -1
 ICHARG = 1
 ICORELEVEL = 0  # needed if using the kumagai-oba (efnv) anisotropic charge correction scheme
+ISEARCH = 1  # improved line-search algorithm if ALGO changed to All/
 ISMEAR = 0
 ISPIN = 2
 ISYM = 0  # symmetry breaking extremely likely for defects
