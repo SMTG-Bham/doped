@@ -203,8 +203,8 @@ Acknowledgements
 members of the `Scanlon <http://davidscanlon.com/>`_ and
 `Walsh <https://wmd-group.github.io/>`_ research groups who have / are using it in their work.
 Direct contributors are listed in the GitHub ``Contributors`` sidebar; including `Seán Kavanagh <https://sam-lab.net>`__,
-Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya
-Aggarwal.
+Alex Squires, Irea Mosquera-Lois, Sefer Bora Lisesivdin, Muhammad Zahir Iqbal, Atharva Anturkar, Adair Nicolson, Alex
+Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya Aggarwal.
 
 ``doped`` was originally based on the excellent ``PyCDT`` (no longer maintained), but transformed and morphed
 over time as more and more functionality was added. After breaking changes in ``pymatgen``, the package

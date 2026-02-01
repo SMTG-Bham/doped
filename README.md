@@ -164,9 +164,11 @@ Information files. See the [Open Science](https://doped.readthedocs.io/en/latest
 section of the docs Tips page for details.
 
 ## Acknowledgments
-`doped` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular
-members of the [Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are listed in the `Contributors` sidebar above; including [Seán Kavanagh](https://sam-lab.net),
-Alex Squires, Adair Nicolson, Irea Mosquera-Lois, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine Hachmioune and Savya Aggarwal.
+`doped` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular members of the
+[Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are
+listed in the `Contributors` sidebar above; including [Seán Kavanagh](https://sam-lab.net), Alex Squires, Irea Mosquera-Lois, Sefer Bora
+Lisesivdin, Muhammad Zahir Iqbal, Atharva Anturkar, Adair Nicolson, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine
+Hachmioune and Savya Aggarwal.
 
 `doped` was originally based on the excellent `PyCDT` (no longer maintained), but transformed and morphed over time as more and more functionality was added. After breaking changes in `pymatgen`, the package was entirely refactored and rewritten, to work with the new
 `pymatgen-analysis-defects` package.
