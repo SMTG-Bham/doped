@@ -23,7 +23,7 @@ from matplotlib import colors
 from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
-from pymatgen.core.composition import Composition
+from pymatgen.core.composition import Composition, Element
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin, f0
 from pymatgen.io.vasp import Vasprun
 from pymatgen.util.typing import PathLike
@@ -32,7 +32,12 @@ from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods
-from doped.chemical_potentials import ChemicalPotentialGrid, get_X_poor_limit, get_X_rich_limit
+from doped.chemical_potentials import (
+    ChemicalPotentialGrid,
+    get_X_poor_limit,
+    get_X_rich_limit,
+    plot_chempot_heatmap,
+)
 from doped.core import (
     DefectEntry,
     _get_dft_chempots,
@@ -4243,6 +4248,146 @@ class DefectThermodynamics(MSONable):
         stability_windows = np.array([self.band_gap - lowest, highest])
         return min(stability_windows[np.isfinite(stability_windows)])
 
+    def plot_chempot_heatmap(
+        self,
+        dependent_element: str | Element | None = None,
+        fixed_elements: dict[str, float] | None = None,
+        bordering_phases: bool = True,
+        xlim: tuple[float, float] | None = None,
+        ylim: tuple[float, float] | None = None,
+        cbar_range: tuple[float, float] | None = None,
+        colormap: str | colors.Colormap | None = None,
+        padding: float | None = None,
+        title: str | bool = False,
+        label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+        filename: PathLike | None = None,
+        style_file: PathLike | None = None,
+        **kwargs,
+    ) -> plt.Figure:
+        """
+        Plot a heatmap of the chemical potentials (in
+        ``DefectThermodynamics.chempots``) for a multinary system, showing
+        bordering secondary phases.
+
+        In this plot, the ``dependent_element`` chemical potential is plotted
+        as a heatmap over the stability region of the host composition, as a
+        function of two other elemental chemical potentials on the x and y
+        axes.
+
+        3-D data is required to plot a 2-D heatmap, and so this function can be
+        applied as-is for ternary systems, but for higher-dimensional systems
+        a set of chemical potential constraints must be provided (as
+        ``fixed_elements``) to project the chemical stability region to 3-D;
+        see the competing phases tutorial:
+        https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+
+        Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
+        sometimes there can be odd holes in the whitespace around the chemical
+        formula labels (see:
+        https://github.com/matplotlib/matplotlib/issues/25669).
+        This is only the case for ``png`` output, so saving to e.g. ``svg``
+        or ``pdf`` instead will avoid this issue.
+
+        If using the default colour map (``batlow``) in publications, please
+        consider citing: https://zenodo.org/records/8409685
+
+        Tip: https://github.com/frssp/cplapy can be used to generate 3D plots
+        of chemical stability regions, to show the bordering competing phases
+        in quaternary systems.
+
+        Args:
+            dependent_element (str or Element):
+                The element for which the chemical potential is plotted as a
+                heatmap. If None (default), the last element in the bulk
+                composition formula is used (which corresponds to the most
+                electronegative element present).
+            fixed_elements (dict):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{element: value}``; e.g. ``{"Li": -2}``) if the chemical
+                system is >3-D. Constraining chemical potentials is required for
+                multinary systems, in order to reduce the dimensionality to 3-D
+                for plotting a 2-D heatmap. For a system with N elements, N-3
+                fixed chemical potentials should be specified. If ``None``
+                (default), the chemical potentials of the first N-3 elements in
+                the bulk composition are fixed to their mean values in the
+                stability region (i.e. the centroid of the stability region).
+            bordering_phases (bool):
+                Whether to plot the competing/secondary phases which border the
+                host composition in the chemical potential diagram.
+                Default is ``True``.
+            xlim (tuple):
+                The x-axis limits for the plot. If None (default), the limits
+                are set to the minimum and maximum values of the x-axis data,
+                with padding equal to ``padding`` (default = 10% of the range).
+            ylim (tuple):
+                The y-axis limits for the plot. If None (default), the limits
+                are set to the minimum and maximum values of the y-axis data,
+                with padding equal to ``padding`` (default = 10% of the range).
+            cbar_range (tuple):
+                The range for the colourbar. If None (default), the range is
+                set to the minimum and maximum values of the data.
+            colormap (str, matplotlib.colors.Colormap):
+                Colormap to use for the heatmap, either as a string (which can
+                be a colormap name from https://www.fabiocrameri.ch/colourmaps
+                / https://matplotlib.org/stable/users/explain/colors/colormaps)
+                or a ``Colormap`` / ``ListedColormap`` object. If ``None``
+                (default), uses ``batlow`` from
+                https://www.fabiocrameri.ch/colourmaps.
+
+                Append "S" to the colormap name if using a sequential colormap
+                from https://www.fabiocrameri.ch/colourmaps.
+            padding (float):
+                The padding to add to the x and y axis limits. If ``None``
+                (default), the padding is set to 10% of the range.
+            title (str or bool):
+                The title for the plot. If ``False`` (default), no title is
+                added. If ``True``, the title is set to the bulk composition
+                formula, or if ``str``, the title is set to the provided
+                string.
+            label_positions (bool, dict or list):
+                The positions for the chemical formula line labels. If ``True``
+                (default), the labels are placed using a custom ``doped``
+                algorithm which attempts to find the best possible positions
+                (minimising overlap). If ``False``, no labels are added.
+                Alternatively a dictionary can be provided, where the keys are
+                the chemical formulae and the values are tuples of
+                ``(x_coord, y-offset)`` at which to place the line labels
+                (where y-offset is the offset from the line at ``x=x_coord``).
+                A list of tuples can also be provided, where the order is
+                assumed to match the competing phase lines.
+            filename (PathLike):
+                The filename to save the plot to. If ``None`` (default), the
+                plot is not saved.
+            style_file (PathLike):
+                Path to a mplstyle file to use for the plot. If ``None``
+                (default), uses the default ``doped`` style (from
+                ``doped/utils/doped.mplstyle``).
+            **kwargs:
+                Additional keyword arguments to pass to
+                ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+                (default = 1000) and ``cartesian`` (default = ``False``).
+
+        Returns:
+            plt.Figure: The ``matplotlib`` ``Figure`` object.
+        """
+        return plot_chempot_heatmap(
+            self.chempots,
+            composition=self.bulk_formula,
+            dependent_element=dependent_element,
+            fixed_elements=fixed_elements,
+            bordering_phases=bordering_phases,
+            xlim=xlim,
+            ylim=ylim,
+            cbar_range=cbar_range,
+            colormap=colormap,
+            padding=padding,
+            title=title,
+            label_positions=label_positions,
+            filename=filename,
+            style_file=style_file,
+            **kwargs,
+        )
+
     def __repr__(self):
         """
         Returns a string representation of the ``DefectThermodynamics`` object.
@@ -4883,7 +5028,7 @@ class FermiSolver(MSONable):
                 else "The py-sc-fermi backend was attempted to be activated" + finishing_message
             )
             raise ImportError(message) from exc
-        finally:  # avoid py-sc-fermi warning suppression; github.com/bjmorgan/py-sc-fermi/issues/50
+        finally:  # avoid py-sc-fermi warning suppression; fixed in >2.0.4 (can remove if req ever higher)
             warnings.showwarning = orig_showwarning
 
         self._DefectSystem = DefectSystem
