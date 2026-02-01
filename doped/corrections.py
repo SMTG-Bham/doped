@@ -505,7 +505,11 @@ def get_kumagai_correction(
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
         if defect_region_radius is None:
-            defect_region_radius = get_wigner_seitz_radius(lattice)
+            # use half the shortest distance between parallel planes (inscribed sphere radius):
+            defect_region_radius = 0.5 * np.min(
+                [1 / np.linalg.norm(lattice.reciprocal_lattice.matrix[i]) for i in range(3)]
+            )
+            defect_region_radius *= np.pi
 
         for site, rel_coord in zip(sites, rel_coords, strict=False):
             if site.distance > defect_region_radius:

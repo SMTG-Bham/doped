@@ -248,6 +248,7 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
 
    Installation
    Python API <doped>
+   GPAW_Support
    Tutorials
    Tips
    Code Overview & Workflow Diagrams <https://deepwiki.com/SMTG-Bham/doped>

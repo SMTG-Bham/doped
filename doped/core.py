@@ -585,7 +585,11 @@ class DefectEntry(thermo.DefectEntry):
         )
 
         # correction energy error can be estimated from standard error of the mean:
-        correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        if sampled_pot_diff_array.size > 0:
+            correction_error = sem(sampled_pot_diff_array) * abs(self.charge_state)
+        else:
+            correction_error = np.nan
+
         self.corrections_metadata.update({"kumagai_charge_correction_error": correction_error})
         return self._check_correction_error_and_return_output(
             efnv_correction_output,
