@@ -44,7 +44,7 @@ _orientational_degeneracy_warning = (
     "point group symmetries (and thus orientational degeneracies) from being automatically determined.\n"
     "This will not affect defect formation energies / transition levels, but can be important for "
     "concentrations/doping/Fermi level behaviour (10.1039/D2FD00043A, 10.1039/D3CS00432E, "
-    "10.26434/chemrxiv-2025-3lb5k ...).\n"
+    "10.1038/s41578-025-00879-y ...).\n"
     "You can manually check (and edit) the computed defect point symmetries and corresponding "
     "orientational degeneracy factors by inspecting/editing the calculation_metadata['relaxed point "
     "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
@@ -95,7 +95,7 @@ class DefectEntry(thermo.DefectEntry):
             degeneracy of the defect species (such as spin and configurational
             degeneracy etc). This is an important factor in the defect
             concentration equation (https://doi.org/10.1039/D2FD00043A,
-            https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+            https://doi.org/10.1038/s41578-025-00879-y,
             https://doi.org/10.1039/D3CS00432E), and so affects the output of
             the defect concentration / Fermi level functions. Spin and
             configurational (geometry) degeneracy factors are automatically
@@ -1234,7 +1234,7 @@ class DefectEntry(thermo.DefectEntry):
         ``defect_entry.defect.multiplicity`` and
         ``defect_entry.degeneracy_factors`` attributes. Discussion in:
         https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
-        https://doi.org/10.26434/chemrxiv-2025-3lb5k...
+        https://doi.org/10.1038/s41578-025-00879-y...
 
         Note that this function sets lower and upper bounds on the per-site
         defect concentrations of 1e-50 and 1 (the latter only applying when
@@ -1331,7 +1331,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.26434/chemrxiv-2025-3lb5k,
+                (https://doi.org/10.1038/s41578-025-00879-y,
                 https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site as the defect of
                 interest. Otherwise, uses the standard dilute limit
@@ -1364,7 +1364,7 @@ class DefectEntry(thermo.DefectEntry):
                 "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
                 "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
                 "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
-                "(discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.26434/chemrxiv-2025-3lb5k ...)."
+                "(discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ...)."
                 "This will affect the computed defect concentration / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
                 "'spin degeneracy' in the degeneracy_factors attribute(s) -- usually 2 for odd-electron "
@@ -1379,7 +1379,7 @@ class DefectEntry(thermo.DefectEntry):
                 "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
                 "attribute (for this vacancy/substitution defect). This factor contributes to the "
                 "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- "
-                "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.26434/chemrxiv-2025-3lb5k ... "
+                "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ... "
                 "-- and is automatically computed when parsing with doped if possible (if the defect "
                 "supercell doesn't break the host periodicity). This will affect the computed defect "
                 "concentrations / Fermi level!\n"

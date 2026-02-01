@@ -48,9 +48,9 @@ class DefectStencilingTest(unittest.TestCase):
         # these supercells were explicitly tested by performing hybrid DFT relaxations from these
         # starting points and comparing to results of unperturbed/rattled supercell relaxations of these
         # defects directly generated (with ``DefectsGenerator``) in this 20Å supercell
-        # (for the work described in: https://doi.org/10.26434/chemrxiv-2024-91h02)
+        # (for the work described in: https://doi.org/10.1039/D4EE04647A)
         # these defects are good test cases as some are not so trivial; e.g. v_Se_+2 has two inter-chain
-        # bridging bonds; see https://doi.org/10.26434/chemrxiv-2024-91h02 SI.
+        # bridging bonds; see https://doi.org/10.1039/D4EE04647A SI.
         Se_20A_test_supercells = [i for i in os.listdir(self.Se_example_dir) if "20Å_Stenciled" in i]
 
         previous_bulk = None
@@ -111,7 +111,7 @@ class DefectStencilingTest(unittest.TestCase):
         # these supercells were explicitly tested by performing hybrid DFT relaxations from these
         # starting points and comparing to results of unperturbed/rattled supercell relaxations of these
         # defects directly generated (with ``DefectsGenerator``) in this 222-expanded supercell
-        # (for the work described in: https://doi.org/10.26434/chemrxiv-2024-91h02)
+        # (for the work described in: https://doi.org/10.1039/D4EE04647A)
         Se_222_exp_test_supercells = [
             i for i in os.listdir(self.Se_example_dir) if "222_Exp_Stenciled" in i
         ]
