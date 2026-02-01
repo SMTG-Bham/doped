@@ -13,6 +13,7 @@ from itertools import permutations, product
 
 import numpy as np
 import pandas as pd
+import spglib
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import (
@@ -60,11 +61,11 @@ def cached_solve(equation, variable):
     return solve(equation, variable)
 
 
-def _set_spglib_warnings_env_var():
+def _set_spglib_warnings_error_handling_env_var():
     """
-    Set the SPGLIB environment variable to suppress spglib warnings.
+    Set the SPGLIB environment variable to use new error handling.
     """
-    os.environ["SPGLIB_WARNING"] = "OFF"
+    os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"  # can be removed with spglib >=2.8
 
 
 def _check_spglib_version():
@@ -72,29 +73,20 @@ def _check_spglib_version():
     Check the versions of spglib and its C libraries, and raise a warning if
     the correct installation instructions have not been followed.
     """
-    import spglib
-
     python_version = spglib.__version__
     c_version = spglib.spg_get_version_full()
 
     if python_version != c_version:
-        warnings.warn(
+        warnings.warn(  # think this issue is avoided with latest spglib versions, but not sure
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
             f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
             f"spglib`."
-            # No longer required as of spglib v2.5:
-            # f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
-            # f"(to ensure no duplicate installations).\n"
-            # f"- Then, install spglib with `conda install -c conda-forge spglib` or "
-            # f"`pip install git+https://github.com/spglib/spglib "
-            # f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
-            # f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
-        )
+        )  # previously also had to do conda or special pip install settings, with spglib <2.5
 
 
 _check_spglib_version()
-_set_spglib_warnings_env_var()
+_set_spglib_warnings_error_handling_env_var()
 
 
 def _round_floats(obj, places: int = 5):
@@ -318,21 +310,27 @@ def _cache_ready_get_sga(
             site.properties = {}
 
     sga = None
-    for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
-        # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
-        with contextlib.suppress(SymmetryUndeterminedError):
+    trial_symprecs = [symprec, 0.1, 0.001, 1, 0.0001]
+    spg_2pt7 = False
+    symm_error_types: tuple[type[Exception], ...] = (SymmetryUndeterminedError, ValueError)
+    with contextlib.suppress(AttributeError):  # introduced with spglib 2.7.0, can remove once spglib
+        symm_error_types += (spglib.SpglibError,)  # (indirect) requirement is >= 2.7
+        spg_2pt7 = True
+
+    for trial_symprec in trial_symprecs:
+        try:  # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
             sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
-        if sga:
-            try:
-                _detected_symmetry = sga._get_symmetry()
-            except ValueError:  # symmetry determination failed
-                continue
+            # check symmetry determination, sometimes SpacegroupAnalyzer initialises but methods fail:
+            _detected_symmetry = sga._get_symmetry()
             return (sga, trial_symprec) if return_symprec else sga
-    import spglib
+        except symm_error_types as latest_symm_error:
+            symm_error = latest_symm_error  # save before auto-deleted at end of except block
+            continue
 
     raise SymmetryUndeterminedError(
-        f"Could not determine symmetry of input structure! Got spglib error: {spglib.get_error_message()}"
-    )
+        "Could not determine symmetry of input structure!"
+        + (f"Got spglib error: {spglib.get_error_message()}" if not spg_2pt7 else "")
+    ) from symm_error
 
 
 def apply_symm_op_to_site(
@@ -2714,7 +2712,7 @@ def point_symmetry_from_defect_entry(
     degeneracy factor is used in the calculation of defect/carrier
     concentrations and Fermi level behaviour (discussion in
     https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
-    https://doi.org/10.26434/chemrxiv-2025-3lb5k...).
+    https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
@@ -3419,7 +3417,7 @@ def get_orientational_degeneracy(
     degeneracy factor is used in the calculation of defect/carrier
     concentrations and Fermi level behaviour (discussion in
     https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
-    https://doi.org/10.26434/chemrxiv-2025-3lb5k...).
+    https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
         defect_entry (DefectEntry):
