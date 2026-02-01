@@ -1765,7 +1765,8 @@ class ChemicalPotentialGrid:
                 and not necessarily in Cartesian coordinates.
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
-                Default is 4.
+                Note that the tolerance for grid-point matching is
+                10^[-decimal_places]. Default is 4.
             drop_duplicates (bool):
                 Whether to drop duplicate points in the generated grid. With
                 barycentric coordinate generation, there can be duplicate

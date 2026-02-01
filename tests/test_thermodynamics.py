@@ -3239,6 +3239,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert os.path.exists("test.png")
         return plot
 
+    def test_error_with_no_chempots(self):
+        with pytest.raises(ValueError) as exc:
+            self.YTOS_defect_thermo.plot_chempot_heatmap()
+        assert "No chemical potentials in DefectThermodynamics.chempots to plot!" in str(exc.value)
+
 
 def belas_linear_fit(T):  #
     """

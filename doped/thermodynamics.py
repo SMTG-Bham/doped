@@ -4370,6 +4370,9 @@ class DefectThermodynamics(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
+        if not self.chempots:
+            raise ValueError("No chemical potentials in DefectThermodynamics.chempots to plot!")
+
         return plot_chempot_heatmap(
             self.chempots,
             composition=self.bulk_formula,
