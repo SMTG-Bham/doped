@@ -547,12 +547,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_equilibrium_solve(self, backend):
         """
-        Test ``equilibrium_solve`` method for both backends.
+        Test ``_equilibrium_solve`` method for both backends.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
-        concentrations = solver.equilibrium_solve(
+        concentrations = solver._equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
             el_refs=self.CdTe_thermo.el_refs,
             temperature=300,
@@ -594,11 +594,11 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             rtol=1e-3,
         )  # also checks the index and ordering
 
-        # check against pseudo_equilibrium_solve
-        pseudo_concentrations = solver.pseudo_equilibrium_solve(
+        # check against _pseudo_equilibrium_solve
+        pseudo_concentrations = solver._pseudo_equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
             effective_dopant_concentration=1e16,
-            annealing_temperature=300,  # set to 300 to match equilibrium_solve
+            annealing_temperature=300,  # set to 300 to match _equilibrium_solve
         )
         pseudo_concentrations = pseudo_concentrations.rename(
             columns={"Annealing Temperature (K)": "Temperature (K)"}
@@ -611,12 +611,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_equilibrium_solve_700K_no_eff_dopant(self, backend):
         """
-        Test ``equilibrium_solve`` method for both backends, this time with
+        Test ``_equilibrium_solve`` method for both backends, this time with
         ``temperature=700``, no effective dopant and Cd-rich conditions.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
-        concentrations = solver.equilibrium_solve(
+        concentrations = solver._equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
             el_refs=self.CdTe_thermo.el_refs,
             temperature=700,
@@ -651,10 +651,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             rtol=1e-3,
         )  # also checks the index and ordering
 
-        # check against pseudo_equilibrium_solve
-        pseudo_concentrations = solver.pseudo_equilibrium_solve(
+        # check against _pseudo_equilibrium_solve
+        pseudo_concentrations = solver._pseudo_equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
-            annealing_temperature=700,  # match equilibrium_solve
+            annealing_temperature=700,  # match _equilibrium_solve
             quenched_temperature=700,
         )
         pseudo_concentrations = pseudo_concentrations.rename(
@@ -667,8 +667,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     def test_equilibrium_solve_mocked_py_sc_fermi_backend(self):
         """
-        Test equilibrium_solve method for a mocked ``py-sc-fermi`` backend (so
-        test works even when ``py-sc-fermi`` is not installed).
+        Test ``_equilibrium_solve`` method for a mocked ``py-sc-fermi`` backend
+        (so test works even when ``py-sc-fermi`` is not installed).
         """
         single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
 
@@ -689,7 +689,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         self.solver_py_sc_fermi._generate_defect_system.return_value = defect_system
 
         # Call the method
-        concentrations = self.solver_py_sc_fermi.equilibrium_solve(
+        concentrations = self.solver_py_sc_fermi._equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
             el_refs=self.CdTe_thermo.el_refs,
             temperature=300,
@@ -716,12 +716,12 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_pseudo_equilibrium_solve(self, backend):
         """
-        Test ``pseudo_equilibrium_solve`` method for both backends.
+        Test ``_pseudo_equilibrium_solve`` method for both backends.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
-        concentrations = solver.pseudo_equilibrium_solve(
+        concentrations = solver._pseudo_equilibrium_solve(
             annealing_temperature=800,
             single_chempot_dict=single_chempot_dict,
             el_refs=el_refs,
@@ -771,14 +771,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_pseudo_equilibrium_solve_1400K_no_eff_dopant(self, backend):
         """
-        Test ``pseudo_equilibrium_solve`` method for both backends, now with
+        Test ``_pseudo_equilibrium_solve`` method for both backends, now with
         ``annealing_temperature=1400``, ``quenched_temperature=150``,
         ``limit="Cd-rich"`` and no effective dopant.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
         single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
 
-        concentrations = solver.pseudo_equilibrium_solve(
+        concentrations = solver._pseudo_equilibrium_solve(
             annealing_temperature=1400,
             single_chempot_dict=single_chempot_dict,
             el_refs=el_refs,
@@ -827,7 +827,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
     def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
         """
-        Test ``pseudo_equilibrium_solve`` method for a mocked ``py-sc-fermi``
+        Test ``_pseudo_equilibrium_solve`` method for a mocked ``py-sc-fermi``
         backend (so test works even when ``py-sc-fermi`` is not installed),
         with ``fixed_defects``.
         """
@@ -850,7 +850,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         self.solver_py_sc_fermi._generate_annealed_defect_system.return_value = defect_system
 
         # Call the method with fixed_defects
-        concentrations = self.solver_py_sc_fermi.pseudo_equilibrium_solve(
+        concentrations = self.solver_py_sc_fermi._pseudo_equilibrium_solve(
             annealing_temperature=800,
             single_chempot_dict=single_chempot_dict,
             el_refs=el_refs,
@@ -1901,7 +1901,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         quenched_fermi_levels = []
         for anneal_temp in reduced_anneal_temperatures:
             gap_shift = belas_linear_fit(anneal_temp) - 1.5
-            result = solver.pseudo_equilibrium_solve(
+            result = solver._pseudo_equilibrium_solve(
                 # quenching to 300K (default)
                 single_chempot_dict=self.CdTe_thermo.chempots["limits_wrt_el_refs"]["CdTe-Te"],
                 annealing_temperature=anneal_temp,

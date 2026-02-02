@@ -29,6 +29,7 @@ from test_utils import (
     _compare_attributes,
     _print_warning_info,
     _run_func_and_capture_stdout_warnings,
+    api_key,
     custom_mpl_image_compare,
     data_dir,
     if_present_rm,
@@ -135,7 +136,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
             os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )
 
-        cls.YTOS_cp = CompetingPhases("Y2Ti2S2O5")
+        cls.YTOS_cp = CompetingPhases("Y2Ti2S2O5", api_key=api_key)
         cls.MP_YTOS_doped_chempots = get_doped_chempots_from_entries(cls.YTOS_cp.entries, "Y2Ti2S2O5")
 
         cls.orig_Sb2Se3_defect_dict = loadfn(

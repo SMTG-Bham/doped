@@ -12,6 +12,9 @@ from io import StringIO
 import numpy as np
 import pytest
 
+# Materials Project API key for tests
+api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"  # SK MP Imperial email (GitHub) A/C
+
 # for pytest-mpl:
 module_path = os.path.dirname(os.path.abspath(__file__))
 data_dir = os.path.join(module_path, "data")
