@@ -113,8 +113,11 @@ Studies using ``doped``, so far
 - A\. Abudulimu et al. **Radiative Defects in Chloride-Activated CdSe Thin Films** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.5c03191>`__ 2026
 - H\. Ma, J. E. McLeod and C. Stampfl **Toward tunable carrier polarity in monolayer ZrS₂: A hybrid functional study of intrinsic and extrinsic defects** `Physical Review B <https://doi.org/10.1103/spjk-wj13>`__ 2026
 - E\. I. Jaffal et al. **Investigating mechanical properties through defect chemistry in hard binary phosphide material Ta₃P** `Solid State Communications <https://doi.org/10.1016/j.ssc.2025.116250>`__ 2026
+- A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ` `Physical Review Materials <https://doi.org/10.1103/tgp7-n673>`__ 2026
+- L\. Tian et al. **Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts** `Chemical Science <https://doi.org/10.1039/D5SC08101G>`__ 2026
+- M\. Biswas et al. **Unified Graph-based Interatomic Potential for Perovskite Structure Optimization** `Journal of Chemical Information and Modeling <https://doi.org/10.1021/acs.jcim.5c01611>`__ 2026
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
-- R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-h3gsc>`__ 2025
+- R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ACS Applied Materials & Interfaces <https://doi.org/10.1021/acsami.5c19146>`__ 2025
 - T\. Oikawa et al. **Semi-automated estimation of hydrogenic initial states for localized Wannier functions** `arXiv <https://arxiv.org/abs/2512.19900>`__ 2025
 - J\. Zhou et al. **Breaking the 800 mV open-circuit voltage barrier in antimony sulfide photovoltaics** `arXiv <https://doi.org/10.48550/arXiv.2512.18100>`__ 2025
 - K\. Talit et al. **Structural and electronic properties of Ti- and Ca-doped hexagonal TbInO₃** `Physical Review Materials <https://doi.org/10.1103/hww6-snlj>`__ 2025
@@ -122,14 +125,12 @@ Studies using ``doped``, so far
 - B\. I. J. Johnston et al. **Enhanced cycling stability of LiNiO₂ cathodes through a Mg/W dual-cation modification strategy** `Journal of Materials Chemistry A <https://doi.org/10.1039/D5TA05316A>`__ 2025
 - Z\. Li and A. Walsh **Thermodynamics of Sulfur Vacancy Formation in the Chalcogenide Perovskite BaZrS₃** `Journal of Physical Chemistry C <https://pubs.acs.org/doi/10.1021/acs.jpcc.5c00828>`__ 2025
 - P\. Russell et al. **Computational prediction of Y-doped Cd₂Sb₂O₇ as a competitive Sb-based n-type Transparent Conducting Oxide** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-c1r3l>`__ 2025
-- A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ` `arXiv <https://arxiv.org/abs/2510.05323>`__ 2025
 - V\. Watson et al. **Enhanced Oxide Ion Diffusion by Lanthanum Substitution in the Palmierite Sr** :sub:`3–3x` **La** :sub:`2x` **V₂O₈ via Increased Tetrahedral Distortion and Cation Vacancies** `Chemistry of Materials <https://pubs.acs.org/doi/full/10.1021/acs.chemmater.5c01856>`__ 2025
 - P\. Deng et al. **Temperature and Doping Dependence of Carbon Interstitial Diffusion in 4H-SiC from First Principles** `Advanced Electronic Materials <https://doi.org/10.1002/aelm.202500467>`__ 2025
 - P\. Deng et al. **Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy** `Advanced Theory and Simulations <https://doi.org/10.1002/adts.202501088>`__ 2025
 - P\. Panagis Filippatos et al. **Ab initio investigation of the Cr substitutional defect in α-quartz for quantum applications** `Journal of Applied Physics <https://doi.org/10.1063/5.0303245>`__ 2025
 - P\. Panagis Filippatos, A. Chroneos and N. Kelaidis **A first-principles investigation of halogen doped diamond and its application to quantum technologies** `Journal of Applied Physics <https://doi.org/10.1063/5.0279139>`__ 2025
 - P\. Panagis Filippatos, T. J. P. Irons and K. Inzani **Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN** `arXiv <http://dx.doi.org/10.48550/arXiv.2509.09002>`__ 2025
-- L\. Tian et al. **Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-bhf0z>`__ 2025
 - M\. A. Fadla et al. **Tailoring the Electronic Properties of Monoclinic (In** :sub:`x` **Al** :sub:`1-x` **)₂O₃ Alloys via Substitutional Donors and Acceptors** `Physical Review Materials <https://doi.org/10.1103/78f8-j9m2>`__ 2025
 - M\. E. Turiansky et al. **Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects** `arXiv <https://arxiv.org/abs/2508.09113>`__ 2025
 - C\. López et al. **Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers** `ACS Energy Letters <https://pubs.acs.org/doi/10.1021/acsenergylett.5c01267>`__ 2025
@@ -149,7 +150,6 @@ Studies using ``doped``, so far
 - C\. Kaewmeechai, J. Strand & A. Shluger **Structure and Migration Mechanisms of Oxygen Interstitial Defects in β-Ga₂O₃** `Physica Status Solidi B <https://onlinelibrary.wiley.com/doi/10.1002/pssb.202400652>`__ 2025
 - Y\. Gong Wang et al. **Influence of Vanadium and Chromium Doping on the Thermoelectric Performance of AgSbTe₂** `Physica Scripta <https://doi.org/10.1088/1402-4896/ae26ec>`__ 2025
 - W\. Gierlotka et al. **Thermodynamics of point defects in the AlSb phase and its influence on phase equilibrium** `Computational Materials Science <https://doi.org/10.1016/j.commatsci.2025.113934>`__ 2025
-- M\. Biswas et al. **Unified Graph-based Interatomic Potential for Perovskite Structure Optimization** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-g9sb9>`__ 2025
 - X\. Wang et al. **Sulfur vacancies limit the open-circuit voltage of Sb₂S₃ solar cells** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.4c02722>`__ 2024
 - A\. Zhang et al. **Optimizing the n-type carrier concentration of an InVO₄ photocatalyst by codoping with donors and intrinsic defects** `Physical Review Applied <https://doi.org/10.1103/PhysRevApplied.22.044047>`__ 2024
 - M-L\. Wang et al. **Impact of sulfur doping on copper-substituted lead apatite** `Physical Review B <https://doi.org/10.1103/PhysRevB.110.104109>`__ 2024
