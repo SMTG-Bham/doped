@@ -2188,6 +2188,7 @@ def entries_from_chempot_limits(chempots_dict):
         chempots_dict (dict):
             ``doped`` chemical potential limits dictionary, as output by
             ``CompetingPhasesAnalyzer.chempots``, having the keys:
+
                 - "limits": {"phaseA-phaseB-phaseC":
                     {"Li": mu_Li, "P": mu_P, ...}, ... }
                 - "elemental_refs":

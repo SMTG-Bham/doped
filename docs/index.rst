@@ -1,10 +1,7 @@
-``doped``
-=========
-
 .. image:: https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg
    :target: https://github.com/SMTG-Bham/doped/actions
-.. image:: https://readthedocs.org/projects/doped/badge/?version=latest&style=flat
-   :target: https://doped.readthedocs.io/en/latest/
+.. .. image:: https://readthedocs.org/projects/doped/badge/?version=latest&style=flat
+..    :target: https://doped.readthedocs.io/en/latest/
 .. image:: https://img.shields.io/pypi/v/doped
    :target: https://pypi.org/project/doped
 .. image:: https://img.shields.io/conda/vn/conda-forge/doped.svg
@@ -16,7 +13,9 @@
 
 .. raw:: html
 
+   <br><br>
    <img src="https://raw.githubusercontent.com/SMTG-Bham/doped/develop/docs/Images/doped_v2_logo.png" align="right" width="200" alt="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping." title="Schematic of a doped (defect-containing) crystal, inspired by the biological analogy to (semiconductor) doping.">
+
 
 ``doped`` is a Python software for the generation, pre-/post-processing and analysis of defect supercell
 calculations, implementing the defect simulation workflow in an efficient, reproducible, user-friendly yet
@@ -238,6 +237,7 @@ Thanks to `Chaoqun Zhang <https://github.com/Warlocat>`__ for uploading the
 
 .. toctree::
    :hidden:
+   :maxdepth: 1
 
    Home <self>
 

@@ -15,7 +15,7 @@ copyright = "2023, Seán R. Kavanagh"
 author = "Seán R. Kavanagh"  # https://sam-lab.net
 
 # The full version, including alpha/beta/rc tags
-release = "3.1.0"
+release = "3.2.0"
 
 
 # -- General configuration ---------------------------------------------------
