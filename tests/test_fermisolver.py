@@ -183,18 +183,17 @@ def check_concentrations_df(solver, concentrations, free_defects=None):
     """
     free_defects = free_defects or []
     annealing = "Annealing Temperature (K)" in concentrations.columns
-    formation_energy = None
+    host_formation_energy = None
 
     for defect, row in concentrations.iterrows():
         print(f"Checking {defect}")
-        total_concentration = 0
         formal_chempots = {
             mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
         }
-        this_row_formation_energy = sum(formal_chempots.values())
-        if formation_energy is not None:
-            assert np.isclose(this_row_formation_energy, formation_energy, atol=1e-4)
-        formation_energy = this_row_formation_energy
+        this_row_host_formation_energy = sum(formal_chempots.values())
+        if host_formation_energy is not None:
+            assert np.isclose(this_row_host_formation_energy, host_formation_energy, atol=1e-4)
+        host_formation_energy = this_row_host_formation_energy
 
         temperature = row["Annealing Temperature (K)"] if annealing else row["Temperature (K)"]
         if annealing:
@@ -205,20 +204,44 @@ def check_concentrations_df(solver, concentrations, free_defects=None):
                 effective_dopant_concentration=dopant_concentration,
             )
 
-        for defect_entry in solver.defect_thermodynamics.all_entries[defect]:
-            total_concentration += defect_entry.equilibrium_concentration(
-                temperature=temperature,
-                fermi_level=fermi_level if annealing else row["Fermi Level (eV wrt VBM)"],
-                chempots=formal_chempots,
-                el_refs=solver.defect_thermodynamics.el_refs,
+        concentration_kwargs = {
+            "temperature": temperature,
+            "fermi_level": fermi_level if annealing else row["Fermi Level (eV wrt VBM)"],
+            "chempots": formal_chempots,
+            "el_refs": solver.defect_thermodynamics.el_refs,
+        }
+
+        if isinstance(defect, tuple):  # (defect_name, charge)
+            defect_name, _charge = defect
+            total_concentration = solver.defect_thermodynamics.get_equilibrium_concentrations(
+                **concentration_kwargs, per_charge=False, skip_formatting=True
+            )["Concentration (cm^-3)"].loc[defect_name]
+            same_chempots_T_rows = concentrations  # get df rows with the same chempots and temperature(s)
+            for mu_T_col in [col for col in concentrations.columns if "μ_" in col or "Temp" in col]:
+                same_chempots_T_rows = same_chempots_T_rows[
+                    np.isclose(same_chempots_T_rows[mu_T_col], row[mu_T_col])
+                ]
+            df_total_concentration = (
+                same_chempots_T_rows.groupby("Defect")["Concentration (cm^-3)"]
+                .transform("sum")
+                .loc[defect_name]
+                .iloc[0]
+            )  # easier to compare total concentrations as (1) per-charge concentrations change from
+            # equilibrium with frozen defect approach, and (2) potential site competition effects
+
+        else:  # per_charge = False, defect is defect name without charge
+            total_concentration = sum(
+                entry.equilibrium_concentration(**concentration_kwargs)
+                for entry in solver.defect_thermodynamics.all_entries[defect]
             )
+            df_total_concentration = row["Concentration (cm^-3)"]
 
         # higher rtol required with large temperatures, concentrations more sensitive to rounded numbers:
         rtol = 1e-3 * (np.exp(temperature / 300))
         if defect in free_defects:
-            assert row["Concentration (cm^-3)"] < total_concentration
+            assert df_total_concentration < total_concentration
         else:
-            assert np.isclose(total_concentration, row["Concentration (cm^-3)"], rtol=rtol)
+            assert np.isclose(total_concentration, df_total_concentration, rtol=rtol)
 
 
 # TODO: Add actual tests for fixed_defects, free_defects and fix_charge_states
@@ -246,7 +269,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             temperature=700,
             per_charge=False,
             skip_formatting=True,
-        )  # currently FermiSolver only supports per charge=False
+        )  # per_charge=False to get total concentrations for simpler comparisons in tests
 
         cls.CdTe_300K_eff_1e16_fermi_level, cls.CdTe_300K_eff_1e16_e, cls.CdTe_300K_eff_1e16_h = (
             cls.CdTe_thermo.get_equilibrium_fermi_level(
@@ -259,7 +282,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             temperature=300,
             per_charge=False,
             skip_formatting=True,
-        )  # currently FermiSolver only supports per charge=False
+        )  # per_charge=False to get total concentrations for simpler comparisons in tests
 
         (
             cls.CdTe_anneal_800K_eff_1e16_fermi_level,
@@ -270,7 +293,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             annealing_temperature=800,
             effective_dopant_concentration=1e16,
             limit="Te-rich",
-            per_charge=False,  # currently FermiSolver only supports per charge=False
+            per_charge=False,  # per_charge=False to get total concentrations for simpler comparisons
             skip_formatting=True,
         )
         # drop Dopant row, included as column instead
@@ -288,7 +311,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             annealing_temperature=1400,
             quenched_temperature=150,
             limit="Cd-rich",
-            per_charge=False,  # currently FermiSolver only supports per charge=False
+            per_charge=False,  # per_charge=False to get total concentrations for simpler comparisons
             skip_formatting=True,
         )
 
@@ -2094,6 +2117,8 @@ def _check_output_concentrations(solver, result):
     expected_concentrations = solver._solve(
         **kwargs,
         append_chempots=True,
+        # detect per_charge from the result index type (MultiIndex with "Charge" level = per_charge=True):
+        per_charge=isinstance(result.index, pd.MultiIndex) and "Charge" in result.index.names,
     )
     print(f"Comparing:\n{result}\nto\n{expected_concentrations}\nwith kwargs: {kwargs}")
     pd.testing.assert_frame_equal(result, expected_concentrations, check_dtype=False)

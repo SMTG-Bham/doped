@@ -5374,21 +5374,47 @@ class FermiSolver(MSONable):
                     decomposed=per_charge, per_volume=not per_site
                 )
 
-            data = [
-                {
-                    "Defect": k,
-                    "Concentration (cm^-3)": v,
-                    "Temperature (K)": defect_system.temperature,
-                    "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
-                    "Electrons (cm^-3)": conc_dict["n0"],
-                    "Holes (cm^-3)": conc_dict["p0"],
-                }
-                for k, v in conc_dict.items()
-                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]
-            ]
+            data = []
+            for k, v in conc_dict.items():
+                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
+                    per_defect_data = {
+                        "Defect": k,
+                        "Charge": None,
+                        "Concentration (cm^-3)": v,
+                        "Formation Energy (eV)": None,
+                        "Charge State Population": None,
+                        "Temperature (K)": defect_system.temperature,
+                        "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
+                        "Electrons (cm^-3)": conc_dict["n0"],
+                        "Holes (cm^-3)": conc_dict["p0"],
+                    }
+
+                    if per_charge:
+                        total_concentration = sum(v.values())
+                        for charge, charge_state_concentration in v.items():
+                            per_charge_state_data = per_defect_data.copy()
+                            per_charge_state_data["Charge"] = charge
+                            per_charge_state_data["Formation Energy (eV)"] = round(
+                                defect_system.defect_species_by_name(k)
+                                .charge_states[charge]
+                                .get_formation_energy(conc_dict["Fermi Energy"]),
+                                3,
+                            )
+                            per_charge_state_data["Charge State Population"] = (
+                                f"{charge_state_concentration / total_concentration:.2%}"
+                            )
+                            per_charge_state_data["Concentration (cm^-3)"] = charge_state_concentration
+                            data.append(per_charge_state_data)
+
+                    else:
+                        for col in ["Charge", "Formation Energy (eV)", "Charge State Population"]:
+                            del per_defect_data[col]  # remove placeholder columns
+                        data.append(per_defect_data)
 
             concentrations = pd.DataFrame(data)
-            concentrations = concentrations.set_index("Defect", drop=True)
+            concentrations = concentrations.set_index(
+                "Defect" if not per_charge else ["Defect", "Charge"], drop=True
+            )
 
         if append_chempots:
             for key, value in single_chempot_dict.items():
@@ -5716,21 +5742,48 @@ class FermiSolver(MSONable):
                 )
 
             # order is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
-            data = [
-                {
-                    "Defect": k,
-                    "Concentration (cm^-3)": v,
-                    "Annealing Temperature (K)": annealing_temperature,
-                    "Quenched Temperature (K)": quenched_temperature,
-                    "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
-                    "Electrons (cm^-3)": conc_dict["n0"],
-                    "Holes (cm^-3)": conc_dict["p0"],
-                }
-                for k, v in conc_dict.items()
-                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]
-            ]
+            data = []
+            for k, v in conc_dict.items():
+                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
+                    per_defect_data = {
+                        "Defect": k,
+                        "Charge": None,
+                        "Concentration (cm^-3)": v,
+                        "Formation Energy (eV)": None,
+                        "Charge State Population": None,
+                        "Annealing Temperature (K)": annealing_temperature,
+                        "Quenched Temperature (K)": quenched_temperature,
+                        "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
+                        "Electrons (cm^-3)": conc_dict["n0"],
+                        "Holes (cm^-3)": conc_dict["p0"],
+                    }
+
+                    if per_charge:
+                        total_concentration = sum(v.values())
+                        for charge, charge_state_concentration in v.items():
+                            per_charge_state_data = per_defect_data.copy()
+                            per_charge_state_data["Charge"] = charge
+                            per_charge_state_data["Formation Energy (eV)"] = round(
+                                defect_system.defect_species_by_name(k)
+                                .charge_states[charge]
+                                .get_formation_energy(conc_dict["Fermi Energy"]),
+                                3,
+                            )
+                            per_charge_state_data["Charge State Population"] = (
+                                f"{charge_state_concentration / total_concentration:.2%}"
+                            )
+                            per_charge_state_data["Concentration (cm^-3)"] = charge_state_concentration
+                            data.append(per_charge_state_data)
+
+                    else:
+                        for col in ["Charge", "Formation Energy (eV)", "Charge State Population"]:
+                            del per_defect_data[col]  # remove placeholder columns
+                        data.append(per_defect_data)
+
             concentrations = pd.DataFrame(data)
-            concentrations = concentrations.set_index("Defect", drop=True)
+            concentrations = concentrations.set_index(
+                "Defect" if not per_charge else ["Defect", "Charge"], drop=True
+            )
 
         if append_chempots:
             for key, value in single_chempot_dict.items():
@@ -8119,20 +8172,23 @@ def _get_min_max_target_values(
 
     chempots_labels = [col for col in results_df.columns if col.startswith("μ_")]
 
+    # handle MultiIndex (per_charge=True gives ("Defect", "Charge") tuples) -- extract defect names:
+    defect_names = (
+        results_df.index.get_level_values("Defect")
+        if isinstance(results_df.index, pd.MultiIndex)
+        else results_df.index
+    )
+
     # determine target; can be column, defect name, element (TODO), starting string of column name,
     # starting string of defect name, column name subset or defect name subset, w/that preferential order:
 
     target_names = (
         [col for col in results_df.columns if col == target]
-        or [defect_name for defect_name in results_df.index if defect_name == target]
+        or [name for name in defect_names if name == target]
         or [col for col in results_df.columns if col.lower().startswith(target.lower())]
-        or [
-            defect_name
-            for defect_name in results_df.index
-            if defect_name.lower().startswith(target.lower())
-        ]
+        or [name for name in defect_names if name.lower().startswith(target.lower())]
         or [col for col in results_df.columns if target in col]
-        or [defect_name for defect_name in (results_df.index) if target in defect_name]
+        or [name for name in defect_names if target in name]
     )
     target_names = sorted(set(target_names), key=target_names.index)  # preserve order
 
@@ -8162,13 +8218,17 @@ def _get_min_max_target_values(
         target_chempot = target_df[chempots_labels]
 
     else:
-        filtered_df = results_df[results_df.index.isin(target_names)]  # filter df for the chosen defect(s)
-        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects):
-        summed_df = filtered_df.groupby(chempots_labels).sum()
+        # filter df for the chosen defect(s), handling both simple and MultiIndex (per_charge=True):
+        filtered_df = results_df[defect_names.isin(target_names)]
         # TODO: When adding element option, will need to subtract for vacancies...
-        current_value = min_or_max_func(summed_df["Concentration (cm^-3)"])  # find the extremum row
+
+        # group by chemical potentials, to sum values at the same chempots (e.g. for different defects /
+        # charge states); only sum the concentration column to avoid issues with non-numeric columns (e.g.
+        # "Charge State Population" strings):
+        summed_conc = filtered_df.groupby(chempots_labels)["Concentration (cm^-3)"].sum()
+        current_value = min_or_max_func(summed_conc)  # find the extremum
         # get chempots which min/maximise the target:
-        target_chempot = summed_df[summed_df["Concentration (cm^-3)"] == current_value].index.to_frame()
+        target_chempot = summed_conc[summed_conc == current_value].index.to_frame()
         # get all DataFrame rows which have the chempots matching the extremum row:
         target_df = results_df[results_df[chempots_labels].eq(target_chempot.iloc[0]).all(axis=1)]
 
