@@ -48,7 +48,7 @@ _orientational_degeneracy_warning = (
     "You can manually check (and edit) the computed defect point symmetries and corresponding "
     "orientational degeneracy factors by inspecting/editing the calculation_metadata['relaxed point "
     "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
-)  # TODO: Update link when published
+)
 
 _falling_back_to_common_oxi_states_warning = (
     "Oxidation states could not be guessed. The most common oxidation state for each element will be "
@@ -1403,11 +1403,11 @@ class DefectEntry(thermo.DefectEntry):
             degeneracy_factor = (
                 np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
             )
-            # set minimum per-site concentration for numerical stability; 1e-100 roughly corresponds to one
-            # 1e-50 defects per Earth volume (~10^27 cm^3); ~10^23 sites per cm^3 ~> 10^50 sites per Earth
+            # set minimum per-site concentration for numerical stability; 1e-150 roughly corresponds to one
+            # 1e-100 defects per Earth volume (~10^27 cm^3); ~10^23 sites per cm^3 ~> 10^50 sites per Earth
             # setting to 1e-50 can cause some oddities with the site competition routine (doesn't affect
             # main results as it only affects low concentration defects though)
-            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-100)
+            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-150)
             if site_competition:
                 per_site_concentration /= 1 + per_site_concentration
             elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
