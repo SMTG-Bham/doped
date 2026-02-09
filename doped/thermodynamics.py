@@ -7748,9 +7748,19 @@ class FermiSolver(MSONable):
 
         defect_species = []  # dicts of: {"charge_states": {...}, "nsites": X, "name": label}
         for label, entry_list in self.defect_thermodynamics.all_entries.items():
+            # py-sc-fermi doesn't allow degeneracies < 1, so we set the defect multiplicity to be either
+            # the minimum multiplicity of entries in the group, or the minimum multiplicity-degeneracy
+            # product (if lower), to ensure the degeneracy used for py-sc-fermi DefectSpecies is >=1
+            min_degeneracy_multiplicity_factor = min(
+                (np.prod(list(entry.degeneracy_factors.values())) if entry.degeneracy_factors else 1)
+                * entry.defect.multiplicity
+                for entry in entry_list
+            )
+            min_multiplicity = min(entry.defect.multiplicity for entry in entry_list)
+            reference_multiplicity = min(min_multiplicity, min_degeneracy_multiplicity_factor)
             defect_species_dict = {
                 "charge_states": {},
-                "nsites": entry_list[0].defect.multiplicity / self.multiplicity_scaling,
+                "nsites": reference_multiplicity / self.multiplicity_scaling,
                 "name": label,
             }
             for entry in entry_list:
@@ -7764,7 +7774,7 @@ class FermiSolver(MSONable):
                 # states of a given grouped defect, but this is not necessarily the case for
                 # interstitials (e.g. Te_i_Td_Te2.83_a), so we account for this in the degeneracy
                 # factors here:
-                degeneracy_factor *= entry.defect.multiplicity / entry_list[0].defect.multiplicity
+                degeneracy_factor *= entry.defect.multiplicity / reference_multiplicity
                 defect_species_dict["charge_states"][entry.charge_state] = {
                     "charge": entry.charge_state,
                     "energy": formation_energy,

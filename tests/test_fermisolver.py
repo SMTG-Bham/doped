@@ -1881,7 +1881,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test ``optimise`` method to min/max a defect concentration, where now
         we use a defect name substring to match multiple defects.
 
-        Here we use the vacanies in Sb2S3 as an example case; see
+        Here we use the vacancies in Sb2S3 as an example case; see
         10.1021/acsenergylett.4c02722 for reference.
         """
         solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
