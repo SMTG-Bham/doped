@@ -2625,7 +2625,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             np.mean(quenched_fermi_levels[6:8]), 0.31825, atol=1e-3 if backend == "doped" else 1e-2
         )
 
-    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te.png")
+    @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te_both_backends.png")
     def test_delta_gap_interpolate_chempots_CdTe(self):
         """
         Mirrors ``test_CdTe_concentrations_vs_chempots`` in
@@ -3020,7 +3020,7 @@ def _check_output_concentrations(solver, result):
 
 
 def _plot_Cu_i_data(Cu_i_data):
-    Cu_i_concs = Cu_i_data["Concentration (cm^-3)"]
+    Cu_i_concs = Cu_i_data["Total Concentration (cm^-3)"]
     plt.style.use(STYLE)
     fig, ax = plt.subplots()
     from matplotlib.colors import LogNorm

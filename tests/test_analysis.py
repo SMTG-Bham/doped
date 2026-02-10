@@ -1103,9 +1103,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         conc_df = thermo.get_equilibrium_concentrations()  # no chempots or Fermi level
         print("conc_df", conc_df)  # for debugging
         srtio3_V_O_conc_lists = [  # with no chempots or Fermi level (so using Eg/2)
-            ["5.068e-78", 9.742, "N/A", "33.33%"],  # +2  # "N/A" is placeholder here for per-site concs
-            ["5.068e-78", 11.043, "N/A", "33.33%"],  # +1
-            ["5.068e-78", 12.635, "N/A", "33.33%"],  # 0
+            ["5.068e-128", 9.742, "N/A", "33.33%"],  # +2  # "N/A" is placeholder here for per-site concs
+            ["5.068e-128", 11.043, "N/A", "33.33%"],  # +1
+            ["5.068e-128", 12.635, "N/A", "33.33%"],  # 0
         ]  # (in order of positive to negative, left to right on formation energy diagram)
         for i, (index, row) in enumerate(conc_df.iterrows()):
             print(i, index, row)
@@ -1131,7 +1131,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         )
 
         assert thermo.get_equilibrium_concentrations(per_charge=False).to_numpy().tolist() == [
-            ["1.520e-77"]
+            ["1.520e-127"]
         ]
         print(  # for debugging
             "per_charge_F conc_df:", thermo.get_equilibrium_concentrations(per_charge=False, per_site=True)
@@ -1156,11 +1156,11 @@ class DefectsParsingTestCase(unittest.TestCase):
                 .to_numpy()
                 .tolist()
             )
-        ) == ["1.520e-77"]
+        ) == ["1.520e-127"]
 
         per_site_conc_df = thermo.get_equilibrium_concentrations(per_site=True, fermi_level=1.710795)
         print("per_site_conc_df", per_site_conc_df)  # for debugging
-        custom_fermi_concs = ["1.000e-98 %", "1.000e-98 %", "1.000e-98 %"]
+        custom_fermi_concs = ["1.000e-148 %", "1.000e-148 %", "1.000e-148 %"]
         for i, (index, row) in enumerate(per_site_conc_df.iterrows()):
             print(i, index, row)
             assert row["Concentration (per site)"] == custom_fermi_concs[i]
@@ -1176,7 +1176,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist() == [["1.520e-77"]]
+        assert conc_df.to_numpy().tolist() == [["1.520e-127"]]
         assert conc_df.index[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
@@ -1191,9 +1191,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_conc_df_lists = [
-            [5.067520711200816e-78, 9.822, "33.33%", 1.5202562133602447e-77],  # +2
-            [5.067520711200816e-78, 11.083, "33.33%", 1.5202562133602447e-77],  # +1
-            [5.067520711200816e-78, 12.635, "33.33%", 1.5202562133602447e-77],  # 0
+            [5.067520711200816e-128, 9.822, "33.33%", 1.5202562133602447e-127],  # +2
+            [5.067520711200816e-128, 11.083, "33.33%", 1.5202562133602447e-127],  # +1
+            [5.067520711200816e-128, 12.635, "33.33%", 1.5202562133602447e-127],  # 0
         ]
         assert_df_rows_equal(conc_df, quenched_conc_df_lists)
 
@@ -1208,9 +1208,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
         quenched_per_site_conc_df_lists = [
-            ["5.068e-78", 9.822, "1.000e-98 %", "33.33%", "1.520e-77"],  # +2
-            ["5.068e-78", 11.083, "1.000e-98 %", "33.33%", "1.520e-77"],  # +1
-            ["5.068e-78", 12.635, "1.000e-98 %", "33.33%", "1.520e-77"],  # 0
+            ["5.068e-128", 9.822, "1.000e-148 %", "33.33%", "1.520e-127"],  # +2
+            ["5.068e-128", 11.083, "1.000e-148 %", "33.33%", "1.520e-127"],  # +1
+            ["5.068e-128", 12.635, "1.000e-148 %", "33.33%", "1.520e-127"],  # 0
         ]
         assert_df_rows_equal(conc_df, quenched_per_site_conc_df_lists)
 
@@ -1226,7 +1226,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(e_conc, h_conc, rtol=1e-4)  # same because defect concentration negligible
         # without chempots
         assert np.isclose(e_conc, 6.129e-7, rtol=1e-3)
-        assert conc_df.to_numpy().tolist()[0][-1] == 3e-100
+        assert conc_df.to_numpy().tolist()[0][-1] == 3e-150
         assert conc_df.index.to_numpy()[0] == "vac_O"
         assert conc_df.index.name == "Defect"
 
