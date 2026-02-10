@@ -2187,8 +2187,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     def test_equilibrium_solve_per_site(self, backend):
         """
         Test ``_equilibrium_solve`` method with ``per_site=True`` returns the
-        expected formation, for the ``doped`` backend, and that it gives an
-        error (as it's not supported) for the ``py-sc-fermi`` backend.
+        expected format, for the ``doped`` backend, and that it gives an error
+        (as it's not supported) for the ``py-sc-fermi`` backend.
 
         Tests that ``per_site=True`` adds per-site concentration column.
         """
@@ -2249,6 +2249,20 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             rtol=1e-3,
         )
 
+        # compare per_site concentrations to DefectThermodynamics.get_equilibrium_concentrations
+        # (which is separately benchmarked and tested)
+        eq_conc_kwargs = eq_solve_kwargs.copy()
+        eq_conc_kwargs["chempots"] = eq_conc_kwargs.pop("single_chempot_dict")
+        del eq_conc_kwargs["append_chempots"]
+        eq_conc_df = self.CdTe_thermo.get_equilibrium_concentrations(
+            **eq_conc_kwargs, per_site=True, skip_formatting=True
+        )
+        pd.testing.assert_series_equal(
+            concentrations_per_site["Concentration (per site)"],
+            eq_conc_df["Concentration (per site)"],
+            rtol=1e-3,
+        )
+
     @parameterize_backend()
     def test_pseudo_equilibrium_solve_per_charge_per_site(self, backend):
         """
@@ -2272,17 +2286,17 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
 
         results = {}
+        pseudo_eq_solve_kwargs = {
+            "annealing_temperature": 800,
+            "single_chempot_dict": single_chempot_dict,
+            "el_refs": el_refs,
+            "quenched_temperature": 300,
+            "effective_dopant_concentration": 1e16,
+            "append_chempots": True,
+        }
         for kwargs in kwargs_combinations:
             key = (kwargs["per_charge"], kwargs["per_site"])
-            results[key] = solver._pseudo_equilibrium_solve(
-                annealing_temperature=800,
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                quenched_temperature=300,
-                effective_dopant_concentration=1e16,
-                append_chempots=True,
-                **kwargs,
-            )
+            results[key] = solver._pseudo_equilibrium_solve(**pseudo_eq_solve_kwargs, **kwargs)
 
         # All should have the same Fermi level, electron, hole concentrations
         reference_result = results[(True, False)]
@@ -2313,10 +2327,42 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # per_charge=False should have defect names without charge states
         assert "v_Cd" in per_charge_false_indices
 
+        if solver.backend == "py-sc-fermi":
+            return  # that's enough, bro
+
         # Check per_site=True adds the right column (for doped backend)
-        if solver.backend == "doped":
-            assert "Concentration (per site)" in results[(True, True)].columns
-            assert "Concentration (per site)" in results[(False, True)].columns
+        assert "Concentration (per site)" in results[(True, True)].columns
+        assert "Concentration (per site)" in results[(False, True)].columns
+
+        # compare per_site concentrations to DefectThermodynamics.get_fermi_level_and_concentrations
+        # (which is separately benchmarked and tested)
+        conc_kwargs = pseudo_eq_solve_kwargs.copy()
+        conc_kwargs["chempots"] = conc_kwargs.pop("single_chempot_dict")
+        del conc_kwargs["append_chempots"]
+        fermi_level, e_conc, h_conc, conc_df = self.CdTe_thermo.get_fermi_level_and_concentrations(
+            **conc_kwargs, per_site=True, skip_formatting=True
+        )
+        conc_df = conc_df.drop(index="Dopant")  # cut dopant row from conc_df
+        pd.testing.assert_series_equal(
+            results[(True, True)]["Concentration (per site)"],
+            conc_df["Concentration (per site)"],
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            fermi_level,
+            results[(True, True)]["Fermi Level (eV wrt VBM)"].iloc[0],
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            e_conc,
+            results[(True, True)]["Electrons (cm^-3)"].iloc[0],
+            rtol=1e-3,
+        )
+        assert np.isclose(
+            h_conc,
+            results[(True, True)]["Holes (cm^-3)"].iloc[0],
+            rtol=1e-3,
+        )
 
     @parameterize_backend()
     def test_pseudo_equilibrium_solve_return_annealing_values(self, backend):
