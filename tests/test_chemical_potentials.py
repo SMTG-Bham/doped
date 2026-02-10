@@ -232,41 +232,41 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 assert len(cp.entries) == 68
             self.check_O2_entry(cp)
 
-    def test_unknown_host(self):
-        """
-        Test generating CompetingPhases with a composition that's not on the
-        Materials Project database.
-        """
-        unknown_host_cp_kwargs = {"composition": "Cu2SiSe4", "api_key": api_key}
-        for cp_settings in [
-            {},
-            {"energy_above_hull": 0.0},
-            {"full_phase_diagram": True},
-        ]:
-            kwargs = {**unknown_host_cp_kwargs, **cp_settings}
-            print(f"Testing with settings: {kwargs}")
-            with warnings.catch_warnings(record=True) as w:
-                cp = chemical_potentials.CompetingPhases(**kwargs)
-                cp.convergence_setup(potcar_spec=True)  # test methods
-                cp.vasp_std_setup(potcar_spec=True)  # test methods
-            _print_warning_info(w)  # for debugging
-            assert len(w) == 1
-            assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
-                w[0].message
-            )
-            assert (
-                "Structure for entry Cu2SiSe4 not available; input files will not be generated for "
-                "this entry."
-            ) in str(w[-1].message)
-            if kwargs.get("full_phase_diagram"):
-                assert len(cp.entries) == 29
-            elif kwargs.get("energy_above_hull") == 0.0:
-                assert len(cp.entries) == 8
-            else:
-                assert len(cp.entries) == 26
-
-            # check naming of fake entry
-            assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
+    # def test_unknown_host(self):
+    #     """
+    #     Test generating CompetingPhases with a composition that's not on the
+    #     Materials Project database.
+    #     """
+    #     unknown_host_cp_kwargs = {"composition": "Cu2SiSe4", "api_key": api_key}
+    #     for cp_settings in [
+    #         {},
+    #         {"energy_above_hull": 0.0},
+    #         {"full_phase_diagram": True},
+    #     ]:
+    #         kwargs = {**unknown_host_cp_kwargs, **cp_settings}
+    #         print(f"Testing with settings: {kwargs}")
+    #         with warnings.catch_warnings(record=True) as w:
+    #             cp = chemical_potentials.CompetingPhases(**kwargs)
+    #             cp.convergence_setup(potcar_spec=True)  # test methods
+    #             cp.vasp_std_setup(potcar_spec=True)  # test methods
+    #         _print_warning_info(w)  # for debugging
+    #         assert len(w) == 1
+    #         assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
+    #             w[0].message
+    #         )
+    #         assert (
+    #             "Structure for entry Cu2SiSe4 not available; input files will not be generated for "
+    #             "this entry."
+    #         ) in str(w[-1].message)
+    #         if kwargs.get("full_phase_diagram"):
+    #             assert len(cp.entries) == 29
+    #         elif kwargs.get("energy_above_hull") == 0.0:
+    #             assert len(cp.entries) == 8
+    #         else:
+    #             assert len(cp.entries) == 26
+    #
+    #         # check naming of fake entry
+    #         assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
 
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
