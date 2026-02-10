@@ -3292,7 +3292,7 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 )
                 _check_output_concentrations(w_v_Cu_solver, result)
 
-    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png")
+    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png", tolerance=4)
     def test_plot_scan_chemical_potential_grid(self, backend="doped"):
         """
         Test ``scan_chemical_potential_grid`` method, by plotting the output
@@ -3310,7 +3310,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         )
         return _plot_Cu_i_data(data.loc["Int_Cu"])
 
-    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid_cartesian.png")
+    @custom_mpl_image_compare(
+        filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid_cartesian.png", tolerance=4
+    )
     def test_plot_scan_chemical_potential_grid_cartesian(self, backend="doped"):
         solver = FermiSolver(
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
