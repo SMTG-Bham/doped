@@ -881,8 +881,8 @@ def get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     +/-``padding`` to the fully-ionised vacancy charge state (a.k.a. the
     vacancy oxidation state).
 
-    e.g. for vacancies in Sb2O5 (doi.org/10.1021/acs.chemmater.3c03257), the
-    fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2
+    e.g. vacancies in Sb2O5 (https://doi.org/10.1021/acs.chemmater.3c03257),
+    the fully-ionised charge states for ``V_Sb`` and ``V_O`` are -5 and +2
     respectively (i.e. the negative of the elemental oxidation states in
     Sb2O5), so the estimated charge states would be from +1 to -5 for ``V_Sb``
     and from +2 to -1 for ``V_O`` for the default ``padding`` of 1.
