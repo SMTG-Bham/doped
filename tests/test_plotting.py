@@ -7,7 +7,6 @@ tests much of the plotting functionality.
 """
 
 import os
-import shutil
 import unittest
 import warnings
 from copy import deepcopy
@@ -15,7 +14,8 @@ from copy import deepcopy
 import matplotlib as mpl
 import pytest
 from monty.serialization import loadfn
-from test_thermodynamics import DefectThermodynamicsSetupMixin, custom_mpl_image_compare, data_dir
+from test_thermodynamics import DefectThermodynamicsSetupMixin
+from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir
 
 from doped import analysis
 from doped.thermodynamics import DefectThermodynamics
@@ -24,26 +24,13 @@ from doped.utils import plotting
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
-def if_present_rm(path):
-    """
-    Remove file or directory if it exists.
-    """
-    if os.path.exists(path):
-        if os.path.isfile(path):
-            os.remove(path)
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
-
-
 class DefectPlottingTestCase(unittest.TestCase):
     def setUp(self):
-        self.module_path = os.path.dirname(os.path.abspath(__file__))
-        self.EXAMPLE_DIR = os.path.join(self.module_path, "../examples")
-        self.CdTe_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/CdTe")
-        self.CdTe_thermo = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_example_thermo.json")
-        self.CdTe_chempots = loadfn(f"{self.CdTe_EXAMPLE_DIR}/CdTe_chempots.json")
-        self.YTOS_EXAMPLE_DIR = os.path.join(self.module_path, "../examples/YTOS")
-        self.YTOS_thermo = loadfn(f"{self.YTOS_EXAMPLE_DIR}/YTOS_example_thermo.json")
+        self.CdTe_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "CdTe")
+        self.CdTe_thermo = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"))
+        self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
+        self.YTOS_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "YTOS")
+        self.YTOS_thermo = loadfn(os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json"))
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe(self):
@@ -295,6 +282,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th}^{+2}$",
             "As_i_C2_-3": "As$_i^{-3}$",
             "Ag_i_C3v_Ag2.40_0": "Ag$_i^{0}$",
+            "Ga_O_C1_Ga1.93Ga2.08O2.62aas_0": "Ga$_{O}^{0}$",
         }
 
         for defect_species, expected_name in defect_species_name_dict.items():
@@ -374,6 +362,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             "vac_14_Th_+2": "$\\it{V}\\!$ $_{Th_{14}}^{+2}$",
             "As_i_C2_-3": "As$_{i_{C_{2}}}^{-3}$",
             "Ag_i_C3v_Ag2.40_0": "Ag$_{i_{C_{3v}-Ag2.40}}^{0}$",
+            "Ga_O_C1_Ga1.93Ga2.08O2.62aas_0": "Ga$_{O_{C_{1}-Ga1.93Ga2.08O2.62aas}}^{0}$",
         }
         for (
             defect_species,
@@ -420,7 +409,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         )
 
         cls.orig_Se_amalgamated_extrinsic_thermo = DefectThermodynamics.from_json(
-            f"{cls.EXAMPLE_DIR}/Se/Se_Amalgamated_Extrinsic_Thermo.json.gz"
+            f"{EXAMPLE_DIR}/Se/Se_Amalgamated_Extrinsic_Thermo.json.gz"
         )
         cls.orig_Bi_Se_thermo = loadfn(f"{data_dir}/Bi_Se_BiSeI_thermo.json.gz")
 

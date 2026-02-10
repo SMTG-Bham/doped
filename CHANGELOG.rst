@@ -3,12 +3,33 @@ Change Log
 
 ..  Release checklist: Version bump, update changelog, possibly update pytest timings if significant new tests added, check tutorials run, update SnB?
 
+v.3.2.1
+----------
+- Add ``per_site``, ``per_charge`` and ``return_annealing_values`` options to ``FermiSolver`` methods, for more flexible output formatting.
+- Add `fixed_elements` option to `optimise()` and `scan_chemical_potential_grid()`
+- Add ``plot_chempot_heatmap`` method to ``DefectThermodynamics``, for convenience.
+- Add ``include_unique_wyckoffs`` option to ``get_interstitial_sites`` (see https://github.com/SMTG-Bham/doped/issues/140)
+- Avoid interstitial duplication in mixed-valence systems.
+- Fixes and extensions for ``py-sc-fermi`` ``FermiSolver`` backend: degeneracy handling, ``delta_gap`` handling, and multiplicity scaling with non-primitive DOS cells.
+- Numerical stability improvements: extend ``brentq`` Fermi level search limits, cap defect concentration bounds, and custom ``ConvexHull`` code for chemical potential spaces.
+- Handle magnetization parsing for cases with ``N_spin_down > N_spin_up``.
+- Update ``symmetry_preference`` to relative ``symm_pref_dist_factor`` for more consistent behaviour across systems.
+- Update interstitial clustering method to ``centroid`` to avoid over-daisy-chaining.
+- Default to most common elemental oxidation states when guessing fails (following SnB approach).
+- Smart ``n_points`` estimation for ``ChemicalPotentialGrid.get_grid()``.
+- Update ``spglib`` error handling for compatibility with ``>=2.7``.
+- Make ``pydefect`` a softer dependency, minimising imports.
+- Modularise ``DefectsGenerator`` internals for future extensibility (i.e. complexes...).
+- ``DefectsParser`` refactoring and cleanup.
+- Various robustness, efficiency and docs updates.
+
 v.3.2.0
 ----------
 - Add `fast` chempot heatmap plotting for arbitrary dimension systems; see https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
 - Modularise `DefectsParser` in preparation for additional code support (Quantum Espresso; https://github.com/SMTG-Bham/doped/pull/133)
 - Automatically identify dimer bonds in defect supercells and inform user of potential spin polarisation
 - Detect cases of matching kpoint grids but mismatching shifts
+- Add ``shallow_dopant_binding_energy`` convenience function (hydrogenic effective mass model).
 - Update defect clustering naming behaviour (https://doped.readthedocs.io/en/latest/doped.thermodynamics.html#doped.thermodynamics.name_defect_cluster)
 - Updates to be fully compatible with latest ``pymatgen`` (https://github.com/SMTG-Bham/doped/issues/144)
 - ``numpy`` v2 (and v1) compatibility

@@ -25,7 +25,7 @@ from doped.utils.efficiency import Composition, Element, PeriodicSite, Structure
 if TYPE_CHECKING:
     from matplotlib.pyplot import Figure
 
-    from doped.utils.parsing import suppress_logging
+    from doped import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # type: ignore
         try:
@@ -41,15 +41,21 @@ mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 _orientational_degeneracy_warning = (
     "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
     "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
-    "point group symmetries (and thus orientational degeneracies) from being automatically "
-    "determined.\n"
+    "point group symmetries (and thus orientational degeneracies) from being automatically determined.\n"
     "This will not affect defect formation energies / transition levels, but can be important for "
-    "concentrations/doping/Fermi level behaviour (see e.g. doi.org/10.1039/D2FD00043A & "
-    "doi.org/10.1039/D3CS00432E).\n"
-    "You can manually check (and edit) the computed defect/bulk point symmetries and "
-    "corresponding orientational degeneracy factors by inspecting/editing the "
-    "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
-    "degeneracy_factors['orientational degeneracy'] attributes."
+    "concentrations/doping/Fermi level behaviour (10.1039/D2FD00043A, 10.1039/D3CS00432E, "
+    "10.1038/s41578-025-00879-y ...).\n"
+    "You can manually check (and edit) the computed defect point symmetries and corresponding "
+    "orientational degeneracy factors by inspecting/editing the calculation_metadata['relaxed point "
+    "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
+)
+
+_falling_back_to_common_oxi_states_warning = (
+    "Oxidation states could not be guessed. The most common oxidation state for each element will be "
+    "used, which may not be appropriate! Oxidation states are used in charge state guessing. You can "
+    "manually edit charge states with the add/remove_charge_states methods (see tutorials), or you can "
+    "set the oxidation states of the input structure (e.g. using "
+    "structure.add_oxidation_state_by_element()) and re-initialize DefectsGenerator()."
 )
 
 
@@ -88,7 +94,8 @@ class DefectEntry(thermo.DefectEntry):
             A dictionary of degeneracy factors contributing to the total
             degeneracy of the defect species (such as spin and configurational
             degeneracy etc). This is an important factor in the defect
-            concentration equation (see https://doi.org/10.1039/D2FD00043A and
+            concentration equation (https://doi.org/10.1039/D2FD00043A,
+            https://doi.org/10.1038/s41578-025-00879-y,
             https://doi.org/10.1039/D3CS00432E), and so affects the output of
             the defect concentration / Fermi level functions. Spin and
             configurational (geometry) degeneracy factors are automatically
@@ -154,7 +161,7 @@ class DefectEntry(thermo.DefectEntry):
     equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
     _BilbaoCS_conv_cell_vector_mapping: list[int] = field(default_factory=lambda: [0, 1, 2])
     wyckoff: str | None = None
-    charge_state_guessing_log: dict = field(default_factory=dict)
+    charge_state_guessing_log: list[dict] | None = None
     defect_supercell: Structure | None = None
     defect_supercell_site: PeriodicSite | None = None  # TODO: Add `from_structures` method to
     # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
@@ -251,7 +258,7 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             ``DefectEntry`` object
         """
-        from doped.utils.parsing import suppress_logging
+        from doped import suppress_logging
 
         with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression:
             return super().from_dict(d)
@@ -1204,7 +1211,7 @@ class DefectEntry(thermo.DefectEntry):
         per_site: bool = False,
         symprec: float | None = None,
         formation_energy: float | None = None,
-        site_competition: bool = True,
+        site_competition: bool | None = True,
         **kwargs,
     ) -> float:
         r"""
@@ -1225,8 +1232,13 @@ class DefectEntry(thermo.DefectEntry):
         defect concentration equation, affecting the final concentration by up
         to 2 orders of magnitude. This factor is taken from the product of the
         ``defect_entry.defect.multiplicity`` and
-        ``defect_entry.degeneracy_factors`` attributes. See discussion in:
-        https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E.
+        ``defect_entry.degeneracy_factors`` attributes. Discussion in:
+        https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+        https://doi.org/10.1038/s41578-025-00879-y...
+
+        Note that this function sets lower and upper bounds on the per-site
+        defect concentrations of 1e-50 and 1 (the latter only applying when
+        ``site_competition = False``).
 
         Args:
             temperature (float):
@@ -1319,7 +1331,8 @@ class DefectEntry(thermo.DefectEntry):
                 ``g`` (see https://doi.org/10.1039/D3CS00432E)), which gives
                 the following defect concentration equation:
                 ``N_X = N*[g*exp(-E/kT) / (1 + sum(g_i*exp(-E_i/kT)))]``
-                (https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
+                (https://doi.org/10.1038/s41578-025-00879-y,
+                https://doi.org/10.1021/jacs.5c07104) where ``i`` runs over
                 all defects which occupy the same site as the defect of
                 interest. Otherwise, uses the standard dilute limit
                 approximation. Note that when used with
@@ -1331,10 +1344,13 @@ class DefectEntry(thermo.DefectEntry):
                 ``DefectThermodynamics.get_fermi_level_and_concentrations()``
                 (recommended) then all defects in the system occupying the same
                 lattice site are considered.
+                If set to ``None`` (primarily intended for internal usage), the
+                standard dilute limit is used without capping the defect
+                concentration at the bulk site concentration.
             **kwargs:
                 Additional keyword arguments to pass to
                 ``_parse_and_set_symmetries_and_degeneracies``, such as
-                ``bulk_symprec``, ``symprec``, ``dist_tol_factor`` etc.
+                ``bulk_symprec``, ``dist_tol_factor`` etc.
 
         Returns:
             float:
@@ -1348,8 +1364,8 @@ class DefectEntry(thermo.DefectEntry):
                 "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
                 "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
                 "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
-                "(see discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E). This will "
-                "affect the computed defect concentration / Fermi level!\n"
+                "(discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ...)."
+                "This will affect the computed defect concentration / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
                 "'spin degeneracy' in the degeneracy_factors attribute(s) -- usually 2 for odd-electron "
                 "defect species and 1 for even-electron)."
@@ -1362,11 +1378,11 @@ class DefectEntry(thermo.DefectEntry):
             warnings.warn(
                 "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
                 "attribute (for this vacancy/substitution defect). This factor contributes to the "
-                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- see "
-                "discussion in doi.org/10.1039/D2FD00043A and doi.org/10.1039/D3CS00432E) and is "
-                "automatically computed when parsing with doped if possible (if the defect supercell "
-                "doesn't break the host periodicity). This will affect the computed defect concentrations "
-                "/ Fermi level!\n"
+                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- "
+                "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ... "
+                "-- and is automatically computed when parsing with doped if possible (if the defect "
+                "supercell doesn't break the host periodicity). This will affect the computed defect "
+                "concentrations / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
             )
@@ -1387,9 +1403,19 @@ class DefectEntry(thermo.DefectEntry):
             degeneracy_factor = (
                 np.prod(list(self.degeneracy_factors.values())) if self.degeneracy_factors else 1
             )
-            per_site_concentration = exp_factor * degeneracy_factor
+            # set minimum per-site concentration for numerical stability; 1e-150 roughly corresponds to one
+            # 1e-100 defects per Earth volume (~10^27 cm^3); ~10^23 sites per cm^3 ~> 10^50 sites per Earth
+            # setting to 1e-50 can cause some oddities with the site competition routine (doesn't affect
+            # main results as it only affects low concentration defects though)
+            per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-150)
             if site_competition:
                 per_site_concentration /= 1 + per_site_concentration
+            elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
+                # this point anyway, this just makes it less so and stabilises some numerics)
+                # note that this sets the max at N_sites, rather than N_site * g_config,
+                # as this theoretical limit assumes that different configurations of the same site cannot
+                # be simultaneously occupied (i.e. gives an entropy boost but not site number boost)
+                per_site_concentration = np.minimum(per_site_concentration, 1)
 
             if per_site:
                 return per_site_concentration
@@ -1652,7 +1678,7 @@ def _get_dft_chempots(chempots: dict | None, el_refs: dict | None = None, limit:
     return chempots
 
 
-def _guess_and_set_struct_oxi_states(structure):
+def _guess_and_set_struct_oxi_states(structure: Structure) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, using
     the ``pymatgen`` ``BVAnalyzer`` class.
@@ -1690,7 +1716,9 @@ def _guess_and_set_struct_oxi_states(structure):
     return False  # if oxi states could not be guessed
 
 
-def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=False):
+def _guess_and_set_struct_oxi_states_icsd_prob(
+    structure: Structure, try_without_max_sites: bool = False
+) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, using
     the ``pymatgen``-tabulated ICSD oxidation state probabilities.
@@ -1722,10 +1750,8 @@ def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=
         attempt = 0
         structure.add_oxidation_state_by_guess(max_sites=-1)
         while (  # check oxi_states assigned and not all zero:
-            attempt < 3
-            and all(specie.oxi_state == 0 for specie in structure.species)
-            or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species)
-        ):
+            attempt < 3 and all(specie.oxi_state == 0 for specie in structure.species)
+        ) or not all(np.isclose(int(specie.oxi_state), specie.oxi_state) for specie in structure.species):
             attempt += 1
             if attempt == 1:
                 structure.add_oxidation_state_by_guess(max_sites=-1, all_oxi_states=True)
@@ -1742,7 +1768,7 @@ def _guess_and_set_struct_oxi_states_icsd_prob(structure, try_without_max_sites=
     return False
 
 
-def guess_and_set_struct_oxi_states(structure, try_without_max_sites=False):
+def guess_and_set_struct_oxi_states(structure: Structure, try_without_max_sites: bool = False):
     """
     Tries to guess (and set) the oxidation states of the input structure, first
     using the ``pymatgen`` ``BVAnalyzer`` class, and if that fails, using the
@@ -1769,8 +1795,12 @@ def guess_and_set_struct_oxi_states(structure, try_without_max_sites=False):
 
 
 def guess_and_set_oxi_states_with_timeout(
-    structure, timeout_1=10, timeout_2=15, break_early_if_expensive=False
-) -> bool:
+    structure: Structure,
+    timeout_1: float = 10,
+    timeout_2: float = 15,
+    break_early_if_expensive: bool = False,
+    common_oxi_states: bool = True,
+) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure, with
     a timeout catch for cases where the structure is complex and oxi state
@@ -1796,6 +1826,11 @@ def guess_and_set_oxi_states_with_timeout(
             attempt (with ``BVAnalyzer``) fails and the cost estimate for the
             ICSD probability guessing is high (expected to take a long time;
             > 10 seconds). Default is ``False``.
+        common_oxi_states (bool):
+            Whether to allow falling back to just using the most common
+            oxidation states for the elements present (with a warning), if
+            other oxidation state guessing routines fail.
+            Default is ``True``.
 
     Returns:
         Structure:
@@ -1811,12 +1846,96 @@ def guess_and_set_oxi_states_with_timeout(
         )  # if in a daemon process, can't spawn new `Process`s
         and _rough_oxi_state_cost_icsd_prob_from_comp(structure.composition) > 1e6
     ):
-        return False
+        structure_with_oxi = False
 
     if mp.current_process().daemon:  # if in a daemon process, can't spawn new `Process`s
-        return _guess_and_set_struct_oxi_states_icsd_prob(structure)
+        structure_with_oxi = _guess_and_set_struct_oxi_states_icsd_prob(structure)
 
-    return _guess_and_set_oxi_states_with_timeout_icsd_prob(structure, timeout_1, timeout_2)
+    else:
+        structure_with_oxi = _guess_and_set_oxi_states_with_timeout_icsd_prob(
+            structure, timeout_1, timeout_2
+        )
+
+    if not structure_with_oxi and common_oxi_states:
+        warnings.warn(_falling_back_to_common_oxi_states_warning)
+        oxi_dec_structure = structure.copy()  # don't modify original structure
+        oxi_dec_structure.add_oxidation_state_by_element(
+            {elt.symbol: most_common_oxi(elt.symbol) for elt in structure.elements}
+        )
+        return oxi_dec_structure
+
+    return structure_with_oxi
+
+
+def get_oxi_probabilities(element_symbol: str) -> dict:
+    """
+    Get a dictionary of oxidation states and their probabilities for an
+    element.
+
+    Tries to get the probabilities from the ``pymatgen`` tabulated ICSD
+    oxidation state probabilities, and if not available, uses the common
+    oxidation states of the element.
+
+    Args:
+        element_symbol (str): Element symbol.
+
+    Returns:
+        dict:
+            Dictionary of oxidation states (ints) and their probabilities
+            (floats).
+    """
+    comp_obj = Composition(element_symbol)
+    comp_obj.add_charges_from_oxi_state_guesses()  # add oxidation states to Composition object
+    if oxi_probabilities := {
+        k.oxi_state: v
+        for k, v in comp_obj.oxi_prob.items()
+        if k.element.symbol == element_symbol and k.oxi_state != 0
+    }:  # not empty
+        normalised_oxi_probabilities = {
+            int(k): round(v / sum(oxi_probabilities.values()), 3) for k, v in oxi_probabilities.items()
+        }
+        return dict(  # sorted by value, descending (max probability first)
+            sorted(normalised_oxi_probabilities.items(), key=lambda item: item[1], reverse=True)
+        )
+    # Note that most_common_oxi() relies on the ordering of the oxi probability dicts here!
+
+    element_obj = Element(element_symbol)
+    if element_obj.common_oxidation_states:
+        return {
+            int(k): 1 / len(element_obj.common_oxidation_states)
+            for k in element_obj.common_oxidation_states
+        }  # known common oxidation states
+
+    # no known _common_ oxidation state, make guess and warn user
+    if element_obj.oxidation_states:
+        oxi_states = {
+            int(k): 1 / len(element_obj.oxidation_states) for k in element_obj.oxidation_states
+        }  # known oxidation states
+    else:
+        oxi_states = {0: 1}  # no known oxidation states, return 0 with 100% probability
+
+    warnings.warn(
+        f"No known common oxidation states in pymatgen/ICSD dataset for element "
+        f"{element_obj.name}. If this results in unreasonable charge states, you "
+        f"should manually edit the defect charge states."
+    )
+
+    return oxi_states
+
+
+def most_common_oxi(element_symbol: str) -> int:
+    """
+    Convenience function to get the most common oxidation state of an element,
+    using elemental data from ``pymatgen``.
+
+    Args:
+        element_symbol (str): Element symbol.
+
+    Returns:
+        Most common oxidation state of the element.
+    """
+    # Note this relies on ordering conventions in ``get_oxi_probabilities``!
+    return next(iter(get_oxi_probabilities(element_symbol).keys()))
 
 
 def _guess_and_set_struct_oxi_states_icsd_prob_process(structure, queue, try_without_max_sites=False):
@@ -1837,7 +1956,7 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     structure,
     timeout_1: float = 10,
     timeout_2: float = 15,
-) -> bool:
+) -> Structure | bool:
     """
     Tries to guess (and set) the oxidation states of the input structure using
     the ICSD oxidation state probabilities approach, with a timeout catch for

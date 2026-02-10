@@ -11,13 +11,9 @@ Tests for ``DefectThermodynamics.plot()`` are in the separate ``test_plotting.py
 
 import os
 import random
-import shutil
-import sys
 import unittest
 import warnings
 from copy import deepcopy
-from functools import wraps
-from io import StringIO
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -27,8 +23,26 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.electronic_structure.dos import FermiDos
+from test_utils import (
+    EXAMPLE_DIR,
+    STYLE,
+    _compare_attributes,
+    _print_warning_info,
+    _run_func_and_capture_stdout_warnings,
+    api_key,
+    custom_mpl_image_compare,
+    data_dir,
+    if_present_rm,
+    module_path,
+    plot_chempot_heatmap_and_test_no_warnings,
+)
 
 from doped.analysis import DefectsParser, guess_defect_position
+from doped.chemical_potentials import (
+    CompetingPhases,
+    CompetingPhasesAnalyzer,
+    get_doped_chempots_from_entries,
+)
 from doped.generation import sort_defect_entries
 from doped.thermodynamics import (
     DefectThermodynamics,
@@ -47,44 +61,6 @@ from doped.utils.symmetry import (
     point_symmetry_from_structure,
 )
 
-# for pytest-mpl:
-module_path = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(module_path, "data")
-BASELINE_DIR = f"{data_dir}/remote_baseline_plots"
-STYLE = f"{module_path}/../doped/utils/doped.mplstyle"
-
-
-def custom_mpl_image_compare(filename, style=STYLE):
-    """
-    Set our default settings for MPL image compare.
-    """
-
-    def decorator(func):
-        @wraps(func)
-        @pytest.mark.mpl_image_compare(
-            baseline_dir=BASELINE_DIR,
-            filename=filename,
-            style=style,
-            savefig_kwargs={"transparent": True, "bbox_inches": "tight"},
-        )
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-def if_present_rm(path):
-    """
-    Remove file or directory if it exists.
-    """
-    if os.path.exists(path):
-        if os.path.isfile(path):
-            os.remove(path)
-        elif os.path.isdir(path):
-            shutil.rmtree(path)
-
 
 @pytest.fixture(autouse=True)
 def _inject_capsys(request, capsys):
@@ -95,57 +71,6 @@ def _inject_capsys(request, capsys):
     """
     if request.instance is not None:
         request.instance.capsys = capsys
-
-
-def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
-    original_stdout = sys.stdout  # Save a reference to the original standard output
-    sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
-    w = None
-    try:
-        with warnings.catch_warnings(record=True) as w:
-            result = func(*args, **kwargs)
-        output = sys.stdout.getvalue()  # Return a str containing the printed output
-    finally:
-        sys.stdout = original_stdout  # Reset standard output to its original value.
-
-    print(f"Running {func.__name__} with args: {args} and kwargs: {kwargs}:")
-    print(output)
-    if w:
-        print(f"Warnings ({len(w)}):\n{[str(warning.message) for warning in w]}")
-    print(f"Result: {result}\n")
-
-    return result, output, w
-
-
-def _compare_attributes(obj1, obj2, exclude=None):
-    """
-    Check that two objects are equal by comparing their public
-    attributes/properties.
-
-    Templated from the version in ``test_generation.py`` and updated
-    for ``DefectThermodynamics`` (i.e. handling ``bulk_dos`` attribute).
-    """
-    if exclude is None:
-        exclude = set()  # Create an empty set if no exclusions
-
-    for attr in dir(obj1):
-        if attr.startswith("_") or attr in exclude or callable(getattr(obj1, attr)):
-            continue  # Skip private, excluded, and callable attributes
-
-        print(attr)
-        val1 = getattr(obj1, attr)
-        val2 = getattr(obj2, attr)
-
-        if isinstance(val1, np.ndarray):
-            assert np.allclose(val1, val2)
-        elif attr == "bulk_dos" and val1 is not None:
-            assert val1.as_dict() == val2.as_dict()
-        elif isinstance(val1, list | tuple) and all(isinstance(i, np.ndarray) for i in val1):
-            assert all(
-                np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)
-            ), "List of arrays do not match"
-        else:
-            assert val1 == val2
 
 
 class DefectThermodynamicsSetupMixin(unittest.TestCase):
@@ -177,13 +102,11 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.module_path = os.path.dirname(os.path.abspath(__file__))
-        cls.EXAMPLE_DIR = os.path.join(cls.module_path, "../examples")
-        cls.CdTe_EXAMPLE_DIR = os.path.join(cls.module_path, "../examples/CdTe")
+        cls.CdTe_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "CdTe")
         cls.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
         cls.CdTe_chempots = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
 
-        cls.YTOS_EXAMPLE_DIR = os.path.join(cls.module_path, "../examples/YTOS")
+        cls.YTOS_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "YTOS")
         cls.ytos_dielectric = [  # from legacy Materials Project
             [40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
             [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
@@ -194,11 +117,11 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.Sb2Se3_dielectric = np.array([[85.64, 0, 0], [0.0, 128.18, 0], [0, 0, 15.00]])
 
         cls.Sb2Si2Te6_dielectric = [44.12, 44.12, 17.82]
-        cls.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "Sb2Si2Te6")
+        cls.Sb2Si2Te6_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "Sb2Si2Te6")
 
         cls.V2O5_DATA_DIR = os.path.join(data_dir, "V2O5")
 
-        cls.MgO_EXAMPLE_DIR = os.path.join(cls.EXAMPLE_DIR, "MgO")
+        cls.MgO_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "MgO")
 
         cls.orig_CdTe_defect_dict = loadfn(
             os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_defect_dict.json")
@@ -212,6 +135,10 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         cls.orig_YTOS_defect_thermo = loadfn(
             os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json")
         )
+
+        cls.YTOS_cp = CompetingPhases("Y2Ti2S2O5", api_key=api_key)
+        cls.MP_YTOS_doped_chempots = get_doped_chempots_from_entries(cls.YTOS_cp.entries, "Y2Ti2S2O5")
+
         cls.orig_Sb2Se3_defect_dict = loadfn(
             os.path.join(cls.Sb2Se3_DATA_DIR, "defect/Sb2Se3_O_example_defect_dict.json")
         )
@@ -233,7 +160,7 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
 
         cls.orig_MgO_defect_thermo = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_thermo.json.gz"))
         cls.orig_MgO_defect_dict = loadfn(os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_defect_dict.json.gz"))
-        cls.MgO_chempots = loadfn(os.path.join(cls.EXAMPLE_DIR, "MgO/CompetingPhases/MgO_chempots.json"))
+        cls.MgO_chempots = loadfn(os.path.join(EXAMPLE_DIR, "MgO/CompetingPhases/MgO_chempots.json"))
 
         cls.Sb2O5_chempots = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_chempots.json"))
         cls.orig_Sb2O5_defect_thermo = loadfn(os.path.join(data_dir, "Sb2O5/Sb2O5_thermo.json.gz"))
@@ -248,10 +175,187 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         # )  # not used twice yet
 
 
+def _compare_sym_degen_df_to_expected_lists(sym_degen_df, sym_degen_lists, format_int=False):
+    for i, row in enumerate(sym_degen_lists):
+        print(i, row)
+        if format_int:
+            row[1] = int(row[1])
+        assert list(sym_degen_df.iloc[i]) == row[2:]
+        assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+
+
+def _compare_form_en_df_to_expected_lists(
+    form_en_df, form_en_lists, format_int=False, defect_thermo=None, fermi_level=None
+):
+    for i, row in enumerate(form_en_lists):
+        if format_int:
+            row[1] = int(row[1])
+        print("Comparing form_en_df row to expected list row, all except path, ΔE_corr, index")
+        assert list(form_en_df.iloc[i])[:-2] == row[2:-2]  # compare everything except path, ΔE_corr
+        print("Comparing form_en_df row to expected list row, ΔE_corr")
+        assert list(form_en_df.iloc[i])[-1] == row[-1]  # compare ΔE_corr
+        print("Comparing form_en_df row to expected list row, index")
+        assert list(form_en_df.index.to_numpy()[i]) == row[:2]
+        if defect_thermo is not None:
+            _check_formation_energy_methods(row, defect_thermo, fermi_level)
+
+
+def _check_formation_energy_methods(form_en_df_row, thermo_obj, fermi_level):
+    defect_name_w_charge_state = f"{form_en_df_row[0]}_{int(form_en_df_row[1])}"
+    print(defect_name_w_charge_state)  # for debugging
+    defect_entry = next(
+        entry
+        for entry in thermo_obj.defect_entries.values()
+        if entry.name.rsplit("_", 1)[0] == defect_name_w_charge_state.rsplit("_", 1)[0]
+        and entry.charge_state == int(defect_name_w_charge_state.rsplit("_", 1)[1])
+    )
+
+    for name, entry in [
+        ("string", defect_name_w_charge_state),
+        ("DefectEntry", defect_entry),
+    ]:
+        print(f"Testing formation energy methods with {name} input")  # for debugging
+        if thermo_obj.chempots is None:
+            limits = [
+                None,
+            ]
+            with warnings.catch_warnings(record=True) as w:
+                _form_en = thermo_obj.get_formation_energy(entry, limit="test pop b...")
+            print([str(warn.message) for warn in w])  # for debugging
+            assert len(w) == 2
+            assert "No chemical potentials supplied" in str(w[0].message)
+            assert (
+                "You have specified a chemical potential limit but no chemical potentials "
+                "(`chempots`) were supplied, so `limit` will be ignored." in str(w[-1].message)
+            )
+
+        elif len(thermo_obj.chempots["limits_wrt_el_refs"]) == 2:  # CdTe full chempots
+            with warnings.catch_warnings(record=True) as w:
+                assert not np.isclose(  # if chempots present, uses the first limit which is Cd-rich
+                    thermo_obj.get_formation_energy(entry),
+                    form_en_df_row[8],
+                    atol=1e-3,
+                )
+            assert len(w) == 1
+            assert (
+                "No chemical potential limit specified! Using Cd-CdTe for computing "
+                "the formation energy" in str(w[0].message)
+            )
+            limits = ["CdTe-Te", "Te-rich"]
+        else:
+            limits = list(thermo_obj.chempots["limits_wrt_el_refs"].keys())  # user supplied
+
+        for limit in limits:
+            if np.isclose(fermi_level, 0.75):  # default CdTe:
+                assert np.isclose(  # test get_formation_energy method
+                    thermo_obj.get_formation_energy(entry, limit=limit),
+                    form_en_df_row[8],
+                    atol=1e-3,
+                )
+            assert np.isclose(  # test get_formation_energy method
+                thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level),
+                form_en_df_row[8],
+                atol=1e-3,
+            )
+            # Test usage of ``DefectThermodynamics.get_formation_energy()`` where charge state
+            # isn't specified:
+            lowest_e_form = thermo_obj.get_formation_energy(
+                form_en_df_row[0], limit=limit, fermi_level=fermi_level
+            )
+            assert np.isclose(
+                lowest_e_form,
+                min(
+                    thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level)
+                    for entry in thermo_obj.defect_entries.values()
+                    if form_en_df_row[0] in entry.name
+                ),
+            )
+
+            assert np.isclose(  # test get_formation_energy() method
+                thermo_obj.get_formation_energy(
+                    entry, fermi_level=fermi_level, limit=limit, chempots=thermo_obj.chempots
+                ),
+                form_en_df_row[8],
+                atol=1e-3,
+            )
+            lowest_e_form = thermo_obj.get_formation_energy(
+                form_en_df_row[0],
+                limit=limit,
+                fermi_level=fermi_level,
+                chempots=thermo_obj.chempots,
+            )
+            assert np.isclose(  # test get_formation_energy method
+                lowest_e_form,
+                min(
+                    [
+                        thermo_obj.get_formation_energy(
+                            entry,
+                            limit=limit,
+                            fermi_level=fermi_level,
+                            chempots=thermo_obj.chempots,
+                        )
+                        for entry in thermo_obj.defect_entries.values()
+                        if form_en_df_row[0] in entry.name
+                    ]
+                ),
+            )
+
+            # test DefectEntry.formation_energy() method:
+            assert np.isclose(
+                defect_entry.formation_energy(
+                    fermi_level=fermi_level, limit=limit, chempots=thermo_obj.chempots
+                ),
+                form_en_df_row[8],
+                atol=1e-3,
+            )
+            assert np.isclose(  # test DefectEntry.formation_energy() method
+                defect_entry.formation_energy(
+                    fermi_level=fermi_level,
+                    vbm=thermo_obj.vbm,
+                    limit=limit,
+                    chempots=thermo_obj.chempots,
+                ),
+                form_en_df_row[8],
+                atol=1e-3,
+            )
+            assert np.isclose(  # test DefectEntry.formation_energy() method
+                defect_entry.formation_energy(
+                    fermi_level=fermi_level + 0.1,
+                    vbm=thermo_obj.vbm - 0.1,
+                    limit=limit,
+                    chempots=thermo_obj.chempots,
+                ),
+                form_en_df_row[8],
+                atol=1e-3,
+            )
+            if thermo_obj.chempots and "rich" not in limit:  # needs to be 'CdTe-Te' etc for
+                # sub-selecting like this
+                assert np.isclose(  # test DefectEntry.formation_energy() method
+                    defect_entry.formation_energy(
+                        fermi_level=fermi_level,
+                        chempots=thermo_obj.chempots["limits_wrt_el_refs"][limit],
+                        el_refs=thermo_obj.chempots["elemental_refs"],
+                    ),
+                    form_en_df_row[8],
+                    atol=1e-3,
+                )
+                assert np.isclose(  # test DefectThermodynamics.get_formation_energy() method
+                    thermo_obj.get_formation_energy(
+                        entry,
+                        fermi_level=fermi_level,
+                        chempots=thermo_obj.chempots["limits_wrt_el_refs"][limit],
+                        el_refs=thermo_obj.chempots["elemental_refs"],
+                    ),
+                    form_en_df_row[8],
+                    atol=1e-3,
+                )
+
+
 class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def tearDown(self):
         super().tearDown()
         if_present_rm(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_example_data/CdTe_defect_dict.json.gz")
+        if_present_rm("test.png")
 
     def _compare_defect_thermo_and_dict(self, defect_thermo, defect_dict):
         assert len(defect_thermo.defect_entries) == len(defect_dict)
@@ -690,7 +794,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert set(all_tl_df.index.names) == {"Charges", "Defect"}
             defect_thermo.print_transition_levels()
             defect_thermo.print_transition_levels(all=True)
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert not w
 
         print(
@@ -788,7 +892,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         mismatch_chempots = {el: -3 for el in Composition(defect_thermo.bulk_formula).as_dict()}
         with warnings.catch_warnings(record=True) as w:
             defect_thermo.chempots = mismatch_chempots
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert any(
             "Note that the raw (DFT) energy of the bulk supercell calculation" in str(warning.message)
             for warning in w
@@ -917,7 +1021,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(f"Checking {name}; initialisation from list")
             with warnings.catch_warnings(record=True) as w:
                 defect_thermo = DefectThermodynamics(list(defect_dict.values()))  # test init with list
-            print([str(warning.message) for warning in w])  # for debugging
+            _print_warning_info(w)
             assert not w
             self._check_defect_thermo(defect_thermo, defect_dict)  # default values
             self.capsys.readouterr()  # clear previous stdout, if passed
@@ -957,7 +1061,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         print("Checking CdTe with mismatching chempots")
         with warnings.catch_warnings(record=True) as w:
             defect_thermo = DefectThermodynamics(self.CdTe_defect_dict, chempots={"Cd": -1.0, "Te": -6})
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert len(w) == 1  # only chempot incompatibility warning
         assert str(w[0].message) == self.cdte_chempot_warning_message
 
@@ -977,7 +1081,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 self.CdTe_defect_dict,
                 bulk_dos=os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_prim_k181818_NKRED_2_vasprun.xml.gz"),
             )
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert len(w) == 0  # no warning (e.g. VBM mismatch)
         assert isinstance(defect_thermo.bulk_dos, FermiDos)
         assert np.isclose(defect_thermo.bulk_dos.get_cbm_vbm()[1], 1.65, atol=1e-2)
@@ -1366,19 +1470,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ["Int_Te_3", "+1", "Cs", "C2v", 0.5, 2, 1.0, 12.0],
             ["Int_Te_3_Unperturbed", "+1", "C1", "Cs", 0.5, 2, 1.0, 24.0],
         ]
-        for i, row in enumerate(cdte_sym_degen_lists):
-            print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row[2:]
-            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+        _compare_sym_degen_df_to_expected_lists(sym_degen_df, cdte_sym_degen_lists)
 
         non_formatted_sym_degen_df = self.CdTe_defect_thermo.get_symmetries_and_degeneracies(
             skip_formatting=True
         )
         print(non_formatted_sym_degen_df)  # for debugging
-        for i, row in enumerate(cdte_sym_degen_lists):
-            row[1] = int(row[1])  # type: ignore
-            assert list(non_formatted_sym_degen_df.iloc[i]) == row[2:]
-            assert list(non_formatted_sym_degen_df.index.to_numpy()[i]) == row[:2]
+        _compare_sym_degen_df_to_expected_lists(
+            non_formatted_sym_degen_df, cdte_sym_degen_lists, format_int=True
+        )
 
     def _check_MgO_symmetries_degeneracies(self, MgO_defect_thermo: DefectThermodynamics):
         sym_degen_df = MgO_defect_thermo.get_symmetries_and_degeneracies()
@@ -1403,19 +1503,15 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ["Mg_O", "+1", "Oh", "Cs", 24.0, 2, 48.0, 1.0],
             ["Mg_O", "0", "Oh", "Cs", 24.0, 1, 24.0, 1.0],
         ]
-        for i, row in enumerate(mgo_sym_degen_lists):
-            print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row[2:]
-            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+        _compare_sym_degen_df_to_expected_lists(sym_degen_df, mgo_sym_degen_lists)
 
         non_formatted_sym_degen_df = MgO_defect_thermo.get_symmetries_and_degeneracies(
             skip_formatting=True
         )
         print(non_formatted_sym_degen_df)  # for debugging
-        for i, row in enumerate(mgo_sym_degen_lists):
-            row[1] = int(row[1])  # type: ignore
-            assert list(non_formatted_sym_degen_df.iloc[i]) == row[2:]
-            assert list(non_formatted_sym_degen_df.index.to_numpy()[i]) == row[:2]
+        _compare_sym_degen_df_to_expected_lists(
+            non_formatted_sym_degen_df, mgo_sym_degen_lists, format_int=True
+        )
 
     def _check_YTOS_symmetries_degeneracies(self, YTOS_defect_thermo: DefectThermodynamics):
         # this behaviour is also tested extensively in ``test_analysis.py``;
@@ -1622,163 +1718,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         # test sum of formation energy terms equals total and other formation energy df properties:
         self._check_form_en_df(form_en_df, fermi_level=0.749, defect_thermo=self.CdTe_defect_thermo)
 
-        def _check_formation_energy_methods(form_en_df_row, thermo_obj, fermi_level):
-            defect_name_w_charge_state = f"{form_en_df_row[0]}_{int(form_en_df_row[1])}"
-            print(defect_name_w_charge_state)  # for debugging
-            defect_entry = next(
-                entry
-                for entry in thermo_obj.defect_entries.values()
-                if entry.name.rsplit("_", 1)[0] == defect_name_w_charge_state.rsplit("_", 1)[0]
-                and entry.charge_state == int(defect_name_w_charge_state.rsplit("_", 1)[1])
-            )
-
-            for name, entry in [
-                ("string", defect_name_w_charge_state),
-                ("DefectEntry", defect_entry),
-            ]:
-                print(f"Testing formation energy methods with {name} input")  # for debugging
-                if thermo_obj.chempots is None:
-                    limits = [
-                        None,
-                    ]
-                    with warnings.catch_warnings(record=True) as w:
-                        _form_en = thermo_obj.get_formation_energy(entry, limit="test pop b...")
-                    print([str(warn.message) for warn in w])  # for debugging
-                    assert len(w) == 2
-                    assert "No chemical potentials supplied" in str(w[0].message)
-                    assert (
-                        "You have specified a chemical potential limit but no chemical potentials "
-                        "(`chempots`) were supplied, so `limit` will be ignored." in str(w[-1].message)
-                    )
-
-                elif len(thermo_obj.chempots["limits_wrt_el_refs"]) == 2:  # CdTe full chempots
-                    with warnings.catch_warnings(record=True) as w:
-                        assert (
-                            not np.isclose(  # if chempots present, uses the first limit which is Cd-rich
-                                thermo_obj.get_formation_energy(entry),
-                                form_en_df_row[8],
-                                atol=1e-3,
-                            )
-                        )
-                    assert len(w) == 1
-                    assert (
-                        "No chemical potential limit specified! Using Cd-CdTe for computing "
-                        "the formation energy" in str(w[0].message)
-                    )
-                    limits = ["CdTe-Te", "Te-rich"]
-                else:
-                    limits = list(thermo_obj.chempots["limits_wrt_el_refs"].keys())  # user supplied
-
-                for limit in limits:
-                    if np.isclose(fermi_level, 0.75):  # default CdTe:
-                        assert np.isclose(  # test get_formation_energy method
-                            thermo_obj.get_formation_energy(entry, limit=limit),
-                            form_en_df_row[8],
-                            atol=1e-3,
-                        )
-                    assert np.isclose(  # test get_formation_energy method
-                        thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level),
-                        form_en_df_row[8],
-                        atol=1e-3,
-                    )
-                    # Test usage of ``DefectThermodynamics.get_formation_energy()`` where charge state
-                    # isn't specified:
-                    lowest_e_form = thermo_obj.get_formation_energy(
-                        form_en_df_row[0], limit=limit, fermi_level=fermi_level
-                    )
-                    assert np.isclose(
-                        lowest_e_form,
-                        min(
-                            thermo_obj.get_formation_energy(entry, limit=limit, fermi_level=fermi_level)
-                            for entry in thermo_obj.defect_entries.values()
-                            if form_en_df_row[0] in entry.name
-                        ),
-                    )
-
-                    assert np.isclose(  # test get_formation_energy() method
-                        thermo_obj.get_formation_energy(
-                            entry, fermi_level=fermi_level, limit=limit, chempots=thermo_obj.chempots
-                        ),
-                        form_en_df_row[8],
-                        atol=1e-3,
-                    )
-                    lowest_e_form = thermo_obj.get_formation_energy(
-                        form_en_df_row[0],
-                        limit=limit,
-                        fermi_level=fermi_level,
-                        chempots=thermo_obj.chempots,
-                    )
-                    assert np.isclose(  # test get_formation_energy method
-                        lowest_e_form,
-                        min(
-                            [
-                                thermo_obj.get_formation_energy(
-                                    entry,
-                                    limit=limit,
-                                    fermi_level=fermi_level,
-                                    chempots=thermo_obj.chempots,
-                                )
-                                for entry in thermo_obj.defect_entries.values()
-                                if form_en_df_row[0] in entry.name
-                            ]
-                        ),
-                    )
-
-                    # test DefectEntry.formation_energy() method:
-                    assert np.isclose(
-                        defect_entry.formation_energy(
-                            fermi_level=fermi_level, limit=limit, chempots=thermo_obj.chempots
-                        ),
-                        form_en_df_row[8],
-                        atol=1e-3,
-                    )
-                    assert np.isclose(  # test DefectEntry.formation_energy() method
-                        defect_entry.formation_energy(
-                            fermi_level=fermi_level,
-                            vbm=thermo_obj.vbm,
-                            limit=limit,
-                            chempots=thermo_obj.chempots,
-                        ),
-                        form_en_df_row[8],
-                        atol=1e-3,
-                    )
-                    assert np.isclose(  # test DefectEntry.formation_energy() method
-                        defect_entry.formation_energy(
-                            fermi_level=fermi_level + 0.1,
-                            vbm=thermo_obj.vbm - 0.1,
-                            limit=limit,
-                            chempots=thermo_obj.chempots,
-                        ),
-                        form_en_df_row[8],
-                        atol=1e-3,
-                    )
-                    if thermo_obj.chempots and "rich" not in limit:  # needs to be 'CdTe-Te' etc for
-                        # sub-selecting like this
-                        assert np.isclose(  # test DefectEntry.formation_energy() method
-                            defect_entry.formation_energy(
-                                fermi_level=fermi_level,
-                                chempots=thermo_obj.chempots["limits_wrt_el_refs"][limit],
-                                el_refs=thermo_obj.chempots["elemental_refs"],
-                            ),
-                            form_en_df_row[8],
-                            atol=1e-3,
-                        )
-                        assert np.isclose(  # test DefectThermodynamics.get_formation_energy() method
-                            thermo_obj.get_formation_energy(
-                                entry,
-                                fermi_level=fermi_level,
-                                chempots=thermo_obj.chempots["limits_wrt_el_refs"][limit],
-                                el_refs=thermo_obj.chempots["elemental_refs"],
-                            ),
-                            form_en_df_row[8],
-                            atol=1e-3,
-                        )
-
-        for i, row in enumerate(cdte_form_en_lists):
-            assert list(form_en_df.iloc[i])[:-2] == row[2:-2]  # compare everything except path, ΔE_corr
-            assert list(form_en_df.iloc[i])[-1] == row[-1]  # compare ΔE_corr
-            assert list(form_en_df.index.to_numpy()[i]) == row[:2]
-            _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap value
+        _compare_form_en_df_to_expected_lists(
+            form_en_df,
+            cdte_form_en_lists,
+            defect_thermo=self.CdTe_defect_thermo,
+            fermi_level=0.7493,
+        )
 
         with pytest.raises(ValueError) as exc:
             self.CdTe_defect_thermo.get_formation_energy("v_Cd_3")
@@ -1794,7 +1739,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             _vbm = new_entry.calculation_metadata.pop("vbm")
             assert np.isclose(
                 new_entry.formation_energy(fermi_level=0.7493, vbm=self.CdTe_defect_thermo.vbm),
-                form_en_df.iloc[i][6],
+                form_en_df.iloc[i, 6],
                 atol=1e-3,
             )
             with warnings.catch_warnings(record=True) as w:
@@ -1816,12 +1761,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
 
         self._check_chempot_w_and_fermi_message(w, output)
-        for i, row in enumerate(cdte_form_en_lists):
-            row[1] = int(row[1])
-            assert list(non_formatted_form_en_df.iloc[i])[:-2] == row[2:-2]  # and all other terms the same
-            assert list(non_formatted_form_en_df.iloc[i])[-1] == row[-1]  # check ΔE_corr
-            assert list(non_formatted_form_en_df.index.to_numpy()[i]) == row[:2]
-            _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap value
+        _compare_form_en_df_to_expected_lists(
+            non_formatted_form_en_df,
+            cdte_form_en_lists,
+            format_int=True,
+            defect_thermo=self.CdTe_defect_thermo,
+            fermi_level=0.7493,
+        )
 
         # with chempots:
         list_of_dfs, output, w = _run_func_and_capture_stdout_warnings(
@@ -1971,13 +1917,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         # test sum of formation energy terms equals total and other formation energy df properties:
         self._check_form_en_df(te_rich_df, fermi_level=0.7493, defect_thermo=self.CdTe_defect_thermo)
-
-        for i, row in enumerate(cdte_te_rich_form_en_lists):
-            assert list(te_rich_df.iloc[i])[:-2] == row[2:-2]  # compare everything except path, ΔE_corr
-            assert list(te_rich_df.iloc[i])[-1] == row[-1]  # compare ΔE_corr
-            assert list(te_rich_df.index.to_numpy()[i]) == row[:2]
-            _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)  # default mid-gap
-            # value, chempots also now attached
+        _compare_form_en_df_to_expected_lists(
+            te_rich_df,
+            cdte_te_rich_form_en_lists,
+            defect_thermo=self.CdTe_defect_thermo,
+            fermi_level=0.7493,
+        )
 
         # test same non-formatted output with chempots:
         list_of_dfs, output, w = _run_func_and_capture_stdout_warnings(
@@ -1994,12 +1939,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 skip_formatting=True,
             )
             self._check_no_w_fermi_message_and_new_matches_ref_df(output, w, df, non_formatted_te_rich_df)
-        for i, row in enumerate(cdte_te_rich_form_en_lists):
-            row[1] = int(row[1])
-            assert list(non_formatted_te_rich_df.iloc[i])[:-2] == row[2:-2]
-            assert list(non_formatted_te_rich_df.iloc[i])[-1] == row[-1]  # check ΔE_corr
-            assert list(non_formatted_te_rich_df.index.to_numpy()[i]) == row[:2]
-            _check_formation_energy_methods(row, self.CdTe_defect_thermo, 0.7493)
+        _compare_form_en_df_to_expected_lists(
+            non_formatted_te_rich_df,
+            cdte_te_rich_form_en_lists,
+            format_int=True,
+            defect_thermo=self.CdTe_defect_thermo,
+            fermi_level=0.7493,
+        )
 
         # hard test random case with random chempots, el_refs and fermi level
         manual_form_en_df, output, w = _run_func_and_capture_stdout_warnings(
@@ -2200,7 +2146,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self.CdTe_defect_thermo.chempots = chempots_df
         for i in [
             "Invalid chempots/el_refs format:",
-            "chempots: <class 'pandas.core.frame.DataFrame'>",
+            "chempots: <class",
+            "DataFrame'>",  # pandas DataFrame type str changed with v3 (not supported for python 3.10)
             "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!",
         ]:
             print(i)
@@ -2239,7 +2186,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 "CdTe_defect_dict_old_names",
             ]
         ):
-            cdte_defect_dict = loadfn(os.path.join(self.module_path, f"data/{name}.json.gz"))
+            cdte_defect_dict = loadfn(os.path.join(module_path, f"data/{name}.json.gz"))
             cdte_defect_thermo = DefectThermodynamics(deepcopy(cdte_defect_dict))  # don't overwrite symm
             # only run min-dists check with first set of defects (expensive)
             self._check_defect_thermo(cdte_defect_thermo, cdte_defect_dict, check_dists=(i == 0))
@@ -2329,10 +2276,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 ["Int_Te_3_unperturbed", "+1", "C1", "Cs", 0.5, 2, 1.0, 24.0],
                 ["Int_Te_3_unperturbed", "0", "Cs", "Cs", 1.0, 1, 1.0, 12.0],
             ]
-            for i, row in enumerate(cdte_sym_degen_lists):
-                print(i, row)
-                assert list(sym_degen_df.iloc[i]) == row[2:]
-                assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+            _compare_sym_degen_df_to_expected_lists(sym_degen_df, cdte_sym_degen_lists)
 
         # test with direct use of point_symmetry_from_structure function:
         sym_degen_dict = {
@@ -2481,9 +2425,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         assert skipped == 1  # only v_Cd_1_not_in_gap_+1, because different format ("_+1" vs "_1")
 
-        cdte_defect_dict = loadfn(
-            os.path.join(self.module_path, "data/CdTe_defect_dict_old_names.json.gz")
-        )
+        cdte_defect_dict = loadfn(os.path.join(module_path, "data/CdTe_defect_dict_old_names.json.gz"))
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         cdte_defect_thermo.chempots = self.CdTe_chempots
         self._check_defect_thermo(
@@ -2495,10 +2437,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         )
 
         sym_degen_df = cdte_defect_thermo.get_symmetries_and_degeneracies()
-        for i, row in enumerate(cdte_sym_degen_lists):
-            print(i, row)
-            assert list(sym_degen_df.iloc[i]) == row[2:]
-            assert list(sym_degen_df.index.to_numpy()[i]) == row[:2]
+        _compare_sym_degen_df_to_expected_lists(sym_degen_df, cdte_sym_degen_lists)
 
         # delete symmetry info to force re-parsing, to test symmetry/degeneracy functions
         self._clear_symmetry_degeneracy_info(cdte_defect_thermo)
@@ -2556,6 +2495,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
             for temperature in [300, 1000]:
                 for fermi_level in [0.25, 0.9, 3]:
+                    atol = 1e-4
+                    rtol = 1e-6
                     orig_conc = random_defect_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
                         limit="Cd-rich",
@@ -2565,6 +2506,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     )
                     new_entry = deepcopy(random_defect_entry)
                     new_entry.defect.multiplicity *= 2
+                    assert np.isclose(
+                        new_entry.bulk_site_concentration, random_defect_entry.bulk_site_concentration * 2
+                    )
 
                     new_conc = new_entry.equilibrium_concentration(
                         chempots=self.CdTe_chempots,
@@ -2583,7 +2527,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
-                    assert np.isclose(new_conc, orig_conc)
+                    # new concentration is either equal to orig_conc times changes in multiplicity and
+                    # degeneracy factors, or at the concentration upper limit (100%), or in between (if
+                    # orig_conc was at the concentration upper limit (100%), which has since changed)
+                    assert new_conc >= (orig_conc * 2 * 0.5) * (1 - rtol) - atol
+                    assert new_conc <= new_entry.bulk_site_concentration * (1 + rtol) + atol
 
                     new_entry.degeneracy_factors["orientational degeneracy"] *= 3
                     new_conc = new_entry.equilibrium_concentration(
@@ -2593,7 +2541,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
-                    assert np.isclose(new_conc, orig_conc * 3)
+                    assert new_conc <= new_entry.bulk_site_concentration * (1 + rtol) + atol
+                    expected_conc = (orig_conc * 2 * 0.5 * 3) * (1 - rtol) - atol
+                    if expected_conc < new_entry.bulk_site_concentration * (1 - rtol) - atol:
+                        assert new_conc >= expected_conc
 
                     new_entry.degeneracy_factors["fake degeneracy"] = 7
                     new_conc = new_entry.equilibrium_concentration(
@@ -2603,7 +2554,10 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         temperature=temperature,
                         site_competition=False,  # this linear dependence can change w/site competition
                     )
-                    assert np.isclose(new_conc, orig_conc * 21)
+                    assert new_conc <= new_entry.bulk_site_concentration * (1 + rtol) + atol
+                    expected_conc = (orig_conc * 2 * 0.5 * 3 * 7) * (1 - rtol) - atol
+                    if expected_conc < new_entry.bulk_site_concentration * (1 - rtol) - atol:
+                        assert new_conc >= expected_conc
 
                     # test per_site and bulk_site_concentration attributes:
                     new_conc = random_defect_entry.equilibrium_concentration(
@@ -2709,7 +2663,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         with warnings.catch_warnings(record=True) as w:
             self.CdTe_defect_thermo.chempots = slightly_off_chempots
-        print([str(warning.message) for warning in w])  # for debugging
+        _print_warning_info(w)
         assert len(w) == 1  # only chempot incompatibility warning
         assert str(w[0].message) == self.cdte_chempot_warning_message
 
@@ -2932,7 +2886,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             > 0
         )
         assert dilute_lim_conc_2000K < v_O.bulk_site_concentration * degeneracy_factor
-        assert np.isclose(dilute_lim_conc_2000K, 1.666e23, rtol=1e-3)
+        assert np.isclose(dilute_lim_conc_2000K, 5.06752e22, rtol=1e-3)
 
         x = np.linspace(100, 4000, 100)
         fig, ax = plt.subplots()
@@ -3068,7 +3022,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ).all()
 
         fig, ax = plt.subplots()
-        x = np.linspace(100, 4000, 100)
+        x = np.concatenate((np.linspace(10, 400, 100), np.linspace(400, 4000, 500)))
 
         for i, T in enumerate(x):
             conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(
@@ -3228,6 +3182,79 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         return fig
 
+    @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png", tolerance=4)
+    def test_YTOS_chempot_heatmap_default(self):
+        """
+        Test chemical potential heatmap plotting via ``DefectThermodynamics``.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            self.YTOS_defect_thermo.chempots = self.MP_YTOS_doped_chempots
+        _print_warning_info(w)
+        assert any(
+            "Note that the raw (DFT) energy of the bulk supercell calculation (-8.49 eV/atom) differs "
+            "from that expected from the supplied chemical potentials (-8.91 eV/atom) by >0.025 eV."
+            in str(warn.message)
+            for warn in w
+        )
+        assert len(w) == 1
+        plot, output, w = _run_func_and_capture_stdout_warnings(
+            self.YTOS_defect_thermo.plot_chempot_heatmap
+        )
+        for info_substring in [
+            "Chemical potential heatmap plotting requires 3-D data",
+            "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
+            "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.8207)}",
+        ]:
+            assert info_substring in output
+        assert not w
+        return plot
+
+    @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png")
+    def test_YTOS_chempot_heatmap_default_from_cpa(self):
+        """
+        Test chemical potential heatmap plotting via
+        ``CompetingPhasesAnalyzer`` object returns same result as with
+        ``DefectThermodynamics`` object.
+        """
+        ytos_cpa = CompetingPhasesAnalyzer("Y2Ti2S2O5", entries=self.YTOS_cp.entries)
+        plot, output, w = _run_func_and_capture_stdout_warnings(ytos_cpa.plot_chempot_heatmap)
+        for info_substring in [
+            "Chemical potential heatmap plotting requires 3-D data",
+            "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
+            "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.8207)}",
+        ]:
+            assert info_substring in output
+        assert not w
+        return plot
+
+    @custom_mpl_image_compare(
+        filename="YTOS_chempot_heatmap_custom.png",
+        style=f"{module_path}/../doped/utils/displacement.mplstyle",
+    )
+    def test_YTOS_chempot_heatmap_custom(self):
+        self.YTOS_defect_thermo.chempots = self.MP_YTOS_doped_chempots
+        plot = plot_chempot_heatmap_and_test_no_warnings(
+            self.YTOS_defect_thermo,
+            dependent_element="Ti",
+            xlim=(-4, 0.0),
+            ylim=(-4, 0.0),
+            colormap="viridis",
+            padding=0.05,
+            title=True,
+            label_positions=False,
+            filename="test.png",
+            style_file=f"{module_path}/../doped/utils/displacement.mplstyle",
+        )
+        assert os.path.exists("test.png")
+        return plot
+
+    def test_error_with_no_chempots(self):
+        with pytest.raises(ValueError) as exc:
+            self.YTOS_defect_thermo.plot_chempot_heatmap()
+        assert "No chemical potentials in DefectThermodynamics.chempots to plot!" in str(exc.value)
+
 
 def belas_linear_fit(T):  #
     """
@@ -3268,11 +3295,10 @@ reduced_anneal_temperatures = np.arange(200, 1401, 100)  # for quicker testing
 class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.module_path = os.path.dirname(os.path.abspath(__file__))
-        cls.CdTe_EXAMPLE_DIR = os.path.join(cls.module_path, "../examples/CdTe")
+        cls.CdTe_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "CdTe")
         cls.CdTe_chempots = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
         cls.defect_dict = loadfn(
-            os.path.join(cls.module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
+            os.path.join(module_path, "data/CdTe_LZ_defect_dict_v2.3_wout_meta.json.gz")
         )
         cls.orig_defect_thermo = DefectThermodynamics(cls.defect_dict)
         cls.orig_defect_thermo.chempots = cls.CdTe_chempots
@@ -3438,7 +3464,8 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             },
         ]
 
-        for kwargs in kwargs_list:
+        for kwargs in kwargs_list:  # note that these are somewhat extreme, sensitive conditions (non-eq
+            # chempots with low eq temperature (room temp))
             print(f"Computing eq Fermi level with: {kwargs}")
             assert np.isclose(defect_thermo.get_equilibrium_fermi_level(**kwargs), 1.2298, atol=1e-3)
 
@@ -4033,7 +4060,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         calculation for primitive CdTe; specifying just the path to the DOS
         vasprun.xml.
         """
-        k10_dos_vr_path = os.path.join(self.module_path, "data/CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
+        k10_dos_vr_path = os.path.join(data_dir, "CdTe/CdTe_prim_k101010_dos_vr.xml.gz")
 
         for i, bulk_dos in enumerate([k10_dos_vr_path, get_vasprun(k10_dos_vr_path, parse_dos=True)]):
             print(f"Testing k10 DOS with thermo for {'str input' if i == 0 else 'DOS object input'}")

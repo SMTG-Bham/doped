@@ -15,17 +15,13 @@ import matplotlib as mpl
 import numpy as np
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.entries.computed_entries import ComputedStructureEntry
-from test_thermodynamics import custom_mpl_image_compare
+from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
 from doped import analysis
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
-
-# for pytest-mpl:
-module_path = os.path.dirname(os.path.abspath(__file__))
-data_dir = os.path.join(module_path, "data")
 
 
 class FiniteSizeChargeCorrectionTest(unittest.TestCase):
@@ -181,10 +177,8 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         # prepare parsed defect data (from doped parsing example)
-        cls.module_path = os.path.dirname(os.path.abspath(__file__))
-        cls.example_dir = os.path.join(cls.module_path, "../examples")
-        cls.CdTe_example_dir = os.path.join(cls.module_path, "../examples/CdTe")
-        cls.ytos_example_dir = os.path.join(cls.module_path, "../examples/YTOS")
+        cls.CdTe_example_dir = os.path.join(EXAMPLE_DIR, "CdTe")
+        cls.ytos_example_dir = os.path.join(EXAMPLE_DIR, "YTOS")
         cls.CdTe_bulk_data_dir = os.path.join(cls.CdTe_example_dir, "v_Cd_example_data/CdTe_bulk/vasp_ncl")
         cls.CdTe_dielectric = np.array([[9.13, 0, 0], [0.0, 9.13, 0], [0, 0, 9.13]])  # CdTe
 

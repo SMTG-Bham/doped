@@ -13,6 +13,7 @@ from itertools import permutations, product
 
 import numpy as np
 import pandas as pd
+import spglib
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import (
@@ -28,7 +29,7 @@ from pymatgen.transformations.standard_transformations import SupercellTransform
 from pymatgen.util.coord import is_coord_subset_pbc
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
-from sympy import Eq, simplify, solve, symbols
+from sympy import Eq, Expr, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
@@ -60,11 +61,11 @@ def cached_solve(equation, variable):
     return solve(equation, variable)
 
 
-def _set_spglib_warnings_env_var():
+def _set_spglib_warnings_error_handling_env_var():
     """
-    Set the SPGLIB environment variable to suppress spglib warnings.
+    Set the SPGLIB environment variable to use new error handling.
     """
-    os.environ["SPGLIB_WARNING"] = "OFF"
+    os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"  # can be removed with spglib >=2.8
 
 
 def _check_spglib_version():
@@ -72,29 +73,20 @@ def _check_spglib_version():
     Check the versions of spglib and its C libraries, and raise a warning if
     the correct installation instructions have not been followed.
     """
-    import spglib
-
     python_version = spglib.__version__
     c_version = spglib.spg_get_version_full()
 
     if python_version != c_version:
-        warnings.warn(
+        warnings.warn(  # think this issue is avoided with latest spglib versions, but not sure
             f"Your spglib Python version (spglib.__version__ = {python_version}) does not match its C "
             f"library version (spglib.spg_get_version_full() = {c_version}). This can lead to unnecessary "
             f"spglib warning messages, but can be avoided by upgrading spglib with `pip install --upgrade "
             f"spglib`."
-            # No longer required as of spglib v2.5:
-            # f"- First uninstalling spglib with both `conda uninstall spglib` and `pip uninstall spglib` "
-            # f"(to ensure no duplicate installations).\n"
-            # f"- Then, install spglib with `conda install -c conda-forge spglib` or "
-            # f"`pip install git+https://github.com/spglib/spglib "
-            # f"--config-settings=cmake.define.SPGLIB_SHARED_LIBS=OFF` as detailed in the doped "
-            # f"installation instructions: https://doped.readthedocs.io/en/latest/Installation.html"
-        )
+        )  # previously also had to do conda or special pip install settings, with spglib <2.5
 
 
 _check_spglib_version()
-_set_spglib_warnings_env_var()
+_set_spglib_warnings_error_handling_env_var()
 
 
 def _round_floats(obj, places: int = 5):
@@ -318,21 +310,27 @@ def _cache_ready_get_sga(
             site.properties = {}
 
     sga = None
-    for trial_symprec in [symprec, 0.1, 0.001, 1, 0.0001]:
-        # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
-        with contextlib.suppress(SymmetryUndeterminedError):
+    trial_symprecs = [symprec, 0.1, 0.001, 1, 0.0001]
+    spg_2pt7 = False
+    symm_error_types: tuple[type[Exception], ...] = (SymmetryUndeterminedError, ValueError)
+    with contextlib.suppress(AttributeError):  # introduced with spglib 2.7.0, can remove once spglib
+        symm_error_types += (spglib.SpglibError,)  # (indirect) requirement is >= 2.7
+        spg_2pt7 = True
+
+    for trial_symprec in trial_symprecs:
+        try:  # if symmetry determination fails, increase symprec first, then decrease, then criss-cross
             sga = SpacegroupAnalyzer(struct, symprec=trial_symprec)
-        if sga:
-            try:
-                _detected_symmetry = sga._get_symmetry()
-            except ValueError:  # symmetry determination failed
-                continue
+            # check symmetry determination, sometimes SpacegroupAnalyzer initialises but methods fail:
+            _detected_symmetry = sga._get_symmetry()
             return (sga, trial_symprec) if return_symprec else sga
-    import spglib
+        except symm_error_types as latest_symm_error:
+            symm_error = latest_symm_error  # save before auto-deleted at end of except block
+            continue
 
     raise SymmetryUndeterminedError(
-        f"Could not determine symmetry of input structure! Got spglib error: {spglib.get_error_message()}"
-    )
+        "Could not determine symmetry of input structure!"
+        + (f"Got spglib error: {spglib.get_error_message()}" if not spg_2pt7 else "")
+    ) from symm_error
 
 
 def apply_symm_op_to_site(
@@ -590,11 +588,13 @@ def cluster_coords(
     return fcluster(z, dist_tol, criterion=criterion)
 
 
-def _doped_cluster_frac_coords(
+def doped_cluster_frac_coords(
     fcoords: np.typing.ArrayLike,
     structure: Structure,
     tol: float = 0.55,
-    symmetry_preference: float = 0.1,
+    symm_pref_dist_factor: float = 0.85,
+    method: str = "centroid",
+    criterion: str = "distance",
 ) -> np.typing.NDArray:
     """
     Cluster fractional coordinates that are within a certain distance tolerance
@@ -605,15 +605,15 @@ def _doped_cluster_frac_coords(
     in the cluster `and` the cluster midpoint (average position). Of these
     sites, the site with the highest symmetry, and then largest ``min_dist``
     (distance to any host lattice site), is chosen -- if its ``min_dist`` is
-    no more than ``symmetry_preference`` (0.1 Å by default) smaller than
-    the site with the largest ``min_dist``. This is because we want to favour
-    the higher symmetry interstitial sites (as these are typically the more
-    intuitive sites for placement, cleaner, easier for analysis etc, and work
-    well when combined with ``ShakeNBreak`` or other structure-searching
-    techniques to account for symmetry-breaking), but also interstitials are
-    often lowest-energy when furthest from host atoms (i.e. in the largest
-    interstitial voids -- particularly for fully-ionised charge states), and
-    so this approach tries to strike a balance between these two goals.
+    no more than ``symm_pref_dist_factor`` (0.85 by default) times the largest
+    possible ``min_dist``. This is because we want to favour the higher
+    symmetry interstitial sites (as these are typically the more intuitive
+    sites for placement, cleaner, easier for analysis etc, and work well when
+    combined with ``ShakeNBreak`` or other structure-searching techniques to
+    account for symmetry-breaking), but also interstitials are often
+    lowest-energy when furthest from host atoms (i.e. in the largest
+    interstitial voids -- particularly for fully-ionised charge states), and so
+    this approach tries to strike a balance between these two goals.
 
     In ``pymatgen-analysis-defects``, the average cluster position is used,
     which breaks symmetries and is less easy to manipulate in the following
@@ -626,10 +626,17 @@ def _doped_cluster_frac_coords(
             The host structure.
         tol (float):
             Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
-        symmetry_preference (float):
-            Distance preference for symmetry over minimum distance to host
-            atoms, as detailed in docstring above.
-            Default is 0.1 Å.
+        symm_pref_dist_factor (float):
+            Minimum acceptable ratio of distance to host atoms for
+            symmetry-favoured sites vs distance-to-host-favoured sites, for
+            which to prefer symmetry-favoured sites. Default is 0.85.
+        method (str):
+            Clustering algorithm to use with ``linkage()`` (default:
+            ``"centroid"``, better than the ``scipy`` default of ``"single``
+            for interstitial generation to avoid daisy-chaining clusters).
+        criterion (str):
+            Criterion to use for flattening hierarchical clusters from the
+            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
 
     Returns:
         np.typing.NDArray: Clustered fractional coordinates.
@@ -640,7 +647,7 @@ def _doped_cluster_frac_coords(
         return _vectorized_custom_round(np.mod(_vectorized_custom_round(fcoords, 5), 1), 4)  # to unit cell
 
     lattice = structure.lattice
-    cn = cluster_coords(fcoords, structure, dist_tol=tol)
+    cn = cluster_coords(fcoords, structure, dist_tol=tol, method=method, criterion=criterion)
     unique_fcoords = []
 
     # cn is an array of cluster numbers, of length ``len(fcoords)``, so we take the set of cluster numbers
@@ -673,10 +680,9 @@ def _doped_cluster_frac_coords(
         )[0][0]
 
         if (
-            np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
-            < np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
-            - symmetry_preference
-        ):
+            np.min(lattice.get_all_distances(symmetry_favoured_site, structure.frac_coords), axis=1)
+            / np.min(lattice.get_all_distances(dist_favoured_site, structure.frac_coords), axis=1)
+        ) < symm_pref_dist_factor:
             unique_fcoords.append(dist_favoured_site)
         else:  # prefer symmetry over distance if difference is sufficiently small
             unique_fcoords.append(symmetry_favoured_site)
@@ -1420,6 +1426,37 @@ def get_equiv_frac_coords_in_primitive(
     if return_symprec_and_dist_tol_factor:
         return (prim_coord_list if equiv_coords else prim_coord_list[0]), symprec, dist_tol_factor
     return prim_coord_list if equiv_coords else prim_coord_list[0]
+
+
+def are_equivalent_lattices(
+    lattice_1: Lattice | Structure,
+    lattice_2: Lattice | Structure,
+    ltol: float = 5e-3,
+    atol: float = 1,
+) -> bool:
+    """
+    Check if two lattices are (symmetry-)equivalent, allowing for different
+    cell sizes.
+
+    Args:
+        lattice_1 (Lattice | Structure):
+            The first lattice to check for equivalence.
+        lattice_2 (Lattice | Structure):
+            The second lattice to check for equivalence.
+        ltol (float):
+            Fractional tolerance for matching lattice vector lengths.
+            Defaults to 5e-3 (i.e. 0.5% tolerance).
+        atol (float):
+            Tolerance for matching angles. Defaults to 1 degree.
+
+    Returns:
+        bool:
+            ``True`` if the two lattices are (symmetry-)equivalent, ``False``
+            otherwise.
+    """
+    lattice_1 = lattice_1 if isinstance(lattice_1, Lattice) else lattice_1.lattice
+    lattice_2 = lattice_2 if isinstance(lattice_2, Lattice) else lattice_2.lattice
+    return lattice_1.find_mapping(lattice_2, ltol=ltol, atol=atol, skip_rotation_matrix=True) is not None
 
 
 def _rotate_and_get_supercell_matrix(
@@ -2245,7 +2282,7 @@ def swap_axes(structure: Structure, axes: list[int] | tuple[int, ...]) -> Struct
     return transformation.apply_transformation(structure)
 
 
-def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[float]]]:
+def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[Expr]]]:
     """
     Get dictionary of ``{Wyckoff label: coordinates}`` for a given space group
     number.
@@ -2275,7 +2312,7 @@ def get_wyckoff_dict_from_sgn(sgn: int) -> dict[str, list[list[float]]]:
     def _coord_string_to_array(coord_string):
         # Split string into substrings, parse each as a sympy expression,
         # then convert to list of sympy expressions
-        return [cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")]
+        return np.array([cached_simplify(x.replace("2x", "2*x")) for x in coord_string.split(",")])
 
     for element in wyckoff["letters"]:
         label = wyckoff[element]["multiplicity"] + element  # e.g. 4d
@@ -2673,8 +2710,9 @@ def point_symmetry_from_defect_entry(
     while for interstitials it is the point symmetry of the `final relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
-    concentrations and Fermi level behaviour (see e.g.
-    https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
+    concentrations and Fermi level behaviour (discussion in
+    https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+    https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
@@ -3377,8 +3415,9 @@ def get_orientational_degeneracy(
     while for interstitials it is the point symmetry of the `final relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
-    concentrations and Fermi level behaviour (see e.g.
-    https://doi.org/10.1039/D2FD00043A & https://doi.org/10.1039/D3CS00432E).
+    concentrations and Fermi level behaviour (discussion in
+    https://doi.org/10.1039/D2FD00043A, https://doi.org/10.1039/D3CS00432E,
+    https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
         defect_entry (DefectEntry):

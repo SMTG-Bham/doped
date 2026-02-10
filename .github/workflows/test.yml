@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
 
       matrix:
-        os: [ ubuntu-latest, macos-14 ]
+        os: [ ubuntu-latest, macos-14 ]  # Windows in theory possible, but needs circumventing ``vise`` issues
         python-version: [ '3.10', '3.13' ]  # lowest and highest supported Python versions
 
         # if durations files present, pytest-split will use them to intelligently distribute tests
@@ -37,6 +37,7 @@ jobs:
           pip install -e .[tests]
 
       - name: Test
+        shell: bash
         run: |  # update durations file with `pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting`
           pytest -vv -m "not mpl_image_compare" \
             --splits 10 --group ${{ matrix.split }} \
@@ -44,6 +45,7 @@ jobs:
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
       - name: Plotting Tests
+        shell: bash
         if: always()  # run even if non-plotting tests fail
         id: plotting_tests  # Add an ID to this step for reference
         env:
@@ -55,6 +57,7 @@ jobs:
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
 
       - name: Generate GH Actions test plots
+        shell: bash
         if: failure() && steps.plotting_tests.outcome == 'failure'  # Run only if plotting tests fail
         env:
           MPLBACKEND: Agg  # non-interactive backend for matplotlib

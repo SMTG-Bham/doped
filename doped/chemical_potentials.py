@@ -9,6 +9,7 @@ import copy
 import itertools
 import os
 import warnings
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
 from pathlib import Path
@@ -39,7 +40,6 @@ from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
 from pymatgen.util.typing import PathLike
-from scipy.interpolate import griddata
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
@@ -1273,6 +1273,28 @@ class CompetingPhases:
         """
         return [entry for entry in self.entries if entry.data.get("molecule")]
 
+    def _iter_entries_with_types(self) -> Iterable[tuple[ComputedEntry, str]]:
+        """
+        Yield tuples ``(entry, type)`` for non-metallic, metallic and molecular
+        entries in ``self.entries``.
+
+        Centralises the unknown-structure warning/skip logic so callers only
+        handle valid entries.
+        """
+        for entry_list, type in [
+            (self.nonmetallic_entries, "non-metals"),
+            (self.metallic_entries, "metals"),
+            (self.molecular_entries, "molecules"),
+        ]:
+            for entry in entry_list:
+                if not hasattr(entry, "structure"):
+                    warnings.warn(
+                        f"Structure for entry {entry.name} not available; input files will not be "
+                        f"generated for this entry."
+                    )
+                    continue
+                yield entry, type
+
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
     # TODO: Have option to only write extrinsic files to output (in case regenerated when adding calcs
@@ -1320,42 +1342,42 @@ class CompetingPhases:
         # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
+        kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
 
-        for entry_list, type in [
-            (self.nonmetallic_entries, "non-metals"),
-            (self.metallic_entries, "metals"),
-        ]:  # no molecular entries as they don't need convergence testing
-            # kpoints should be set as (min, max, step):
-            min_k, max_k, step_k = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}[type]
-            for entry in entry_list:
-                uis = copy.deepcopy(base_incar_settings or {})
-                self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
-                if type == "metals":
-                    self._set_default_metal_smearing(uis, user_incar_settings or {})
+        for entry, type in self._iter_entries_with_types():
+            if "molecule" in type:
+                continue  # no molecular entries as they don't need convergence testing
 
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                    dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                        structure=entry.structure,
-                        user_incar_settings=uis,
-                        user_kpoints_settings={"reciprocal_density": min_k},
-                        user_potcar_settings=user_potcar_settings or {},
-                        user_potcar_functional=user_potcar_functional,
-                        force_gamma=True,
+            # kpoints should be set as (min, max, step)
+            min_k, max_k, step_k = kpoints_by_metallicity[type]
+            uis = copy.deepcopy(base_incar_settings or {})
+            self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
+            if type == "metals":
+                self._set_default_metal_smearing(uis, user_incar_settings or {})
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                    structure=entry.structure,
+                    user_incar_settings=uis,
+                    user_kpoints_settings={"reciprocal_density": min_k},
+                    user_potcar_settings=user_potcar_settings or {},
+                    user_potcar_functional=user_potcar_functional,
+                    force_gamma=True,
+                )
+
+                for kpoint in range(min_k, max_k, step_k):
+                    dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
+                    kname = (
+                        "k"
+                        + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
+                        + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                     )
-
-                    for kpoint in range(min_k, max_k, step_k):
-                        dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
-                        kname = (
-                            "k"
-                            + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
-                            + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
-                        )
-                        fname = (
-                            f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
-                            f"/{kname}"
-                        )
-                        dict_set.write_input(fname, **kwargs)
+                    fname = (
+                        f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
+                        f"/{kname}"
+                    )
+                    dict_set.write_input(fname, **kwargs)
 
         if self.molecular_entries:
             print(
@@ -1364,7 +1386,12 @@ class CompetingPhases:
                 f"k-point convergence testing, as Γ-only sampling is sufficient."
             )
 
-    # TODO: Add vasp_ncl_setup()
+    # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
+    #  chemical potentials (-> Guidelines perspective)
+    # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
+    # same composition (oxidation states), to good accuracy, so do this for pre-screening
+    # Also, can use symmetry with SOC total energy calculations, have tested this.
+
     def vasp_std_setup(
         self,
         kpoints_metals=200,
@@ -1416,45 +1443,40 @@ class CompetingPhases:
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
-        for entry_list, type in [
-            (self.nonmetallic_entries, "non-metals"),
-            (self.metallic_entries, "metals"),
-            (self.molecular_entries, "molecules"),
-        ]:
-            if type == "molecules":
+        for entry, type in self._iter_entries_with_types():
+            if "molecule" in type:
                 user_kpoints_settings = Kpoints().from_dict(
                     {
                         "comment": "Gamma-only kpoints for molecule-in-a-box",
                         "generation_style": "Gamma",
                     }
                 )
-            elif type == "non-metals":
+            elif "non-metals" in type:
                 user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
             else:  # metals
                 user_kpoints_settings = {"reciprocal_density": kpoints_metals}
 
-            for entry in entry_list:
-                uis = copy.deepcopy(base_incar_settings or {})
-                if type == "molecules":
-                    uis["ISIF"] = 2  # can't change the volume
-                    uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
-                self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
-                if type == "metals":
-                    self._set_default_metal_smearing(uis, user_incar_settings or {})
+            uis = copy.deepcopy(base_incar_settings or {})
+            if type == "molecules":
+                uis["ISIF"] = 2  # can't change the volume
+                uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
+            self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
+            if type == "metals":
+                self._set_default_metal_smearing(uis, user_incar_settings or {})
 
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                    dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                        structure=entry.structure,
-                        user_incar_settings=uis,
-                        user_kpoints_settings=user_kpoints_settings,
-                        user_potcar_settings=user_potcar_settings or {},
-                        user_potcar_functional=user_potcar_functional,
-                        force_gamma=True,
-                    )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
+                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                    structure=entry.structure,
+                    user_incar_settings=uis,
+                    user_kpoints_settings=user_kpoints_settings,
+                    user_potcar_settings=user_potcar_settings or {},
+                    user_potcar_functional=user_potcar_functional,
+                    force_gamma=True,
+                )
 
-                    fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
-                    dict_set.write_input(fname, **kwargs)
+                fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
+                dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """
@@ -1633,7 +1655,7 @@ class ChemicalPotentialGrid:
     chemical potential space.
     """
 
-    def __init__(self, chempots: dict[str, Any]):
+    def __init__(self, chempots: dict[str, Any], format_chempot_labels: bool = True):
         r"""
         Initializes the ``ChemicalPotentialGrid`` with chemical potential data.
 
@@ -1657,18 +1679,22 @@ class ChemicalPotentialGrid:
                 chemical potentials `with respect to the elemental reference
                 energies` will be used (i.e.
                 ``chempots["limits_wrt_el_refs"]``)!
+            format_chempot_labels (bool):
+                Whether to format the elemental chemical potential labels as
+                "µ_{elt} (eV)" (default) or just "{elt}" (if ``False``).
         """
-        unformatted_chempots_dict = chempots.get("limits_wrt_el_refs", chempots)
-        test_elt = Element("H")
-        formatted_chempots_dict = {
-            limit: {
-                f"μ_{k} (eV)" if test_elt.is_valid_symbol(k) else k: v
-                for (k, v) in unformatted_chempots_subdict.items()
+        chempots_dict = chempots.get("limits_wrt_el_refs", chempots)  # unformatted chempots dict
+        if format_chempot_labels:
+            test_elt = Element("H")
+            chempots_dict = {
+                limit: {
+                    f"μ_{k} (eV)" if test_elt.is_valid_symbol(k) else k: v
+                    for (k, v) in unformatted_chempots_subdict.items()
+                }
+                for limit, unformatted_chempots_subdict in chempots_dict.items()
             }
-            for limit, unformatted_chempots_subdict in unformatted_chempots_dict.items()
-        }
 
-        self.vertices = pd.DataFrame.from_dict(formatted_chempots_dict, orient="index")
+        self.vertices = pd.DataFrame.from_dict(chempots_dict, orient="index")
 
     @classmethod
     def from_dataframe(cls, vertices: pd.DataFrame) -> "ChemicalPotentialGrid":
@@ -1693,6 +1719,7 @@ class ChemicalPotentialGrid:
     def get_grid(
         self,
         n_points: int | None = None,
+        fixed_elements: dict[str, float] | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
@@ -1725,6 +1752,11 @@ class ChemicalPotentialGrid:
                 polytope is much slower).
                 Note that large values (>= 1e5) with multinary systems can
                 explode, crashing system memory.
+            fixed_elements (dict | None):
+                A dictionary of chemical potentials to fix (in the format:
+                ``{column_name: value}``; e.g. ``{"Li": -2}``), if a reduced /
+                constrained chemical potential grid is desired. If provided,
+                the ``get_constrained_grid`` method is used.
             cartesian (bool):
                 Whether to generate the grid in Cartesian coordinates. If
                 ``False`` (default), the grid is generated in barycentric
@@ -1733,14 +1765,15 @@ class ChemicalPotentialGrid:
                 and not necessarily in Cartesian coordinates.
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
-                Default is 4.
+                Note that the tolerance for grid-point matching is
+                10^[-decimal_places]. Default is 4.
             drop_duplicates (bool):
                 Whether to drop duplicate points in the generated grid. With
                 barycentric coordinate generation, there can be duplicate
                 points in the generated grid from overlapping simplices. If
                 duplicates are acceptable (likely true for most downstream
                 usages; e.g. plotting etc) then this can be set to ``False`` to
-                speed up runtime.
+                speed up runtime. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
@@ -1750,6 +1783,11 @@ class ChemicalPotentialGrid:
                 A ``DataFrame`` containing the points within the convex hull.
                 Each row represents a point in the grid.
         """
+        if fixed_elements is not None:
+            return self.get_constrained_grid(
+                fixed_elements, n_points, cartesian, decimal_places, drop_duplicates, include_vertices
+            )
+
         n_points = n_points or (1000 if not cartesian else 100)
         dependent_variable = self.vertices.columns[-1]
         dependent_var = self.vertices[dependent_variable].to_numpy()
@@ -1769,7 +1807,6 @@ class ChemicalPotentialGrid:
         hull_idx = hull.vertices  # indices of the hull points
         coords_hull = independent_vars.to_numpy()[hull_idx]
         values_hull = dependent_var[hull_idx]
-        delaunay_tri = Delaunay(coords_hull)
 
         if cartesian:  # Create a dense grid that covers the entire range of the vertices
             # hull volume (in N-D) times grid density = num points:
@@ -1787,16 +1824,12 @@ class ChemicalPotentialGrid:
             grid_points = np.vstack([g.ravel() for g in grid]).T  # Flatten the grid to points
 
             # Delaunay triangulation to get points inside the convex hull
-            inside_hull = delaunay_tri.find_simplex(grid_points) >= 0
-            points_inside = grid_points[inside_hull]
-            values_inside = griddata(  # interpolate values to get the dependent chemical potential
-                independent_vars.to_numpy(), dependent_var, points_inside, method="linear"
+            grid_with_values = _griddata_linear_in_hull(
+                coords_hull, values_hull, grid_points, tol=10 ** (-decimal_places)
             )
-            # Combine points with their corresponding interpolated values:
-            grid_with_values = np.hstack((points_inside, values_inside.reshape(-1, 1)))
 
         else:  # efficiently generate a grid of points inside the convex hull, using barycentric coords:
-            grid_with_values = _lattice_in_hull(delaunay_tri, values_hull, n_points=n_points)
+            grid_with_values = _lattice_in_hull(coords_hull, values_hull, n_points=n_points)
 
         if include_vertices:  # Ensure vertices are in the grid
             grid_with_values = np.vstack((grid_with_values, self.vertices.to_numpy()))
@@ -1814,6 +1847,7 @@ class ChemicalPotentialGrid:
         n_points: int | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
+        drop_duplicates: bool = True,
         include_vertices: bool = True,
     ) -> pd.DataFrame:
         r"""
@@ -1854,6 +1888,13 @@ class ChemicalPotentialGrid:
             decimal_places (int):
                 The number of decimal places to round the grid coordinates to.
                 Default is 4.
+            drop_duplicates (bool):
+                Whether to drop duplicate points in the generated grid. With
+                barycentric coordinate generation, there can be duplicate
+                points in the generated grid from overlapping simplices. If
+                duplicates are acceptable (likely true for most downstream
+                usages; e.g. plotting etc) then this can be set to ``False`` to
+                speed up runtime. Default is ``True``.
             include_vertices (bool):
                 Whether to include the vertices themselves in the generated
                 grid. Default is ``True``.
@@ -1879,6 +1920,7 @@ class ChemicalPotentialGrid:
                     vertices,
                     list(independent_vars.columns).index(element),
                     value,
+                    tol=10 ** (-decimal_places),
                 )
             except ValueError as e:
                 if "does not meet the hull" in str(e):
@@ -1891,13 +1933,9 @@ class ChemicalPotentialGrid:
                 raise e
 
         # Interpolate the values to get the dependent chemical potential
-        values_inside = griddata(independent_vars.to_numpy(), dependent_var, vertices, method="linear")
-
-        # Combine points with their corresponding interpolated values
-        grid_with_values = np.hstack((vertices, values_inside.reshape(-1, 1)))
-
-        # remove nan values and round
-        grid_with_values = grid_with_values[~np.isnan(grid_with_values[:, -1])].round(decimal_places + 1)
+        grid_with_values = _griddata_linear_in_hull(
+            independent_vars.to_numpy(), dependent_var, vertices, tol=10 ** (-decimal_places)
+        )
 
         constrained_vertices = pd.DataFrame(
             grid_with_values,
@@ -1906,19 +1944,25 @@ class ChemicalPotentialGrid:
         # these are our new constrained vertices, now we generate the grid (without the fixed element):
         input_constrained_vertices = constrained_vertices.drop(columns=list(fixed_elements.keys()))
         constrained_grid = ChemicalPotentialGrid.from_dataframe(input_constrained_vertices)
-        return constrained_grid.get_grid(
+        grid_df = constrained_grid.get_grid(
             n_points=n_points,
             cartesian=cartesian,
             decimal_places=decimal_places,
+            drop_duplicates=drop_duplicates,
             include_vertices=include_vertices,
         ).dropna()
+
+        for element_col_name, value in fixed_elements.items():  # add fixed-element values to the grid
+            grid_df[element_col_name] = [value] * len(grid_df)
+
+        return grid_df
 
 
 def _intersect_hull_with_plane(
     vertices: np.ndarray,
     axis: int,
     value: float,
-    tol: float = 1e-10,
+    tol: float = 1e-6,
 ) -> np.ndarray:
     """
     Intersect the convex hull with a plane defined by a fixed value of a given
@@ -1950,7 +1994,7 @@ def _intersect_hull_with_plane(
         d_j = v_j[axis] - value  # vector from plane to vertex j, along axis
 
         if d_i * d_j < 0:  # opposite signs in vectors -> crossing
-            t = d_i / (d_i - d_j)  # 0 < t < 1
+            t = d_i / (d_i - d_j)  # 0 < t < 1  (fraction along path)
             pts.append(v_i + t * (v_j - v_i))  # intersection point
 
         else:  # check if endpoint is on plane:
@@ -1962,7 +2006,10 @@ def _intersect_hull_with_plane(
 
 
 def _lattice_in_hull(
-    delaunay_tri: Delaunay, dependent_var: np.ndarray | None = None, n_points: int = 1000
+    vertices: np.ndarray,
+    Y: np.ndarray | None = None,
+    n_points: int = 1000,
+    qhull_options: str = "QJ Qbb Qc",
 ) -> np.ndarray:
     """
     Generate a grid of points inside the convex hull of the given vertices,
@@ -1977,19 +2024,23 @@ def _lattice_in_hull(
     ``n_points`` until convergence.
 
     Args:
-        delaunay_tri (Delaunay):
-            A Delaunay triangulation object representing the convex hull of
-            the vertices.
-        dependent_var (np.ndarray | None):
-            Values of the dependent variable (e.g. chemical potential) at the
-            vertices. If provided, the function will also interpolate the
+        vertices (np.ndarray):
+            (n, k) float array of data points to interpolate between.
+        Y (np.ndarray):
+            (n,) float array of values at ``vertices``. This should be the
+            values of the dependent variable (e.g. chemical potential) at the
+            given vertices. If provided, the function will also interpolate the
             dependent variable values at the generated points inside the convex
-            hull -- must have the same order as the vertices in
-            ``delaunay_tri``! Default is ``None``.
+            hull. Default is ``None``.
         n_points (int):
             `Minimum` number of grid points to generate. The output grid will
             contain at least this many points, regularly spaced in barycentric
             space. Default is 1000.
+        qhull_options (str):
+            Options to pass to ``QHull`` via ``~scipy.spatial.Delaunay``.
+            Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
+            precision problems, "Qbb" scales coordinates for better
+            conditioning, and "Qc" keeps coplanar points.
 
     Returns:
         np.ndarray:
@@ -1997,10 +2048,10 @@ def _lattice_in_hull(
             The shape of the array is (M, k), where M is the number of points
             in the grid.
     """
-    vertices = delaunay_tri.points  # vertices of the convex hull
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
 
+    delaunay_tri = Delaunay(vertices, qhull_options=qhull_options)  # setup Delaunay triangulation
     # vertices defines the polytope (k-D polyhedron) of the convex hull; shape (N, k)
     # we then tessellate the hull with Delaunay triangulation, which breaks the polytope into a set of
     # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
@@ -2053,14 +2104,118 @@ def _lattice_in_hull(
 
     # Vectorised Cartesian coordinates (and interpolated values if dependent_var is provided):
     # points_inside: (S, L, k) -> reshape -> (S*L, k)
-    points_inside = np.einsum("lK,sKm->slm", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
-    if dependent_var is None:
+    points_inside = np.einsum("LK,SKk->SLk", bary_coords, verts_per_simplex).reshape(-1, k)  # K = k+1
+    if Y is None:
         return points_inside
 
-    vals_per_simplex = dependent_var[delaunay_tri.simplices]  # (S, k+1)
+    vals_per_simplex = Y[delaunay_tri.simplices]  # (S, k+1)
     # values_inside: (S, L) -> reshape -> (S*L,)
-    values_inside = np.einsum("lK,sK->sl", bary_coords, vals_per_simplex).ravel()
-    return np.hstack((points_inside, values_inside.reshape(-1, 1)))
+    Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
+    return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
+
+
+def _griddata_linear_in_hull(
+    X: np.ndarray, Y: np.ndarray, xi: np.ndarray, tol: float = 1e-6, qhull_options: str = "QJ Qbb Qc"
+):
+    """
+    Linear ND interpolation of ``xi``, using input data ``X`` and ``Y``, which
+    also returns values `on` the convex hull boundary (which ``griddata`` often
+    fails to do), and NaN for points truly outside the convex hull.
+
+    Args:
+        X (np.ndarray):
+            (n, k) float array of data points to interpolate between.
+        Y (np.ndarray):
+            (n,) float array of values at ``X``.
+        xi (np.ndarray):
+            (L, k) float array of query points to interpolate values for.
+        tol (float):
+            Tolerance for including boundary points as inside. Default is
+            1e-6.
+        qhull_options (str):
+            Options to pass to ``QHull`` via ``~scipy.spatial.Delaunay``.
+            Default is "QJ Qbb Qc", where "QJ" means joggled input to avoid
+            precision problems, "Qbb" scales coordinates for better
+            conditioning, and "Qc" keeps coplanar points.
+
+    Returns:
+         np.ndarray: (m,) float array of interpolated values within the
+         convex hull, with NaN values outside the hull.
+    """
+    _n, k = np.shape(X)
+    # Delaunay triangulation breaks our k-D polyhedron (polytope) of the convex hull into k-D
+    # simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
+    # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc):
+    delaunay_tri = Delaunay(X, qhull_options=qhull_options)  # setup Delaunay triangulation
+    simplex_indices = delaunay_tri.find_simplex(xi, tol=tol)  # simplex indices; (L,), where L is len(xi)
+    inside_hull = simplex_indices >= 0  # outside = -1; tol treats near-edge as inside; (L,)
+    if not inside_hull.any():  # no inside points, return array of NaNs of shape (L,)
+        raise ValueError("No points found inside convex hull (of chemical potentials)")
+
+    X_inside = xi[inside_hull]  # (N, k) where N is number of points inside hull; N <= L
+    # k is the xi dimension (k-D chemical potential space)
+    # inside_hull_simplex_indices = simplex_indices[inside_hull]  # (N,)
+
+    # Linear interpolation via barycentric coordinates:
+    # SciPy exposes an affine map from x to barycentric coords via tri.transform:
+    #   For each simplex i:  T_i c = x - r_i, with c[:-1] first d barycentric coordinates,
+    #   and c_last = 1 - sum(c[:-1])
+    # (This mirrors what ``LinearNDInterpolator`` does under the hood)
+    Ti = delaunay_tri.transform[simplex_indices[inside_hull]]  # (N, k+1, k)
+    Xdif = X_inside - Ti[:, -1, :]  # x - r, shape (N, k)
+    lam = np.einsum("Nij,Nj->Ni", Ti[:, :k, :], Xdif)  # first k barycentrics; (N, k)
+    bary_coords = np.concatenate([lam, 1.0 - lam.sum(axis=1, keepdims=True)], axis=1)  # (N, k+1)
+
+    vertex_indices_of_simplices = delaunay_tri.simplices[simplex_indices[inside_hull]]  # (N, k+1)
+    # where delaunay_tri.simplices is (S, k+1))
+    vertex_values_of_simplices = Y[vertex_indices_of_simplices]  # (N, k+1)
+    values_inside = np.einsum("Ni,Ni->N", bary_coords, vertex_values_of_simplices)  # N
+    # combine input xi points (which are inside hull) with interpolated values for returned output:
+    return np.hstack((X_inside, values_inside.reshape(-1, 1)))  # (N, k+1)
+
+
+def entries_from_chempot_limits(chempots_dict):
+    """
+    Generate a list of ``ComputedEntry`` objects from a ``doped`` dictionary of
+    chemical potential limits.
+
+    These entries will correspond to the ground-state phase for each
+    chemically-stable composition in the chemical system, and can be used to
+    generate a ``ChemicalPotentialDiagram`` object (used in chemical potential
+    heatmap plotting).
+
+    Args:
+        chempots_dict (dict):
+            ``doped`` chemical potential limits dictionary, as output by
+            ``CompetingPhasesAnalyzer.chempots``, having the keys:
+
+                - "limits": {"phaseA-phaseB-phaseC":
+                    {"Li": mu_Li, "P": mu_P, ...}, ... }
+                - "elemental_refs":
+                    {"Li": mu_Li_ref, "P": mu_P_ref, ...}
+
+    Returns:
+        list[ComputedEntry]:
+            List of ``ComputedEntry`` objects, with energies per formula unit.
+    """
+    phase_energies = defaultdict(list)
+
+    for limit, chempots in chempots_dict["limits"].items():
+        phases = limit.split("-")
+        for ph in phases:
+            comp = Composition(ph)
+            phase_energies[ph].append(
+                sum(comp[el] * float(chempots[str(el)]) for el in comp.elements)  # total energy per fu
+            )
+
+    # average duplicates (should all be the same energy anyway)
+    entries = [ComputedEntry(ph, sum(Es) / len(Es)) for ph, Es in phase_energies.items()]
+
+    for el, mu_el in chempots_dict.get("elemental_refs", {}).items():  # ensure elt refs included
+        if el not in phase_energies:
+            entries.append(ComputedEntry(el, float(mu_el)))
+
+    return entries
 
 
 class CompetingPhasesAnalyzer(MSONable):
@@ -2145,6 +2300,8 @@ class CompetingPhasesAnalyzer(MSONable):
             extrinsic_elements (str):
                 List of extrinsic elements in the chemical system (not present
                 in ``composition``).
+            intrinsic_elements (str):
+                List of intrinsic elements (i.e. those in ``composition``).
             bulk_entry (ComputedStructureEntry):
                 The lowest energy computed entry for the host material.
             unstable_host (bool):
@@ -2173,6 +2330,7 @@ class CompetingPhasesAnalyzer(MSONable):
         # TODO: Use smart subfolder detection as in DefectsParser, and update docstring!
         self.composition = Composition(composition)
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
+        self.intrinsic_elements = self.elements.copy()
         self.extrinsic_elements: list[str] = []
 
         # _from_vaspruns or _from_entries depending on input
@@ -3069,7 +3227,8 @@ class CompetingPhasesAnalyzer(MSONable):
         **kwargs,
     ) -> plt.Figure:
         """
-        Plot a heatmap of the chemical potentials for a multinary system.
+        Plot a heatmap of the chemical potentials for a multinary system,
+        showing bordering secondary phases.
 
         In this plot, the ``dependent_element`` chemical potential is plotted
         as a heatmap over the stability region of the host composition, as a
@@ -3085,7 +3244,8 @@ class CompetingPhasesAnalyzer(MSONable):
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
-        formula labels (see: github.com/matplotlib/matplotlib/issues/25669).
+        formula labels (see:
+        https://github.com/matplotlib/matplotlib/issues/25669).
         This is only the case for ``png`` output, so saving to e.g. ``svg``
         or ``pdf`` instead will avoid this issue.
 
@@ -3171,378 +3331,23 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
         """
-        # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
-        # Note that we could also add option to instead plot competing phases lines coloured,
-        # with a legend added giving the composition of each competing phase line (as in the SI of
-        # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
-        # can be achieved by the user by saving to PDF without labels, and manually colouring and adding
-        # a legend in a vector graphics editor (e.g. Inkscape, Affinity Designer, Adobe Illustrator, etc.).
-        from shakenbreak.plotting import _install_custom_font
-
-        _install_custom_font()
-        cpd = ChemicalPotentialDiagram(list(self.intrinsic_phase_diagram.entries))  # change to
-        # self.entries when extrinsic plotting functionality added
-
-        host_domains = cpd.domains[self.composition.reduced_formula]
-        cpg = ChemicalPotentialGrid.from_dataframe(
-            pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
+        return plot_chempot_heatmap(
+            self.chempots,
+            composition=self.composition,
+            dependent_element=dependent_element,
+            fixed_elements=fixed_elements,
+            bordering_phases=bordering_phases,
+            xlim=xlim,
+            ylim=ylim,
+            cbar_range=cbar_range,
+            colormap=colormap,
+            padding=padding,
+            title=title,
+            label_positions=label_positions,
+            filename=filename,
+            style_file=style_file,
+            **kwargs,
         )
-        fixed_elements = fixed_elements or {}
-        input_variable_elements = [
-            el for el in self.composition.elements if el.symbol not in fixed_elements
-        ]
-        if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
-            dependent_element = input_variable_elements[-1]
-        elif isinstance(dependent_element, str):
-            dependent_element = Element(dependent_element)
-        assert isinstance(dependent_element, Element)  # typing
-        input_variable_elements.remove(dependent_element)
-
-        # check dimensionality:
-        if len(cpd.elements) == 2:  # switch to line plot
-            raise ValueError(
-                "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
-                "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
-                "line plot of the chemical potentials as shown in the doped competing phases tutorial."
-            )
-        if len(cpd.elements) - len(fixed_elements) != 3:  # auto fix to centroid of stability region:
-            info_message = (
-                f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
-                f"potential constraints for >ternary systems; such that the number of elements in the "
-                f"chemical system ({len(cpd.elements)}) minus the number of fixed chemical potentials "
-                f"({len(fixed_elements)}) must be equal to 3."
-            )
-            if len(cpd.elements) - len(fixed_elements) < 3:
-                raise ValueError(info_message)
-            centroid = cpg.get_grid(cartesian=True, include_vertices=False).mean(axis=0)
-            req_num_constraints = len(cpd.elements) - 3
-            additional_fixed_elements = {
-                el.symbol: round(centroid[el.symbol], 4)
-                for i, el in enumerate(input_variable_elements)
-                if i < req_num_constraints
-            }
-            print(
-                f"{info_message} The following chemical potentials will additionally be constrained to "
-                f"their mean (centroid) values in the chemical stability region: "
-                f"{additional_fixed_elements}"
-            )
-            fixed_elements = {**fixed_elements, **additional_fixed_elements}
-
-        independent_elts = [
-            el for el in cpd.elements if el.symbol not in fixed_elements and el != dependent_element
-        ]
-
-        # Generate grid data
-        grid_kwargs: dict[str, Any] = {"n_points": 1000, "cartesian": False}
-        grid_kwargs.update(kwargs)
-        if fixed_elements:
-            grid_data = cpg.get_constrained_grid(fixed_elements, **grid_kwargs)
-        else:
-            grid_data = cpg.get_grid(**grid_kwargs)
-        values_inside = grid_data[dependent_element.symbol].to_numpy()
-        points_inside = grid_data.drop(columns=[dependent_element.symbol]).to_numpy()
-        tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
-
-        # Create plot
-        style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-        fig, ax = plt.subplots()
-        vmin = cbar_range[0] if cbar_range else None
-        vmax = cbar_range[1] if cbar_range else None
-        if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
-            vmax = 0
-
-        cmap = get_colormap(colormap, default="batlow")
-        dep_mu = ax.tripcolor(
-            tri,
-            values_inside,
-            rasterized=True,
-            cmap=cmap,
-            shading="gouraud",  # smooth
-            vmin=vmin,
-            vmax=vmax,
-        )
-        cbar = fig.colorbar(dep_mu)
-
-        # Set plot limits and labels
-        x_max, y_max = points_inside.max(axis=0)
-        x_min, y_min = points_inside.min(axis=0)
-        x_padding = padding or abs(x_max - x_min) * 0.1
-        y_padding = padding or abs(y_max - y_min) * 0.1
-
-        if xlim is None:
-            xlim = (float(x_min - x_padding), float(x_max + x_padding))
-
-        if ylim is None:
-            ylim = (float(y_min - y_padding), float(y_max + y_padding))
-
-        ax.set_xlim(*xlim)
-        ax.set_ylim(*ylim)
-        cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
-        ax.set_xlabel(rf"$\Delta\mu$ ({independent_elts[0].symbol}) (eV)")
-        ax.set_ylabel(rf"$\Delta\mu$ ({independent_elts[1].symbol}) (eV)")
-        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
-        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-
-        if title:  # add title
-            if not isinstance(title, str):
-                title = latexify(f"{self.composition.reduced_formula}")
-            ax.set_title(title)
-
-        if bordering_phases:
-            self._plot_competing_phase_lines(  # plot competing phase lines and labels
-                ax, cpd, host_domains, fixed_elements, independent_elts, label_positions
-            )
-            self._nudge_labels_inside_axes(
-                ax, padding
-            )  # adjust label positions to stay within plot bounds
-
-        if filename:
-            fig.savefig(filename, bbox_inches="tight", dpi=600)
-
-        return fig
-
-    def _plot_competing_phase_lines(
-        self,
-        ax: plt.Axes,
-        cpd: ChemicalPotentialDiagram,
-        host_domains: np.ndarray,
-        fixed_elements: dict[str, float],
-        independent_elts: list[Element],
-        label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
-    ) -> None:
-        """
-        Plot competing phase lines and add labels.
-        """
-        lines = {}  # {formula: matplotlib line object}
-        labels = {}  # {formula: line function}
-        intersections = []
-        x = np.linspace(-50, 50, 1000)
-        x_min, x_max = ax.get_xlim()
-        y_min, y_max = ax.get_ylim()
-
-        for formula, pts in cpd.domains.items():
-            if formula == self.composition.reduced_formula:
-                continue
-
-            # Get domain points that match host domains
-            domain_pts = [
-                chempot_coords
-                for chempot_coords in pts
-                if np.any(np.all(np.isclose(host_domains, chempot_coords), axis=1))  # (M, k)
-            ]
-            if len(domain_pts) < 2:
-                continue  # not a stable bordering phase
-
-            try:
-                domain_pts = self._apply_fixed_element_constraints(
-                    domain_pts, fixed_elements, cpd.elements
-                )  # handle fixed elements by intersecting with planes
-            except ValueError:
-                continue  # no intersection with plane, skip to next phase
-
-            # Fit line function
-            formula_x_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[0])]
-            formula_y_vals = np.array(domain_pts)[:, cpd.elements.index(independent_elts[1])]
-            if np.isclose(min(formula_x_vals), max(formula_x_vals), atol=5e-5):  # vertical line
-                m = np.inf
-                b = formula_x_vals[0]
-            else:
-                m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
-
-            def f(xx, m=m, b=b):  # line function for the fitted line
-                return m * xx + b
-
-            # Check for vertical lines
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", "divide by zero")
-                vertical_line = (np.abs(f(x)) == np.inf).any() or (
-                    f(x).max() - f(x).min() > 1e5  # basically a vertical line, account for rounding
-                )
-
-            # Plot line and get intersections
-            line, intersection = self._plot_single_phase_line(
-                ax, formula, domain_pts, cpd, independent_elts, vertical_line, f, x
-            )
-
-            if intersection is not None and np.size(intersection) >= 4:
-                if np.size(intersection) == 4:
-                    # if 4 intersections, check if the midpoint of intersections is at an edge (skip if so)
-                    midpoint = np.mean(intersection, axis=0)
-                    if np.any(np.abs(midpoint - np.array([x_min, y_min])) < 1e-4) or np.any(
-                        np.abs(midpoint - np.array([x_max, y_max])) < 1e-4
-                    ):
-                        continue
-
-                intersections.append(intersection)
-                lines[formula] = line
-                labels[formula] = f
-
-        if label_positions:  # add labels to lines
-            self._add_line_labels(
-                intersections=intersections,
-                lines=lines,
-                x_range=abs(x_max - x_min),
-                y_range=abs(y_max - y_min),
-                label_positions=label_positions,
-            )
-
-    def _apply_fixed_element_constraints(
-        self, domain_pts: list, fixed_elements: dict[str, float], elements: list[Element]
-    ) -> np.ndarray:
-        """
-        Apply fixed element constraints by intersecting with planes.
-        """
-        domain_pts = np.array(domain_pts)
-        for element, value in fixed_elements.items():
-            domain_pts = _intersect_hull_with_plane(
-                domain_pts,
-                elements.index(Element(element)),
-                value,
-            )
-        return domain_pts
-
-    def _plot_single_phase_line(
-        self,
-        ax: plt.Axes,
-        formula: str,
-        domain_pts: np.ndarray,
-        cpd: ChemicalPotentialDiagram,
-        independent_elts: list[Element],
-        vertical_line: bool,
-        f: Callable,
-        x: np.ndarray,
-    ) -> tuple[plt.Line2D, np.ndarray | None]:
-        """
-        Plot a single competing phase line and return line object and
-        intersections.
-        """
-        xlim, ylim = ax.get_xlim(), ax.get_ylim()
-
-        if vertical_line:
-            x_val = domain_pts[0][cpd.elements.index(independent_elts[0])]
-            line = ax.axvline(x_val, label=latexify(formula), color="k")
-            if x_val < xlim[1] and x_val > xlim[0]:
-                intersection = ((x_val, ylim[0]), (x_val, ylim[1]))
-            else:
-                intersection = None
-        else:
-            (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
-            intersection = self._get_line_intersections(f, xlim, ylim)
-
-        return line, intersection
-
-    def _get_line_intersections(
-        self, f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
-    ) -> np.ndarray:
-        """
-        Get intersections of a line with the plot bounding box.
-        """
-        x_min, x_max = xlim
-        y_min, y_max = ylim
-        x_intersections = []
-        y_intersections = []
-
-        # Check intersections with vertical bounds (x_min and x_max)
-        y_at_x_min = f(x_min)
-        y_at_x_max = f(x_max)
-        if y_min <= y_at_x_min <= y_max:
-            x_intersections.append((x_min, float(y_at_x_min)))
-        if y_min <= y_at_x_max <= y_max:
-            x_intersections.append((x_max, float(y_at_x_max)))
-
-        # Check intersections with horizontal bounds (y_min and y_max)
-        if not np.isclose(float(y_at_x_min), float(y_at_x_max), atol=1e-4):  # not a horizontal line
-
-            def inv_f(yy):  # inverse of the line function
-                return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else x_min
-
-            x_at_y_min = inv_f(y_min)
-            x_at_y_max = inv_f(y_max)
-            if x_min <= x_at_y_min <= x_max:
-                y_intersections.append((float(x_at_y_min), y_min))
-            if x_min <= x_at_y_max <= x_max:
-                y_intersections.append((float(x_at_y_max), y_max))
-
-        # take unique points in case intersects at x/y corner (which would give a duplicate):
-        return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
-
-    def _add_line_labels(
-        self,
-        intersections: list,
-        lines: dict[str, plt.Line2D],
-        x_range: float,
-        y_range: float,
-        label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
-    ) -> None:
-        """
-        Add labels to the competing phase lines.
-        """
-        if label_positions is True:  # use custom doped algorithm
-            poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
-            label_positions, best_norm_min_dist = _find_best_label_positions(
-                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-            )
-            if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
-                poss_label_positions = _possible_label_positions_from_bbox_intersections(
-                    intersections, positions_per_line=5
-                )
-                label_positions, best_norm_min_dist = _find_best_label_positions(
-                    poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
-                )
-
-        elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
-            lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
-            label_positions = [label_positions[k] for k in lines]  # reorder to match lines
-
-        if isinstance(label_positions, list):
-            label_positions = np.array(label_positions, dtype=float)
-
-        assert isinstance(label_positions, np.ndarray)  # typing; converted to array now
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "The value at position")
-            labelLines(
-                list(lines.values()),  # must be in same order as plotting order...
-                xvals=label_positions[:, 0],
-                yoffsets=label_positions[:, 1],
-                align=False,
-                color="black",
-            )
-
-    def _nudge_labels_inside_axes(self, ax: plt.Axes, padding: float | None) -> None:
-        """
-        Adjust label positions to ensure they stay within plot bounds.
-        """
-        xlim, ylim = ax.get_xlim(), ax.get_ylim()
-        x_padding = padding or (xlim[1] - xlim[0]) * 0.1
-        y_padding = padding or (ylim[1] - ylim[0]) * 0.1
-
-        latexified_labels = {
-            artist.get_text(): artist for artist in ax.get_children() if isinstance(artist, plt.Text)
-        }
-        for text in latexified_labels.values():
-            bbox = text.get_window_extent().transformed(ax.transData.inverted())
-            new_position = text.get_position()
-            delta_x = delta_y = 0
-
-            if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
-                if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
-                    delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
-                elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
-                    delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
-
-                if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
-                    delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
-                if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
-                    delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
-
-                # Apply adjustments while keeping within bounds
-                if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
-                    new_position = (new_position[0] + delta_x, new_position[1])
-                if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
-                    new_position = (new_position[0], new_position[1] + delta_y)
-
-            text.set_position(new_position)
 
     def __repr__(self):
         """
@@ -3557,6 +3362,467 @@ class CompetingPhasesAnalyzer(MSONable):
             f"entries (in self.entries):\n{joined_entry_list}\n\n"
             f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
+
+
+def plot_chempot_heatmap(
+    chempots: dict,
+    composition: str | Composition | ComputedEntry,
+    dependent_element: str | Element | None = None,
+    fixed_elements: dict[str, float] | None = None,
+    bordering_phases: bool = True,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+    cbar_range: tuple[float, float] | None = None,
+    colormap: str | colors.Colormap | None = None,
+    padding: float | None = None,
+    title: str | bool = False,
+    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+    filename: PathLike | None = None,
+    style_file: PathLike | None = None,
+    **kwargs,
+) -> plt.Figure:
+    """
+    Plot a heatmap of the chemical potentials (``chempots``) for a multinary
+    system (``composition``), showing bordering secondary phases.
+
+    In this plot, the ``dependent_element`` chemical potential is plotted
+    as a heatmap over the stability region of the host composition, as a
+    function of two other elemental chemical potentials on the x and y
+    axes.
+
+    3-D data is required to plot a 2-D heatmap, and so this function can be
+    applied as-is for ternary systems, but for higher-dimensional systems
+    a set of chemical potential constraints must be provided (as
+    ``fixed_elements``) to project the chemical stability region to 3-D;
+    see the competing phases tutorial:
+    https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+
+    Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
+    sometimes there can be odd holes in the whitespace around the chemical
+    formula labels (see:
+    https://github.com/matplotlib/matplotlib/issues/25669).
+    This is only the case for ``png`` output, so saving to e.g. ``svg``
+    or ``pdf`` instead will avoid this issue.
+
+    If using the default colour map (``batlow``) in publications, please
+    consider citing: https://zenodo.org/records/8409685
+
+    Tip: https://github.com/frssp/cplapy can be used to generate 3D plots
+    of chemical stability regions, to show the bordering competing phases
+    in quaternary systems.
+
+    Args:
+        chempots (dict):
+            Chemical potential limits dictionary in the ``doped`` format (i.e.
+            ``{"limits": [{'limit': [chempot_dict]}], ...}``) for the host
+            material (``composition``).
+        composition (str or Composition or ComputedEntry):
+            Host material composition as a string, ``Composition`` object or
+            ``ComputedEntry``, for which to plot the chemical stability region
+            (and for which ``chempots`` corresponds to).
+        dependent_element (str or Element):
+            The element for which the chemical potential is plotted as a
+            heatmap. If None (default), the last element in the bulk
+            composition formula is used (which corresponds to the most
+            electronegative element present).
+        fixed_elements (dict):
+            A dictionary of chemical potentials to fix (in the format:
+            ``{element: value}``; e.g. ``{"Li": -2}``) if the chemical
+            system is >3-D. Constraining chemical potentials is required for
+            multinary systems, in order to reduce the dimensionality to 3-D
+            for plotting a 2-D heatmap. For a system with N elements, N-3
+            fixed chemical potentials should be specified. If ``None``
+            (default), the chemical potentials of the first N-3 elements in
+            the bulk composition are fixed to their mean values in the
+            stability region (i.e. the centroid of the stability region).
+        bordering_phases (bool):
+            Whether to plot the competing/secondary phases which border the
+            host composition in the chemical potential diagram.
+            Default is ``True``.
+        xlim (tuple):
+            The x-axis limits for the plot. If None (default), the limits
+            are set to the minimum and maximum values of the x-axis data,
+            with padding equal to ``padding`` (default = 10% of the range).
+        ylim (tuple):
+            The y-axis limits for the plot. If None (default), the limits
+            are set to the minimum and maximum values of the y-axis data,
+            with padding equal to ``padding`` (default = 10% of the range).
+        cbar_range (tuple):
+            The range for the colourbar. If None (default), the range is
+            set to the minimum and maximum values of the data.
+        colormap (str, matplotlib.colors.Colormap):
+            Colormap to use for the heatmap, either as a string (which can
+            be a colormap name from https://www.fabiocrameri.ch/colourmaps
+            / https://matplotlib.org/stable/users/explain/colors/colormaps)
+            or a ``Colormap`` / ``ListedColormap`` object. If ``None``
+            (default), uses ``batlow`` from
+            https://www.fabiocrameri.ch/colourmaps.
+
+            Append "S" to the colormap name if using a sequential colormap
+            from https://www.fabiocrameri.ch/colourmaps.
+        padding (float):
+            The padding to add to the x and y axis limits. If ``None``
+            (default), the padding is set to 10% of the range.
+        title (str or bool):
+            The title for the plot. If ``False`` (default), no title is
+            added. If ``True``, the title is set to the bulk composition
+            formula, or if ``str``, the title is set to the provided
+            string.
+        label_positions (bool, dict or list):
+            The positions for the chemical formula line labels. If ``True``
+            (default), the labels are placed using a custom ``doped``
+            algorithm which attempts to find the best possible positions
+            (minimising overlap). If ``False``, no labels are added.
+            Alternatively a dictionary can be provided, where the keys are
+            the chemical formulae and the values are tuples of
+            ``(x_coord, y-offset)`` at which to place the line labels
+            (where y-offset is the offset from the line at ``x=x_coord``).
+            A list of tuples can also be provided, where the order is
+            assumed to match the competing phase lines.
+        filename (PathLike):
+            The filename to save the plot to. If ``None`` (default), the
+            plot is not saved.
+        style_file (PathLike):
+            Path to a mplstyle file to use for the plot. If ``None``
+            (default), uses the default ``doped`` style (from
+            ``doped/utils/doped.mplstyle``).
+        **kwargs:
+            Additional keyword arguments to pass to
+            ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+            (default = 1000) and ``cartesian`` (default = ``False``).
+
+    Returns:
+        plt.Figure: The ``matplotlib`` ``Figure`` object.
+    """
+    # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
+    # Note that we could also add option to instead plot competing phases lines coloured,
+    # with a legend added giving the composition of each competing phase line (as in the SI of
+    # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
+    # can be achieved by the user by saving to PDF without labels, and manually colouring and adding
+    # a legend in a vector graphics editor (e.g. Inkscape, Affinity Designer, Adobe Illustrator, etc.).
+    from shakenbreak.plotting import _install_custom_font
+
+    _install_custom_font()
+
+    composition = Composition(composition)
+    entries = entries_from_chempot_limits(chempots)
+    intrinsic_entries = [  # only include intrinsic entries: (until extrinsic chempots supported):
+        entry for entry in entries if set(entry.composition.elements).issubset(composition.elements)
+    ]
+    cpd = ChemicalPotentialDiagram(intrinsic_entries)
+    host_domains = cpd.domains[composition.reduced_formula]
+    cpg = ChemicalPotentialGrid.from_dataframe(
+        pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
+    )
+
+    fixed_elements = fixed_elements or {}
+    input_variable_elements = [el for el in composition.elements if el.symbol not in fixed_elements]
+    if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
+        dependent_element = input_variable_elements[-1]
+    elif isinstance(dependent_element, str):
+        dependent_element = Element(dependent_element)
+    assert isinstance(dependent_element, Element)  # typing
+    input_variable_elements.remove(dependent_element)
+
+    # check dimensionality:
+    if len(cpd.elements) == 2:  # switch to line plot
+        raise ValueError(
+            "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
+            "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
+            "line plot of the chemical potentials as shown in the doped competing phases tutorial."
+        )
+    if len(cpd.elements) - len(fixed_elements) != 3:  # auto fix to centroid of stability region:
+        info_message = (
+            f"Chemical potential heatmap plotting requires 3-D data, requiring fixed chemical "
+            f"potential constraints for >ternary systems; such that the number of elements in the "
+            f"chemical system ({len(cpd.elements)}) minus the number of fixed chemical potentials "
+            f"({len(fixed_elements)}) must be equal to 3."
+        )
+        if len(cpd.elements) - len(fixed_elements) < 3:
+            raise ValueError(info_message)
+        centroid = cpg.get_grid(cartesian=True, include_vertices=False).mean(axis=0)
+        req_num_constraints = len(cpd.elements) - 3
+        additional_fixed_elements = {
+            el.symbol: round(centroid[el.symbol], 4)
+            for i, el in enumerate(input_variable_elements)
+            if i < req_num_constraints
+        }
+        print(
+            f"{info_message} The following chemical potentials will additionally be constrained to "
+            f"their mean (centroid) values in the chemical stability region: "
+            f"{additional_fixed_elements}"
+        )
+        fixed_elements = {**fixed_elements, **additional_fixed_elements}
+
+    independent_elts = [
+        el for el in cpd.elements if el.symbol not in fixed_elements and el != dependent_element
+    ]
+
+    # Generate grid data
+    grid_kwargs: dict[str, Any] = {
+        "n_points": 1000,
+        "cartesian": False,
+        "fixed_elements": fixed_elements,
+    }
+    grid_kwargs.update(kwargs)
+    grid_data = cpg.get_grid(**grid_kwargs)
+    values_inside = grid_data[dependent_element.symbol].to_numpy()
+    points_inside = grid_data.drop(  # only independent (X) points, no dependent or fixed elements
+        columns=[*list(fixed_elements.keys()), dependent_element.symbol]
+    ).to_numpy()
+    tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
+
+    # Create plot
+    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
+    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+    fig, ax = plt.subplots()
+    vmin = cbar_range[0] if cbar_range else None
+    vmax = cbar_range[1] if cbar_range else None
+    if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
+        vmax = 0
+
+    cmap = get_colormap(colormap, default="batlow")
+    dep_mu = ax.tripcolor(
+        tri,
+        values_inside,
+        rasterized=True,
+        cmap=cmap,
+        shading="gouraud",  # smooth
+        vmin=vmin,
+        vmax=vmax,
+    )
+    cbar = fig.colorbar(dep_mu)
+
+    # Set plot limits and labels
+    xmax, ymax = points_inside.max(axis=0)
+    xmin, ymin = points_inside.min(axis=0)
+    x_padding = padding or abs(xmax - xmin) * 0.1
+    y_padding = padding or abs(ymax - ymin) * 0.1
+
+    if xlim is None:
+        xlim = (float(xmin - x_padding), float(xmax + x_padding))
+
+    if ylim is None:
+        ylim = (float(ymin - y_padding), float(ymax + y_padding))
+
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
+    ax.set_xlabel(rf"$\Delta\mu$ ({independent_elts[0].symbol}) (eV)")
+    ax.set_ylabel(rf"$\Delta\mu$ ({independent_elts[1].symbol}) (eV)")
+    ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+
+    if title:  # add title
+        if not isinstance(title, str):
+            title = latexify(f"{composition.reduced_formula}")
+        ax.set_title(title)
+
+    if bordering_phases:
+        _plot_competing_phase_lines(  # plot competing phase lines and labels
+            composition, ax, cpd, fixed_elements, independent_elts, label_positions
+        )
+        _nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
+
+    if filename:
+        fig.savefig(filename, bbox_inches="tight", dpi=600)
+
+    return fig
+
+
+def _plot_competing_phase_lines(
+    composition: Composition,
+    ax: plt.Axes,
+    cpd: ChemicalPotentialDiagram,
+    fixed_elements: dict[str, float],
+    independent_elts: list[Element],
+    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+) -> None:
+    """
+    Plot competing phase lines and add labels.
+    """
+    lines = {}  # {formula: matplotlib line object}
+    intersections = []
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+
+    for formula, pts in cpd.domains.items():
+        x = np.linspace(-50, 50, 1000)
+        if formula == composition.reduced_formula:
+            continue
+
+        # Get domain points that match host domains
+        host_domains = cpd.domains[composition.reduced_formula]
+        domain_pts = np.array(
+            [
+                chempot_coords
+                for chempot_coords in pts
+                if np.any(np.all(np.isclose(host_domains, chempot_coords), axis=1))  # (M, k)
+            ]
+        )
+        if domain_pts.size < 2:
+            continue  # not a stable bordering phase
+
+        try:
+            for element, value in fixed_elements.items():
+                domain_pts = _intersect_hull_with_plane(
+                    domain_pts,
+                    cpd.elements.index(Element(element)),
+                    value,
+                )  # handle fixed elements by intersecting with planes
+        except ValueError:
+            continue  # no intersection with plane, skip to next phase
+
+        # Fit line function, plot and get intersections:
+        formula_x_vals = domain_pts[:, cpd.elements.index(independent_elts[0])]
+        formula_y_vals = domain_pts[:, cpd.elements.index(independent_elts[1])]
+        if np.isclose(min(formula_x_vals), max(formula_x_vals), atol=5e-5):  # vertical line
+            x = formula_x_vals[0]
+            line = ax.axvline(x, label=latexify(formula), color="k")
+            intersection = ((x, ymin), (x, ymax)) if (x < xmax and x > xmin) else None
+        else:
+            m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
+
+            def f(xx, m=m, b=b):  # line function for the fitted line
+                return m * xx + b
+
+            (line,) = ax.plot(x, f(x), label=latexify(formula), color="k")
+            intersection = _get_line_intersections(f, (xmin, xmax), (ymin, ymax))
+
+        if intersection is not None and np.size(intersection) >= 4:
+            if np.size(intersection) == 4:
+                # if 4 intersections, check if the midpoint of intersections is at an edge (skip if so)
+                midpoint = np.mean(intersection, axis=0)
+                if np.any(np.abs(midpoint - np.array([xmin, ymin])) < 1e-4) or np.any(
+                    np.abs(midpoint - np.array([xmax, ymax])) < 1e-4
+                ):
+                    continue
+
+            intersections.append(intersection)
+            lines[formula] = line
+
+    if label_positions:  # add labels to lines
+        _add_line_labels(
+            intersections=intersections,
+            lines=lines,  # {formula: matplotlib line object}
+            x_range=abs(xmax - xmin),
+            y_range=abs(ymax - ymin),
+            label_positions=label_positions,
+        )
+
+
+def _get_line_intersections(
+    f: Callable, xlim: tuple[float, float], ylim: tuple[float, float]
+) -> np.ndarray:
+    """
+    Get intersections of a line with the plot bounding box.
+    """
+    xmin, xmax = xlim
+    ymin, ymax = ylim
+    x_intersections = []
+    y_intersections = []
+
+    # Check intersections with vertical bounds (xmin and xmax)
+    y_at_xmin = f(xmin)
+    y_at_xmax = f(xmax)
+    if ymin <= y_at_xmin <= ymax:
+        x_intersections.append((xmin, float(y_at_xmin)))
+    if ymin <= y_at_xmax <= ymax:
+        x_intersections.append((xmax, float(y_at_xmax)))
+
+    # Check intersections with horizontal bounds (ymin and ymax)
+    if not np.isclose(float(y_at_xmin), float(y_at_xmax), atol=1e-4):  # not a horizontal line
+
+        def inv_f(yy):  # inverse of the line function
+            return (yy - f(0)) / (f(1) - f(0)) if f(1) != f(0) else xmin
+
+        x_at_ymin = inv_f(ymin)
+        x_at_ymax = inv_f(ymax)
+        if xmin <= x_at_ymin <= xmax:
+            y_intersections.append((float(x_at_ymin), ymin))
+        if xmin <= x_at_ymax <= xmax:
+            y_intersections.append((float(x_at_ymax), ymax))
+
+    # take unique points in case intersects at x/y corner (which would give a duplicate):
+    return np.unique(np.round((x_intersections + y_intersections), 4), axis=0)
+
+
+def _add_line_labels(
+    intersections: list,
+    lines: dict[str, plt.Line2D],
+    x_range: float,
+    y_range: float,
+    label_positions: bool | dict[str, tuple[float, float]] | list[tuple[float, float]] = True,
+) -> None:
+    """
+    Add labels to the competing phase lines.
+    """
+    if label_positions is True:  # use custom doped algorithm
+        poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
+        label_positions, best_norm_min_dist = _find_best_label_positions(
+            poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+        )
+        if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
+            poss_label_positions = _possible_label_positions_from_bbox_intersections(
+                intersections, positions_per_line=5
+            )
+            label_positions, best_norm_min_dist = _find_best_label_positions(
+                poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
+            )
+
+    elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
+        lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
+        label_positions = [label_positions[k] for k in lines]  # reorder to match lines
+
+    if isinstance(label_positions, list):
+        label_positions = np.array(label_positions, dtype=float)
+
+    assert isinstance(label_positions, np.ndarray)  # typing; converted to array now
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", "The value at position")
+        labelLines(
+            list(lines.values()),  # must be in same order as plotting order...
+            xvals=label_positions[:, 0],
+            yoffsets=label_positions[:, 1],
+            align=False,
+            color="black",
+        )
+
+
+def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None) -> None:
+    """
+    Adjust label positions to ensure they stay within plot bounds.
+    """
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    x_padding = padding or (xlim[1] - xlim[0]) * 0.1
+    y_padding = padding or (ylim[1] - ylim[0]) * 0.1
+
+    latexified_labels = {
+        artist.get_text(): artist for artist in ax.get_children() if isinstance(artist, plt.Text)
+    }
+    for text in latexified_labels.values():
+        bbox = text.get_window_extent().transformed(ax.transData.inverted())
+        new_position = text.get_position()
+        delta_x = delta_y = 0
+
+        if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
+            if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
+                delta_x = (xlim[0] - bbox.xmin) + x_padding * 0.25
+            elif bbox.xmax > xlim[1]:  # shift left if label ends after xmax
+                delta_x = (xlim[1] - bbox.xmax) - x_padding * 0.25
+
+            if bbox.ymin < ylim[0]:  # shift up if label starts before ymin
+                delta_y = (ylim[0] - bbox.ymin) + y_padding * 0.25
+            if bbox.ymax > ylim[1]:  # shift down if label ends after ymax
+                delta_y = (ylim[1] - bbox.ymax) - y_padding * 0.25
+
+            # Apply adjustments while keeping within bounds
+            if delta_x != 0 and new_position[0] + delta_x < xlim[1]:
+                new_position = (new_position[0] + delta_x, new_position[1])
+            if delta_y != 0 and new_position[1] + delta_y < ylim[1]:
+                new_position = (new_position[0], new_position[1] + delta_y)
+
+        text.set_position(new_position)
 
 
 def _parse_entry_from_vasprun_and_catch_exception(

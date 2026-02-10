@@ -1,17 +1,9 @@
 doped
 =============
 
-See the `doped DeepWiki <https://deepwiki.com/SMTG-Bham/doped/1-overview>`__ site for an overview of the
-codebase and workflow diagrams.
+See the |DeepWiki| site for an overview of the codebase and workflow diagrams.
 
-Module contents
----------------
-.. automodule:: doped
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Submodules
+Modules
 -----------
 
 .. toctree::
@@ -22,6 +14,7 @@ Submodules
    doped.core
    doped.corrections
    doped.generation
+   doped.init
    doped.thermodynamics
    doped.utils
    doped.vasp

@@ -20,17 +20,17 @@ If this does not solve your issue, please check the specific cases noted below.
 The next recommended step is to search through the ``doped``
 `GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ (use the GitHub search bar on the top
 right) to see if your issue/question has been asked before. If your problem is still not solved, then
-please contact the developers through the
-`GitHub Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
+please post your issue on the `doped MatSci community forum <https://matsci.org/c/doped/70>`__; see
+`instructions here <https://matsci.org/t/questions-related-to-doped/66448>`__.
 
 Parsing Errors
 --------------
 If errors occur during parsing of defect calculations, ``doped`` will try to informatively warn you about
 the origin of the parsing failure (e.g. ``Parsing failed for [...] with the same error: ...``).
 Depending on what the error is, this error message on its own may not be very helpful. In these cases, it's
-worth trying to parse one or two of these failing defect calculations individually, using
-``DefectParser.from_paths(defect_path="...", bulk_path="...", ...)``, which should give a more verbose
-error traceback.
+worth trying to parse one or two of these failing defect calculations individually, using the
+|DefectsParser| :meth:`~doped.analysis.DefectParser.from_paths()` method
+(``defect_path="...", bulk_path="...", ...``), which should give a more verbose error traceback.
 
 .. note::
 
@@ -144,7 +144,7 @@ Typically this can be fixed by updating to ``spglib>=2.5`` with ``pip install --
 -------------------
 
 For issues relating to the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
-`ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`_.
+|ShakeNBreakDocs|.
 
 Installation
 ------------
@@ -201,7 +201,8 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
 .. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
 
 .. NOTE::
-    If you run into any issues using ``doped`` that aren't addressed above, please contact the developers
-    through the ``GitHub`` `Issues <https://github.com/SMTG-Bham/doped/issues>`_ page.
+    If you run into any issues using ``doped`` that aren't addressed above, please post your issue on the
+    `doped MatSci community forum <https://matsci.org/c/doped/70>`__; see
+    `instructions here <https://matsci.org/t/questions-related-to-doped/66448>`__.
 
 .. _Installation: https://doped.readthedocs.io/en/latest/Installation.html
