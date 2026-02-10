@@ -15,9 +15,17 @@ from threading import Thread
 import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
+from monty.serialization import loadfn
 from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
-from test_utils import EXAMPLE_DIR, _potcars_available, _print_warning_info, data_dir, if_present_rm
+from test_utils import (
+    EXAMPLE_DIR,
+    _compare_attributes,
+    _potcars_available,
+    _print_warning_info,
+    data_dir,
+    if_present_rm,
+)
 
 from doped.generation import DefectsGenerator
 from doped.utils.efficiency import Structure, StructureMatcher
@@ -1009,93 +1017,93 @@ class DefectRelaxSetTest(unittest.TestCase):
             with open(f"{defect_entry.name}/vasp_std/POSCAR") as file:
                 assert "Test pop" in file.read()
 
-    # def test_GGA_defect_sets(self):
-    #     """
-    #     Test initialising defects sets with `LHFCALC = False` (i.e. semi-local
-    #     GGA DFT).
-    #
-    #     So `vasp_nkred_std` is None (but no warnings unless `write_nkred_std`
-    #     called etc.)
-    #     """
-    #     mgo_defect_gen = DefectsGenerator(self.prim_MgO, supercell_gen_kwargs={"force_cubic": True})
-    #
-    #     from pymatgen.io.vasp.inputs import Kpoints
-    #
-    #     with warnings.catch_warnings(record=True) as w:
-    #         defect_set = DefectsSet(
-    #             mgo_defect_gen,
-    #             user_incar_settings={
-    #                 "ENCUT": 450,
-    #                 "GGA": "PS",  # Functional (PBEsol for this tutorial)
-    #                 "LHFCALC": False,  # Disable Hybrid functional
-    #                 "NCORE": 8,
-    #             },
-    #             user_kpoints_settings=Kpoints(kpts=[(2, 2, 2)]),
-    #         )
-    #         assert defect_set.defect_sets["Mg_O_+2"].vasp_nkred_std is None
-    #         assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_nkred_std is None
-    #         assert defect_set.defect_sets["Mg_O_+2"].vasp_ncl is None  # SOC = False by default for MgO
-    #         assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_ncl is None
-    #
-    #         if _potcars_available():  # need to write files without error for charged defects
-    #             defect_set.write_files()
-    #
-    #     _print_warning_info(w)
-    #     non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
-    #     assert not non_potcar_warnings  # no warnings about LHFCALC / SOC
-    #
-    #     # use neutral charge states here to avoid errors when POTCARs not available:
-    #     defect_names = ["Mg_O_0", "Mg_O_+2"] if _potcars_available() else ["Mg_O_0"]
-    #     for defect_name in defect_names:
-    #         print(f"Testing: {defect_name}")
-    #         with warnings.catch_warnings(record=True) as w:
-    #             defect_set.defect_sets[defect_name].write_nkred_std()
-    #         _print_warning_info(w)
-    #         assert (
-    #             "`LHFCALC` is set to `False` in user_incar_settings, so `vasp_nkred_std` is None"
-    #             in str(w[0].message)
-    #         )
-    #
-    #         with warnings.catch_warnings(record=True) as w:
-    #             defect_set.defect_sets[defect_name].write_ncl()
-    #         _print_warning_info(w)
-    #         assert (
-    #             "DefectRelaxSet.soc is False, so `vasp_ncl` is None (i.e. no `vasp_ncl` input files "
-    #             in str(w[0].message)
-    #         )
-    #
-    #     # test setting SOC = True:
-    #     with warnings.catch_warnings(record=True) as w:
-    #         defect_set = DefectsSet(
-    #             mgo_defect_gen,
-    #             user_incar_settings={
-    #                 "ENCUT": 450,
-    #                 "GGA": "PS",  # Functional (PBEsol for this tutorial)
-    #                 "LHFCALC": False,  # Disable Hybrid functional
-    #                 "NCORE": 8,
-    #             },
-    #             user_kpoints_settings=Kpoints(kpts=[(2, 2, 2)]),
-    #             soc=True,
-    #         )
-    #         assert defect_set.defect_sets["Mg_O_+2"].vasp_nkred_std is None
-    #         assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_nkred_std is None
-    #         assert defect_set.defect_sets["Mg_O_+2"].vasp_ncl is not None  # SOC = True now
-    #         assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_ncl is not None
-    #
-    #         if _potcars_available():  # need to write files without error for charged defects
-    #             defect_set.write_files()
-    #
-    #     _print_warning_info(w)
-    #     non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
-    #     assert not non_potcar_warnings  # no warnings about LHFCALC / SOC
-    #
-    #     for defect_name in defect_names:
-    #         print(f"Testing: {defect_name}")
-    #         with warnings.catch_warnings(record=True) as w:
-    #             defect_set.defect_sets[defect_name].write_ncl()
-    #         _print_warning_info(w)
-    #         non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
-    #         assert not non_potcar_warnings
+    def test_GGA_defect_sets(self):
+        """
+        Test initialising defects sets with `LHFCALC = False` (i.e. semi-local
+        GGA DFT).
+
+        So `vasp_nkred_std` is None (but no warnings unless `write_nkred_std`
+        called etc.)
+        """
+        mgo_defect_gen = DefectsGenerator(self.prim_MgO, supercell_gen_kwargs={"force_cubic": True})
+
+        from pymatgen.io.vasp.inputs import Kpoints
+
+        with warnings.catch_warnings(record=True) as w:
+            defect_set = DefectsSet(
+                mgo_defect_gen,
+                user_incar_settings={
+                    "ENCUT": 450,
+                    "GGA": "PS",  # Functional (PBEsol for this tutorial)
+                    "LHFCALC": False,  # Disable Hybrid functional
+                    "NCORE": 8,
+                },
+                user_kpoints_settings=Kpoints(kpts=[(2, 2, 2)]),
+            )
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_ncl is None  # SOC = False by default for MgO
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_ncl is None
+
+            if _potcars_available():  # need to write files without error for charged defects
+                defect_set.write_files()
+
+        _print_warning_info(w)
+        non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
+        assert not non_potcar_warnings  # no warnings about LHFCALC / SOC
+
+        # use neutral charge states here to avoid errors when POTCARs not available:
+        defect_names = ["Mg_O_0", "Mg_O_+2"] if _potcars_available() else ["Mg_O_0"]
+        for defect_name in defect_names:
+            print(f"Testing: {defect_name}")
+            with warnings.catch_warnings(record=True) as w:
+                defect_set.defect_sets[defect_name].write_nkred_std()
+            _print_warning_info(w)
+            assert (
+                "`LHFCALC` is set to `False` in user_incar_settings, so `vasp_nkred_std` is None"
+                in str(w[0].message)
+            )
+
+            with warnings.catch_warnings(record=True) as w:
+                defect_set.defect_sets[defect_name].write_ncl()
+            _print_warning_info(w)
+            assert (
+                "DefectRelaxSet.soc is False, so `vasp_ncl` is None (i.e. no `vasp_ncl` input files "
+                in str(w[0].message)
+            )
+
+        # test setting SOC = True:
+        with warnings.catch_warnings(record=True) as w:
+            defect_set = DefectsSet(
+                mgo_defect_gen,
+                user_incar_settings={
+                    "ENCUT": 450,
+                    "GGA": "PS",  # Functional (PBEsol for this tutorial)
+                    "LHFCALC": False,  # Disable Hybrid functional
+                    "NCORE": 8,
+                },
+                user_kpoints_settings=Kpoints(kpts=[(2, 2, 2)]),
+                soc=True,
+            )
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_nkred_std is None
+            assert defect_set.defect_sets["Mg_O_+2"].vasp_ncl is not None  # SOC = True now
+            assert defect_set.defect_sets["Mg_O_+2"].bulk_vasp_ncl is not None
+
+            if _potcars_available():  # need to write files without error for charged defects
+                defect_set.write_files()
+
+        _print_warning_info(w)
+        non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
+        assert not non_potcar_warnings  # no warnings about LHFCALC / SOC
+
+        for defect_name in defect_names:
+            print(f"Testing: {defect_name}")
+            with warnings.catch_warnings(record=True) as w:
+                defect_set.defect_sets[defect_name].write_ncl()
+            _print_warning_info(w)
+            non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
+            assert not non_potcar_warnings
 
 
 class DefectsSetTest(unittest.TestCase):
@@ -1526,271 +1534,271 @@ class DefectsSetTest(unittest.TestCase):
             self.tearDown()  # delete generated folders each time
         self.tearDown()
 
-    # def test_SQS_AgSbTe2(self):
-    #     """
-    #     Test VASP IO functions with SQS AgSbTe2 supercell (tricky case for
-    #     certain functions, like structure reordering etc).
-    #     """
-    #     sqs_defect_gen = DefectsGenerator(self.sqs_agsbte2, generate_supercell=False)
-    #     defect_supercell = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"].sc_entry.structure
-    #     with warnings.catch_warnings(record=True) as w:
-    #         dds = DefectDictSet(defect_supercell, charge_state=0)
-    #     _print_warning_info(w)
-    #     non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
-    #     assert not non_potcar_warnings  # no warnings with DDS generation
-    #     if _potcars_available():
-    #         neutral_nelect = dds.nelect
-    #
-    #     def _check_agsbte2_vasp_folder(folder_name, structure, **kwargs):
-    #         with open(f"{folder_name}/KPOINTS", encoding="utf-8") as f:
-    #             kpoints_lines = f.readlines()
-    #         if "gam" not in folder_name:
-    #             assert kpoints_lines[0] == "KPOINTS from doped, with reciprocal_density = 100/Å⁻³\n"
-    #             assert kpoints_lines[3] == "2 2 2\n"
-    #         else:
-    #             assert kpoints_lines[0] == "Γ-only KPOINTS from doped\n"
-    #             assert kpoints_lines[3] == "1 1 1\n"
-    #         assert kpoints_lines[1] == "0\n"
-    #         assert kpoints_lines[2] == "Gamma\n"
-    #
-    #         if _potcars_available():  # otherwise INCARs not written for charged defects
-    #             with open(f"{folder_name}/INCAR", encoding="utf-8") as f:
-    #                 assert "HFSCREEN = 0.208\n" in f.readlines()
-    #
-    #         if kwargs.get("poscar", True):
-    #             struct = Structure.from_file(f"{folder_name}/POSCAR")
-    #             assert self.structure_matcher.fit(struct, structure)
-    #         else:
-    #             assert not os.path.exists(f"{folder_name}/POSCAR")
-    #
-    #     def _write_and_test_agsbte2_dds(dds, structure, folder_name="test_pop", **kwargs):
-    #         dds.write_input(folder_name, **kwargs)  # general DDS test already done for this system
-    #         assert os.path.exists(folder_name)
-    #         _check_agsbte2_vasp_folder(folder_name, structure, **kwargs)
-    #
-    #     _write_and_test_agsbte2_dds(dds, defect_supercell)
-    #
-    #     with warnings.catch_warnings(record=True) as w:
-    #         dds = DefectDictSet(defect_supercell, charge_state=+2)
-    #     _print_warning_info(w)
-    #     non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
-    #     assert not non_potcar_warnings  # no warnings with DDS generation
-    #
-    #     if _potcars_available():
-    #         assert dds.nelect == neutral_nelect - 2
-    #     _write_and_test_agsbte2_dds(dds, defect_supercell, "AgSbTe2_test")
-    #     if _potcars_available():  # with poscar=False, only works for charged defects w/POTCARs
-    #         _write_and_test_agsbte2_dds(dds, defect_supercell, "AgSbTe2_test_no_POSCAR", poscar=False)
-    #
-    #     # test DefectRelaxSet behaviour:
-    #     defect_entry = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"]
-    #     with warnings.catch_warnings(record=True) as w:
-    #         drs = DefectRelaxSet(defect_entry)
-    #     _print_warning_info(w)
-    #     non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
-    #     assert not non_potcar_warnings  # no warnings with DRS generation
-    #
-    #     if _potcars_available():
-    #         drs.write_std()
-    #         assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_std")
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, poscar=False
-    #         )
-    #
-    #     drs.write_std(poscar=True)
-    #     _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell)
-    #
-    #     def _check_reloaded_defect_entry(filename, ref_defect_entry):
-    #         reloaded_defect_entry = loadfn(filename)
-    #         assert reloaded_defect_entry.name == ref_defect_entry.name
-    #         assert np.allclose(
-    #             reloaded_defect_entry.sc_defect_frac_coords,
-    #             ref_defect_entry.sc_defect_frac_coords,
-    #         )
-    #         _compare_attributes(reloaded_defect_entry, ref_defect_entry)
-    #
-    #     _check_reloaded_defect_entry(
-    #         "Ag_Sb_Cs_Te2.90_-2/vasp_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #     )
-    #
-    #     if _potcars_available():
-    #         drs.write_nkred_std()
-    #         assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std")
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std",
-    #             defect_entry.defect_supercell,
-    #             poscar=False,
-    #         )
-    #
-    #     drs.write_nkred_std(poscar=True)
-    #     _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std", defect_entry.defect_supercell)
-    #     _check_reloaded_defect_entry(
-    #         "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #     )
-    #
-    #     assert not any(i in os.listdir("Ag_Sb_Cs_Te2.90_-2") for i in ["vasp_gam", "vasp_ncl"])
-    #
-    #     drs.write_gam()
-    #     assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_gam")
-    #     _check_agsbte2_vasp_folder(
-    #         "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
-    #     )  # poscar True by default when write_gam called directly
-    #     _check_reloaded_defect_entry(
-    #         "Ag_Sb_Cs_Te2.90_-2/vasp_gam/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #     )
-    #
-    #     if _potcars_available():
-    #         drs.write_ncl()
-    #         assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_ncl")
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
-    #         )
-    #         _check_reloaded_defect_entry(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_ncl/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #         )
-    #         assert "bulk" not in os.listdir()  # no bulk folders written yet
-    #
-    #     if_present_rm("Ag_Sb_Cs_Te2.90_-2")
-    #     if _potcars_available():
-    #         drs.write_all()
-    #         assert not os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_gam")  # not written by default
-    #         for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-    #             assert os.path.exists(f"Ag_Sb_Cs_Te2.90_-2/{i}")
-    #             _check_agsbte2_vasp_folder(
-    #                 f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
-    #             )
-    #             _check_reloaded_defect_entry(
-    #                 f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #             )
-    #
-    #     if _potcars_available():
-    #         drs.write_all(vasp_gam=True)
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
-    #         )
-    #
-    #     drs.write_all(poscar=True)
-    #     for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-    #         _check_agsbte2_vasp_folder(
-    #             f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
-    #         )
-    #         _check_reloaded_defect_entry(
-    #             f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #         )
-    #     assert "bulk" not in os.listdir()  # no bulk folders written by default
-    #
-    #     if _potcars_available():
-    #         drs.write_all(bulk=True)
-    #         assert "AgSbTe2_bulk" in os.listdir()
-    #         for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-    #             _check_agsbte2_vasp_folder(
-    #                 f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
-    #             )
-    #             _check_reloaded_defect_entry(
-    #                 f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #             )
-    #         _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
-    #         assert all(i not in os.listdir("AgSbTe2_bulk") for i in ["vasp_gam", "vasp_std"])
-    #
-    #         if_present_rm("Ag_Sb_Cs_Te2.90_-2")
-    #         drs.write_all(bulk="all")
-    #         assert not os.path.exists("AgSbTe2_bulk/vasp_gam")  # not written by default
-    #         for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-    #             _check_agsbte2_vasp_folder(
-    #                 f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
-    #             )
-    #             _check_reloaded_defect_entry(
-    #                 f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #             )
-    #             _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
-    #         drs.write_all(bulk="all", vasp_gam=True)
-    #         _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
-    #
-    #     drs.write_gam(bulk=True)
-    #     _check_agsbte2_vasp_folder(
-    #         "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
-    #     )
-    #     _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
-    #
-    #     if _potcars_available():
-    #         drs.write_std(bulk=True)
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, poscar=False
-    #         )
-    #         _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_std", defect_entry.bulk_supercell, poscar=True)
-    #         drs.write_nkred_std(bulk=True)
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std",
-    #             defect_entry.defect_supercell,
-    #             poscar=False,
-    #         )
-    #         _check_agsbte2_vasp_folder(
-    #             "AgSbTe2_bulk/vasp_nkred_std", defect_entry.bulk_supercell, poscar=True
-    #         )
-    #         drs.write_ncl(bulk=True)
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
-    #         )
-    #         _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
-    #
-    #     drs.write_all("test_pop", poscar=True)
-    #     for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-    #         _check_agsbte2_vasp_folder(f"test_pop/{i}", defect_entry.defect_supercell, poscar=True)
-    #         _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry)
-    #
-    #     if_present_rm("Ag_Sb_Cs_Te2.90_-2")
-    #     if_present_rm("AgSbTe2_bulk")
-    #
-    #     # test behaviour with DefectsSet initialised from DefectEntry list
-    #     ds = DefectsSet([sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"], sqs_defect_gen["Ag_Sb_Cs_Te2.90_0"]])
-    #     if _potcars_available():
-    #         ds.write_files()
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_0/vasp_ncl", defect_entry.defect_supercell, poscar=False
-    #         )
-    #         _check_agsbte2_vasp_folder(
-    #             "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
-    #         )
-    #         _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
-    #         assert not os.path.exists("AgSbTe2_bulk/vasp_std")  # only top one
-    #
-    #     ds.write_files(vasp_gam=True, poscar=True, processes=2, bulk="all")
-    #     for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
-    #         _check_agsbte2_vasp_folder(
-    #             f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
-    #         )
-    #         _check_agsbte2_vasp_folder(
-    #             f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, poscar=True
-    #         )
-    #         _check_reloaded_defect_entry(
-    #             f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
-    #         )
-    #         _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
-    #         _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
-    #
-    #     # test convenience methods for ``DefectsSet``, where dict methods are passed to
-    #     # ``self.defect_sets``:
-    #     assert len(ds) == len(ds.defect_sets)  # __len__ method
-    #     assert len(ds) == 2  # 2 entries provided above
-    #     assert hasattr(ds, "defect_sets")  # Test accessing attributes
-    #     assert "Ag_Sb_Cs_Te2.90_-2" in list(ds.keys())  # __getattr__ method
-    #     assert "Ag_Sb_Cs_Te2.90_-2" in ds  # __contains__ method
-    #   assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
-    #     assert isinstance(ds["Ag_Sb_Cs_Te2.90_-2"], DefectRelaxSet)  # __getitem__
-    #     if _potcars_available():
-    #         assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
-    #
-    #     new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
-    #     ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
-    #     assert len(ds) == 3  # 3 entries now
-    #     assert "Ag_Sb_Cs_Te2.90_-1" in ds
-    #
-    #     del ds["Ag_Sb_Cs_Te2.90_0"]  # __delitem__ method
-    #     assert "Ag_Sb_Cs_Te2.90_0" not in ds
-    #     assert len(ds) == 2
-    #
-    #     for key in ds:
-    #         assert key in ["Ag_Sb_Cs_Te2.90_-2", "Ag_Sb_Cs_Te2.90_-1"]
+    def test_SQS_AgSbTe2(self):
+        """
+        Test VASP IO functions with SQS AgSbTe2 supercell (tricky case for
+        certain functions, like structure reordering etc).
+        """
+        sqs_defect_gen = DefectsGenerator(self.sqs_agsbte2, generate_supercell=False)
+        defect_supercell = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"].sc_entry.structure
+        with warnings.catch_warnings(record=True) as w:
+            dds = DefectDictSet(defect_supercell, charge_state=0)
+        _print_warning_info(w)
+        non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
+        assert not non_potcar_warnings  # no warnings with DDS generation
+        if _potcars_available():
+            neutral_nelect = dds.nelect
+
+        def _check_agsbte2_vasp_folder(folder_name, structure, **kwargs):
+            with open(f"{folder_name}/KPOINTS", encoding="utf-8") as f:
+                kpoints_lines = f.readlines()
+            if "gam" not in folder_name:
+                assert kpoints_lines[0] == "KPOINTS from doped, with reciprocal_density = 100/Å⁻³\n"
+                assert kpoints_lines[3] == "2 2 2\n"
+            else:
+                assert kpoints_lines[0] == "Γ-only KPOINTS from doped\n"
+                assert kpoints_lines[3] == "1 1 1\n"
+            assert kpoints_lines[1] == "0\n"
+            assert kpoints_lines[2] == "Gamma\n"
+
+            if _potcars_available():  # otherwise INCARs not written for charged defects
+                with open(f"{folder_name}/INCAR", encoding="utf-8") as f:
+                    assert "HFSCREEN = 0.208\n" in f.readlines()
+
+            if kwargs.get("poscar", True):
+                struct = Structure.from_file(f"{folder_name}/POSCAR")
+                assert self.structure_matcher.fit(struct, structure)
+            else:
+                assert not os.path.exists(f"{folder_name}/POSCAR")
+
+        def _write_and_test_agsbte2_dds(dds, structure, folder_name="test_pop", **kwargs):
+            dds.write_input(folder_name, **kwargs)  # general DDS test already done for this system
+            assert os.path.exists(folder_name)
+            _check_agsbte2_vasp_folder(folder_name, structure, **kwargs)
+
+        _write_and_test_agsbte2_dds(dds, defect_supercell)
+
+        with warnings.catch_warnings(record=True) as w:
+            dds = DefectDictSet(defect_supercell, charge_state=+2)
+        _print_warning_info(w)
+        non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
+        assert not non_potcar_warnings  # no warnings with DDS generation
+
+        if _potcars_available():
+            assert dds.nelect == neutral_nelect - 2
+        _write_and_test_agsbte2_dds(dds, defect_supercell, "AgSbTe2_test")
+        if _potcars_available():  # with poscar=False, only works for charged defects w/POTCARs
+            _write_and_test_agsbte2_dds(dds, defect_supercell, "AgSbTe2_test_no_POSCAR", poscar=False)
+
+        # test DefectRelaxSet behaviour:
+        defect_entry = sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"]
+        with warnings.catch_warnings(record=True) as w:
+            drs = DefectRelaxSet(defect_entry)
+        _print_warning_info(w)
+        non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
+        assert not non_potcar_warnings  # no warnings with DRS generation
+
+        if _potcars_available():
+            drs.write_std()
+            assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_std")
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, poscar=False
+            )
+
+        drs.write_std(poscar=True)
+        _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell)
+
+        def _check_reloaded_defect_entry(filename, ref_defect_entry):
+            reloaded_defect_entry = loadfn(filename)
+            assert reloaded_defect_entry.name == ref_defect_entry.name
+            assert np.allclose(
+                reloaded_defect_entry.sc_defect_frac_coords,
+                ref_defect_entry.sc_defect_frac_coords,
+            )
+            _compare_attributes(reloaded_defect_entry, ref_defect_entry)
+
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+        )
+
+        if _potcars_available():
+            drs.write_nkred_std()
+            assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std")
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std",
+                defect_entry.defect_supercell,
+                poscar=False,
+            )
+
+        drs.write_nkred_std(poscar=True)
+        _check_agsbte2_vasp_folder("Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std", defect_entry.defect_supercell)
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+        )
+
+        assert not any(i in os.listdir("Ag_Sb_Cs_Te2.90_-2") for i in ["vasp_gam", "vasp_ncl"])
+
+        drs.write_gam()
+        assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_gam")
+        _check_agsbte2_vasp_folder(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
+        )  # poscar True by default when write_gam called directly
+        _check_reloaded_defect_entry(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_gam/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+        )
+
+        if _potcars_available():
+            drs.write_ncl()
+            assert os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_ncl")
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
+            )
+            _check_reloaded_defect_entry(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            )
+            assert "bulk" not in os.listdir()  # no bulk folders written yet
+
+        if_present_rm("Ag_Sb_Cs_Te2.90_-2")
+        if _potcars_available():
+            drs.write_all()
+            assert not os.path.exists("Ag_Sb_Cs_Te2.90_-2/vasp_gam")  # not written by default
+            for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+                assert os.path.exists(f"Ag_Sb_Cs_Te2.90_-2/{i}")
+                _check_agsbte2_vasp_folder(
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
+                )
+                _check_reloaded_defect_entry(
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+                )
+
+        if _potcars_available():
+            drs.write_all(vasp_gam=True)
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
+            )
+
+        drs.write_all(poscar=True)
+        for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+            _check_agsbte2_vasp_folder(
+                f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
+            )
+            _check_reloaded_defect_entry(
+                f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            )
+        assert "bulk" not in os.listdir()  # no bulk folders written by default
+
+        if _potcars_available():
+            drs.write_all(bulk=True)
+            assert "AgSbTe2_bulk" in os.listdir()
+            for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+                _check_agsbte2_vasp_folder(
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
+                )
+                _check_reloaded_defect_entry(
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+                )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
+            assert all(i not in os.listdir("AgSbTe2_bulk") for i in ["vasp_gam", "vasp_std"])
+
+            if_present_rm("Ag_Sb_Cs_Te2.90_-2")
+            drs.write_all(bulk="all")
+            assert not os.path.exists("AgSbTe2_bulk/vasp_gam")  # not written by default
+            for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+                _check_agsbte2_vasp_folder(
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=False
+                )
+                _check_reloaded_defect_entry(
+                    f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+                )
+                _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
+            drs.write_all(bulk="all", vasp_gam=True)
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
+
+        drs.write_gam(bulk=True)
+        _check_agsbte2_vasp_folder(
+            "Ag_Sb_Cs_Te2.90_-2/vasp_gam", defect_entry.defect_supercell, poscar=True
+        )
+        _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_gam", defect_entry.bulk_supercell, poscar=True)
+
+        if _potcars_available():
+            drs.write_std(bulk=True)
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_std", defect_entry.defect_supercell, poscar=False
+            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_std", defect_entry.bulk_supercell, poscar=True)
+            drs.write_nkred_std(bulk=True)
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_nkred_std",
+                defect_entry.defect_supercell,
+                poscar=False,
+            )
+            _check_agsbte2_vasp_folder(
+                "AgSbTe2_bulk/vasp_nkred_std", defect_entry.bulk_supercell, poscar=True
+            )
+            drs.write_ncl(bulk=True)
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
+            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
+
+        drs.write_all("test_pop", poscar=True)
+        for i in ["vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+            _check_agsbte2_vasp_folder(f"test_pop/{i}", defect_entry.defect_supercell, poscar=True)
+            _check_reloaded_defect_entry(f"test_pop/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry)
+
+        if_present_rm("Ag_Sb_Cs_Te2.90_-2")
+        if_present_rm("AgSbTe2_bulk")
+
+        # test behaviour with DefectsSet initialised from DefectEntry list
+        ds = DefectsSet([sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"], sqs_defect_gen["Ag_Sb_Cs_Te2.90_0"]])
+        if _potcars_available():
+            ds.write_files()
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_0/vasp_ncl", defect_entry.defect_supercell, poscar=False
+            )
+            _check_agsbte2_vasp_folder(
+                "Ag_Sb_Cs_Te2.90_-2/vasp_ncl", defect_entry.defect_supercell, poscar=False
+            )
+            _check_agsbte2_vasp_folder("AgSbTe2_bulk/vasp_ncl", defect_entry.bulk_supercell, poscar=True)
+            assert not os.path.exists("AgSbTe2_bulk/vasp_std")  # only top one
+
+        ds.write_files(vasp_gam=True, poscar=True, processes=2, bulk="all")
+        for i in ["vasp_gam", "vasp_nkred_std", "vasp_std", "vasp_ncl"]:
+            _check_agsbte2_vasp_folder(
+                f"Ag_Sb_Cs_Te2.90_-2/{i}", defect_entry.defect_supercell, poscar=True
+            )
+            _check_agsbte2_vasp_folder(
+                f"Ag_Sb_Cs_Te2.90_0/{i}", defect_entry.defect_supercell, poscar=True
+            )
+            _check_reloaded_defect_entry(
+                f"Ag_Sb_Cs_Te2.90_-2/{i}/Ag_Sb_Cs_Te2.90_-2.json.gz", defect_entry
+            )
+            _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
+            _check_agsbte2_vasp_folder(f"AgSbTe2_bulk/{i}", defect_entry.bulk_supercell, poscar=True)
+
+        # test convenience methods for ``DefectsSet``, where dict methods are passed to
+        # ``self.defect_sets``:
+        assert len(ds) == len(ds.defect_sets)  # __len__ method
+        assert len(ds) == 2  # 2 entries provided above
+        assert hasattr(ds, "defect_sets")  # Test accessing attributes
+        assert "Ag_Sb_Cs_Te2.90_-2" in list(ds.keys())  # __getattr__ method
+        assert "Ag_Sb_Cs_Te2.90_-2" in ds  # __contains__ method
+        assert sqs_defect_gen["Ag_Sb_Cs_Te2.90_-2"] == ds["Ag_Sb_Cs_Te2.90_-2"].defect_entry  # __getitem__
+        assert isinstance(ds["Ag_Sb_Cs_Te2.90_-2"], DefectRelaxSet)  # __getitem__
+        if _potcars_available():
+            assert ds["Ag_Sb_Cs_Te2.90_-2"].vasp_nkred_std.incar["HFSCREEN"] == 0.208  # __getitem__
+
+        new_drs = DefectRelaxSet(sqs_defect_gen["Ag_Sb_Cs_Te2.90_-1"])
+        ds["Ag_Sb_Cs_Te2.90_-1"] = new_drs
+        assert len(ds) == 3  # 3 entries now
+        assert "Ag_Sb_Cs_Te2.90_-1" in ds
+
+        del ds["Ag_Sb_Cs_Te2.90_0"]  # __delitem__ method
+        assert "Ag_Sb_Cs_Te2.90_0" not in ds
+        assert len(ds) == 2
+
+        for key in ds:
+            assert key in ["Ag_Sb_Cs_Te2.90_-2", "Ag_Sb_Cs_Te2.90_-1"]
 
     def test_rattled_CdTe_files(self):
         CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
