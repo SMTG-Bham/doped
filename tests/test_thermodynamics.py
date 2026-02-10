@@ -1739,7 +1739,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             _vbm = new_entry.calculation_metadata.pop("vbm")
             assert np.isclose(
                 new_entry.formation_energy(fermi_level=0.7493, vbm=self.CdTe_defect_thermo.vbm),
-                form_en_df.iloc[i][6],
+                form_en_df.iloc[i, 6],
                 atol=1e-3,
             )
             with warnings.catch_warnings(record=True) as w:
@@ -2146,7 +2146,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             self.CdTe_defect_thermo.chempots = chempots_df
         for i in [
             "Invalid chempots/el_refs format:",
-            "chempots: <class 'pandas.core.frame.DataFrame'>",
+            "chempots: <class",
+            "DataFrame'>",  # pandas DataFrame type str changed with v3 (not supported for python 3.10)
             "Must be a dict (e.g. from `CompetingPhasesAnalyzer.chempots`) or `None`!",
         ]:
             print(i)
