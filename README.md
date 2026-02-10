@@ -100,7 +100,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - P. Deng et al. **_Temperature and Doping Dependence of Carbon Interstitial Diffusion in 4H-SiC from First Principles_** [_Advanced Electronic Materials_](https://doi.org/10.1002/aelm.202500467) 2025
 - P. Deng et al. **_Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy_** [_Advanced Theory and Simulations_](https://doi.org/10.1002/adts.202501088) 2025
 - P. Panagis Filippatos et al. **_Ab initio investigation of the Cr substitutional defect in α-quartz for quantum applications_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0303245) 2025
-- P. Panagis Filippatos, T. J. P. Irons and K. Inzani **_Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN_** [_arXiv_](http://dx.doi.org/10.48550/arXiv.2509.09002) 2025
+- P. Panagis Filippatos, T. J. P. Irons and K. Inzani **_Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN_** [_arXiv_](https://dx.doi.org/10.48550/arXiv.2509.09002) 2025
 - P. Panagis Filippatos, A. Chroneos and N. Kelaidis **_A first-principles investigation of halogen doped diamond and its application to quantum technologies_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0279139) 2025
 - M. A. Fadla et al. **_Tailoring the Electronic Properties of Monoclinic (In<sub>x</sub>Al<sub>1-x</sub>)<sub>2</sub>O<sub>3</sub> Alloys via Substitutional Donors and Acceptors_** [_Physical Review Materials_](https://doi.org/10.1103/78f8-j9m2) 2025
 - M. E. Turiansky et al. **_Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects_** [_arXiv_](https://arxiv.org/abs/2508.09113) 2025
@@ -136,7 +136,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - S. Hachmioune et al. **_Exploring the Thermoelectric Potential of MgB<sub>4</sub>: Electronic Band Structure, Transport Properties, and Defect Chemistry_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.4c00584) 2024
 - Y. Zeng et al. **_Role of carbon in α-Al2O3:C crystals investigated with first-principles calculations and experiment_** [_Ceramics International_](https://doi.org/10.1016/j.ceramint.2024.12.512) 2024
 - X. Wang et al. **_Four-electron negative-U vacancy defects in antimony selenide_** [_Physical Review B_](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102) 2023
-- Y. Kumagai et al. **_Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation_** [_PRX Energy_](http://dx.doi.org/10.1103/PRXEnergy.2.043002) 2023
+- Y. Kumagai et al. **_Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation_** [_PRX Energy_](https://dx.doi.org/10.1103/PRXEnergy.2.043002) 2023
 - S. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos **_Mixed-Cation Vacancy-Ordered Perovskites (Cs<sub>2</sub>Ti<sub>1–x</sub>Sn<sub>x</sub>X<sub>6</sub>; X = I or Br): Low-Temperature Miscibility, Additivity, and Tunable Stability_** [_Journal of Physical Chemistry C_](https://doi.org/10.1021/acs.jpcc.3c05204) 2023
 - A. T. J. Nicolson et al. **_Cu<sub>2</sub>SiSe<sub>3</sub> as a promising solar absorber: harnessing cation dissimilarity to avoid killer antisites_** [_Journal of Materials Chemistry A_](https://doi.org/10.1039/D3TA02429F) 2023
 - Y. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh **_Inhomogeneous Defect Distribution in Mixed-Polytype Metal Halide Perovskites_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.2c02306) 2023
@@ -166,7 +166,7 @@ section of the docs Tips page for details.
 
 ## Acknowledgments
 `doped` (née `DefectsWithTheBoys`) has benefitted from feedback from many users, in particular members of the
-[Scanlon](http://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are
+[Scanlon](https://davidscanlon.com/) and [Walsh](https://wmd-group.github.io/) research groups who have used / are using it in their work. Direct contributors are
 listed in the `Contributors` sidebar above; including [Seán Kavanagh](https://sam-lab.net), Alex Squires, Irea Mosquera-Lois, Sefer Bora
 Lisesivdin, Sheharyar Pervez, Atharva Anturkar, Adair Nicolson, Alex Ganose, Bonan Zhu, Katarina Brlec, Sabrine
 Hachmioune and Savya Aggarwal.

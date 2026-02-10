@@ -106,7 +106,7 @@ html_context = {
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    "pymatgen": ("http://pymatgen.org/", None),
+    "pymatgen": ("https://pymatgen.org/", None),
     "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
 }

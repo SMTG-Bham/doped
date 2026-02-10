@@ -522,9 +522,9 @@ def calc_displacements_ellipsoid(
         Find the minimum volume ellipsoid which holds all the points.
 
         Based on work by Nima Moshtagh:
-        http://www.mathworks.com/matlabcentral/fileexchange/9542
+        https://www.mathworks.com/matlabcentral/fileexchange/9542
         and following work:
-        http://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
+        https://cctbx.sourceforge.net/current/python/scitbx.math.minimum_covering_ellipsoid.html
 
         Here, P is a numpy array of N dimensional points like:
         P = [[x,y,z], <-- one point per line

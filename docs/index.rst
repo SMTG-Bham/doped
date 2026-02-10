@@ -129,7 +129,7 @@ Studies using ``doped``, so far
 - P\. Deng et al. **Carbon Interstitial Diffusion in 3C-SiC: Role of Charge-State Transitions and Entropy** `Advanced Theory and Simulations <https://doi.org/10.1002/adts.202501088>`__ 2025
 - P\. Panagis Filippatos et al. **Ab initio investigation of the Cr substitutional defect in α-quartz for quantum applications** `Journal of Applied Physics <https://doi.org/10.1063/5.0303245>`__ 2025
 - P\. Panagis Filippatos, A. Chroneos and N. Kelaidis **A first-principles investigation of halogen doped diamond and its application to quantum technologies** `Journal of Applied Physics <https://doi.org/10.1063/5.0279139>`__ 2025
-- P\. Panagis Filippatos, T. J. P. Irons and K. Inzani **Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN** `arXiv <http://dx.doi.org/10.48550/arXiv.2509.09002>`__ 2025
+- P\. Panagis Filippatos, T. J. P. Irons and K. Inzani **Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN** `arXiv <https://dx.doi.org/10.48550/arXiv.2509.09002>`__ 2025
 - M\. A. Fadla et al. **Tailoring the Electronic Properties of Monoclinic (In** :sub:`x` **Al** :sub:`1-x` **)₂O₃ Alloys via Substitutional Donors and Acceptors** `Physical Review Materials <https://doi.org/10.1103/78f8-j9m2>`__ 2025
 - M\. E. Turiansky et al. **Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects** `arXiv <https://arxiv.org/abs/2508.09113>`__ 2025
 - C\. López et al. **Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers** `ACS Energy Letters <https://pubs.acs.org/doi/10.1021/acsenergylett.5c01267>`__ 2025
@@ -164,7 +164,7 @@ Studies using ``doped``, so far
 - S\. Hachmioune et al. **Exploring the Thermoelectric Potential of MgB₄: Electronic Band Structure, Transport Properties, and Defect Chemistry** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.4c00584>`__ 2024
 - Y\. Zeng et al. **Role of carbon in α-Al2O3:C crystals investigated with first-principles calculations and experiment** `Ceramics International <https://doi.org/10.1016/j.ceramint.2024.12.512>`__ 2024
 - X\. Wang et al. **Four-electron negative-U vacancy defects in antimony selenide** `Physical Review B <https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.134102>`__ 2023
-- Y\. Kumagai et al. **Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation** `PRX Energy <http://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
+- Y\. Kumagai et al. **Alkali Mono-Pnictides: A New Class of Photovoltaic Materials by Element Mutation** `PRX Energy <https://dx.doi.org/10.1103/PRXEnergy.2.043002>`__ 2023
 - S\. M. Liga & S. R. Kavanagh, A. Walsh, D. O. Scanlon, G. Konstantatos **Mixed-Cation Vacancy-Ordered Perovskites (Cs₂Ti** :sub:`1–x` **Sn** :sub:`x` **X₆; X = I or Br): Low-Temperature Miscibility, Additivity, and Tunable Stability** `Journal of Physical Chemistry C <https://doi.org/10.1021/acs.jpcc.3c05204>`__ 2023
 - A\. T. J. Nicolson et al. **Cu₂SiSe₃ as a promising solar absorber: harnessing cation dissimilarity to avoid killer antisites** `Journal of Materials Chemistry A <https://doi.org/10.1039/D3TA02429F>`__ 2023
 - Y\. W. Woo, Z. Li, Y-K. Jung, J-S. Park, A. Walsh **Inhomogeneous Defect Distribution in Mixed-Polytype Metal Halide Perovskites** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.2c02306>`__ 2023
@@ -200,7 +200,7 @@ Acknowledgements
 ================
 
 ``doped`` (née ``DefectsWithTheBoys``) has benefitted from feedback from many users, in particular
-members of the `Scanlon <http://davidscanlon.com/>`_ and
+members of the `Scanlon <https://davidscanlon.com/>`_ and
 `Walsh <https://wmd-group.github.io/>`_ research groups who have / are using it in their work.
 Direct contributors are listed in the GitHub ``Contributors`` sidebar; including `Seán Kavanagh <https://sam-lab.net>`__,
 Alex Squires, Irea Mosquera-Lois, Sefer Bora Lisesivdin, Sheharyar Pervez, Atharva Anturkar, Adair Nicolson, Alex
