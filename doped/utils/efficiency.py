@@ -6,10 +6,10 @@ functions/workflows/calculations in ``doped``.
 import contextlib
 import itertools
 import operator
-import re
 from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
 from functools import cached_property, lru_cache
+from string import digits
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     from doped.core import Vacancy
 
 # Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
+
+_TRANSLATE_REMOVE_CHARGE = str.maketrans("", "", digits + "+-.")
 
 
 # Composition overrides:
@@ -182,20 +184,37 @@ Composition.__eq__ = _Composition__eq__
 Composition.__hash__ = _composition__hash__
 
 
-@lru_cache(maxsize=int(1e5))
-def _parse_site_species_str(site: Site, wout_charge: bool = False):
-    if isinstance(site._species, Element):
-        return site._species.symbol
-    if isinstance(site._species, str):
-        species_string = site._species
-    elif isinstance(site._species, Composition | dict):
-        species_string = str(next(iter(site._species)))
-    else:
-        raise ValueError(f"Unexpected species type: {type(site._species)}")
+def _parse_site_species_str(site: Site, wout_charge: bool = False) -> str:
+    """
+    Get the species string of a ``Site`` object, with or without charge
+    information.
 
-    if wout_charge:  # remove all digits, + or - from species string
-        return re.sub(r"\d+|[\+\-]", "", species_string)
-    return species_string
+    Much faster than ``pymatgen`` functions. Note that this is faster without
+    caching.
+
+    Args:
+        site (Site):
+            ``Site`` object to get the species string of.
+        wout_charge (bool):
+            Whether to remove charge information from the species string.
+
+    Returns:
+        str:
+            Species string of the ``Site`` object, with or without charge
+            information.
+    """
+    species = site._species
+    if isinstance(species, Element):
+        species_string = species.symbol
+    elif isinstance(species, str):
+        species_string = species
+    elif isinstance(species, Composition | dict):
+        species_string = str(next(iter(species)))
+    else:
+        raise ValueError(f"Unexpected species type: {type(species)}")
+
+    # remove all digits, +, - or . from species string, if `wout_charge` is True
+    return species_string.translate(_TRANSLATE_REMOVE_CHARGE) if wout_charge else species_string
 
 
 # PeriodicSite overrides:

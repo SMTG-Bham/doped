@@ -40,10 +40,11 @@ from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
     Vasprun,
+    _create_unrelaxed_defect_structure,
     _num_electrons_from_charge_state,
     _simple_spin_degeneracy_from_num_electrons,
     get_defect_type_and_composition_diff,
-    get_defect_type_site_idxs_and_unrelaxed_structure,
+    get_defect_type_and_site_indices,
     get_magnetization_from_vasprun,
     get_outcar,
     get_procar,
@@ -2152,12 +2153,20 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert comp_diff == {"F": 1}
         (
             def_type,
-            bulk_site_idx,
-            defect_site_idx,
-            unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_sc_structure, initial_defect_structure)
+            missing_bulk_site_indices,
+            additional_defect_site_indices,
+        ) = get_defect_type_and_site_indices(bulk_sc_structure, initial_defect_structure)
+        bulk_site_idx = next(iter(missing_bulk_site_indices), None)
+        defect_site_idx = next(iter(additional_defect_site_indices), None)
         assert bulk_site_idx is None
         assert def_type == "interstitial"
+        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
+            bulk_sc_structure,
+            initial_defect_structure,
+            bulk_site_idx=bulk_site_idx,
+            defect_site_idx=defect_site_idx,
+            defect_coords=def_type == "interstitial",
+        )
         assert defect_site_idx == len(unrelaxed_defect_structure) - 1
 
         # assert auto-determined interstitial site is correct
@@ -2185,13 +2194,21 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert comp_diff == {"Cd": -1, "U": 1}
         (
             def_type,
-            bulk_site_idx,
-            defect_site_idx,
-            unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_sc_structure, initial_defect_structure)
+            missing_bulk_site_indices,
+            additional_defect_site_indices,
+        ) = get_defect_type_and_site_indices(bulk_sc_structure, initial_defect_structure)
         assert def_type == "substitution"
+        bulk_site_idx = next(iter(missing_bulk_site_indices), None)
+        defect_site_idx = next(iter(additional_defect_site_indices), None)
         assert bulk_site_idx == 0
         assert defect_site_idx == 63  # last site in structure
+        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
+            bulk_sc_structure,
+            initial_defect_structure,
+            bulk_site_idx=bulk_site_idx,
+            defect_site_idx=defect_site_idx,
+            defect_coords=def_type == "interstitial",
+        )
 
         # assert auto-determined substitution site is correct (exact match because perfect supercell):
         assert np.array_equal(unrelaxed_defect_structure[defect_site_idx].frac_coords, [0.00, 0.00, 0.00])
@@ -2608,7 +2625,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
-                if stdev >= 0.5:
+                if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
                         "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
                         ">0.5 Å) in the defect supercell. This likely indicates a mismatch"
@@ -2685,7 +2702,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
                 print([str(warn.message) for warn in w])  # for debugging
-                if stdev >= 0.5:
+                if stdev >= 0.4:  # average displacement is roughly 1.6 * stdev
                     assert (
                         "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
                         ">0.5 Å) in the defect supercell. This likely indicates a mismatch"

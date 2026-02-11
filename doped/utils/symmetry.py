@@ -16,12 +16,7 @@ import pandas as pd
 import spglib
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import (
-    ElementComparator,
-    StructureMatcher,
-    get_linear_assignment_solution,
-    pbc_shortest_vectors,
-)
+from pymatgen.analysis.structure_matcher import ElementComparator, StructureMatcher
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Lattice
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
@@ -39,9 +34,10 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
+    _get_site_mapping_from_coords_and_indices,
     _get_unrelaxed_defect_structure,
     _partial_defect_entry_from_structures,
-    get_site_mapping_indices,
+    get_site_mappings,
 )
 
 
@@ -490,11 +486,14 @@ def summed_rms_dist(
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
     # set threshold to a large number to avoid possible site-matching warnings
-    return sum(
-        get_site_mapping_indices(
-            struct_a, struct_b, threshold=1e10, dists_only=True, ignored_species=ignored_species
+    return np.array(
+        get_site_mappings(
+            struct_a,
+            struct_b,
+            threshold=1e10,
+            ignored_species=ignored_species,
         )
-    )
+    )[:, 0].sum()
 
 
 def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
@@ -525,8 +524,7 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
-    return (dist_matrix + dist_matrix.T) / 2
+    return np.array(lattice.get_all_distances(fcoords, fcoords))
 
 
 def cluster_coords(
@@ -3557,6 +3555,9 @@ def is_periodic_image(
     sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
     sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
 
+    if len(sites_1_frac_coords) != len(sites_2_frac_coords):
+        raise ValueError("``is_periodic_image`` requires the same number of sites in both lists!")
+
     if not same_image:
         return len(sites_1_frac_coords) == len(sites_2_frac_coords) and is_coord_subset_pbc(
             sites_1_frac_coords, sites_2_frac_coords
@@ -3569,11 +3570,16 @@ def is_periodic_image(
 
     # first need to match sites with their closest (individual) periodic images, to account for order /
     # permutation invariance:
-    vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
-    site_matches, _ = get_linear_assignment_solution(d_2)  # closest individual periodic image matches
-    reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
+    site_mapping = _get_site_mapping_from_coords_and_indices(
+        sites_1_frac_coords, sites_2_frac_coords, lattice=lattice
+    )  # list of tuples of (dist, s1_index, s2_index)
+    reordered_sites_1_frac_coords = [
+        sites_1_frac_coords[mapping_tuple[1]]
+        for mapping_tuple in site_mapping
+        if mapping_tuple[1] is not None
+    ]
 
-    pbc_frac_dist = np.subtract(sites_1_frac_coords, reordered_sites_2_frac_coords)
+    pbc_frac_dist = np.subtract(reordered_sites_1_frac_coords, sites_2_frac_coords)
     pbc_frac_diff = pbc_frac_dist - np.round(pbc_frac_dist)
     return np.allclose(  # all sites are periodic images
         pbc_frac_diff, np.zeros(pbc_frac_diff.shape), atol=frac_tol

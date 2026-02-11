@@ -3638,7 +3638,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         Previously had a minor issue where this could give an output
         bulk supercell with overlapping sites (due to a reordering of the
         transformation matrices). Now fixed, and also safeguarded in
-        ``get_site_mapping_indices`` to prevent duplicate site matches.
+        ``get_site_mappings`` to prevent duplicate site matches.
         """
         defect_gen, output = self._generate_and_test_no_warnings(
             self.navcdo4_supercell, interstitial_gen_kwargs=False, generate_supercell=False

@@ -4,12 +4,12 @@ calculations.
 """
 
 import contextlib
-import copy
 import logging
 import operator
 import re
 import warnings
 from collections import defaultdict
+from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain
 from typing import TYPE_CHECKING, Union, cast
@@ -47,7 +47,7 @@ from doped.core import (
 )
 from doped.utils import parsing, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
-from doped.utils.parsing import reorder_s1_like_s2
+from doped.utils.parsing import reorder_s2_like_s1
 from doped.utils.plotting import format_defect_name
 
 if TYPE_CHECKING:
@@ -1731,7 +1731,7 @@ class DefectsGenerator(MSONable):
             to_unit_cell=True,
         )
         if not self.generate_supercell:  # re-order bulk supercell to match that of input supercell
-            self.bulk_supercell = reorder_s1_like_s2(self.bulk_supercell, self.structure)
+            self.bulk_supercell = reorder_s2_like_s1(self.structure, self.bulk_supercell)
 
         # get and round (to avoid tiny mismatches, due to rounding in search functions,
         # flagging issues) min image distance of supercell:
@@ -2074,7 +2074,7 @@ class DefectsGenerator(MSONable):
                 neutral_defect_entry.charge_state_guessing_log = cast("list[dict] | None", None)
 
             for charge in charge_states:
-                defect_entry = copy.deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
+                defect_entry = deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
                 defect_entry.charge_state = charge
                 defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
                 self.defect_entries[defect_entry.name] = defect_entry
@@ -2213,7 +2213,7 @@ class DefectsGenerator(MSONable):
                 if _check_if_name_subset(name, defect_entry_name_wout_charge)
             )
             for charge in charge_states:
-                defect_entry = copy.deepcopy(previous_defect_entry)
+                defect_entry = deepcopy(previous_defect_entry)
                 defect_entry.charge_state = charge
                 defect_entry.name = (
                     f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"

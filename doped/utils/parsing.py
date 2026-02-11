@@ -9,6 +9,7 @@ import re
 import warnings
 from copy import deepcopy
 from functools import lru_cache, partialmethod
+from typing import cast
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
@@ -17,7 +18,7 @@ from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
-from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
+from pymatgen.core.structure import Composition, Lattice, PeriodicSite, SiteCollection, Structure
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
@@ -356,9 +357,6 @@ def get_defect_type_and_composition_diff(
     Get the difference in composition between a bulk structure and a defect
     structure.
 
-    Contributed by Dr. Alex Ganose (@ Imperial Chemistry) and refactored for
-    extrinsic species and code efficiency/robustness improvements.
-
     Args:
         bulk (Union[Structure, Composition]):
             The bulk structure or composition.
@@ -367,9 +365,9 @@ def get_defect_type_and_composition_diff(
 
     Returns:
         tuple[str, Dict[str, int]]:
-            The defect type (``interstitial``, ``vacancy`` or ``substitution``)
-            and the composition difference between the bulk and defect
-            structures as a dictionary.
+            The defect type (``interstitial``, ``vacancy``, ``substitution`` or
+            ``complex``) and the composition difference between the bulk and
+            defect structures as a dictionary.
     """
     bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
     defect_comp = defect.composition if isinstance(defect, Structure) else defect
@@ -387,179 +385,158 @@ def get_defect_type_and_composition_diff(
         defect_type = "interstitial"
     elif len(composition_diff) == 1 and next(iter(composition_diff.values())) == -1:
         defect_type = "vacancy"
-    elif len(composition_diff) == 2:
+    elif len(composition_diff) == 2 and all(i in composition_diff.values() for i in [-1, 1]):
         defect_type = "substitution"
     else:
-        raise RuntimeError(
-            f"Could not determine defect type from composition difference of bulk ({bulk_comp_dict}) and "
-            f"defect ({defect_comp_dict})."
+        defect_type = "complex"
+
+    if len(composition_diff) > 5:  # likely a mistake, warn user:
+        warnings.warn(
+            f"The composition difference between the bulk ({bulk_comp_dict}) and defect "
+            f"({defect_comp_dict}) structures is quite large, suggesting either a large complex defect "
+            f"or a mistake in the inputs. Beware!"
         )
 
     return defect_type, composition_diff
 
 
-def get_defect_type_site_idxs_and_unrelaxed_structure(
+def get_defect_type_and_site_indices(
     bulk_supercell: Structure,
     defect_supercell: Structure,
-) -> tuple[str, int | None, int | None, Structure]:
+    site_tol: float | None = None,  # TODO: Change to 0.5 and add complex defect handling
+    abs_tol: bool = False,
+    use_oxi_states: bool = False,
+    use_rms: bool = False,
+) -> tuple[str, list[int], list[int]]:
     """
-    Get the defect type, site (indices in the bulk and defect supercells) and
-    unrelaxed structure, where 'unrelaxed structure' corresponds to the
-    pristine defect supercell structure for vacancies / substitutions (with no
-    relaxation), and the pristine bulk structure with the `final` relaxed
-    interstitial site for interstitials.
+    Get the defect type, and indices of defect sites in the bulk (vacancies /
+    substitutions) and defect (interstitials / substitutions) supercells.
 
-    Initial draft contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
-    refactored for extrinsic species and several code efficiency/robustness
-    improvements.
+    Defect sites are determined by matching sites in the bulk and defect
+    structures (by element and distances), according to ``site_tol``.
 
     Args:
         bulk_supercell (Structure):
             The bulk supercell structure.
         defect_supercell (Structure):
             The defect supercell structure.
+        site_tol (float | None):
+            The (fractional) tolerance for matching sites between the defect
+            and bulk structures. If ``abs_tol`` is ``False`` (default), then
+            the distance threshold for matching is set to the product of
+            ``site_tol`` and the shortest bond length in the bulk structure for
+            the given species, otherwise the value is used directly (as a
+            length in Å).
+            If set to ``None``, the defect is assumed to be a point defect, and
+            the largest site mismatch is assigned as the defect site.
+            Default is 0.5 (i.e. half the shortest bond length in the bulk
+            structure for the given species).
+        abs_tol (bool):
+            Whether to use ``site_tol`` as an absolute distance tolerance (in
+            Å) instead of a fractional tolerance (in terms of the shortest bond
+            length in the structure). Default is ``False``.
+        use_oxi_states (bool):
+            Whether to use the oxidation states of the sites in the bulk and
+            defect structures when considering matching sites (such that e.g.
+            ``Fe3+`` and ``Fe2+`` would be considered different species).
+            Default is ``False``.
+        use_rms (bool):
+            Site mapping (using linear assignment) -- used to determine defect
+            sites -- will be that which minimises either the summed RMS
+            distances (if ``use_rms`` is ``True``) or just simple linear sum of
+            distances (if ``False``, default) between all paired sites.
 
     Returns:
         defect_type (str):
             The type of defect as a string (``interstitial``, ``vacancy`` or
             ``substitution``).
-        bulk_site_idx (int):
-            Index of the site in the bulk structure that corresponds to the
-            defect site in the defect structure.
-        defect_site_idx (int):
-            Index of the defect site in the defect structure.
-        unrelaxed_defect_structure (Structure):
-            Pristine defect supercell structure for vacancies/substitutions
-            (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
-            pristine bulk structure with the `final` relaxed interstitial site
-            for interstitials.
+        missing_bulk_site_indices (list[int]):
+            Indices of sites in the bulk structure that do not match any site
+            in the defect structure (according to ``site_tol`` choice).
+        additional_defect_site_indices (list[int]):
+            Indices of sites in the defect structure that do not match any site
+            in the bulk structure (according to ``site_tol`` choice).
     """
-
-    def process_substitution(bulk_supercell, defect_supercell, composition_diff):
-        old_species = _get_species_from_composition_diff(composition_diff, -1)
-        new_species = _get_species_from_composition_diff(composition_diff, 1)
-
-        bulk_new_species_coords, _idx = get_coords_and_idx_of_species(bulk_supercell, new_species)
-        defect_new_species_coords, defect_new_species_idx = get_coords_and_idx_of_species(
-            defect_supercell, new_species
-        )
-
-        if bulk_new_species_coords.size > 0:  # intrinsic substitution
-            # find coords of new species in defect structure, taking into account periodic boundaries
-            defect_site_arg_idx = find_missing_idx(
-                bulk_new_species_coords,
-                defect_new_species_coords,
-                bulk_supercell.lattice,
-            )
-
-        else:  # extrinsic substitution
-            defect_site_arg_idx = 0
-
-        # Get the coords and site index of the defect that was used in the calculation
-        defect_site_idx = defect_new_species_idx[defect_site_arg_idx]
-
-        # now find the closest old_species site in the bulk structure to the defect site
-        # again, make sure to use periodic boundaries
-        bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
-            bulk_supercell, old_species
-        )
-        _bulk_coords, bulk_site_arg_idx = find_nearest_coords(
-            bulk_old_species_coords,
-            defect_new_species_coords[defect_site_arg_idx],  # defect coords
-            bulk_supercell.lattice,
-            return_idx=True,
-        )
-        bulk_site_idx = bulk_old_species_idx[bulk_site_arg_idx]
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            bulk_supercell,
-            new_species=new_species,
-            bulk_site_idx=bulk_site_idx,
-            defect_site_idx=defect_site_idx,
-        )
-        return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
-
-    def process_vacancy(bulk_supercell, defect_supercell, composition_diff):
-        old_species = _get_species_from_composition_diff(composition_diff, -1)
-        bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
-            bulk_supercell, old_species
-        )
-        defect_old_species_coords, _idx = get_coords_and_idx_of_species(defect_supercell, old_species)
-
-        bulk_site_arg_idx = find_missing_idx(
-            bulk_old_species_coords,
-            defect_old_species_coords,
-            bulk_supercell.lattice,
-        )
-        bulk_site_idx = bulk_old_species_idx[bulk_site_arg_idx]
-        defect_site_idx = None
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            bulk_supercell,
-            bulk_site_idx=bulk_site_idx,
-        )
-        return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
-
-    def process_interstitial(bulk_supercell, defect_supercell, composition_diff):
-        new_species = _get_species_from_composition_diff(composition_diff, 1)
-
-        bulk_new_species_coords, bulk_new_species_idx = get_coords_and_idx_of_species(
-            bulk_supercell, new_species
-        )
-        defect_new_species_coords, defect_new_species_idx = get_coords_and_idx_of_species(
-            defect_supercell, new_species
-        )
-
-        if bulk_new_species_coords.size > 0:  # intrinsic interstitial
-            defect_site_arg_idx = find_missing_idx(
-                bulk_new_species_coords,
-                defect_new_species_coords,
-                bulk_supercell.lattice,
-            )
-
-        else:  # extrinsic interstitial
-            defect_site_arg_idx = 0
-
-        # Get the coords and site index of the defect that was used in the calculation
-        defect_site_coords = defect_new_species_coords[defect_site_arg_idx]  # frac coords of defect site
-        defect_site_idx = defect_new_species_idx[defect_site_arg_idx]
-
-        bulk_site_idx = None
-        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
-            bulk_supercell,
-            frac_coords=defect_site_coords,
-            new_species=new_species,
-            defect_site_idx=defect_site_idx,
-        )
-        return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
-
-    handlers = {
-        "substitution": process_substitution,
-        "vacancy": process_vacancy,
-        "interstitial": process_interstitial,
-    }
+    bulk_composition = bulk_supercell.composition
+    defect_composition = defect_supercell.composition
 
     try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
+        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_composition, defect_composition)
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
             f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
         ) from exc
 
-    return (defect_type, *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff))
+    if site_tol is None and defect_type == "complex":
+        raise ValueError(
+            f"Based on the composition difference between defect and bulk structures ({comp_diff}), "
+            f"the defect is a complex defect, but ``site_tol`` is set to ``None`` which enforces the "
+            f"assumption of a point defect. Please set ``site_tol`` to allow parsing of complex defect "
+            f"sites."
+        )
+
+    oxi_state_decorated = [  # if all sites in both structures are not oxi-state decorated / neutral
+        any(i in site.species_string for i in ["+", "-", "0"])
+        for site in [*bulk_supercell.sites, *defect_supercell.sites]
+    ]
+    if len(set(oxi_state_decorated)) > 1 and use_oxi_states:  # not consistent, ignore oxi states:
+        warnings.warn(
+            "`use_oxi_states` was set to `True`, but not all sites in the bulk and defect structures are "
+            "oxidation state decorated. Setting `use_oxi_states` to `False`."
+        )
+        use_oxi_states = False
+
+    elt_symbols = {
+        str(species) if use_oxi_states else species.symbol
+        for species in bulk_composition.elements + defect_composition.elements
+    }
+    additional_defect_site_indices = []
+    missing_bulk_site_indices = []
+    distance_matrix = bulk_supercell.distance_matrix
+
+    for elt_symbol in elt_symbols:
+        bulk_species_coords, bulk_species_indices = get_coords_and_idx_of_species(
+            bulk_supercell, elt_symbol, use_oxi_states=use_oxi_states
+        )
+        defect_species_coords, defect_species_indices = get_coords_and_idx_of_species(
+            defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
+        )
+        if bulk_species_indices.size == 0:  # extrinsic species
+            site_dist_tol = None
+        else:
+            species_distances = distance_matrix[bulk_species_indices]
+            species_min_dist = max(species_distances[np.nonzero(species_distances)].min(), 1)
+            site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
+
+        site_mapping = _get_site_mapping_from_coords_and_indices(
+            bulk_species_coords,
+            defect_species_coords,
+            lattice=bulk_supercell.lattice,
+            s1_indices=bulk_species_indices,
+            s2_indices=defect_species_indices,
+            use_rms=use_rms,
+        )
+        defect_site_mappings = [
+            mapping
+            for mapping in site_mapping
+            if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
+        ]
+        for mapping in defect_site_mappings:
+            if mapping[1] is not None:  # missing bulk site
+                missing_bulk_site_indices.append(mapping[1])
+            if mapping[2] is not None:  # additional defect site (may be from same matched tuple if dist
+                additional_defect_site_indices.append(mapping[2])  # greater than site_dist_tol)
+
+    return defect_type, missing_bulk_site_indices, additional_defect_site_indices
 
 
-# maintain backwards compatibility with old function name for now, to be removed in next major release
-get_defect_site_idxs_and_unrelaxed_structure = get_defect_type_site_idxs_and_unrelaxed_structure
-
-
-def _get_species_from_composition_diff(composition_diff, el_change):
-    """
-    Get the species corresponding to the given change in composition.
-    """
-    return next(el for el, amt in composition_diff.items() if amt == el_change)
-
-
-def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=True):
+def get_coords_and_idx_of_species(
+    structure_or_sites: SiteCollection,
+    species_name: str,
+    frac_coords: bool = True,
+    use_oxi_states: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Get arrays of the coordinates and indices of the given species in the
     structure/list of sites.
@@ -569,7 +546,7 @@ def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=
     coords = []
     idx = []
     for i, site in enumerate(structure_or_sites):
-        if _parse_site_species_str(site, wout_charge=True) == species_name:
+        if _parse_site_species_str(site, wout_charge=not use_oxi_states) == species_name:
             coords.append(site.frac_coords if frac_coords else site.coords)
             idx.append(i)
 
@@ -637,7 +614,7 @@ def get_matching_site(
     # else get closest site in structure, raising error if not within tol Å:
     if isinstance(site, PeriodicSite) and not anonymous:  # reduce to only matching species
         candidate_frac_coords, candidate_indices = get_coords_and_idx_of_species(
-            structure, site.specie.symbol, frac_coords=True
+            structure, site.specie.symbol
         )
     else:
         candidate_frac_coords = structure.frac_coords
@@ -670,85 +647,12 @@ def get_matching_site(
     return closest_site
 
 
-def find_nearest_coords(
-    candidate_frac_coords: list | np.ndarray,
-    target_frac_coords: list | np.ndarray,
-    lattice: Lattice,
-    return_idx: bool = False,
-) -> tuple[list | np.ndarray, int] | list | np.ndarray:
-    """
-    Find the nearest coords in ``candidate_frac_coords`` to
-    ``target_frac_coords``.
-
-    If ``return_idx`` is ``True``, also returns the index of the nearest coords
-    in ``candidate_frac_coords`` to ``target_frac_coords``.
-
-    Args:
-        candidate_frac_coords (Union[list, np.ndarray]):
-            Fractional coordinates (typically from a bulk supercell), to find
-            the nearest coordinates to ``target_frac_coords``.
-        target_frac_coords (Union[list, np.ndarray]):
-            The target coordinates to find the nearest coordinates to in
-            ``candidate_frac_coords``.
-        lattice (Lattice):
-            The lattice object to use with the fractional coordinates.
-        return_idx (bool):
-            Whether to also return the index of the nearest coordinates in
-            ``candidate_frac_coords`` to ``target_frac_coords``.
-    """
-    if len(np.array(target_frac_coords).shape) > 1:
-        raise ValueError("`target_frac_coords` should be a 1D array of fractional coordinates!")
-
-    distance_matrix = lattice.get_all_distances(candidate_frac_coords, target_frac_coords).ravel()
-    match = distance_matrix.argmin()
-
-    return candidate_frac_coords[match], match if return_idx else candidate_frac_coords[match]
-
-
-def find_missing_idx(
-    frac_coords1: list | np.ndarray,
-    frac_coords2: list | np.ndarray,
-    lattice: Lattice,
-):
-    """
-    Find the missing/outlier index between two sets of fractional coordinates
-    (differing in size by 1), by grouping the coordinates based on the minimum
-    distances between coordinates or, if that doesn't give a unique match, the
-    site combination that gives the minimum summed squared distances between
-    paired sites.
-
-    The index returned is the index of the missing/outlier coordinate in the
-    larger set of coordinates.
-
-    Args:
-        frac_coords1 (Union[list, np.ndarray]):
-            First set of fractional coordinates.
-        frac_coords2 (Union[list, np.ndarray]):
-            Second set of fractional coordinates.
-        lattice (Lattice):
-            The lattice object to use with the fractional coordinates.
-    """
-    subset, superset = (  # supa-set
-        (frac_coords1, frac_coords2)
-        if len(frac_coords1) < len(frac_coords2)
-        else (frac_coords2, frac_coords1)
-    )
-    # in theory this could be made even faster using ``lll_frac_tol`` as in ``_cart_dists()`` in
-    # ``pymatgen``, with smart choice of initial ``lll_frac_tol`` and scanning upwards if the match is
-    # below the threshold tolerance (as in ``StructureMatcher_scan_stol()``), but in practice this
-    # function seems to be incredibly fast as is. Can revisit if it ever becomes a bottleneck
-    _vecs, d_2 = pbc_shortest_vectors(lattice, subset, superset, return_d2=True)
-    site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
-
-    return next(iter(set(np.arange(len(superset), dtype=int)) - set(site_matches)))
-
-
 def _create_unrelaxed_defect_structure(
     bulk_supercell: Structure,
-    frac_coords: list | np.ndarray | None = None,
-    new_species: str | None = None,
+    defect_supercell: Structure,
     bulk_site_idx: int | None = None,
     defect_site_idx: int | None = None,
+    defect_coords: bool = False,
 ) -> Structure:
     """
     Create the unrelaxed defect structure, which corresponds to the bulk
@@ -761,18 +665,20 @@ def _create_unrelaxed_defect_structure(
 
     Args:
         bulk_supercell (Structure):
-            The bulk supercell structure.
-        frac_coords (Union[list, np.ndarray]):
-            The fractional coordinates of the defect site. Unnecessary if
-            ``bulk_site_idx`` is provided.
-        new_species (str):
-            The species of the defect site. Unnecessary for vacancies.
+            The bulk structure.
+        defect_supercell (Structure):
+            The defect structure.
         bulk_site_idx (int):
             The index of the site in the bulk structure that corresponds to the
             defect site in the defect structure.
         defect_site_idx (int):
             The index of the defect site to use in the unreleaxed defect
             structure. Just for consistency with the relaxed defect structure.
+        defect_coords (bool):
+            Whether to use the fractional coordinates of the defect site in the
+            defect structure, or the bulk structure. Irrelevant for vacancies.
+            Parent functions in ``doped`` use ``True`` for interstitials, and
+            ``False`` for substitutions (i.e. use bulk site coords).
 
     Returns:
         Structure:
@@ -782,17 +688,15 @@ def _create_unrelaxed_defect_structure(
 
     if bulk_site_idx is not None:
         unrelaxed_defect_structure.remove_sites([bulk_site_idx])
-        defect_coords = bulk_supercell[bulk_site_idx].frac_coords
 
-    else:
-        defect_coords = frac_coords
+    if defect_site_idx is not None:
+        defect_site_in_defect = defect_supercell[defect_site_idx]
+        if not defect_coords and bulk_site_idx is not None:
+            defect_coords = bulk_supercell[bulk_site_idx].frac_coords
+        else:
+            defect_coords = defect_site_in_defect.frac_coords
 
-    if new_species is not None:  # not a vacancy
-        # Place defect in same location as output from calculation
-        defect_site_idx = (
-            defect_site_idx if defect_site_idx is not None else len(unrelaxed_defect_structure)
-        )  # use "is not None" to allow 0 index
-        unrelaxed_defect_structure.insert(defect_site_idx, new_species, defect_coords)
+        unrelaxed_defect_structure.insert(defect_site_idx, defect_site_in_defect.species, defect_coords)
 
     return unrelaxed_defect_structure
 
@@ -908,18 +812,13 @@ def check_atom_mapping_far_from_defect(
         ):
             continue  # if no sites of this species outside the WS radius, skip
 
-        subset, superset = (  # supa-set
-            (defect_species_outside_ws_coords, bulk_species_outside_near_ws_coords)
-            if len(defect_species_outside_ws_coords) < len(bulk_species_outside_near_ws_coords)
-            else (bulk_species_outside_near_ws_coords, defect_species_outside_ws_coords)
+        displacement_dists = np.min(
+            bulk_supercell.lattice.get_all_distances(
+                defect_species_outside_ws_coords, bulk_species_outside_near_ws_coords
+            ),
+            axis=1,
         )
-        vecs, d_2 = pbc_shortest_vectors(bulk_supercell.lattice, subset, superset, return_d2=True)
-        site_matches, _ = get_linear_assignment_solution(d_2)  # matching superset indices, of len(subset)
-        matching_vecs = vecs[np.arange(len(site_matches)), site_matches]
-        displacements = np.linalg.norm(matching_vecs, axis=1)
-        far_from_defect_disps[species.name].extend(
-            np.round(displacements[displacements > displacement_tol], 2)
-        )
+        far_from_defect_disps[species.name].extend(np.round(displacement_dists, 2))
 
     if far_from_defect_large_disps := {
         specie: list
@@ -944,31 +843,103 @@ def check_atom_mapping_far_from_defect(
     return True
 
 
-def get_site_mapping_indices(
+def _get_site_mapping_from_coords_and_indices(
+    s1_coords: np.ndarray[float],
+    s2_coords: np.ndarray[float],
+    s1_indices: np.ndarray[int] | None = None,
+    s2_indices: np.ndarray[int] | None = None,
+    lattice: Lattice | None = None,
+    use_rms: bool = False,
+) -> list[tuple[float | None, int | None, int | None]]:
+    """
+    Get the site mapping between two sets of coordinates and indices, based on
+    the shortest distances between sites.
+
+    The coordinates are treated as fractional coordinates if ``lattice`` is
+    provided, otherwise they are treated as Cartesian coordinates.
+
+    Args:
+        s1_coords (np.ndarray[float]):
+            The fractional coordinates of the first set of sites.
+        s2_coords (np.ndarray[float]):
+            The fractional coordinates of the second set of sites.
+        s1_indices (np.ndarray[int] | None):
+            The indices of the first set of sites. If ``None``, the indices are
+            assumed to be the range of the number of sites in ``s1_coords``.
+        s2_indices (np.ndarray[int] | None):
+            The indices of the second set of sites. If ``None``, the indices are
+            assumed to be the range of the number of sites in ``s2_coords``.
+        lattice (Lattice | None):
+            The lattice of the structures. If ``None``, the identity matrix is
+            used (corresponding to the assumption that the input coordinates
+            are Cartesian).
+        use_rms (bool):
+            The returned site mapping (using linear assignment) will be that
+            which minimises either the summed RMS distances (if ``use_rms`` is
+            ``True``) or just simple linear sum of distances (if ``False``,
+            default) between all paired sites.
+
+    Returns:
+        list:
+            A list of lists containing the distance, index from ``s1_indices``
+            and index from ``s2_indices`` for each matched site.
+    """
+    lattice = lattice or Lattice(np.eye(3))
+    if s1_indices is None:
+        s1_indices = np.arange(len(s1_coords))
+    if s2_indices is None:
+        s2_indices = np.arange(len(s2_coords))
+    s1_coords = np.array(s1_coords)
+    s2_coords = np.array(s2_coords)
+
+    for empty_coords, indices, tuple_idx in [(s1_coords, s2_indices, 2), (s2_coords, s1_indices, 1)]:
+        if empty_coords.size == 0:  # handly case of empty input coords
+            if indices is None:
+                return [(None, None, None)]
+            return [(None, None if tuple_idx == 2 else i, None if tuple_idx == 1 else i) for i in indices]
+
+    s1_is_subset = len(s1_coords) < len(s2_coords)
+    subset_fcoords, subset_indices = (s1_coords, s1_indices) if s1_is_subset else (s2_coords, s2_indices)
+    superset_fcoords, superset_indices = (
+        (s2_coords, s2_indices) if s1_is_subset else (s1_coords, s1_indices)
+    )
+    _vecs, d_2 = pbc_shortest_vectors(lattice, subset_fcoords, superset_fcoords, return_d2=True)
+    dists = np.sqrt(d_2)
+    site_matches, _ = get_linear_assignment_solution(d_2 if use_rms else dists)
+    site_mapping = [  # site_matches -> matching superset indices, of len(subset)
+        (dists[i, j], subset_indices[i], superset_indices[j]) for i, j in enumerate(site_matches)
+    ]
+    for missing_index in set(range(len(superset_fcoords))) - set(site_matches):
+        site_mapping.append((None, None, superset_indices[missing_index]))  # unmatched sites
+
+    if not s1_is_subset:  # swap tuple order, to match (dist, s1_index, s2_index)
+        site_mapping = [(dist, index2, index1) for dist, index1, index2 in site_mapping]
+
+    return site_mapping
+
+
+def get_site_mappings(
     struct1: Structure,
     struct2: Structure,
     species: SpeciesLike | None = None,
     allow_duplicates: bool = False,
     threshold: float = 2.0,
-    dists_only: bool = False,
     anonymous: bool = False,
     ignored_species: list[str] | None = None,
-):
+    use_rms: bool = False,
+) -> list[tuple[float | None, int | None, int | None]]:
     """
-    Get the site mapping indices between two structures (from ``struct1`` to
-    ``struct2``), based on the fractional coordinates of the sites.
+    Get the site mappings between two structures (from ``struct1`` to
+    ``struct2``), based on the shortest distances between sites.
 
-    The template structure may have a different species ordering to the
-    ``input_structure``.
+    The two structures may have different species orderings.
 
     NOTE: This assumes that both structures have the same lattice definitions
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
     defect/bulk supercell (in which case the
     ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
-    during parsing). Currently, this function is only used for analysing site
-    displacements in the ``displacements`` module so this is fine (user will
-    already have been warned at this point if there is a possible mismatch).
+    during parsing).
 
     Args:
         struct1 (Structure):
@@ -984,10 +955,6 @@ def get_site_mapping_indices(
         threshold (float):
             If the distance between a pair of matched sites is larger than
             this, then a warning will be thrown. Default is 2.0 Å.
-        dists_only (bool):
-            Whether to return only the distances between matched sites, rather
-            than a list of lists containing the distance, index in ``struct1``
-            and index in ``struct2``. Default is ``False``.
         anonymous (bool):
             If ``True``, the species of the sites will not be considered when
             matching sites. Default is ``False`` (only matching species can be
@@ -995,18 +962,20 @@ def get_site_mapping_indices(
         ignored_species (list[str]):
             A list of species to ignore when matching sites. Default is no
             species ignored.
+        use_rms (bool):
+            The returned site mapping (using linear assignment -- only
+            applicable when ``allow_duplicates`` is ``False``) will be that
+            which minimises either the summed RMS distances (if ``use_rms`` is
+            ``True``) or just simple linear sum of distances (if ``False``,
+            default) between all paired sites.
 
     Returns:
         list:
             A list of lists containing the distance, index in ``struct1`` and
-            index in ``struct2`` for each matched site. If ``dists_only`` is
-            ``True``, then only the distances between matched sites are
-            returned.
+            index in ``struct2`` for each matched site.
     """
-    ## Generate a site matching table between the input and the template
+    # Generate a site matching table between the input and the template
     min_dist_with_index = []
-    all_input_fcoords = [list(site.frac_coords) for site in struct1]
-    all_template_fcoords = [list(site.frac_coords) for site in struct2]
     s1_species_symbols = (
         [
             species.symbol
@@ -1018,62 +987,42 @@ def get_site_mapping_indices(
     )
 
     for s1_species_symbol in s1_species_symbols:
-        if species is not None and s1_species_symbol != species:
+        if species is not None and s1_species_symbol != species and not anonymous:
             continue
-        input_fcoords = [
-            list(site.frac_coords)
-            for site in struct1
-            if (site.specie.symbol == s1_species_symbol or anonymous)
-        ]
-        template_fcoords = [
-            list(site.frac_coords)
-            for site in struct2
-            if (site.specie.symbol == s1_species_symbol or anonymous)
-        ]
 
-        dmat = struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
-        for index, coords in enumerate(all_input_fcoords):
-            if coords in input_fcoords:
-                dists = dmat[input_fcoords.index(coords)]
-                if not dists.size:
-                    min_dist_with_index.append((None, index) if dists_only else (None, index, None))
-                    continue
+        if anonymous:
+            s1_fcoords, s1_indices = struct1.frac_coords, np.arange(len(struct1))
+            s2_fcoords, s2_indices = struct2.frac_coords, np.arange(len(struct2))
+        else:
+            s1_fcoords, s1_indices = get_coords_and_idx_of_species(struct1, s1_species_symbol)
+            s2_fcoords, s2_indices = get_coords_and_idx_of_species(struct2, s1_species_symbol)
 
-                dists_argmin = dists.argmin()
-                current_dist = dists[dists_argmin]
-                template_fcoord = template_fcoords[dists_argmin]
-                template_index = None  # only compute if needed
+        if not allow_duplicates:
+            min_dist_with_index.extend(
+                _get_site_mapping_from_coords_and_indices(
+                    s1_fcoords,
+                    s2_fcoords,
+                    lattice=struct1.lattice,
+                    s1_indices=s1_indices,
+                    s2_indices=s2_indices,
+                    use_rms=use_rms,
+                )
+            )
+            continue
 
-                if current_dist > threshold:
-                    template_index = all_template_fcoords.index(template_fcoord)
-                    site_a = struct1[index]
-                    site_b = struct2[template_index]
-                    warnings.warn(
-                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
-                        f"sites: {site_a} -> {site_b}."
-                    )
+        dmat = struct1.lattice.get_all_distances(s1_fcoords, s2_fcoords)
+        for i, index in enumerate(s1_indices):
+            dists = dmat[i]
+            min_dist_idx = dists.argmin()
+            current_dist = dists[min_dist_idx]
+            s2_index = s2_indices[min_dist_idx]
+            min_dist_with_index.append((current_dist, index, s2_index))
 
-                if dists_only:
-                    min_dist_with_index.append(
-                        (
-                            current_dist,
-                            index,
-                        )
-                    )
-                else:
-                    template_index = template_index or all_template_fcoords.index(template_fcoord)
-                    min_dist_with_index.append(
-                        (
-                            current_dist,
-                            index,
-                            template_index,
-                        )
-                    )
-
-                if not allow_duplicates:
-                    # drop template_fcoord from template_fcoords and dmat to avoid duplicates:
-                    template_fcoord = template_fcoords.pop(dists.argmin())
-                    dmat = np.delete(dmat, dists.argmin(), axis=1)
+            if current_dist > threshold:
+                warnings.warn(
+                    f"Large site displacement {current_dist:.2f} Å detected when matching atomic sites: "
+                    f"{struct1[index]} -> {struct2[s2_index]}."
+                )
 
     if not min_dist_with_index:
         raise RuntimeError(
@@ -1081,64 +1030,54 @@ def get_site_mapping_indices(
             f"Struct1 composition: {struct1.composition}, Struct2 composition: {struct2.composition}"
         )
 
-    if dists_only and min_dist_with_index:  # sort by index in struct1:
-        return [
-            x[0]
-            for x in sorted(min_dist_with_index, key=lambda x: x[1] if x[1] is not None else float("inf"))
-        ]
-
     return min_dist_with_index
 
 
-def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, threshold=5.0) -> Structure:
+def reorder_s2_like_s1(s1_structure: Structure, s2_structure: Structure, threshold=5.0) -> Structure:
     """
-    Reorder the atoms of a (relaxed) structure, s1, to match the ordering of
-    the atoms in s2_structure.
+    Reorder the atoms of a (relaxed) structure, ``s2_structure``, to match the
+    ordering of the atoms in ``s1_structure``.
 
     s1/s2 structures may have a different species orderings.
-
-    Previously used to ensure correct site matching when pulling site
-    potentials for the eFNV Kumagai correction, though no longer used for this
-    purpose. If threshold is set to a low value, it will raise a warning if
-    there is a large site displacement detected.
 
     NOTE: This assumes that both structures have the same lattice definitions
     (i.e. that they match, and aren't rigidly translated/rotated with respect
     to each other), which is mostly the case unless we have a mismatching
     defect/bulk supercell (in which case the
     ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
-    during parsing). Currently, this function is no longer used, but if it is
-    reintroduced at any point, this point should be noted!
+    during parsing).
 
     Args:
         s1_structure (Structure):
-            The input structure.
-        s2_structure (Structure):
             The template structure.
+        s2_structure (Structure):
+            The structure to reorder, to match ``s1_structure``.
         threshold (float):
             If the distance between a pair of matched sites is larger than
-            this, then a warning will be thrown. Default is 5.0 Å.
+            this value in Å, then a warning will be thrown. Default is 5.0 Å.
 
     Returns:
         Structure:
-            The reordered structure.
+            ``s2_structure`` reordered to match ``s1_structure``.
     """
+    # This function was previously used to ensure correct site matching when pulling site potentials for
+    # the eFNV Kumagai correction, though no longer used for this purpose. If threshold is set to a low
+    # value, it will raise a warning if there is a large site displacement detected.
+    if len(s2_structure) != len(s1_structure):
+        raise ValueError("Structure reordering not possible, structures have different number of sites.")
+
     # Obtain site mapping between the initial_relax_structure and the unrelaxed structure
-    mapping = get_site_mapping_indices(s2_structure, s1_structure, threshold=threshold)
+    mapping = get_site_mappings(s1_structure, s2_structure, threshold=threshold)
+    mapping = sorted(mapping, key=lambda x: cast(int, x[1]))  # sort by s1 index (to match s1 ordering)
 
-    # Reorder s1_structure so that it matches the ordering of s2_structure
-    reordered_sites = [s1_structure[tmp[2]] for tmp in mapping]
+    # Reorder s2_structure so that it matches the ordering of s1_structure
+    reordered_sites = [s2_structure[mapping_tuple[-1]] for mapping_tuple in mapping]
 
-    # avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
+    # Avoid warning about selective_dynamics properties (can happen if user explicitly set "T T T" (or
     # otherwise) for the bulk):
-    warnings.filterwarnings("ignore", message="Not all sites have property")
-
-    new_structure = Structure.from_sites(reordered_sites)
-
-    if len(new_structure) != len(s1_structure):
-        raise ValueError("Structure reordering failed: structures have different number of sites?")
-
-    return new_structure
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Not all sites have property")
+        return Structure.from_sites(reordered_sites)
 
 
 def _compare_potcar_symbols(

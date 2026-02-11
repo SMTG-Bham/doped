@@ -44,6 +44,7 @@ from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
+    _create_unrelaxed_defect_structure,
     _format_mismatching_incar_warning,
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
@@ -53,7 +54,7 @@ from doped.utils.parsing import (
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
     get_core_potentials_from_outcar,
-    get_defect_type_site_idxs_and_unrelaxed_structure,
+    get_defect_type_and_site_indices,
     get_dimer_bonds,
     get_locpot,
     get_matching_site,
@@ -262,13 +263,12 @@ def defect_from_structures(
             ``pymatgen`` ``Structure`` object of the unrelaxed defect
             structure.
     """
-    try:  # Try automatic defect site detection -- this gives us the "unrelaxed" defect structure
-        (
+    try:
+        (  # automatic defect site detection:
             defect_type,
-            bulk_site_idx,
-            defect_site_idx,
-            unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_supercell, defect_supercell)
+            missing_bulk_site_indices,
+            additional_defect_site_indices,
+        ) = get_defect_type_and_site_indices(bulk_supercell, defect_supercell)
 
     except RuntimeError as exc:
         check_atom_mapping_far_from_defect(
@@ -283,6 +283,10 @@ def defect_from_structures(
             f"and this error is not resolved, please report this issue to the developers."
         ) from exc
 
+    # TODO: Add handling of complex defects (multiple bulk/defect sites here). Need ComplexDefect class (
+    # see pmg...)
+    bulk_site_idx = next(iter(missing_bulk_site_indices), None)
+    defect_site_idx = next(iter(additional_defect_site_indices), None)
     if defect_type == "vacancy":
         site_in_bulk = defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
     elif defect_type == "substitution":
@@ -312,38 +316,6 @@ def defect_from_structures(
         # choice of matching orientation for the bulk supercell (and thus defect site) can become arbitrary
         # in these situations, where there are many possible defect cell translations etc which match the
         # bulk cell...
-
-    if unrelaxed_defect_structure:
-        if defect_type == "interstitial":
-            # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
-            # the _initial_ interstitial site
-            closest_node_frac_coords = min(
-                [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)],
-                key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
-            )
-            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-            int_site = guessed_initial_defect_structure[defect_site_idx]
-            guessed_initial_defect_structure.remove_sites([defect_site_idx])
-            guessed_initial_defect_structure.insert(
-                defect_site_idx,  # Place defect at same position as in DFT calculation
-                int_site.species_string,
-                closest_node_frac_coords,
-                coords_are_cartesian=False,
-                validate_proximity=True,
-            )
-            # if guessed initial site is sufficiently close to the relaxed site, then use it as
-            # "defect_site_in_bulk", otherwise use the relaxed site:
-            if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_node_frac_coords)[0] < 1:
-                defect_site_in_bulk = guessed_initial_defect_structure[defect_site_idx]
-
-        else:
-            guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-
-    else:
-        warnings.warn(
-            "Cannot determine the unrelaxed `initial_defect_structure`. Please ensure the "
-            "`initial_defect_structure` is indeed unrelaxed."
-        )
 
     # get defect site in primitive structure, for Defect generation:
     primitive_structure = get_primitive_structure(bulk_supercell, symprec=kwargs.get("symprec") or 0.01)
@@ -395,6 +367,36 @@ def defect_from_structures(
 
     if not return_all_info:
         return defect
+
+    unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
+        bulk_supercell,
+        defect_supercell,
+        bulk_site_idx=bulk_site_idx,
+        defect_site_idx=defect_site_idx,
+        defect_coords=defect_type == "interstitial",
+    )
+    guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+
+    if defect_type == "interstitial":
+        # get closest Voronoi site in bulk supercell to final interstitial site as this is likely
+        # the _initial_ interstitial site
+        closest_node_frac_coords = min(
+            [site.frac_coords for site in get_voronoi_nodes(bulk_supercell)],
+            key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
+        )
+        int_site = guessed_initial_defect_structure[defect_site_idx]
+        guessed_initial_defect_structure.remove_sites([defect_site_idx])
+        guessed_initial_defect_structure.insert(
+            defect_site_idx,  # Place defect at same position as in DFT calculation
+            int_site.species_string,
+            closest_node_frac_coords,
+            coords_are_cartesian=False,
+            validate_proximity=True,
+        )
+        # if guessed initial site is sufficiently close to the relaxed site, then use it as
+        # "defect_site_in_bulk", otherwise use the relaxed site:
+        if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_node_frac_coords)[0] < 1:
+            defect_site_in_bulk = guessed_initial_defect_structure[defect_site_idx]
 
     return (
         defect,

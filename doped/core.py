@@ -1517,6 +1517,9 @@ class DefectEntry(thermo.DefectEntry):
         reducing compute times when looping over formation energy /
         concentration functions.
         """
+        if self.sc_entry is None:
+            return None
+
         if hasattr(self, "_sc_entry_energy") and self._sc_entry_hash == hash(self.sc_entry):
             return self._sc_entry_energy
 
@@ -2736,6 +2739,24 @@ def remove_site_oxi_state(site: PeriodicSite):
         sym = el.symbol
         new_sp[Element(sym)] += occu
     site.species = Composition(new_sp)
+
+
+def _get_single_valence_oxi_states(bulk_oxi_states: Structure | Composition | dict = False) -> dict:
+    if isinstance(bulk_oxi_states, Structure):
+        single_valence_oxi_states = {
+            el.symbol: el.oxi_state for el in bulk_oxi_states.composition.elements
+        }
+    elif isinstance(bulk_oxi_states, Composition):
+        single_valence_oxi_states = {el.symbol: el.oxi_state for el in bulk_oxi_states.elements}
+    elif isinstance(bulk_oxi_states, dict):
+        single_valence_oxi_states = bulk_oxi_states
+    else:
+        raise TypeError(
+            f"Input bulk_oxi_states must be a pymatgen Structure, Composition or dict, not "
+            f"{type(bulk_oxi_states)}."
+        )
+
+    return single_valence_oxi_states
 
 
 def doped_defect_from_pmg_defect(
