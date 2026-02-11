@@ -102,7 +102,7 @@ given on the |ShakeNBreakDocs|.
 
 .. _theory paper: https://www.nature.com/articles/s41524-023-00973-1
 
-.. image:: https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/SnB_Supercell_Schematic_PES_2sec_Compressed.gif
+.. image:: https://raw.githubusercontent.com/SMTG-Bham/ShakeNBreak/main/docs/Images/SnB_Supercell_Schematic_PES_2sec_Compressed.gif
 
 Studies using ``doped``, so far
 ===============================
