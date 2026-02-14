@@ -23,9 +23,9 @@ from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike, SpeciesLike
-
+from typing import Literal
+from pathlib import Path
 from doped.core import DefectEntry, remove_site_oxi_state
-
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
@@ -347,6 +347,25 @@ def _get_output_files_and_check_if_multiple(
         os.path.join(path, output_file),
         False,
     )  # so `get_X()` will raise an informative FileNotFoundError
+
+def _get_output_files_warn_if_multiple(
+    output_file: PathLike = "vasprun.xml",
+    path: PathLike = ".",
+    dir_type: None | str = None,
+    quiet: bool = False
+) -> tuple[PathLike, bool]:
+    """
+    Wrapper for _get_output_files_and_check_if_multiple to include warning inside.
+    """
+    file_path, multiple = _get_output_files_and_check_if_multiple(output_file, path)
+    if multiple and not quiet:
+        _multiple_files_warning(
+            output_file,
+            path,
+            file_path,
+            dir_type=dir_type,
+        )
+    return file_path, multiple
 
 
 def get_defect_type_and_composition_diff(
@@ -1467,7 +1486,9 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     # spin-polarisation / account for NELECT changes from neutral apparently
 
     eigenvalues_and_occs = vasprun.eigenvalues
-    kweights = vasprun.actual_kpoints_weights
+    kweights = np.array(vasprun.actual_kpoints_weights)
+    if kweights.sum() != 1:
+        kweights/=kweights.sum()
 
     # product of the sum of occupations over all bands, times the k-point weights:
     nelect = np.sum(eigenvalues_and_occs[Spin.up][:, :, 1].sum(axis=1) * kweights)
@@ -1475,7 +1496,6 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
         nelect += np.sum(eigenvalues_and_occs[Spin.down][:, :, 1].sum(axis=1) * kweights)
     elif not vasprun.parameters.get("LNONCOLLINEAR", False):
         nelect *= 2  # non-spin-polarised or SOC calc
-
     return round(nelect, 2)
 
 
@@ -1522,7 +1542,6 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
                     ]
                 )
             )
-
     if nelect is not None:
         return int(nelect)
 
@@ -1541,6 +1560,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
             ).nelect
         )
 
+        return nelect
 
 def _get_bulk_supercell(defect_entry: DefectEntry):
     if hasattr(defect_entry, "bulk_supercell") and defect_entry.bulk_supercell:
@@ -1854,7 +1874,7 @@ def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
     return int(num_electrons % 2 + 1)
 
 
-def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
+def total_charge_from_vasprun(vasprun: Vasprun, code: str = 'vasp', pp_folder: str | PathLike | None = None) -> int:
     """
     Determine the total charge state of a system from the vasprun, and compare
     to the expected charge state if provided.
@@ -1868,6 +1888,10 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
         vasprun (Vasprun):
             ``pymatgen`` ``Vasprun`` object for which to determine the total
             charge.
+        code (str):
+            String to judge which neutral_nelect procedure to use.
+        pp_folder (str | PathLike):
+            Folder which contains pseudopotential files. For QE currently.
 
     Returns:
         int or None:
@@ -1878,25 +1902,26 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
 
     auto_charge = None
     with contextlib.suppress(Exception):  # otherwise determine neutral NELECT from vasprun & POTCARs:
-        neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
+        nelect = get_nelect_from_vasprun(vasprun)
+
+        if code == 'vasp':
+            neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
+        elif code == 'espresso':
+            neutral_nelect = RunParser('espresso')._get_neutral_nelect_from_pp(vasprun, pp_folder)
+
         auto_charge = -1 * (nelect - neutral_nelect)
 
-        if abs(auto_charge) >= 10:
+        if abs(auto_charge) >= 10 and code=="vasp":
             neutral_nelect = get_neutral_nelect_from_vasprun(vasprun, skip_potcar_init=True)
             auto_charge = -1 * (nelect - neutral_nelect)
 
     return auto_charge
 
 
-def _get_bulk_locpot_dict(bulk_path, quiet=False):
-    bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
-    if multiple and not quiet:
-        _multiple_files_warning(
-            "LOCPOT",
-            bulk_path,
-            bulk_locpot_path,
-            dir_type="bulk",
-        )
+def _get_bulk_locpot_dict(bulk_path, quiet=False, filename = "LOCPOT"):
+    bulk_locpot_path, multiple = _get_output_files_warn_if_multiple(filename, bulk_path, dir_type="bulk", quiet = quiet)
+
+
     bulk_locpot = get_locpot(bulk_locpot_path)
     return {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
 
@@ -1979,3 +2004,421 @@ def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[
         for elt in structure.composition.elements
     }
     return {k: v for k, v in dimer_bond_dict.items() if v}
+
+
+
+from pymatgen.entries.computed_entries import ComputedEntry
+from doped.utils.parsing import parse_projected_eigen, find_archived_fname
+from pymatgen.io.espresso.outputs.pwxml import PWxml
+from ase.io.cube import read_cube_data
+from scipy.ndimage import map_coordinates
+BOHR_TO_ANGSTROM = 0.529177
+
+class RunParser:
+    def __new__(cls, code: Literal["vasp", "espresso"], **kwargs):
+        code = code.lower()
+        if code == "vasp":
+            return RunParserVasp #(**kwargs) #NOT IMPLEMENTED
+        elif code == "espresso":
+            return RunParserEspresso #(**kwargs)
+        else:
+            raise ValueError(f"Unsupported code: {code}")
+
+
+
+class RunParserEspresso():
+    @classmethod
+    def get_run(cls, espressorun_path: PathLike,
+                parse_mag: bool = False,
+                standardize = True,
+                **kwargs):
+        """
+        Similar to get_vasprun but for espresso.
+
+        if parse_projected_eigen = True: must provide filproj (for pwxml). (Use filproj = 'filproj' for projwfc.x
+        if parse_dos: Must give fildos.
+
+        """
+        espressorun_path = str(espressorun_path)  # convert to string if Path object
+        warnings.filterwarnings(
+            "ignore", category=UnknownPotcarWarning
+        )  # Ignore unknown POTCAR warnings when loading vasprun.xml
+        # pymatgen assumes the default PBE with no way of changing this within get_vasprun())
+        warnings.filterwarnings(
+            "ignore", message="No POTCAR file with matching TITEL fields"
+        )  # `message` only needs to match start of message
+        default_kwargs = {"parse_dos": False, "exception_on_bad_xml": False}
+        default_kwargs.update(kwargs)
+
+        #PWxml._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag) #??? Never called in doped? PWxml already has a _parse_projected_eigen though it only accepts filproj.
+        from pymatgen.electronic_structure.core import Spin
+        try:
+            with warnings.catch_warnings(record=True) as w:
+
+                # if standardize:
+                #     vasprun = cls.standardized_computed_entry(find_archived_fname(espressorun_path),
+                #                                             **default_kwargs)
+                # else:
+                vasprun = PWxml(find_archived_fname(espressorun_path), **default_kwargs)
+
+                #hacks because PWxml does not initialize atomic states and kpoints_opt_props
+                #see https://github.com/Griffin-Group/pymatgen-io-espresso/issues/27
+                vasprun.atomic_states = None
+
+                # if isinstance(vasprun.potcar_spec, list):
+                #     vasprun.potcar_spec = cls.potcar_spec_fix(vasprun)
+                #-----------------------------------
+            for warning in w:
+                if "XML is malformed" in str(warning.message):
+                    warnings.warn(
+                        f"espresso.xml file at {espressorun_path} is corrupted/incomplete. Attempting to "
+                        f"continue parsing but may fail!"
+                    )
+                else:  # show warning, preserving original category:
+                    warnings.warn(warning.message, category=warning.category)
+
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(
+                f"espresso.xml not found at {espressorun_path}. Needed for parsing calculation "
+                f"output!"
+            ) from exc
+        return vasprun
+
+
+    @classmethod
+    def _parse_run_and_poss_projwfc(
+        cls,
+        vr_path: PathLike,
+        parse_projected_eigen: bool | None = None,
+        output_path: PathLike | None = None,
+        label: str = "bulk",
+        parse_procar: bool = True,
+        ):
+        procar = None
+
+        failed_eig_parsing_warning_message = (
+            f"Could not parse eigenvalue data from vasprun.xml.gz files in {label} folder at {output_path}"
+        )
+
+        try:
+            # Get run, parse_proj_eigen (if demanded), parse_eigen (if demanded) but definitely if bulk
+            vr = cls.get_run(vr_path,
+                                parse_projected_eigen=bool(parse_projected_eigen),
+                                parse_eigen=(bool(parse_projected_eigen) or label == "bulk"),
+                                )# vr.eigenvalues not needed for defects except for vr-only eigenvalue analysis
+
+        except Exception as vr_exc:
+            # Get run, don't parse_proj_eigen, parse_eigen if bulkrun.
+            vr = cls.get_run(vr_path,
+                            parse_projected_eigen=False,
+                            parse_eigen=label == "bulk")
+            failed_eig_parsing_warning_message += f", got error:\n{vr_exc}"
+
+            # Parse from PROCAR if needed -> Goes to projwfc for espresso.
+            if parse_procar:
+                # But there might be multiple, so check.
+                procar_path, multiple = _get_output_files_and_check_if_multiple("PROCAR", output_path)
+                #Have the PROCAR? Now parse_projected_eigen if needed
+                if "PROCAR" in procar_path and parse_projected_eigen is not False:
+                    try:
+                        procar = get_procar(procar_path)
+
+                    except Exception as procar_exc:
+                        failed_eig_parsing_warning_message += (
+                            f"\nThen got the following error when attempting to parse projected eigenvalues "
+                            f"from the defect PROCAR(.gz):\n{procar_exc}"
+                        )
+        if vr.projected_eigenvalues is None and procar is None and parse_projected_eigen is True:
+            # only warn if parse_projected_eigen is set to True (not None)
+            warnings.warn(failed_eig_parsing_warning_message)
+
+        return vr, procar if parse_procar else vr
+
+    @classmethod
+    def ensure_band_edges(cls, vasprun_obj, occu_tol = 1e-8, backend = 'doped'):
+        """Ensure that the Vasprun object has VBM, CBM, and band_gap set."""
+        if backend == 'pymatgen':
+            vasprun_obj.occu_tol = occu_tol
+            band_gap, cbm, vbm, _ = vasprun_obj.eigenvalue_band_properties
+            vasprun_obj.vbm = vbm
+            vasprun_obj.cbm = cbm
+            vasprun_obj.band_gap = band_gap
+
+
+        elif backend == 'doped':
+            from doped.utils.eigenvalues import band_edge_properties_from_vasprun
+
+            if not hasattr(vasprun_obj, "vbm") or vasprun_obj.vbm is None \
+            or not hasattr(vasprun_obj, "cbm") or vasprun_obj.cbm is None \
+            or not hasattr(vasprun_obj, "band_gap") or vasprun_obj.band_gap is None:
+
+                band_edge_prop = band_edge_properties_from_vasprun(vasprun_obj)
+
+                if not band_edge_prop.is_metal:
+                    vasprun_obj.vbm = band_edge_prop.vbm_info.as_dict()["energy"]
+                    vasprun_obj.cbm = band_edge_prop.cbm_info.as_dict()["energy"]
+                    vasprun_obj.band_gap = vasprun_obj.cbm - vasprun_obj.vbm
+        else:
+            raise ValueError("Use doped or pymatgen for finding band_gap")
+        return vasprun_obj
+
+
+    @classmethod
+    def _get_bulk_locpot_dict(cls, bulk_path, quiet=False):
+
+        bulk_locpot_path, multiple = _get_output_files_warn_if_multiple(filename, bulk_path, dir_type="bulk")
+
+        bulk_locpot = cls.get_locpot(bulk_locpot_path)
+        return {str(k): bulk_locpot.get_average_along_axis(k) for k in [0, 1, 2]}
+
+    @classmethod
+    def _get_bulk_site_potentials(cls, bulk_path: PathLike, quiet: bool = False, total_energy: list | float | None = None
+    ):
+        # TODO
+        bulk_outcar_path, multiple = _get_output_files_and_check_if_multiple("OUTCAR", bulk_path)
+        if multiple and not quiet:
+            _multiple_files_warning(
+                "OUTCAR",
+                bulk_path,
+                bulk_outcar_path,
+                dir_type="bulk",
+            )
+        return get_core_potentials_from_outcar(bulk_outcar_path, dir_type="bulk", total_energy=total_energy)
+
+    @classmethod
+    def _get_neutral_nelect_from_pp(cls, vasprun: Vasprun, pp_folder: str | Path) -> float:
+        """
+        Compute NELECT for a QE system using a Vasprun object and QE UPF pseudopotentials.
+
+        Args:
+            vasprun (Vasprun): VASP vasprun.xml parsed object.
+            pp_folder (str | Path): Path to QE UPF pseudopotential folder.
+
+        Returns:
+            float: Total number of electrons for the system (neutral).
+        """
+        def _get_zval_from_upf(pp_file: Path) -> float:
+            """Extract z_valence from a QE UPF pseudopotential file (supports v1, v2 XML, and old format)."""
+            with open(pp_file, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if "z_valence" in line:
+                        if "=" in line:
+                            m = re.search(r'z_valence\s*=\s*"([^"]*)"', line)
+                            if not m:
+                                return None  # or raise error
+                            
+                            raw = m.group(1).strip().replace(" ", "")
+                            return float(raw)
+                        elif "<z_valence>" in line:
+                            val = line.split(">")[1].split("<")[0]
+                            return float(val.strip('"'))
+                    elif "Z valence" in line and any(char.isdigit() for char in line):
+                        val = line.split()[0]
+                        return float(val.strip('"'))
+            raise ValueError(f"z_valence not found in {pp_file}")
+
+        def _extract_element_from_filename(filename: str, valid_elements: list[str]) -> str:
+            """Safely match UPF filename to a chemical element symbol."""
+            for el in valid_elements:
+                if re.search(rf"\b{el}\b", filename, flags=re.IGNORECASE):
+                    return el
+            for el in valid_elements:
+                if el.lower() in filename.lower():
+                    return el
+            raise ValueError(f"Could not match element for {filename}")
+
+
+        pp_folder = Path(pp_folder)
+        structure = vasprun.final_structure
+        composition = structure.composition.get_el_amt_dict()
+
+        total_nelect = 0.0
+
+        for pp_filename in vasprun.potcar_spec:
+            pp_name = Path(pp_filename).stem
+            element = _extract_element_from_filename(pp_name, list(composition.keys()))
+
+            pp_path = pp_folder / pp_filename
+            if not pp_path.exists():
+                raise FileNotFoundError(f"UPF file not found: {pp_path}")
+
+            zval = _get_zval_from_upf(pp_path)
+            count = composition[element]
+
+            total_nelect += count * zval
+
+        return round(total_nelect, 6)
+
+    @classmethod
+    def get_locpot(cls, locpot_path: PathLike):
+        """
+        Read the ``LOCPOT(.gz)`` file as a ``pymatgen`` ``Locpot`` object.
+        """
+        from pymatgen.io.common import VolumetricData
+
+        locpot_path = str(locpot_path)  # convert to string if Path object
+        try:
+            #locpot = Locpot.from_file(find_archived_fname(locpot_path))
+            locpot = VolumetricData.from_cube(locpot_path)
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"LOCPOT file not found at {locpot_path}(.gz/.xz/.bz/.lzma). Needed for calculating the "
+                f"Freysoldt (FNV) image charge correction!"
+            ) from None
+        return locpot
+
+    # @classmethod
+    # def potcar_spec_fix(cls, vasprun_obj):
+    #     """
+    #     Converts QE-style pseudopotential filenames to VASP-style potcar_spec dictionaries
+    #     by extracting the element and pseudopotential type from the filename.
+
+    #     Parameters:
+    #         vasprun_obj: An object with `potcar_spec` as a list of pseudopotential filenames.
+
+    #     Returns:
+    #         List[dict]: VASP-style potcar_spec list.
+    #     """
+    #     import re
+    #     qe_pseudos = vasprun_obj.potcar_spec
+    #     vasp_specs = []
+
+    #     for pseudo in qe_pseudos:
+    #         # Extract element (first word or token before `_` or `.`)
+    #         element_match = re.match(r'^([A-Za-z]+)', pseudo)
+    #         element = element_match.group(1).capitalize() if element_match else "X"
+
+    #         # Infer functional (e.g., PBE, LDA)
+    #         functional_match = re.search(r'_(pbe|lda|pw91|revpbe)', pseudo, re.IGNORECASE)
+    #         functional = functional_match.group(1).upper() if functional_match else "PBE"
+
+    #         # Infer potential type (PAW/USPP)
+    #         if 'paw' in pseudo.lower():
+    #             method = "PAW"
+    #         elif 'uspp' in pseudo.lower():
+    #             method = "USPP"
+    #         else:
+    #             method = "PAW"  # default guess
+
+    #         titel = f"{method}_{functional} {element} UNKNOWN"
+
+    #         vasp_specs.append({
+    #             'titel': titel,
+    #             'hash': None,
+    #             'summary_stats': {}
+    #         })
+
+    #     return vasp_specs
+
+    @classmethod
+    def _get_core_site_potentials(cls, cube_file=None, data=None, atoms=None, radius_bohr=1.1, n_points=5000, verbose = False):
+        """Calculate spherical average potential at atomic sites from a .cube file or preloaded data."""
+
+        def spherical_average(pos, radius, data, cell, n_points=5000):
+            """Compute spherical average of potential field around a point."""
+            rand_dirs = np.random.normal(size=(n_points, 3))
+            rand_dirs /= np.linalg.norm(rand_dirs, axis=1)[:, None]
+            rand_radii = np.random.rand(n_points) ** (1/3) * radius
+            sample_points = pos + rand_dirs * rand_radii[:, None]
+
+            # Convert to fractional coordinates and then grid indices
+            frac = np.linalg.solve(cell.T, sample_points.T).T
+            frac %= 1.0
+            grid_points = frac * (np.array(data.shape) - 1)
+
+            # Interpolate potential values
+            values = map_coordinates(data, grid_points.T, order=1, mode='wrap')
+            return np.mean(values)
+
+
+        # === Load data if a file path is provided ===
+        if cube_file:
+            data, atoms = read_cube_data(cube_file)
+
+        elif data is None or atoms is None:
+            raise ValueError("You must provide either `cube_file` or both `data` and `atoms`.")
+
+        # === Prepare variables ===
+        cell = atoms.get_cell()
+        positions = atoms.get_positions()
+        radius_ang = radius_bohr * BOHR_TO_ANGSTROM
+
+        core_potentials = []
+
+        for i, pos in enumerate(positions):
+            avg_pot = spherical_average(pos, radius_ang, data, cell, n_points=n_points)
+            core_potentials.append(avg_pot)
+            if verbose:
+                print(f"{atoms[i].symbol:<6}{i+1:>6}{avg_pot:>30.6f}")
+
+        core_dict = {'site_potentials': np.array(core_potentials),
+                    'atoms': atoms,
+                    'positions': positions
+        }
+
+        return core_dict
+
+
+    @classmethod
+    #@fileread
+    def standardized_computed_entry(cls, xml_file: PathLike = None, computed_entry: ComputedEntry = None, **kwargs):
+        """
+        Return a computed entry with the standard formation enthalpy as total energy
+        """
+        if xml_file:
+            # print(xml_file, "\n")
+            calc = PWxml(xml_file)
+            computed_entry = calc.get_computed_entry(entry_id = "")
+
+        # print("COMPUTEDENTRY: ", dir(computed_entry))
+        d_ = {
+           "energy": cls._standardize_total_energy(computed_entry),
+           "composition": computed_entry.composition,
+           "entry_id": "",
+           "correction": 0, #pristine_calc.get_computed_entry(entry_id = "").correction
+           #"structure": computed_entry.structure
+        }
+
+        #print(computed_entry.structure)
+        ent = ComputedEntry.from_dict(d_) #Computed entries list. Why twice?
+        ent.structure = computed_entry.structure
+
+        return ent
+
+    @classmethod
+    def _standardize_total_energy(cls, struct):
+        """
+        Hack for PWxml. PWxml puts energy as the formation energy.
+        Might need to be changed if PWxml updates.
+        """
+
+        e_bulk = struct.energy
+        composition = struct.composition
+
+        comp_dict = composition.as_data_dict()['unit_cell_composition']
+
+        elements = [k.name for k in struct.elements]
+        n_i = np.array(list(comp_dict.values()))
+        u_i = np.array([cls._get_element_formation_energy(elem) for elem in elements])
+
+        std_form_energy = (e_bulk - np.sum(n_i*u_i))/np.sum(n_i)
+
+        return std_form_energy
+
+    @classmethod
+    def _get_element_formation_energy(cls,
+                                     elem,
+                                     pseudo = 'pbe',
+                                     root = Path('/home/fes33/Documents/GIK - R&D/Personal - Papers and Reports/--Libraries/abinit/jhr/data/formation_energies')
+                                     ):
+
+        elem_file = root / elem / f"{elem}_{pseudo}.xml"
+
+        comp_entry = PWxml(elem_file).get_computed_entry(entry_id = "")
+        n_atoms = comp_entry.composition.as_data_dict()["unit_cell_composition"][elem]
+
+        energy = comp_entry.energy
+
+        en_per_atom = energy/n_atoms
+        return en_per_atom
