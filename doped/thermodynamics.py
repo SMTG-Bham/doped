@@ -10,7 +10,7 @@ import os
 import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable
-from copy import deepcopy
+from copy import copy, deepcopy
 from functools import partial, reduce
 from itertools import chain, product
 from operator import methodcaller
@@ -4970,17 +4970,21 @@ class FermiSolver(MSONable):
         """
         self.defect_thermodynamics = defect_thermodynamics
         self.skip_dos_check = skip_dos_check
+        # Create a shallow copy of defect_thermodynamics for internal use, so we can set the
+        # correct bulk_dos without mutating the user's original DefectThermodynamics object.
+        # Shared attributes (defect_entries, chempots, etc.) are the same references in both.
+        self._thermo = copy(defect_thermodynamics)
         if bulk_dos is not None:
-            self.defect_thermodynamics._bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
+            self._thermo._bulk_dos = self._thermo._parse_fermi_dos(
                 bulk_dos, skip_dos_check=self.skip_dos_check
             )
-        if self.defect_thermodynamics.bulk_dos is None:
+        if self._thermo.bulk_dos is None:
             raise ValueError(
                 "No bulk DOS calculation (`bulk_dos`) provided or previously parsed to "
                 "`DefectThermodynamics.bulk_dos`, which is required for calculating carrier "
                 "concentrations and solving for Fermi level position."
             )
-        self.volume: float = self.defect_thermodynamics.bulk_dos.volume
+        self.volume: float = self._thermo.bulk_dos.volume
 
         if "fermi" in backend.lower():
             if bool(importlib.util.find_spec("py_sc_fermi")):
@@ -5039,11 +5043,14 @@ class FermiSolver(MSONable):
         self._DefectChargeState = DefectChargeState
         self._DOS = DOS
 
-        if isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
+        if isinstance(self._thermo.bulk_dos, FermiDos):
+            fdos = self._thermo.bulk_dos
+            dos_vbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+            dos_cbm = dos_vbm + fdos.get_gap(tol=1e-4, abs_tol=True)
             self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
-                self.defect_thermodynamics.bulk_dos,
+                fdos,
                 vbm=self.defect_thermodynamics.vbm,
-                bandgap=self.defect_thermodynamics.band_gap,
+                bandgap=dos_cbm - self.defect_thermodynamics.vbm,
             )
 
         ms = (
@@ -5142,14 +5149,14 @@ class FermiSolver(MSONable):
                 - The hole concentration (float) in cm^-3.
         """
         self._check_required_backend_and_error("doped")
-        fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
+        fermi_level, electrons, holes = self._thermo.get_equilibrium_fermi_level(  # type: ignore
             chempots=single_chempot_dict,
             el_refs=el_refs,
             temperature=temperature,
             return_concs=True,
             effective_dopant_concentration=effective_dopant_concentration,
             site_competition=site_competition,
-        )  # use already-set bulk dos
+        )
         return fermi_level, electrons, holes
 
     def _get_and_check_thermo_chempots(
@@ -5691,7 +5698,7 @@ class FermiSolver(MSONable):
                 annealing_e_conc,
                 annealing_h_conc,
                 _annealing_conc_df,
-            ) = self.defect_thermodynamics.get_fermi_level_and_concentrations(  # type: ignore
+            ) = self._thermo.get_fermi_level_and_concentrations(  # type: ignore
                 chempots=single_chempot_dict,
                 el_refs=el_refs,
                 annealing_temperature=annealing_temperature,
@@ -5704,7 +5711,7 @@ class FermiSolver(MSONable):
                 per_site=per_site,
                 return_annealing_values=True,
                 **kwargs,
-            )  # use already-set bulk dos
+            )
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
@@ -7978,15 +7985,18 @@ class FermiSolver(MSONable):
             delta_gap = delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature)
             assert self.defect_thermodynamics.vbm is not None
             assert self.defect_thermodynamics.band_gap is not None
+            _fdos = self._thermo.bulk_dos
+            _dos_vbm = _fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+            _dos_cbm = _dos_vbm + _fdos.get_gap(tol=1e-4, abs_tol=True)
             self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
                 scissor_dos(
                     delta_gap,
-                    self.defect_thermodynamics.bulk_dos,
+                    self._thermo.bulk_dos,
                     verbose=kwargs.get("verbose", False),
                     tol=kwargs.get("tol", 1e-8),
                 ),
                 vbm=self.defect_thermodynamics.vbm - delta_gap / 2,
-                bandgap=self.defect_thermodynamics.band_gap + delta_gap,
+                bandgap=_dos_cbm - self.defect_thermodynamics.vbm + delta_gap,
             )
 
         assert isinstance(delta_gap, float)  # typing
