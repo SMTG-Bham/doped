@@ -48,6 +48,7 @@ tests = [
     "pytest-mpl>=0.16.1",
     "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
     "pytest-split>=0.10.0",  # for test splitting
+    "pytest-xdist>=3.0.0",  # to split test groups over CPUs
 ]
 docs = [
     "sphinx>7",

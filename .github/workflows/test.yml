@@ -39,7 +39,7 @@ jobs:
       - name: Test
         shell: bash
         run: |  # update durations file with `pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting`
-          pytest -vv -m "not mpl_image_compare" \
+          pytest -vv -m "not mpl_image_compare" -n auto \  # use pytest-xdist to distribute CPUs within each split
             --splits 10 --group ${{ matrix.split }} \
             --durations-path tests/.pytest_split_durations_non_plotting \
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
@@ -51,7 +51,7 @@ jobs:
         env:
           MPLBACKEND: Agg  # non-interactive backend for matplotlib
         run: |  # update durations file with `pytest -vv -m "mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_plotting`
-          pytest -vv --mpl -m "mpl_image_compare" \
+          pytest -vv --mpl -m "mpl_image_compare" -n auto \  # use pytest-xdist to distribute CPUs within each split
             --splits 10 --group ${{ matrix.split }} \
             --durations-path tests/.pytest_split_durations_plotting \
             --splitting-algorithm least_duration tests  # use this algo to avoid zero-splits
