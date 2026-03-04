@@ -1,10 +1,8 @@
 .. image:: https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg
    :target: https://github.com/SMTG-Bham/doped/actions
-.. .. image:: https://readthedocs.org/projects/doped/badge/?version=latest&style=flat
-..    :target: https://doped.readthedocs.io/en/latest/
 .. image:: https://img.shields.io/pypi/v/doped
    :target: https://pypi.org/project/doped
-.. image:: https://img.shields.io/conda/vn/conda-forge/doped.svg
+.. image:: https://img.shields.io/conda/vn/conda-forge/doped?label=conda
    :target: https://anaconda.org/conda-forge/doped
 .. image:: https://img.shields.io/pypi/dm/doped
    :target: https://pypi.org/project/doped
