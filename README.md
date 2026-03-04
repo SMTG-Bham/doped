@@ -1,7 +1,7 @@
 [![Build status](https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg)](https://github.com/SMTG-Bham/doped/actions)
 [![Documentation Status](https://readthedocs.org/projects/doped/badge/?version=latest&style=flat)](https://doped.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/doped)](https://pypi.org/project/doped)
-[![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
+[![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped?label=conda)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.06433/status.svg)](https://doi.org/10.21105/joss.06433)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SMTG-Bham/doped)
