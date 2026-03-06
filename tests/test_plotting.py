@@ -13,6 +13,7 @@ from copy import deepcopy
 
 import matplotlib as mpl
 import pytest
+from matplotlib.colors import ListedColormap
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir
@@ -396,6 +397,36 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         super().setUp()
         self.CdTe_LZ_thermo_wout_meta = deepcopy(self.orig_CdTe_LZ_thermo_wout_meta)
         self.Se_amalgamated_extrinsic_thermo = deepcopy(self.orig_Se_amalgamated_extrinsic_thermo)
+
+        # H, N, P, As, Sb, O, S, Te, F, Cl, Br:
+        colors = mpl.colormaps.get("Dark2").colors
+        H_color = colors[4]
+        pnict_color = colors[2]
+        chalc_color = colors[1]
+        halogen_color = colors[0]
+
+        self.H_pnict_chalc_halogen_colormap = ListedColormap(
+            [
+                H_color,
+                *[(*pnict_color, 1 - 0.2 * i) for i in range(4)],
+                *[(*chalc_color, 1 - 0.3 * i) for i in range(3)],
+                *[(*halogen_color, 1 - 0.3 * i) for i in range(3)],
+            ]
+        )
+        self.Se_ext_linestyles = [  # solid for first of each group, then dashed, dotted, double dash
+            "-",
+            "-",
+            "--",
+            ":",
+            "-.",
+            "-",
+            "--",
+            ":",
+            "-",
+            "--",
+            ":",
+        ]
+
         self.Bi_Se_thermo = deepcopy(self.orig_Bi_Se_thermo)
 
     @classmethod
@@ -752,9 +783,6 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         Test plotting extrinsic interstitials in Se, using the ``linestyles``
         and ``colormap`` (with ``ListedColormap``) options.
         """
-        from matplotlib import colormaps
-        from matplotlib.colors import ListedColormap
-
         from doped.core import Interstitial
 
         amalgamated_Se_extrinsic_interstitials_thermo = DefectThermodynamics(
@@ -767,37 +795,38 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         )
         amalgamated_Se_extrinsic_interstitials_thermo.dist_tol = 2  # amalgamate Hi and Oi
 
-        # H, N, P, As, Sb, O, S, Te, F, Cl, Br:
-        colors = colormaps.get("Dark2").colors
-        H_color = colors[4]
-        pnict_color = colors[2]
-        chalc_color = colors[1]
-        halogen_color = colors[0]
-
-        H_pnict_chalc_halogen_colormap = ListedColormap(
-            [
-                H_color,
-                *[(*pnict_color, 1 - 0.2 * i) for i in range(4)],
-                *[(*chalc_color, 1 - 0.3 * i) for i in range(3)],
-                *[(*halogen_color, 1 - 0.3 * i) for i in range(3)],
-            ]
-        )
-        linestyles = [  # solid for first of each group, then dashed, dotted, double dash
-            "-",
-            "-",
-            "--",
-            ":",
-            "-.",
-            "-",
-            "--",
-            ":",
-            "-",
-            "--",
-            ":",
-        ]
-
         return amalgamated_Se_extrinsic_interstitials_thermo.plot(
-            chempot_table=False, colormap=H_pnict_chalc_halogen_colormap, linestyles=linestyles
+            chempot_table=False,
+            colormap=self.H_pnict_chalc_halogen_colormap,
+            linestyles=self.Se_ext_linestyles,
+        )
+
+    @custom_mpl_image_compare(filename="Se_extrinsic_substitutions_linestyles_plot.png")
+    def test_plotting_linestyles_and_colors_ext_Se_substitutions(self):
+        """
+        Test plotting extrinsic substitutions in Se, using the ``linestyles``
+        and ``colormap`` (with ``ListedColormap``) options.
+
+        Previously there was an issue where the extrinsic element wasn't being
+        correctly parsed for substitution Defects (as ``Defect.defect_site``
+        confusingly returns the original element, not the substitution
+        element), so we test the correct behaviour here.
+        """
+        from doped.core import Substitution
+
+        amalgamated_Se_extrinsic_substitutions_thermo = DefectThermodynamics(
+            defect_entries=[
+                entry
+                for entry in self.Se_amalgamated_extrinsic_thermo.defect_entries.values()
+                if isinstance(entry.defect, Substitution)
+            ],
+            chempots=self.Se_amalgamated_extrinsic_thermo.chempots,
+        )
+
+        return amalgamated_Se_extrinsic_substitutions_thermo.plot(
+            chempot_table=False,
+            colormap=self.H_pnict_chalc_halogen_colormap,
+            linestyles=self.Se_ext_linestyles,
         )
 
     @custom_mpl_image_compare(filename="CdTe_LZ_all_Te_rich_site_info.png")

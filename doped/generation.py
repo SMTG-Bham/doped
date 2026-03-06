@@ -2545,7 +2545,8 @@ def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
         element_list = list(
             dict.fromkeys(el.symbol for el in single_defect.structure.composition.elements)
         )
-        defect_element = single_defect.defect_site.specie.symbol  # possibly extrinsic
+        defect_element = single_defect.site.specie.symbol  # possibly extrinsic
+        # for substitutions; defect.site is substitution element, defect.defect_site is the original site..
         if defect_element not in element_list:
             element_list.append(defect_element)
 
@@ -2571,7 +2572,8 @@ def _get_element_list(defect: Defect | DefectEntry | dict | list) -> list[str]:
     )
     extrinsic_element_list: list[str] = []
     for single_defect in defect_list:
-        extrinsic_element_list.append(single_defect.defect_site.specie.symbol)  # possibly extrinsic
+        extrinsic_element_list.append(single_defect.site.specie.symbol)  # possibly extrinsic
+        # for substitutions; defect.site is substitution element, defect.defect_site is the original site..
     extrinsic_element_list = list(set(extrinsic_element_list) - set(host_element_list))
 
     # sort extrinsic elements by periodic group and atomic number for deterministic ordering:
