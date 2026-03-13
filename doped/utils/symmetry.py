@@ -466,12 +466,12 @@ def apply_symm_op_to_struct(
     )
 
 
-def summed_rms_dist(
+def summed_dist(
     struct_a: Structure, struct_b: Structure, ignored_species: list[str] | None = None
 ) -> float:
     """
-    Get the summed root-mean-square (RMS) distance between the sites of two
-    structures, in Å.
+    Get the summed distance between closest-matched sites of two structures, in
+    Å.
 
     Note that this assumes the lattices of the two structures are equal!
 
@@ -484,14 +484,14 @@ def summed_rms_dist(
 
     Returns:
         float:
-            The summed RMS distance between the sites of the two structures, in
-            Å.
+            The summed distance between the sites of the two structures, in Å.
     """
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
     # set threshold to a large number to avoid possible site-matching warnings
     return sum(
-        get_site_mapping_indices(
+        d if d is not None else 0
+        for d in get_site_mapping_indices(
             struct_a, struct_b, threshold=1e10, dists_only=True, ignored_species=ignored_species
         )
     )
@@ -1367,10 +1367,9 @@ def get_equiv_frac_coords_in_primitive(
 
     dist_tol = symprec * dist_tol_factor
     primitive_with_all_X = rotated_struct * matrix
-    orig_rms_dist = summed_rms_dist(primitive, primitive_with_all_X, ignored_species=["X"])
-    if orig_rms_dist != 0:
+    orig_summed_dist = summed_dist(primitive, primitive_with_all_X, ignored_species=["X"])
+    if orig_summed_dist != 0:
         # may have different primitive cell definitions, try re-orienting
-        from doped.utils.configurations import orient_s2_like_s1
         from doped.utils.supercells import min_dist
 
         orig_min_dist = min_dist(primitive_with_all_X, ignored_species=["X"])
@@ -1382,9 +1381,9 @@ def get_equiv_frac_coords_in_primitive(
             comparator=ElementComparator(),
         )
         new_min_dist = min_dist(reoriented_primitive_with_all_X, ignored_species=["X"])
-        new_rms_dist = summed_rms_dist(primitive, reoriented_primitive_with_all_X, ignored_species=["X"])
+        new_summed_dist = summed_dist(primitive, reoriented_primitive_with_all_X, ignored_species=["X"])
         if (
-            abs(new_rms_dist - orig_rms_dist) > abs(orig_min_dist - new_min_dist)
+            abs(new_summed_dist - orig_summed_dist) > abs(orig_min_dist - new_min_dist)
             and abs(orig_min_dist - new_min_dist) < dist_tol * 2
         ):  # only take re-oriented cell if it improves RMS diff and doesn't significantly change min_dist
             primitive_with_all_X = reoriented_primitive_with_all_X
@@ -1610,7 +1609,7 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
 
         return prim_struct, transformation_matrix
 
-    rms_dists_w_candidate_prim_structs_and_T_matrices = []
+    summed_dists_w_candidate_prim_structs_and_T_matrices = []
     # Could also apply possible origin shifts to other structs (refined, find_primitive) as well,
     # if we find any structures for which this code still fails
     candidate_prim_structs = [
@@ -1632,7 +1631,7 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
             # not integer or doesn't exactly match bulk supercell, so bad transformation matrix, skip
             continue
         new_prim_struct = Structure.from_sites([site.to_unit_cell() for site in new_prim_struct])
-        rms_dist_to_target = summed_rms_dist(
+        summed_dist_to_target = summed_dist(
             Structure.from_sites(
                 [
                     site.to_unit_cell()
@@ -1641,12 +1640,12 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
             ),
             target_struct,
         )
-        rms_dists_w_candidate_prim_structs_and_T_matrices.append(
-            (rms_dist_to_target, new_prim_struct, transformation_matrix)
+        summed_dists_w_candidate_prim_structs_and_T_matrices.append(
+            (summed_dist_to_target, new_prim_struct, transformation_matrix)
         )
 
     closest_match = sorted(  # sort to get ideal primitive cell definition
-        rms_dists_w_candidate_prim_structs_and_T_matrices,
+        summed_dists_w_candidate_prim_structs_and_T_matrices,
         key=lambda x: (
             round(x[0], 3),
             _lattice_matrix_sort_func(x[1].lattice.matrix),
