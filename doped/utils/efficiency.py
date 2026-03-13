@@ -526,15 +526,22 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
     np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
     distance_matrix[:, ignored_indices] = np.inf  # set ignored indices to np.inf to ignore these distances
     distance_matrix[ignored_indices, :] = np.inf  # set ignored indices to np.inf to ignore these distances
-    element_min_max_bond_length_dict = {elt: np.array([0, 0]) for elt in element_idx_dict}
+    element_min_max_bond_length_dict = {
+        elt: np.array([np.min(structure.lattice.abc), np.max(structure.lattice.abc)])
+        for elt in element_idx_dict
+    }  # default to min/max lattice vectors (for cases where there are no other matching non-ignored atoms)
 
     for elt, site_indices in element_idx_dict.items():
         element_dist_matrix = distance_matrix[:, site_indices]  # (N_of_that_element, N_sites) matrix
         if element_dist_matrix.size != 0:
             min_interatomic_distances_per_atom = np.min(element_dist_matrix, axis=0)  # min along columns
-            element_min_max_bond_length_dict[elt] = np.array(
-                [np.min(min_interatomic_distances_per_atom), np.max(min_interatomic_distances_per_atom)]
-            )
+            if np.min(min_interatomic_distances_per_atom) != np.inf:  # other non-ignored matching atoms
+                element_min_max_bond_length_dict[elt] = np.array(
+                    [
+                        np.min(min_interatomic_distances_per_atom),
+                        np.max(min_interatomic_distances_per_atom),
+                    ]
+                )
 
     return element_min_max_bond_length_dict
 
