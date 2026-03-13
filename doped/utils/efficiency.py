@@ -643,7 +643,7 @@ def StructureMatcher_scan_stol(
     struct2: Structure,
     func_name: str = "get_s2_like_s1",
     min_stol: float | None = None,
-    max_stol: float = 5.0,
+    max_stol: float = 0.3,
     stol_factor: float = 0.5,
     **sm_kwargs,
 ):
@@ -683,7 +683,8 @@ def StructureMatcher_scan_stol(
             ``stol`` necessary, and start with 2x this value to achieve fast
             structure-matching in most cases.
         max_stol (float):
-            Maximum ``stol`` value to try. Default: 5.0.
+            Maximum ``stol`` value to try. Default: 0.3 (matching
+            ``StructureMatcher`` default).
         stol_factor (float):
             Fractional increment to increase ``stol`` by each time (when a
             match is not found). Default value of 0.5 increases ``stol`` by 50%
@@ -710,7 +711,7 @@ def StructureMatcher_scan_stol(
     # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
     # and break once a match is found:
     stol = min_stol
-    while stol < max_stol:
+    while stol <= max_stol:
         if user_stol := sm_kwargs.pop("stol", False):  # first run, try using user-provided stol first:
             sm_full_user_custom = StructureMatcher(stol=user_stol, **sm_kwargs)
             result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
@@ -726,7 +727,10 @@ def StructureMatcher_scan_stol(
         ):
             return result
 
-        stol *= 1 + stol_factor
+        if stol == max_stol:  # failed with max_stol; break
+            break
+
+        stol = min(stol * (1 + stol_factor), max_stol)
         # Note: this function could possibly be sped up if ``StructureMatcher._match()`` was updated to
         # return the guessed ``best_match`` value (even if larger than ``stol``), which will always be
         # >= the best possible match it seems, and then using this to determine the next ``stol`` value
