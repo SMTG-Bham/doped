@@ -6,6 +6,7 @@ radiative recombination calculations etc.
 
 import os
 import warnings
+from functools import lru_cache
 
 import numpy as np
 from pymatgen.core.structure import PeriodicSite, Structure
@@ -24,7 +25,9 @@ def get_transformation_from_s2_to_s1(
     mapping to transform ``struct2`` to be similar to ``struct1``.
 
     Copied over from the ``pymatgen`` ``StructureMatcher`` class, to allow
-    usage with the fast ``StructureMatcher_scan_stol`` function from ``doped``.
+    usage with the fast ``StructureMatcher_scan_stol`` function from ``doped``,
+    along with caching to reduce redundancy; e.g. when looping over multiple
+    defects for stenciling etc.
 
     Args:
         struct1 (Structure):
@@ -47,6 +50,18 @@ def get_transformation_from_s2_to_s1(
             ``None`` if there is no corresponding site), and the other items
             are the remaining site indices of ``struct2``.
     """
+    if sm_kwargs.get("ignored_species"):  # ensure it's hashable!
+        sm_kwargs["ignored_species"] = tuple(sm_kwargs["ignored_species"])
+
+    return _cache_ready_get_transformation_from_s2_to_s1(struct1, struct2, **sm_kwargs)
+
+
+@lru_cache(maxsize=100)  # cache transformation generation (if running multiple times with e.g. stenciling)
+def _cache_ready_get_transformation_from_s2_to_s1(
+    struct1: Structure,
+    struct2: Structure,
+    **sm_kwargs,
+):
     if sm_kwargs.get("primitive_cell", False):
         raise ValueError(
             "``primitive_cell=True`` is not supported for the ``get_transformation`` method of "
