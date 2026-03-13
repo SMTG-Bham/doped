@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
 from monty.serialization import loadfn
-from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_utils import (
     EXAMPLE_DIR,
@@ -28,7 +27,7 @@ from test_utils import (
 )
 
 from doped.generation import DefectsGenerator
-from doped.utils.efficiency import Structure, StructureMatcher
+from doped.utils.efficiency import Structure, StructureMatcher_scan_stol
 from doped.vasp import (
     DefectDictSet,
     DefectRelaxSet,
@@ -1116,10 +1115,6 @@ class DefectsSetTest(unittest.TestCase):
         self.drs_test.setUp()
 
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{data_dir}/CdTe_defect_gen.json")
-        self.structure_matcher = StructureMatcher(
-            comparator=ElementComparator(), primitive_cell=False
-        )  # ignore oxidation states when comparing structures
-
         # Note this is different to above: (for testing against pre-generated input files with these
         # settings):
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
@@ -1279,9 +1274,12 @@ class DefectsSetTest(unittest.TestCase):
         defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True, rattle=False)
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        assert StructureMatcher_scan_stol(
+            bulk_supercell,
+            self.CdTe_defect_gen.bulk_supercell,
+            func_name="fit",
+        )
         # check_generated_vasp_inputs also checks bulk folders
-
         assert os.path.exists("CdTe_defects_generator.json.gz")
         CdTe_se_defect_gen.to_json("test_CdTe_defects_generator.json")
         with (
@@ -1567,7 +1565,7 @@ class DefectsSetTest(unittest.TestCase):
 
             if kwargs.get("poscar", True):
                 struct = Structure.from_file(f"{folder_name}/POSCAR")
-                assert self.structure_matcher.fit(struct, structure)
+                assert StructureMatcher_scan_stol(struct, structure, func_name="fit")
             else:
                 assert not os.path.exists(f"{folder_name}/POSCAR")
 
@@ -1815,7 +1813,9 @@ class DefectsSetTest(unittest.TestCase):
         defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True)
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        assert StructureMatcher_scan_stol(
+            bulk_supercell, self.CdTe_defect_gen.bulk_supercell, func_name="fit"
+        )
         # check_generated_vasp_inputs also checks bulk folders
         assert os.path.exists("CdTe_defects_generator.json.gz")
 
@@ -1841,13 +1841,11 @@ class DefectsSetTest(unittest.TestCase):
                     f"{self.CdTe_data_dir}/{defect_entry_name}/vasp_gam/POSCAR"
                 )
                 generated_struct = Structure.from_file(f"{defect_entry_name}/vasp_std/POSCAR")
-                assert not StructureMatcher(stol=0.1).fit(
-                    reference_struct, generated_struct
-                )  # now rattled
-                print(StructureMatcher().get_rms_dist(reference_struct, generated_struct))  # for debugging
-                assert (
-                    StructureMatcher().get_rms_dist(reference_struct, generated_struct)[0] > 0.05
-                )  # rattled
+                rms_dist = StructureMatcher_scan_stol(
+                    reference_struct, generated_struct, func_name="get_rms_dist", max_stol=0.3
+                )
+                print(f"RMS dist after rattling: {rms_dist}")  # for debugging
+                assert rms_dist[0] > 0.1  # after rattling
 
                 for other_vasp_dir in ["vasp_gam", "vasp_nkred_std", "vasp_ncl"]:
                     print(f"Checking {other_vasp_dir}")

@@ -20,7 +20,13 @@ from scipy.constants import value as constants_value
 from scipy.stats import sem
 
 from doped import _doped_obj_properties_methods, get_mp_context
-from doped.utils.efficiency import Composition, Element, PeriodicSite, Structure, StructureMatcher
+from doped.utils.efficiency import (
+    Composition,
+    Element,
+    PeriodicSite,
+    Structure,
+    StructureMatcher_scan_stol,
+)
 
 if TYPE_CHECKING:
     from matplotlib.pyplot import Figure
@@ -2652,9 +2658,13 @@ class Defect(core.Defect):
         if self.defect_type != other.defect_type:
             return False
 
-        sm = StructureMatcher(stol=0.2, comparator=ElementComparator())
-
-        return sm.fit(self.defect_structure, other.defect_structure)
+        return StructureMatcher_scan_stol(
+            self.defect_structure,
+            other.defect_structure,
+            func_name="fit",
+            max_stol=0.2,
+            comparator=ElementComparator(),
+        )
 
     @property
     def defect_site(self) -> PeriodicSite:

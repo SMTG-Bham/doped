@@ -27,7 +27,6 @@ from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
-from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import SETTINGS, Composition, Element, Structure
 from pymatgen.entries.computed_entries import (
     ComputedEntry,
@@ -45,6 +44,7 @@ from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.generation import _element_sort_func
+from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_potcar_symbols,
@@ -1028,15 +1028,23 @@ class CompetingPhases:
                 for entry in formatted_entries  # sorted by energy_above_hull in ``get_entries_in_chemsys``
                 if entry.composition.reduced_composition == self.composition.reduced_composition
             ]:
-                sm = StructureMatcher()
-                matching_bulk_entries = [
-                    entry
+                candidate_bulk_entries = [
+                    (
+                        entry,
+                        StructureMatcher_scan_stol(
+                            self.bulk_structure, entry.structure, func_name="get_rms_dist", max_stol=0.5
+                        )
+                        or float("inf"),
+                    )
                     for entry in bulk_entries
-                    if hasattr(entry, "structure") and sm.fit(self.bulk_structure, entry.structure)
+                    if hasattr(entry, "structure")
                 ]
-                matching_bulk_entries.sort(key=lambda x: sm.get_rms_dist(self.bulk_structure, x.structure))
+                matching_bulk_entries = sorted(  # those with non-inf RMS (i.e. matching), sorted:
+                    [entry for entry in candidate_bulk_entries if entry[1] != float("inf")],
+                    key=lambda x: x[1],
+                )
                 if matching_bulk_entries:
-                    matching_bulk_entry = matching_bulk_entries[0]
+                    matching_bulk_entry = matching_bulk_entries[0][0]
                     manual_bulk_entry = matching_bulk_entry
                     manual_bulk_entry._structure = self.bulk_structure
 

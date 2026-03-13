@@ -18,7 +18,6 @@ from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
 from pymatgen.analysis.structure_matcher import (
     ElementComparator,
-    StructureMatcher,
     get_linear_assignment_solution,
     pbc_shortest_vectors,
 )
@@ -33,6 +32,7 @@ from sympy import Eq, Expr, simplify, solve, symbols
 from tqdm import tqdm
 
 from doped.core import Defect, DefectEntry
+from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure
 from doped.utils.parsing import (
     _get_bulk_supercell,
@@ -2213,48 +2213,38 @@ def get_conv_cell_site(defect_entry: DefectEntry) -> PeriodicSite | None:
 
     sga = get_sga(bulk_prim_structure)
     # convert to match sga primitive structure first:
-    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
-    s2_like_s1 = sm.get_s2_like_s1(sga_prim_struct, prim_struct_with_X)
-    if not s2_like_s1:
+    prim_struct_with_X_like_sga_prim = orient_s2_like_s1(
+        sga_prim_struct,
+        prim_struct_with_X,
+        primitive_cell=False,
+        ignored_species=["X"],
+        comparator=ElementComparator(),
+    )
+    if not prim_struct_with_X_like_sga_prim:
         warnings.warn(
-            "The transformation from the DefectEntry primitive cell to the spglib primitive "
-            "cell could not be determined, and so the corresponding conventional cell site "
-            "cannot be identified."
+            "The transformation from the DefectEntry primitive cell to the spglib primitive cell could "
+            "not be determined, and so the corresponding conventional cell site cannot be identified."
         )
         return None
-    s2_really_like_s1 = Structure.from_sites(
-        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
-            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
-                site.specie,
-                site.frac_coords,
-                sga_prim_struct.lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
-    )
 
-    conv_struct_with_X = s2_really_like_s1 * np.linalg.inv(
+    conv_struct_with_X = prim_struct_with_X_like_sga_prim * np.linalg.inv(
         sga.get_conventional_to_primitive_transformation_matrix()
     )
 
     # convert to match defect_entry conventional structure definition
     assert defect_entry.conventional_structure is not None
-    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, conv_struct_with_X)
-    s2_really_like_s1 = Structure.from_sites(
-        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
-            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
-                site.specie,
-                site.frac_coords,
-                defect_entry.conventional_structure.lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
+    conv_struct_with_X_like_defect_entry_conv = orient_s2_like_s1(
+        defect_entry.conventional_structure,
+        conv_struct_with_X,
+        primitive_cell=False,
+        ignored_species=["X"],
+        comparator=ElementComparator(),
     )
 
-    conv_cell_site = next(site for site in s2_really_like_s1.sites if site.specie.symbol == "X")
+    conv_cell_site = next(
+        site for site in conv_struct_with_X_like_defect_entry_conv.sites if site.specie.symbol == "X"
+    )
     # site choice doesn't matter so much here, as we later get the equivalent coordinates using the
     # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
     # initialisation)
