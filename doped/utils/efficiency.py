@@ -592,13 +592,16 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
 
     min_min_dist_change = 1e-4
     with contextlib.suppress(Exception):
-        min_min_dist_change = max(
-            {
-                elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
-                for elt in common_elts
-                if elt not in sm_kwargs.get("ignored_species", [])
-            }.values()
-        )
+        min_min_dist_change = (
+            max(
+                {
+                    elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
+                    for elt in common_elts
+                    if elt not in sm_kwargs.get("ignored_species", [])
+                }.values()
+            )
+            / 2
+        )  # divide by two as sites may have displaced toward each other (so Δbond-length = 2*Δsite)
 
     return max(get_dist_equiv_stol(min_min_dist_change, struct1), 1e-4)
 
