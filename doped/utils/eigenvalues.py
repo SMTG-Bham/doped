@@ -26,7 +26,7 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
 from doped import suppress_logging
-from doped.analysis import defect_from_structures
+from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, _parse_procar
 from doped.utils.parsing import (
     _partial_defect_entry_from_structures,
@@ -255,16 +255,11 @@ def get_band_edge_info(
     min_distance = sorted_distances[sorted_distances > 0.5][0]
 
     if defect_supercell_site is None:
-        defect_struct_info = defect_from_structures(
+        defect_supercell_site = defect_site_from_structures(
             bulk_vr.final_structure,
-            defect_vr.final_structure.copy(),
-            return_all_info=True,
-            oxi_state="Undetermined",
-            multiplicity=1,
+            defect_vr.final_structure,
         )
-        defect_site = defect_struct_info[1]  # _relaxed_ defect site (if substitution/interstitial)
-        defect_site_in_bulk = defect_struct_info[2]  # vacancy site
-        defect_supercell_site = defect_site or defect_site_in_bulk
+        assert isinstance(defect_supercell_site, PeriodicSite)  # typing
 
     neighbor_indices = [
         i

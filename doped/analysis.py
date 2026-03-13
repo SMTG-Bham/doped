@@ -187,82 +187,47 @@ def check_and_set_defect_entry_name(
         defect_entry.name = defect_entry.calculation_metadata["full_unrelaxed_defect_name"]
 
 
-def defect_from_structures(
+def defect_site_from_structures(
     bulk_supercell: Structure,
     defect_supercell: Structure,
     return_all_info: bool = False,
-    skip_atom_mapping_check: bool = False,
-    **kwargs,
-) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
+) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure]:
     """
-    Auto-determines the defect type and defect site from the supplied bulk and
-    defect structures, and returns a corresponding ``Defect`` object with the
-    defect site in the primitive structure.
-
-    If ``return_all_info`` is set to true, then also returns:
-
-    - `relaxed` defect site in the defect supercell
-    - the defect site in the bulk supercell
-    - defect site index in the defect supercell
-    - bulk site index (index of defect site in bulk supercell)
-    - guessed initial defect structure (before relaxation)
-    - 'unrelaxed defect structure' (also before relaxation, but with
-      interstitials at their final `relaxed` positions, and all bulk atoms at
-      their unrelaxed positions).
+    Auto-determines the defect site from the supplied bulk and defect
+    structures, returning the corresponding ``PeriodicSite``.
 
     Args:
         bulk_supercell (Structure):
             Bulk supercell structure.
         defect_supercell (Structure):
-            Defect structure to use for identifying the defect site and type.
+            Defect structure to use for identifying the defect site.
         return_all_info (bool):
-            If ``True``, returns additional python objects related to the
-            site-matching, listed above. (Default = False)
-        skip_atom_mapping_check (bool):
-            If ``True``, skips the atom mapping check which ensures that the
-            bulk and defect supercell lattice definitions are matched
-            (important for accurate defect site determination and charge
-            corrections). Can be used to speed up parsing when you are sure
-            the cell definitions match (e.g. both supercells were generated
-            with ``doped``). Default is ``False``.
-        **kwargs:
-            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
-            ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
-            fast site matching and ``Defect`` creation are desired (e.g. when
-            analysing MD trajectories of defects), where providing these
-            parameters can greatly speed up parsing.
-            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
-            auto-determination and accelerate parsing, if these properties are
-            not required.
+            If ``True``, returns additional info related to the site-matching;
+            see return signature. (Default: ``False``)
 
     Returns:
-        defect (Defect):
-            ``doped`` ``Defect`` object.
+        defect_site (PeriodicSite):
+            ``pymatgen`` ``PeriodicSite`` object for the `relaxed` defect site
+            in the defect supercell.
 
-        If ``return_all_info`` is True, then also:
+        If ``return_all_info`` is True, then also returns:
 
-        defect_site (Site):
-            ``pymatgen`` ``Site`` object of the `relaxed` defect site in the
-            defect supercell.
-        defect_site_in_bulk (Site):
-            ``pymatgen`` ``Site`` object of the defect site in the bulk
+        defect_type (str):
+            The type of defect as a string (``interstitial``, ``vacancy`` or
+            ``substitution``).
+        defect_site_in_bulk (PeriodicSite):
+            ``pymatgen`` ``PeriodicSite`` object of the defect site in the bulk
             supercell (i.e. unrelaxed vacancy/substitution site, or final
             `relaxed` interstitial site for interstitials).
         defect_site_index (int):
             Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
             Index of defect site in bulk supercell (None for interstitials)
-        guessed_initial_defect_structure (Structure):
-            ``pymatgen`` ``Structure`` object of the guessed initial defect
-            structure.
         unrelaxed_defect_structure (Structure):
             ``pymatgen`` ``Structure`` object of the unrelaxed defect
             structure.
     """
-    try:  # Try automatic defect site detection -- this gives us the "unrelaxed" defect structure
+    try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
             defect_type,
             bulk_site_idx,
@@ -293,6 +258,103 @@ def defect_from_structures(
         )
     else:  # interstitial
         site_in_bulk = defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
+
+    if not return_all_info:
+        return defect_site
+
+    return (
+        defect_site,
+        defect_type,
+        defect_site_in_bulk,
+        defect_site_idx,
+        bulk_site_idx,
+        unrelaxed_defect_structure,
+    )
+
+
+def defect_from_structures(
+    bulk_supercell: Structure,
+    defect_supercell: Structure,
+    return_all_info: bool = False,
+    skip_atom_mapping_check: bool = False,
+    **kwargs,
+) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
+    """
+    Auto-determines the defect type and defect site from the supplied bulk and
+    defect structures, and returns a corresponding ``Defect`` object with the
+    defect site in the primitive structure.
+
+    If ``return_all_info`` is set to true, then also returns:
+
+    - `relaxed` defect site in the defect supercell
+    - the defect site in the bulk supercell
+    - defect site index in the defect supercell
+    - bulk site index (index of defect site in bulk supercell)
+    - guessed initial defect structure (before relaxation)
+    - 'unrelaxed defect structure' (also before relaxation, but with
+      interstitials at their final `relaxed` positions, and all bulk atoms at
+      their unrelaxed positions).
+
+    Args:
+        bulk_supercell (Structure):
+            Bulk supercell structure.
+        defect_supercell (Structure):
+            Defect structure to use for identifying the defect site and type.
+        return_all_info (bool):
+            If ``True``, returns additional info related to the site-matching;
+            see return signature. (Default: ``False``)
+        skip_atom_mapping_check (bool):
+            If ``True``, skips the atom mapping check which ensures that the
+            bulk and defect supercell lattice definitions are matched
+            (important for accurate defect site determination and charge
+            corrections). Can be used to speed up parsing when you are sure
+            the cell definitions match (e.g. both supercells were generated
+            with ``doped``). Default is ``False``.
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
+            fast site matching and ``Defect`` creation are desired (e.g. when
+            analysing MD trajectories of defects), where providing these
+            parameters can greatly speed up parsing.
+            Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
+            auto-determination and accelerate parsing, if these properties are
+            not required.
+
+    Returns:
+        defect (Defect):
+            ``doped`` ``Defect`` object.
+
+        If ``return_all_info`` is True, then also returns:
+
+        defect_site (PeriodicSite):
+            ``pymatgen`` ``PeriodicSite`` object of the `relaxed` defect site
+            in the defect supercell.
+        defect_site_in_bulk (PeriodicSite):
+            ``pymatgen`` ``PeriodicSite`` object of the defect site in the bulk
+            supercell (i.e. unrelaxed vacancy/substitution site, or final
+            `relaxed` interstitial site for interstitials).
+        defect_site_index (int):
+            Index of defect site in defect supercell (None for vacancies)
+        bulk_site_index (int):
+            Index of defect site in bulk supercell (None for interstitials)
+        guessed_initial_defect_structure (Structure):
+            ``pymatgen`` ``Structure`` object of the guessed initial defect
+            structure.
+        unrelaxed_defect_structure (Structure):
+            ``pymatgen`` ``Structure`` object of the unrelaxed defect
+            structure.
+    """
+    (
+        defect_site,
+        defect_type,
+        defect_site_in_bulk,
+        defect_site_idx,
+        bulk_site_idx,
+        unrelaxed_defect_structure,
+    ) = defect_site_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
 
     if not skip_atom_mapping_check:
         check_atom_mapping_far_from_defect(
@@ -371,7 +433,7 @@ def defect_from_structures(
     if defect_type != "interstitial":  # ensure exact matches to Defect.structure (primitive) sites:
         for defect_site_in_prim in equiv_defect_sites_in_prim:
             bulk_site_in_prim = deepcopy(defect_site_in_prim)
-            bulk_site_in_prim.species = site_in_bulk.species
+            bulk_site_in_prim.species = bulk_supercell[bulk_site_idx].species
             bulk_site_in_prim = get_matching_site(bulk_site_in_prim, primitive_structure)
             defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
 
@@ -455,9 +517,9 @@ def defect_and_info_from_structures(
         tuple[Defect, PeriodicSite, dict]:
             defect (Defect):
                 ``doped`` ``Defect`` object.
-            defect_site (Site):
-                ``pymatgen`` ``Site`` object of the `relaxed` defect site in
-                the defect supercell.
+            defect_site (PeriodicSite):
+                ``pymatgen`` ``PeriodicSite`` object of the `relaxed` defect
+                site in the defect supercell.
             defect_structure_metadata (dict):
                 Dictionary containing metadata about the defect structure,
                 including:
