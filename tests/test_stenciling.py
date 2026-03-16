@@ -20,7 +20,7 @@ from test_utils import (
     custom_mpl_image_compare,
 )
 
-from doped.analysis import defect_site_from_structures
+from doped.analysis import DefectParser, defect_site_from_structures
 from doped.core import DefectEntry
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.displacements import plot_site_displacements
@@ -41,7 +41,6 @@ _DISP_STYLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "../doped/utils/displacement.mplstyle"
 )
 
-# TODO: Test smaller cell stenciling
 # TODO: Decide optimal dist tol factor choices
 # TODO: Add / run some quick energy tests (e.g. Madelung, from split-vac code); or some invariant test?
 # TODO: After stenciling test updates; redo pytest split timings
@@ -263,6 +262,12 @@ class DefectStencilingTest(unittest.TestCase):
                     name = name.replace(key, val)
                 thermo.defect_entries[name] = thermo.defect_entries.pop(old_name)
 
+        cls.single_MgO_dp = DefectParser.from_paths(
+            defect_path=os.path.join(EXAMPLE_DIR, "MgO/Defects/Pre_Calculated_Results/Mg_O_+2/vasp_std"),
+            bulk_path=os.path.join(EXAMPLE_DIR, "MgO/Defects/Pre_Calculated_Results/MgO_bulk/vasp_std"),
+            dielectric=8.8963,
+        )
+
     def test_Se_20_A_supercell(self):
         """
         Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
@@ -449,23 +454,41 @@ class DefectStencilingTest(unittest.TestCase):
         uses a FCC-like 12 Å cell with ~62.5° angles as the stenciling target,
         which also has a different volume per atom!
         """
-        from doped.analysis import DefectParser
         from doped.generation import get_ideal_supercell_matrix
 
         # non-encompassing cell first:
         prim_MgO = Structure.from_file(os.path.join(EXAMPLE_DIR, "MgO/Input_files/prim_struc_POSCAR"))
         target_supercell = prim_MgO * get_ideal_supercell_matrix(structure=prim_MgO, min_image_distance=15)
 
-        single_dp = DefectParser.from_paths(
-            defect_path=os.path.join(EXAMPLE_DIR, "MgO/Defects/Pre_Calculated_Results/Mg_O_+2/vasp_std"),
-            bulk_path=os.path.join(EXAMPLE_DIR, "MgO/Defects/Pre_Calculated_Results/MgO_bulk/vasp_std"),
-            dielectric=8.8963,
-        )
         stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
-            single_dp.defect_entry,
+            self.single_MgO_dp.defect_entry,
             target_supercell,
         )
         stenciled_entry = _make_stenciled_defect_entry(
-            single_dp.defect_entry, stenciled_supercell, corresponding_bulk
+            self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
         )
-        return _plot_stenciled_vs_original_displacements(stenciled_entry, single_dp.defect_entry)
+        return _plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
+
+    @custom_mpl_image_compare(
+        filename="Mg_O_+2_stenciled_vs_original_displacements_10_A_cell.png", style=STYLE
+    )
+    def test_stenciling_displacement_plot_Mg_O_plus2_smaller_target(self):
+        """
+        Test stenciling with ``Mg_O_+2``; now using a target supercell which is
+        smaller (10 Å min image distance) than the original 12 Å cubic
+        supercell.
+        """
+        from doped.generation import get_ideal_supercell_matrix
+
+        # non-encompassing cell first:
+        prim_MgO = Structure.from_file(os.path.join(EXAMPLE_DIR, "MgO/Input_files/prim_struc_POSCAR"))
+        target_supercell = prim_MgO * get_ideal_supercell_matrix(structure=prim_MgO, min_image_distance=10)
+
+        stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+            self.single_MgO_dp.defect_entry,
+            target_supercell,
+        )
+        stenciled_entry = _make_stenciled_defect_entry(
+            self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
+        )
+        return _plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
