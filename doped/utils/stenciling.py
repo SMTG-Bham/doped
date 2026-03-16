@@ -27,6 +27,7 @@ from doped.utils.parsing import (
     _get_defect_supercell,
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
+    get_defect_type_and_composition_diff,
     get_wigner_seitz_radius,
 )
 from doped.utils.supercells import _largest_cube_length_from_matrix, min_dist
@@ -200,8 +201,6 @@ def get_defect_in_supercell(
             struct.remove_oxidation_states()
 
         # first translate both orig supercells to put defect in the middle, to aid initial stenciling:
-        # TODO: Check if they don't match (like we already do in doped code), and attempt to reorient
-        #  with defect -> X etc code (if this works, could try applying in general w/defect parsing)
         orig_def_to_centre = np.array([0.5, 0.5, 0.5]) - orig_defect_frac_coords
         trans_orig_supercell = translate_structure(orig_supercell, orig_def_to_centre, frac_coords=True)
         trans_orig_bulk_supercell = translate_structure(
@@ -235,7 +234,6 @@ def get_defect_in_supercell(
         # first reduce to only closest atoms to centre for both target and super-supercells, to avoid
         # exorbitant comp costs with site-matching enormous supercells
         # TODO: Update to scan over radii here, as some choices give matches and some don't
-        # TODO: Update notes about bulk cells
         fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
             target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
             r=min(12.0, 0.8 * get_wigner_seitz_radius(target_supercell)),
@@ -331,7 +329,11 @@ def get_defect_in_supercell(
                 new_defect_supercell, target_supercell, trans
             )
         else:
-            # TODO: Warning, this should really never happen?
+            warnings.warn(  # shouldn't happen?
+                "No mapping from the (bulk) stenciled cell to ``target_supercell`` could be found. This "
+                "may indicate a severe issue with stenciling for this defect. Please report this issue to "
+                "the developers if there are no obvious causes of this."
+            )
             oriented_new_bulk_supercell = new_bulk_supercell
             oriented_new_defect_supercell = new_defect_supercell
 
@@ -398,7 +400,15 @@ def get_defect_in_supercell(
 
     _check_min_dist(oriented_new_defect_supercell, min_dist_tol)  # check distances are reasonable
     _check_min_dist(oriented_new_bulk_supercell, bulk_min_dist_tol)
-    # TODO: Quick sanity check of compositions here
+    assert (
+        get_defect_type_and_composition_diff(orig_bulk_supercell, orig_supercell)[1]
+        == get_defect_type_and_composition_diff(
+            oriented_new_bulk_supercell, oriented_new_defect_supercell
+        )[1]
+    ), (
+        f"Output composition ({oriented_new_defect_supercell.composition}) does not match expected "
+        f"stenciled defect composition, indicating fatal issues with stenciling here!"
+    )
     return oriented_new_defect_supercell, oriented_new_bulk_supercell
 
 

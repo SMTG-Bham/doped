@@ -42,10 +42,10 @@ _DISP_STYLE = os.path.join(
 )
 
 # TODO: Decide optimal dist tol factor choices
-# TODO: Add / run some quick energy tests (e.g. Madelung, from split-vac code); or some invariant test?
 # TODO: After stenciling test updates; redo pytest split timings
-# TODO: Test "Generated structure has a minimum interatomic" warnings
 # Note: If we needed more tests, useful test cases could be to stencil split vacancies
+# Note: If we wanted more invariant / noise-tolerant tests, could implement some energy-based tests (e.g.
+# Madelung energies)
 
 
 def _get_sorted_nn_distances(structure, frac_coords, n_neighbours=12):
@@ -304,6 +304,11 @@ class DefectStencilingTest(unittest.TestCase):
                 # these warnings), but updated pre-stenciling re-orientation of
                 # ``(oriented_)big_{bulk,defect}_supercell`` now returns tile-matching supercells
 
+                assert any(
+                    "Generated structure has a minimum interatomic" in str(warning.message)
+                    for warning in w
+                ) == ("Se_i_C2_-2" in name)
+
                 # invariant validation tests:
                 _validate_stenciled_supercell(
                     expanded_defect_supercell,
@@ -357,6 +362,10 @@ class DefectStencilingTest(unittest.TestCase):
                     )
                 _print_warning_info(w)
                 assert not any("Note that the atomic position" in str(warning.message) for warning in w)
+                assert any(
+                    "Generated structure has a minimum interatomic" in str(warning.message)
+                    for warning in w
+                ) == ("Se_i_C2_-2" in name)
 
                 # invariant validation tests:
                 _validate_stenciled_supercell(
@@ -460,9 +469,15 @@ class DefectStencilingTest(unittest.TestCase):
         prim_MgO = Structure.from_file(os.path.join(EXAMPLE_DIR, "MgO/Input_files/prim_struc_POSCAR"))
         target_supercell = prim_MgO * get_ideal_supercell_matrix(structure=prim_MgO, min_image_distance=15)
 
-        stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
-            self.single_MgO_dp.defect_entry,
-            target_supercell,
+        with warnings.catch_warnings(record=True) as w:
+            stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+                self.single_MgO_dp.defect_entry,
+                target_supercell,
+            )
+        _print_warning_info(w)
+        assert not any("Note that the atomic position" in str(warning.message) for warning in w)
+        assert not any(
+            "Generated structure has a minimum interatomic" in str(warning.message) for warning in w
         )
         stenciled_entry = _make_stenciled_defect_entry(
             self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
@@ -484,9 +499,15 @@ class DefectStencilingTest(unittest.TestCase):
         prim_MgO = Structure.from_file(os.path.join(EXAMPLE_DIR, "MgO/Input_files/prim_struc_POSCAR"))
         target_supercell = prim_MgO * get_ideal_supercell_matrix(structure=prim_MgO, min_image_distance=10)
 
-        stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
-            self.single_MgO_dp.defect_entry,
-            target_supercell,
+        with warnings.catch_warnings(record=True) as w:
+            stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+                self.single_MgO_dp.defect_entry,
+                target_supercell,
+            )
+        _print_warning_info(w)
+        assert not any("Note that the atomic position" in str(warning.message) for warning in w)
+        assert not any(
+            "Generated structure has a minimum interatomic" in str(warning.message) for warning in w
         )
         stenciled_entry = _make_stenciled_defect_entry(
             self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
