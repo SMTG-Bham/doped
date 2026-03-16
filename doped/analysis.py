@@ -230,8 +230,8 @@ def defect_site_from_structures(
     try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
             defect_type,
-            bulk_site_idx,
-            defect_site_idx,
+            bulk_site_index,
+            defect_site_index,
             unrelaxed_defect_structure,
         ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_supercell, defect_supercell)
 
@@ -249,15 +249,15 @@ def defect_site_from_structures(
         ) from exc
 
     if defect_type == "vacancy":
-        site_in_bulk = defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_idx]
+        site_in_bulk = defect_site_in_bulk = defect_site = bulk_supercell[bulk_site_index]
     elif defect_type == "substitution":
-        defect_site = defect_supercell[defect_site_idx]
-        site_in_bulk = bulk_supercell[bulk_site_idx]  # this is with orig (substituted) element
+        defect_site = defect_supercell[defect_site_index]
+        site_in_bulk = bulk_supercell[bulk_site_index]  # this is with orig (substituted) element
         defect_site_in_bulk = PeriodicSite(
             defect_site.species, site_in_bulk.frac_coords, site_in_bulk.lattice
         )
     else:  # interstitial
-        site_in_bulk = defect_site_in_bulk = defect_site = defect_supercell[defect_site_idx]
+        site_in_bulk = defect_site_in_bulk = defect_site = defect_supercell[defect_site_index]
 
     if not return_all_info:
         return defect_site
@@ -266,8 +266,8 @@ def defect_site_from_structures(
         defect_site,
         defect_type,
         defect_site_in_bulk,
-        defect_site_idx,
-        bulk_site_idx,
+        defect_site_index,
+        bulk_site_index,
         unrelaxed_defect_structure,
     )
 
@@ -351,8 +351,8 @@ def defect_from_structures(
         defect_site,
         defect_type,
         defect_site_in_bulk,
-        defect_site_idx,
-        bulk_site_idx,
+        defect_site_index,
+        bulk_site_index,
         unrelaxed_defect_structure,
     ) = defect_site_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
 
@@ -384,10 +384,10 @@ def defect_from_structures(
                 key=lambda node: defect_site.distance_and_image_from_frac_coords(node)[0],
             )
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-            int_site = guessed_initial_defect_structure[defect_site_idx]
-            guessed_initial_defect_structure.remove_sites([defect_site_idx])
+            int_site = guessed_initial_defect_structure[defect_site_index]
+            guessed_initial_defect_structure.remove_sites([defect_site_index])
             guessed_initial_defect_structure.insert(
-                defect_site_idx,  # Place defect at same position as in DFT calculation
+                defect_site_index,  # Place defect at same position as in DFT calculation
                 int_site.species_string,
                 closest_node_frac_coords,
                 coords_are_cartesian=False,
@@ -396,7 +396,7 @@ def defect_from_structures(
             # if guessed initial site is sufficiently close to the relaxed site, then use it as
             # "defect_site_in_bulk", otherwise use the relaxed site:
             if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_node_frac_coords)[0] < 1:
-                defect_site_in_bulk = guessed_initial_defect_structure[defect_site_idx]
+                defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
 
         else:
             guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
@@ -433,7 +433,7 @@ def defect_from_structures(
     if defect_type != "interstitial":  # ensure exact matches to Defect.structure (primitive) sites:
         for defect_site_in_prim in equiv_defect_sites_in_prim:
             bulk_site_in_prim = deepcopy(defect_site_in_prim)
-            bulk_site_in_prim.species = bulk_supercell[bulk_site_idx].species
+            bulk_site_in_prim.species = bulk_supercell[bulk_site_index].species
             bulk_site_in_prim = get_matching_site(bulk_site_in_prim, primitive_structure)
             defect_site_in_prim.frac_coords = bulk_site_in_prim.frac_coords
 
@@ -462,8 +462,8 @@ def defect_from_structures(
         defect,
         defect_site,
         defect_site_in_bulk,
-        defect_site_idx,
-        bulk_site_idx,
+        defect_site_index,
+        bulk_site_index,
         guessed_initial_defect_structure,
         unrelaxed_defect_structure,
     )
@@ -613,10 +613,9 @@ def defect_and_info_from_structures(
         defect_structure_metadata["guessed_defect_displacement"] = None  # type: ignore
 
     defect_structure_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
-    if bulk_site_index is None:  # interstitial
-        defect_structure_metadata["bulk_site"] = defect_site_in_bulk
-    else:
-        defect_structure_metadata["bulk_site"] = bulk_supercell[bulk_site_index]
+    defect_structure_metadata["bulk_site"] = (
+        defect_site_in_bulk if bulk_site_index is None else bulk_supercell[bulk_site_index]  # interstitial
+    )
 
     return (
         defect,

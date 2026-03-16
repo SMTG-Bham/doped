@@ -525,8 +525,7 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
-    return (dist_matrix + dist_matrix.T) / 2
+    return np.array(lattice.get_all_distances(fcoords, fcoords))
 
 
 def cluster_coords(
@@ -1994,7 +1993,7 @@ def get_primitive_structure(
     primitive cells (e.g. Cd (0,0,0) & Te (0.25,0.25,0.25); Cd (0,0,0) & Te
     (0.75,0.75,0.75) for F-43m CdTe), so for reproducibility and in line with
     most structure conventions/definitions, take the one with the cleanest
-    lattice and structure definition, according to ``struct_sort_func``.
+    lattice and structure definition, according to ``_struct_sort_func``.
 
     If ``ignored_species`` is set, then the sorting function used to determine
     the ideal primitive structure will ignore sites with species in
