@@ -40,9 +40,6 @@ from doped.utils.symmetry import (
     translate_structure,
 )
 
-# TODO: Before removing other TODOs in this module, should expand tests (other defect types, MgO),
-#  _then_ start to cut things
-
 
 def get_defect_in_supercell(
     defect_entry: DefectEntry,
@@ -64,31 +61,10 @@ def get_defect_in_supercell(
     base supercell for ``defect_entry``, see note below).
 
     ``target_supercell`` should be the same host crystal structure, just with
-    different supercell dimensions, having the same lattice parameters and bond
-    lengths.
-
-    TODO: Update this discussion: (and search throughout for this stuff)
-    Note: This function does `not` guarantee that the generated defect
-    supercell atomic position basis exactly matches that of
-    ``target_supercell``, which may have come from a different primitive
-    structure definition (e.g. CdTe with
-    ``{"Cd": [0,0,0], "Te": [0.25,0.25,0.25]}`` vs
-    ``{"Cd": [0,0,0], "Te": [0.75,0.75,0.75]}``). The generated supercell
-    `will` have the exact same lattice/cell definition with fully
-    symmetry-equivalent atom positions, but if the actual position basis
-    differs then this can cause issues with parsing finite-size corrections
-    (which rely on site-matched potentials). This is perfectly fine if it
-    occurs, just will require the use of a matching bulk/reference supercell
-    when parsing (rather than the input ``target_supercell``) -- ``doped`` will
-    also throw a warning about this when parsing if a non-matching bulk
-    supercell is used anyway. This function will automatically check if the
-    position basis in the generated supercell differs from that of
-    ``target_supercell``, printing a warning if so (unless ``check_bulk`` is
-    ``False``) and returning the corresponding bulk supercell which should be
-    used for parsing defect calculations with the generated supercell. Of
-    course, if generating multiple defects in the same ``target_supercell``,
-    only one such bulk supercell calculation should be required (should
-    correspond to the same bulk supercell in each case).
+    different supercell dimensions. The stenciling algorithm is typically
+    robust to small differences in lattice parameters (i.e. volume per atom)
+    and bond lengths, but large differences in these between the original and
+    target bulk supercells can cause issues.
 
     Briefly, this function works by:
 
@@ -123,6 +99,25 @@ def get_defect_in_supercell(
       operations of ``target_supercell`` and apply that which places the defect
       site closest to ``target_frac_coords``, to both the defect and bulk
       supercells.
+
+    Note: While this function tries to ensure that the generated defect/bulk
+    supercell position basis exactly matches that of ``target_supercell``, this
+    is `not` guaranteed. A mismatch can arise due to different tiling of
+    primitive cells within ``target_supercell`` and the original defect
+    supercell, which are symmetry-equivalent for the bulk (pristine) supercell
+    but not for the defect supercell (due to the broken periodicity/symmetry).
+    The generated supercell `is` guaranteed to have the exact same lattice
+    parameters etc. This is perfectly fine if it occurs (in which case a
+    warning will be thrown, unless ``check_bulk`` is ``False``), just will
+    require the use of a matching bulk/reference supercell when parsing (rather
+    than the input ``target_supercell``) to avoid any issues with finite-size
+    corrections and defect site-matching -- ``doped`` will also throw a warning
+    about this when parsing if a non-matching bulk supercell is used anyway.
+    This function returns the corresponding bulk supercell which should be used
+    for parsing defect calculations with the generated supercell. Of course, if
+    generating multiple defects in the same ``target_supercell`` with this
+    issue occurring, only one such bulk supercell calculation should be
+    required (`should` correspond to the same bulk supercell in each case).
 
     We note that the algorithm employed here is not guaranteed to be
     deterministic. It can depend on site orderings, small differences in cell
@@ -173,8 +168,6 @@ def get_defect_in_supercell(
             generated defect supercell (see explanations above).
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest for debugging
-    # TODO: Tests!! (At least one of each defect, Se good test case, then at least one or two with
-    #  >unary compositions and extrinsic substitution/interstitial)
     # TODO: We should now be able to use these functions (without the final re-orientation step,
     #  for speed) to determine the point symmetries of relaxed defects in non-symmetry-conserving
     #  supercells, by stenciling into a small symmetry-conserving cell and getting the point symmetry
@@ -290,6 +283,7 @@ def get_defect_in_supercell(
         new_bulk_supercell = stencil_target_cell_from_big_cell(
             oriented_big_bulk_supercell,
             target_supercell,
+            target_composition=target_supercell.composition,
             bulk_min_bond_length=bulk_min_bond_length,
             min_dist_tol=bulk_min_dist_tol,
             edge_tol=1e-3,
@@ -298,6 +292,9 @@ def get_defect_in_supercell(
         new_defect_supercell = stencil_target_cell_from_big_cell(
             oriented_big_defect_supercell,
             target_supercell,
+            target_composition=(
+                target_supercell.composition + orig_supercell.composition - orig_bulk_supercell.composition
+            ),
             bulk_min_bond_length=bulk_min_bond_length,
             min_dist_tol=min_dist_tol,
             edge_tol=edge_tol,
@@ -387,9 +384,6 @@ def get_defect_in_supercell(
             "bulk and defect supercell should be used, and so the matching bulk supercell for the "
             "generated defect supercell (also returned by this function) should be used for its reference "
             "host cell calculation.",
-            # "{'Cd': [0,0,0], 'Te': [0.75,0.75,0.75]}``) -- see ``get_defect_in_supercell`` "
-            # "docstring for more info.
-            # TODO: Update other docstrings about this?
         )
         # Two symmetry-equivalent supercells can have identical supercell lattice vectors but different
         # atomic positions, due to different tiling of primitive cells within the same total supercell --
@@ -400,15 +394,7 @@ def get_defect_in_supercell(
         # When these different primitive cells are tiled into supercells, the supercell shapes end up
         # identical but the atoms sit at different Cartesian positions. Crucially, the mapping between the
         # two is not a single rigid-body transformation (rotation + translation) applied uniformly to all
-        # atoms. Instead, each atom's Cartesian displacement depends on its sublattice — i.e. which of the
-        # n atoms in the primitive cell it corresponds to. The displacement for sublattice k is:
-        # d_k = f_k @ (L_TP - L_BP)
-        # where f_k is the atom's fractional coordinate within the primitive cell, and L_BP, L_TP are the
-        # two primitive lattice matrices. Since each primitive cell atom has a different f_k, each
-        # sublattice gets a different displacement vector. This is why no single symmetry operation,
-        # rotation matrix, or fractional coordinate transformation can map one supercell onto the other —
-        # the transformation is sublattice-dependent, not expressible as a linear operation on supercell
-        # fractional coordinates.
+        # atoms.
 
     _check_min_dist(oriented_new_defect_supercell, min_dist_tol)  # check distances are reasonable
     _check_min_dist(oriented_new_bulk_supercell, bulk_min_dist_tol)
@@ -459,6 +445,7 @@ def _scan_symm_ops_to_place_site_closest_to_frac_coords(
 def stencil_target_cell_from_big_cell(
     big_supercell: Structure,
     target_supercell: Structure,
+    target_composition: Composition | None,
     edge_tol: float = 0.2,
     bulk_min_bond_length: float | None = None,
     min_dist_tol: float = 1.0,
@@ -485,6 +472,11 @@ def stencil_target_cell_from_big_cell(
     maximises the `minimum` inter-atomic distance in the new supercell, when
     accounting for PBCs.
 
+    Note that differences between the lattice parameters (volumes per atom) of
+    ``big_supercell`` and ``target_supercell`` can cause issues with the
+    stenciling approach herein, particularly when ``target_composition`` is not
+    supplied and/or for defective ``big_supercell`` cells.
+
     Args:
         big_supercell (Structure):
             The supercell structure which fully encompasses
@@ -492,6 +484,11 @@ def stencil_target_cell_from_big_cell(
         target_supercell (Structure):
             The supercell structure giving the cell dimensions to stencil out
             from ``big_supercell``.
+        target_composition (Composition | None):
+            Expected composition of the output stenciled cell (used to
+            determine candidate sites to stencil out). Auto-determined by
+            comparing ``big_supercell`` and ``target_supercell`` if ``None``
+            (default).
         edge_tol (float):
             A tolerance (in Angstrom) for site displacements at the edge of the
             stenciled supercell, when determining the best match of sites to
@@ -529,11 +526,12 @@ def stencil_target_cell_from_big_cell(
     if bulk_min_bond_length is None:
         bulk_min_bond_length = min_dist(target_supercell)
 
-    # get target composition accounting for defect presence in big supercell:
-    num_sc = big_supercell.volume / target_supercell.volume  # may be fractional
-    big_supercell_comp_wout_X = big_supercell.copy().remove_species(["X"]).composition
-    target_composition = big_supercell_comp_wout_X - ((num_sc - 1) * target_supercell.composition)
-    target_composition = Composition({k: round(v) for k, v in target_composition.items()})
+    if target_composition is None:
+        # get target composition accounting for defect presence in big supercell:
+        num_sc = big_supercell.volume / target_supercell.volume  # may be fractional
+        big_supercell_comp_wout_X = big_supercell.copy().remove_species(["X"]).composition
+        target_composition = big_supercell_comp_wout_X - ((num_sc - 1) * target_supercell.composition)
+        target_composition = Composition({k: round(v) for k, v in target_composition.items()})
 
     # here we stencil out sites from the big supercell using the ``target_supercell`` cell (i.e. stencil)
     # for the bulk supercell this is trivial, as we can just take the ``target_supercell`` box as is, and
@@ -739,6 +737,8 @@ def _convert_defect_neighbours_to_X(
     ignoring the highly-perturbed defect neighbourhood (which requires larger
     ``stol`` values which grealy slow down structure-matching).
 
+    No longer used in default stenciling approach.
+
     Args:
         defect_supercell (Structure):
             The defect supercell to edit.
@@ -789,8 +789,8 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
 
     Mainly intended just for internal ``doped`` usage, to convert back sites
     which had been converted to "X" for efficient structure-matching (see
-    ``_convert_defect_neighbours_to_X``).
-    TODO: Now unnecessary?
+    ``_convert_defect_neighbours_to_X``). No longer used in default stenciling
+    approach.
 
     Args:
         converted_defect_supercell (Structure):
@@ -1170,9 +1170,6 @@ def _get_matching_sites_from_s1_then_s2(
         : len(struct2_pool) - len(struct2_pool) // num_super_supercells
     ]
 
-    # TODO: This check was removed before (in `40f129f`), not sure if for a proper reason -- check and
-    #  remove this note
-    _check_min_dist(Structure.from_sites(bulk_outer_cell_sites), min_dist_tol, warning=False)
     return Structure.from_sites(single_defect_subcell_sites + bulk_outer_cell_sites)
 
 
