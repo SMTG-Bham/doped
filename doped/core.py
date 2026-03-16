@@ -1543,9 +1543,9 @@ class DefectEntry(thermo.DefectEntry):
 
     def plot_site_displacements(
         self,
+        relative_to_defect: bool = True,
         separated_by_direction: bool = False,
         relaxed_distances: bool = False,
-        relative_to_defect: bool = False,
         vector_to_project_on: list | None = None,
         use_plotly: bool = False,
         ax: "mpl.axes.Axes | None" = None,
@@ -1561,24 +1561,34 @@ class DefectEntry(thermo.DefectEntry):
 
         The plot mode depends on the combination of options:
 
-        - Default: Single-panel absolute displacement vs. distance to defect.
+        - ``relative_to_defect=True`` (default): Single-panel signed
+          displacement along the defect -> atom direction (negative = towards
+          defect).
 
-        - ``relative_to_defect=True``: Single-panel signed displacement along
-          the defect -> atom direction (negative = towards defect).
+        - ``relative_to_defect=False``: Single-panel absolute displacement vs.
+          distance to defect.
 
         - ``vector_to_project_on=[x,y,z]``: 2-panel plot showing displacement
           parallel and perpendicular to the given vector.
 
-        - ``separated_by_direction=True``: 3-panel plot showing the ``|x|``,
-          ``|y|``, ``|z|`` displacement components separately.
+        - ``separated_by_direction=True``: 3-panel plot showing the ``x``,
+          ``y``, ``z`` displacement components separately.
 
-        ``separated_by_direction``, ``relative_to_defect``, and
-        ``vector_to_project_on`` are mutually exclusive.
+        ``separated_by_direction`` and ``vector_to_project_on`` are mutually
+        exclusive, and if either is set then ``relative_to_defect`` is set to
+        ``False``.
 
         Args:
+            defect_entry (DefectEntry): ``DefectEntry`` object.
+            relative_to_defect (bool):
+                Whether to plot the signed displacements along the line from
+                the (relaxed) defect site to that atom. Negative values
+                indicate the atom moves towards the defect (compressive
+                strain), positive values indicate the atom moves away from the
+                defect (tensile strain). Default is ``True``.
             separated_by_direction (bool):
-                Whether to plot site displacements separated into ``|x|``,
-            ``|y|``, ``|z|`` components (3-panel figure). Default is ``False``.
+                Whether to plot site displacements separated into ``x``, ``y``,
+                ``z`` components (3-panel figure). Default is ``False``.
             relaxed_distances (bool):
                 Whether to use the atomic positions in the `relaxed` defect
                 supercell for ``'Distance to defect'``,
@@ -1586,12 +1596,6 @@ class DefectEntry(thermo.DefectEntry):
                 ``'Displacement wrt defect'`` values (``True``), or unrelaxed
                 positions (i.e. the bulk structure positions)(``False``).
                 Defaults to ``False``.
-            relative_to_defect (bool):
-                Whether to plot the signed displacements along the line from
-                the defect site to that atom. Negative values indicate the atom
-                moves towards the defect (compressive strain), positive values
-                indicate the atom moves away from the defect (tensile strain).
-                Uses the *relaxed* defect position as reference.
             vector_to_project_on (list):
                 Direction to project the site displacements along
                 (e.g. ``[0, 0, 1]``). Produces a 2-panel figure showing
@@ -1603,10 +1607,10 @@ class DefectEntry(thermo.DefectEntry):
                 an interactive plot.
             ax (matplotlib.axes.Axes or sequence of matplotlib.axes.Axes):
                 Optional ``matplotlib`` ``Axes`` to plot on. If ``None``, a new
-                figure and axes are created. For single-panel modes (default or
-                ``relative_to_defect``), provide a single ``Axes``. For
-                multi-panel modes, provide a matching sequence of ``Axes``: 2
-                axes for ``vector_to_project_on``, 3 axes for
+                figure and axes are created. For single-panel modes (default),
+                provide a single ``Axes``. For multi-panel modes, provide a
+                matching sequence of ``Axes``: 2 axes for
+                ``vector_to_project_on``, 3 axes for
                 ``separated_by_direction``. A ``ValueError`` is raised if the
                 wrong number of axes is supplied. Only used with
                 ``use_plotly=False``. Default is ``None``.
@@ -1626,9 +1630,9 @@ class DefectEntry(thermo.DefectEntry):
 
         return plot_site_displacements(
             defect_entry=self,
+            relative_to_defect=relative_to_defect,
             separated_by_direction=separated_by_direction,
             relaxed_distances=relaxed_distances,
-            relative_to_defect=relative_to_defect,
             vector_to_project_on=vector_to_project_on,
             use_plotly=use_plotly,
             ax=ax,

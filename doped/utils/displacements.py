@@ -37,8 +37,8 @@ except ImportError:
 
 def calc_site_displacements(
     defect_entry: DefectEntry,
+    relative_to_defect: bool = True,
     relaxed_distances: bool = False,
-    relative_to_defect: bool = False,
     vector_to_project_on: list | None = None,
     threshold: float = 2.0,
 ) -> pd.DataFrame:
@@ -52,24 +52,24 @@ def calc_site_displacements(
     Args:
         defect_entry (DefectEntry):
             ``DefectEntry`` object.
+        relative_to_defect (bool):
+            Whether to calculate the signed displacements along the line from
+            the (relaxed) defect site to that atom. Negative values indicate
+            the atom moves towards the defect (compressive strain), positive
+            values indicate the atom moves away from the defect. The relative
+            displacements are stored in the ``Displacement wrt defect`` key of
+            the returned dictionary. Defaults to ``True``.
         relaxed_distances (bool):
             Whether to use the atomic positions in the `relaxed` defect
             supercell for ``'Distance to defect'``,
             ``'Vector to site from defect'`` and ``'Displacement wrt defect'``
             values (``True``), or unrelaxed positions (i.e. the bulk structure
             positions)(``False``). Defaults to ``False``.
-        relative_to_defect (bool):
-            Whether to calculate the signed displacements along the line from
-            the (relaxed) defect site to that atom. Negative values indicate
-            the atom moves towards the defect (compressive strain), positive
-            values indicate the atom moves away from the defect. Defaults to
-            ``False``. If ``True``, the relative displacements are stored in
-            the ``Displacement wrt defect`` key of the returned dictionary.
         vector_to_project_on (list):
             Direction to project the site displacements along (e.g. [0, 0, 1]).
-            If given, also calculates displacements perpendicular to the
-            projection vector. Defaults to ``None`` (displacements are given as
-            vectors in Cartesian space).
+            If given, also calculates (absolute) displacements perpendicular to
+            the projection vector. Defaults to ``None`` (displacements are
+            given as vectors in Cartesian space).
         threshold (float):
             If the distance between a pair of matched sites is larger than
             this, then a warning will be thrown. Default is 2.0 Å.
@@ -97,7 +97,7 @@ def calc_site_displacements(
         disp_dict["Displacement wrt defect"] = []
     if vector_to_project_on is not None:
         disp_dict["Displacement projected along vector"] = []
-        disp_dict["Displacement perpendicular to vector"] = []
+        disp_dict["Absolute displacement perpendicular to vector"] = []
 
     for i, site in enumerate(defect_sc_with_site):  # Loop over sites in defect sc
         bulk_sc_index = mappings_dict[i]  # Map to bulk sc
@@ -140,7 +140,7 @@ def calc_site_displacements(
                 angle = np.arccos(proj / np.linalg.norm(disp))
                 rejection = np.linalg.norm(disp) * np.sin(angle)
                 disp_dict["Displacement projected along vector"].append(proj)
-                disp_dict["Displacement perpendicular to vector"].append(rejection)
+                disp_dict["Absolute displacement perpendicular to vector"].append(rejection)
 
     # sort each list in disp dict by index of species in bulk element list, then by distance to defect:
     element_list = _get_element_list(defect_entry)
@@ -183,9 +183,9 @@ def calc_site_displacements(
 
 def plot_site_displacements(
     defect_entry: DefectEntry,
+    relative_to_defect: bool = True,
     separated_by_direction: bool = False,
     relaxed_distances: bool = False,
-    relative_to_defect: bool = False,
     vector_to_project_on: list | None = None,
     use_plotly: bool = False,
     ax: mpl.axes.Axes | None = None,
@@ -200,55 +200,57 @@ def plot_site_displacements(
 
     The plot mode depends on the combination of options:
 
-    - Default: Single-panel absolute displacement vs. distance to defect.
+    - ``relative_to_defect=True`` (default): Single-panel signed displacement
+      along the defect -> atom direction (negative = towards defect).
 
-    - ``relative_to_defect=True``: Single-panel signed displacement along
-      the defect -> atom direction (negative = towards defect).
+    - ``relative_to_defect=False``: Single-panel absolute displacement vs.
+      distance to defect.
 
     - ``vector_to_project_on=[x,y,z]``: 2-panel plot showing displacement
-      parallel and perpendicular to the given vector.
+      parallel and (absolute displacement) perpendicular to the given vector.
 
-    - ``separated_by_direction=True``: 3-panel plot showing the ``|x|``,
-      ``|y|``, ``|z|`` displacement components separately.
+    - ``separated_by_direction=True``: 3-panel plot showing the ``x``, ``y``,
+    ``z`` displacement components separately.
 
-    ``separated_by_direction``, ``relative_to_defect``, and
-    ``vector_to_project_on`` are mutually exclusive.
+    ``separated_by_direction`` and ``vector_to_project_on`` are mutually
+    exclusive, and if either is set then ``relative_to_defect`` is set to
+    ``False``.
 
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
+        relative_to_defect (bool):
+            Whether to plot the signed displacements along the line from the
+            (relaxed) defect site to that atom. Negative values indicate the
+            atom moves towards the defect (compressive strain), positive values
+            indicate the atom moves away from the defect (tensile strain).
+            Default is ``True``.
         separated_by_direction (bool):
-            Whether to plot site displacements separated into ``|x|``,
-            ``|y|``, ``|z|`` components (3-panel figure). Default is ``False``.
+            Whether to plot site displacements separated into ``x``, ``y``,
+            ``z`` components (3-panel figure). Default is ``False``.
         relaxed_distances (bool):
             Whether to use the atomic positions in the `relaxed` defect
             supercell for ``'Distance to defect'``,
             ``'Vector to site from defect'`` and ``'Displacement wrt defect'``
             values (``True``), or unrelaxed positions (i.e. the bulk structure
             positions)(``False``). Defaults to ``False``.
-        relative_to_defect (bool):
-            Whether to plot the signed displacements along the line from the
-            (relaxed) defect site to that atom. Negative values indicate the
-            atom moves towards the defect (compressive strain), positive values
-            indicate the atom moves away from the defect (tensile strain).
-            Default is ``False``.
         vector_to_project_on (list):
             Direction to project the site displacements along
             (e.g. ``[0, 0, 1]``). Produces a 2-panel figure showing
-            displacement parallel and perpendicular to the given vector.
-            Defaults to ``None`` (i.e. don't project displacements).
+            displacement parallel and (absolute displacement) perpendicular to
+            the given vector. Defaults to ``None`` (i.e. don't project
+            displacements).
         use_plotly (bool):
             Whether to use ``plotly`` for plotting. Default is ``False`` (i.e.
             use ``matplotlib`` for plotting). Set to ``True`` to get an
             interactive plot.
         ax (matplotlib.axes.Axes or sequence of matplotlib.axes.Axes):
             Optional ``matplotlib`` ``Axes`` to plot on. If ``None``, a new
-            figure and axes are created. For single-panel modes (default or
-            ``relative_to_defect``), provide a single ``Axes``. For
-            multi-panel modes, provide a matching sequence of ``Axes``: 2
-            axes for ``vector_to_project_on``, 3 axes for
-            ``separated_by_direction``. A ``ValueError`` is raised if the
-            wrong number of axes is supplied. Only used w/``use_plotly=False``.
-            Default is ``None``.
+            figure and axes are created. For single-panel modes (default),
+            provide a single ``Axes``. For multi-panel modes, provide a
+            matching sequence of ``Axes``: 2 axes for ``vector_to_project_on``,
+            3 axes for ``separated_by_direction``. A ``ValueError`` is raised
+            if the wrong number of axes is supplied. Only used with
+            ``use_plotly=False``. Default is ``None``.
         fig (plotly.graph_objects.Figure):
             Optional ``plotly`` ``Figure`` to add traces to. If ``None``, a
             new figure is created (including the required subplot layout and
@@ -264,6 +266,8 @@ def plot_site_displacements(
     Returns:
         ``plotly`` or ``matplotlib`` ``Figure``.
     """
+    # Note: Remember to update docstring/function signature in DefectEntry.plot_site_displacements if
+    # updating here!
 
     def _mpl_plot_total_disp(
         disp_type_key,
@@ -366,15 +370,13 @@ def plot_site_displacements(
         return _fig
 
     # Check user didn't set both relative_to_defect and vector_to_project_on
-    if (separated_by_direction and (relative_to_defect or vector_to_project_on is not None)) or (
-        relative_to_defect and vector_to_project_on is not None
-    ):
+    if separated_by_direction and vector_to_project_on is not None:
         raise ValueError(
-            "Cannot separate by direction and also plot relative displacements or displacements "
-            "projected along a vector. Please only set one of these three options (e.g. to plot "
-            "displacements relative to defect, rerun with relative_to_defect=True, "
-            "separated_by_direction=False and vector_to_project_on=None)"
+            "Cannot separate by direction (``separated_by_direction=True``) and also plot displacements "
+            "projected along a vector (``vector_to_project_on=[x,y,z]``). "
         )
+    if relative_to_defect and (separated_by_direction or vector_to_project_on is not None):
+        relative_to_defect = False
 
     disp_df = calc_site_displacements(
         defect_entry=defect_entry,
@@ -400,7 +402,7 @@ def plot_site_displacements(
                     cols=2,
                     subplot_titles=(
                         f"Parallel {tuple(vector_to_project_on)}",
-                        f"Perpendicular {tuple(vector_to_project_on)}",
+                        f"|Perpendicular {tuple(vector_to_project_on)}|",
                     ),
                     shared_xaxes=True,
                     shared_yaxes=True,
@@ -415,13 +417,13 @@ def plot_site_displacements(
                 hover_ylabel="Parallel displacement",
             )
             fig = _plotly_plot_total_disp(
-                disp_type_key="Displacement perpendicular to vector",
+                disp_type_key="Absolute displacement perpendicular to vector",
                 ylabel="Displacement (\u212b)",
                 disp_df=disp_df,
                 fig=fig,
                 row=1,
                 col=2,
-                hover_ylabel="Perpendicular displacement",
+                hover_ylabel="|Perpendicular displacement|",
                 showlegend=False,  # don't duplicate legend
             )
             fig.update_layout(
@@ -436,13 +438,17 @@ def plot_site_displacements(
                 fig=fig,
             )
 
-        else:  # separated by direction
-            # Add |x|, |y|, |z| columns for _plotly_plot_total_disp
+        else:  # separated by direction; Add x,y,z columns for _plotly_plot_total_disp
+            signed = True  # could make this an option if demand for it, but for the (expected) rare use
+            # case the user can do this manually easily
+            left_paren = "(" if signed else "|"
+            right_paren = ")" if signed else "|"
             disp_df = disp_df.assign(
                 **{
-                    "Displacement |x|": [abs(v[0]) for v in disp_df["Displacement vector"]],
-                    "Displacement |y|": [abs(v[1]) for v in disp_df["Displacement vector"]],
-                    "Displacement |z|": [abs(v[2]) for v in disp_df["Displacement vector"]],
+                    f"Displacement {left_paren}{direction}{right_paren}": [
+                        v[index] if signed else abs(v[index]) for v in disp_df["Displacement vector"]
+                    ]
+                    for index, direction in enumerate(["x", "y", "z"])
                 }
             )
             titles = ("x", "y", "z")
@@ -456,14 +462,14 @@ def plot_site_displacements(
                 )
             for col_index, (disp_key, direction) in enumerate(
                 [
-                    ("Displacement |x|", "x"),
-                    ("Displacement |y|", "y"),
-                    ("Displacement |z|", "z"),
+                    (f"Displacement {left_paren}x{right_paren}", "x"),
+                    (f"Displacement {left_paren}y{right_paren}", "y"),
+                    (f"Displacement {left_paren}z{right_paren}", "z"),
                 ]
             ):
                 fig = _plotly_plot_total_disp(
                     disp_type_key=disp_key,
-                    ylabel="Absolute displacement (\u212b)",
+                    ylabel="Displacement (\u212b)" if signed else "Absolute displacement (\u212b)",
                     disp_df=disp_df,
                     fig=fig,
                     row=1,
@@ -471,10 +477,6 @@ def plot_site_displacements(
                     hover_ylabel=f"|{direction}| displacement",
                     showlegend=(col_index == 0),
                 )
-            fig.update_layout(
-                xaxis_title="Distance to defect (\u212b)",
-                yaxis_title="Absolute displacement (\u212b)",
-            )
     else:
         element_list = _get_element_list(defect_entry)
 
@@ -530,10 +532,13 @@ def plot_site_displacements(
                     )
                 for index, i, title in zip(
                     [0, 1],
-                    ["Displacement projected along vector", "Displacement perpendicular to vector"],
+                    [
+                        "Displacement projected along vector",
+                        "Absolute displacement perpendicular to vector",
+                    ],
                     [
                         f"Parallel {tuple(vector_to_project_on)}",
-                        f"Perpendicular {tuple(vector_to_project_on)}",
+                        f"|Perpendicular {tuple(vector_to_project_on)}|",
                     ],
                     strict=False,
                 ):
@@ -564,10 +569,13 @@ def plot_site_displacements(
                         sharey=True,
                         sharex=True,
                     )
+                # could make ``signed`` an option if demand for it, but for the (expected) rare use case
+                # the user can do this manually easily by default:
+                signed = True
                 for index, title in enumerate(["x", "y", "z"]):
                     ax[index].scatter(
                         disp_df["Distance to defect"],
-                        [abs(j[index]) for j in disp_df["Displacement vector"]],
+                        [v[index] if signed else abs(v[index]) for v in disp_df["Displacement vector"]],
                         c=disp_df["Species"].map(color_dict),
                         alpha=0.4,
                         edgecolor="none",
@@ -579,7 +587,6 @@ def plot_site_displacements(
             ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
             patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
             ax[0].legend(handles=patches)  # Add legend with species manually
-
     return fig
 
 

@@ -5,7 +5,9 @@ Tests for the `doped.utils.displacements` module.
 import unittest
 
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objects as go
 import pytest
 from test_utils import STYLE, custom_mpl_image_compare, data_dir
 
@@ -14,6 +16,7 @@ from doped.utils.displacements import (
     calc_displacements_ellipsoid,
     calc_site_displacements,
     plot_displacements_ellipsoid,
+    plot_site_displacements,
 )
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
@@ -121,7 +124,9 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                     disp_df["Displacement projected along vector"].iloc[index], disp_paral, atol=1e-3
                 )
                 assert np.isclose(
-                    disp_df["Displacement perpendicular to vector"].iloc[index], disp_perp, atol=1e-2
+                    disp_df["Absolute displacement perpendicular to vector"].iloc[index],
+                    disp_perp,
+                    atol=1e-2,
                 )
 
             # Substitution:
@@ -146,12 +151,19 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             defect_entry.plot_site_displacements(
                 separated_by_direction=True, vector_to_project_on=[0, 0, 1]
             )
-        # Same but if user sets separated_by_direction and relative_to_defect
-        with pytest.raises(ValueError):
-            defect_entry.plot_site_displacements(separated_by_direction=True, relative_to_defect=True)
-        # Same but if user sets vector_to_project_on and relative_to_defect
-        with pytest.raises(ValueError):
-            defect_entry.plot_site_displacements(vector_to_project_on=[0, 0, 1], relative_to_defect=True)
+        # test now fine if user sets separated_by_direction and relative_to_defect (latter ignored):
+        defect_entry.plot_site_displacements(separated_by_direction=True, relative_to_defect=True)
+        # test now fine if user sets vector_to_project_on and relative_to_defect (latter ignored):
+        defect_entry.plot_site_displacements(vector_to_project_on=[0, 0, 1], relative_to_defect=True)
+
+        # wrong-length ax sequences should raise ValueError:
+        _, (ax1, ax2) = plt.subplots(1, 2)
+        with pytest.raises(ValueError):  # separated_by_direction needs 3 axes, not 2
+            defect_entry.plot_site_displacements(separated_by_direction=True, ax=[ax1, ax2])
+        _, ax1 = plt.subplots(1, 1)
+        with pytest.raises(ValueError):  # vector_to_project_on needs 2 axes, not 1
+            defect_entry.plot_site_displacements(vector_to_project_on=[0, 0, 1], ax=[ax1])
+        plt.close("all")
 
     def test_calc_displacements_ellipsoid(self):
         # Vacancy:
@@ -230,18 +242,19 @@ class DefectDisplacementsTestCase(unittest.TestCase):
                     == ellipsoid_radii[0] / ellipsoid_radii[2]
                 )
 
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot.png", style=STYLE)
+    def test_plot_site_displacements(self):
+        return self.v_Cd_0_defect_entry.plot_site_displacements(use_plotly=False)
+
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot_total_disp.png", style=STYLE)
+    def test_plot_site_displacements_total_disp(self):  # Vacancy, total displacement
+        return self.v_Cd_0_defect_entry.plot_site_displacements(use_plotly=False, relative_to_defect=False)
+
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot.png", style=STYLE)
     def test_plot_site_displacements_proj(self):
         # Vacancy, displacement separated by direction:
         return self.v_Cd_0_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False
-        )
-
-    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot.png", style=STYLE)
-    def test_plot_site_displacements(self):
-        # Vacancy, total displacement
-        return self.v_Cd_0_defect_entry.plot_site_displacements(
-            separated_by_direction=False, use_plotly=False
         )
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_proj_plot_relaxed_dists.png", style=STYLE)
@@ -258,12 +271,34 @@ class DefectDisplacementsTestCase(unittest.TestCase):
             separated_by_direction=False, use_plotly=False, relaxed_distances=True
         )
 
-    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png", style=STYLE)
-    def test_plot_site_displacements_ytos(self):
-        # Interstitial, total displacement
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_plot_relaxed_dists.png", style=STYLE)
+    def test_plot_site_displacements_relaxed_dists_relative_to_defect(self):
+        return self.v_Cd_0_defect_entry.plot_site_displacements(
+            separated_by_direction=False, use_plotly=False, relaxed_distances=True, relative_to_defect=True
+        )
+
+    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements_separated.png", style=STYLE)
+    def test_plot_site_displacements_ytos(self):  # Interstitial, total displacement
         return self.F_i_m1_defect_entry.plot_site_displacements(
             separated_by_direction=True, use_plotly=False
         )
+
+    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png", style=STYLE)
+    def test_plot_site_displacements_ytos_relative_to_defect(self):
+        return self.F_i_m1_defect_entry.plot_site_displacements(
+            use_plotly=False, relative_to_defect=True  # default
+        )
+
+    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements_total_disp.png", style=STYLE)
+    def test_plot_site_displacements_ytos_relative_to_defect_total_disp(self):
+        return self.F_i_m1_defect_entry.plot_site_displacements(
+            use_plotly=False, relative_to_defect=False  # total displacements
+        )
+
+    @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements_along_111.png", style=STYLE)
+    def test_plot_site_displacements_ytos_vector_to_project_on(self):
+        # test using direct function here:
+        return plot_site_displacements(self.F_i_m1_defect_entry, vector_to_project_on=[1, 1, 1])
 
     @custom_mpl_image_compare(filename="v_Cd_0_disp_ellipsoid_plot.png", style=STYLE)
     def test_plot_displacements_ellipsoid_ellipsoid(self):
@@ -292,3 +327,69 @@ class DefectDisplacementsTestCase(unittest.TestCase):
         return plot_displacements_ellipsoid(
             self.F_i_m1_defect_entry, plot_ellipsoid=False, plot_anisotropy=True
         )
+
+    @custom_mpl_image_compare(filename="v_Cd_0_and_m1_disp_on_provided_axes.png", style=STYLE)
+    def test_plot_site_displacements_provided_ax(self):
+        """
+        Test that ``plot_site_displacements`` plots onto a user-provided
+        ``ax``, enabling side-by-side comparison of two defect entries on a
+        single figure.
+        """
+        styled_fig_size = plt.rcParams["figure.figsize"]
+        fig, axes = plt.subplots(1, 2, figsize=(2 * styled_fig_size[0], styled_fig_size[1]), sharey=True)
+
+        self.v_Cd_0_defect_entry.plot_site_displacements(
+            separated_by_direction=False, use_plotly=False, ax=axes[0], style_file=STYLE
+        )
+        self.v_Cd_m1_defect_entry.plot_site_displacements(
+            separated_by_direction=False, use_plotly=False, ax=axes[1], style_file=STYLE
+        )
+        axes[0].set_title("V$_{Cd}^{0}$")
+        axes[1].set_title("V$_{Cd}^{-1}$")
+        fig.subplots_adjust(wspace=0.15)
+        return fig
+
+    @custom_mpl_image_compare(filename="v_Cd_0_disp_vector_to_project_on.png", style=STYLE)
+    def test_plot_site_displacements_vector_to_project_on(self):
+        """
+        Test ``plot_site_displacements`` with ``vector_to_project_on``, which
+        produces a 2-panel mpl figure (parallel + perpendicular).
+        """
+        return self.v_Cd_0_defect_entry.plot_site_displacements(
+            vector_to_project_on=[0, 0, 1], style_file=STYLE
+        )
+
+    def test_plot_site_displacements_provided_plotly_fig(self):
+        """
+        Test that ``plot_site_displacements`` adds traces to a user-provided
+        plotly ``fig``, for each plot mode.
+        """
+        from plotly.subplots import make_subplots
+
+        # single panel: one trace per species (Cd, Te)
+        existing_fig = go.Figure()
+        result = self.v_Cd_0_defect_entry.plot_site_displacements(use_plotly=True, fig=existing_fig)
+        assert result is existing_fig
+        assert len(result.data) == 2  # one trace per species
+        assert len({t.xaxis for t in result.data}) == 1  # all on the same (single) panel
+
+        # separated_by_direction: 3 scatter traces (one per axis, no legend) + 2 legend-only traces
+        multi_fig = make_subplots(rows=1, cols=3, shared_xaxes=True, shared_yaxes=True)
+        result2 = self.v_Cd_0_defect_entry.plot_site_displacements(
+            use_plotly=True, separated_by_direction=True, fig=multi_fig
+        )
+        assert result2 is multi_fig
+        assert len(result2.data) == 6  # 2x species (Cd, Te) for each x/y/z subplot
+        scatter_xaxes = {t.xaxis for t in result2.data}
+        assert scatter_xaxes == {"x", "x2", "x3"}  # one scatter per subplot
+        scatter_xaxes_no_showlegend = {t.xaxis for t in result2.data if not t.showlegend}
+        assert scatter_xaxes_no_showlegend == {"x2", "x3"}  # showlegend False for extra axes
+
+        # vector_to_project_on: 2 species x 2 panels (parallel + perpendicular)
+        vtp_fig = make_subplots(rows=1, cols=2, shared_xaxes=True, shared_yaxes=True)
+        result3 = self.v_Cd_0_defect_entry.plot_site_displacements(
+            use_plotly=True, vector_to_project_on=[0, 0, 1], fig=vtp_fig
+        )
+        assert result3 is vtp_fig
+        assert len(result3.data) == 4  # 2 species x 2 panels
+        assert {t.xaxis for t in result3.data} == {"x", "x2"}  # one set per panel
