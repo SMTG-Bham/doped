@@ -189,7 +189,7 @@ def plot_site_displacements(
     vector_to_project_on: list | None = None,
     use_plotly: bool = False,
     ax: mpl.axes.Axes | None = None,
-    fig: "go.Figure | None" = None,
+    fig: go.Figure | None = None,
     style_file: PathLike | None = None,
 ):
     """
@@ -198,11 +198,27 @@ def plot_site_displacements(
     Set ``use_plotly = True`` to get an interactive ``plotly`` plot, useful for
     analysis!
 
+    The plot mode depends on the combination of options:
+
+    - Default: Single-panel absolute displacement vs. distance to defect.
+
+    - ``relative_to_defect=True``: Single-panel signed displacement along
+      the defect -> atom direction (negative = towards defect).
+
+    - ``vector_to_project_on=[x,y,z]``: 2-panel plot showing displacement
+      parallel and perpendicular to the given vector.
+
+    - ``separated_by_direction=True``: 3-panel plot showing the ``|x|``,
+      ``|y|``, ``|z|`` displacement components separately.
+
+    ``separated_by_direction``, ``relative_to_defect``, and
+    ``vector_to_project_on`` are mutually exclusive.
+
     Args:
         defect_entry (DefectEntry): ``DefectEntry`` object.
         separated_by_direction (bool):
-            Whether to plot site displacements separated by direction
-            (x, y, z). Default is ``False``.
+            Whether to plot site displacements separated into ``|x|``,
+            ``|y|``, ``|z|`` components (3-panel figure). Default is ``False``.
         relaxed_distances (bool):
             Whether to use the atomic positions in the `relaxed` defect
             supercell for ``'Distance to defect'``,
@@ -215,34 +231,35 @@ def plot_site_displacements(
             atom moves towards the defect (compressive strain), positive values
             indicate the atom moves away from the defect (tensile strain).
             Default is ``False``.
-        vector_to_project_on (bool):
-            Direction to project the site displacements along (e.g. [0, 0, 1]).
-            Also plots displacements perpendicular to the projection vector.
-            Defaults to ``None`` (e.g. the displacements are calculated in the
-            cartesian basis x, y, z).
+        vector_to_project_on (list):
+            Direction to project the site displacements along
+            (e.g. ``[0, 0, 1]``). Produces a 2-panel figure showing
+            displacement parallel and perpendicular to the given vector.
+            Defaults to ``None`` (i.e. don't project displacements).
         use_plotly (bool):
-            Whether to use ``plotly`` for plotting. Default is ``False``.
-            Set to ``True`` to get an interactive plot.
-        ax (matplotlib.axes.Axes or list of matplotlib.axes.Axes):
+            Whether to use ``plotly`` for plotting. Default is ``False`` (i.e.
+            use ``matplotlib`` for plotting). Set to ``True`` to get an
+            interactive plot.
+        ax (matplotlib.axes.Axes or sequence of matplotlib.axes.Axes):
             Optional ``matplotlib`` ``Axes`` to plot on. If ``None``, a new
-            figure and axes are created. For single-panel plots (default,
-            ``relative_to_defect``, or ``vector_to_project_on`` in plotly),
-            provide a single ``Axes``. For multi-panel plots, provide a
-            sequence of axes matching the number of panels (2 for
-            ``vector_to_project_on``, 3 for ``separated_by_direction``).
+            figure and axes are created. For single-panel modes (default or
+            ``relative_to_defect``), provide a single ``Axes``. For
+            multi-panel modes, provide a matching sequence of ``Axes``: 2
+            axes for ``vector_to_project_on``, 3 axes for
+            ``separated_by_direction``. A ``ValueError`` is raised if the
+            wrong number of axes is supplied. Only used w/``use_plotly=False``.
             Default is ``None``.
         fig (plotly.graph_objects.Figure):
             Optional ``plotly`` ``Figure`` to add traces to. If ``None``, a
-            new figure is created. For multi-panel plotly plots
-            (``vector_to_project_on`` → 2 subplots,
-            ``separated_by_direction=True`` → 3 subplots), the provided
-            figure should already have the corresponding number of subplots
-            set up (e.g. via
-            ``plotly.subplots.make_subplots(rows=1, cols=2)``).
+            new figure is created (including the required subplot layout and
+            titles for multi-panel modes). When supplying an existing figure
+            for multi-panel modes, it must already have the correct number of
+            subplots configured (2 for ``vector_to_project_on``, 3 for
+            ``separated_by_direction``). Only used w/``use_plotly=True``.
             Default is ``None``.
         style_file (PathLike):
-            Path to ``matplotlib`` style file. if not set, will use the
-            ``doped`` default displacements style.
+            Path to a ``matplotlib`` style file. If not set, uses the ``doped``
+            default displacement plotting style.
 
     Returns:
         ``plotly`` or ``matplotlib`` ``Figure``.

@@ -29,6 +29,8 @@ from doped.utils.efficiency import (
 )
 
 if TYPE_CHECKING:
+    import matplotlib as mpl
+    import plotly.graph_objects as go
     from matplotlib.pyplot import Figure
 
     from doped import suppress_logging
@@ -1546,6 +1548,8 @@ class DefectEntry(thermo.DefectEntry):
         relative_to_defect: bool = False,
         vector_to_project_on: list | None = None,
         use_plotly: bool = False,
+        ax: "mpl.axes.Axes | None" = None,
+        fig: "go.Figure | None" = None,
         style_file: PathLike | None = "",
     ):
         """
@@ -1555,11 +1559,26 @@ class DefectEntry(thermo.DefectEntry):
         Set ``use_plotly = True`` to get an interactive ``plotly`` plot, useful
         for analysis!
 
+        The plot mode depends on the combination of options:
+
+        - Default: Single-panel absolute displacement vs. distance to defect.
+
+        - ``relative_to_defect=True``: Single-panel signed displacement along
+          the defect -> atom direction (negative = towards defect).
+
+        - ``vector_to_project_on=[x,y,z]``: 2-panel plot showing displacement
+          parallel and perpendicular to the given vector.
+
+        - ``separated_by_direction=True``: 3-panel plot showing the ``|x|``,
+          ``|y|``, ``|z|`` displacement components separately.
+
+        ``separated_by_direction``, ``relative_to_defect``, and
+        ``vector_to_project_on`` are mutually exclusive.
+
         Args:
             separated_by_direction (bool):
-                Whether to plot the site displacements separated by the
-                x, y and z directions (True) or all together (False).
-                Defaults to False.
+                Whether to plot site displacements separated into ``|x|``,
+            ``|y|``, ``|z|`` components (3-panel figure). Default is ``False``.
             relaxed_distances (bool):
                 Whether to use the atomic positions in the `relaxed` defect
                 supercell for ``'Distance to defect'``,
@@ -1573,17 +1592,35 @@ class DefectEntry(thermo.DefectEntry):
                 moves towards the defect (compressive strain), positive values
                 indicate the atom moves away from the defect (tensile strain).
                 Uses the *relaxed* defect position as reference.
-            vector_to_project_on:
+            vector_to_project_on (list):
                 Direction to project the site displacements along
-                (e.g. [0, 0, 1]). Defaults to ``None`` (displacements are given
-                as vectors in Cartesian space).
+                (e.g. ``[0, 0, 1]``). Produces a 2-panel figure showing
+                displacement parallel and perpendicular to the given vector.
+                Defaults to ``None`` (i.e. don't project displacements).
             use_plotly (bool):
-                Whether to use ``plotly`` (``True``) or ``matplotlib``
-                (``False``; default). Set to ``True`` to get an interactive
-                plot.
+                Whether to use ``plotly`` for plotting. Default is ``False``
+                (i.e. use ``matplotlib`` for plotting). Set to ``True`` to get
+                an interactive plot.
+            ax (matplotlib.axes.Axes or sequence of matplotlib.axes.Axes):
+                Optional ``matplotlib`` ``Axes`` to plot on. If ``None``, a new
+                figure and axes are created. For single-panel modes (default or
+                ``relative_to_defect``), provide a single ``Axes``. For
+                multi-panel modes, provide a matching sequence of ``Axes``: 2
+                axes for ``vector_to_project_on``, 3 axes for
+                ``separated_by_direction``. A ``ValueError`` is raised if the
+                wrong number of axes is supplied. Only used with
+                ``use_plotly=False``. Default is ``None``.
+            fig (plotly.graph_objects.Figure):
+                Optional ``plotly`` ``Figure`` to add traces to. If ``None``, a
+                new figure is created (including the required subplot layout
+                and titles for multi-panel modes). When supplying an existing
+                figure for multi-panel modes, it must already have the correct
+                number of subplots configured (2 for ``vector_to_project_on``,
+                3 for ``separated_by_direction``). Only used with
+                ``use_plotly=True``. Default is ``None``.
             style_file (PathLike):
-                Path to a ``matplotlib`` style file to use for the plot. If
-                ``None`` (default), uses the default ``doped`` style file.
+                Path to a ``matplotlib`` style file. If not set, uses the
+                ``doped`` default displacement plotting style.
         """
         from doped.utils.displacements import plot_site_displacements
 
@@ -1594,6 +1631,8 @@ class DefectEntry(thermo.DefectEntry):
             relative_to_defect=relative_to_defect,
             vector_to_project_on=vector_to_project_on,
             use_plotly=use_plotly,
+            ax=ax,
+            fig=fig,
             style_file=style_file,
         )
 
