@@ -26,7 +26,7 @@ from doped.utils.parsing import (
 from doped.utils.symmetry import _round_floats
 
 try:
-    import plotly.express as px
+    import plotly.colors as pc
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
@@ -67,8 +67,9 @@ def calc_site_displacements(
             the ``Displacement wrt defect`` key of the returned dictionary.
         vector_to_project_on (list):
             Direction to project the site displacements along (e.g. [0, 0, 1]).
-            Defaults to ``None`` (displacements are given as vectors in
-            Cartesian space).
+            If given, also calculates displacements perpendicular to the
+            projection vector. Defaults to ``None`` (displacements are given as
+            vectors in Cartesian space).
         threshold (float):
             If the distance between a pair of matched sites is larger than
             this, then a warning will be thrown. Default is 2.0 Å.
@@ -187,6 +188,8 @@ def plot_site_displacements(
     relative_to_defect: bool = False,
     vector_to_project_on: list | None = None,
     use_plotly: bool = False,
+    ax: mpl.axes.Axes | None = None,
+    fig: "go.Figure | None" = None,
     style_file: PathLike | None = None,
 ):
     """
@@ -214,11 +217,29 @@ def plot_site_displacements(
             Default is ``False``.
         vector_to_project_on (bool):
             Direction to project the site displacements along (e.g. [0, 0, 1]).
+            Also plots displacements perpendicular to the projection vector.
             Defaults to ``None`` (e.g. the displacements are calculated in the
             cartesian basis x, y, z).
         use_plotly (bool):
             Whether to use ``plotly`` for plotting. Default is ``False``.
             Set to ``True`` to get an interactive plot.
+        ax (matplotlib.axes.Axes or list of matplotlib.axes.Axes):
+            Optional ``matplotlib`` ``Axes`` to plot on. If ``None``, a new
+            figure and axes are created. For single-panel plots (default,
+            ``relative_to_defect``, or ``vector_to_project_on`` in plotly),
+            provide a single ``Axes``. For multi-panel plots, provide a
+            sequence of axes matching the number of panels (2 for
+            ``vector_to_project_on``, 3 for ``separated_by_direction``).
+            Default is ``None``.
+        fig (plotly.graph_objects.Figure):
+            Optional ``plotly`` ``Figure`` to add traces to. If ``None``, a
+            new figure is created. For multi-panel plotly plots
+            (``vector_to_project_on`` → 2 subplots,
+            ``separated_by_direction=True`` → 3 subplots), the provided
+            figure should already have the corresponding number of subplots
+            set up (e.g. via
+            ``plotly.subplots.make_subplots(rows=1, cols=2)``).
+            Default is ``None``.
         style_file (PathLike):
             Path to ``matplotlib`` style file. if not set, will use the
             ``doped`` default displacements style.
@@ -234,6 +255,7 @@ def plot_site_displacements(
         color_dict,
         styled_fig_size,
         styled_font_size,
+        ax=None,
     ):
         """
         Function to plot absolute/total displacement.
@@ -244,7 +266,11 @@ def plot_site_displacements(
         or the displacement projected along a specified direction
         (``disp_type_key="Displacement projected along vector"``).
         """
-        fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
+        if ax is not None:
+            _fig = ax.get_figure()
+        else:
+            _fig, ax = plt.subplots(figsize=(styled_fig_size[0], styled_fig_size[1]))
+
         y_data = disp_df[disp_type_key]
         ax.scatter(
             disp_df["Distance to defect"],
@@ -261,43 +287,70 @@ def plot_site_displacements(
         if disp_type_key in ("Displacement wrt defect", "Displacement projected along vector"):
             # Add horizontal line at 0
             ax.axhline(0, color="grey", alpha=0.3, linestyle="--")
-        return fig
+        return _fig
 
     def _plotly_plot_total_disp(
         disp_type_key,
         ylabel,
         disp_df,
+        fig=None,
+        row=None,
+        col=None,
+        hover_ylabel="Absolute displacement",
+        showlegend=None,
     ):
+        _fig = fig if fig is not None else go.Figure()
+        _hovertemplate = (
+            f"Distance to defect: %{{x:.2f}} Å<br>"
+            f"{hover_ylabel}: %{{y:.2f}} Å<br>"
+            "Species: %{z}<extra></extra>"
+        )
         y_data = disp_df[disp_type_key]
-        fig = px.scatter(
-            x=disp_df["Distance to defect"],
-            y=y_data,
-            hover_data={
-                "Distance to defect": disp_df["Distance to defect"],
-                "Absolute displacement": y_data,
-                "Species_with_index": [
-                    f"{species} ({disp_df['Index (defect supercell)'][i]})"
-                    for i, species in enumerate(disp_df["Species"])
-                ],
-            },
-            color=disp_df["Species"],
-            # trendline="ols"
-        )
-        # Round x and y in hover data
-        fig.update_traces(
-            hovertemplate=hovertemplate.replace("{x", "{customdata[0]")
-            .replace("{y", "{customdata[1]")
-            .replace("{z", "{customdata[2]")
-        )
-        # Add axis labels
-        fig.update_layout(xaxis_title="Distance to defect (\u212B)", yaxis_title=f"{ylabel} (\u212B)")
-        return fig
+        unique_species = list(dict.fromkeys(disp_df["Species"]))  # preserve insertion order
+        color_dict = dict(zip(unique_species, pc.qualitative.Plotly[: len(unique_species)], strict=False))
+        species_with_index = [
+            f"{species} ({disp_df['Index (defect supercell)'][i]})"
+            for i, species in enumerate(disp_df["Species"])
+        ]
+        add_trace_kwargs = {} if row is None else {"row": row, "col": col}
+        for species in unique_species:
+            mask = disp_df["Species"] == species
+            _fig.add_trace(
+                go.Scatter(
+                    x=disp_df.loc[mask, "Distance to defect"],
+                    y=y_data[mask],
+                    mode="markers",
+                    marker={"color": color_dict[species], "opacity": 0.8},
+                    name=species,
+                    customdata=np.column_stack(
+                        [
+                            disp_df.loc[mask, "Distance to defect"].to_numpy(),
+                            y_data[mask].to_numpy(),
+                            [species_with_index[i] for i, m in enumerate(mask) if m],
+                        ]
+                    ),
+                    hovertemplate=_hovertemplate.replace("{x", "{customdata[0]")
+                    .replace("{y", "{customdata[1]")
+                    .replace("{z", "{customdata[2]"),
+                    legendgroup=species,
+                    showlegend=showlegend,
+                ),
+                **add_trace_kwargs,
+            )
+        layout_updates = {
+            "xaxis_title": "Distance to defect (\u212b)",
+            "yaxis_title": ylabel,
+        }
+        # Also update additional subplot axes when present (e.g. 1x2 or 1x3 layouts)
+        for axis_num in (2, 3):
+            if f"xaxis{axis_num}" in _fig.layout:
+                layout_updates[f"xaxis{axis_num}_title"] = "Distance to defect (\u212b)"
+        _fig.update_layout(**layout_updates)
+        return _fig
 
     # Check user didn't set both relative_to_defect and vector_to_project_on
-    if (
-        separated_by_direction
-        and (relative_to_defect or vector_to_project_on is not None)
-        or (relative_to_defect and vector_to_project_on is not None)
+    if (separated_by_direction and (relative_to_defect or vector_to_project_on is not None)) or (
+        relative_to_defect and vector_to_project_on is not None
     ):
         raise ValueError(
             "Cannot separate by direction and also plot relative displacements or displacements "
@@ -316,68 +369,94 @@ def plot_site_displacements(
         warnings.warn("Plotly not installed, using matplotlib instead")
         use_plotly = False
     if use_plotly:
-        hovertemplate = "Distance to defect: %{x:.2f}<br>Absolute displacement: %{y:.2f}<br>Species: %{z}"
         if relative_to_defect:
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement wrt defect",
-                ylabel="Displacement wrt defect",  # Angstrom symbol added in function
+                ylabel="Displacement wrt defect (\u212b)",
                 disp_df=disp_df,
+                fig=fig,
             )
         elif vector_to_project_on:
+            if fig is None:
+                fig = make_subplots(
+                    rows=1,
+                    cols=2,
+                    subplot_titles=(
+                        f"Parallel {tuple(vector_to_project_on)}",
+                        f"Perpendicular {tuple(vector_to_project_on)}",
+                    ),
+                    shared_xaxes=True,
+                    shared_yaxes=True,
+                )
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement projected along vector",
-                ylabel=f"Disp. along vector {tuple(vector_to_project_on)}",
+                ylabel="Displacement (\u212b)",
                 disp_df=disp_df,
+                fig=fig,
+                row=1,
+                col=1,
+                hover_ylabel="Parallel displacement",
             )
+            fig = _plotly_plot_total_disp(
+                disp_type_key="Displacement perpendicular to vector",
+                ylabel="Displacement (\u212b)",
+                disp_df=disp_df,
+                fig=fig,
+                row=1,
+                col=2,
+                hover_ylabel="Perpendicular displacement",
+                showlegend=False,  # don't duplicate legend
+            )
+            fig.update_layout(
+                xaxis_title="Distance to defect (\u212b)", yaxis_title="Displacement (\u212b)"
+            )
+
         elif not separated_by_direction:  # total displacement
             fig = _plotly_plot_total_disp(
                 disp_type_key="Displacement",
-                ylabel="Absolute displacement",
+                ylabel="Absolute displacement (\u212b)",
                 disp_df=disp_df,
+                fig=fig,
             )
+
         else:  # separated by direction
-            fig = make_subplots(
-                rows=1, cols=3, subplot_titles=("x", "y", "z"), shared_xaxes=True, shared_yaxes=True
+            # Add |x|, |y|, |z| columns for _plotly_plot_total_disp
+            disp_df = disp_df.assign(
+                **{
+                    "Displacement |x|": [abs(v[0]) for v in disp_df["Displacement vector"]],
+                    "Displacement |y|": [abs(v[1]) for v in disp_df["Displacement vector"]],
+                    "Displacement |z|": [abs(v[2]) for v in disp_df["Displacement vector"]],
+                }
             )
-            unique_species = list(set(disp_df["Species"]))
-            color_dict = dict(
-                zip(unique_species, px.colors.qualitative.Plotly[: len(unique_species)], strict=False)
-            )
-            for dir_index, _direction in enumerate(["x", "y", "z"]):
-                fig.add_trace(
-                    go.Scatter(
-                        x=disp_df["Distance to defect"],
-                        y=[abs(i[dir_index]) for i in disp_df["Displacement vector"]],
-                        hovertemplate=hovertemplate.replace("{z", "{text"),
-                        text=[
-                            f"{species} ({disp_df['Index (defect supercell)'][i]})"
-                            for i, species in enumerate(disp_df["Species"])
-                        ],
-                        marker={"color": disp_df["Species"].map(color_dict)},
-                        mode="markers",
-                        showlegend=False,
-                    ),  # Only scatter plot, no line
-                    row=1,
-                    col=dir_index + 1,
+            titles = ("x", "y", "z")
+            if fig is None:
+                fig = make_subplots(
+                    rows=1,
+                    cols=3,
+                    subplot_titles=titles,
+                    shared_xaxes=True,
+                    shared_yaxes=True,
                 )
-            # Add legend for color used for each species
-            for specie, color in color_dict.items():
-                fig.add_trace(
-                    go.Scatter(
-                        x=[None],
-                        y=[None],
-                        mode="markers",
-                        marker={"color": color},
-                        showlegend=True,
-                        legendgroup="1",
-                        name=specie,
-                    ),
+            for col_index, (disp_key, direction) in enumerate(
+                [
+                    ("Displacement |x|", "x"),
+                    ("Displacement |y|", "y"),
+                    ("Displacement |z|", "z"),
+                ]
+            ):
+                fig = _plotly_plot_total_disp(
+                    disp_type_key=disp_key,
+                    ylabel="Absolute displacement (\u212b)",
+                    disp_df=disp_df,
+                    fig=fig,
                     row=1,
-                    col=1,
+                    col=col_index + 1,
+                    hover_ylabel=f"|{direction}| displacement",
+                    showlegend=(col_index == 0),
                 )
-            # Add axis labels
             fig.update_layout(
-                xaxis_title="Distance to defect (\u212B)", yaxis_title="Absolute displacement (\u212B)"
+                xaxis_title="Distance to defect (\u212b)",
+                yaxis_title="Absolute displacement (\u212b)",
             )
     else:
         element_list = _get_element_list(defect_entry)
@@ -404,6 +483,7 @@ def plot_site_displacements(
                     color_dict=color_dict,
                     styled_fig_size=styled_fig_size,
                     styled_font_size=styled_font_size,
+                    ax=ax,
                 )
             if not (vector_to_project_on or separated_by_direction):
                 return _mpl_plot_total_disp(
@@ -413,15 +493,24 @@ def plot_site_displacements(
                     color_dict=color_dict,
                     styled_fig_size=styled_fig_size,
                     styled_font_size=styled_font_size,
+                    ax=ax,
                 )
             if vector_to_project_on:
-                fig, ax = plt.subplots(
-                    1,
-                    2,
-                    sharey=True,
-                    sharex=True,
-                    figsize=(1.5 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (9.5, 4),
-                )
+                if ax is not None:
+                    if len(ax) != 2:
+                        raise ValueError(
+                            f"For ``vector_to_project_on`` plots, ``ax`` must be a sequence of 2 "
+                            f"``Axes``, but got {len(ax)}."
+                        )
+                    fig = ax[0].get_figure()
+                else:
+                    fig, ax = plt.subplots(
+                        1,
+                        2,
+                        sharey=True,
+                        sharex=True,
+                        figsize=(1.5 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (9.5, 4),
+                    )
                 for index, i, title in zip(
                     [0, 1],
                     ["Displacement projected along vector", "Displacement perpendicular to vector"],
@@ -443,13 +532,21 @@ def plot_site_displacements(
                 ax[0].set_ylabel("Displacements ($\\AA$)", fontsize=styled_font_size)
 
             else:  # else separated by direction
-                fig, ax = plt.subplots(
-                    1,
-                    3,
-                    figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
-                    sharey=True,
-                    sharex=True,
-                )
+                if ax is not None:
+                    if len(ax) != 3:
+                        raise ValueError(
+                            f"For ``separated_by_direction`` plots, ``ax`` must be a sequence of 3 "
+                            f"``Axes``, but got {len(ax)}."
+                        )
+                    fig = ax[0].get_figure()
+                else:
+                    fig, ax = plt.subplots(
+                        1,
+                        3,
+                        figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
+                        sharey=True,
+                        sharex=True,
+                    )
                 for index, title in enumerate(["x", "y", "z"]):
                     ax[index].scatter(
                         disp_df["Distance to defect"],
