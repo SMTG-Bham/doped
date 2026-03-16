@@ -5,15 +5,25 @@ Tests for the ``doped.utils.stenciling`` module.
 import os
 import unittest
 import warnings
+from copy import deepcopy
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 import numpy as np
 from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.core.structure import PeriodicSite
-from test_utils import EXAMPLE_DIR, _potcars_available, _print_warning_info
+from test_utils import (
+    EXAMPLE_DIR,
+    STYLE,
+    _potcars_available,
+    _print_warning_info,
+    custom_mpl_image_compare,
+)
 
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.displacements import plot_site_displacements
 
 # use doped efficiency functions for speed in structure-matching testing
 from doped.utils.efficiency import (
@@ -21,20 +31,19 @@ from doped.utils.efficiency import (
     StructureMatcher_scan_stol,
     get_element_min_max_bond_length_dict,
 )
-from doped.utils.parsing import get_defect_type_and_composition_diff
+from doped.utils.parsing import check_atom_mapping_far_from_defect, get_defect_type_and_composition_diff
 from doped.utils.stenciling import get_defect_in_supercell
 from doped.utils.supercells import min_dist
 
+mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
+
+_DISP_STYLE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "../doped/utils/displacement.mplstyle"
+)
+
 # TODO: Decide optimal dist tol factor choices
-# TODO: Add / run some quick energy tests (e.g. Madelung); or some invariant test?
-# TODO (for Claude)
-# I would also like to add tests which use the doped site displacements plotting functions
-# (doped/utils/displacements.py), to plot the 'displacements' of the stenciled supercell relative to the
-# corresponding bulk supercell, which should give some nice visual demonstrations of the expected
-# behaviour and would make for good testing. See the test files for test_displacements.py and
-# test_plotting.py for how I like to do the matplotlib plot tests.
+# TODO: Add / run some quick energy tests (e.g. Madelung, from split-vac code); or some invariant test?
 # TODO: After stenciling test updates; redo pytest split timings
-# TODO: Do one of the Se extrinsic substitutions/interstitials as a test too
 # TODO: Useful test case could be trying to stencil split vacancies in new supercells...
 
 
@@ -47,7 +56,73 @@ def _get_sorted_nn_distances(structure, frac_coords, n_neighbours=12):
     atoms in the structure (accounting for PBC).
     """
     all_dists = structure.lattice.get_all_distances(structure.frac_coords, [frac_coords]).ravel()
-    return np.sort(all_dists)[:n_neighbours]
+    # exclude zero distances (for interstitial/substitution defects)
+    return np.sort(all_dists[all_dists > 1e-2])[:n_neighbours]
+
+
+def _plot_stenciled_vs_original_displacements(stenciled_entry: DefectEntry, original_entry: DefectEntry):
+    """
+    Create a 1x2 figure comparing site displacements of a stenciled defect
+    supercell (left) against the original DFT defect entry (right).
+    """
+    with plt.style.context(_DISP_STYLE):
+        styled_fig_size = plt.rcParams["figure.figsize"]
+        styled_font_size = plt.rcParams["font.size"]
+        fig, axes = plt.subplots(
+            1, 2, figsize=(2 * styled_fig_size[0], styled_fig_size[1]), sharey=True, sharex=False
+        )
+        for ax, entry, title in zip(
+            axes, [stenciled_entry, original_entry], ["Stenciled", "Original DFT"], strict=False
+        ):
+            plot_site_displacements(entry, ax=ax, style_file=_DISP_STYLE)
+            ax.set_title(title, fontsize=styled_font_size)
+        axes[1].set_ylabel("")
+        axes[1].get_legend().remove()
+        fig.subplots_adjust(wspace=0.15)
+    return fig
+
+
+def _make_stenciled_defect_entry(
+    defect_entry: DefectEntry, stenciled_supercell: Structure, corresponding_bulk: Structure
+) -> DefectEntry:
+    """
+    Create a copy of ``defect_entry`` with its ``defect_supercell`` and
+    ``bulk_supercell`` replaced by the stenciled structures, for use with
+    displacement plotting functions.
+
+    Args:
+        defect_entry (DefectEntry):
+            Original ``DefectEntry`` (with DFT structures).
+        stenciled_supercell (Structure):
+            Stenciled defect supercell from ``get_defect_in_supercell``.
+        corresponding_bulk (Structure):
+            Corresponding bulk supercell from ``get_defect_in_supercell``.
+
+    Returns:
+        A deepcopy of ``defect_entry`` with updated supercell structures and
+        defect site fractional coordinates.
+    """
+    stenciled_entry = deepcopy(defect_entry)
+    stenciled_entry.defect_supercell = stenciled_supercell
+    stenciled_entry.bulk_supercell = corresponding_bulk
+    (
+        defect_site,
+        _defect_type,
+        defect_site_in_bulk,
+        _defect_site_index,
+        bulk_site_index,
+        _unrelaxed_defect_structure,
+    ) = defect_site_from_structures(corresponding_bulk, stenciled_supercell, return_all_info=True)
+    stenciled_entry.defect_supercell_site = defect_site
+    stenciled_entry.sc_defect_frac_coords = defect_site.frac_coords
+    # pop any previously-calculated site displacement data:
+    stenciled_entry.calculation_metadata.pop("site_displacements", None)
+    stenciled_entry.calculation_metadata["bulk_site"] = (
+        defect_site_in_bulk
+        if bulk_site_index is None  # interstitial
+        else corresponding_bulk[bulk_site_index]
+    )
+    return stenciled_entry
 
 
 def _validate_stenciled_supercell(
@@ -104,26 +179,28 @@ def _validate_stenciled_supercell(
     # 3. Min bond length preservation: stenciled min dist >= original * tolerance
     stenciled_min_dist = min_dist(stenciled_supercell)
     orig_defect_min_dist = min_dist(orig_supercell)
-    assert stenciled_min_dist >= min(orig_defect_min_dist, bulk_min_dist_tol), (
+    assert stenciled_min_dist >= min(orig_defect_min_dist, bulk_min_dist_tol) * 0.999, (
         f"Stenciled min dist ({stenciled_min_dist:.3f} Å) < original "
         f"({orig_defect_min_dist:.3f} Å) and bulk min dist tol "
         f"({bulk_min_bond_length:.3f} Å * {min_dist_tol_factor})"
-    )
+    )  # we multiply min by 0.999 to account for small numerical differences
 
-    # 4. No unreasonably short bonds (< 80% of bulk min bond length)
-    assert stenciled_min_dist > bulk_min_bond_length * 0.8, (
-        f"Stenciled supercell has unreasonably short bond "
-        f"({stenciled_min_dist:.3f} Å < 80% of bulk min "
-        f"{bulk_min_bond_length:.3f} Å)"
+    stenciled_defect_site = defect_site_from_structures(corresponding_bulk, stenciled_supercell)
+    assert isinstance(stenciled_defect_site, PeriodicSite)  # typing
+    stenciled_defect_frac_coords = stenciled_defect_site.frac_coords
+
+    # 4. Check atom displacements vs corresponding_bulk, away from defect site:
+    assert check_atom_mapping_far_from_defect(
+        bulk_supercell=corresponding_bulk,
+        defect_supercell=stenciled_supercell,
+        defect_coords=stenciled_defect_frac_coords,
+        displacement_tol=0.25,  # less than 0.25 Å displacement from bulk site, outside of defect WZ region
     )
 
     # 5. Defect nearest-neighbour distances preserved:
     # Find the actual defect position in the stenciled supercell by comparing with the corresponding
     # bulk supercell:
     orig_nn_dists = _get_sorted_nn_distances(orig_supercell, orig_defect_frac_coords)
-    stenciled_defect_site = defect_site_from_structures(stenciled_supercell, corresponding_bulk)
-    assert isinstance(stenciled_defect_site, PeriodicSite)  # typing
-    stenciled_defect_frac_coords = stenciled_defect_site.frac_coords
     stenciled_nn_dists = _get_sorted_nn_distances(stenciled_supercell, stenciled_defect_frac_coords)
     # The first few NN (=12 by default here) distances from the defect site should be preserved,
     # as this local geometry should be effectively fixed (assuming sufficiently large target supercell)
@@ -156,18 +233,34 @@ def _validate_stenciled_supercell(
 
 
 class DefectStencilingTest(unittest.TestCase):
-    def setUp(self):
+    @classmethod
+    def setUpClass(cls):
         # don't run heavy tests on GH Actions, these are run locally
-        self.heavy_tests = bool(_potcars_available())
-        self.Se_example_dir = os.path.join(EXAMPLE_DIR, "Se")
-        self.Se_20A_bulk_supercell = Structure.from_file(f"{self.Se_example_dir}/Se_20Å_Supercell_POSCAR")
-        self.Se_222_expanded_supercell = Structure.from_file(
-            f"{self.Se_example_dir}/Se_222_Expanded_Supercell_POSCAR"
+        cls.heavy_tests = bool(_potcars_available())
+        cls.Se_example_dir = os.path.join(EXAMPLE_DIR, "Se")
+        cls.Se_20A_bulk_supercell = Structure.from_file(f"{cls.Se_example_dir}/Se_20Å_Supercell_POSCAR")
+        cls.Se_222_expanded_supercell = Structure.from_file(
+            f"{cls.Se_example_dir}/Se_222_Expanded_Supercell_POSCAR"
         )
-        self.Se_intrinsic_thermo = DefectThermodynamics.from_json(
-            f"{self.Se_example_dir}/Se_Intrinsic_Thermo.json.gz"
+        cls.Se_intrinsic_thermo = DefectThermodynamics.from_json(
+            f"{cls.Se_example_dir}/Se_Intrinsic_Thermo.json.gz"
         )
-        self.Se_old_new_names_dict = {"vac_1_Se": "v_Se", "Int_Se_1": "Se_i_C2"}
+        cls.Se_extrinsic_thermo = DefectThermodynamics.from_json(
+            f"{cls.Se_example_dir}/Se_Amalgamated_Extrinsic_Thermo.json.gz"
+        )
+        cls.Se_old_new_names_dict = {
+            "vac_1_Se": "v_Se",
+            "Int_Se_1": "Se_i_C2",
+            "sub_1_H_on_Se": "H_Se",
+            "inter_1_F": "F_i_C2",
+        }
+        for thermo in [cls.Se_intrinsic_thermo, cls.Se_extrinsic_thermo]:
+            for old_name in list(thermo.defect_entries.keys()):
+                name = old_name
+                for key, val in cls.Se_old_new_names_dict.items():
+                    name = name.replace(key, val)
+                thermo.defect_entries[name] = thermo.defect_entries.pop(old_name)
+
         # TODO: Test "Generated structure has a minimum interatomic" warnings
 
     def test_Se_20_A_supercell(self):
@@ -187,10 +280,9 @@ class DefectStencilingTest(unittest.TestCase):
         Se_20A_test_supercells = [i for i in os.listdir(self.Se_example_dir) if "20Å_Stenciled" in i]
 
         previous_bulk = None
-        for old_name, defect_entry in self.Se_intrinsic_thermo.defect_entries.items():
-            name = old_name
-            for key, val in self.Se_old_new_names_dict.items():
-                name = name.replace(key, val)
+        for name, defect_entry in (
+            self.Se_intrinsic_thermo.defect_entries | self.Se_extrinsic_thermo.defect_entries
+        ).items():
             if name in [i.split("_20Å")[0] for i in Se_20A_test_supercells]:
                 print(f"Testing {name}")
                 with warnings.catch_warnings(record=True) as w:
@@ -248,10 +340,9 @@ class DefectStencilingTest(unittest.TestCase):
         ]
 
         previous_bulk = None
-        for old_name, defect_entry in self.Se_intrinsic_thermo.defect_entries.items():
-            name = old_name
-            for key, val in self.Se_old_new_names_dict.items():
-                name = name.replace(key, val)
+        for name, defect_entry in (
+            self.Se_intrinsic_thermo.defect_entries | self.Se_extrinsic_thermo.defect_entries
+        ).items():
             if name in [i.split("_222")[0] for i in Se_222_exp_test_supercells]:
                 print(f"Testing {name}")
                 with warnings.catch_warnings(record=True) as w:
@@ -296,3 +387,54 @@ class DefectStencilingTest(unittest.TestCase):
                         stenciled_elt_min_max_bond_length_dict[elt],
                         atol=1e-3,
                     )
+
+    @custom_mpl_image_compare(filename="Se_v_Se_0_stenciled_vs_original_displacements.png", style=STYLE)
+    def test_stenciling_displacement_plot_v_Se_0_20A(self):
+        """
+        Test 1x2 displacement comparison plot for ``v_Se_0`` stenciled to 20Å
+        supercell.
+
+        Left panel: site displacements of the stenciled defect supercell
+        relative to the corresponding bulk. Right panel: original DFT defect
+        entry displacements.
+        The two panels should show very similar patterns, validating the
+        stenciling algorithm.
+        """
+        defect_entry = self.Se_intrinsic_thermo.defect_entries.get("v_Se_0")
+        stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+            defect_entry, self.Se_20A_bulk_supercell
+        )
+        stenciled_entry = _make_stenciled_defect_entry(
+            defect_entry, stenciled_supercell, corresponding_bulk
+        )
+        return _plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
+
+    @custom_mpl_image_compare(filename="Se_i_C2_0_stenciled_vs_original_displacements.png", style=STYLE)
+    def test_stenciling_displacement_plot_Se_i_C2_0_20A(self):
+        """
+        Test 1x2 displacement comparison plot for ``Se_i_C2_0`` stenciled to
+        20Å supercell.
+        """
+        defect_entry = self.Se_intrinsic_thermo.defect_entries.get("Se_i_C2_0")
+        stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+            defect_entry, self.Se_20A_bulk_supercell
+        )
+        stenciled_entry = _make_stenciled_defect_entry(
+            defect_entry, stenciled_supercell, corresponding_bulk
+        )
+        return _plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
+
+    @custom_mpl_image_compare(filename="H_Se_-1_stenciled_vs_original_displacements.png", style=STYLE)
+    def test_stenciling_displacement_plot_H_Se_m1_20A(self):
+        """
+        Test 1x2 displacement comparison plot for ``H_Se_-1`` stenciled to 20Å
+        supercell.
+        """
+        defect_entry = self.Se_extrinsic_thermo.defect_entries.get("H_Se_-1")
+        stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+            defect_entry, self.Se_20A_bulk_supercell
+        )
+        stenciled_entry = _make_stenciled_defect_entry(
+            defect_entry, stenciled_supercell, corresponding_bulk
+        )
+        return _plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)

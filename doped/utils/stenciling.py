@@ -35,6 +35,7 @@ from doped.utils.symmetry import (
     apply_symm_op_to_site,
     apply_symm_op_to_struct,
     get_clean_structure,
+    get_distance_matrix,
     get_sga,
     translate_structure,
 )
@@ -240,9 +241,11 @@ def get_defect_in_supercell(
         # calculations)
         # first reduce to only closest atoms to centre for both target and super-supercells, to avoid
         # exorbitant comp costs with site-matching enormous supercells
+        # TODO: Update to scan over radii here, as some choices give matches and some don't
+        # TODO: Update notes about bulk cells
         fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
             target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-            r=min(15, get_wigner_seitz_radius(target_supercell)),
+            r=min(12.0, 0.8 * get_wigner_seitz_radius(target_supercell)),
         )
         fake_target_supercell_in_big_supercell_lattice = Structure(
             big_bulk_supercell.lattice,
@@ -253,13 +256,13 @@ def get_defect_in_supercell(
         fake_big_supercell = Structure.from_sites(
             big_bulk_supercell.get_sites_in_sphere(
                 big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                r=min(15, get_wigner_seitz_radius(target_supercell)),
+                r=min(15.0, get_wigner_seitz_radius(target_supercell)),
             )
         )
         trans_to_match_target = get_transformation_from_s2_to_s1(
             fake_target_supercell_in_big_supercell_lattice,
             fake_big_supercell,
-            allow_subset=True,  # s2 has much less atoms than s1 here!
+            allow_subset=True,  # allow subset to match, likely different number of atoms here
         )
         oriented_big_bulk_supercell = _orient_to_match_target(
             big_bulk_supercell, fake_target_supercell_in_big_supercell_lattice, trans_to_match_target
@@ -267,7 +270,6 @@ def get_defect_in_supercell(
         oriented_big_defect_supercell = _orient_to_match_target(
             big_defect_supercell, fake_target_supercell_in_big_supercell_lattice, trans_to_match_target
         )
-
         pbar.update(20)  # 20% of progress bar
         pbar.set_description("Getting sites in border region")
 
@@ -644,9 +646,7 @@ def stencil_target_cell_from_big_cell(
                             def_new_supercell_sites_to_check + idx_combo_sites_in_target
                         )
                         frac_coords = [site.frac_coords for site in fake_candidate_struct_sites]
-                        distance_matrix = target_supercell.lattice.get_all_distances(
-                            frac_coords, frac_coords
-                        )
+                        distance_matrix = get_distance_matrix(frac_coords, target_supercell.lattice)
                         sorted_distances = np.sort(distance_matrix.flatten())
                         min_interatomic_distances_tuple_combo_dict[
                             tuple(sorted_distances[len(frac_coords) : len(frac_coords) + 10])
@@ -687,7 +687,6 @@ def stencil_target_cell_from_big_cell(
                 coords_are_cartesian=True,
                 to_unit_cell=True,
             )
-            new_supercell.to(filename=f"{edge_tol}_new_supercell_POSCAR")
             # raise RuntimeError and dynamically increase edge_tol if resulting min_dist too small:
             # use a looser tolerance here (95% of min_dist_tol) to avoid spurious failures when the
             # defect-bulk boundary inherently produces slightly shorter bonds; we do a final check with the
