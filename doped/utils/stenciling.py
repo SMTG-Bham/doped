@@ -51,6 +51,7 @@ def get_defect_in_supercell(
     edge_tol_range: float | range | list | np.ndarray | None = None,
     min_dist_tol_factor_range: float | range | list | np.ndarray | None = None,
     min_dist_warning_tol_factor: float = 0.9,
+    orientation_template_radii_range: float | range | list | np.ndarray | None = None,
 ) -> tuple[Structure, Structure]:
     """
     Re-generate a (relaxed) defect structure in a (arbitrarily) different
@@ -186,6 +187,16 @@ def get_defect_in_supercell(
             near the edge of the stenciled defect supercell is less than this
             threshold, a warning is issued. Default is 0.9 (i.e. 90% of the
             ``bulk_min_bond_length``).
+        orientation_template_radii_range (float | range | list | np.ndarray | None):
+            A range or list of scale factors (relative to the Wigner-Seitz
+            radius of ``target_supercell``) to scan over when constructing the
+            template sub-structures of ``target_supercell`` and the bulk
+            super-supercell used for pre-stenciling orientation matching (to
+            try ensure matching supercell atomic bases (i.e. tiling of
+            primitive cells in the supercells) in the output stenciled cells
+            with ``target_supercell``). Default is ``None``, in which case the
+            default test range of ``[0.8, 1.0, 0.6, 0.4, 1.2]`` is used. It is
+            expected that this parameter should rarely be required to tune.
 
     Returns:
         tuple[Structure, Structure]:
@@ -250,39 +261,60 @@ def get_defect_in_supercell(
             struct2_pool=trans_orig_bulk_supercell * superset_matrix,
         )
 
-        # try to pre-emptively reorient the big supercell to match the orientation of target_supercell (to
-        # try avoid output stenciled supercells with different tiling, requiring additional bulk supercell
-        # calculations)
-        # first reduce to only closest atoms to centre for both target and super-supercells, to avoid
-        # exorbitant comp costs with site-matching enormous supercells
-        # TODO: Update to scan over radii here, as some choices give matches and some don't
-        fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
-            target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-            r=min(12.0, 0.8 * get_wigner_seitz_radius(target_supercell)),
+        # now we try to pre-emptively reorient the big supercell to match the orientation of
+        # target_supercell (to try avoid output stenciled supercells with different tiling, requiring
+        # additional bulk supercell calculations).
+        # First, we reduce to only atoms closest to the centre for both target and super-supercells, to
+        # greatly reduce comp costs with site-matching enormous supercells; for this, we scan over possible
+        # radii for the sampling sphere as some choices give matches (transformations) and some fail:
+        orientation_template_radii_range = _ensure_list(
+            orientation_template_radii_range
+            if orientation_template_radii_range is not None
+            else [0.8, 1.0, 0.6, 0.4, 1.2]  # scale factors of get_wigner_seitz_radius(target_supercell)
         )
-        fake_target_supercell_in_big_supercell_lattice = Structure(
-            big_bulk_supercell.lattice,
-            [site.species for site in fake_target_supercell_sites],
-            [site.coords for site in fake_target_supercell_sites],
-            coords_are_cartesian=True,
-        )
-        fake_big_supercell = Structure.from_sites(
-            big_bulk_supercell.get_sites_in_sphere(
-                big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
-                r=min(15.0, get_wigner_seitz_radius(target_supercell)),
+        assert isinstance(orientation_template_radii_range, list | np.ndarray)  # typing
+        wsr_target = get_wigner_seitz_radius(target_supercell)
+        trans_to_match_target = None
+        fake_target_supercell_w_big_supercell_lattice = None
+        for r_factor in orientation_template_radii_range:
+            fake_target_supercell_sites = target_supercell.get_sites_in_sphere(
+                target_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
+                r=r_factor * wsr_target,
             )
-        )
-        trans_to_match_target = get_transformation_from_s2_to_s1(
-            fake_target_supercell_in_big_supercell_lattice,
-            fake_big_supercell,
-            allow_subset=True,  # allow subset to match, likely different number of atoms here
-        )
-        oriented_big_bulk_supercell = _orient_to_match_target(
-            big_bulk_supercell, fake_target_supercell_in_big_supercell_lattice, trans_to_match_target
-        )
-        oriented_big_defect_supercell = _orient_to_match_target(
-            big_defect_supercell, fake_target_supercell_in_big_supercell_lattice, trans_to_match_target
-        )
+            if not fake_target_supercell_sites:
+                continue
+            fake_target_supercell_w_big_supercell_lattice = Structure(
+                big_bulk_supercell.lattice,
+                [site.species for site in fake_target_supercell_sites],
+                [site.coords for site in fake_target_supercell_sites],
+                coords_are_cartesian=True,
+            )
+            fake_big_supercell = Structure.from_sites(
+                big_bulk_supercell.get_sites_in_sphere(
+                    big_bulk_supercell.lattice.get_cartesian_coords([0.5, 0.5, 0.5]),
+                    r=r_factor * wsr_target / 0.8,  # slightly larger r for fake big supercell
+                )
+            )
+            trans_to_match_target = get_transformation_from_s2_to_s1(
+                fake_target_supercell_w_big_supercell_lattice,
+                fake_big_supercell,
+                allow_subset=True,  # allow subset to match, likely different number of atoms here
+                max_stol=0.1,
+            )
+            if trans_to_match_target is not None:
+                break
+
+        if trans_to_match_target is not None:
+            oriented_big_bulk_supercell = _orient_to_match_target(
+                big_bulk_supercell, fake_target_supercell_w_big_supercell_lattice, trans_to_match_target
+            )
+            oriented_big_defect_supercell = _orient_to_match_target(
+                big_defect_supercell, fake_target_supercell_w_big_supercell_lattice, trans_to_match_target
+            )
+        else:
+            oriented_big_bulk_supercell = big_bulk_supercell
+            oriented_big_defect_supercell = big_defect_supercell
+
         pbar.update(20)  # 20% of progress bar
         pbar.set_description("Getting sites in border region")
 

@@ -389,6 +389,54 @@ class DefectStencilingTest(unittest.TestCase):
                     check_exact_bulk_match=True,  # we now get tiling match with latest stenciling code
                 )
 
+    def test_orientation_template_radii_range(self):
+        """
+        Test the usage of ``orientation_template_radii_range`` input to
+        ``get_defect_in_supercell``, scanning over sphere-radius scale factors
+        for the pre-orientational matching step.
+        """
+        defect_entry = self.Se_intrinsic_thermo.defect_entries.get("v_Se_0")
+
+        # With a very tiny radius, no atoms are found -> no transformation found -> fallback to using
+        # the unoriented big super-supercell -> for the Se 20Å case, this triggers bulk mismatch warning
+        with warnings.catch_warnings(record=True) as w:
+            stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+                defect_entry, self.Se_20A_bulk_supercell, orientation_template_radii_range=[0.01]
+            )
+        _print_warning_info(w)
+        assert any(
+            "Note that the atomic position basis of the generated defect/bulk supercell differs"
+            in str(warning.message)
+            for warning in w
+        )
+        # Stenciled supercell is still physically valid, just with a different atomic position basis:
+        _validate_stenciled_supercell(
+            stenciled_supercell,
+            defect_entry,
+            self.Se_20A_bulk_supercell,
+            corresponding_bulk,
+            check_exact_bulk_match=False,  # different basis expected here
+        )
+
+        # Scanning over radii (0.01 finds no atoms -> no match, 0.8 finds match) avoids the warning:
+        with warnings.catch_warnings(record=True) as w:
+            stenciled_supercell, corresponding_bulk = get_defect_in_supercell(
+                defect_entry, self.Se_20A_bulk_supercell, orientation_template_radii_range=[0.01, 0.8]
+            )
+        _print_warning_info(w)
+        assert not any(
+            "Note that the atomic position basis of the generated defect/bulk supercell differs"
+            in str(warning.message)
+            for warning in w
+        )
+        _validate_stenciled_supercell(
+            stenciled_supercell,
+            defect_entry,
+            self.Se_20A_bulk_supercell,
+            corresponding_bulk,
+            check_exact_bulk_match=True,
+        )
+
     def test_Se_222_expanded_supercell(self):
         """
         Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
