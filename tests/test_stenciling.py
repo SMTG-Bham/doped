@@ -10,6 +10,7 @@ from copy import deepcopy
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.core.structure import PeriodicSite
 from test_utils import (
@@ -43,6 +44,7 @@ _DISP_STYLE = os.path.join(
 
 # TODO: Decide optimal dist tol factor choices
 # TODO: After stenciling test updates; redo pytest split timings
+# TODO: Tutorial notebook with stenciling examples
 # Note: If we needed more tests, useful test cases could be to stencil split vacancies
 # Note: If we wanted more invariant / noise-tolerant tests, could implement some energy-based tests (e.g.
 # Madelung energies)
@@ -304,10 +306,10 @@ class DefectStencilingTest(unittest.TestCase):
                 # these warnings), but updated pre-stenciling re-orientation of
                 # ``(oriented_)big_{bulk,defect}_supercell`` now returns tile-matching supercells
 
-                assert any(
+                assert not any(
                     "Generated structure has a minimum interatomic" in str(warning.message)
                     for warning in w
-                ) == ("Se_i_C2_-2" in name)
+                )
 
                 # invariant validation tests:
                 _validate_stenciled_supercell(
@@ -334,6 +336,58 @@ class DefectStencilingTest(unittest.TestCase):
                     f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR"
                 )
                 assert StructureMatcher_scan_stol(reference_struct, expanded_defect_supercell, "fit")
+
+    def test_edge_tol_min_dist_tol_ranges_and_warning_factor(self):
+        """
+        Test the usage of ``edge_tol_range`` and ``min_dist_tol_range`` inputs
+        to ``get_defect_in_supercell`` for Se defects stenciled to the same 20Å
+        supercell.
+
+        234-atom supercell was generated from
+        ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
+        """
+        for name, defect_entry in (
+            self.Se_intrinsic_thermo.defect_entries | self.Se_extrinsic_thermo.defect_entries
+        ).items():
+            if name == "Se_i_C2_-2":
+                with pytest.raises(ValueError) as exc:
+                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+                        defect_entry, self.Se_20A_bulk_supercell, edge_tol_range=0.001
+                    )
+                assert "Amounts in Composition cannot be negative!" in str(exc.value)
+
+                with pytest.raises(RuntimeError) as exc:
+                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+                        defect_entry, self.Se_20A_bulk_supercell, min_dist_tol_factor_range=0.99
+                    )
+                assert (
+                    "Minimum interatomic distance (2.09 \u212b) near the edge (within 3.80 \u212b) of "
+                    "the target cell is less than the minimum distance tolerance (2.34 \u212b), "
+                    "indicating a fatal issue with the stenciling process. Aborting" in str(exc.value)
+                )
+                # the successful stenciling of this defect entry is tested in ``test_Se_20_A_supercell``
+
+                with warnings.catch_warnings(record=True) as w:
+                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
+                        defect_entry, self.Se_20A_bulk_supercell, min_dist_warning_tol_factor=0.99
+                    )
+                _print_warning_info(w)
+                assert any(
+                    "Note that the generated stenciled structure has a minimum interatomic distance of "
+                    "2.13 Å near the cell edge (within 2.36 Å), smaller than the warning threshold (0.99 "
+                    "of the bulk minimum interatomic distance (2.36 Å) = 2.34 Å). Some remnant "
+                    "structural noise is of course expected when stenciling with relatively small "
+                    "original/target supercells, so consider if this is reasonable for your system!"
+                    in str(warning.message)
+                    for warning in w
+                )
+                _validate_stenciled_supercell(
+                    expanded_defect_supercell,
+                    defect_entry,
+                    self.Se_20A_bulk_supercell,
+                    corresponding_bulk,
+                    check_exact_bulk_match=True,  # we now get tiling match with latest stenciling code
+                )
 
     def test_Se_222_expanded_supercell(self):
         """
@@ -362,10 +416,10 @@ class DefectStencilingTest(unittest.TestCase):
                     )
                 _print_warning_info(w)
                 assert not any("Note that the atomic position" in str(warning.message) for warning in w)
-                assert any(
+                assert not any(
                     "Generated structure has a minimum interatomic" in str(warning.message)
                     for warning in w
-                ) == ("Se_i_C2_-2" in name)
+                )
 
                 # invariant validation tests:
                 _validate_stenciled_supercell(

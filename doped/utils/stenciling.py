@@ -563,14 +563,12 @@ def stencil_target_cell_from_big_cell(
     Returns:
         Structure: The stenciled supercell structure.
     """
-    if edge_tol_range is None:
-        edge_tol_range = np.arange(0.2, 4, 0.2)
-    if min_dist_tol_factor_range is None:
-        min_dist_tol_factor_range = np.arange(0.95, 0.5, -0.05)
-    edge_tol_range = _ensure_list(edge_tol_range)
-    min_dist_tol_factor_range = _ensure_list(min_dist_tol_factor_range)
-    assert isinstance(edge_tol_range, list)
-    assert isinstance(min_dist_tol_factor_range, list)
+    edge_tol_range = _ensure_list(edge_tol_range if edge_tol_range is not None else np.arange(0.2, 4, 0.2))
+    min_dist_tol_factor_range = _ensure_list(
+        min_dist_tol_factor_range if min_dist_tol_factor_range is not None else np.arange(0.95, 0.5, -0.05)
+    )
+    assert isinstance(edge_tol_range, list | np.ndarray)
+    assert isinstance(min_dist_tol_factor_range, list | np.ndarray)
 
     # first, translate sites to put the centre of big_supercell (which should have defect site at the
     # centre) to the centre of the target supercell (w/cart coords)
