@@ -962,9 +962,7 @@ def get_site_mapping_indices(
     to each other), which is mostly the case unless we have a mismatching
     defect/bulk supercell (in which case the
     ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
-    during parsing). Currently, this function is only used for analysing site
-    displacements in the ``displacements`` module so this is fine (user will
-    already have been warned at this point if there is a possible mismatch).
+    during parsing).
 
     Args:
         struct1 (Structure):
@@ -1000,8 +998,7 @@ def get_site_mapping_indices(
             returned.
     """
     ## Generate a site matching table between the input and the template
-    min_dist_with_index = []
-    all_input_fcoords = [list(site.frac_coords) for site in struct1]
+    min_dist_with_index: list[tuple] = []
     all_template_fcoords = [list(site.frac_coords) for site in struct2]
     s1_species_symbols = (
         [
@@ -1016,60 +1013,73 @@ def get_site_mapping_indices(
     for s1_species_symbol in s1_species_symbols:
         if species is not None and s1_species_symbol != species:
             continue
-        input_fcoords = [
-            list(site.frac_coords)
-            for site in struct1
+        # Build (struct1_index, fcoords) pairs for this species, preserving ``struct1`` order:
+        species_input = [
+            (i, list(site.frac_coords))
+            for i, site in enumerate(struct1)
             if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
+        input_fcoords = [fc for _, fc in species_input]
         template_fcoords = [
             list(site.frac_coords)
             for site in struct2
             if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
 
-        dmat = struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
-        for index, coords in enumerate(all_input_fcoords):
-            if coords in input_fcoords:
-                dists = dmat[input_fcoords.index(coords)]
-                if not dists.size:
+        dmat = (
+            struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
+            if template_fcoords
+            else None
+        )
+
+        if not allow_duplicates and dmat is not None:
+            # Use linear assignment for order-independent optimal matching.
+            # get_linear_assignment_solution returns (col_ind, total_cost), where col_ind[i] is the
+            # template index assigned to input row i (requires n_rows <= n_cols). For n > m, transpose
+            # the problem (assign each template to one input) and invert the mapping:
+            if len(input_fcoords) <= len(template_fcoords):
+                tmpl_col_indices, _ = get_linear_assignment_solution(dmat)
+                input_to_template = dict(enumerate(tmpl_col_indices.tolist()))
+            else:
+                input_col_indices, _ = get_linear_assignment_solution(dmat.T)
+                input_to_template = {int(input_col_indices[j]): j for j in range(len(template_fcoords))}
+        else:
+            input_to_template = None
+
+        for input_idx, (index, _) in enumerate(species_input):
+            if dmat is None:
+                min_dist_with_index.append((None, index) if dists_only else (None, index, None))
+                continue
+
+            if input_to_template is not None:
+                if input_idx not in input_to_template:
+                    # No unique template available (more inputs than templates for this species)
                     min_dist_with_index.append((None, index) if dists_only else (None, index, None))
                     continue
+                tmpl_idx = input_to_template[input_idx]
 
-                dists_argmin = dists.argmin()
-                current_dist = dists[dists_argmin]
-                template_fcoord = template_fcoords[dists_argmin]
-                template_index = None  # only compute if needed
+            else:  # allow_duplicates=True: each input independently picks its closest template
+                dists = dmat[input_idx]
+                tmpl_idx = int(dists.argmin())
 
-                if current_dist > threshold:
-                    template_index = all_template_fcoords.index(template_fcoord)
-                    site_a = struct1[index]
-                    site_b = struct2[template_index]
-                    warnings.warn(
-                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
-                        f"sites: {site_a} -> {site_b}."
-                    )
+            current_dist = float(dmat[input_idx, tmpl_idx])
+            template_fcoord = template_fcoords[tmpl_idx]
+            template_index = None  # only compute if needed
 
-                if dists_only:
-                    min_dist_with_index.append(
-                        (
-                            current_dist,
-                            index,
-                        )
-                    )
-                else:
-                    template_index = template_index or all_template_fcoords.index(template_fcoord)
-                    min_dist_with_index.append(
-                        (
-                            current_dist,
-                            index,
-                            template_index,
-                        )
-                    )
+            if current_dist > threshold:
+                template_index = all_template_fcoords.index(template_fcoord)
+                site_a = struct1[index]
+                site_b = struct2[template_index]
+                warnings.warn(
+                    f"Large site displacement {current_dist:.2f} Å detected when matching atomic sites: "
+                    f"{site_a} -> {site_b}."
+                )
 
-                if not allow_duplicates:
-                    # drop template_fcoord from template_fcoords and dmat to avoid duplicates:
-                    template_fcoord = template_fcoords.pop(dists.argmin())
-                    dmat = np.delete(dmat, dists.argmin(), axis=1)
+            if dists_only:
+                min_dist_with_index.append((current_dist, index))
+            else:
+                template_index = template_index or all_template_fcoords.index(template_fcoord)
+                min_dist_with_index.append((current_dist, index, template_index))
 
     if not min_dist_with_index:
         raise RuntimeError(
