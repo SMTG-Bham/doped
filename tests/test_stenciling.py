@@ -42,8 +42,6 @@ _DISP_STYLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "../doped/utils/displacement.mplstyle"
 )
 
-# TODO: Decide optimal dist tol factor choices
-# TODO: After stenciling test updates; redo pytest split timings
 # TODO: Tutorial notebook with stenciling examples
 # Note: If we needed more tests, useful test cases could be to stencil split vacancies
 # Note: If we wanted more invariant / noise-tolerant tests, could implement some energy-based tests (e.g.
