@@ -23,15 +23,6 @@
 - Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
 
 
-## FermiSolver
-- Per-charge outputs are currently not supported for `FermiSolver`, but are for `DefectThermodynamics`, and so only total defect concentrations are accessible. This is useful information to users in a lot of cases, so would be good to include in future. I think this is possible with `py-sc-fermi`, just needs to use the `decomposed` option with `concentration_dict`?
-- Should also allow just specifying an extrinsic element for fixed_defects, to allow the user to specify the known concentration of a dopant / over/under-stoichiometry of a given element (but with unknown relative populations of different possible defects) -- realistically the most commonly desired option (but would require a bit of refactoring from the current `py-sc-fermi` implementation). See in-code `TODO` and notes. The DefectThermodynamics JSONs in the repo for extrinsic-doped Selenium (link) would be a good test case for this.
-- In future the `fixed_defects`, `free_defects` and `fix_charge_states` options may be added to the `doped` backend (in theory very simple to add, and `doped` currently far quicker ~>10x)
-- Add per-site option like in `DefectThermodynamics`, should be quick to add (can use `per_volume=False` in `py-sc-fermi`).
-- Show example of extremum position for a defect/carrier concentration occurring at a non-limiting chemical potential (e.g. CdTe from SK thesis, V_S in Sb2S3 just about (https://pubs.acs.org/doi/10.1021/acsenergylett.4c02722)), as this is the main case where the `optimise` function is particularly powerful.
-- It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe.
-
-
 ## Housekeeping
 - Tutorials general structure clean-up
 - Remnant TODOs in code
@@ -76,10 +67,11 @@
 
 ## SK To-Do for next update:
 - `doped` repo/docs cleanup `TODO`s above, and check through code TODOs
+- It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe.
+- Show example of extremum position for a defect/carrier concentration occurring at a non-limiting chemical potential (e.g. CdTe from SK thesis, V_S in Sb2S3 just about (https://pubs.acs.org/doi/10.1021/acsenergylett.4c02722)), as this is the main case where the `optimise` function is particularly powerful.
 - Should have a general refactor from `(bulk, defect)` to `(defect, bulk)` in inputs to functions (e.g. site-matching, symmetry functions etc), as this is most intuitive and then keep consistent throughout?
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.
   - Tests for configuration coordinate diagram generation code
-- Stenciling tutorial and tests.
 - Quick-start tutorial suggested by Alex G
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - Deal with cases where "X-rich"/"X-poor" corresponds to more than one limit (pick one and warn user?)(e.g. Wenzhen Si2Sb2Te6). Can see `get_chempots` in `pmg-analysis-defects` for inspo on this.

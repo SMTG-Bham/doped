@@ -5662,12 +5662,14 @@ class FermiSolver(MSONable):
         # TODO: Allow matching of substring (e.g. "O_i" matching "O_i_C2" and "O_i_Ci") for fixed_defects
         #  and update docstrings ("...where the _total_ concentration of all defect entries whose names
         #  begin with ``defect_name`` will...") & tests accordingly, see _get_min_max_target_values
-        # TODO: Related: Should allow just specifying an element for ``fixed_defects``, to allow the
-        #  user to specify the known concentration of a dopant (or over/under-stoichiometry of an
-        #  element? (but with unknown relative populations of different possible defects) -- not possible
-        #  with current py-sc-fermi implementation, see code in _get_min_max_target_values()
+        # TODO: Should allow just specifying an (extrinsic) element for fixed_defects, to allow the user
+        #  to specify the known concentration of a dopant / over/under-stoichiometry of a given element
+        #  (but with unknown relative populations of different possible defects) -- realistically the most
+        #  commonly desired option (but would require a bit of refactoring from the current `py-sc-fermi`
+        #  implementation; see code in _get_min_max_target_values()). The DefectThermodynamics JSONs in
+        #  the repo for extrinsic-doped Selenium would be a good test case for this.
         # TODO: In future the ``fixed_defects``, ``free_defects`` and ``fix_charge_states`` options may
-        #  be added to the ``doped`` backend (in theory very simple to add)
+        #  be added to the ``doped`` backend (in theory very simple to add, and `doped` quicker)
         py_sc_fermi_required = fix_charge_states or free_defects or fixed_defects is not None
         if py_sc_fermi_required and self._DOS is None:
             self._activate_py_sc_fermi_backend(
@@ -5809,9 +5811,9 @@ class FermiSolver(MSONable):
 
     def _check_temperature_settings(
         self,
-        annealing_temperature: float | list[float] | None = None,
-        temperature: float | list[float] = 300,
-        quenched_temperature: float | list[float] = 300,
+        annealing_temperature: float | range | list[float] | np.ndarray = None,
+        temperature: float | range | list[float] | np.ndarray = 300,
+        quenched_temperature: float | range | list[float] | np.ndarray = 300,
         range=False,
     ):
         """
@@ -5898,9 +5900,9 @@ class FermiSolver(MSONable):
     #  determines parallelisation speedup and batch size based on grid size, and acts accordingly
     def scan_temperature(
         self,
-        annealing_temperature_range: float | list[float] | None = None,
-        quenched_temperature_range: float | list[float] = 300,
-        temperature_range: float | list[float] = 300,
+        annealing_temperature_range: float | range | list[float] | np.ndarray | None = None,
+        quenched_temperature_range: float | range | list[float] | np.ndarray = 300,
+        temperature_range: float | range | list[float] | np.ndarray = 300,
         chempots: dict[str, float] | None = None,
         limit: str | None = None,
         el_refs: dict[str, float] | None = None,
@@ -6140,7 +6142,7 @@ class FermiSolver(MSONable):
 
     def scan_dopant_concentration(
         self,
-        effective_dopant_concentration_range: float | list[float],
+        effective_dopant_concentration_range: float | range | list | np.ndarray,
         annealing_temperature: float | None = None,
         quenched_temperature: float = 300,
         temperature: float = 300,
