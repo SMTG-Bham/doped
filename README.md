@@ -80,6 +80,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
+- L. Zhang, M. Zhou and A. M. Ganose **_Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.16310) 2026
 - X. Wang, I. Mosquera-Lois and A. Walsh **_Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.05238) 2026
 - R. Claes, K. Li, A. G. Squires and D. O. Scanlon **_Screening ASb<sub>2</sub>O<sub>6</sub> (A = Mg, Ca, Sr, Ba, Cd) for High Performance Transparent Conducting Oxides_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-39bbf) 2026
 - S. Ling et al. **_Investigations of Defect Physics and Quenching Effect for Optimizing n-type Carrier Concentration in CuWO<sub>4</sub> Photocatalyst_** [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.5c05718) 2026
