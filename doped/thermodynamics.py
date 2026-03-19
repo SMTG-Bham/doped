@@ -4981,10 +4981,6 @@ class FermiSolver(MSONable):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable.
-            multiplicity_scaling (int):
-                Scaling factor to account for the difference in volume between
-                the defect supercells and the bulk DOS calculation cell, when
-                using the ``py-sc-fermi`` backend.
             py_sc_fermi_dos (DOS):
                 A ``py-sc-fermi`` ``DOS`` object, generated from the input
                 ``FermiDos`` object, for use with the ``py-sc-fermi`` backend.
@@ -5015,7 +5011,6 @@ class FermiSolver(MSONable):
         else:
             raise ValueError(f"Unrecognised `backend`: {backend}")
 
-        self.multiplicity_scaling = 1
         self.py_sc_fermi_dos = None
         self._DefectSystem = self._DefectSpecies = self._DefectChargeState = self._DOS = None
 
@@ -5067,7 +5062,7 @@ class FermiSolver(MSONable):
                 bandgap=self.defect_thermodynamics.band_gap,
             )
 
-        ms = (
+        ms = (  # multiplicity scaling
             next(iter(self.defect_thermodynamics.defect_entries.values())).defect.structure.volume
             / self.volume
         )
@@ -5079,9 +5074,6 @@ class FermiSolver(MSONable):
                 f"primitive unit cell. The former can cause quantitative errors of a similar relative "
                 f"magnitude in the predicted defect/carrier concentrations!"
             )
-        else:
-            ms = round(ms)
-        self.multiplicity_scaling = ms
 
     def _check_required_backend_and_error(self, required_backend: str):
         """
@@ -7771,19 +7763,24 @@ class FermiSolver(MSONable):
 
         defect_species = []  # dicts of: {"charge_states": {...}, "nsites": X, "name": label}
         for label, entry_list in self.defect_thermodynamics.all_entries.items():
-            # py-sc-fermi doesn't allow degeneracies < 1, so we set the defect multiplicity to be either
-            # the minimum multiplicity of entries in the group, or the minimum multiplicity-degeneracy
-            # product (if lower), to ensure the degeneracy used for py-sc-fermi DefectSpecies is >=1
-            min_degeneracy_multiplicity_factor = min(
+            # here we use site concentration (multiplicity/volume) rather than raw multiplicity throughout,
+            # so that the logic is supercell-size-invariant and correctly handles cases where different
+            # charge states of the same defect are computed in different-sized supercells.
+            # py-sc-fermi doesn't allow degeneracies < 1, so we set the reference site concentration to
+            # be either the minimum site concentration of entries in the group, or the minimum
+            # site-concentration-degeneracy product (if lower), to ensure degeneracy >= 1:
+            def _site_conc(entry):
+                return entry.defect.multiplicity / entry.defect.structure.volume
+
+            min_degeneracy_site_conc = min(
                 (np.prod(list(entry.degeneracy_factors.values())) if entry.degeneracy_factors else 1)
-                * entry.defect.multiplicity
+                * _site_conc(entry)
                 for entry in entry_list
             )
-            min_multiplicity = min(entry.defect.multiplicity for entry in entry_list)
-            reference_multiplicity = min(min_multiplicity, min_degeneracy_multiplicity_factor)
+            reference_site_conc = min(*(_site_conc(e) for e in entry_list), min_degeneracy_site_conc)
             defect_species_dict = {
                 "charge_states": {},
-                "nsites": reference_multiplicity / self.multiplicity_scaling,
+                "nsites": reference_site_conc * self.volume,  # sites per DOS cell
                 "name": label,
             }
             for entry in entry_list:
@@ -7796,12 +7793,13 @@ class FermiSolver(MSONable):
                 # py-sc-fermi assumes the same multiplicity (nsites) for all defect species / charge
                 # states of a given grouped defect, but this is not necessarily the case for
                 # interstitials (e.g. Te_i_Td_Te2.83_a), so we account for this in the degeneracy
-                # factors here:
-                degeneracy_factor *= entry.defect.multiplicity / reference_multiplicity
+                # factors here (using site concentrations so this is also correct when different charge
+                # states use different supercell sizes):
+                degeneracy_factor *= _site_conc(entry) / reference_site_conc
                 defect_species_dict["charge_states"][entry.charge_state] = {
                     "charge": entry.charge_state,
                     "energy": formation_energy,
-                    "degeneracy": degeneracy_factor,
+                    "degeneracy": degeneracy_factor,  # has to be >=1 in py-sc-fermi
                 }
             defect_species.append(defect_species_dict)
 

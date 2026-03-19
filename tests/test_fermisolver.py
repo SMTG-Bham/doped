@@ -449,7 +449,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert self.solver_py_sc_fermi._DefectChargeState == DefectChargeState
             assert self.solver_py_sc_fermi._DOS == DOS
             assert self.solver_py_sc_fermi.py_sc_fermi_dos is not None
-            assert self.solver_py_sc_fermi.multiplicity_scaling is not None
 
     def test_activate_backend_py_sc_fermi_not_installed(self):
         """
