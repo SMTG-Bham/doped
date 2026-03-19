@@ -94,10 +94,12 @@ class DefectThermodynamicsSetupMixin(unittest.TestCase):
         self.Se_pnict_thermo = deepcopy(self.orig_Se_pnict_thermo)  # primarily used in test_plotting.py
         self.cdte_chempot_warning_message = (
             "Note that the raw (DFT) energy of the bulk supercell calculation (-3.37 eV/atom) differs "
-            "from that expected from the supplied chemical potentials (-3.50 eV/atom) by >0.025 eV. This "
-            "will likely give inaccuracies of similar magnitude in the predicted formation energies! "
-            "\nYou can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
-            "False`."
+            "from that expected from the supplied chemical potentials (-3.50 eV/atom) by >0.025 eV. In "
+            "some rare cases this might be expected (if intentionally using different defect / chemical "
+            "potential settings for well-founded reasons), but otherwise will give inaccuracies of "
+            "similar magnitude in the predicted formation energies!"
+            "\nYou can suppress this warning by setting ``DefectThermodynamics.check_compatibility = "
+            "False``."
         )
 
     @classmethod
@@ -2706,12 +2708,13 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 for warning in w
             )
             assert any(
-                "You can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
-                "False`." in str(warning.message)
+                "You can suppress this warning by setting ``DefectThermodynamics.check_compatibility = "
+                "False``." in str(warning.message)
                 for warning in w
             )
             assert any(
-                "[('v_Cd_0', 0.1), ('v_Cd_-1', -215.61198601)," in str(warning.message) for warning in w
+                "[('v_Cd_0', 0.0015625), ('v_Cd_-1', -3.36893728140625)," in str(warning.message)
+                for warning in w
             )
 
         _check_compatibility_warnings(w)

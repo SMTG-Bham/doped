@@ -7,6 +7,7 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 import contextlib
 import importlib.util
 import os
+import statistics
 import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -1315,26 +1316,35 @@ class DefectThermodynamics(MSONable):
     def _check_bulk_compatibility(self):
         """
         Helper function to quickly check if all entries have compatible bulk
-        calculation settings, by checking that the energy of
-        ``defect_entry.bulk_entry`` is the same for all defect entries.
+        calculation settings, by checking that the bulk energy per atom is the
+        same for all defect entries.
 
         By proxy checks that same bulk/defect calculation settings were used in
         all cases, from each bulk/defect combination already being checked when
         parsing. This is to catch any cases where defects may have been parsed
-        separately and combined (rather than altogether with DefectsParser,
+        separately and combined (rather than altogether with ``DefectsParser``,
         which ensures the same bulk in each case), and where a different bulk
         reference calculation was (mistakenly) used.
+
+        In some cases, mismatches here are ok -- e.g. if SOC is known to be
+        important for just one defect state, so one uses a SOC bulk reference
+        for this state but not for the others, but this is expected to be a
+        rare use case.
         """
-        bulk_energies = [entry.bulk_entry.energy for entry in self.defect_entries.values()]
-        if max(bulk_energies) - min(bulk_energies) > 0.02:  # 0.02 eV tolerance
+        bulk_energies_per_atom = [
+            entry.bulk_entry.energy / entry.bulk_entry.composition.num_atoms
+            for entry in self.defect_entries.values()
+        ]
+        if max(bulk_energies_per_atom) - min(bulk_energies_per_atom) > 0.001:  # 1 meV/atom tolerance
             warnings.warn(
-                f"Note that not all defects in `defect_entries` have the same reference bulk energy (bulk "
-                f"supercell calculation at `bulk_path` when parsing), with energies differing by >0.02 "
-                f"eV. This can lead to inaccuracies in predicted formation energies! The bulk energies of "
-                f"defect entries in `defect_entries` are:\n"
-                f"{[(name, entry.bulk_entry.energy) for name, entry in self.defect_entries.items()]}\n"
-                f"You can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
-                f"False`."
+                f"Note that not all defects in `defect_entries` have the same reference bulk energy per "
+                f"atom, with energies differing by >1 meV/atom. This may be intentional (e.g. if "
+                f"combining SOC and non-SOC defect/bulk calculations), but otherwise can lead to "
+                f"inaccuracies in predicted formation energies if mixing of inequivalent bulk references "
+                f"is unintendend! The bulk energies per atom of defect entries in `defect_entries` are:\n"
+                f"{list(zip(self.defect_entries.keys(), bulk_energies_per_atom, strict=False))}\n"
+                f"You can suppress this warning by setting "
+                f"``DefectThermodynamics.check_compatibility = False``."
             )
 
     def _check_bulk_defects_compatibility(self):
@@ -1394,8 +1404,13 @@ class DefectThermodynamics(MSONable):
         r"""
         Helper function to quickly check if the supplied chemical potentials
         dictionary matches the bulk supercell used for the defect calculations,
-        by comparing the raw energies (from the bulk supercell calculation, and
-        that corresponding to the chemical potentials supplied).
+        by comparing the raw energies per atom (from the bulk supercell
+        calculation, and that of the chemical potentials supplied).
+
+        In some cases, mismatches here are ok -- e.g. if SOC is used for a
+        defect state but not for the chemical potentials (for a well-founded
+        reason, in most cases the same settings should be used;
+        https://doi.org/10.1038/s41578-025-00879-y).
 
         Args:
             chempots (dict, optional):
@@ -1420,24 +1435,30 @@ class DefectThermodynamics(MSONable):
         if chempots is None and self.chempots is None:
             return
 
-        bulk_entry = next(entry.bulk_entry for entry in self.defect_entries.values())
-        bulk_supercell_energy_per_atom = bulk_entry.energy / bulk_entry.composition.num_atoms
+        bulk_comps = [entry.bulk_entry.composition for entry in self.defect_entries.values()]
+        bulk_energies_per_atom = [
+            entry.bulk_entry.energy / entry.bulk_entry.composition.num_atoms
+            for entry in self.defect_entries.values()
+        ]
+        # get most common bulk composition and energy per atom:
+        bulk_comp = statistics.mode(bulk_comps)
+        bulk_energy_per_atom = statistics.mode(bulk_energies_per_atom)
         bulk_chempot_energy_per_atom = (
-            raw_energy_from_chempots(bulk_entry.composition, chempots or self.chempots)
-            / bulk_entry.composition.num_atoms
+            raw_energy_from_chempots(bulk_comp, chempots or self.chempots) / bulk_comp.num_atoms
         )
 
-        if abs(bulk_supercell_energy_per_atom - bulk_chempot_energy_per_atom) > 0.025:
+        if abs(bulk_energy_per_atom - bulk_chempot_energy_per_atom) > 0.025:
             warnings.warn(  # 0.05 eV intrinsic defect formation energy error tolerance, taking per-atom
                 # chempot error and multiplying by 2 to account for how this would affect antisite
                 # formation energies (extreme case)
-                f"Note that the raw (DFT) energy of the bulk supercell calculation ("
-                f"{bulk_supercell_energy_per_atom:.2f} eV/atom) differs from that expected from the "
-                f"supplied chemical potentials ({bulk_chempot_energy_per_atom:.2f} eV/atom) by >0.025 eV. "
-                f"This will likely give inaccuracies of similar magnitude in the predicted formation "
-                f"energies! \n"
-                f"You can suppress this warning by setting `DefectThermodynamics.check_compatibility = "
-                f"False`."
+                f"Note that the raw (DFT) energy of the bulk supercell calculation "
+                f"({bulk_energy_per_atom:.2f} eV/atom) differs from that expected from the supplied "
+                f"chemical potentials ({bulk_chempot_energy_per_atom:.2f} eV/atom) by >0.025 eV. "
+                f"In some rare cases this might be expected (if intentionally using different defect / "
+                f"chemical potential settings for well-founded reasons), but otherwise will give "
+                f"inaccuracies of similar magnitude in the predicted formation energies!"
+                f"\nYou can suppress this warning by setting "
+                f"``DefectThermodynamics.check_compatibility = False``."
             )
 
     def add_entries(
