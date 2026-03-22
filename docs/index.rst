@@ -106,6 +106,8 @@ Studies using ``doped``, so far
 ===============================
 
 - A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
+- B\. Bakhit et al. **HfO₂-based memristive synapses with asymmetrically extended p-n heterointerfaces for highly energy-efficient neuromorphic hardware** `Science Advances <https://doi.org/10.1126/sciadv.aec2324>`__ 2026
+- M\. Saminathan et al. **Interplay between Cu Delocalization and Bonding Anisotropy on the Thermoelectric Performance of Double-Cation Chalcohalides CuBiSeX₂ (X = Cl, Br)** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.6c00087>`__ 2026
 - A\. Zhang et al. **Theoretical insight into the strategy for high electron carrier concentration in Bi₂WO₆ with intrinsic point defects** `Physical Review B <https://doi.org/10.1103/jkj7-dnqj>`__ 2026
 - L\. Zhang, M. Zhou and A. M. Ganose **Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs** `arXiv <https://doi.org/10.48550/arXiv.2603.16310>`__ 2026
 - X\. Wang, I. Mosquera-Lois and A. Walsh **Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects** `arXiv <https://doi.org/10.48550/arXiv.2603.05238>`__ 2026

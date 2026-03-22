@@ -80,6 +80,8 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
+- B. Bakhit et al. **_HfO<sub>2</sub>-based memristive synapses with asymmetrically extended p-n heterointerfaces for highly energy-efficient neuromorphic hardware_** [_Science Advances_](https://doi.org/10.1126/sciadv.aec2324) 2026
+- M. Saminathan et al. **_Interplay between Cu Delocalization and Bonding Anisotropy on the Thermoelectric Performance of Double-Cation Chalcohalides CuBiSeX<sub>2</sub> (X = Cl, Br)_** [_ACS Applied Energy Materials_](https://doi.org/10.1021/acsaem.6c00087) 2026
 - A. Zhang et al. **_Theoretical insight into the strategy for high electron carrier concentration in Bi<sub>2</sub>WO<sub>6</sub> with intrinsic point defects_** [_Physical Review B_](https://doi.org/10.1103/jkj7-dnqj) 2026
 - L. Zhang, M. Zhou and A. M. Ganose **_Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.16310) 2026
 - X. Wang, I. Mosquera-Lois and A. Walsh **_Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.05238) 2026
