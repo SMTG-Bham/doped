@@ -43,6 +43,7 @@ from doped.utils.symmetry import (
 )
 
 
+# TODO: Option to input structures instead?
 def get_defect_in_supercell(
     defect_entry: DefectEntry,
     target_supercell: Structure,
@@ -453,7 +454,24 @@ def get_defect_in_supercell(
         # two is not a single rigid-body transformation (rotation + translation) applied uniformly to all
         # atoms.
 
-    _check_min_dist(oriented_new_bulk_supercell, bulk_min_bond_length * 0.99)  # sanity check bulk cell
+        # if the original (defect entry) bulk supercell and target supercell differ in bond lengths,
+        # then this can cause some irregularities in bonding within the output bulk supercell (as we
+        # don't rescale when stenciling, so we take original Cartesian coordinates with the target
+        # supercell lattice parameters) here we warn if the minimum bond length in the output bulk
+        # supercell is less than 99% of the original bond length, _and_ if we have a bulk mismatch
+        # warning (as otherwise the output bulk cell shouldn't be used anyway):
+        new_bulk_min_bond_length = min_dist(oriented_new_bulk_supercell)
+        if new_bulk_min_bond_length < bulk_min_bond_length * 0.995:
+            warnings.warn(
+                f"Note that the stenciled `bulk` supercell has a minimum interatomic distance of "
+                f"{new_bulk_min_bond_length:.2f} Å, smaller than 99.5% of the original bond length "
+                f"({bulk_min_bond_length:.2f} Å). This is typically the result of different bond lengths "
+                f"/ interatomic distances between the original bulk and target supercells, which affects "
+                f"the stenciling process. If the difference is relatively small, then this is easily "
+                f"resolved by relaxing the output bulk supercell to re-equilibrate the interatomic "
+                f"distances."
+            )
+
     assert (
         get_defect_type_and_composition_diff(orig_bulk_supercell, orig_supercell)[1]
         == get_defect_type_and_composition_diff(
@@ -1299,42 +1317,3 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
             defect_supercell.replace(i, site.properties.pop("orig_species", site.specie.symbol))
 
     return defect_supercell
-
-
-def _check_min_dist(
-    structure: Structure,
-    min_dist_tol: float = 1.0,
-    warning: bool = True,
-    ignored_species: list[str] | None = None,
-) -> None:
-    """
-    Helper function to check if the minimum interatomic distance in the
-    provided ``structure`` is reasonable.
-
-    Args:
-        structure (Structure):
-            The structure to check.
-        min_dist_tol (float):
-            If the minimum interatomic distance (ignoring any Hydrogen atoms)
-            in the structure is smaller than this, a warning or error is
-            raised. Default is 1.0 Å.
-        warning (bool):
-            Whether to raise a warning or an error if the minimum interatomic
-            distance is too small. Default is ``True`` (warning).
-        ignored_species (list[str]):
-            A list of species symbols to ignore when calculating the minimum
-            interatomic distance. Default is to ignore Hydrogen atoms only.
-    """
-    ignored_species = [*(ignored_species or []), "H"]
-    struct_min_dist = min_dist(structure, ignored_species)
-    if struct_min_dist < min_dist_tol:
-        message = (
-            f"Generated structure has a minimum interatomic distance of {struct_min_dist:.2f} Å, smaller "
-            f"than the minimum distance tolerance ({min_dist_tol:.2f} Å), which may be unreasonable. "
-            f"Please check if this minimum distance and structure make sense, and if not please report "
-            f"this issue to the developers!"
-        )
-        if warning:
-            warnings.warn(message)
-        else:
-            raise RuntimeError(message)
