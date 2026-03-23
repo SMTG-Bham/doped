@@ -42,7 +42,6 @@ _DISP_STYLE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "../doped/utils/displacement.mplstyle"
 )
 
-# TODO: Tutorial notebook with stenciling examples
 # Note: If we needed more tests, useful test cases could be to stencil split vacancies
 # Note: If we wanted more invariant / noise-tolerant tests, could implement some energy-based tests (e.g.
 # Madelung energies)
@@ -61,10 +60,16 @@ def _get_sorted_nn_distances(structure, frac_coords, n_neighbours=12):
     return np.sort(all_dists[all_dists > 1e-2])[:n_neighbours]
 
 
-def _plot_stenciled_vs_original_displacements(stenciled_entry: DefectEntry, original_entry: DefectEntry):
+def plot_stenciled_vs_original_displacements(stenciled_entry: DefectEntry, original_entry: DefectEntry):
     """
-    Create a 1x2 figure comparing site displacements of a stenciled defect
-    supercell (left) against the original DFT defect entry (right).
+    Create a 1x2 figure comparing site displacements of the the original DFT
+    defect entry (left) against the stenciled defect entry (right).
+
+    Args:
+        stenciled_entry (DefectEntry):
+            The stenciled defect entry.
+        original_entry (DefectEntry):
+            The original defect entry.
     """
     with plt.style.context(_DISP_STYLE):
         styled_fig_size = plt.rcParams["figure.figsize"]
@@ -73,13 +78,16 @@ def _plot_stenciled_vs_original_displacements(stenciled_entry: DefectEntry, orig
             1, 2, figsize=(2 * styled_fig_size[0], styled_fig_size[1]), sharey=True, sharex=False
         )
         for ax, entry, title in zip(
-            axes, [stenciled_entry, original_entry], ["Stenciled", "Original DFT"], strict=False
+            axes, [original_entry, stenciled_entry], ["Original DFT", "Stenciled"], strict=False
         ):
             plot_site_displacements(entry, ax=ax, style_file=_DISP_STYLE)
             ax.set_title(title, fontsize=styled_font_size)
         axes[1].set_ylabel("")
         axes[1].get_legend().remove()
         fig.subplots_adjust(wspace=0.15)
+        # same x-limits on both axes (element-wise min/max of each subplot's auto limits)
+        for ax in axes:
+            ax.set(xlim=[np.min([ax.get_xlim() for ax in axes]), np.max([ax.get_xlim() for ax in axes])])
     return fig
 
 
@@ -304,10 +312,7 @@ class DefectStencilingTest(unittest.TestCase):
                 # these warnings), but updated pre-stenciling re-orientation of
                 # ``(oriented_)big_{bulk,defect}_supercell`` now returns tile-matching supercells
 
-                assert not any(
-                    "Generated structure has a minimum interatomic" in str(warning.message)
-                    for warning in w
-                )
+                assert not any("Note that the stenciled" in str(warning.message) for warning in w)
 
                 # invariant validation tests:
                 _validate_stenciled_supercell(
@@ -462,10 +467,7 @@ class DefectStencilingTest(unittest.TestCase):
                     )
                 _print_warning_info(w)
                 assert not any("Note that the atomic position" in str(warning.message) for warning in w)
-                assert not any(
-                    "Generated structure has a minimum interatomic" in str(warning.message)
-                    for warning in w
-                )
+                assert not any("Note that the stenciled" in str(warning.message) for warning in w)
 
                 # invariant validation tests:
                 _validate_stenciled_supercell(
@@ -521,7 +523,7 @@ class DefectStencilingTest(unittest.TestCase):
         stenciled_entry = _make_stenciled_defect_entry(
             defect_entry, stenciled_supercell, corresponding_bulk
         )
-        return _plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
+        return plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
 
     @custom_mpl_image_compare(filename="Se_i_C2_0_stenciled_vs_original_displacements.png", style=STYLE)
     def test_stenciling_displacement_plot_Se_i_C2_0_20A(self):
@@ -536,7 +538,7 @@ class DefectStencilingTest(unittest.TestCase):
         stenciled_entry = _make_stenciled_defect_entry(
             defect_entry, stenciled_supercell, corresponding_bulk
         )
-        return _plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
+        return plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
 
     @custom_mpl_image_compare(filename="H_Se_-1_stenciled_vs_original_displacements.png", style=STYLE)
     def test_stenciling_displacement_plot_H_Se_m1_20A(self):
@@ -551,7 +553,7 @@ class DefectStencilingTest(unittest.TestCase):
         stenciled_entry = _make_stenciled_defect_entry(
             defect_entry, stenciled_supercell, corresponding_bulk
         )
-        return _plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
+        return plot_stenciled_vs_original_displacements(stenciled_entry, defect_entry)
 
     @custom_mpl_image_compare(filename="Mg_O_+2_stenciled_vs_original_displacements.png", style=STYLE)
     def test_stenciling_displacement_plot_Mg_O_plus2(self):
@@ -576,13 +578,11 @@ class DefectStencilingTest(unittest.TestCase):
             )
         _print_warning_info(w)
         assert not any("Note that the atomic position" in str(warning.message) for warning in w)
-        assert not any(
-            "Generated structure has a minimum interatomic" in str(warning.message) for warning in w
-        )
+        assert not any("Note that the stenciled" in str(warning.message) for warning in w)
         stenciled_entry = _make_stenciled_defect_entry(
             self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
         )
-        return _plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
+        return plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
 
     @custom_mpl_image_compare(
         filename="Mg_O_+2_stenciled_vs_original_displacements_10_A_cell.png", style=STYLE
@@ -606,10 +606,8 @@ class DefectStencilingTest(unittest.TestCase):
             )
         _print_warning_info(w)
         assert not any("Note that the atomic position" in str(warning.message) for warning in w)
-        assert not any(
-            "Generated structure has a minimum interatomic" in str(warning.message) for warning in w
-        )
+        assert not any("Note that the stenciled" in str(warning.message) for warning in w)
         stenciled_entry = _make_stenciled_defect_entry(
             self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
         )
-        return _plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
+        return plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
