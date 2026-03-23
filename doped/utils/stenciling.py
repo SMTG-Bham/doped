@@ -953,80 +953,73 @@ def _remove_overlapping_sites(
     if bulk_min_bond_length is None:
         bulk_min_bond_length = min_dist(Structure.from_sites(def_new_supercell_sites_to_check))
 
-    # scan over all possible combinations of num_sites_up_for_grabs sites in candidate_new_supercell_sites:
     check_other_candidate_sites_first = len(candidate_new_supercell_sites) < len(
         def_new_supercell_sites_to_check
     )  # check smaller list first for efficiency
 
-    overlapping_site_indices: list[int] = []  # using indices as faster for comparing than actual sites
+    overlapping_site_indices: set[int] = set()  # using indices as faster for comparing than actual sites
     _pbar_increment_per_iter = max(
         0, 20 / len(candidate_new_supercell_sites) - 0.0001
     )  # up to 20% of progress bar
 
-    def _check_other_sites(
-        idx,
-        candidate_new_supercell_sites,
-        overlapping_site_indices,
-        bulk_min_bond_length,
-    ):
-        lattice = candidate_new_supercell_sites[0].lattice
-        for other_idx, other_site in enumerate(candidate_new_supercell_sites):
+    # pre-compute arrays for vectorised distance checks:
+    lattice = candidate_new_supercell_sites[0].lattice  # same lattice for all sites
+    n = len(candidate_new_supercell_sites)
+    cand_frac_coords = np.array([s.frac_coords for s in candidate_new_supercell_sites])
+    cand_species = [s.specie.symbol for s in candidate_new_supercell_sites]
+    threshold = bulk_min_bond_length * 0.5
+
+    # NxN candidate-candidate distance matrix (diagonal set to inf to ignore self-distances):
+    cand_cand_dists = lattice.get_all_distances(cand_frac_coords, cand_frac_coords)
+    np.fill_diagonal(cand_cand_dists, np.inf)
+
+    # per-candidate minimum distance to any definite site (inf if no definite sites):
+    def_frac_coords = np.array([s.frac_coords for s in def_new_supercell_sites_to_check])
+    min_cand_def_dists = (
+        np.min(lattice.get_all_distances(cand_frac_coords, def_frac_coords), axis=1)
+        if def_frac_coords.size
+        else np.full(n, np.inf)
+    )
+
+    def _check_other_sites(idx):
+        for other_idx in range(n):
             if (
                 idx == other_idx
                 or other_idx in overlapping_site_indices
-                or candidate_site.specie.symbol != other_site.specie.symbol
+                or cand_species[idx] != cand_species[other_idx]
             ):
                 continue
-            if candidate_site.distance(other_site) < bulk_min_bond_length * 0.5:
-                # if distance is less than 50% of bulk bond length, remove the site which is closest to a
-                # different site in ``candidate_new_supercell_sites``/``def_new_supercell_sites_to_check``
-                all_other_frac_coords_to_check = [
-                    site.frac_coords
-                    for site in candidate_new_supercell_sites
-                    if site not in [candidate_site, other_site]
-                ] + [site.frac_coords for site in def_new_supercell_sites_to_check]
-                overlapping_site_indices.append(
-                    min(
-                        [(idx, candidate_site), (other_idx, other_site)],
-                        key=lambda x: (
-                            np.min(  # remove site which is closest to another site in the candidates
-                                lattice.get_all_distances(x[1].frac_coords, all_other_frac_coords_to_check)
-                            )
-                            if all_other_frac_coords_to_check
-                            else x[0]  # otherwise just sort by index
-                        ),
-                    )[0]
+            if cand_cand_dists[idx, other_idx] < threshold:
+                # remove the site closest to any other candidate/def site (excluding the overlapping pair)
+                pair_mask = np.ones(n, dtype=bool)
+                pair_mask[[idx, other_idx]] = False
+                min_d_idx = min(
+                    np.min(cand_cand_dists[idx, pair_mask], initial=np.inf), min_cand_def_dists[idx]
                 )
-        return overlapping_site_indices
+                min_d_other = min(
+                    np.min(cand_cand_dists[other_idx, pair_mask], initial=np.inf),
+                    min_cand_def_dists[other_idx],
+                )
+                overlapping_site_indices.add(idx if min_d_idx < min_d_other else other_idx)
 
-    for idx, candidate_site in list(enumerate(candidate_new_supercell_sites)):
+    for idx in range(n):
         if pbar is not None:
             pbar.update(_pbar_increment_per_iter)
         if idx in overlapping_site_indices:
             continue
 
         if check_other_candidate_sites_first:
-            overlapping_site_indices = _check_other_sites(
-                idx,
-                candidate_new_supercell_sites,
-                overlapping_site_indices,
-                bulk_min_bond_length,
-            )
+            _check_other_sites(idx)
 
-        for site in def_new_supercell_sites_to_check:
-            if candidate_site.distance(site) < bulk_min_bond_length * 0.5:
-                overlapping_site_indices.append(idx)
-                break
-        if idx in overlapping_site_indices:
-            continue
+        if (
+            idx not in overlapping_site_indices
+            and def_frac_coords.size
+            and min_cand_def_dists[idx] < threshold
+        ):
+            overlapping_site_indices.add(idx)
 
-        if not check_other_candidate_sites_first:
-            overlapping_site_indices = _check_other_sites(
-                idx,
-                candidate_new_supercell_sites,
-                overlapping_site_indices,
-                bulk_min_bond_length,
-            )
+        if idx not in overlapping_site_indices and not check_other_candidate_sites_first:
+            _check_other_sites(idx)
 
     return [
         site for i, site in enumerate(candidate_new_supercell_sites) if i not in overlapping_site_indices
