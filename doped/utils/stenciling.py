@@ -905,20 +905,25 @@ def _get_candidate_supercell_sites(
         for site in big_supercell.sites
         if is_within_frac_bounds(target_supercell.lattice, site.coords, tol=edge_tol)
     ]
+    def_new_supercell_site_indices = []
+    for i, site in enumerate(possible_new_supercell_sites):
+        if is_within_frac_bounds(target_supercell.lattice, site.coords, tol=-edge_tol):
+            def_new_supercell_site_indices.append(i)
     def_new_supercell_sites = [
-        site
-        for site in possible_new_supercell_sites
-        if is_within_frac_bounds(target_supercell.lattice, site.coords, tol=-edge_tol)
+        site for i, site in enumerate(possible_new_supercell_sites) if i in def_new_supercell_site_indices
     ]
+    candidate_new_supercell_sites = [
+        site
+        for i, site in enumerate(possible_new_supercell_sites)
+        if i not in def_new_supercell_site_indices
+    ]
+
     def_new_supercell_sites_to_check = [
         site
         for site in def_new_supercell_sites
         if not is_within_frac_bounds(
             target_supercell.lattice, site.coords, tol=-max(bulk_min_bond_length, edge_tol * 2)
         )
-    ]
-    candidate_new_supercell_sites = [
-        site for site in possible_new_supercell_sites if site not in def_new_supercell_sites
     ]
 
     return (
