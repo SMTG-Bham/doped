@@ -263,6 +263,15 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :height: 320px
     :align: right
 
+.. tip::
+
+    In other cases, if the error in the finite-size corrections are too large, we may need to compute the 
+    given defect in a larger supercell. The stenciling functions in ``doped``, which allow the 
+    re-generation of (relaxed) defect structures in arbitrary supercells, can be very useful in these 
+    cases. See the 
+    `stenciling tutorial <https://doped.readthedocs.io/en/latest/stenciling_tutorial.html>`__ for examples 
+    and discussion.
+
 
 2D Materials and Surface Defects
 --------------------------------
