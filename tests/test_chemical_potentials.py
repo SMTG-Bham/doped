@@ -250,7 +250,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 cp.convergence_setup(potcar_spec=True)  # test methods
                 cp.vasp_std_setup(potcar_spec=True)  # test methods
             _print_warning_info(w)  # for debugging
-            assert len(w) == 1
+            assert len(w) == 3  # no MP entry, and structure not available twice (convergence and vasp_std)
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
                 w[0].message
             )

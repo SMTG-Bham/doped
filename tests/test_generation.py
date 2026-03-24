@@ -24,7 +24,6 @@ from pymatgen.analysis.defects.core import DefectType
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Species
 from pymatgen.core.surface import SlabGenerator
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp import Poscar
 from test_utils import (
     EXAMPLE_DIR,
@@ -55,6 +54,11 @@ from doped.utils.symmetry import (
     translate_structure,
 )
 from doped.vasp import DefectsSet
+
+try:
+    from pymatgen.core.entries import ComputedStructureEntry
+except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
+    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 default_supercell_gen_kwargs = {
     "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)

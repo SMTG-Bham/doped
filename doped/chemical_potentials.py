@@ -28,12 +28,6 @@ from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Structure
-from pymatgen.entries.computed_entries import (
-    ComputedEntry,
-    ComputedStructureEntry,
-    ConstantEnergyAdjustment,
-    ManualEnergyAdjustment,
-)
 from pymatgen.ext.matproj import MPRester, MPRestError
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
@@ -56,6 +50,24 @@ from doped.utils.parsing import (
 from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
+
+warnings.simplefilter("error")
+
+try:
+    from pymatgen.core.entries import (
+        ComputedEntry,
+        ComputedStructureEntry,
+        ConstantEnergyAdjustment,
+        ManualEnergyAdjustment,
+    )
+except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
+    from pymatgen.entries.computed_entries import (
+        ComputedEntry,
+        ComputedStructureEntry,
+        ConstantEnergyAdjustment,
+        ManualEnergyAdjustment,
+    )
+
 
 # globally ignore:
 _ignore_pmg_warnings()

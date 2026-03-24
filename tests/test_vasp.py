@@ -92,11 +92,10 @@ class DefectDictSetTest(unittest.TestCase):
         self.sqs_agsbte2 = Structure.from_file(f"{data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {
-            "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
-            "correction scheme".lower(),
+            "ICORELEVEL": 0,  # now set to int without comment in pymatgen>=2026
             "ISIF": 2,  # Fixed supercell for defects
             "ISPIN": 2,  # Spin polarisation likely for defects
-            "ISYM": "0  # Symmetry breaking extremely likely for defects".lower(),
+            "ISYM": 0,  # now set to int without comment in pymatgen>=2026
             "LVHAR": True,
             "ISMEAR": 0,
         }
@@ -377,8 +376,7 @@ class DefectDictSetTest(unittest.TestCase):
             "KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1" in str(warning.message)
             for warning in w
         )
-        assert "1  # only one k-point" in dds.incar["KPAR"]  # pmg makes it lowercase and can change
-        # gamma symbol
+        assert dds.incar["KPAR"] == 1  # converted to int without comment in pymatgen>=2026
 
         self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
@@ -490,14 +488,15 @@ class DefectDictSetTest(unittest.TestCase):
             # load INCAR and check it matches dds.incar
             written_incar = Incar.from_file(f"{output_path}/INCAR")
             dds_incar_without_comments = dds.incar.copy()
-            dds_incar_without_comments["ICORELEVEL"] = 0
-            dds_incar_without_comments["ISYM"] = 0
-            dds_incar_without_comments["ISEARCH"] = 1
-            dds_incar_without_comments["ALGO"] = (
+            expected_algo = (
                 "Normal"
                 if "normal" in dds_incar_without_comments.get("ALGO", "normal").lower()
                 else dds_incar_without_comments.get("ALGO", "normal")
             )
+            dds_incar_without_comments["ALGO"] = expected_algo
+            dds_incar_without_comments["ICORELEVEL"] = 0
+            dds_incar_without_comments["ISYM"] = 0
+            dds_incar_without_comments["ISEARCH"] = 1
             if "KPAR" in dds_incar_without_comments and isinstance(
                 dds_incar_without_comments["KPAR"], str
             ):
@@ -509,11 +508,14 @@ class DefectDictSetTest(unittest.TestCase):
                 incar_lines = f.readlines()
             print(f"{output_path}/INCAR:", incar_lines)
             print("Testing comment strings")
-            for comment_string in [
+            expected_comment_strings = [
                 "# MAY WANT TO CHANGE NCORE, KPAR, AEXX, ENCUT",
-                "needed if using the kumagai-oba",
-                "symmetry breaking extremely likely",
-            ]:
+                # "needed if using the kumagai-oba",  # set to int by pymatgen>=2026
+                # "symmetry breaking extremely likely",  # set to int by pymatgen>=2026
+            ]
+            if expected_algo.lower().startswith("n"):  # ALGO = Normal
+                expected_comment_strings.append("# change to all if zhegv, fexcp/f or zbrent")
+            for comment_string in expected_comment_strings:
                 assert any(comment_string in line for line in incar_lines)
 
             print("Testing ALGO")

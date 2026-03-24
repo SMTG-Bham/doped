@@ -19,12 +19,16 @@ from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, 
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
 from pymatgen.util.typing import PathLike, SpeciesLike
 
 from doped.core import DefectEntry, remove_site_oxi_state
+
+try:
+    from pymatgen.core.entries import ComputedStructureEntry
+except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
+    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing

@@ -13,7 +13,6 @@ from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.bond_valence import BVAnalyzer
 from pymatgen.analysis.defects import core, thermo, utils
 from pymatgen.analysis.structure_matcher import ElementComparator, SpeciesComparator
-from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
@@ -43,6 +42,11 @@ if TYPE_CHECKING:
                 "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, "
                 "and can be installed with `pip install pydefect`."
             )
+
+try:
+    from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry
+except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
+    from pymatgen.entries.computed_entries import ComputedEntry, ComputedStructureEntry
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 

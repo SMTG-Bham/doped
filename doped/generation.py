@@ -28,7 +28,6 @@ from pymatgen.analysis.defects.generators import (
 )
 from pymatgen.analysis.defects.utils import remove_collisions
 from pymatgen.core.periodic_table import DummySpecies
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
 from tabulate import tabulate
@@ -52,6 +51,11 @@ from doped.utils.plotting import format_defect_name
 
 if TYPE_CHECKING:
     from ase.atoms import Atoms
+
+try:
+    from pymatgen.core.entries import ComputedStructureEntry
+except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
+    from pymatgen.entries.computed_entries import ComputedStructureEntry
 
 _dummy_species = DummySpecies("X")  # Dummy species used to keep track of defect coords in the supercell
 

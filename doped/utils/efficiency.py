@@ -514,7 +514,9 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
     comparator = sm_kwargs.get("comparator")
 
     if len(structure) == 1:
-        structure = structure * 2  # need at least two sites to calculate bond lengths
+        structure *= 2  # need at least two sites to calculate bond lengths
+    elif len(structure) == 0:  # edge case of a 'defect structure' in a primitive cell with 1 atom
+        return {}
 
     # get the distance matrix broken down by species:
     element_idx_dict = get_element_indices(structure, comparator=comparator)
@@ -562,7 +564,7 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     Returns:
         float: Equivalent ``stol`` value for the given distance.
     """
-    return dist / (structure.volume / len(structure)) ** (1 / 3)
+    return dist / (structure.volume / max(len(structure), 1)) ** (1 / 3)  # max to ensure no divide-by-zero
 
 
 def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) -> float:
