@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.10"  # dictated by "pymatgen>=2025" requirement
+requires-python = ">=3.10"  # dictated by "pymatgen>=2025" requirement; note that latest pymatgen (2026, currently not required) only supports 3.11-3.14
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
