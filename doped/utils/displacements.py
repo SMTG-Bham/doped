@@ -210,7 +210,7 @@ def plot_site_displacements(
       parallel and (absolute displacement) perpendicular to the given vector.
 
     - ``separated_by_direction=True``: 3-panel plot showing the ``x``, ``y``,
-    ``z`` displacement components separately.
+      ``z`` displacement components separately.
 
     ``separated_by_direction`` and ``vector_to_project_on`` are mutually
     exclusive, and if either is set then ``relative_to_defect`` is set to

@@ -19,7 +19,7 @@ def get_transformation_from_s2_to_s1(
     struct1: Structure,
     struct2: Structure,
     **sm_kwargs,
-):
+) -> tuple[np.ndarray, np.ndarray, list[int | None]]:
     """
     Get the supercell transformation, fractional translation vector, and a
     mapping to transform ``struct2`` to be similar to ``struct1``.
@@ -39,16 +39,20 @@ def get_transformation_from_s2_to_s1(
             (e.g. ``ignored_species``, ``comparator`` etc).
 
     Returns:
-        supercell (np.array(3, 3)):
-            Supercell matrix for the transformation.
-        vector (np.array(3)):
-            Fractional translation vector for the transformation.
-        mapping (list[int | None]):
-            Mapping of the sites in ``struct2`` to the sites in ``struct1``.
-            The first ``len(struct1)`` items of the mapping vector are the
-            indices of ``struct1``'s corresponding sites in ``struct2`` (or
-            ``None`` if there is no corresponding site), and the other items
-            are the remaining site indices of ``struct2``.
+        tuple[np.ndarray, np.ndarray, list[int | None]]:
+            ``(supercell_matrix, trans_vector, mapping)`` — the supercell
+            transformation, fractional translation, and site mapping produced
+            by ``StructureMatcher.get_transformation`` (in that order).
+
+            * ``supercell_matrix``: shape ``(3, 3)`` — supercell matrix for the
+              transformation.
+            * ``trans_vector``: shape ``(3,)`` — fractional translation vector
+              for the transformation.
+            * ``mapping``: Mapping of the sites in ``struct2`` to the sites in
+              ``struct1``. The first ``len(struct1)`` items of the mapping
+              vector are the indices of ``struct1``'s corresponding sites in
+              ``struct2`` (or ``None`` if there is no corresponding site), and
+              the other items are the remaining site indices of ``struct2``.
     """
     if sm_kwargs.get("ignored_species"):  # ensure it's hashable!
         sm_kwargs["ignored_species"] = tuple(sm_kwargs["ignored_species"])
@@ -81,7 +85,7 @@ def apply_s2_to_s1_transformation(
     include_ignored_species: bool = True,
     ignored_species: list[str] | None = None,
     new_lattice: str | None = None,
-):
+) -> Structure:
     """
     Apply a transformation (e.g. as determined by
     ``get_transformation_from_s2_to_s1``) from ``struct2`` to ``struct1``, with
@@ -216,7 +220,7 @@ def orient_s2_like_s1(
     new_lattice: str | None = None,
     verbose: bool = False,
     **sm_kwargs,
-):
+) -> Structure:
     """
     Re-orient ``struct2`` to match the orientation of ``struct1`` as closely as
     possible , with matching atomic indices as needed for VASP NEB calculations

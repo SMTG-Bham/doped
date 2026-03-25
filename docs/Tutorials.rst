@@ -40,3 +40,4 @@ tutorials:
    plotting_customisation_tutorial
    GGA_workflow_tutorial
    CCD_NEB_tutorial
+   stenciling_tutorial
