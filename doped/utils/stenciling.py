@@ -14,6 +14,7 @@ from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Lattice, Structure
 from tqdm import tqdm
 
+from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry
 from doped.thermodynamics import _ensure_list
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
@@ -43,9 +44,10 @@ from doped.utils.symmetry import (
 )
 
 
-# TODO: Option to input structures instead?
 def get_defect_in_supercell(
-    defect_entry: DefectEntry,
+    defect_entry: (
+        DefectEntry | tuple[Structure, Structure] | tuple[Structure, Structure, list | np.ndarray]
+    ),
     target_supercell: Structure,
     check_bulk: bool = True,
     target_frac_coords: np.ndarray[float] | list[float] | bool = True,
@@ -59,19 +61,20 @@ def get_defect_in_supercell(
     supercell.
 
     This function takes the relaxed defect structure of the input
-    ``DefectEntry`` (from ``DefectEntry.defect_supercell``) and re-generates it
-    in the ``target_supercell`` structure (which may be smaller or larger than
-    the original supercell), using the bulk supercell to intelligently pad out
-    the additional missing positions in the new supercell as needed. The defect
-    is placed at the closest possible position to ``target_frac_coords``
-    (default is the supercell centre = [0.5, 0.5, 0.5]). In most cases, the
-    generated supercell should correspond to the same supercell basis / tiling
-    as the input ``target_supercell``. In some cases, however, this is not
-    possible (in which case a warning is thrown), and so this function also
-    returns the corresponding bulk supercell for the generated supercell (which
-    should be the same for each generated defect supercell given the same
-    ``target_supercell`` and base supercell for ``defect_entry``, see notes
-    below).
+    ``DefectEntry`` (from ``DefectEntry.defect_supercell``), or input
+    ``Structure`` objects (if ``defect_entry`` is a tuple, see argument
+    descriptions) and re-generates it in the ``target_supercell`` structure
+    (which may be smaller or larger than the original supercell), using the
+    bulk supercell to intelligently pad out the additional missing positions in
+    the new supercell as needed. The defect is placed at the closest possible
+    position to ``target_frac_coords`` (default is the supercell centre =
+    [0.5, 0.5, 0.5]). In most cases, the generated supercell should correspond
+    to the same supercell basis / tiling as the input ``target_supercell``. In
+    some cases, however, this is not possible (in which case a warning is
+    thrown), and so this function also returns the corresponding bulk supercell
+    for the generated supercell (which should be the same for each generated
+    defect supercell given the same ``target_supercell`` and base supercell for
+    ``defect_entry``, see notes below).
 
     ``target_supercell`` should be the same host crystal structure, just with
     different supercell dimensions. The stenciling algorithm is typically
@@ -141,10 +144,16 @@ def get_defect_in_supercell(
     supercells should be negligible).
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (DefectEntry | tuple[Structure, Structure] | tuple[Structure, Structure, np.ndarray]):
             A ``DefectEntry`` object for which to re-generate the relaxed
             structure (taken from ``DefectEntry.defect_supercell``) in the
-            ``target_supercell`` lattice.
+            ``target_supercell`` lattice. Alternatively, a tuple of
+            ``(defect_supercell, bulk_supercell)`` structures can be provided,
+            in which case the defect fractional coordinates are determined
+            automatically (by comparing the two supercells). The defect
+            fractional coordinates can optionally be provided as a third
+            element with the tuple input option (as a ``numpy`` array or list),
+            to skip auto-determination in this case.
         target_supercell (Structure):
             The supercell structure to re-generate the relaxed defect structure
             in.
@@ -193,7 +202,7 @@ def get_defect_in_supercell(
             radius of ``target_supercell``) to scan over when constructing the
             template sub-structures of ``target_supercell`` and the bulk
             super-supercell used for pre-stenciling orientation matching (to
-            try ensure matching supercell atomic bases (i.e. tiling of
+            try to ensure matching supercell atomic bases (i.e. tiling of
             primitive cells in the supercells) in the output stenciled cells
             with ``target_supercell``). Default is ``None``, in which case the
             default test range of ``[0.8, 1.0, 0.6, 0.4, 1.2]`` is used. It is
@@ -206,6 +215,7 @@ def get_defect_in_supercell(
             generated defect supercell (see explanations above).
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest for debugging
+    # TODO: Re-run timings? Once pmg stuff sorted out
     # TODO: We should now be able to use these functions (without the final re-orientation step,
     #  for speed) to determine the point symmetries of relaxed defects in non-symmetry-conserving /
     #  periodicity-breaking supercells, by stenciling into a small symmetry-conserving cell and getting the
@@ -219,9 +229,20 @@ def get_defect_in_supercell(
     bulk_mismatch_warning = False
 
     try:
-        orig_supercell = _get_defect_supercell(defect_entry)
-        orig_bulk_supercell = _get_bulk_supercell(defect_entry)
-        orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
+        if isinstance(defect_entry, tuple):
+            orig_supercell = defect_entry[0].copy()
+            orig_bulk_supercell = defect_entry[1].copy()
+            if len(defect_entry) > 2:
+                orig_defect_frac_coords = np.array(defect_entry[2])
+            else:
+                defect_site = defect_site_from_structures(orig_bulk_supercell, orig_supercell)
+                assert isinstance(defect_site, PeriodicSite)
+                orig_defect_frac_coords = defect_site.frac_coords
+        else:
+            orig_supercell = _get_defect_supercell(defect_entry)
+            orig_bulk_supercell = _get_bulk_supercell(defect_entry)
+            orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
+
         target_supercell = target_supercell.copy()
         bulk_min_bond_length = min_dist(orig_bulk_supercell)
         target_frac_coords = [0.5, 0.5, 0.5] if target_frac_coords is True else target_frac_coords
@@ -1018,7 +1039,7 @@ def _remove_overlapping_sites(
                     np.min(cand_cand_dists[other_idx, pair_mask], initial=np.inf),
                     min_cand_def_dists[other_idx],
                 )
-                overlapping_site_indices.add(idx if min_d_idx < min_d_other else other_idx)
+                overlapping_site_indices.add(idx if min_d_idx <= min_d_other else other_idx)
 
     for idx in range(n):
         if pbar is not None:

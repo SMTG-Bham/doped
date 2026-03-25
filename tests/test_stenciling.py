@@ -11,8 +11,8 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.core.structure import PeriodicSite
+from pymatgen.core.structure_matcher import ElementComparator
 from test_utils import (
     EXAMPLE_DIR,
     STYLE,
@@ -276,69 +276,171 @@ class DefectStencilingTest(unittest.TestCase):
             dielectric=8.8963,
         )
 
-    def test_Se_20_A_supercell(self):
+    def _run_stenciling_loop(
+        self,
+        target_supercell,
+        test_files_tag,
+        name_split_tag,
+        get_input_fn=None,
+        check_exact_bulk_match=True,
+        reference_fn=None,
+    ):
         """
-        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
-        supercell to a 20.5 x 20.0 x 20.3 Å 234-atom Se supercell.
+        Common loop for Se stenciling tests. Iterates over all defect entries
+        with matching reference supercell files, runs
+        ``get_defect_in_supercell``, checks for no unexpected warnings,
+        validates the stenciled supercell, and checks bulk consistency across
+        defects.
 
-        234-atom supercell was generated from
-        ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
+        Args:
+            target_supercell (Structure):
+                Target supercell for stenciling.
+            test_files_tag (str):
+                Substring to identify reference POSCAR files (e.g.
+                ``"20Å_Stenciled"``).
+            name_split_tag (str):
+                String used to split the filename to recover the defect name
+                (e.g. ``"_20Å"``).
+            get_input_fn (callable | None):
+                Maps a ``DefectEntry`` to the first argument of
+                ``get_defect_in_supercell`` (allowing easy switching between
+                ``DefectEntry`` or ``Structure`` inputs). Defaults to the
+                identity (i.e. passes the ``DefectEntry`` directly).
+            check_exact_bulk_match (bool):
+                Passed to ``_validate_stenciled_supercell``. Default ``True``.
+            reference_fn (callable | None):
+                Optional ``(name, stenciled_supercell) -> None`` callable for
+                per-defect reference structure comparison.
         """
-        # these supercells were explicitly tested by performing hybrid DFT relaxations from these
-        # starting points and comparing to results of unperturbed/rattled supercell relaxations of these
-        # defects directly generated (with ``DefectsGenerator``) in this 20Å supercell
-        # (for the work described in: https://doi.org/10.1039/D4EE04647A)
-        # these defects are good test cases as some are not so trivial; e.g. v_Se_+2 has two inter-chain
-        # bridging bonds; see https://doi.org/10.1039/D4EE04647A SI.
-        Se_20A_test_supercells = [i for i in os.listdir(self.Se_example_dir) if "20Å_Stenciled" in i]
+        if get_input_fn is None:
 
+            def get_input_fn(defect_entry):
+                return defect_entry  # just input ``defect_entry`` as is
+
+        test_supercells = [i for i in os.listdir(self.Se_example_dir) if test_files_tag in i]
         previous_bulk = None
         for name, defect_entry in (
             self.Se_intrinsic_thermo.defect_entries | self.Se_extrinsic_thermo.defect_entries
         ).items():
-            if name in [i.split("_20Å")[0] for i in Se_20A_test_supercells]:
+            if name in [i.split(name_split_tag)[0] for i in test_supercells]:
                 print(f"Testing {name}")
                 with warnings.catch_warnings(record=True) as w:
                     expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
-                        defect_entry,
-                        self.Se_20A_bulk_supercell,
+                        get_input_fn(defect_entry), target_supercell
                     )
                 _print_warning_info(w)
-                assert not any(
-                    "Note that the atomic position basis of the generated defect/bulk supercell differs"
-                    in str(warning.message)
-                    for warning in w
-                )  # previously we got non-tile-matching supercells for this 20Å target_supercell (throwing
-                # these warnings), but updated pre-stenciling re-orientation of
-                # ``(oriented_)big_{bulk,defect}_supercell`` now returns tile-matching supercells
-
+                assert not any("Note that the atomic position" in str(warning.message) for warning in w)
                 assert not any("Note that the stenciled" in str(warning.message) for warning in w)
-
-                # invariant validation tests:
                 _validate_stenciled_supercell(
                     expanded_defect_supercell,
                     defect_entry,
-                    self.Se_20A_bulk_supercell,
+                    target_supercell,
                     corresponding_bulk,
-                    check_exact_bulk_match=True,  # we now get tiling match with latest stenciling code
+                    check_exact_bulk_match=check_exact_bulk_match,
                 )
-
                 if previous_bulk is not None:  # check same bulk structure output in each case here
                     assert StructureMatcher_scan_stol(
                         previous_bulk, corresponding_bulk, "fit", primitive_cell=False, max_stol=0.02
                     )
                 previous_bulk = corresponding_bulk
+                if reference_fn is not None:
+                    reference_fn(name, expanded_defect_supercell)
 
-                # Note: These direct structure comparisons are the most sensitive tests here, and can break
-                # with updated edge-site handling -- which may be perfectly fine, if the other
-                # validation tests above pass:
-                # expanded_defect_supercell.to(  # uncomment to update reference structures
-                #     f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR"
-                # )
-                reference_struct = Structure.from_file(
-                    f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR"
-                )
-                assert StructureMatcher_scan_stol(reference_struct, expanded_defect_supercell, "fit")
+    def test_Se_20_A_supercell(self):
+        """
+        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
+        supercell to a 20.5 x 20.0 x 20.3 Å 234-atom Se supercell.
+
+        234-atom supercell was generated from
+        ``DefectsGenerator(prim_Se, supercell_gen_kwargs={"min_dist":20})``.
+        These supercells were explicitly tested by performing hybrid DFT
+        relaxations and comparing to directly-generated defects (see
+        https://doi.org/10.1039/D4EE04647A). Note: previously we got
+        non-tile-matching supercells for this 20Å target_supercell (raising
+        "Note that the atomic position basis..." warnings), but updated
+        pre-stenciling re-orientation now returns tile-matching supercells.
+        """
+        # Note: Direct structure comparisons are the most sensitive tests here, and can break with
+        # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
+        # stenciled.to(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")  # update refs
+
+        def reference_fn(name, stenciled):
+            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
+            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit")
+
+        self._run_stenciling_loop(
+            self.Se_20A_bulk_supercell, "20Å_Stenciled", "_20Å", reference_fn=reference_fn
+        )
+
+    def test_Se_20_A_supercell_structure_tuple_input(self):
+        """
+        Same as ``test_Se_20_A_supercell`` but using a ``(defect_supercell,
+        bulk_supercell)`` tuple as input to ``get_defect_in_supercell``, with
+        defect fractional coordinates determined automatically.
+        """
+
+        def reference_fn(name, stenciled):
+            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
+            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit")
+
+        self._run_stenciling_loop(
+            self.Se_20A_bulk_supercell,
+            "20Å_Stenciled",
+            "_20Å",
+            get_input_fn=lambda de: (de.defect_supercell, de.bulk_supercell),
+            reference_fn=reference_fn,
+        )
+
+    def test_Se_20_A_supercell_structure_tuple_with_frac_coords_input(self):
+        """
+        Same as ``test_Se_20_A_supercell`` but using a ``(defect_supercell,
+        bulk_supercell, defect_frac_coords)`` tuple as input to
+        ``get_defect_in_supercell``, with defect fractional coordinates
+        provided explicitly.
+        """
+
+        def reference_fn(name, stenciled):
+            reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
+            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit")
+
+        self._run_stenciling_loop(
+            self.Se_20A_bulk_supercell,
+            "20Å_Stenciled",
+            "_20Å",
+            get_input_fn=lambda de: (
+                de.defect_supercell,
+                de.bulk_supercell,
+                de.sc_defect_frac_coords,
+            ),
+            reference_fn=reference_fn,
+        )
+
+    def test_Se_222_expanded_supercell(self):
+        """
+        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
+        supercell to a 2x2x2 expansion of this cell; 26.0 x 26.0 x 29.8 Å
+        648-atom supercell.
+
+        These supercells were explicitly tested by performing hybrid DFT
+        relaxations and comparing to directly-generated defects (see
+        https://doi.org/10.1039/D4EE04647A).
+        """
+        # Note: Direct structure comparisons are the most sensitive tests here, and can break with
+        # updated edge-site handling -- which may be fine if _validate_stenciled_supercell passes.
+        # stenciled.to(f"{self.Se_example_dir}/{name}_222_Exp_Stenciled_POSCAR")  # update refs
+
+        def reference_fn(name, stenciled):
+            reference_struct = Structure.from_file(
+                f"{self.Se_example_dir}/{name}_222_Exp_Stenciled_POSCAR"
+            )
+            ref_dict = get_element_min_max_bond_length_dict(reference_struct)
+            stenciled_dict = get_element_min_max_bond_length_dict(stenciled)
+            for elt in ref_dict:
+                assert np.allclose(ref_dict[elt], stenciled_dict[elt], atol=1e-3)
+
+        self._run_stenciling_loop(
+            self.Se_222_expanded_supercell, "222_Exp_Stenciled", "_222", reference_fn=reference_fn
+        )
 
     def test_edge_tol_min_dist_tol_ranges_and_warning_factor(self):
         """
@@ -439,70 +541,6 @@ class DefectStencilingTest(unittest.TestCase):
             corresponding_bulk,
             check_exact_bulk_match=True,
         )
-
-    def test_Se_222_expanded_supercell(self):
-        """
-        Tests stenciling from the original 13.0 x 13.0 x 14.9 Å 81-atom Se
-        supercell to a 2x2x2 expansion of this cell; 26.0 x 26.0 x 29.8 Å
-        648-atom supercell.
-        """
-        # these supercells were explicitly tested by performing hybrid DFT relaxations from these
-        # starting points and comparing to results of unperturbed/rattled supercell relaxations of these
-        # defects directly generated (with ``DefectsGenerator``) in this 222-expanded supercell
-        # (for the work described in: https://doi.org/10.1039/D4EE04647A)
-        Se_222_exp_test_supercells = [
-            i for i in os.listdir(self.Se_example_dir) if "222_Exp_Stenciled" in i
-        ]
-
-        previous_bulk = None
-        for name, defect_entry in (
-            self.Se_intrinsic_thermo.defect_entries | self.Se_extrinsic_thermo.defect_entries
-        ).items():
-            if name in [i.split("_222")[0] for i in Se_222_exp_test_supercells]:
-                print(f"Testing {name}")
-                with warnings.catch_warnings(record=True) as w:
-                    expanded_defect_supercell, corresponding_bulk = get_defect_in_supercell(
-                        defect_entry,
-                        self.Se_222_expanded_supercell,
-                    )
-                _print_warning_info(w)
-                assert not any("Note that the atomic position" in str(warning.message) for warning in w)
-                assert not any("Note that the stenciled" in str(warning.message) for warning in w)
-
-                # invariant validation tests:
-                _validate_stenciled_supercell(
-                    expanded_defect_supercell,
-                    defect_entry,
-                    self.Se_222_expanded_supercell,
-                    corresponding_bulk,
-                    check_exact_bulk_match=True,
-                )
-
-                if previous_bulk is not None:  # check same bulk structure output in each case here
-                    assert StructureMatcher_scan_stol(
-                        previous_bulk, corresponding_bulk, "fit", primitive_cell=False, max_stol=0.02
-                    )
-                previous_bulk = corresponding_bulk
-
-                # Note: These direct structure comparisons are the most sensitive tests here, and can break
-                # with updated edge-site handling -- which may be perfectly fine, if the other
-                # validation tests above pass:
-                # expanded_defect_supercell.to(  # uncomment to update reference structures
-                #     f"{self.Se_example_dir}/{name}_222_Exp_Stenciled_POSCAR"
-                # )
-                reference_struct = Structure.from_file(
-                    f"{self.Se_example_dir}/{name}_222_Exp_Stenciled_POSCAR"
-                )
-                ref_elt_min_max_bond_length_dict = get_element_min_max_bond_length_dict(reference_struct)
-                stenciled_elt_min_max_bond_length_dict = get_element_min_max_bond_length_dict(
-                    expanded_defect_supercell
-                )
-                for elt in ref_elt_min_max_bond_length_dict:
-                    assert np.allclose(
-                        ref_elt_min_max_bond_length_dict[elt],
-                        stenciled_elt_min_max_bond_length_dict[elt],
-                        atol=1e-3,
-                    )
 
     @custom_mpl_image_compare(filename="Se_v_Se_0_stenciled_vs_original_displacements.png", style=STYLE)
     def test_stenciling_displacement_plot_v_Se_0_20A(self):
