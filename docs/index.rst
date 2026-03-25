@@ -106,6 +106,8 @@ Studies using ``doped``, so far
 ===============================
 
 - A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
+- N\. Singh et al. **Data-driven discovery of high-performance quaternary chalcogenide photovoltaics** `Physical Review Applied <https://doi.org/10.1103/r77p-wl3l>`__ 2026
+- S\. Meher, M. Dey and A\. K. Singh **Origin of Bright Quantum Emissions with a High Debye-Waller Factor in Silicon Nitride** `Nano Letters <https://doi.org/10.1021/acs.nanolett.5c06190>`__ 2026
 - B\. Bakhit et al. **HfO₂-based memristive synapses with asymmetrically extended p-n heterointerfaces for highly energy-efficient neuromorphic hardware** `Science Advances <https://doi.org/10.1126/sciadv.aec2324>`__ 2026
 - M\. Saminathan et al. **Interplay between Cu Delocalization and Bonding Anisotropy on the Thermoelectric Performance of Double-Cation Chalcohalides CuBiSeX₂ (X = Cl, Br)** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.6c00087>`__ 2026
 - A\. Zhang et al. **Theoretical insight into the strategy for high electron carrier concentration in Bi₂WO₆ with intrinsic point defects** `Physical Review B <https://doi.org/10.1103/jkj7-dnqj>`__ 2026
