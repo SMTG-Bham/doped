@@ -50,7 +50,7 @@ tests = [
     "pytest-split>=0.10.0",  # for test splitting
 ]
 docs = [
-    "sphinx>7",
+    "sphinx>7,<9",  # current issue with Sphinx 9: https://github.com/sphinx-doc/sphinx/issues/14270; remove limit once resolved
     "myst-nb>=1.0",
     "recommonmark",
     "renku-sphinx-theme>=0.5.0",
