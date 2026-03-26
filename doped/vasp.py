@@ -1064,7 +1064,7 @@ class DefectRelaxSet(MSONable):
                 "NKREDX": None,
                 "NKREDY": None,
                 "NKREDZ": None,
-            }  # type: dict[str, Optional[int]]
+            }  # type: dict[str, int | None]
             for k in [2, 3]:
                 if np.all(kpt_mesh % k == 0):
                     nkred_dict["NKRED"] = k
@@ -2046,7 +2046,7 @@ class DefectRelaxSet(MSONable):
                 structure for <~30% of known cases of energy-lowering
                 reconstructions relative to an unperturbed defect structure.
                 (default: True)
-            vasp_gam (Optional[bool]):
+            vasp_gam (bool | None):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``. Not recommended, as the recommended workflow is to
                 initially perform ``vasp_gam`` ground-state structure searching
@@ -2592,7 +2592,7 @@ class DefectsSet(MSONable):
                 structure for <~30% of known cases of energy-lowering
                 reconstructions relative to an unperturbed defect structure.
                 (default: True)
-            vasp_gam (Optional[bool]):
+            vasp_gam (bool | None):
                 If ``True``, writes the ``vasp_gam`` input files, with defect
                 ``POSCAR``\s. Not recommended, as the recommended workflow is
                 to initially perform ``vasp_gam`` ground-state structure

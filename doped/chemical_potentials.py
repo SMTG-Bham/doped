@@ -2325,7 +2325,7 @@ class CompetingPhasesAnalyzer(MSONable):
             unstable_host (bool):
                 Whether the host material is unstable with respect to competing
                 phases (i.e. has an energy above hull > 0).
-            entries (list[Union[ComputedEntry, ComputedStructureEntry]]):
+            entries (list[ComputedEntry | ComputedStructureEntry]):
                 List of all parsed ``ComputedEntry``\s /
                 ``ComputedStructureEntry``\s.
             phase_diagram (PhaseDiagram):
@@ -2381,7 +2381,7 @@ class CompetingPhasesAnalyzer(MSONable):
         ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
 
         Args:
-            entries (list[Union[ComputedEntry, ComputedStructureEntry]]):
+            entries (list[ComputedEntry | ComputedStructureEntry]):
                 List of ``ComputedEntry``\s / ``ComputedStructureEntry``\s,
                 from which to compute the phase diagram and chemical
                 potential limits.

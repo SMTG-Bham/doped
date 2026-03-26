@@ -12,7 +12,7 @@ import warnings
 from collections import defaultdict
 from functools import partial, reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Union, cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -342,7 +342,7 @@ def closest_site_info(
     be at least 0.02 Å further away than the (n-1)th site.
 
     Args:
-        defect_entry_or_defect (Union[DefectEntry, Defect]):
+        defect_entry_or_defect (DefectEntry | Defect):
             ``DefectEntry`` or ``Defect`` object, to get neighbour info.
         n (int):
             Return the element symbol and distance for the ``n``\th closest
@@ -1297,7 +1297,7 @@ class DefectsGenerator(MSONable):
 
     def __init__(
         self,
-        structure: Union[Structure, "Atoms", PathLike],
+        structure: "Structure | Atoms | PathLike",
         extrinsic: str | list | dict | None = None,
         interstitial_coords: list | None = None,
         generate_supercell: bool = True,
@@ -1385,7 +1385,7 @@ class DefectsGenerator(MSONable):
                 (e.g. ``CONTCAR``). If this is not the primitive unit cell, it
                 will be reduced to the primitive cell for defect generation,
                 before supercell generation.
-            extrinsic (Union[str, list, dict]):
+            extrinsic (str | list | dict):
                 List or dict of elements (or string for single element) to be
                 used for extrinsic defect generation (i.e. dopants/impurities).
                 If a list is provided, all possible substitutional defects for

@@ -15,7 +15,7 @@ from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain, product
 from operator import methodcaller
-from typing import TYPE_CHECKING, Any, TypeAlias, Union
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -230,7 +230,7 @@ def raw_energy_from_chempots(composition: str | dict | Composition, chempots: di
     potentials dictionary format).
 
     Args:
-        composition (Union[str, dict, Composition]):
+        composition (str | dict | Composition):
             Composition to get the raw energy of.
         chempots (dict):
             Chemical potentials dictionary.
@@ -2703,7 +2703,7 @@ class DefectThermodynamics(MSONable):
                 If ``True``, defect entries are not pruned based on stability /
                 shallow classification.
                 See ``prune_to_stable_entries`` for more info.
-            chempot_table (Optional[bool]):
+            chempot_table (bool | None):
                 Whether to include a table of the chemical potentials above the
                 formation energy plot. If ``None`` (default), shown if multiple
                 plots are generated (i.e. multiple chemical potential limits)
@@ -4620,7 +4620,7 @@ def get_fermi_dos(dos_vr: PathLike | Vasprun):
     object (parsed with ``parse_dos = True``).
 
     Args:
-        dos_vr (Union[PathLike, Vasprun]):
+        dos_vr (PathLike | Vasprun):
             Path to a ``vasprun.xml(.gz)`` file, or a ``Vasprun`` object.
 
     Returns:
@@ -4846,7 +4846,7 @@ class FermiSolver(MSONable):
     def __init__(
         self,
         defect_thermodynamics: DefectThermodynamics,
-        bulk_dos: Union[FermiDos, Vasprun, "PathLike"] | None = None,
+        bulk_dos: FermiDos | Vasprun | PathLike | None = None,
         chempots: dict | None = None,
         el_refs: dict | None = None,
         backend: str = "doped",
@@ -4901,7 +4901,7 @@ class FermiSolver(MSONable):
 
                 Note that the ``DefectThermodynamics.bulk_dos`` will be set to
                 match this input, if provided.
-            chempots (Optional[dict]):
+            chempots (dict | None):
                 Dictionary of chemical potentials to use for calculating the
                 defect formation energies (and thus concentrations and Fermi
                 level), under different chemical environments.
@@ -4933,7 +4933,7 @@ class FermiSolver(MSONable):
 
                 If provided here, then ``defect_thermodynamics.chempots`` is
                 set to this input.
-            el_refs (Optional[dict]):
+            el_refs (dict | None):
                 Dictionary of elemental reference energies for the chemical
                 potentials in the format:
                 ``{element symbol: reference energy}`` (to determine the formal
@@ -4952,7 +4952,7 @@ class FermiSolver(MSONable):
                 ``FermiSolver.defect_thermodynamics.el_refs = ...`` or
                 ``DefectThermodynamics.el_refs = ...`` (with the same input
                 options). Default is ``None``.
-            backend (Optional[str]):
+            backend (str | None):
                 The code backend to use for the thermodynamic calculations,
                 which can be either ``"doped"`` or ``"py-sc-fermi"``.
                 ``"py-sc-fermi"`` allows the use of ``fixed_defects`` and
@@ -5124,7 +5124,7 @@ class FermiSolver(MSONable):
             temperature (float):
                 The temperature at which to solve for the Fermi level and
                 carrier concentrations, in Kelvin. Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -5254,7 +5254,7 @@ class FermiSolver(MSONable):
             temperature (float):
                 The temperature at which to solve for defect concentrations,
                 in Kelvin. Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -5277,7 +5277,7 @@ class FermiSolver(MSONable):
                 Whether to append the chemical potentials (and effective dopant
                 concentration, if provided) to the output ``DataFrame``.
                 Default is ``True``.
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -5549,7 +5549,7 @@ class FermiSolver(MSONable):
                 concentrations, given the fixed total concentrations, which
                 should correspond to operating temperature of the material
                 (typically room temperature). Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -5584,7 +5584,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature, in the format: ``{defect_name: concentration}``,
                 where ``defect_name`` is the name of a defect entry without
@@ -5596,7 +5596,7 @@ class FermiSolver(MSONable):
                 of the chemical potentials, or anneal-quench procedure (e.g. to
                 simulate the effect of a fixed impurity concentration).
                 Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -5949,7 +5949,7 @@ class FermiSolver(MSONable):
         See ``_(pseudo_)equilibrium_solve`` docstrings for more details.
 
         Args:
-            annealing_temperature_range (Optional[Union[float, list[float]]]):
+            annealing_temperature_range (float | list[float] | None):
                 Temperature range in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing /
@@ -5957,14 +5957,14 @@ class FermiSolver(MSONable):
                 defect concentrations) within the frozen defect approach.
                 Default is ``None`` (uses ``temperature_range`` under
                 thermodynamic equilibrium).
-            quenched_temperature_range (Union[float, list[float]]):
+            quenched_temperature_range (float | list[float]):
                 Temperature, or range of temperatures, in Kelvin at which to
                 calculate the self-consistent (constrained equilibrium) Fermi
                 level and carrier concentrations, given the fixed total
                 concentrations, which should correspond to operating
                 temperature of the material (typically room temperature).
                 Default is just 300 K.
-            temperature_range (Union[float, list[float]]):
+            temperature_range (float | list[float]):
                 Temperature range to solve over, under thermodynamic
                 equilibrium (if ``annealing_temperature_range`` is not
                 specified). Defaults to just 300 K.
@@ -6023,7 +6023,7 @@ class FermiSolver(MSONable):
                 same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -6058,7 +6058,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -6070,7 +6070,7 @@ class FermiSolver(MSONable):
                 specific defects regardless of the chemical potentials, or
                 anneal-quench procedure (e.g. to simulate the effect of a fixed
                 impurity concentration). Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -6189,7 +6189,7 @@ class FermiSolver(MSONable):
         See ``_(pseudo_)equilibrium_solve`` docstrings for more details.
 
         Args:
-            effective_dopant_concentration_range (Union[float, list[float]]):
+            effective_dopant_concentration_range (float | list[float]):
                 The range of effective dopant concentrations to solve over.
                 This can be a single value or a list of values representing
                 different concentrations. These are taken as fixed
@@ -6200,7 +6200,7 @@ class FermiSolver(MSONable):
                 Positive values correspond to donor doping, while negative
                 values correspond to acceptor doping. For dopants of charge
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
-            annealing_temperature (Optional[float]):
+            annealing_temperature (float | None):
                 Temperature in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing /
@@ -6299,7 +6299,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -6311,7 +6311,7 @@ class FermiSolver(MSONable):
                 specific defects regardless of the chemical potentials, or
                 anneal-quench procedure (e.g. to simulate the effect of a fixed
                 impurity concentration). Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -6431,7 +6431,7 @@ class FermiSolver(MSONable):
             n_points (int):
                 The number of points to generate between chemical potential
                 end points. Defaults to 10.
-            chempots (Optional[list[dict]]):
+            chempots (list[dict] | None):
                 The chemical potentials to interpolate between. This can be
                 either a list containing two dictionaries, each representing
                 a set of chemical potentials for a single limit (in the format:
@@ -6456,7 +6456,7 @@ class FermiSolver(MSONable):
                 to the elemental references) that should be given here,
                 otherwise the absolute (DFT) chemical potentials should be
                 given.
-            limits (Optional[list[str]]):
+            limits (list[str] | None):
                 The chemical potential limits to interpolate between, as a list
                 containing two strings. Each string should be in the format
                 ``"X-rich"/"X-poor"``, where X is an element in the system, or
@@ -6480,7 +6480,7 @@ class FermiSolver(MSONable):
                 same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            annealing_temperature (Optional[float]):
+            annealing_temperature (float | None):
                 Temperature in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing /
@@ -6499,7 +6499,7 @@ class FermiSolver(MSONable):
                 and Fermi level, under thermodynamic equilibrium (if
                 ``annealing_temperature`` is not specified).
                 Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -6534,7 +6534,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -6546,7 +6546,7 @@ class FermiSolver(MSONable):
                 specific defects regardless of the chemical potentials, or
                 anneal-quench procedure (e.g. to simulate the effect of a fixed
                 impurity concentration). Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -6683,7 +6683,7 @@ class FermiSolver(MSONable):
         See ``_(pseudo_)equilibrium_solve`` docstrings for more details.
 
         Args:
-            chempots (Optional[Union[list[dict], dict]]):
+            chempots (list[dict] | dict | None):
                 The chemical potentials to scan over. This can be either a list
                 containing dictionaries of a set of chemical potentials for a
                 `single` limit (in the format:
@@ -6708,7 +6708,7 @@ class FermiSolver(MSONable):
                 to the elemental references) that should be given here,
                 otherwise the absolute (DFT) chemical potentials should be
                 given.
-            limits (Optional[list[str]]):
+            limits (list[str] | None):
                 The chemical potential limits to scan over, as a list of
                 strings, if ``chempots`` was provided / is present in the
                 ``doped`` format. Each string should be in the format
@@ -6733,7 +6733,7 @@ class FermiSolver(MSONable):
                 same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
-            annealing_temperature (Optional[float]):
+            annealing_temperature (float | None):
                 Temperature in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing /
@@ -6752,7 +6752,7 @@ class FermiSolver(MSONable):
                 and Fermi level, under thermodynamic equilibrium (if
                 ``annealing_temperature`` is not specified).
                 Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -6787,7 +6787,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -6797,7 +6797,7 @@ class FermiSolver(MSONable):
                 for the specified charge state. Concentrations should be given
                 in cm^-3. This can be used to simulate the effect of a fixed
                 impurity concentration. Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -6922,7 +6922,7 @@ class FermiSolver(MSONable):
         See ``_(pseudo_)equilibrium_solve`` docstrings for more details.
 
         Args:
-            chempots (Optional[dict]):
+            chempots (dict | None):
                 Dictionary of chemical potentials to scan over, in the
                 ``doped`` format (i.e.
                 ``{"limits": [{'limit': [chempot_dict]}], ...}``) -- the format
@@ -6947,7 +6947,7 @@ class FermiSolver(MSONable):
                 large values (>= 1e5) with multinary systems can explode,
                 crashing system memory.
                 Default is 100.
-            annealing_temperature (Optional[float]):
+            annealing_temperature (float | None):
                 Temperature in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing /
@@ -6966,7 +6966,7 @@ class FermiSolver(MSONable):
                 and Fermi level, under thermodynamic equilibrium (if
                 ``annealing_temperature`` is not specified).
                 Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -7001,7 +7001,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -7011,7 +7011,7 @@ class FermiSolver(MSONable):
                 for the specified charge state. Concentrations should be given
                 in cm^-3. This can be used to simulate the effect of a fixed
                 impurity concentration. Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -7101,7 +7101,7 @@ class FermiSolver(MSONable):
         scanning functions, checking that it is in the correct format.
 
         Args:
-            chempots (Optional[dict]):
+            chempots (dict | None):
                 Dictionary of chemical potentials to scan over, in the
                 ``doped`` format (i.e.
                 ``{"limits": [{'limit': [chempot_dict]}], ...}``) -- the format
@@ -7188,7 +7188,7 @@ class FermiSolver(MSONable):
             min_or_max (str):
                 Specify whether to "minimise" ("min") or "maximise" ("max";
                 default) the target variable.
-            chempots (Optional[dict]):
+            chempots (dict | None):
                 Dictionary of chemical potentials to scan over, in the
                 ``doped`` format (i.e.
                 ``{"limits": [{'limit': [chempot_dict]}], ...}``) -- the format
@@ -7204,7 +7204,7 @@ class FermiSolver(MSONable):
                 ``FermiSolver.defect_thermodynamics.el_refs = ...`` or
                 ``DefectThermodynamics.el_refs = ...`` if you want to update
                 the elemental reference energies for any reason.
-            annealing_temperature (Optional[float]):
+            annealing_temperature (float | None):
                 Temperature in Kelvin at which to calculate the high
                 temperature (fixed) total defect concentrations, which should
                 correspond to the highest temperature during annealing /
@@ -7232,7 +7232,7 @@ class FermiSolver(MSONable):
                 of the search; see ``scan_chemical_potential_grid`` docstring.
                 Large values are typically not required as the search will
                 iterate to convergence. Defaults to 30.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -7267,7 +7267,7 @@ class FermiSolver(MSONable):
                 If True, also returns the Fermi level, electron and hole
                 concentrations at the annealing temperatures. Only supported
                 with the ``doped`` backend. (default: ``False``)
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -7277,7 +7277,7 @@ class FermiSolver(MSONable):
                 for the specified charge state. Concentrations should be given
                 in cm^-3. This can be used to simulate the effect of a fixed
                 impurity concentration. Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.
@@ -7725,7 +7725,7 @@ class FermiSolver(MSONable):
                 applies re-normalises the VBM eigenvalue used in generating
                 the ``py-sc-fermi`` ``DefectSpecies`` appropriately.
                 Default is 0 (no gap shifting).
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -7735,7 +7735,7 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -7838,7 +7838,7 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` ``DefectSystem`` for which to fix the
                 concentrations of defects (in ``defect_system.defect_species``)
                 according to the ``fixed_defects`` input.
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
                 ``{defect_name: concentration}``, where ``defect_name`` is the
@@ -7934,7 +7934,7 @@ class FermiSolver(MSONable):
             quenched_temperature (float):
                 The lower temperature (in Kelvin) to which the system is
                 quenched. Defaults to 300 K.
-            effective_dopant_concentration (Optional[float]):
+            effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
                 neutrality condition to analyse the Fermi level and doping
@@ -7956,7 +7956,7 @@ class FermiSolver(MSONable):
                 fixed. Can be a value (in eV), or a function with annealing
                 temperature as input; e.g. ``lambda T: -1e-6*500**2``.
                 Default is 0 (no gap shifting).
-            fixed_defects (Optional[dict[str, float]]):
+            fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature regardless of chemical potentials / temperature /
                 Fermi level, in the format: ``{defect_name: concentration}``,
@@ -7967,7 +7967,7 @@ class FermiSolver(MSONable):
                 state. Concentrations should be given in cm^-3. This can be
                 used to simulate the effect of a fixed impurity concentration.
                 Defaults to ``None``.
-            free_defects (Optional[list[str]]):
+            free_defects (list[str] | None):
                 A list of defects (without charge states) to be excluded from
                 high-temperature concentration fixing. Useful for highly mobile
                 defects that are not expected to be "frozen-in" upon quenching.

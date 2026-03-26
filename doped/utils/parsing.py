@@ -78,7 +78,7 @@ def parse_projected_eigen(
             Whether to parse the projected magnetization. Default is ``True``.
 
     Returns:
-        tuple[dict[Spin, np.ndarray], Optional[np.ndarray]]:
+        tuple[dict[Spin, np.ndarray], np.ndarray | None]:
             A dictionary of projected eigenvalues for each spin channel
             (up/down), and the projected magnetization (if parsed).
     """
@@ -204,7 +204,7 @@ def get_core_potentials_from_outcar(
         dir_type (str):
             The type of directory the OUTCAR is in (e.g. ``bulk`` or
             ``defect``) for informative error messages.
-        total_energy (Optional[Union[list, float]]):
+        total_energy (list | float | None):
             The already-parsed total energy for the structure. If provided,
             will check that the total energy of the ``OUTCAR`` matches this
             value / one of these values, and throw a warning if not.
@@ -364,9 +364,9 @@ def get_defect_type_and_composition_diff(
     extrinsic species and code efficiency/robustness improvements.
 
     Args:
-        bulk (Union[Structure, Composition]):
+        bulk (Structure | Composition):
             The bulk structure or composition.
-        defect (Union[Structure, Composition]):
+        defect (Structure | Composition):
             The defect structure or composition.
 
     Returns:
@@ -684,10 +684,10 @@ def find_nearest_coords(
     in ``candidate_frac_coords`` to ``target_frac_coords``.
 
     Args:
-        candidate_frac_coords (Union[list, np.ndarray]):
+        candidate_frac_coords (list | np.ndarray):
             Fractional coordinates (typically from a bulk supercell), to find
             the nearest coordinates to ``target_frac_coords``.
-        target_frac_coords (Union[list, np.ndarray]):
+        target_frac_coords (list | np.ndarray):
             The target coordinates to find the nearest coordinates to in
             ``candidate_frac_coords``.
         lattice (Lattice):
@@ -721,9 +721,9 @@ def find_missing_idx(
     larger set of coordinates.
 
     Args:
-        frac_coords1 (Union[list, np.ndarray]):
+        frac_coords1 (list | np.ndarray):
             First set of fractional coordinates.
-        frac_coords2 (Union[list, np.ndarray]):
+        frac_coords2 (list | np.ndarray):
             Second set of fractional coordinates.
         lattice (Lattice):
             The lattice object to use with the fractional coordinates.
@@ -762,7 +762,7 @@ def _create_unrelaxed_defect_structure(
     Args:
         bulk_supercell (Structure):
             The bulk supercell structure.
-        frac_coords (Union[list, np.ndarray]):
+        frac_coords (list | np.ndarray):
             The fractional coordinates of the defect site. Unnecessary if
             ``bulk_site_idx`` is provided.
         new_species (str):
@@ -807,7 +807,7 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     (https://github.com/SMTG-Bham/doped/issues/147).
 
     Args:
-        lattice (Union[Structure,Lattice]):
+        lattice (Structure | Lattice):
             The lattice of the structure (either a ``pymatgen`` ``Structure``
             or ``Lattice`` object).
 

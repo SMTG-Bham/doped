@@ -357,7 +357,7 @@ def apply_symm_op_to_site(
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
             ``site.coords``). Default: False
-        rotate_lattice (Union[Lattice, bool]):
+        rotate_lattice (Lattice | bool):
             Either a ``pymatgen`` ``Lattice`` object (to use as the new lattice
             basis of the transformed site, which can be provided to reduce
             computation time when looping) or ``True/False``. If ``True``
@@ -3169,7 +3169,7 @@ def point_symmetry_from_site(
     Get the point symmetry of a site in a structure.
 
     Args:
-        site (Union[PeriodicSite, np.ndarray, list]):
+        site (PeriodicSite | np.ndarray | list):
             Site for which to determine the point symmetry. Can be a
             ``PeriodicSite`` object, or a list or numpy array of the
             coordinates of the site (fractional coordinates by default, or

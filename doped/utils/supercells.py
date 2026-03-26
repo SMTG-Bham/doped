@@ -105,14 +105,14 @@ def _get_min_image_distance_from_matrix(
             If the cell matrix volume is normalised (to 1). This is done in the
             ``doped`` supercell generation functions, and boosts efficiency by
             skipping volume calculation. Default = False.
-        break_if_less_than (Optional[float]):
+        break_if_less_than (float | None):
             If the minimum image distance is definitely less than this value
             (based on the minimum cell vector length), then return early with
             the minimum cell length and this value. Mainly for internal use in
             ``doped`` to speed up supercell generation. Default = None.
 
     Returns:
-        Union[float, tuple[float, float]]:
+        float | tuple[float, float]:
             Minimum image distance, or tuple of minimum image distance and the
             break value if ``break_if_less_than`` is not None.
     """

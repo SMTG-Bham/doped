@@ -5,7 +5,7 @@ Core functions and classes for defects in doped.
 import collections
 import contextlib
 import warnings
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
@@ -828,7 +828,7 @@ class DefectEntry(thermo.DefectEntry):
         force_reparse: bool = False,
         clear_attributes: bool = True,
         **kwargs,
-    ) -> Union["BandEdgeStates", tuple["BandEdgeStates", "Figure"]]:
+    ) -> "BandEdgeStates | tuple[BandEdgeStates, Figure]":
         r"""
         Returns information about the band edge and in-gap electronic states
         and their orbital character / localisation degree for the defect entry,

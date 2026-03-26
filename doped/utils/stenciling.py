@@ -162,7 +162,7 @@ def get_defect_in_supercell(
             different atomic position bases to ``target_supercell`` (as
             described above) -- if so, a warning will be printed (unless
             ``check_bulk`` is ``False``). Default is ``True``.
-        target_frac_coords (Union[np.ndarray[float], list[float], bool]):
+        target_frac_coords (np.ndarray[float] | list[float] | bool):
             The fractional coordinates to target for defect placement in the
             new supercell. If just set to ``True`` (default), will try to place
             the defect nearest to the centre of the superset cell (i.e.
@@ -512,12 +512,12 @@ def _scan_symm_ops_to_place_site_closest_to_frac_coords(
     coordinates.
 
     Args:
-        symm_ops (Union[Structure, Sequence[SymmOp]]):
+        symm_ops (Structure | Sequence[SymmOp]):
             Either a list of symmetry operations or a structure from which to
             extract symmetry operations.
         site (PeriodicSite):
             The site to place closest to the target fractional coordinates.
-        target_frac_coords (Optional[Union[np.ndarray[float], list[float]]]):
+        target_frac_coords (np.ndarray[float] | list[float] | None):
             The target fractional coordinates to place the site closest to.
             Default is ``None``, in which case the site is placed closest to
             the centre of the supercell (i.e. [0.5, 0.5, 0.5]).
@@ -1231,7 +1231,7 @@ def is_within_frac_bounds(
     Args:
         lattice (Lattice):
             ``Lattice`` object defining the unit cell.
-        cart_coords (Union[np.ndarray[float], list[float]]):
+        cart_coords (np.ndarray[float] | list[float]):
             The Cartesian coordinates to check.
         tol (float):
             A tolerance (in Angstrom / cartesian units) for coordinates to be
