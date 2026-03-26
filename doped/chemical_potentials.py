@@ -51,8 +51,6 @@ from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
 
-warnings.simplefilter("error")
-
 try:
     from pymatgen.core.entries import (
         ComputedEntry,
