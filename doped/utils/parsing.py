@@ -78,7 +78,7 @@ def parse_projected_eigen(
             Whether to parse the projected magnetization. Default is ``True``.
 
     Returns:
-        Tuple[Dict[Spin, np.ndarray], Optional[np.ndarray]]:
+        tuple[dict[Spin, np.ndarray], Optional[np.ndarray]]:
             A dictionary of projected eigenvalues for each spin channel
             (up/down), and the projected magnetization (if parsed).
     """
@@ -370,7 +370,7 @@ def get_defect_type_and_composition_diff(
             The defect structure or composition.
 
     Returns:
-        tuple[str, Dict[str, int]]:
+        tuple[str, dict[str, int]]:
             The defect type (``interstitial``, ``vacancy`` or ``substitution``)
             and the composition difference between the bulk and defect
             structures as a dictionary.

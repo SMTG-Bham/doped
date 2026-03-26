@@ -19,7 +19,7 @@ v.3.2.1
 - Smart ``n_points`` estimation for ``ChemicalPotentialGrid.get_grid()``.
 - Update ``spglib`` error handling for compatibility with ``>=2.7``.
 - Make ``pydefect`` a softer dependency, minimising imports.
-- Modularise ``DefectsGenerator`` internals for future extensibility (i.e. complexes...).
+- Modularise |DefectsGenerator| internals for future extensibility (i.e. complexes...).
 - ``DefectsParser`` refactoring and cleanup.
 - Various robustness, efficiency and docs updates.
 
@@ -157,7 +157,7 @@ v.2.3.3
 ----------
 - General robustness updates:
     - Updated file parsing to avoid hidden files.
-    - Sanity check in ``DefectsGenerator`` if input symmetry is ``P1``.
+    - Sanity check in |DefectsGenerator| if input symmetry is ``P1``.
     - Add ``NKRED`` to ``INCAR`` mismatch tests.
     - Re-parse config & spin degeneracies in concentration/symmetry functions if data not already present
       (if user is porting ``DefectEntry``\s from older ``doped`` versions or manually).
@@ -276,7 +276,7 @@ v.2.0.0
 ----------
 - Major overhaul to rebase onto the new ``pymatgen`` defects code (``>v2022.7.25``).
 - Add documentation (https://doped.readthedocs.io/en/latest)
-- Add ``DefectsGenerator`` class with major upgrade in functionality.
+- Add |DefectsGenerator| class with major upgrade in functionality.
 - Add ``DefectsSet`` classes in ``vasp.py``
 
 v.1.1.2

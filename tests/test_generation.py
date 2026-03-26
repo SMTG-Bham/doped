@@ -3360,7 +3360,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
 
     def test_unknown_oxi_states(self):
         """
-        Test initialising DefectsGenerator with elements that don't have
+        Test initialising |DefectsGenerator| with elements that don't have
         tabulated ICSD oxidation states.
         """
         CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
@@ -3573,8 +3573,8 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
 
     def test_Si_D_extrinsic(self):
         """
-        Test initialising DefectsGenerator with "D" (deuterium) as an extrinsic
-        species.
+        Test initialising |DefectsGenerator| with "D" (deuterium) as an
+        extrinsic species.
 
         Previously failed as "D" gets renamed to "H" by `pymatgen` under the
         hood, and so wasn't present in `element_list`.

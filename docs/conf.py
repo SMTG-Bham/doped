@@ -109,6 +109,8 @@ intersphinx_mapping = {
     "pymatgen": ("https://pymatgen.org/", None),
     "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/api_ref/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------

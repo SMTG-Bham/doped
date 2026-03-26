@@ -2207,11 +2207,11 @@ class DefectsSet(MSONable):
         upon defect & competing phases parsing in ``doped``.
 
         Args:
-            defect_entries (``DefectsGenerator``, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
-                Either a ``DefectsGenerator`` object, or a dictionary/list of
+            defect_entries (|DefectsGenerator|, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
+                Either a |DefectsGenerator| object, or a dictionary/list of
                 ``DefectEntry``\s, or a single ``DefectEntry`` object, for
                 which to generate VASP input files.
-                If a ``DefectsGenerator`` object or a dictionary (->
+                If a |DefectsGenerator| object or a dictionary (->
                 ``{defect name: DefectEntry}``), the defect folder names
                 will be set equal to ``defect name``. If a list or single
                 ``DefectEntry`` object is provided, the defect folder names
@@ -2252,9 +2252,9 @@ class DefectsSet(MSONable):
             **kwargs: Additional kwargs to pass to each ``DefectRelaxSet()``.
 
         Key Attributes:
-            defect_sets (Dict):
+            defect_sets (dict):
                 Dictionary of ``{defect name: DefectRelaxSet}``.
-            defect_entries (Dict):
+            defect_entries (dict):
                 Dictionary of ``{defect name: DefectEntry}`` for the input
                 defect species, for which to generate ``VASP`` input files.
             bulk_vasp_gam (DefectDictSet):
@@ -2284,9 +2284,9 @@ class DefectsSet(MSONable):
                 further down the periodic table than Zn).
             bulk_supercell (Structure):
                 Supercell structure of the bulk (pristine) material.
-            json_obj (Union[Dict, DefectsGenerator]):
-                Either the ``DefectsGenerator`` object if input
-                ``defect_entries`` is a ``DefectsGenerator`` object, otherwise
+            json_obj (dict | |DefectsGenerator|):
+                Either the |DefectsGenerator| object if input
+                ``defect_entries`` is a |DefectsGenerator| object, otherwise
                 the ``defect_entries`` dictionary, which will be written to
                 file when ``write_files()`` is called, to aid calculation
                 provenance.
@@ -2370,16 +2370,16 @@ class DefectsSet(MSONable):
         dictionary of ``DefectEntry`` objects.
 
         Also returns the name of the JSON file and object to serialise when
-        writing the VASP input to files. This is the DefectsGenerator object if
-        ``defect_entries`` is a ``DefectsGenerator`` object, otherwise the
+        writing the VASP input to files. This is the |DefectsGenerator| object if
+        ``defect_entries`` is a |DefectsGenerator| object, otherwise the
         dictionary of ``DefectEntry`` objects.
 
         Args:
-            defect_entries (``DefectsGenerator``, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
-                Either a ``DefectsGenerator`` object, or a dictionary/list of
+            defect_entries (|DefectsGenerator|, dict/list of ``DefectEntry``\s, or ``DefectEntry``):
+                Either a |DefectsGenerator| object, or a dictionary/list of
                 ``DefectEntry``\s, or a single ``DefectEntry`` object, for
                 which to generate ``VASP`` input files.
-                If a ``DefectsGenerator`` object or a dictionary (->
+                If a |DefectsGenerator| object or a dictionary (->
                 ``{defect name: DefectEntry}``), the defect folder names will
                 be set equal to ``defect name``. If a list or single
                 ``DefectEntry`` object is provided, the defect folder names

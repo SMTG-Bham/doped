@@ -641,7 +641,7 @@ def find_ideal_supercell(
     https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     Note that this function is used by default to generate defect supercells
-    with the ``doped`` ``DefectsGenerator`` class, unless specific supercell
+    with the ``doped`` |DefectsGenerator| class, unless specific supercell
     settings are used.
 
     Args:

@@ -140,7 +140,7 @@ def _compare_attributes(obj1, obj2, exclude=None):
     Check that two objects are equal by comparing their public
     attributes/properties.
 
-    Handles special cases for ``DefectsGenerator``
+    Handles special cases for |DefectsGenerator|
     (``prim_interstitial_coords_mult_and_equiv_coords``)
     and ``DefectThermodynamics`` (``bulk_dos``) objects.
     """

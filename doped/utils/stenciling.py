@@ -168,7 +168,7 @@ def get_defect_in_supercell(
             the defect nearest to the centre of the superset cell (i.e.
             ``target_frac_coords = [0.5, 0.5, 0.5]``), as is default in
             ``doped`` defect generation. Note that defect placement is harder
-            in this case than in generation with ``DefectsGenerator``, as we
+            in this case than in generation with |DefectsGenerator|, as we
             are not starting from primitive cells, and we are working with
             relaxed geometries. If ``False``, does not attempt any defect
             re-positioning.
