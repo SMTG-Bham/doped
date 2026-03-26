@@ -5,7 +5,6 @@ Core functions and classes for defects in doped.
 import collections
 import contextlib
 import warnings
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Union
 
 import numpy as np
@@ -71,128 +70,160 @@ _falling_back_to_common_oxi_states_warning = (
 )
 
 
-@dataclass
 class DefectEntry(thermo.DefectEntry):
     """
-    Subclass of ``pymatgen.analysis.defects.thermo.DefectEntry`` with
-    additional attributes used by ``doped``.
-
-    Core Attributes:
-        defect:
-            ``doped``/``pymatgen`` defect object corresponding to the defect
-            in the entry.
-        charge_state:
-            Charge state of the defect.
-        sc_entry:
-            ``pymatgen`` ``ComputedStructureEntry`` for the `defect` supercell.
-        sc_defect_frac_coords:
-            The fractional coordinates of the defect in the supercell.
-        bulk_entry:
-            ``pymatgen`` ``ComputedEntry`` for the bulk supercell reference.
-            Required for calculating the defect formation energy.
-        corrections:
-            A dictionary of energy corrections which are summed and added to
-            the defect formation energy.
-        corrections_metadata:
-            A dictionary that acts as a generic container for storing
-            information about how the corrections were calculated. Only used
-            for debugging and plotting purposes.
-
-    Parsing Attributes:
-        calculation_metadata:
-            A dictionary of calculation parameters and data, used to perform
-            charge corrections and compute formation energies.
-        degeneracy_factors:
-            A dictionary of degeneracy factors contributing to the total
-            degeneracy of the defect species (such as spin and configurational
-            degeneracy etc). This is an important factor in the defect
-            concentration equation (https://doi.org/10.1039/D2FD00043A,
-            https://doi.org/10.1038/s41578-025-00879-y,
-            https://doi.org/10.1039/D3CS00432E), and so affects the output of
-            the defect concentration / Fermi level functions. Spin and
-            configurational (geometry) degeneracy factors are automatically
-            determined by ``doped`` during parsing (for details, see the
-            ``spin_degeneracy_from_vasprun()``,
-            ``get_orientational_degeneracy`` and
-            ``point_symmetry_from_defect_entry`` functions), but can also be
-            edited in ``DefectEntry.degeneracy_factors``.
-            For discussion, see:
-            https://doped.readthedocs.io/en/latest/Tips.html#spin
-
-    Generation Attributes:
-        name:
-            The ``doped``-generated name of the defect entry. See docstrings
-            of ``DefectsGenerator`` for the doped naming algorithm.
-        conventional_structure:
-            Conventional cell structure of the host according to the Bilbao
-            Crystallographic Server (BCS) definition, used to determine defect
-            site Wyckoff labels and multiplicities.
-        conv_cell_frac_coords:
-            Fractional coordinates of the defect in the conventional cell.
-        equiv_conv_cell_frac_coords:
-            Symmetry-equivalent defect positions in fractional coordinates of
-            the conventional cell.
-        _BilbaoCS_conv_cell_vector_mapping:
-            A vector mapping the lattice vectors of the ``spglib``-defined
-            conventional cell to that of the Bilbao Crystallographic Server
-            definition (for most space groups the definitions are the same).
-        wyckoff:
-            Wyckoff label of the defect site.
-        charge_state_guessing_log:
-            A log of the input & computed values used to determine charge state
-            probabilities.
-        defect_supercell:
-            ``pymatgen`` ``Structure`` object of the defect supercell.
-        defect_supercell_site:
-            ``pymatgen`` ``PeriodicSite`` object of the defect in the defect
-            supercell.
-        equivalent_supercell_sites:
-            List of ``pymatgen`` ``PeriodicSite`` objects of
-            symmetry-equivalent defect sites in the defect supercell.
-        bulk_supercell:
-            ``pymatgen`` ``Structure`` object of the bulk (pristine,
-            defect-free) supercell.
+    ``doped`` ``DefectEntry`` object.
     """
 
-    # core attributes:
-    defect: "Defect"
-    charge_state: int
-    sc_entry: ComputedStructureEntry
-    corrections: dict[str, float] = field(default_factory=dict)
-    corrections_metadata: dict[str, Any] = field(default_factory=dict)
-    sc_defect_frac_coords: tuple[float, float, float] | None = None
-    bulk_entry: ComputedEntry | None = None
-    entry_id: str | None = None
-
-    # doped attributes:
-    name: str = ""
-    calculation_metadata: dict[str, Any] = field(default_factory=dict)
-    degeneracy_factors: dict[str, float] = field(default_factory=dict)
-    conventional_structure: Structure | None = None
-    conv_cell_frac_coords: np.ndarray | None = None
-    equiv_conv_cell_frac_coords: list[np.ndarray] = field(default_factory=list)
-    _BilbaoCS_conv_cell_vector_mapping: list[int] = field(default_factory=lambda: [0, 1, 2])
-    wyckoff: str | None = None
-    charge_state_guessing_log: list[dict] | None = None
-    defect_supercell: Structure | None = None
-    defect_supercell_site: PeriodicSite | None = None  # TODO: Add `from_structures` method to
-    # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
-    # codes etc)
-    equivalent_supercell_sites: list[PeriodicSite] = field(default_factory=list)
-    bulk_supercell: Structure | None = None
-    _bulk_entry_energy: float | None = None
-    _bulk_entry_hash: int | None = None
-    _sc_entry_energy: float | None = None
-    _sc_entry_hash: int | None = None
-
-    def __post_init__(self):
+    def __init__(
+        self,
+        defect: "Defect",
+        charge_state: int,
+        sc_entry: ComputedStructureEntry,
+        corrections: dict[str, float] | None = None,
+        corrections_metadata: dict[str, Any] | None = None,
+        sc_defect_frac_coords: tuple[float, float, float] | None = None,
+        bulk_entry: ComputedEntry | None = None,
+        entry_id: str | None = None,
+        name: str | None = None,
+        calculation_metadata: dict[str, Any] | None = None,
+        degeneracy_factors: dict[str, float] | None = None,
+        conventional_structure: Structure | None = None,
+        conv_cell_frac_coords: np.ndarray | None = None,
+        equiv_conv_cell_frac_coords: list[np.ndarray] | None = None,
+        _BilbaoCS_conv_cell_vector_mapping: list[int] | None = None,
+        wyckoff: str | None = None,
+        charge_state_guessing_log: list[dict] | None = None,
+        defect_supercell: Structure | None = None,
+        defect_supercell_site: PeriodicSite | None = None,
+        equivalent_supercell_sites: list[PeriodicSite] | None = None,
+        bulk_supercell: Structure | None = None,
+        _bulk_entry_energy: float | None = None,
+        _bulk_entry_hash: int | None = None,
+        _sc_entry_energy: float | None = None,
+        _sc_entry_hash: int | None = None,
+    ):
         """
-        Post-initialization method, using super() and self.defect.
+        Subclass of :class:`~pymatgen.analysis.defects.thermo.DefectEntry` with
+        additional attributes used by ``doped``.
+
+        Core Attributes:
+            defect:
+                ``doped``/``pymatgen`` defect object corresponding to the
+                defect in the entry.
+            charge_state:
+                Charge state of the defect.
+            sc_entry:
+                ``pymatgen`` ``ComputedStructureEntry`` for the `defect`
+                supercell.
+            sc_defect_frac_coords:
+                The fractional coordinates of the defect in the supercell.
+            bulk_entry:
+                ``pymatgen`` ``ComputedEntry`` for the bulk supercell
+                reference. Required for calculating defect formation energy.
+            corrections:
+                A dictionary of energy corrections which are summed and added
+                to the defect formation energy.
+            corrections_metadata:
+                A dictionary that acts as a generic container for storing
+                information about how the corrections were calculated. Only
+                used for debugging and plotting purposes.
+
+        Parsing Attributes:
+            calculation_metadata:
+                A dictionary of calculation parameters and data, used to
+                perform charge corrections and compute formation energies.
+            degeneracy_factors:
+                A dictionary of degeneracy factors contributing to the total
+                degeneracy of the defect species (such as spin and
+                configurational degeneracy etc). This is an important factor in
+                the defect concentration equation
+                (https://doi.org/10.1039/D2FD00043A,
+                https://doi.org/10.1038/s41578-025-00879-y,
+                https://doi.org/10.1039/D3CS00432E), and so affects the output
+                of the defect concentration / Fermi level functions. Spin and
+                configurational (geometry) degeneracy factors are automatically
+                determined by ``doped`` during parsing (for details, see the
+                ``spin_degeneracy_from_vasprun()``,
+                ``get_orientational_degeneracy`` and
+                ``point_symmetry_from_defect_entry`` functions), but can also
+                be edited in ``DefectEntry.degeneracy_factors``.
+                For discussion, see:
+                https://doped.readthedocs.io/en/latest/Tips.html#spin
+
+        Generation Attributes:
+            name:
+                The ``doped``-generated name of the defect entry. See
+                |DefectsGenerator| for the doped naming algorithm.
+            conventional_structure:
+                Conventional cell structure of the host according to the Bilbao
+                Crystallographic Server (BCS) definition, used to determine
+                defect site Wyckoff labels and multiplicities.
+            conv_cell_frac_coords:
+                Fractional coordinates of the defect in the conventional cell.
+            equiv_conv_cell_frac_coords:
+                Symmetry-equivalent defect positions in fractional coordinates
+                of the conventional cell.
+            _BilbaoCS_conv_cell_vector_mapping:
+                A vector mapping the lattice vectors of the ``spglib``-defined
+                conventional cell to that of the Bilbao Crystallographic Server
+                definition (these are equal for most space groups).
+            wyckoff:
+                Wyckoff label of the defect site.
+            charge_state_guessing_log:
+                A log of the input & computed values used to determine charge
+                state probabilities.
+            defect_supercell:
+                ``pymatgen`` ``Structure`` object of the defect supercell.
+            defect_supercell_site:
+                ``pymatgen`` ``PeriodicSite`` object of the defect in the
+                defect supercell.
+            equivalent_supercell_sites:
+                List of ``pymatgen`` ``PeriodicSite`` objects of
+                symmetry-equivalent defect sites in the defect supercell.
+            bulk_supercell:
+                ``pymatgen`` ``Structure`` object of the bulk (pristine,
+                defect-free) supercell.
         """
-        if self.sc_entry is None and not self.entry_id:
+        # core attributes:
+        self.defect = defect
+        self.charge_state = int(charge_state)
+        self.sc_entry = sc_entry
+        self.corrections = corrections if corrections is not None else {}
+        self.corrections_metadata = corrections_metadata if corrections_metadata is not None else {}
+        self.sc_defect_frac_coords = sc_defect_frac_coords
+        self.bulk_entry = bulk_entry
+        if sc_entry is None and not entry_id:
             self.entry_id = "N/A"  # otherwise crashes unnecessarily with pymatgen defects
-        super().__post_init__()
-        if not self.name:
+        else:
+            self.entry_id = entry_id or sc_entry.entry_id
+
+        # doped attributes:
+        self.calculation_metadata = calculation_metadata if calculation_metadata is not None else {}
+        self.degeneracy_factors = degeneracy_factors if degeneracy_factors is not None else {}
+        self.conventional_structure = conventional_structure
+        self.conv_cell_frac_coords = conv_cell_frac_coords
+        self.equiv_conv_cell_frac_coords = (
+            equiv_conv_cell_frac_coords if equiv_conv_cell_frac_coords is not None else []
+        )
+        self._BilbaoCS_conv_cell_vector_mapping = (
+            _BilbaoCS_conv_cell_vector_mapping
+            if _BilbaoCS_conv_cell_vector_mapping is not None
+            else [0, 1, 2]
+        )
+        self.wyckoff = wyckoff
+        self.charge_state_guessing_log = charge_state_guessing_log
+        self.defect_supercell = defect_supercell
+        self.defect_supercell_site = defect_supercell_site
+        self.equivalent_supercell_sites = (
+            equivalent_supercell_sites if equivalent_supercell_sites is not None else []
+        )
+        self.bulk_supercell = bulk_supercell
+        self._bulk_entry_energy = _bulk_entry_energy
+        self._bulk_entry_hash = _bulk_entry_hash
+        self._sc_entry_energy = _sc_entry_energy
+        self._sc_entry_hash = _sc_entry_hash
+        if name is None:
             # try get using doped functions:
             try:
                 from doped.generation import get_defect_name_from_defect
@@ -201,9 +232,13 @@ class DefectEntry(thermo.DefectEntry):
             except Exception:
                 name_wout_charge = self.defect.name
 
-            self.name: str = (
-                f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
-            )
+            self.name = f"{name_wout_charge}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
+        else:
+            self.name = name
+
+    # TODO: Add `from_structures` method to
+    # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
+    # codes etc)
 
     def to_json(self, filename: PathLike | None = None):
         """

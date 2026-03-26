@@ -2635,7 +2635,7 @@ class DefectParser:
             sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
             bulk_entry=bulk_entry,
             # doped attributes:
-            name=possible_defect_name,  # set later, so set now to avoid guessing in ``__post_init__()``
+            name=possible_defect_name,  # auto-determined in ``__init__`` if not set; set to avoid guessing
             defect_supercell_site=defect_site,  # _relaxed_ defect site
             defect_supercell=defect_vr.final_structure,
             bulk_supercell=bulk_vr.final_structure,
