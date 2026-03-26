@@ -1051,8 +1051,8 @@ def formation_energy_plot(
     Produce defect formation energy vs Fermi level plot.
 
     Args:
-        defect_thermodynamics (DefectThermodynamics):
-            ``DefectThermodynamics`` object containing defect entries to plot.
+        defect_thermodynamics (|DefectThermodynamics|):
+            |DefectThermodynamics| object containing defect entries to plot.
         dft_chempots (dict):
             Dictionary of ``{Element: value}`` giving the chemical potential of
             each element.

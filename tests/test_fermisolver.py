@@ -2100,7 +2100,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
     @parameterize_backend()
     def test_skip_dos_check(self, backend):
         """
-        Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
+        Test the ``FermiDos`` vs |DefectThermodynamics| VBM check, and how it
         is skipped with ``skip_dos_check``.
 
         Main test code in ``test_thermodynamics.py``.

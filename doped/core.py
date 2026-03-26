@@ -72,7 +72,7 @@ _falling_back_to_common_oxi_states_warning = (
 
 class DefectEntry(thermo.DefectEntry):
     """
-    ``doped`` ``DefectEntry`` object.
+    ``doped`` |DefectEntry| object.
     """
 
     def __init__(
@@ -145,7 +145,7 @@ class DefectEntry(thermo.DefectEntry):
                 configurational (geometry) degeneracy factors are automatically
                 determined by ``doped`` during parsing (for details, see the
                 ``spin_degeneracy_from_vasprun()``,
-                ``get_orientational_degeneracy`` and
+                |get_orientational_degeneracy| and
                 ``point_symmetry_from_defect_entry`` functions), but can also
                 be edited in ``DefectEntry.degeneracy_factors``.
                 For discussion, see:
@@ -174,15 +174,15 @@ class DefectEntry(thermo.DefectEntry):
                 A log of the input & computed values used to determine charge
                 state probabilities.
             defect_supercell:
-                ``pymatgen`` ``Structure`` object of the defect supercell.
+                ``pymatgen`` |Structure| object of the defect supercell.
             defect_supercell_site:
-                ``pymatgen`` ``PeriodicSite`` object of the defect in the
+                ``pymatgen`` |PeriodicSite| object of the defect in the
                 defect supercell.
             equivalent_supercell_sites:
-                List of ``pymatgen`` ``PeriodicSite`` objects of
+                List of ``pymatgen`` |PeriodicSite| objects of
                 symmetry-equivalent defect sites in the defect supercell.
             bulk_supercell:
-                ``pymatgen`` ``Structure`` object of the bulk (pristine,
+                ``pymatgen`` |Structure| object of the bulk (pristine,
                 defect-free) supercell.
         """
         # core attributes:
@@ -242,7 +242,7 @@ class DefectEntry(thermo.DefectEntry):
 
     def to_json(self, filename: PathLike | None = None):
         """
-        Save the ``DefectEntry`` object to a json file, which can be reloaded
+        Save the |DefectEntry| object to a json file, which can be reloaded
         with the ``DefectEntry.from_json()`` class method.
 
         Note that file extensions with ".gz" will be automatically compressed
@@ -264,22 +264,22 @@ class DefectEntry(thermo.DefectEntry):
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a ``DefectEntry`` object from a json(.gz) file.
+        Load a |DefectEntry| object from a json(.gz) file.
 
         Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):
-                Filename of json file to load ``DefectEntry`` from.
+                Filename of json file to load |DefectEntry| from.
 
         Returns:
-            ``DefectEntry`` object
+            |DefectEntry| object
         """
         return loadfn(filename)
 
     def as_dict(self) -> dict:
         """
-        Return a JSON-serializable dict representation of ``DefectEntry``.
+        Return a JSON-serializable dict representation of |DefectEntry|.
 
         Slightly modified from the parent function to remove any hash values,
         as these are only relevant to the current python session.
@@ -294,16 +294,16 @@ class DefectEntry(thermo.DefectEntry):
     @classmethod
     def from_dict(cls, d: dict):
         """
-        Class method to create a ``DefectEntry`` object from a dictionary.
+        Class method to create a |DefectEntry| object from a dictionary.
 
         Defined to avoid unnecessary ``vise``/``pydefect`` INFO messages.
 
         Args:
             d (dict):
-                Dictionary representation of the ``DefectEntry`` object.
+                Dictionary representation of the |DefectEntry| object.
 
         Returns:
-            ``DefectEntry`` object
+            |DefectEntry| object
         """
         from doped import suppress_logging
 
@@ -386,7 +386,7 @@ class DefectEntry(thermo.DefectEntry):
                 (likely but not necessarily the same as the raw output of a
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
-                from the ``DefectEntry`` ``calculation_metadata`` if available.
+                from the |DefectEntry| ``calculation_metadata`` if available.
                 See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
                 for information on calculating and converging the dielectric
                 constant.
@@ -543,7 +543,7 @@ class DefectEntry(thermo.DefectEntry):
                 (likely but not necessarily the same as the raw output of a
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
-                from the ``DefectEntry`` ``calculation_metadata`` if available.
+                from the |DefectEntry| ``calculation_metadata`` if available.
                 See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
                 for information on calculating and converging the dielectric
                 constant.
@@ -558,15 +558,17 @@ class DefectEntry(thermo.DefectEntry):
                 the site potential sampling in the correction calculation/plot.
                 If None (default), no sites are excluded.
             defect_outcar (PathLike or Outcar):
-                Path to the output VASP OUTCAR file from the defect supercell
-                calculation, or the corresponding ``pymatgen`` Outcar object.
-                If ``None``, will use ``defect_supercell_site_potentials``
-                from the ``defect_entry`` ``calculation_metadata`` if available.
+                Path to the output ``VASP`` ``OUTCAR`` file from the defect
+                supercell calculation, or the corresponding ``pymatgen``
+                |Outcar| object. If ``None``, will use
+                ``defect_supercell_site_potentials`` from the ``defect_entry``
+                ``calculation_metadata`` if available.
             bulk_outcar (PathLike or Outcar):
-                Path to the output VASP OUTCAR file from the bulk supercell
-                calculation, or the corresponding ``pymatgen`` Outcar object.
-                If None, will try use ``bulk_supercell_site_potentials`` from
-                the ``defect_entry`` ``calculation_metadata`` if available.
+                Path to the output ``VASP`` ``OUTCAR`` file from the bulk
+                supercell calculation, or the corresponding ``pymatgen``
+                |Outcar| object. If None, will try to use
+                ``bulk_supercell_site_potentials`` from the ``defect_entry``
+                ``calculation_metadata`` if available.
             plot (bool):
                 Whether to plot the Kumagai site potential plots (for
                 manually checking the behaviour of the charge correction here).
@@ -664,9 +666,9 @@ class DefectEntry(thermo.DefectEntry):
         Args:
             bulk_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-                or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
+                or a ``pymatgen`` |Vasprun| object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
-                the ``Vasprun`` object from
+                the |Vasprun| object from
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
@@ -675,15 +677,15 @@ class DefectEntry(thermo.DefectEntry):
                 ``bulk_vr`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
                 object, for the reference bulk supercell calculation. If
                 ``None`` (default), tries to load from a ``PROCAR(.gz)`` file
                 at ``self.calculation_metadata["bulk_path"]``.
             defect_vr (PathLike, Vasprun):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-                or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
+                or a ``pymatgen`` |Vasprun| object, for the defect supercell
                 calculation. If ``None`` (default), tries to load the
-                ``Vasprun`` object from
+                |Vasprun| object from
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
@@ -692,7 +694,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``defect_vr`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
                 object, for the defect supercell calculation. If ``None``
                 (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
@@ -839,11 +841,11 @@ class DefectEntry(thermo.DefectEntry):
         (PHS / shallow state), see
         https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects.
 
-        If eigenvalue data has not already been parsed for ``DefectEntry``
-        (default in ``doped`` is to parse this data with ``DefectsParser``/
+        If eigenvalue data has not already been parsed for |DefectEntry|
+        (default in ``doped`` is to parse this data with |DefectsParser|/
         ``DefectParser``, as controlled by the ``parse_projected_eigen`` flag),
         then this function will attempt to load the eigenvalue data from either
-        the input ``Vasprun``/``PROCAR`` objects or files, or from the
+        the input |Vasprun|/|Procar| objects or files, or from the
         ``bulk/defect_path``\s in ``defect_entry.calculation_metadata``.
         If so, will initially try to load orbital projections from
         ``vasprun.xml(.gz)`` files (more accurate), or failing that from
@@ -867,45 +869,45 @@ class DefectEntry(thermo.DefectEntry):
                 If ``None`` (default), plots are not saved.
             bulk_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
-                ``DefectEntry`` (default behaviour when parsing, with data in
+                |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-                or a ``pymatgen`` ``Vasprun`` object, for the reference bulk
+                or a ``pymatgen`` |Vasprun| object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
-                the ``Vasprun`` object from
+                the |Vasprun| object from
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
             bulk_procar (PathLike, Procar):
                 Not required if eigenvalue data has already been parsed for
-                ``DefectEntry`` (default behaviour when parsing, with data in
+                |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
                 and/or if ``bulk_vr`` was parsed with
                 ``parse_projected_eigen = True``.
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
                 object, for the reference bulk supercell calculation. If
                 ``None`` (default), tries to load from a ``PROCAR(.gz)`` file
                 at ``self.calculation_metadata["bulk_path"]``.
             defect_vr (PathLike, Vasprun):
                 Not required if eigenvalue data has already been parsed for
-                ``DefectEntry`` (default behaviour when parsing, with data in
+                |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
-                or a ``pymatgen`` ``Vasprun`` object, for the defect supercell
+                or a ``pymatgen`` |Vasprun| object, for the defect supercell
                 calculation. If ``None`` (default), tries to load the
-                ``Vasprun`` object from
+                |Vasprun| object from
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
             defect_procar (PathLike, Procar):
                 Not required if eigenvalue data has already been parsed for
-                ``DefectEntry`` (default behaviour when parsing, with data in
+                |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
                 and/or if ``defect_vr`` was parsed with
                 ``parse_projected_eigen = True``.
                 Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` ``Procar``
+                ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
                 object, for the defect supercell calculation. If ``None``
                 (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
@@ -1022,8 +1024,8 @@ class DefectEntry(thermo.DefectEntry):
         fermi_level: float = 0,
     ) -> float:
         r"""
-        Compute the formation energy for the ``DefectEntry`` at a given
-        chemical potential limit and fermi_level.
+        Compute the formation energy for the |DefectEntry| at a given chemical
+        potential limit and fermi_level.
 
         Args:
             chempots (dict):
@@ -1113,7 +1115,7 @@ class DefectEntry(thermo.DefectEntry):
         Check if symmetry and degeneracy info is present in
         ``self.calculation_metadata``, and attempt to (re)-parse if not.
 
-        e.g. if the ``DefectEntry`` was generated with older versions of
+        e.g. if the |DefectEntry| was generated with older versions of
         ``doped``, manually, or with ``pymatgen-analysis-defects`` etc.
 
         Args:
@@ -1125,7 +1127,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``pymatgen`` default of ``0.01`` to account for residual
                 structural noise in relaxed defect supercells. If set, then
                 site symmetries & degeneracies will be re-parsed/computed even
-                if already present in the ``DefectEntry`` object
+                if already present in the |DefectEntry| object
                 ``calculation_metadata``.
                 You may want to adjust for your system (e.g. if there are very
                 slight octahedral distortions etc.). If
@@ -1144,7 +1146,7 @@ class DefectEntry(thermo.DefectEntry):
                 for your system (e.g. if there are very slight octahedral
                 distortions etc.). If set, then site symmetries & degeneracies
                 will be re-parsed/computed even if already present in the
-                ``DefectEntry`` object ``calculation_metadata``.
+                |DefectEntry| object ``calculation_metadata``.
                 If ``fixed_symprec_and_dist_tol_factor`` is ``False``
                 (default), this value will be automatically adjusted (up to
                 10x, down to 0.1x) until the identified equivalent sites from
@@ -1157,7 +1159,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``get_all_equiv_sites`` /
                 ``get_equiv_frac_coords_in_primitive``, such as
                 ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
-                ``verbose``, and/or ``Defect`` initialization (such as
+                ``verbose``, and/or |Defect| initialization (such as
                 ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
                 ``defect_and_info_from_structures`` function.
         """
@@ -1263,7 +1265,7 @@ class DefectEntry(thermo.DefectEntry):
     ) -> float:
         r"""
         Compute the `equilibrium` concentration (in cm^-3) for the
-        ``DefectEntry`` at a given chemical potential limit, fermi_level and
+        |DefectEntry| at a given chemical potential limit, fermi_level and
         temperature, assuming the dilute limit approximation.
 
         Note that these are the `equilibrium` defect concentrations!
@@ -1357,7 +1359,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``pymatgen`` default of ``0.01`` to account for residual
                 structural noise in relaxed defect supercells. If set, then
                 site symmetries & degeneracies will be re-parsed/computed even
-                if already present in the ``DefectEntry`` object
+                if already present in the |DefectEntry| object
                 ``calculation_metadata``. You may want to adjust for your
                 system (e.g. if there are very slight octahedral distortions
                 etc.).
@@ -1482,7 +1484,7 @@ class DefectEntry(thermo.DefectEntry):
 
     def __repr__(self):
         """
-        Returns a string representation of the ``DefectEntry`` object.
+        Returns a string representation of the |DefectEntry| object.
         """
         from doped.utils.parsing import _get_bulk_supercell
 
@@ -1507,7 +1509,7 @@ class DefectEntry(thermo.DefectEntry):
 
     def __eq__(self, other) -> bool:
         """
-        Determine whether two ``DefectEntry`` objects are equal, by comparing
+        Determine whether two |DefectEntry| objects are equal, by comparing
         ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy`` and
         ``self.corrections`` (i.e. name and energy match).
         """
@@ -1520,7 +1522,7 @@ class DefectEntry(thermo.DefectEntry):
 
     def __hash__(self):
         """
-        Hash the ``DefectEntry`` object by its name, supercell energy, bulk
+        Hash the |DefectEntry| object by its name, supercell energy, bulk
         energy and corrections (i.e. defined by name and energy, as in the
         ``__eq__`` method).
         """
@@ -1575,7 +1577,7 @@ class DefectEntry(thermo.DefectEntry):
     @property
     def is_shallow(self) -> bool:
         """
-        Whether the ``DefectEntry`` is determined to be a shallow (perturbed
+        Whether the |DefectEntry| is determined to be a shallow (perturbed
         host) state, based on ``pydefect`` eigenvalue analysis, or not.
         """
         return is_shallow(self)
@@ -1618,7 +1620,7 @@ class DefectEntry(thermo.DefectEntry):
         ``False``.
 
         Args:
-            defect_entry (DefectEntry): ``DefectEntry`` object.
+            defect_entry (DefectEntry): |DefectEntry| object.
             relative_to_defect (bool):
                 Whether to plot the signed displacements along the line from
                 the (relaxed) defect site to that atom. Negative values
@@ -1682,12 +1684,12 @@ class DefectEntry(thermo.DefectEntry):
 
 def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
     """
-    Return whether a ``DefectEntry`` is determined to be a shallow (perturbed
+    Return whether a |DefectEntry| is determined to be a shallow (perturbed
     host) state, based on ``pydefect`` eigenvalue analysis.
 
     Args:
         defect_entry (DefectEntry):
-            ``doped`` ``DefectEntry`` object.
+            ``doped`` |DefectEntry| object.
         default (bool):
             Default value to return if the eigenvalue analysis fails
             (e.g. if eigenvalue data is not present).
@@ -1701,16 +1703,16 @@ def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
 
 def _parse_procar(procar: PathLike | Procar | None = None):
     """
-    Parse the input path or ``pymatgen`` ``Procar`` to a ``Procar`` object in
-    the correct format, for eigenvalue analysis.
+    Parse the input path or ``pymatgen`` |Procar| to a |Procar| object in the
+    correct format, for eigenvalue analysis.
 
     Args:
         procar (PathLike, Procar):
             Either a path to the ``VASP`` ``PROCAR``` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or a``pymatgen`` ``Procar``.
+            ``LORBIT > 10`` in the ``INCAR``) or a``pymatgen`` |Procar|.
 
     Returns:
-        Procar: The parsed ``Procar`` object in ``pymatgen`` format.
+        Procar: The parsed |Procar| object in ``pymatgen`` format.
     """
     from pymatgen.electronic_structure.core import Spin
 
@@ -2133,7 +2135,7 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
 
 class Defect(core.Defect):
     """
-    ``doped`` ``Defect`` object.
+    ``doped`` |Defect| object.
     """
 
     def __init__(
@@ -2149,8 +2151,8 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of ``pymatgen.analysis.defects.core.Defect`` with additional
-        attributes and methods used by ``doped``.
+        Subclass of :class:`pymatgen.analysis.defects.core.Defect` with
+        additional attributes and methods used by ``doped``.
 
         Args:
             structure (Structure):
@@ -2247,7 +2249,7 @@ class Defect(core.Defect):
         **doped_kwargs,
     ) -> "Defect":
         """
-        Create a ``doped`` ``Defect`` from a ``pymatgen`` ``Defect`` object.
+        Create a ``doped`` |Defect| from a ``pymatgen`` ``Defect`` object.
 
         Args:
             defect:
@@ -2257,7 +2259,7 @@ class Defect(core.Defect):
                 guessing). By default, oxidation states are taken from
                 ``doped_kwargs['oxi_state']`` if set, otherwise from
                 ``bulk_oxi_states`` which can be either a ``pymatgen``
-                ``Structure`` or ``Composition`` object, or a dict (of
+                |Structure| or |Composition| object, or a dict (of
                 ``{element: oxi_state}``), or otherwise guessed using the
                 ``doped`` methods.
                 If ``bulk_oxi_states`` is ``False``, then just uses the
@@ -2271,7 +2273,7 @@ class Defect(core.Defect):
                 should be either a structure input or ``True`` (to re-guess).
 
                 Default behaviour in ``doped`` generation is to provide
-                ``bulk_oxi_states`` as an oxi-state decorated ``Structure``, to
+                ``bulk_oxi_states`` as an oxi-state decorated |Structure|, to
                 make defect setup more robust and efficient (particularly for
                 odd input structures, such as defect supercells etc). Oxidation
                 states are removed from structures in the ``pymatgen`` defect
@@ -2549,7 +2551,7 @@ class Defect(core.Defect):
 
     def as_dict(self):
         """
-        JSON-serializable dict representation of ``Defect``.
+        JSON-serializable dict representation of |Defect|.
 
         Needs to be redefined because attributes not explicitly specified in
         subclasses, which is required for monty functions.
@@ -2560,8 +2562,8 @@ class Defect(core.Defect):
 
     def to_json(self, filename: PathLike | None = None):
         """
-        Save the ``Defect`` object to a json file, which can be reloaded with
-        the `` Defect``.from_json()`` class method.
+        Save the |Defect| object to a json file, which can be reloaded with the
+        ``Defect.from_json()`` class method.
 
         Note that file extensions with ".gz" will be automatically compressed
         (recommended to save space)!
@@ -2579,16 +2581,16 @@ class Defect(core.Defect):
     @classmethod
     def from_json(cls, filename: str):
         """
-        Load a ``Defect`` object from a json(.gz) file.
+        Load a |Defect| object from a json(.gz) file.
 
         Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):
-                Filename of json file to load ``Defect`` from.
+                Filename of json file to load |Defect| from.
 
         Returns:
-            ``Defect`` object
+            |Defect| object
         """
         return loadfn(filename)
 
@@ -2643,7 +2645,7 @@ class Defect(core.Defect):
 
         Args:
             primitive_structure (Structure | None):
-                Structure to use for the primitive unit cell. Can be provided
+                |Structure| to use for the primitive unit cell. Can be provided
                 to avoid recalculation of the primitive cell.
             symprec (float):
                 Symmetry precision to use for determining symmetry operations
@@ -2729,7 +2731,7 @@ class Defect(core.Defect):
 
     def __eq__(self, other) -> bool:
         """
-        Determine whether two ``Defect`` objects are equal.
+        Determine whether two |Defect| objects are equal.
 
         Redefined from the parent method to be more robust (too loose ``stol``
         used in ``pymatgen-analysis-defects``) and much more efficient.
@@ -2807,7 +2809,7 @@ class Defect(core.Defect):
 
     def __hash__(self):
         """
-        Hash the ``Defect`` object, based on the defect name and site.
+        Hash the |Defect| object, based on the defect name and site.
         """
         return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
 
@@ -2834,9 +2836,8 @@ def doped_defect_from_pmg_defect(
     defect: core.Defect, bulk_oxi_states: Structure | Composition | dict | bool = False, **doped_kwargs
 ):
     """
-    Create the corresponding ``doped`` ``Defect`` (``Vacancy``,
-    ``Interstitial``, ``Substitution``) from an input ``pymatgen`` ``Defect``
-    object.
+    Create the corresponding ``doped`` |Defect| (``Vacancy``, ``Interstitial``,
+    ``Substitution``) from an input ``pymatgen`` ``Defect`` object.
 
     Args:
         defect:
@@ -2846,11 +2847,11 @@ def doped_defect_from_pmg_defect(
             By default, oxidation states are taken from
             ``doped_kwargs['oxi_state']`` if set, otherwise from
             ``bulk_oxi_states`` which can be either a ``pymatgen``
-            ``Structure`` or ``Composition`` object, or a dict (of
+            |Structure| or |Composition| object, or a dict (of
             ``{element: oxi_state}``), or otherwise guessed using the ``doped``
             methods.
             If ``bulk_oxi_states`` is ``False``, then just uses the already-set
-            ``Defect`` ``oxi_state`` attribute (default = 0), with no more
+            |Defect| ``oxi_state`` attribute (default = 0), with no more
             guessing. If ``True``, re-guesses the oxidation state of the defect
             (ignoring the ``pymatgen`` ``Defect``  ``oxi_state``  attribute).
 
@@ -2858,7 +2859,7 @@ def doped_defect_from_pmg_defect(
             should be either a structure input or ``True`` (to re-guess).
 
             Default behaviour in ``doped`` generation is to provide
-            ``bulk_oxi_states`` as an oxi-state decorated ``Structure``, to
+            ``bulk_oxi_states`` as an oxi-state decorated |Structure|, to
             make defect setup more robust and efficient (particularly for odd
             input structures, such as defect supercells etc.). Oxidation states
             are removed from structures in the ``pymatgen`` defect generation

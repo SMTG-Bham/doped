@@ -61,8 +61,8 @@ def get_defect_in_supercell(
     supercell.
 
     This function takes the relaxed defect structure of the input
-    ``DefectEntry`` (from ``DefectEntry.defect_supercell``), or input
-    ``Structure`` objects (if ``defect_entry`` is a tuple, see argument
+    |DefectEntry| (from ``DefectEntry.defect_supercell``), or input
+    |Structure| objects (if ``defect_entry`` is a tuple, see argument
     descriptions) and re-generates it in the ``target_supercell`` structure
     (which may be smaller or larger than the original supercell), using the
     bulk supercell to intelligently pad out the additional missing positions in
@@ -145,7 +145,7 @@ def get_defect_in_supercell(
 
     Args:
         defect_entry (DefectEntry | tuple[Structure, Structure] | tuple[Structure, Structure, np.ndarray]):
-            A ``DefectEntry`` object for which to re-generate the relaxed
+            A |DefectEntry| object for which to re-generate the relaxed
             structure (taken from ``DefectEntry.defect_supercell``) in the
             ``target_supercell`` lattice. Alternatively, a tuple of
             ``(defect_supercell, bulk_supercell)`` structures can be provided,
@@ -1230,7 +1230,7 @@ def is_within_frac_bounds(
 
     Args:
         lattice (Lattice):
-            ``Lattice`` object defining the unit cell.
+            |Lattice| object defining the unit cell.
         cart_coords (np.ndarray[float] | list[float]):
             The Cartesian coordinates to check.
         tol (float):

@@ -59,17 +59,17 @@ def parse_projected_eigen(
     elem: XML_Element, parse_mag: bool = True
 ) -> tuple[dict[Spin, np.ndarray], np.ndarray | None]:
     """
-    Parse the projected eigenvalues from a ``Vasprun`` object (used during
+    Parse the projected eigenvalues from a |Vasprun| object (used during
     initialisation), but excluding the projected magnetization for efficiency.
 
     Note that following SK's PRs to ``pymatgen`` (#4359, #4360), parsing of
-    projected eigenvalues adds minimal additional cost to Vasprun parsing
+    projected eigenvalues adds minimal additional cost to |Vasprun| parsing
     (~1-5%), while parsing of projected magnetization can add ~30% cost.
 
     This is a modified version of ``_parse_projected_eigen`` from
-    ``pymatgen.io.vasp.outputs.Vasprun``, which allows skipping of projected
-    magnetization parsing in order to expedite parsing in ``doped``, as well as
-    some small adjustments to maximise efficiency.
+    |Vasprun|, which allows skipping of projected magnetization parsing in
+    order to expedite parsing in ``doped``, as well as some small adjustments
+    to maximise efficiency.
 
     Args:
         elem (Element):
@@ -118,7 +118,7 @@ def parse_projected_eigen(
 
 def get_vasprun(vasprun_path: PathLike, parse_mag: bool = True, **kwargs):
     """
-    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
+    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` |Vasprun| object.
     """
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
@@ -181,7 +181,7 @@ def _get_outcar_path(outcar_path: PathLike, raise_error=True):
 
 def get_outcar(outcar_path: PathLike):
     """
-    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
+    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` |Outcar| object.
     """
     outcar_path = _get_outcar_path(outcar_path)
     return Outcar(outcar_path)
@@ -191,18 +191,18 @@ def get_core_potentials_from_outcar(
     outcar_path: PathLike, dir_type: str = "", total_energy: list | float | None = None
 ):
     """
-    Get the core potentials from the OUTCAR file, which are needed for the
+    Get the core potentials from the ``OUTCAR`` file, which are needed for the
     Kumagai-Oba (eFNV) finite-size correction.
 
-    This parser skips the full ``pymatgen`` ``Outcar`` initialisation/parsing,
+    This parser skips the full ``pymatgen`` |Outcar| initialisation/parsing,
     to expedite parsing and make it more robust (doesn't fail if ``OUTCAR`` is
     incomplete, as long as it has the core potentials information).
 
     Args:
         outcar_path (PathLike):
-            The path to the OUTCAR file.
+            The path to the ``OUTCAR`` file.
         dir_type (str):
-            The type of directory the OUTCAR is in (e.g. ``bulk`` or
+            The type of directory the ``OUTCAR`` is in (e.g. ``bulk`` or
             ``defect``) for informative error messages.
         total_energy (list | float | None):
             The already-parsed total energy for the structure. If provided,
@@ -278,7 +278,7 @@ def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""
     Raise error about supplied ``OUTCAR`` not having atomic core potential
     info.
 
-    Input outcar is either a path or a ``pymatgen`` ``Outcar`` object
+    Input outcar is either a path or a ``pymatgen`` |Outcar| object
     """
     outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, PathLike) else "`OUTCAR` object"
     dir_type = f"{dir_type} " if dir_type else ""
@@ -292,9 +292,9 @@ def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""
 
 def get_procar(procar_path: PathLike) -> Procar:
     """
-    Read the ``PROCAR(.gz)`` file as a ``pymatgen`` ``Procar`` object.
+    Read the ``PROCAR(.gz)`` file as a ``pymatgen`` |Procar| object.
 
-    Previously, ``pymatgen`` ``Procar`` parsing did not support SOC
+    Previously, ``pymatgen`` |Procar| parsing did not support SOC
     calculations, however this was updated in
     https://github.com/materialsproject/pymatgen/pull/3890 to use code from
     ``easyunfold`` (https://smtg-bham.github.io/easyunfold -- a package for
@@ -580,8 +580,8 @@ def get_matching_site(
     site: PeriodicSite | np.ndarray[float], structure: Structure, anonymous: bool = False, tol: float = 0.5
 ) -> PeriodicSite:
     """
-    Get the (closest) matching ``PeriodicSite`` in ``structure`` for the input
-    ``site``, which can be a ``PeriodicSite`` or fractional coordinates.
+    Get the (closest) matching |PeriodicSite| in ``structure`` for the input
+    ``site``, which can be a |PeriodicSite| or fractional coordinates.
 
     If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
     default) away from the input ``site`` coordinates, an error is raised.
@@ -592,7 +592,7 @@ def get_matching_site(
     Args:
         site (PeriodicSite | np.ndarray[float]):
             The site for which to find the closest matching site in
-            ``structure``, either as a ``PeriodicSite`` or fractional
+            ``structure``, either as a |PeriodicSite| or fractional
             coordinates array. If fractional coordinates, then ``anonymous``
             is set to ``True``.
         structure (Structure):
@@ -601,7 +601,7 @@ def get_matching_site(
             Whether to use anonymous matching, allowing different
             species/elements to match each other (i.e. just matching based on
             coordinates). Default is ``False`` if ``site`` is a
-            ``PeriodicSite``, and ``True`` if ``site`` is fractional
+            |PeriodicSite|, and ``True`` if ``site`` is fractional
             coordinates.
         tol (float):
             A distance tolerance (in Å), where an error will be thrown if the
@@ -808,8 +808,8 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
 
     Args:
         lattice (Structure | Lattice):
-            The lattice of the structure (either a ``pymatgen`` ``Structure``
-            or ``Lattice`` object).
+            The lattice of the structure (either a ``pymatgen`` |Structure|
+            or |Lattice| object).
 
     Returns:
         float:
@@ -1380,7 +1380,7 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
 
 def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
     """
-    Determine the total magnetization from a ``Vasprun`` object.
+    Determine the total magnetization from a |Vasprun| object.
 
     For spin-polarised calculations, this is the difference between the number
     of spin-up vs spin-down electrons. For non-spin-polarised calculations,
@@ -1403,7 +1403,7 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
 
     Args:
         vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract the total
+            The |Vasprun| object from which to extract the total
             magnetization.
 
     Returns:
@@ -1462,11 +1462,11 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
 
 def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     """
-    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object.
+    Determine the number of electrons (``NELECT``) from a |Vasprun| object.
 
     Args:
         vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract ``NELECT``.
+            The |Vasprun| object from which to extract ``NELECT``.
 
     Returns:
         int or float: The number of electrons in the system.
@@ -1491,12 +1491,12 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
 
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int:
     """
-    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
+    Determine the number of electrons (``NELECT``) from a |Vasprun| object,
     corresponding to a neutral charge state for the structure.
 
     Args:
         vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract ``NELECT``.
+            The |Vasprun| object from which to extract ``NELECT``.
         skip_potcar_init (bool):
             Whether to skip the initialisation of the ``POTCAR`` statistics
             (i.e. the auto-charge determination) and instead try to reverse
@@ -1649,21 +1649,21 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs
 def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite: bool = False, **kwargs):
     """
     Helper function to reparse the defect site information for a given
-    ``DefectEntry``, updating the relevant attributes and calculation metadata.
+    |DefectEntry|, updating the relevant attributes and calculation metadata.
 
     Args:
         defect_entry (DefectEntry):
-            The ``DefectEntry`` object for which to update the defect site
+            The |DefectEntry| object for which to update the defect site
             information.
         overwrite (bool):
-            Whether to overwrite existing ``DefectEntry`` attributes with the
+            Whether to overwrite existing |DefectEntry| attributes with the
             newly parsed values. Default is ``False`` (i.e. only update if the
             attributes are not already set).
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
     """
@@ -1703,11 +1703,11 @@ def _partial_defect_entry_from_structures(
     bulk_supercell: Structure, defect_supercell: Structure, **kwargs
 ) -> DefectEntry:
     """
-    Helper function to create a partial ``DefectEntry`` from the input bulk and
+    Helper function to create a partial |DefectEntry| from the input bulk and
     defect supercells.
 
     Uses ``defect_and_info_from_structures`` to extract the defect structural
-    information, and creates a corresponding ``DefectEntry`` object (which has
+    information, and creates a corresponding |DefectEntry| object (which has
     no ``bulk_entry`` and a fake zero-energy ``sc_entry``, and so cannot be
     used for energy analyses). Primarily intended for internal usage in
     ``doped`` parsing/analysis functions.
@@ -1721,13 +1721,13 @@ def _partial_defect_entry_from_structures(
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
 
     Returns:
         DefectEntry:
-            A partial ``DefectEntry`` object containing the defect and defect
+            A partial |DefectEntry| object containing the defect and defect
             site information, but no ``bulk_entry`` and a zero-energy
             ``sc_entry``.
     """
@@ -1810,7 +1810,7 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
 
     Args:
         vasprun (Vasprun):
-            ``pymatgen`` ``Vasprun`` for which to determine spin degeneracy.
+            ``pymatgen`` |Vasprun| for which to determine spin degeneracy.
         charge_state (int):
             The charge state of the system, which can be used to determine the
             number of electrons. If ``None`` (default), automatically
@@ -1876,7 +1876,7 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
 
     Args:
         vasprun (Vasprun):
-            ``pymatgen`` ``Vasprun`` object for which to determine the total
+            ``pymatgen`` |Vasprun| object for which to determine the total
             charge.
 
     Returns:

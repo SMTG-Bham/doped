@@ -224,7 +224,7 @@ def _parse_chempots(
 def raw_energy_from_chempots(composition: str | dict | Composition, chempots: dict) -> float:
     """
     Given an input composition (as a ``str``, ``dict`` or ``pymatgen``
-    ``Composition`` object) and chemical potentials dictionary, get the
+    |Composition| object) and chemical potentials dictionary, get the
     corresponding raw energy of the composition (i.e. taking the energies given
     in the ``'limits'`` subdicts of ``chempots``, in the ``doped`` chemical
     potentials dictionary format).
@@ -267,14 +267,14 @@ def group_defects_by_type_and_distance(
     method: str = "single",
 ) -> dict[str, dict[int, set[DefectEntry]]]:
     """
-    Given an input list of ``DefectEntry`` objects, returns a dictionary of
+    Given an input list of |DefectEntry| objects, returns a dictionary of
     format ``{simple defect name: {cluster index: {DefectEntry, ...}}``, with
     defect types as keys, and values being sub-dictionaries of defect entries
     clustered according to the given ``dist_tol`` distance tolerance (between
     symmetry-equivalent sites in the bulk supercell) and clustering ``method``.
     ``simple defect name`` is the nominal defect type (e.g. ``Te_i`` for
-    ``Te_i_Td_Cd2.83_+2``) and ``{DefectEntry, ...}`` is a set of
-    ``DefectEntry`` objects which have been grouped in the same cluster.
+    ``Te_i_Td_Cd2.83_+2``) and ``{DefectEntry, ...}`` is a set of |DefectEntry|
+    objects which have been grouped in the same cluster.
 
     This is used to group together different defect entries (different charge
     states, and/or ground and metastable states (different spin or geometries))
@@ -292,7 +292,7 @@ def group_defects_by_type_and_distance(
 
     Args:
         defect_entries (list[DefectEntry]):
-            A list of ``DefectEntry`` objects to group together based on type
+            A list of |DefectEntry| objects to group together based on type
             and distance between symmetry-equivalent sites.
         dist_tol (float):
             Distance threshold (in Å) for clustering equivalent defect sites.
@@ -343,7 +343,7 @@ def group_defects_by_distance(
     method: str = "centroid",
 ) -> dict[int, set[DefectEntry]]:
     r"""
-    Given an input list of ``DefectEntry`` objects, returns a dictionary of
+    Given an input list of |DefectEntry| objects, returns a dictionary of
     defect entries clustered according to the given ``dist_tol`` distance
     tolerance (between symmetry-equivalent sites in the bulk supercell) and
     clustering ``method``; format: ``{cluster index: {DefectEntry, ...}}``.
@@ -369,7 +369,7 @@ def group_defects_by_distance(
 
     Args:
         entry_list ([DefectEntry, ...]):
-            A list of ``DefectEntry`` objects to group together.
+            A list of |DefectEntry| objects to group together.
         dist_tol (float):
             Distance threshold (in Å) for clustering equivalent defect sites.
             (Default: 1.5)
@@ -500,9 +500,9 @@ def group_defects_by_distance(
 
 def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[DefectEntry]]:
     """
-    Given an input list of ``DefectEntry`` objects, returns a dictionary of
+    Given an input list of |DefectEntry| objects, returns a dictionary of
     ``{defect name without charge: [DefectEntry]}``, where the values are lists
-    of ``DefectEntry`` objects with the same defect name (excluding charge
+    of |DefectEntry| objects with the same defect name (excluding charge
     state).
 
     The ``DefectEntry.name`` attributes are used to get the defect names. These
@@ -519,7 +519,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
 
     Args:
         entry_list ([DefectEntry]):
-            A list of ``DefectEntry`` objects to group together by defect name
+            A list of |DefectEntry| objects to group together by defect name
             (without charge).
 
     Returns:
@@ -546,7 +546,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
 
 def name_defect_cluster(entry_list: list[DefectEntry]) -> str:
     """
-    Given a list of ``DefectEntry`` objects (assumed to be a 'defect
+    Given a list of |DefectEntry| objects (assumed to be a 'defect
     cluster/group'), determines and returns a representative name for the
     cluster.
 
@@ -561,7 +561,7 @@ def name_defect_cluster(entry_list: list[DefectEntry]) -> str:
 
     Args:
         entry_list (list[DefectEntry]):
-            List of ``DefectEntry`` objects constituting the defect cluster.
+            List of |DefectEntry| objects constituting the defect cluster.
 
     Returns:
         str: Representative defect name (without charge) for the cluster.
@@ -631,7 +631,7 @@ class DefectThermodynamics(MSONable):
         f) doping analysis,
         g) ...
 
-    Note that ``DefectThermodynamics`` objects can be used to initialise the
+    Note that |DefectThermodynamics| objects can be used to initialise the
     ``FermiSolver`` class in this module, which implements a number of
     convenience methods for thermodynamic analyses; such as scanning over
     temperatures, chemical potentials, effective dopant concentrations etc,
@@ -657,13 +657,13 @@ class DefectThermodynamics(MSONable):
         skip_dos_check: bool = False,
     ):
         r"""
-        Create a ``DefectThermodynamics`` object, which can be used to analyse
+        Create a |DefectThermodynamics| object, which can be used to analyse
         the calculated thermodynamics of defects in solids (formation energies,
         transition levels, concentrations etc.).
 
         Usually initialised using
         ``DefectsParser.get_defect_thermodynamics()``, but can also be
-        initialised with a list or dict of ``DefectEntry`` objects (e.g. from
+        initialised with a list or dict of |DefectEntry| objects (e.g. from
         ``DefectsParser.defect_dict``).
 
         Note that the ``DefectEntry.name`` attributes are used to label the
@@ -671,7 +671,7 @@ class DefectThermodynamics(MSONable):
 
         Args:
             defect_entries (dict[str, DefectEntry] or list[DefectEntry]):
-                A dict or list of ``DefectEntry`` objects. If a
+                A dict or list of |DefectEntry| objects. If a
                 ``DefectEntry.name`` attribute is not defined or does not end
                 with the charge state (as ``..._{charge state}``), then the
                 entry will be renamed with the ``doped`` default name.
@@ -718,7 +718,7 @@ class DefectThermodynamics(MSONable):
                 VBM eigenvalue to use as Fermi level reference point for
                 analysis. If ``None`` (default), will use ``"vbm"`` from the
                 ``calculation_metadata`` dict attributes of the parsed
-                ``DefectEntry`` objects, which by default is taken from the
+                |DefectEntry| objects, which by default is taken from the
                 bulk supercell VBM (unless ``bulk_band_gap_vr`` is set during
                 defect parsing). Note that ``vbm`` should only affect the
                 reference for the Fermi level values output by ``doped`` (as
@@ -729,7 +729,7 @@ class DefectThermodynamics(MSONable):
             band_gap (float):
                 Band gap of the host, to use for analysis. If ``None``
                 (default), will use "band_gap" from the
-                ``calculation_metadata`` dict attributes of the ``DefectEntry``
+                ``calculation_metadata`` dict attributes of the |DefectEntry|
                 objects in ``defect_entries``.
             dist_tol (float):
                 Distance threshold (in Å) to use for clustering (equivalent)
@@ -751,7 +751,7 @@ class DefectThermodynamics(MSONable):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating Fermi level positions and
                 defect/carrier concentrations. Alternatively, can be a
-                ``pymatgen`` ``Vasprun`` object or path to the
+                ``pymatgen`` |Vasprun| object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
                 Can also provide later in ``get_equilibrium_fermi_level()``,
                 ``get_fermi_level_and_concentrations`` etc., or set using
@@ -776,8 +776,8 @@ class DefectThermodynamics(MSONable):
 
         Key Attributes:
             defect_entries (dict[str, DefectEntry]):
-                Dict of ``DefectEntry`` objects included in the
-                ``DefectThermodynamics`` set, with their names as keys.
+                Dict of |DefectEntry| objects included in the
+                |DefectThermodynamics| set, with their names as keys.
             chempots (dict):
                 Dictionary of chemical potentials to use for calculating the
                 defect formation energies (and hence concentrations etc.), in
@@ -927,7 +927,7 @@ class DefectThermodynamics(MSONable):
     def as_dict(self):
         """
         Returns:
-            JSON-serializable dict representation of ``DefectThermodynamics``.
+            JSON-serializable dict representation of |DefectThermodynamics|.
         """
         return {
             "@module": type(self).__module__,
@@ -947,14 +947,14 @@ class DefectThermodynamics(MSONable):
     @classmethod
     def from_dict(cls, d):
         """
-        Reconstitute a ``DefectThermodynamics`` object from a dict
-        representation created using ``as_dict()``.
+        Reconstitute a |DefectThermodynamics| object from a dict representation
+        created using ``as_dict()``.
 
         Args:
-            d (dict): dict representation of ``DefectThermodynamics``.
+            d (dict): dict representation of |DefectThermodynamics|.
 
         Returns:
-            ``DefectThermodynamics`` object
+            |DefectThermodynamics| object
         """
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -994,7 +994,7 @@ class DefectThermodynamics(MSONable):
 
     def to_json(self, filename: PathLike | None = None):
         """
-        Save the ``DefectThermodynamics`` object as a json file, which can be
+        Save the |DefectThermodynamics| object as a json file, which can be
         reloaded with the ``DefectThermodynamics.from_json()`` class method.
 
         Note that file extensions with ".gz" will be automatically compressed
@@ -1018,17 +1018,17 @@ class DefectThermodynamics(MSONable):
     @classmethod
     def from_json(cls, filename: PathLike):
         """
-        Load a ``DefectThermodynamics`` object from a json(.gz) file.
+        Load a |DefectThermodynamics| object from a json(.gz) file.
 
         Note that ``.json.gz`` files can be loaded directly.
 
         Args:
             filename (PathLike):
-                Filename of json file to load ``DefectThermodynamics``
+                Filename of json file to load |DefectThermodynamics|
                 object from.
 
         Returns:
-            ``DefectThermodynamics`` object
+            |DefectThermodynamics| object
         """
         return loadfn(filename)
 
@@ -1055,8 +1055,8 @@ class DefectThermodynamics(MSONable):
     def _parse_transition_levels(self, symprec: float = 0.1):
         r"""
         Parses the charge transition levels for defect entries in the
-        ``DefectThermodynamics`` object, and stores information about the
-        stable charge states, transition levels etc.
+        |DefectThermodynamics| object, and stores information about the stable
+        charge states, transition levels etc.
 
         Defect entries of the same type (e.g. ``Te_i``, ``v_Cd``) are grouped
         together (for plotting and transition level analysis) based on the
@@ -1107,8 +1107,8 @@ class DefectThermodynamics(MSONable):
         # note that in general, we have chosen to favour ``entry.calculation_metadata.get("vbm")`` over
         # ``self.vbm`` for all calculations of formation energies / transition levels / concentrations.
         # These values should be the same, and we have warnings if they differ by too much,
-        # but in general the ``DefectEntry`` value should be the most reliable, as this is tied to its
-        # raw supercell energy difference from the chosen bulk cell for that ``DefectEntry``.
+        # but in general the |DefectEntry| value should be the most reliable, as this is tied to its
+        # raw supercell energy difference from the chosen bulk cell for that |DefectEntry|.
         # but we do use ``self.band_gap`` preferably as this only affects the plot ranges (rather than
         # formation energies)
 
@@ -1302,7 +1302,7 @@ class DefectThermodynamics(MSONable):
     def _map_sort_func(self, name_wout_charge):
         """
         Convenience sorting function for dictionaries in and outputs from
-        ``DefectThermodynamics``.
+        |DefectThermodynamics|.
         """
         for i in range(name_wout_charge.count("_") + 1):  # number of underscores in name
             split_name = name_wout_charge.rsplit("_", i)[0]
@@ -1322,7 +1322,7 @@ class DefectThermodynamics(MSONable):
         By proxy checks that same bulk/defect calculation settings were used in
         all cases, from each bulk/defect combination already being checked when
         parsing. This is to catch any cases where defects may have been parsed
-        separately and combined (rather than altogether with ``DefectsParser``,
+        separately and combined (rather than altogether with |DefectsParser|,
         which ensures the same bulk in each case), and where a different bulk
         reference calculation was (mistakenly) used.
 
@@ -1467,11 +1467,11 @@ class DefectThermodynamics(MSONable):
         check_compatibility: bool = True,
     ):
         """
-        Add additional defect entries to the ``DefectThermodynamics`` object.
+        Add additional defect entries to the |DefectThermodynamics| object.
 
         Args:
             defect_entries ({str: DefectEntry} or [DefectEntry]):
-                A dict or list of ``DefectEntry`` objects, to add to the
+                A dict or list of |DefectEntry| objects, to add to the
                 ``DefectThermodynamics.defect_entries`` dict. If a
                 ``DefectEntry.name`` attribute is not defined or does not end
                 with the charge state (as ``..._{charge state}``), then the
@@ -1496,16 +1496,16 @@ class DefectThermodynamics(MSONable):
     @property
     def defect_entries(self):
         """
-        Get the dict of parsed ``DefectEntry`` objects in the
-        ``DefectThermodynamics`` analysis object.
+        Get the dict of parsed |DefectEntry| objects in the
+        |DefectThermodynamics| analysis object.
         """
         return self._defect_entries
 
     @defect_entries.setter
     def defect_entries(self, input_defect_entries):
         r"""
-        Set the dict of parsed ``DefectEntry``\s to include in the
-        ``DefectThermodynamics`` object, and reparse the thermodynamic
+        Set the dict of parsed |DefectEntry|\s to include in the
+        |DefectThermodynamics| object, and reparse the thermodynamic
         information (transition levels etc).
         """
         self._defect_entries = input_defect_entries
@@ -1615,7 +1615,7 @@ class DefectThermodynamics(MSONable):
         concentrations.
 
         Should be a ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, a
-        ``pymatgen`` ``Vasprun`` object or path to the  ``vasprun.xml(.gz)``
+        ``pymatgen`` |Vasprun| object or path to the  ``vasprun.xml(.gz)``
         output of a bulk DOS calculation in VASP. Can also be provided later
         when using ``get_equilibrium_fermi_level()``,
         ``get_fermi_level_and_concentrations`` etc.
@@ -1635,15 +1635,15 @@ class DefectThermodynamics(MSONable):
     @property
     def defect_names(self):
         """
-        List of names of defects in the ``DefectThermodynamics`` set.
+        List of names of defects in the |DefectThermodynamics| set.
         """
         return list(self.defect_charge_map.keys())
 
     @property
     def all_stable_entries(self):
         """
-        List all stable entries (defect + charge) in the
-        ``DefectThermodynamics`` set.
+        List all stable entries (defect + charge) in the |DefectThermodynamics|
+        set.
         """
         return list(chain.from_iterable(self.stable_entries.values()))
 
@@ -1651,14 +1651,14 @@ class DefectThermodynamics(MSONable):
     def all_unstable_entries(self):
         """
         List all unstable entries (defect + charge) in the
-        ``DefectThermodynamics`` set.
+        |DefectThermodynamics| set.
         """
         return [e for e in self.defect_entries.values() if e not in self.all_stable_entries]
 
     @property
     def unstable_entries(self):
         """
-        Dictionary of unstable entries in the ``DefectThermodynamics`` set, as
+        Dictionary of unstable entries in the |DefectThermodynamics| set, as
         ``{defect name without charge: [list of DefectEntry objects]}``.
         """
         return {
@@ -1679,9 +1679,9 @@ class DefectThermodynamics(MSONable):
         ``self.clustered_defect_entries_by_type`` can also be manually set with
         these functions for greater control.
 
-        With default settings, ``DefectEntry``\s `of the same type` and with
+        With default settings, |DefectEntry|\s `of the same type` and with
         distances between equivalent defect sites less than ``dist_tol`` (1.5 Å
-        by default) are `mostly` grouped together. If a ``DefectEntry``\'s site
+        by default) are `mostly` grouped together. If a |DefectEntry|\'s site
         has a distance less than ``dist_tol`` to multiple sets of equivalent
         sites, then it should be matched to the one with the lowest minimum
         distance. Each defect group is then named according to the most common
@@ -1811,7 +1811,7 @@ class DefectThermodynamics(MSONable):
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM eigenvalue, which is taken from the
-                ``calculation_metadata`` dict attributes of ``DefectEntry``\s
+                ``calculation_metadata`` dict attributes of |DefectEntry|\s
                 in ``self.defect_entries`` if present, otherwise ``self.vbm``
                 -- which corresponds to the VBM of the `bulk supercell`
                 calculation by default, unless ``bulk_band_gap_vr`` is set
@@ -1890,7 +1890,7 @@ class DefectThermodynamics(MSONable):
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM eigenvalue, which is taken from the
-                ``calculation_metadata`` dict attributes of ``DefectEntry``\s
+                ``calculation_metadata`` dict attributes of |DefectEntry|\s
                 in ``self.defect_entries`` if present, otherwise ``self.vbm``
                 -- which corresponds to the VBM of the `bulk supercell`
                 calculation by default, unless ``bulk_band_gap_vr`` is set
@@ -1971,14 +1971,14 @@ class DefectThermodynamics(MSONable):
         fermi_level: float | None = None,
     ) -> float:
         r"""
-        Compute the formation energy for a ``DefectEntry`` at a given chemical
+        Compute the formation energy for a |DefectEntry| at a given chemical
         potential limit and fermi_level. ``defect_entry`` can be a string of
-        the defect name, of the ``DefectEntry`` object itself.
+        the defect name, of the |DefectEntry| object itself.
 
         Args:
             defect_entry (str or DefectEntry):
                 Either a string of the defect entry name (in
-                ``DefectThermodynamics.defect_entries``), or a ``DefectEntry``
+                ``DefectThermodynamics.defect_entries``), or a |DefectEntry|
                 object. If the defect name is given without the charge state,
                 then the formation energy of the lowest energy (stable) charge
                 state at the chosen Fermi level will be given.
@@ -2473,7 +2473,7 @@ class DefectThermodynamics(MSONable):
         This function takes the defect entries in
         ``DefectThermodynamics.defect_entries``, prunes them to only those
         which pass a given stability criterion, and regenerates a new
-        ``DefectThermodynamics`` object with these defect entries.
+        |DefectThermodynamics| object with these defect entries.
 
         This function can be used to prune out defect entries which are
         detected to be shallow (perturbed host, 'fake') states according to
@@ -2482,7 +2482,7 @@ class DefectThermodynamics(MSONable):
         for more info), and/or entries which are only stable for certain
         Fermi levels outside or within a small window of the band edges.
 
-        Doesn't modify the original ``DefectThermodynamics`` (``self``) object!
+        Doesn't modify the original |DefectThermodynamics| (``self``) object!
 
         This function is used internally in ``doped`` with the
         ``unstable_entries`` argument in ``DefectThermodynamics.plot()``,
@@ -2530,11 +2530,11 @@ class DefectThermodynamics(MSONable):
                 value of this energy window from a band edge).
             **kwargs:
                 Additional keyword arguments to pass to the
-                ``DefectThermodynamics()`` initialisation (via
+                |DefectThermodynamics| initialisation (via
                 ``DefectThermodynamics.from_dict()``).
 
         Returns:
-            New ``DefectThermodynamics`` object with pruned defect entries.
+            New |DefectThermodynamics| object with pruned defect entries.
         """
         if unstable_entries is True:  # all
             return self
@@ -2856,7 +2856,7 @@ class DefectThermodynamics(MSONable):
     ) -> pd.DataFrame | None:
         """
         Return a ``DataFrame`` of the charge transition levels for the defects
-        in the ``DefectThermodynamics`` object (stored in the
+        in the |DefectThermodynamics| object (stored in the
         ``transition_level_map`` attribute).
 
         Note that the transition level (and Fermi level) positions are given
@@ -2989,7 +2989,7 @@ class DefectThermodynamics(MSONable):
     def print_transition_levels(self, all: bool = False):
         """
         Iteratively prints the charge transition levels for the defects in the
-        ``DefectThermodynamics`` object (stored in the ``transition_level_map``
+        |DefectThermodynamics| object (stored in the ``transition_level_map``
         attribute).
 
         By default, only returns the thermodynamic ground-state transition
@@ -3041,7 +3041,7 @@ class DefectThermodynamics(MSONable):
         r"""
         Generates a table of the bulk-site & relaxed defect point group
         symmetries, spin/orientational/total degeneracies and (bulk-)site
-        multiplicities for each defect in the ``DefectThermodynamics`` object.
+        multiplicities for each defect in the |DefectThermodynamics| object.
 
         Table Key:
 
@@ -3093,7 +3093,7 @@ class DefectThermodynamics(MSONable):
         If periodicity-breaking prevents auto-symmetry determination, you can
         manually determine the relaxed defect and bulk-site point symmetries,
         and/or orientational degeneracy, from visualising the structures (e.g.
-        using VESTA)(can use ``get_orientational_degeneracy`` to obtain the
+        using VESTA)(can use |get_orientational_degeneracy| to obtain the
         corresponding orientational degeneracy factor for given defect/bulk
         site point symmetries) and setting the corresponding values in the
         ``'relaxed point symmetry'`` / ``'bulk site symmetry'`` entries in
@@ -3124,7 +3124,7 @@ class DefectThermodynamics(MSONable):
                 ``pymatgen`` default of ``0.01`` to account for residual
                 structural noise in relaxed defect supercells. If set, then
                 site symmetries & degeneracies will be re-parsed/computed even
-                if already present in the ``DefectEntry`` object
+                if already present in the |DefectEntry| object
                 ``calculation_metadata``.
                 You may want to adjust for your system (e.g. if there are very
                 slight octahedral distortions etc.). If
@@ -3143,7 +3143,7 @@ class DefectThermodynamics(MSONable):
                 for your system (e.g. if there are very slight octahedral
                 distortions etc.). If set, then site symmetries & degeneracies
                 will be re-parsed/computed even if already present in the
-                ``DefectEntry`` object ``calculation_metadata``.
+                |DefectEntry| object ``calculation_metadata``.
                 If ``fixed_symprec_and_dist_tol_factor`` is ``False``
                 (default), this value will be automatically adjusted (up to
                 10x, down to 0.1x) until the identified equivalent sites from
@@ -3156,7 +3156,7 @@ class DefectThermodynamics(MSONable):
                 ``get_all_equiv_sites`` /
                 ``get_equiv_frac_coords_in_primitive``, such as
                 ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
-                ``verbose``, and/or ``Defect`` initialization (such as
+                ``verbose``, and/or |Defect| initialization (such as
                 ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
                 ``defect_and_info_from_structures`` function.
 
@@ -3174,7 +3174,7 @@ class DefectThermodynamics(MSONable):
                     len(get_primitive_structure(defect_entry.defect.structure))  # spglib primitive
                     / len(defect_entry.defect.structure)
                 )  # ensure multiplicity corresponds to unit cell (which it should by default anyway,
-                # now that parsed ``Defect``s are defined in the primitive unit cell)
+                # now that parsed |Defect|s are defined in the primitive unit cell)
 
             except Exception:
                 multiplicity_per_unit_cell = "N/A"
@@ -3258,7 +3258,7 @@ class DefectThermodynamics(MSONable):
     ) -> pd.DataFrame:
         r"""
         Compute the `equilibrium` concentrations (in cm^-3) for all
-        ``DefectEntry``\s in the ``DefectThermodynamics`` object, at a given
+        |DefectEntry|\s in the |DefectThermodynamics| object, at a given
         chemical potential limit, Fermi level and temperature, assuming the
         dilute limit approximation.
 
@@ -3389,7 +3389,7 @@ class DefectThermodynamics(MSONable):
 
         Returns:
             ``pandas`` ``DataFrame`` of defect concentrations (and formation
-            energies) for each ``DefectEntry`` in the ``DefectThermodynamics``
+            energies) for each |DefectEntry| in the |DefectThermodynamics|
             object.
         """
         fermi_level = self._get_and_set_fermi_level(fermi_level)
@@ -3609,7 +3609,7 @@ class DefectThermodynamics(MSONable):
             bulk_dos (FermiDos or Vasprun or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating carrier concentrations.
-                Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path
+                Alternatively, can be a ``pymatgen`` |Vasprun| object or path
                 to the ``vasprun.xml(.gz)`` output of a bulk DOS calculation in
                 VASP -- however this will be much slower when looping over many
                 conditions as it will re-parse the DOS each time! (So
@@ -3855,7 +3855,7 @@ class DefectThermodynamics(MSONable):
             bulk_dos (FermiDos or Vasprun or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating carrier concentrations.
-                Alternatively, can be a ``pymatgen`` ``Vasprun`` object or path
+                Alternatively, can be a ``pymatgen`` |Vasprun| object or path
                 to the ``vasprun.xml(.gz)`` output of a bulk DOS calculation in
                 VASP -- however this will be much slower when looping over many
                 conditions as it will re-parse the DOS each time! (So
@@ -4229,7 +4229,7 @@ class DefectThermodynamics(MSONable):
             defect_entry (str or DefectEntry):
                 Either a string of the defect entry name (in
                 ``DefectThermodynamics.defect_entries``), or a
-                ``DefectEntry`` object.
+                |DefectEntry| object.
 
         Returns:
             float:
@@ -4414,7 +4414,7 @@ class DefectThermodynamics(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the ``DefectThermodynamics`` object.
+        Returns a string representation of the |DefectThermodynamics| object.
         """
         formula = _get_bulk_supercell(
             next(iter(self.defect_entries.values()))
@@ -4430,7 +4430,7 @@ class DefectThermodynamics(MSONable):
         """
         Redirects an unknown attribute/method call to the ``defect_entries``
         dictionary attribute, if the attribute doesn't exist in
-        ``DefectThermodynamics``.
+        |DefectThermodynamics|.
         """
         try:
             super().__getattribute__(attr)
@@ -4441,7 +4441,7 @@ class DefectThermodynamics(MSONable):
 
     def __getitem__(self, key):
         """
-        Makes ``DefectThermodynamics`` object subscriptable, so that it can be
+        Makes |DefectThermodynamics| object subscriptable, so that it can be
         indexed like a dictionary, using the ``defect_entries`` dictionary
         attribute.
         """
@@ -4616,12 +4616,12 @@ def _format_per_site_concentration(raw_concentration: float):
 def get_fermi_dos(dos_vr: PathLike | Vasprun):
     """
     Create a ``FermiDos`` object from the provided ``dos_vr``, which can be
-    either a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+    either a path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` |Vasprun|
     object (parsed with ``parse_dos = True``).
 
     Args:
         dos_vr (PathLike | Vasprun):
-            Path to a ``vasprun.xml(.gz)`` file, or a ``Vasprun`` object.
+            Path to a ``vasprun.xml(.gz)`` file, or a |Vasprun| object.
 
     Returns:
         FermiDos: The ``FermiDos`` object.
@@ -4854,7 +4854,7 @@ class FermiSolver(MSONable):
     ):
         r"""
         Class to calculate the Fermi level, defect and carrier concentrations
-        under various conditions, using the input ``DefectThermodynamics``
+        under various conditions, using the input |DefectThermodynamics|
         object.
 
         This class implements a number of convenience methods for thermodynamic
@@ -4869,7 +4869,7 @@ class FermiSolver(MSONable):
 
         This constructor initializes a ``FermiSolver`` object, setting up the
         necessary attributes, which includes loading the bulk density of states
-        (DOS) data from either the input ``DefectThermodynamics`` or
+        (DOS) data from either the input |DefectThermodynamics| or
         ``bulk_dos``.
 
         If using the ``py-sc-fermi`` backend (currently required for the
@@ -4878,12 +4878,12 @@ class FermiSolver(MSONable):
         Squires et al., JOSS 2023; https://doi.org/10.21105/joss.04962.
 
         Args:
-            defect_thermodynamics (DefectThermodynamics):
-                A ``DefectThermodynamics`` object, providing access to defect
+            defect_thermodynamics (|DefectThermodynamics|):
+                A |DefectThermodynamics| object, providing access to defect
                 formation energies and other related thermodynamic properties.
             bulk_dos (FermiDos or Vasprun or PathLike):
                 Either a path to the ``vasprun.xml(.gz)`` output of a bulk DOS
-                calculation in VASP, a ``pymatgen`` ``Vasprun`` object or a
+                calculation in VASP, a ``pymatgen`` |Vasprun| object or a
                 ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, for
                 calculating carrier concentrations.
                 If not provided, uses ``DefectThermodynamics.bulk_dos`` if
@@ -4940,7 +4940,7 @@ class FermiSolver(MSONable):
                 chemical potentials, when ``chempots`` has been manually
                 specified as ``{element symbol: chemical potential}``).
                 Unnecessary if ``chempots`` is provided/present in
-                ``DefectThermodynamics`` in the format generated by ``doped``
+                |DefectThermodynamics| in the format generated by ``doped``
                 (see tutorials), or if ``DefectThermodynamics.el_refs`` has
                 been set.
 
@@ -4968,8 +4968,8 @@ class FermiSolver(MSONable):
                 Default is ``False``.
 
         Key attributes:
-            defect_thermodynamics (DefectThermodynamics):
-                The ``DefectThermodynamics`` object used for the thermodynamic
+            defect_thermodynamics (|DefectThermodynamics|):
+                The |DefectThermodynamics| object used for the thermodynamic
                 calculations.
             backend (str):
                 The code backend used for the thermodynamic calculations

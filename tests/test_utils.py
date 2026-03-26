@@ -59,8 +59,8 @@ def _print_warning_info(warnings_list):
 
 def plot_chempot_heatmap_and_test_no_warnings(cpa_or_defect_thermo, **kwargs):
     """
-    Plot chemical potential heatmap from a ``CompetingPhasesAnalyzer`` or
-    ``DefectThermodynamics`` object and assert no warnings are raised.
+    Plot chemical potential heatmap from a |CompetingPhasesAnalyzer| or
+    |DefectThermodynamics| object and assert no warnings are raised.
     """
     with warnings.catch_warnings(record=True) as w:
         plot = cpa_or_defect_thermo.plot_chempot_heatmap(**kwargs)
@@ -142,7 +142,7 @@ def _compare_attributes(obj1, obj2, exclude=None):
 
     Handles special cases for |DefectsGenerator|
     (``prim_interstitial_coords_mult_and_equiv_coords``)
-    and ``DefectThermodynamics`` (``bulk_dos``) objects.
+    and |DefectThermodynamics| (``bulk_dos``) objects.
     """
     if exclude is None:
         exclude = set()  # Create an empty set if no exclusions

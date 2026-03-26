@@ -110,7 +110,9 @@ intersphinx_mapping = {
     "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
+    # TODO: Test and add pmg defects docs linking once its website is back up (doped.core mostly)
     "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/api_ref/", None),
+    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------
@@ -144,10 +146,17 @@ rst_prolog = """
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
 .. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
+.. |Composition| replace:: :class:`~pymatgen.core.composition.Composition`
+.. |Lattice| replace:: :class:`~pymatgen.core.lattice.Lattice`
+.. |Atoms| replace:: :class:`~ase.Atoms`
 .. |Vasprun| replace:: :class:`~pymatgen.io.vasp.outputs.Vasprun`
+.. |Procar| replace:: :class:`~pymatgen.io.vasp.outputs.Procar`
+.. |Outcar| replace:: :class:`~pymatgen.io.vasp.outputs.Outcar`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
 .. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
 """
+# TODO: Add Structurematcher, ComputedEntry and ComputedStructureEntry once new pymatgen structure
+#  determined

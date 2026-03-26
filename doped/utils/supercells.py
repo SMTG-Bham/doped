@@ -24,7 +24,7 @@ def get_min_image_distance(structure: Structure) -> float:
     https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     Args:
-        structure (Structure): Structure object.
+        structure (Structure): |Structure| object.
 
     Returns:
         float: Minimum image distance.
@@ -93,7 +93,7 @@ def _get_min_image_distance_from_matrix(
     """
     Get the minimum image distance (i.e. minimum distance between periodic
     images of sites in a lattice) for the input lattice matrix, using the
-    ``pymatgen`` ``get_points_in_sphere()`` ``Lattice`` method.
+    ``pymatgen`` ``get_points_in_sphere()`` |Lattice| method.
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
@@ -846,7 +846,7 @@ def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) 
 
     Args:
         struct (Structure):
-            Structure to generate supercells for.
+            |Structure| to generate supercells for.
         uc_range (tuple):
             Range of numbers of unit cells to search over.
 

@@ -7,7 +7,7 @@ v.3.2.1
 ----------
 - Add ``per_site``, ``per_charge`` and ``return_annealing_values`` options to ``FermiSolver`` methods, for more flexible output formatting.
 - Add `fixed_elements` option to `optimise()` and `scan_chemical_potential_grid()`
-- Add ``plot_chempot_heatmap`` method to ``DefectThermodynamics``, for convenience.
+- Add ``plot_chempot_heatmap`` method to |DefectThermodynamics|, for convenience.
 - Add ``include_unique_wyckoffs`` option to ``get_interstitial_sites`` (see https://github.com/SMTG-Bham/doped/issues/140)
 - Avoid interstitial duplication in mixed-valence systems.
 - Fixes and extensions for ``py-sc-fermi`` ``FermiSolver`` backend: degeneracy handling, ``delta_gap`` handling, and multiplicity scaling with non-primitive DOS cells.
@@ -20,7 +20,7 @@ v.3.2.1
 - Update ``spglib`` error handling for compatibility with ``>=2.7``.
 - Make ``pydefect`` a softer dependency, minimising imports.
 - Modularise |DefectsGenerator| internals for future extensibility (i.e. complexes...).
-- ``DefectsParser`` refactoring and cleanup.
+- |DefectsParser| refactoring and cleanup.
 - Various robustness, efficiency and docs updates.
 
 v.3.2.0
@@ -46,7 +46,7 @@ v.3.1.0
 - Include 'adsorbate' interstitial sites for structures with significant vacuum volume.
 - Avoid ``multiprocessing`` errors with python scripts that don't use ``if __name__ == "__main__":`` (#105, #108)
 - Improved algorithm for defect site clustering (for plotting & concentration analyses).
-- Use primitive cell for parsed ``Defect``\s, rather than supercell.
+- Use primitive cell for parsed |Defect|\s, rather than supercell.
 - ``delta_gap`` updates:
     - Add ``delta_gap`` option to ``FermiSolver`` methods
     - Allow ``delta_gap`` to be given as a function for temperature-dependent methods
@@ -63,20 +63,20 @@ v.3.0.0
     - Defect generation
     - Wyckoff site detection
     - Defect site detection and matching, including very large supercells.
-    - ``DefectThermodynamics`` initialisation (and defect grouping by distance between equivalent sites).
+    - |DefectThermodynamics| initialisation (and defect grouping by distance between equivalent sites).
 - ``FermiSolver`` and ``ChemicalPotentialGrid`` classes in https://github.com/SMTG-Bham/doped/pull/46, for
   advanced defect/carrier thermodynamics, allowing various constraints (e.g. mobile/fixed defects / charge
   states etc), with a number of convenience functions (e.g. for scanning temperature / chemical potentials
   etc, optimising output properties over many-dimensional chemical potential spaces etc). Usage
   demonstrated in https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html.
-- Add ``is_shallow`` ``DefectEntry`` property, and ``DefectThermodynamics._get_in_gap_fermi_level_stability_window``
+- Add ``is_shallow`` |DefectEntry| property, and ``DefectThermodynamics._get_in_gap_fermi_level_stability_window``
   method. Shallow defect states now automatically excluded from formation energy diagram plots for cleaner
   outputs, controllable with the ``unstable_entries`` kwarg. Large charge correction errors for
   shallow/unstable defects (typically higher and a common indication of 'false charge state' behaviour)
   now do not throw a warning during parsing.
 - ``CompetingPhases`` now compatible with both legacy and new Materials Project APIs, with automatic
   handling (and appropriate warnings) for cases of unstable host materials/compositions.
-- Internal overhaul of ``CompetingPhasesAnalyzer`` code, using ``ComputedStructureEntry`` objects.
+- Internal overhaul of |CompetingPhasesAnalyzer| code, using ``ComputedStructureEntry`` objects.
   Initialisation now much faster and more convenient, JSON-serializable outputs, further visualisation and
   plotting, and queryability.
 - Various robustness improvements, including:
@@ -102,7 +102,7 @@ v.2.4.7
 
 v.2.4.6
 ----------
-- Update ``Defect``, ``DefectEntry`` and ``DefectThermodynamics`` properties/methods to be even more
+- Update |Defect|, |DefectEntry| and |DefectThermodynamics| properties/methods to be even more
   efficient with calculations of formation energies and concentrations. Gives ~10x speedup in Fermi
   solving and concentration calculations (e.g. from 2 hours to 12 minutes for 2D chempot vs temp CdTe grid
   in thermodynamics tutorial).
@@ -115,7 +115,7 @@ v.2.4.5
 v.2.4.4
 ----------
 - Make oxidation state guessing more efficient, semi-significant speed up in generation/parsing for tough cases.
-- Add ``bulk_site_concentration`` property to ``DefectEntry``, giving the concentration of the corresponding lattice site of that defect in the pristine bulk.
+- Add ``bulk_site_concentration`` property to |DefectEntry|, giving the concentration of the corresponding lattice site of that defect in the pristine bulk.
 - Minor updates to ensure compatibility with recent ``pymatgen`` and ``ASE`` releases.
 
 v.2.4.3
@@ -160,7 +160,7 @@ v.2.3.3
     - Sanity check in |DefectsGenerator| if input symmetry is ``P1``.
     - Add ``NKRED`` to ``INCAR`` mismatch tests.
     - Re-parse config & spin degeneracies in concentration/symmetry functions if data not already present
-      (if user is porting ``DefectEntry``\s from older ``doped`` versions or manually).
+      (if user is porting |DefectEntry|\s from older ``doped`` versions or manually).
     - Avoid unnecessary ``DeprecationWarning``\s
 - Updated docs and linting
 
@@ -194,18 +194,18 @@ v.2.3.0
 - Site displacement (local strain) plotting by @ireaml 🙌
 - Auto determination of X-poor/rich facets.
 - More control over site selection for eFNV correction.
-- Clean, grouped parsing warnings for ``DefectsParser`` (in case many warnings...)
+- Clean, grouped parsing warnings for |DefectsParser| (in case many warnings...)
 - ``__repr__`` methods for all `doped` classes for informative outputs.
 - Tests and tutorials updates.
 
 v.2.2.0
 ----------
-- Added ``DefectsParser`` class for parsing defect calculations:
+- Added |DefectsParser| class for parsing defect calculations:
     - Uses multiprocessing and shared bulk data to massively speed up parsing of many defect supercell
       calcs at once (e.g. from 17 min to < 3 mins for 54 defects in CdTe).
     - Automatically checks ``INCAR``, ``KPOINTS``, ``POTCAR`` and charge correction compatibility between
       all calculations, and warns the user if any are likely to affect formation energies.
-- Make ``csv`` input to ``CompetingPhasesAnalyzer`` more flexible, along with other code and docstrings updates.
+- Make ``csv`` input to |CompetingPhasesAnalyzer| more flexible, along with other code and docstrings updates.
 - Format point group symbol in formation energy plots.
 - Refactor ``elt``/``elt_refs`` to ``el/el_refs`` by @adair-nicolson
 - Charge states can now be automatically determined even when ``POTCAR``\ s are not setup by the user.

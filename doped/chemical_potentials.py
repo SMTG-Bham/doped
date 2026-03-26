@@ -116,7 +116,7 @@ def make_molecule_in_a_box(element: str):
         Structure, formula and total magnetization:
 
         structure (Structure):
-            ``pymatgen`` ``Structure`` object of the molecule in a box.
+            ``pymatgen`` |Structure| object of the molecule in a box.
         formula (str):
             Chemical formula of the molecule in a box.
         total_magnetization (int):
@@ -832,11 +832,11 @@ class CompetingPhases:
         the Materials Project energetics are typically less reliable.
 
         Args:
-            composition (str, ``Composition``, ``Structure``):
+            composition (str, |Composition|, |Structure|):
                 Composition of the host material (e.g. ``'LiFePO4'``, or
                 ``Composition('LiFePO4')``, or
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
-                Alternatively a ``pymatgen`` ``Structure`` object for the
+                Alternatively a ``pymatgen`` |Structure| object for the
                 host material can be supplied (recommended), in which case
                 the primitive structure will be used as the only host
                 composition phase, reducing the number of calculations.
@@ -1609,7 +1609,7 @@ def get_doped_chempots_from_entries(
             (``composition``).
         composition (str, Composition, ComputedEntry):
             Composition of the host material either as a string
-            (e.g. 'LiFePO4') a ``pymatgen`` ``Composition`` object (e.g.
+            (e.g. 'LiFePO4') a ``pymatgen`` |Composition| object (e.g.
             ``Composition('LiFePO4')``), or a ``ComputedEntry`` object.
         sort_by (str):
             If set, will sort the chemical potential limits in the output
@@ -2265,7 +2265,7 @@ class CompetingPhasesAnalyzer(MSONable):
         (e.g. 4 or less).
 
         Args:
-            composition (str, ``Composition``):
+            composition (str, |Composition|):
                 Composition of the host material (e.g. ``'LiFePO4'``, or
                 ``Composition('LiFePO4')``, or
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
@@ -2307,7 +2307,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 Dictionary of the chemical potential limits for the host
                 material, in the ``doped`` format (i.e.
                 ``{"limits": [{'limit': [chempot_dict]}], ...}``). This can be
-                directly used with the ``DefectThermodynamics`` plotting &
+                directly used with the |DefectThermodynamics| plotting &
                 analysis methods, and saved to file with ``dumpfn`` from
                 ``monty.serialization``.
             chempots_df (DataFrame):
@@ -2377,7 +2377,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self, entries: list[ComputedEntry | ComputedStructureEntry], check_compatibility: bool = True
     ):
         r"""
-        Initialises the ``CompetingPhasesAnalyzer`` object from a list of
+        Initialises the |CompetingPhasesAnalyzer| object from a list of
         ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
 
         Args:
@@ -2835,7 +2835,7 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         Returns:
             JSON-serializable dict representation of
-            ``CompetingPhasesAnalyzer``.
+            |CompetingPhasesAnalyzer|.
         """
         return {
             "@module": self.__class__.__module__,
@@ -2851,14 +2851,14 @@ class CompetingPhasesAnalyzer(MSONable):
     @classmethod
     def from_dict(cls, d: dict) -> "CompetingPhasesAnalyzer":
         """
-        Reconstitute a ``CompetingPhasesAnalyzer`` object from a dict
+        Reconstitute a |CompetingPhasesAnalyzer| object from a dict
         representation created using ``as_dict()``.
 
         Args:
-            d (dict): dict representation of ``CompetingPhasesAnalyzer``.
+            d (dict): dict representation of |CompetingPhasesAnalyzer|.
 
         Returns:
-            ``CompetingPhasesAnalyzer`` object
+            |CompetingPhasesAnalyzer| object
         """
         entries = d["entries"]
 
@@ -3369,7 +3369,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def __repr__(self):
         """
-        Returns a string representation of the ``CompetingPhasesAnalyzer``
+        Returns a string representation of the |CompetingPhasesAnalyzer|
         object.
         """
         formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
@@ -3435,7 +3435,7 @@ def plot_chempot_heatmap(
             ``{"limits": [{'limit': [chempot_dict]}], ...}``) for the host
             material (``composition``).
         composition (str or Composition or ComputedEntry):
-            Host material composition as a string, ``Composition`` object or
+            Host material composition as a string, |Composition| object or
             ``ComputedEntry``, for which to plot the chemical stability region
             (and for which ``chempots`` corresponds to).
         dependent_element (str or Element):

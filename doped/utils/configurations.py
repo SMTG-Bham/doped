@@ -33,7 +33,7 @@ def get_transformation_from_s2_to_s1(
         struct1 (Structure):
             Reference structure
         struct2 (Structure):
-            Structure to transform to be as similar as possible to ``struct1``.
+            |Structure| to transform to be as similar as possible to ``struct1``.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``
             (e.g. ``ignored_species``, ``comparator`` etc).
@@ -109,7 +109,7 @@ def apply_s2_to_s1_transformation(
         struct1 (Structure):
             Reference structure.
         struct2 (Structure):
-            Structure to transform to be as similar as possible to ``struct1``.
+            |Structure| to transform to be as similar as possible to ``struct1``.
         supercell_matrix (np.ndarray):
             Supercell matrix for the transformation.
         trans_vector (np.ndarray):

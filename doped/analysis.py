@@ -154,7 +154,7 @@ def check_and_set_defect_entry_name(
     site in the bulk cell).
 
     Args:
-        defect_entry (DefectEntry): ``DefectEntry`` object.
+        defect_entry (|DefectEntry|): |DefectEntry| object.
         possible_defect_name (str):
             Possible defect name (usually the folder name) to check if
             recognised by ``doped``, otherwise defect name is re-determined.
@@ -194,7 +194,7 @@ def defect_site_from_structures(
 ) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure]:
     """
     Auto-determines the defect site from the supplied bulk and defect
-    structures, returning the corresponding ``PeriodicSite``.
+    structures, returning the corresponding |PeriodicSite|.
 
     Args:
         bulk_supercell (Structure):
@@ -207,7 +207,7 @@ def defect_site_from_structures(
 
     Returns:
         defect_site (PeriodicSite):
-            ``pymatgen`` ``PeriodicSite`` object for the `relaxed` defect site
+            ``pymatgen`` |PeriodicSite| object for the `relaxed` defect site
             in the defect supercell.
 
         If ``return_all_info`` is True, then also returns:
@@ -216,7 +216,7 @@ def defect_site_from_structures(
             The type of defect as a string (``interstitial``, ``vacancy`` or
             ``substitution``).
         defect_site_in_bulk (PeriodicSite):
-            ``pymatgen`` ``PeriodicSite`` object of the defect site in the bulk
+            ``pymatgen`` |PeriodicSite| object of the defect site in the bulk
             supercell (i.e. unrelaxed vacancy/substitution site, or final
             `relaxed` interstitial site for interstitials).
         defect_site_index (int):
@@ -224,7 +224,7 @@ def defect_site_from_structures(
         bulk_site_index (int):
             Index of defect site in bulk supercell (None for interstitials)
         unrelaxed_defect_structure (Structure):
-            ``pymatgen`` ``Structure`` object of the unrelaxed defect
+            ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
     try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
@@ -281,7 +281,7 @@ def defect_from_structures(
 ) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
     """
     Auto-determines the defect type and defect site from the supplied bulk and
-    defect structures, and returns a corresponding ``Defect`` object with the
+    defect structures, and returns a corresponding |Defect| object with the
     defect site in the primitive structure.
 
     If ``return_all_info`` is set to true, then also returns:
@@ -314,9 +314,9 @@ def defect_from_structures(
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
-            fast site matching and ``Defect`` creation are desired (e.g. when
+            fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
             parameters can greatly speed up parsing.
             Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
@@ -325,15 +325,15 @@ def defect_from_structures(
 
     Returns:
         defect (Defect):
-            ``doped`` ``Defect`` object.
+            ``doped`` |Defect| object.
 
         If ``return_all_info`` is True, then also returns:
 
         defect_site (PeriodicSite):
-            ``pymatgen`` ``PeriodicSite`` object of the `relaxed` defect site
+            ``pymatgen`` |PeriodicSite| object of the `relaxed` defect site
             in the defect supercell.
         defect_site_in_bulk (PeriodicSite):
-            ``pymatgen`` ``PeriodicSite`` object of the defect site in the bulk
+            ``pymatgen`` |PeriodicSite| object of the defect site in the bulk
             supercell (i.e. unrelaxed vacancy/substitution site, or final
             `relaxed` interstitial site for interstitials).
         defect_site_index (int):
@@ -341,10 +341,10 @@ def defect_from_structures(
         bulk_site_index (int):
             Index of defect site in bulk supercell (None for interstitials)
         guessed_initial_defect_structure (Structure):
-            ``pymatgen`` ``Structure`` object of the guessed initial defect
+            ``pymatgen`` |Structure| object of the guessed initial defect
             structure.
         unrelaxed_defect_structure (Structure):
-            ``pymatgen`` ``Structure`` object of the unrelaxed defect
+            ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
     (
@@ -477,12 +477,12 @@ def defect_and_info_from_structures(
     **kwargs,
 ) -> tuple[Defect, PeriodicSite, dict]:
     """
-    Generates a corresponding ``Defect`` object from the supplied bulk and
-    defect supercells (using ``defect_from_structures``), and returns the
-    ``Defect`` object, the `relaxed` defect site in the defect supercell, and a
-    dictionary of calculation metadata (including the defect site in the bulk
-    supercell, defect site indices in the defect and bulk supercells, the
-    guessed initial defect structure, and the unrelaxed defect structure).
+    Generates a corresponding |Defect| object from the supplied bulk and defect
+    supercells (using ``defect_from_structures``), and returns the |Defect|
+    object, the `relaxed` defect site in the defect supercell, and a dictionary
+    of calculation metadata (including the defect site in the bulk supercell,
+    defect site indices in the defect and bulk supercells, the guessed initial
+    defect structure, and the unrelaxed defect structure).
 
     Args:
         bulk_supercell (Structure):
@@ -504,9 +504,9 @@ def defect_and_info_from_structures(
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``). Mainly intended for cases where
-            fast site matching and ``Defect`` creation are desired (e.g. when
+            fast site matching and |Defect| creation are desired (e.g. when
             analysing MD trajectories of defects), where providing these
             parameters can greatly speed up parsing.
             Setting ``oxi_state='N/A'`` and ``multiplicity=1`` will skip their
@@ -516,9 +516,9 @@ def defect_and_info_from_structures(
     Returns:
         tuple[Defect, PeriodicSite, dict]:
             defect (Defect):
-                ``doped`` ``Defect`` object.
+                ``doped`` |Defect| object.
             defect_site (PeriodicSite):
-                ``pymatgen`` ``PeriodicSite`` object of the `relaxed` defect
+                ``pymatgen`` |PeriodicSite| object of the `relaxed` defect
                 site in the defect supercell.
             defect_structure_metadata (dict):
                 Dictionary containing metadata about the defect structure,
@@ -749,7 +749,7 @@ def defect_entry_from_paths(
 ) -> DefectEntry:
     """
     Parse the defect calculation outputs in ``defect_path`` and return the
-    parsed ``DefectEntry`` object.
+    parsed |DefectEntry| object.
 
     By default, the ``DefectEntry.name`` attribute (later used to label the
     defects in plots) is set to the defect_path folder name (if it is a
@@ -791,7 +791,7 @@ def defect_entry_from_paths(
             than this value (in eV), then a warning is raised. Default is 0.05
             eV.
         bulk_band_gap_vr (PathLike or Vasprun):
-            Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` ``Vasprun``
+            Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen`` |Vasprun|
             object, from which to determine the bulk band gap and band edge
             positions. If the VBM/CBM occur at `k`-points which are not
             included in the bulk supercell calculation, then this parameter
@@ -825,7 +825,7 @@ def defect_entry_from_paths(
             symmetries.
 
     Returns:
-        Parsed ``DefectEntry`` object.
+        Parsed |DefectEntry| object.
     """
     dp = DefectParser.from_paths(
         defect_path,
@@ -860,7 +860,7 @@ class DefectsParser:
         for a given host (bulk) material.
 
         Loops over calculation directories in ``output_path`` (likely the same
-        ``output_path`` used with ``DefectsSet`` for file generation in
+        ``output_path`` used with |DefectsSet| for file generation in
         ``doped.vasp``) and parses the defect calculations into a dictionary
         of: ``{defect_name: DefectEntry}``, where the ``defect_name`` is set to
         the defect calculation folder name (`if it is a recognised defect
@@ -868,7 +868,7 @@ class DefectsParser:
         (using the estimated `unrelaxed` defect structure, for the point group
         and neighbour distances). By default, searches for folders in
         ``output_path`` with ``subfolder`` containing ``vasprun.xml(.gz)``
-        files, and tries to parse them as ``DefectEntry``\s.
+        files, and tries to parse them as |DefectEntry|\s.
 
         By default, tries multiprocessing to speed up defect parsing, which can
         be controlled with ``processes``. If parsing hangs, this may be due to
@@ -889,7 +889,7 @@ class DefectsParser:
             output_path (PathLike):
                 Path to the output directory containing the defect calculation
                 folders (likely the same ``output_path`` used with
-                ``DefectsSet`` for file generation in ``doped.vasp``).
+                |DefectsSet| for file generation in ``doped.vasp``).
                 Default is current directory.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constant (ionic + static contributions), in
@@ -937,7 +937,7 @@ class DefectsParser:
                 argument).
             bulk_band_gap_vr (PathLike or Vasprun):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                ``Vasprun`` object, from which to determine the bulk band gap
+                |Vasprun| object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk
@@ -965,7 +965,7 @@ class DefectsParser:
                 having to re-parse defects when later analysing further and
                 aiding calculation provenance. Can be reloaded using the
                 ``loadfn`` function from ``monty.serialization`` (and then
-                input to ``DefectThermodynamics`` etc.). If ``None`` (default),
+                input to |DefectThermodynamics| etc.). If ``None`` (default),
                 set as ``{Host Chemical Formula}_defect_dict.json.gz``.
                 If ``False``, no json file is saved.
             parse_projected_eigen (bool):
@@ -1171,7 +1171,7 @@ class DefectsParser:
 
         Returns:
             DefectEntry | None:
-                The parsed ``DefectEntry`` object, or ``None`` if parsing
+                The parsed |DefectEntry| object, or ``None`` if parsing
                 failed.
         """
         try:
@@ -1266,16 +1266,16 @@ class DefectsParser:
         **kwargs,
     ) -> DefectThermodynamics:
         r"""
-        Generates a ``DefectThermodynamics`` object from the parsed
-        ``DefectEntry`` objects in ``self.defect_dict``\, which can then be
-        used to analyse and plot the defect thermodynamics (formation energies,
-        transition levels, concentrations etc).
+        Generates a |DefectThermodynamics| object from the parsed |DefectEntry|
+        objects in ``self.defect_dict``\, which can then be used to analyse and
+        plot the defect thermodynamics (formation energies, transition levels,
+        concentrations etc).
 
         Note that the ``DefectEntry.name`` attributes (rather than the
         ``defect_name`` key in the ``defect_dict``) are used to label the
         defects in plots.
 
-        See the ``DefectThermodynamics`` and accompanying methods docstrings in
+        See the |DefectThermodynamics| and accompanying methods docstrings in
         ``doped.thermodynamics`` for more.
 
         Args:
@@ -1321,7 +1321,7 @@ class DefectsParser:
                 VBM eigenvalue to use as Fermi level reference point for
                 analysis. If ``None`` (default), will use ``"vbm"`` from the
                 ``calculation_metadata`` dict attributes of the parsed
-                ``DefectEntry`` objects, which by default is taken from the
+                |DefectEntry| objects, which by default is taken from the
                 bulk supercell VBM (unless ``bulk_band_gap_vr`` is set during
                 parsing). Note that ``vbm`` should only affect the reference
                 for the Fermi level values output by ``doped`` (as this VBM
@@ -1333,7 +1333,7 @@ class DefectsParser:
                 Band gap of the host, to use for analysis.
                 If ``None`` (default), will use "band_gap" from the
                 ``calculation_metadata`` dict attributes of the parsed
-                ``DefectEntry`` objects.
+                |DefectEntry| objects.
             dist_tol (float):
                 Threshold for the closest distance (in Å) between equivalent
                 defect sites, for different species of the same defect type,
@@ -1354,7 +1354,7 @@ class DefectsParser:
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating Fermi level positions and
                 defect/carrier concentrations. Alternatively, can be a
-                ``pymatgen`` ``Vasprun`` object or path to the
+                ``pymatgen`` |Vasprun| object or path to the
                 ``vasprun.xml(.gz)`` output of a bulk DOS calculation in VASP.
                 Can also be provided later when using
                 ``get_equilibrium_fermi_level()``,
@@ -1379,10 +1379,10 @@ class DefectsParser:
                 (Default: False)
             **kwargs:
                 Additional keyword arguments to pass to the
-                ``DefectThermodynamics`` constructor.
+                |DefectThermodynamics| constructor.
 
         Returns:
-            ``doped`` ``DefectThermodynamics`` object
+            ``doped`` |DefectThermodynamics| object
         """
         if not self.defect_dict or self.defect_dict is None:
             raise ValueError(
@@ -1406,7 +1406,7 @@ class DefectsParser:
 
     def __repr__(self):
         """
-        Returns a string representation of the ``DefectsParser`` object.
+        Returns a string representation of the |DefectsParser| object.
         """
         formula = next(
             iter(self.defect_dict.values())
@@ -1820,7 +1820,7 @@ def _format_and_raise_parsing_warnings(
 
 def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
     """
-    Get the defect folder name from which a ``DefectEntry`` object was parsed.
+    Get the defect folder name from which a |DefectEntry| object was parsed.
 
     Args:
         entry (DefectEntry):
@@ -2060,7 +2060,7 @@ def _handle_charge_correction_errors(
         fermi_stability_window = defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry)
 
         if fermi_stability_window < 0 or (  # Note we avoid the prune_to_stable_entries() method here
-            defect_entry.is_shallow  # as this would require two ``DefectThermodynamics`` inits...
+            defect_entry.is_shallow  # as this would require two |DefectThermodynamics| inits...
             and fermi_stability_window
             < kwargs.get(
                 "shallow_charge_stability_tolerance",
@@ -2195,7 +2195,7 @@ def _parse_charge_state(
     expected_charge_state: int | None = None,
 ) -> int:
     """
-    Determine the defect charge state from the ``Vasprun`` object, folder name,
+    Determine the defect charge state from the |Vasprun| object, folder name,
     and/or ``expected_charge_state``.
     """
     parsed_charge_state: int | None = total_charge_from_vasprun(defect_vr)
@@ -2250,11 +2250,11 @@ def _parse_charge_state(
 def _parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
     """
     Determine the unrelaxed ('bulk') and relaxed defect point symmetries for
-    the input ``DefectEntry``, whether there is any periodicity-breaking in the
+    the input |DefectEntry|, whether there is any periodicity-breaking in the
     supercell, and the corresponding orientational degeneracy factor.
 
     Results are stored in the ``calculation_metadata`` and
-    ``degeneracy_factors`` property dicts of the ``DefectEntry``.
+    ``degeneracy_factors`` property dicts of the |DefectEntry|.
     """
     point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
         defect_entry,
@@ -2374,12 +2374,12 @@ class DefectParser:
 
         Args:
             defect_entry (DefectEntry):
-                doped ``DefectEntry``
+                doped |DefectEntry|
             defect_vr (Vasprun):
-                ``pymatgen`` ``Vasprun`` object for the defect supercell
+                ``pymatgen`` |Vasprun| object for the defect supercell
                 calculation.
             bulk_vr (Vasprun):
-                ``pymatgen`` ``Vasprun`` object for the reference bulk
+                ``pymatgen`` |Vasprun| object for the reference bulk
                 supercell calculation.
             error_tolerance (float):
                 If the estimated error in the defect charge correction, based
@@ -2411,7 +2411,7 @@ class DefectParser:
                 ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
                 ``angle_tolerance``, ``user_charges``,
                 ``initial_defect_structure_path`` etc (see their docstrings).
-                Primarily used by ``DefectsParser`` to expedite parsing by
+                Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
                 use for determining equivalent sites (and thus defect
@@ -2462,11 +2462,11 @@ class DefectParser:
                 Path to bulk supercell folder (containing at least
                 ``vasprun.xml(.gz)``). Not required if ``bulk_vr`` is provided.
             bulk_vr (Vasprun):
-                ``pymatgen`` ``Vasprun`` object for the reference bulk
+                ``pymatgen`` |Vasprun| object for the reference bulk
                 supercell calculation, if already loaded (can be supplied to
                 expedite parsing). Default is ``None``.
             bulk_procar (Procar):
-                ``pymatgen`` ``Procar`` object, for the reference bulk
+                ``pymatgen`` |Procar| object, for the reference bulk
                 supercell calculation if already loaded (can be supplied to
                 expedite parsing). Default is ``None``.
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -2495,7 +2495,7 @@ class DefectParser:
                 Default is 0.05 eV.
             bulk_band_gap_vr (PathLike or Vasprun):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                ``Vasprun`` object, from which to determine the bulk band gap
+                |Vasprun| object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk
@@ -2539,7 +2539,7 @@ class DefectParser:
                 ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
                 ``angle_tolerance``, ``user_charges``,
                 ``initial_defect_structure_path`` etc (see their docstrings).
-                Primarily used by ``DefectsParser`` to expedite parsing by
+                Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
                 use for determining equivalent sites (and thus defect
@@ -3039,13 +3039,13 @@ class DefectParser:
     ):
         r"""
         Load the ``"band_gap"``, ``"vbm"`` and ``"cbm"`` values for the parsed
-        ``DefectEntry``\s.
+        |DefectEntry|\s.
 
         If ``bulk_band_gap_vr`` is provided, then these values are parsed from
         it, else taken from the parsed bulk supercell calculation.
 
         ``"band_gap"`` and ``"vbm"`` are used by default when generating
-        ``DefectThermodynamics`` objects, to be used in plotting & analysis.
+        |DefectThermodynamics| objects, to be used in plotting & analysis.
 
         Alternatively, one can specify query the Materials Project (MP)
         database for the bulk gap data, using ``use_MP = True``, in which case
@@ -3057,7 +3057,7 @@ class DefectParser:
         Args:
             bulk_band_gap_vr (PathLike or Vasprun):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
-                ``Vasprun`` object, from which to determine the bulk band gap
+                |Vasprun| object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
                 which are not included in the bulk supercell calculation, then
                 this parameter should be used to provide the output of a bulk

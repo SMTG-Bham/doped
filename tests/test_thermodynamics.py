@@ -1,9 +1,9 @@
 """
 Tests for the ``doped.thermodynamics`` module, primarily focusing on the
-``DefectThermodynamics`` class.
+|DefectThermodynamics| class.
 
 Note that tests for the ``FermiSolver`` classes are in the separate ``test_fermisolver.py`` file,
-which also indirectly tests much of this core ``doped.thermodynamics`` / ``DefectThermodynamics``
+which also indirectly tests much of this core ``doped.thermodynamics`` / |DefectThermodynamics|
 functionality.
 
 Tests for ``DefectThermodynamics.plot()`` are in the separate ``test_plotting.py`` file.
@@ -1090,7 +1090,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_DefectsParser_CdTe_defect_thermo_obj(self):
         """
-        Test the `DefectThermodynamics` objects created from the
+        Test the |DefectThermodynamics| objects created from the
         ``DefectsParser.get_defect_thermodynamics()`` method.
         """
         self._check_defect_thermo(self.CdTe_defect_thermo)  # default values
@@ -1186,7 +1186,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_DefectsParser_CdTe_defect_thermo_obj_no_metadata(self):
         """
-        Test the `DefectThermodynamics` objects created from the
+        Test the |DefectThermodynamics| objects created from the
         ``DefectsParser.get_defect_thermodynamics()`` method, with no prev
         parsed metadata.
         """
@@ -2456,8 +2456,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
     def test_defect_thermo_direct_from_parsing(self):
         """
-        Test ``DefectThermodynamics`` directly from ``DefectsParser`` parsing
-        (i.e. before any saving/loading to/from ``json``).
+        Test |DefectThermodynamics| directly from |DefectsParser| parsing (i.e.
+        before any saving/loading to/from ``json``).
         """
         dp = DefectsParser(f"{self.CdTe_EXAMPLE_DIR}/v_Cd_example_data", dielectric=9.13)
         thermo_from_dp = dp.get_defect_thermodynamics()
@@ -2642,7 +2642,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     def test_incompatible_chempots_warning(self):
         """
         Test that we get the expected warnings when we provide incompatible
-        chemical potentials for our ``DefectThermodynamics`` object.
+        chemical potentials for our |DefectThermodynamics| object.
         """
         slightly_off_chempots = {"Cd": -1.0, "Te": -6}
         new_thermo = deepcopy(self.CdTe_defect_thermo)
@@ -2944,7 +2944,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test ``site_competition`` flag, which implements the defect
         concentration formula which accounts for defect site occupancies in the
         configurational entropy, as described in ``10.1016/j.ssi.2010.11.022``,
-        via its use in ``DefectThermodynamics`` methods.
+        via its use in |DefectThermodynamics| methods.
 
         Concentration plot shows expected asymptotic behaviour under different
         approximations.
@@ -3119,7 +3119,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="STO_V_Sr_Ti_Sr_Site_Competition.png")
     def test_site_competition_via_DefectThermodynamics_diff_defect_types(self):
         """
-        Test ``site_competition`` with ``DefectThermodynamics`` methods, with
+        Test ``site_competition`` with |DefectThermodynamics| methods, with
         different defect types (``V_Sr`` and ``Ti_Sr`` here) competing for the
         same site.
         """
@@ -3188,7 +3188,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png", tolerance=4)
     def test_YTOS_chempot_heatmap_default(self):
         """
-        Test chemical potential heatmap plotting via ``DefectThermodynamics``.
+        Test chemical potential heatmap plotting via |DefectThermodynamics|.
         """
         with warnings.catch_warnings(record=True) as w:
             self.YTOS_defect_thermo.chempots = self.MP_YTOS_doped_chempots
@@ -3216,9 +3216,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="YTOS_chempot_heatmap_default.png")
     def test_YTOS_chempot_heatmap_default_from_cpa(self):
         """
-        Test chemical potential heatmap plotting via
-        ``CompetingPhasesAnalyzer`` object returns same result as with
-        ``DefectThermodynamics`` object.
+        Test chemical potential heatmap plotting via |CompetingPhasesAnalyzer|
+        object returns same result as with |DefectThermodynamics| object.
         """
         ytos_cpa = CompetingPhasesAnalyzer("Y2Ti2S2O5", entries=self.YTOS_cp.entries)
         plot, output, w = _run_func_and_capture_stdout_warnings(ytos_cpa.plot_chempot_heatmap)
@@ -3496,7 +3495,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
     def test_skip_dos_check(self):
         """
-        Test the ``FermiDos`` vs ``DefectThermodynamics`` VBM check, and how it
+        Test the ``FermiDos`` vs |DefectThermodynamics| VBM check, and how it
         is skipped with ``skip_dos_check``.
         """
         fd_up_fdos = deepcopy(self.fermi_dos)

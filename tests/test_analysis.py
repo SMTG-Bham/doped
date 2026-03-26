@@ -509,7 +509,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged:
         self._check_default_CdTe_DefectsParser_outputs(default_dp, w, dist_tol=0.1)
 
-        # test reloading DefectsParser
+        # test reloading |DefectsParser|
         reloaded_defect_dict = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_test_defect_dict.json"))
 
         for defect_name, defect_entry in reloaded_defect_dict.items():
@@ -1048,8 +1048,8 @@ class DefectsParsingTestCase(unittest.TestCase):
         """
         Test parsing SrTiO3 defect calculations, where a different ISYM was
         used for the bulk (= 3) compared to the defect (= 0) calculations, as
-        well as the ``DefectThermodynamics`` concentration functions with
-        various options.
+        well as the |DefectThermodynamics| concentration functions with various
+        options.
 
         Previously this failed because the bulk/defect kpoints could not be
         properly compared.
@@ -3025,7 +3025,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             [bes.has_acceptor_phs, bes.has_donor_phs, bes.has_unoccupied_localized_state, bes.is_shallow]
         )
 
-        # Test loading using ``DefectsParser``
+        # Test loading using |DefectsParser|
         print("Testing Cu2SiSe3 eigenvalue analysis default, with vaspruns (& PROCARs)")
         dp = DefectsParser(f"{self.Cu2SiSe3_EXAMPLE_DIR}", skip_corrections=True)
 
@@ -3172,7 +3172,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test parsing fine when eigenvalue data not originally parsed, but then
         # ``DefectEntry.get_eigenvalue_analysis()`` later called:
-        # Test loading using ``PROCAR`` and ``DefectsParser``
+        # Test loading using ``PROCAR`` and |DefectsParser|
         print("Testing Cu2SiSe3 eigenvalue analysis, without parsing eigenvalue data originally")
         shutil.move(
             f"{self.Cu2SiSe3_EXAMPLE_DIR}/v_Cu_0/vasp_std/hidden_vr.gz",
@@ -3363,7 +3363,7 @@ class DefectsParsingTestCase(unittest.TestCase):
     # like split-vacancies, antisite swaps, split-interstitials etc
     # def test_orientational_degeneracy_error(self):
     #     # note most usages of get_orientational_degeneracy are tested (indirectly) via the
-    #     # DefectsParser/DefectThermodynamics tests
+    #     # |DefectsParser|/|DefectThermodynamics| tests
     #     for defect_type in ["vacancy", "substitution", DefectType.Vacancy, DefectType.Substitution]:
     #         print(defect_type)  # for debugging
     #         with pytest.raises(ValueError) as exc:
@@ -3440,7 +3440,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         vr = get_vasprun(f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/vasprun.xml.gz", parse_projected_eigen=True)
         assert get_magnetization_from_vasprun(vr) == 0
 
-        # test DefectsParser handling:
+        # test |DefectsParser| handling:
         dp, w = _create_dp_and_capture_warnings(
             output_path=f"{data_dir}/Magnetization_Tests/CdTe",
             bulk_path=f"{self.CdTe_BULK_DATA_DIR}",

@@ -32,8 +32,8 @@
   - Barebones tutorial workflow, as suggested by Alex G.
   - Add our recommended  workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
-  - Show on chemical potentials docs how chempots can be later set as attribute for ``DefectThermodynamics`` (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
-  - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple ``DefectThermodynamics`` objects
+  - Show on chemical potentials docs how chempots can be later set as attribute for `DefectThermodynamics` (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
+  - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple `DefectThermodynamics` objects
   - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
     in a warning when many entries for the same composition, say which have database IDs, warn the user
     and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal

@@ -39,8 +39,8 @@ if TYPE_CHECKING:
 # Composition overrides:
 def _composition__hash__(self):
     """
-    Custom ``__hash__`` method for ``Composition`` instances, to make
-    composition comparisons faster (used in structure matching etc.).
+    Custom ``__hash__`` method for |Composition| instances, to make composition
+    comparisons faster (used in structure matching etc.).
 
     ``pymatgen`` composition has just hashes the chemical system (without
     stoichiometry), which cannot then be used to distinguish different
@@ -52,7 +52,7 @@ def _composition__hash__(self):
 @lru_cache(maxsize=int(1e8))
 def doped_Composition_eq_func(self_hash, other_hash):
     r"""
-    Update equality function for ``Composition`` instances, which breaks early
+    Update equality function for |Composition| instances, which breaks early
     for mismatches and also uses caching, making it orders of magnitude faster
     than ``pymatgen``\s equality function.
     """
@@ -64,7 +64,7 @@ def doped_Composition_eq_func(self_hash, other_hash):
 
 def fast_Composition_eq(self, other):
     """
-    Fast equality function for ``Composition`` instances, breaking early for
+    Fast equality function for |Composition| instances, breaking early for
     mismatches.
     """
     # skip matching object type check here, as already checked upstream in ``_Composition__eq__``
@@ -80,7 +80,7 @@ def fast_Composition_eq(self, other):
 
 def _Composition__eq__(self, other):
     """
-    Custom ``__eq__`` method for ``Composition`` instances, using a cached
+    Custom ``__eq__`` method for |Composition| instances, using a cached
     equality function to speed up comparisons.
     """
     if not isinstance(other, type(self) | dict):
@@ -162,7 +162,7 @@ def _cache_ready_Composition_init(comp_input):
 def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
     """
     Helper function to quickly get the composition of a collection of sites,
-    faster than initializing a ``Structure`` object.
+    faster than initializing a |Structure| object.
 
     Used in initial drafts of defect stenciling code, but replaced by faster
     methods.
@@ -201,7 +201,7 @@ def _parse_site_species_str(site: Site, wout_charge: bool = False):
 # PeriodicSite overrides:
 def _periodic_site__hash__(self):
     """
-    Custom ``__hash__`` method for ``PeriodicSite`` instances.
+    Custom ``__hash__`` method for |PeriodicSite| instances.
     """
     property_dict = (  # Convert properties to a hashable form
         {k: tuple(v) if isinstance(v, list | np.ndarray) else v for k, v in self.properties.items()}
@@ -229,7 +229,7 @@ def _periodic_site__hash__(self):
 
 def cache_ready_PeriodicSite__eq__(self, other):
     """
-    Custom ``__eq__`` method for ``PeriodicSite`` instances, using a cached
+    Custom ``__eq__`` method for |PeriodicSite| instances, using a cached
     equality function to speed up comparisons.
     """
     needed_attrs = ("_species", "coords", "properties")
@@ -262,7 +262,7 @@ PeriodicSite.__hash__ = _periodic_site__hash__
 
 def _structure__hash__(self):
     """
-    Custom ``__hash__`` method for ``Structure`` instances.
+    Custom ``__hash__`` method for |Structure| instances.
     """
     return hash((self.lattice, frozenset(self.sites)))
 
@@ -309,14 +309,14 @@ def doped_Structure__eq__(self, other: IStructure) -> bool:
 @lru_cache(maxsize=int(1e4))
 def cached_Structure_eq_func(self_hash, other_hash):
     """
-    Cached equality function for ``Structure`` instances.
+    Cached equality function for |Structure| instances.
     """
     return doped_Structure__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
 
 
 def _Structure__eq__(self, other):
     """
-    Custom ``__eq__`` method for ``Structure``/``IStructure`` instances, using
+    Custom ``__eq__`` method for |Structure|/``IStructure`` instances, using
     both caching and an updated, faster equality function to speed up
     comparisons.
     """
@@ -459,13 +459,13 @@ def get_element_indices(
 ) -> dict[str, list[int]]:
     """
     Convenience function to generate a dictionary of ``{element: [indices]}``
-    for a given ``Structure``, where ``indices`` are the indices of the sites
-    in the structure corresponding to the given ``elements`` (default is all
+    for a given |Structure|, where ``indices`` are the indices of the sites in
+    the structure corresponding to the given ``elements`` (default is all
     elements in the structure).
 
     Args:
         structure (Structure):
-            ``Structure`` to get the indices from.
+            |Structure| to get the indices from.
         elements (list[Element | Species | str] | None):
             List of elements to get the indices of. If ``None`` (default), all
             elements in the structure are used.
@@ -494,12 +494,12 @@ def get_element_indices(
 def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> dict:
     r"""
     Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
-    given ``Structure``, where ``min_bond_length`` and ``max_bond_length`` are
+    given |Structure|, where ``min_bond_length`` and ``max_bond_length`` are
     the minimum and maximum bond lengths for each element in the structure.
 
     Args:
         structure (Structure):
-            Structure to calculate bond lengths for.
+            |Structure| to calculate bond lengths for.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``comparator`` has been set here (if
@@ -551,7 +551,7 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
 def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     """
     Get the equivalent ``stol`` value for a given Cartesian distance (``dist``)
-    in a given ``Structure``.
+    in a given |Structure|.
 
     ``stol`` is a site tolerance parameter used in ``pymatgen``
     ``StructureMatcher`` functions, defined as the fraction of the average free
@@ -559,7 +559,7 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
 
     Args:
         dist (float): Cartesian distance in Å.
-        structure (Structure): Structure to calculate ``stol`` for.
+        structure (Structure): |Structure| to calculate ``stol`` for.
 
     Returns:
         float: Equivalent ``stol`` value for the given distance.
@@ -625,7 +625,7 @@ def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Stru
     This function replicates ``StructureMatcher.get_rms_dist()``, but changes
     the return value from ``match[0], max(match[1])`` to ``match[0], match[1]``
     to allow further analysis of displacements. Mainly intended for use by
-    ``ShakeNBreak``.
+    |ShakeNBreak|.
 
     Args:
         sm (StructureMatcher): ``pymatgen`` ``StructureMatcher`` object.
@@ -773,7 +773,7 @@ class DopedTopographyAnalyzer:
         """
         Args:
             structure (Structure):
-                Structure to analyse.
+                |Structure| to analyse.
             image_tol (float):
                 A tolerance distance for the analysis, used to determine if
                 sites are periodic images of each other. Default (of 1e-4) is
@@ -869,7 +869,7 @@ class DopedTopographyAnalyzer:
 
 def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     """
-    Get the Voronoi nodes of a ``pymatgen`` ``Structure``.
+    Get the Voronoi nodes of a ``pymatgen`` |Structure|.
 
     Maximises efficiency by mapping down to the primitive cell, doing Voronoi
     analysis (with the efficient ``DopedTopographyAnalyzer`` class), and then
@@ -877,11 +877,11 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
 
     Args:
         structure (Structure):
-            ``pymatgen`` ``Structure`` object.
+            ``pymatgen`` |Structure| object.
 
     Returns:
         list[PeriodicSite]:
-            List of ``PeriodicSite`` objects representing the Voronoi nodes.
+            List of |PeriodicSite| objects representing the Voronoi nodes.
     """
     try:
         return _hashable_get_voronoi_nodes(structure)

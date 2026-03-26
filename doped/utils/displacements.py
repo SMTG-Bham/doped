@@ -47,11 +47,11 @@ def calc_site_displacements(
     bulk supercell, and returns a ``DataFrame`` of site displacement info.
 
     The signed displacements are stored in the calculation_metadata of the
-    ``DefectEntry`` object under the ``"site_displacements"`` key.
+    |DefectEntry| object under the ``"site_displacements"`` key.
 
     Args:
         defect_entry (DefectEntry):
-            ``DefectEntry`` object.
+            |DefectEntry| object.
         relative_to_defect (bool):
             Whether to calculate the signed displacements along the line from
             the (relaxed) defect site to that atom. Negative values indicate
@@ -217,7 +217,7 @@ def plot_site_displacements(
     ``False``.
 
     Args:
-        defect_entry (DefectEntry): ``DefectEntry`` object.
+        defect_entry (DefectEntry): |DefectEntry| object.
         relative_to_defect (bool):
             Whether to plot the signed displacements along the line from the
             (relaxed) defect site to that atom. Negative values indicate the
@@ -604,7 +604,7 @@ def calc_displacements_ellipsoid(
 
     Args:
         defect_entry (DefectEntry):
-            ``DefectEntry`` object.
+            |DefectEntry| object.
         quantile (float):
             The quantile threshold for selecting significant displacements
             (between 0 and 1). Default is 0.8.
@@ -760,7 +760,7 @@ def plot_displacements_ellipsoid(
 
     Args:
         defect_entry (DefectEntry):
-            ``DefectEntry`` object.
+            |DefectEntry| object.
         plot_ellipsoid (bool):
             If ``True``, plot the fitted ellipsoid in the crystal lattice.
         plot_anisotropy (bool):
