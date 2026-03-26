@@ -3078,8 +3078,8 @@ def _plot_Cu_i_data(Cu_i_data):
         norm=LogNorm(min(Cu_i_concs), min(Cu_i_concs) * 1.1),  # small range for better contrast
     )
     fig.colorbar(sc, ax=ax, label="Cu$_i$ Concentration (cm$^{-3}$)")
-    ax.set_xlabel("$\mu_{Se}$ (eV)")
-    ax.set_ylabel("$\mu_{Cu}$ (eV)")
+    ax.set_xlabel("μ$_{Se}$ (eV)")
+    ax.set_ylabel("μ$_{Cu}$ (eV)")
     return fig
 
 
