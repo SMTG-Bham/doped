@@ -1063,8 +1063,10 @@ def get_site_mapping_indices(
                 tmpl_col_indices, _ = get_linear_assignment_solution(dmat)
                 input_to_template = dict(enumerate(tmpl_col_indices.tolist()))
             else:
+                # dmat.T is (n_templates, n_inputs): each template row j is assigned input column
+                # input_col_indices[j]. We need input_idx -> tmpl_idx for the loop below:
                 input_col_indices, _ = get_linear_assignment_solution(dmat.T)
-                input_to_template = dict(enumerate(input_col_indices.tolist()))
+                input_to_template = {int(input_col_indices[j]): j for j in range(len(template_coords))}
         else:
             input_to_template = None
 

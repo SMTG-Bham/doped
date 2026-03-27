@@ -18,18 +18,14 @@ from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry
 from doped.thermodynamics import _ensure_list
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
-from doped.utils.efficiency import (
-    Hashabledict,
-    _cached_Composition_init,
-    _Composition__eq__,
-    _fast_get_composition_from_sites,
-)
+from doped.utils.efficiency import Hashabledict, _cached_Composition_init, _Composition__eq__
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
+    get_site_mapping_indices,
     get_wigner_seitz_radius,
 )
 from doped.utils.supercells import _largest_cube_length_from_matrix, min_dist
@@ -275,7 +271,7 @@ def get_defect_in_supercell(
         big_defect_supercell = _get_matching_sites_from_s1_then_s2(
             template_struct=trans_orig_supercell,
             struct1_pool=big_defect_supercell_with_X,
-            struct2_pool=trans_orig_bulk_supercell * superset_matrix,
+            struct2_pool=big_bulk_supercell,
         )
 
         # now we try to pre-emptively reorient the big supercell to match the orientation of
@@ -1103,27 +1099,23 @@ def _get_matching_sites_from_s1_then_s2(
     num_super_supercells = len(struct1_pool) // len(template_struct)  # both also have X
     single_defect_subcell_sites = []
 
+    # Uses linear assignment per species for unambiguous optimal matching, for template_struct sites
+    mapping = get_site_mapping_indices(template_struct, struct1_pool, frac_coords=False)
+    pool1_indices = [  # mapping entries are (dist, template_idx, pool_idx)
+        pool_idx
+        for _, template_idx, pool_idx in mapping
+        if (template_idx is not None and pool_idx is not None)
+    ]
+    assert len(set(pool1_indices)) == len(pool1_indices)  # check no duplicate indices
+    single_defect_subcell_sites = [struct1_pool[i] for i in pool1_indices]
+
+    # for struct2_pool, it's not as straightforward to use ``get_site_mapping_indices``, as we are trying
+    # to compare defect-containing supercells to a bulk supercell, so have to account for different
+    # compositions / number of sites etc; so more straightforward/robust to follow this approach, where we
+    # get the required number of sites from ``struct2_pool``, which are furthest from those in
+    # ``single_defect_subcell_sites``:
     species_coord_dict = {}  # avoid recomputing coords for each site
-    species_idx_dict = {}
-    for element in _fast_get_composition_from_sites(struct1_pool).elements:
-        species_coord_dict[element.symbol], species_idx_dict[element.symbol] = (
-            get_coords_and_idx_of_species(struct1_pool, element.symbol, frac_coords=False)
-        )
-
-    for (
-        sub_site
-    ) in template_struct.sites:  # get closest site in big supercell to site, using cartesian coords:
-        closest_site_dict_idx = np.argmin(
-            np.linalg.norm(species_coord_dict[sub_site.specie.symbol] - sub_site.coords, axis=1),
-        )
-        single_defect_subcell_sites.append(
-            struct1_pool[species_idx_dict[sub_site.specie.symbol][closest_site_dict_idx]]
-        )
-
-    assert len(set(single_defect_subcell_sites)) == len(single_defect_subcell_sites)  # no repeats
-
-    species_coord_dict = {}  # avoid recomputing coords for each site
-    for element in _fast_get_composition_from_sites(struct2_pool).elements:
+    for element in struct2_pool.composition.elements:
         species_coord_dict[element.symbol] = get_coords_and_idx_of_species(
             single_defect_subcell_sites, element.symbol, frac_coords=True  # frac_coords
         )[0]
