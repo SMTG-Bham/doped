@@ -21,6 +21,7 @@ from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structur
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
+from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
 
 from doped.core import DefectEntry, remove_site_oxi_state
@@ -953,6 +954,7 @@ def get_site_mapping_indices(
     dists_only: bool = False,
     anonymous: bool = False,
     ignored_species: list[str] | None = None,
+    frac_coords: bool = True,
 ):
     """
     Get the site mapping indices between two structures (from ``struct1`` to
@@ -961,12 +963,12 @@ def get_site_mapping_indices(
     The template structure may have a different species ordering to the
     ``input_structure``.
 
-    NOTE: This assumes that both structures have the same lattice definitions
-    (i.e. that they match, and aren't rigidly translated/rotated with respect
-    to each other), which is mostly the case unless we have a mismatching
-    defect/bulk supercell (in which case the
-    ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
-    during parsing).
+    NOTE: if ``frac_coords = True`` (default), this assumes that both
+    structures have the same lattice definitions (i.e. that they match, and
+    aren't rigidly translated/rotated with respect to each other), which is
+    mostly the case unless we have a mismatching defect/bulk supercell (in
+    which case the ``check_atom_mapping_far_from_defect`` warning should be
+    thrown anyway during parsing).
 
     Args:
         struct1 (Structure):
@@ -993,6 +995,12 @@ def get_site_mapping_indices(
         ignored_species (list[str]):
             A list of species to ignore when matching sites. Default is no
             species ignored.
+        frac_coords (bool):
+            Whether to match sites based on their fractional coordinate
+            distances (i.e. assuming PBC with matching lattice definitions,
+            using the lattice of ``struct1``)(default). If ``False``, instead
+            matches sites based on distances between their Cartesian
+            coordinates, with no consideration of PBC.
 
     Returns:
         list:
@@ -1001,9 +1009,20 @@ def get_site_mapping_indices(
             ``True``, then only the distances between matched sites are
             returned.
     """
+
+    def get_coords(site: PeriodicSite):
+        return list(site.frac_coords) if frac_coords else list(site.coords)
+
+    def get_distances(
+        coords1: np.ndarray | list, coords2: np.ndarray | list, lattice: Lattice | None = None
+    ):
+        if frac_coords:
+            assert lattice is not None, "Lattice needs to be given if frac_coords is True!"
+            return lattice.get_all_distances(coords1, coords2)
+        return all_distances(coords1, coords2)
+
     ## Generate a site matching table between the input and the template
     min_dist_with_index: list[tuple] = []
-    all_template_fcoords = [list(site.frac_coords) for site in struct2]
     s1_species_symbols = (
         [
             species.symbol
@@ -1017,22 +1036,21 @@ def get_site_mapping_indices(
     for s1_species_symbol in s1_species_symbols:
         if species is not None and s1_species_symbol != species:
             continue
-        # Build (struct1_index, fcoords) pairs for this species, preserving ``struct1`` order:
+        # Build (struct1_index, coords) pairs for this species, preserving ``struct1`` order:
         species_input = [
-            (i, list(site.frac_coords))
+            (i, get_coords(site))
             for i, site in enumerate(struct1)
             if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
-        input_fcoords = [fc for _, fc in species_input]
-        template_fcoords = [
-            list(site.frac_coords)
-            for site in struct2
-            if (site.specie.symbol == s1_species_symbol or anonymous)
+        input_coords = [coords for _, coords in species_input]
+        species_s2_indices = [
+            i for i, site in enumerate(struct2) if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
+        template_coords = [get_coords(struct2[i]) for i in species_s2_indices]
 
         dmat = (
-            struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
-            if template_fcoords
+            get_distances(input_coords, template_coords, lattice=struct1.lattice)
+            if template_coords
             else None
         )
 
@@ -1041,12 +1059,12 @@ def get_site_mapping_indices(
             # get_linear_assignment_solution returns (col_ind, total_cost), where col_ind[i] is the
             # template index assigned to input row i (requires n_rows <= n_cols). For n > m, transpose
             # the problem (assign each template to one input) and invert the mapping:
-            if len(input_fcoords) <= len(template_fcoords):
+            if len(input_coords) <= len(template_coords):
                 tmpl_col_indices, _ = get_linear_assignment_solution(dmat)
                 input_to_template = dict(enumerate(tmpl_col_indices.tolist()))
             else:
                 input_col_indices, _ = get_linear_assignment_solution(dmat.T)
-                input_to_template = {int(input_col_indices[j]): j for j in range(len(template_fcoords))}
+                input_to_template = dict(enumerate(input_col_indices.tolist()))
         else:
             input_to_template = None
 
@@ -1064,26 +1082,21 @@ def get_site_mapping_indices(
 
             else:  # allow_duplicates=True: each input independently picks its closest template
                 dists = dmat[input_idx]
-                tmpl_idx = int(dists.argmin())
+                tmpl_idx = dists.argmin()
 
             current_dist = float(dmat[input_idx, tmpl_idx])
-            template_fcoord = template_fcoords[tmpl_idx]
-            template_index = None  # only compute if needed
+            # Map species-local template index (tmpl_idx) to global struct2 index (species_s2_indices):
+            template_index = species_s2_indices[tmpl_idx]
 
             if current_dist > threshold:
-                template_index = all_template_fcoords.index(template_fcoord)
-                site_a = struct1[index]
-                site_b = struct2[template_index]
                 warnings.warn(
                     f"Large site displacement {current_dist:.2f} Å detected when matching atomic sites: "
-                    f"{site_a} -> {site_b}."
+                    f"{struct1[index]} -> {struct2[template_index]}."
                 )
 
-            if dists_only:
-                min_dist_with_index.append((current_dist, index))
-            else:
-                template_index = template_index or all_template_fcoords.index(template_fcoord)
-                min_dist_with_index.append((current_dist, index, template_index))
+            min_dist_with_index.append(
+                (current_dist, index) if dists_only else (current_dist, index, template_index)
+            )
 
     if not min_dist_with_index:
         raise RuntimeError(
