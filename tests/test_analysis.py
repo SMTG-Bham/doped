@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.core.structure import Structure
 from pymatgen.electronic_structure.dos import FermiDos
 from test_utils import (
     EXAMPLE_DIR,
@@ -33,10 +32,12 @@ from doped.analysis import (
     defect_entry_from_paths,
     defect_from_structures,
     defect_name_from_structures,
+    parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
 from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
+from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
 from doped.utils.parsing import (
     Vasprun,
@@ -52,6 +53,7 @@ from doped.utils.parsing import (
 )
 from doped.utils.symmetry import (
     get_orientational_degeneracy,
+    get_primitive_structure,
     point_symmetry_from_defect_entry,
     point_symmetry_from_structure,
 )
@@ -2753,6 +2755,53 @@ class DefectsParsingTestCase(unittest.TestCase):
             with pytest.raises(RuntimeError) as excinfo:
                 point_symmetry_from_structure(defect_entry.defect_supercell, relaxed=False)
             assert "Please also supply the unrelaxed bulk structure" in str(excinfo.value)
+
+    def test_periodicity_restoration(self):
+        """
+        Test automatic periodicity restoration in defect parsing, for defect
+        supercells which are periodicity-breaking (thus preventing correct
+        relaxed symmetry determination).
+
+        Here we use YTOS as an example; a periodicity-breaking cell which
+        should be restored by stenciling into a supercell which retains
+        periodicity, without throwing a warning. This approach doesn't work
+        with the ZnS non-diagonal cell above unfortunately, as it's also a
+        different lattice definition / supercell tiling, so can't be re-
+        oriented to match.
+        """
+        bulk = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Bulk/POSCAR")
+        primitive = get_primitive_structure(bulk)
+        YTOS_defect_gen = DefectsGenerator(
+            primitive * [3, 3, 1],
+            generate_supercell=False,
+        )
+
+        with warnings.catch_warnings(record=True) as w:
+            parse_symmetry_and_degeneracy_metadata(YTOS_defect_gen["O_i_D4h_0"])
+        _print_warning_info(w)
+        assert not w
+
+        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["relaxed point symmetry"] == "D4h"
+        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["bulk site symmetry"] == "D4h"
+        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["periodicity_breaking_supercell"] is False
+
+        with warnings.catch_warnings(record=True) as w:
+            parse_symmetry_and_degeneracy_metadata(
+                YTOS_defect_gen["O_i_D4h_0"], attempt_periodicity_restoration=False, verbose=True
+            )
+        _print_warning_info(w)
+        assert len(w) == 1
+        assert "`relaxed` is set to True" in str(w[-1].message)
+        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["relaxed point symmetry"] == "C2h"
+        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["bulk site symmetry"] == "D4h"
+        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["periodicity_breaking_supercell"] is True
+
+        with warnings.catch_warnings(record=True) as w:
+            parse_symmetry_and_degeneracy_metadata(
+                YTOS_defect_gen["O_i_D4h_0"], attempt_periodicity_restoration=False
+            )
+        _print_warning_info(w)
+        assert not w  # no warnings (on initial parsing) by default, when verbose is not set
 
     def test_bulk_defect_compatibility_checks(self):
         """

@@ -2793,7 +2793,7 @@ def point_symmetry_from_defect_entry(
             )
         else:
             warnings.warn(
-                "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), but the "
+                "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but the "
                 "`calculation_metadata`/`bulk_entry.structure` attributes are not set for `DefectEntry`, "
                 "suggesting that this DefectEntry was not parsed from calculations using doped. This "
                 "means doped cannot automatically check if the supercell shape is breaking the cell "

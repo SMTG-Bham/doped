@@ -217,12 +217,7 @@ def get_defect_in_supercell(
             generated defect supercell (see explanations above).
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest for debugging
-    # TODO: Re-run timings? Once pmg stuff sorted out
-    # TODO: We should now be able to use these functions (without the final re-orientation step,
-    #  for speed) to determine the point symmetries of relaxed defects in non-symmetry-conserving /
-    #  periodicity-breaking supercells, by stenciling into a small symmetry-conserving cell and getting the
-    #  point symmetry for that -- will do!
-
+    # TODO: Re-run timings!
     pbar = tqdm(
         total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
     )  # tqdm progress bar. 100% is completion
