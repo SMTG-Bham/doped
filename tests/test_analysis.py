@@ -916,12 +916,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         self._check_DefectsParser(Sb2Se3_O_dp)
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
-    def test_sb2si2te6_eFNV(self):
+    def test_sb2si2te6_eFNV_and_periodicity_breaking_handling(self):
         dp, w = _create_dp_and_capture_warnings(
             self.Sb2Si2Te6_EXAMPLE_DIR,
             dielectric=self.Sb2Si2Te6_dielectric,
             json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+            attempt_periodicity_restoration=False,
         )
         assert any(
             "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
@@ -937,13 +938,27 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert all("The defect supercell has been detected" not in str(warning.message) for warning in w)
 
         self._check_DefectsParser(dp)
-
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
-        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json"))
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
         _print_warning_info(w)
         assert any(_orientational_degeneracy_warning in str(warning.message) for warning in w)
+        assert sb2si2te6_thermo["v_Sb_-3"].calculation_metadata["periodicity_breaking_supercell"] is True
+
+        dp, w = _create_dp_and_capture_warnings(
+            self.Sb2Si2Te6_EXAMPLE_DIR,
+            dielectric=self.Sb2Si2Te6_dielectric,
+            json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
+            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
+        )  # attempt periodicity restoration
+        sb2si2te6_thermo = dp.get_defect_thermodynamics()
+        with warnings.catch_warnings(record=True) as w:
+            sb2si2te6_thermo.get_symmetries_and_degeneracies()
+        _print_warning_info(w)
+        dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json"))
+        assert not w  # periodicity automatically restored now!
+        assert sb2si2te6_thermo["v_Sb_-3"].calculation_metadata["periodicity_breaking_supercell"] is False
+        assert sb2si2te6_thermo["v_Sb_-3"].calculation_metadata["relaxed point symmetry"] == "C3"
 
         v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
         with warnings.catch_warnings(record=True) as w:
@@ -1524,12 +1539,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         ytos_F_O_1 = DefectParser.from_paths(  # with corrections this time
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
-            self.ytos_dielectric,
+            dielectric=self.ytos_dielectric,
         ).defect_entry
         ytos_F_O_1_explicit = DefectParser.from_paths(  # with corrections this time
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
-            self.ytos_dielectric,
+            dielectric=self.ytos_dielectric,
             charge_state=1,
         ).defect_entry
         assert ytos_F_O_1.charge_state == ytos_F_O_1_explicit.charge_state == 1
@@ -1589,7 +1604,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            ).defect_entry
+            )
         _print_warning_info(w)  # for debugging
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
@@ -2630,7 +2645,9 @@ class DefectsParsingTestCase(unittest.TestCase):
                     assert np.allclose(defect.site.frac_coords, [0, 0, 0], atol=1e-2)
                     assert (
                         unrelaxed_defect_structure
-                        == defect_entry.calculation_metadata["unrelaxed_defect_structure"]
+                        == defect_entry.calculation_metadata[
+                            "unrelaxed_defect_structure"
+                        ].remove_oxidation_states()
                     )
                 else:  # interstitial
                     assert np.allclose(  # guessed initial site (closest Voronoi node)
@@ -2665,7 +2682,9 @@ class DefectsParsingTestCase(unittest.TestCase):
                 if stdev < 0.31 or type != "interstitial":  # otherwise nearest Voronoi node can differ!
                     assert (
                         guessed_initial_defect_structure
-                        == defect_entry.calculation_metadata["guessed_initial_defect_structure"]
+                        == defect_entry.calculation_metadata[
+                            "guessed_initial_defect_structure"
+                        ].remove_oxidation_states()
                     )
 
                 print(f"{defect_entry.name}, stdev: {stdev}, rattling bulk supercell")  # now rattle bulk:
