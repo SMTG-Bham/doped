@@ -29,7 +29,6 @@ from test_utils import (
 from doped.analysis import (
     DefectParser,
     DefectsParser,
-    defect_entry_from_paths,
     defect_from_structures,
     defect_name_from_structures,
     parse_symmetry_and_degeneracy_metadata,
@@ -366,7 +365,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         CdTe_thermo = CdTe_dp.get_defect_thermodynamics(dist_tol=dist_tol)
         with warnings.catch_warnings(record=True) as w:
             CdTe_thermo.plot()
-        print([warn.message for warn in w])  # for debugging
+        _print_warning_info(w)
         print([defect_entry.name for defect_entry in CdTe_dp.defect_dict.values()])  # for debugging
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         assert any(
@@ -943,7 +942,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json"))
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
-        print([str(warning.message) for warning in w])
+        _print_warning_info(w)
         assert any(_orientational_degeneracy_warning in str(warning.message) for warning in w)
 
         v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
@@ -1011,7 +1010,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             v2o5_thermo.get_symmetries_and_degeneracies()
-        print([str(warning.message) for warning in w])
+        _print_warning_info(w)
         assert not w  # no warnings
 
         return v2o5_thermo.plot(limit="V2O5-O2")
@@ -1504,13 +1503,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         # test warning when specifying the wrong charge:
         with warnings.catch_warnings(record=True) as w:
-            parsed_v_cd_m1 = defect_entry_from_paths(
+            parsed_v_cd_m1 = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=-1,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
+            ).defect_entry
             assert len(w) == 1
             assert issubclass(w[-1].category, UserWarning)
             assert (
@@ -1522,17 +1521,17 @@ class DefectsParsingTestCase(unittest.TestCase):
             )  # slightly higher atol, due to LOCPOT sub-sampling for file compression on repo
 
         # test YTOS, has trickier POTCAR symbols with  Y_sv, Ti, S, O
-        ytos_F_O_1 = defect_entry_from_paths(  # with corrections this time
+        ytos_F_O_1 = DefectParser.from_paths(  # with corrections this time
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
             self.ytos_dielectric,
-        )
-        ytos_F_O_1_explicit = defect_entry_from_paths(  # with corrections this time
+        ).defect_entry
+        ytos_F_O_1_explicit = DefectParser.from_paths(  # with corrections this time
             f"{self.YTOS_EXAMPLE_DIR}/F_O_1",
             f"{self.YTOS_EXAMPLE_DIR}/Bulk",
             self.ytos_dielectric,
             charge_state=1,
-        )
+        ).defect_entry
         assert ytos_F_O_1.charge_state == ytos_F_O_1_explicit.charge_state == 1
         assert ytos_F_O_1.get_ediff() == ytos_F_O_1_explicit.get_ediff()
         assert np.isclose(ytos_F_O_1.get_ediff(), 0.04176070572680146, atol=1e-3)  # corrected energy
@@ -1552,7 +1551,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         """
         Test skipping of charge corrections and warnings.
 
-        Here we have mixed and matched `defect_entry_from_paths` and
+        Here we have mixed and matched `DefectParser.from_paths` and
         `DefectParser.from_paths()` as the results should be the same.
 
         Note that we have manually edited the LOCPOTs in the examples
@@ -1590,8 +1589,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
-        print([str(warn.message) for warn in w])  # for debugging
+            ).defect_entry
+        _print_warning_info(w)  # for debugging
         assert len(w) == 1
         assert issubclass(w[-1].category, UserWarning)
         assert (
@@ -1625,13 +1624,13 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test no warnings when skip_corrections is True
         with warnings.catch_warnings(record=True) as w:
-            parsed_v_cd_m2_fake_aniso = defect_entry_from_paths(
+            parsed_v_cd_m2_fake_aniso = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=fake_aniso_dielectric,
                 skip_corrections=True,
                 charge_state=-2,
-            )
+            ).defect_entry
             assert len(w) == 0
 
         assert np.isclose(
@@ -1678,12 +1677,12 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test isotropic dielectric but only OUTCAR present:
         with warnings.catch_warnings(record=True) as w:
-            parsed_int_Te_2 = defect_entry_from_paths(
+            parsed_int_Te_2 = DefectParser.from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=2,
-            )
+            ).defect_entry
         assert len(w) == 1  # no charge correction warning with iso dielectric, parsing from OUTCARs,
         # but multiple OUTCARs present -> warning
         assert np.isclose(parsed_int_Te_2.get_ediff(), -6.2009, atol=1e-3)
@@ -1779,12 +1778,12 @@ class DefectsParsingTestCase(unittest.TestCase):
         defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl"  # no LOCPOT/OUTCAR
 
         with warnings.catch_warnings(record=True) as w:
-            parsed_v_cd_0 = defect_entry_from_paths(
+            parsed_v_cd_0 = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
+            ).defect_entry
             assert len(w) == 0
 
         assert np.isclose(
@@ -1797,13 +1796,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"Running _check_no_icorelevel_warning_int_te with dielectric {dielectric}, expecting "
             f"{num_warnings} warnings and action: {action}"
         )  # for debugging
-        result = defect_entry_from_paths(
+        result = DefectParser.from_paths(
             defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=dielectric,
             charge_state=2,
-        )
-        print([warn.message for warn in warnings])  # for debugging
+        ).defect_entry
+        _print_warning_info(warnings)
         assert len(warnings) == num_warnings
         assert all(issubclass(warning.category, UserWarning) for warning in warnings)
         assert (  # different warning start depending on whether isotropic or anisotropic dielectric
@@ -1822,14 +1821,14 @@ class DefectsParsingTestCase(unittest.TestCase):
             f"Running _parse_Int_Te_3_2_and_count_warnings with dielectric {fake_aniso_dielectric}, "
             f"expecting {num_warnings} warnings"
         )  # for debugging
-        defect_entry_from_paths(
+        DefectParser.from_paths(
             defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=fake_aniso_dielectric,
             charge_state=2,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
-        print([warn.message for warn in w])  # for debugging
+        _print_warning_info(w)
         assert len(w) == num_warnings
         assert all(issubclass(warning.category, UserWarning) for warning in w)
 
@@ -1867,7 +1866,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         with warnings.catch_warnings(record=True) as w:
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
@@ -1897,7 +1896,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         with warnings.catch_warnings(record=True) as w:
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
@@ -1926,13 +1925,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         """
         defect_path = f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl"
         # get correct Freysoldt correction energy:
-        parsed_v_cd_m2 = defect_entry_from_paths(  # defect charge determined automatically
+        parsed_v_cd_m2 = DefectParser.from_paths(  # defect charge determined automatically
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
 
         # Check that the correct Freysoldt correction is applied
         correct_correction_dict = {
@@ -1946,12 +1945,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # test float
-        new_parsed_v_cd_m2 = defect_entry_from_paths(
+        new_parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=9.13,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
@@ -1960,13 +1959,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # test int
-        new_parsed_v_cd_m2 = defect_entry_from_paths(
+        new_parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=9,
             charge_state=-2,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
@@ -1975,12 +1974,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # test 3x1 array
-        new_parsed_v_cd_m2 = defect_entry_from_paths(
+        new_parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=np.array([9.13, 9.13, 9.13]),
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
@@ -1989,13 +1988,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # test 3x1 list
-        new_parsed_v_cd_m2 = defect_entry_from_paths(
+        new_parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=[9.13, 9.13, 9.13],
             charge_state=-2,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
@@ -2004,12 +2003,12 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # test 3x3 array
-        new_parsed_v_cd_m2 = defect_entry_from_paths(
+        new_parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=self.CdTe_dielectric,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
@@ -2018,13 +2017,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
 
         # test 3x3 list
-        new_parsed_v_cd_m2 = defect_entry_from_paths(
+        new_parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=self.CdTe_BULK_DATA_DIR,
             dielectric=self.CdTe_dielectric.tolist(),
             charge_state=-2,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
         for correction_name, correction_energy in correct_correction_dict.items():
             assert np.isclose(
                 new_parsed_v_cd_m2.corrections[correction_name],
@@ -2044,11 +2043,11 @@ class DefectsParsingTestCase(unittest.TestCase):
             if os.path.isdir(f"{self.CdTe_EXAMPLE_DIR}/{i}") and "v_Cd" in i and "example" not in i:
                 defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
                 int(i[-2:].replace("_", ""))
-                parsed_vac_Cd_dict[i] = defect_entry_from_paths(
+                parsed_vac_Cd_dict[i] = DefectParser.from_paths(
                     defect_path=defect_path,
                     bulk_path=self.CdTe_BULK_DATA_DIR,
                     dielectric=self.CdTe_dielectric,
-                )  # Keep dictionary of parsed defect entries
+                ).defect_entry  # Keep dictionary of parsed defect entries
 
         assert len(parsed_vac_Cd_dict) == 3
         assert all(f"v_Cd_{i}" in parsed_vac_Cd_dict for i in [0, -1, -2])
@@ -2095,13 +2094,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         correction.
         """
         with patch("builtins.print") as mock_print:
-            te_i_2_ent = defect_entry_from_paths(
+            te_i_2_ent = DefectParser.from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=+2,  # test manually specifying charge state
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
+            ).defect_entry
 
         self._check_defect_entry_corrections(te_i_2_ent, -6.2009, 0.9038318161163628)
         # assert auto-determined interstitial site is correct
@@ -2110,13 +2109,13 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # run again to check parsing of previous Voronoi sites
         with patch("builtins.print") as mock_print:
-            te_i_2_ent = defect_entry_from_paths(
+            te_i_2_ent = DefectParser.from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_2/vasp_ncl",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=self.CdTe_dielectric,
                 charge_state=+2,  # test manually specifying charge state
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
+            ).defect_entry
 
         mock_print.assert_not_called()
 
@@ -2128,13 +2127,13 @@ class DefectsParsingTestCase(unittest.TestCase):
             if "Te_Cd" in i:  # loop folders and parse those with "Te_Cd" in name
                 defect_path = f"{self.CdTe_EXAMPLE_DIR}/{i}/vasp_ncl"
                 defect_charge = int(i[-2:].replace("_", ""))
-                te_cd_1_ent = defect_entry_from_paths(
+                te_cd_1_ent = DefectParser.from_paths(
                     defect_path=defect_path,
                     bulk_path=self.CdTe_BULK_DATA_DIR,
                     dielectric=self.CdTe_dielectric,
                     charge_state=defect_charge,
                     parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-                )
+                ).defect_entry
 
         self._check_defect_entry_corrections(te_cd_1_ent, -2.6676, 0.23840982963691623)
         # assert auto-determined substitution site is correct
@@ -2212,12 +2211,12 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # parse with no explicitly-set-charge:
         with warnings.catch_warnings(record=True) as w:
-            int_F_minus1_ent = defect_entry_from_paths(
+            int_F_minus1_ent = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
+            ).defect_entry
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
         bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis()
         assert not any(
@@ -2246,12 +2245,12 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # test error_tolerance setting:
         with warnings.catch_warnings(record=True) as w:
-            int_F_minus1_ent = defect_entry_from_paths(
+            int_F_minus1_ent = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
                 error_tolerance=0.001,
-            )
+            ).defect_entry
         assert (
             f"Estimated error in the Kumagai (eFNV) charge correction for defect "
             f"{int_F_minus1_ent.name} is 2.58e-03 eV (i.e. which is greater than the `error_tolerance`: "
@@ -2298,7 +2297,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
             relaxed_defect_name = get_defect_name_from_entry(int_F_minus1_ent)
-            print([warn.message for warn in w])  # for debugging
+            _print_warning_info(w)
             assert not w  # this supercell is not periodicity breaking
         # F_i conventional structure interstitial coords here: [0, 0, 0.48467759]
         assert relaxed_defect_name == "F_i_C4v_O2.57"
@@ -2330,25 +2329,25 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         # parse with no explicitly-set-charge:
         with warnings.catch_warnings(record=True) as w:
-            F_O_1_ent = defect_entry_from_paths(
+            F_O_1_ent = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )  # check no correction error warning with default tolerance:
+            ).defect_entry  # check no correction error warning with default tolerance:
         assert len([warning for warning in w if issubclass(warning.category, UserWarning)]) == 1
         assert "An anisotropic dielectric constant was supplied, but `OUTCAR`" in str(w[0].message)
 
         # test error_tolerance setting:
         with warnings.catch_warnings(record=True) as w:
-            F_O_1_ent = defect_entry_from_paths(
+            F_O_1_ent = DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 dielectric=self.ytos_dielectric,
                 error_tolerance=0.00001,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )  # check no correction error warning with default tolerance:
-        print([str(warn.message) for warn in w])
+            ).defect_entry  # check no correction error warning with default tolerance:
+        _print_warning_info(w)
         assert any(  # break up warning message to allow slightly difference numbers after 3.XXe-04 eV:
             f"Estimated error in the Freysoldt (FNV) charge correction for defect {F_O_1_ent.name} is 3"
             in str(warning.message)
@@ -2406,13 +2405,13 @@ class DefectsParsingTestCase(unittest.TestCase):
         # now using Kumagai-Oba (eFNV) correction
         defect_path = f"{self.YTOS_EXAMPLE_DIR}/F_O_1/"
         # parse with no explicitly-set-charge:
-        F_O_1_ent = defect_entry_from_paths(
+        F_O_1_ent = DefectParser.from_paths(
             defect_path=defect_path,
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
             charge_state=1,
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )
+        ).defect_entry
 
         self._test_F_O_1_ent(F_O_1_ent, 0.04176, "kumagai_charge_correction", 0.12699488572686776)
 
@@ -2421,7 +2420,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             warnings.resetwarnings()
             warnings.filterwarnings("ignore", "dict interface")  # ignore spglib warning from v2.4.1
             relaxed_defect_name = get_defect_name_from_entry(F_O_1_ent)
-            print([warn.message for warn in w])  # for debugging
+            _print_warning_info(w)
             assert len(w) == 0
         assert relaxed_defect_name == "F_O_D4h_Ti1.79"
         assert get_defect_name_from_entry(F_O_1_ent, relaxed=False) == "F_O_D4h_Ti1.79"
@@ -2482,12 +2481,12 @@ class DefectsParsingTestCase(unittest.TestCase):
                 +1, defect_calc_results, bulk_calc_results, self.CdTe_dielectric
             )
 
-            Te_i_ent = defect_entry_from_paths(
+            Te_i_ent = DefectParser.from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/{name}/vasp_ncl",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            )
+            ).defect_entry
 
             efnv_w_doped_site = make_efnv_correction(
                 +1,
@@ -2522,7 +2521,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # parse with no explicitly-set-charge:
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=defect_path,
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
                 parse_projected_eigen=False,  # just for fast testing, not recommended in general!
@@ -2538,7 +2537,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/v_Cd_0/vasp_ncl",
                 bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             )
@@ -2609,7 +2608,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         return_all_info=True,
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
-                print([str(warn.message) for warn in w])  # for debugging
+                _print_warning_info(w)  # for debugging
                 if stdev >= 0.5:
                     assert (
                         "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
@@ -2686,7 +2685,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                         return_all_info=True,
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
-                print([str(warn.message) for warn in w])  # for debugging
+                _print_warning_info(w)  # for debugging
                 if stdev >= 0.5:
                     assert (
                         "Detected atoms far from the defect site (>6.62 Å) with major displacements ("
@@ -2813,7 +2812,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         """
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=f"{self.CdTe_EXAMPLE_DIR}/Int_Te_3_Unperturbed_1/vasp_ncl",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
@@ -2854,7 +2853,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=".",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
@@ -2882,7 +2881,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=".",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
@@ -2913,7 +2912,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=".",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
@@ -2946,7 +2945,7 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            defect_entry_from_paths(
+            DefectParser.from_paths(
                 defect_path=".",
                 bulk_path=self.CdTe_BULK_DATA_DIR,
                 dielectric=9.13,
@@ -3292,11 +3291,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         setting.
         """
         with warnings.catch_warnings(record=True) as w:
-            int_F_minus1_ent = defect_entry_from_paths(
+            int_F_minus1_ent = DefectParser.from_paths(
                 defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1",
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk",
                 dielectric=self.ytos_dielectric,
-            )
+            ).defect_entry
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
         bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis(ylims=(-5, 5))
         assert not any(
@@ -3319,11 +3318,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         setting.
         """
         with warnings.catch_warnings(record=True) as w:
-            int_F_minus1_ent = defect_entry_from_paths(
+            int_F_minus1_ent = DefectParser.from_paths(
                 defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1",
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk",
                 dielectric=self.ytos_dielectric,
-            )
+            ).defect_entry
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
         bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis(
             legend_kwargs={"loc": "lower left", "ncol": 2, "fontsize": 12}
@@ -3348,11 +3347,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         setting.
         """
         with warnings.catch_warnings(record=True) as w:
-            int_F_minus1_ent = defect_entry_from_paths(
+            int_F_minus1_ent = DefectParser.from_paths(
                 defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1",
                 bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk",
                 dielectric=self.ytos_dielectric,
-            )
+            ).defect_entry
         assert not [warning for warning in w if issubclass(warning.category, UserWarning)]
         bes, eig_fig = int_F_minus1_ent.get_eigenvalue_analysis(legend_kwargs=False)
         assert not any(
@@ -3480,11 +3479,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert spin_degeneracy_from_vasprun(vr) == 3
 
         # F_i_-1, vasp_std, ISPIN = 1 (non spin polarised)
-        int_F_minus1_ent = defect_entry_from_paths(
+        int_F_minus1_ent = DefectParser.from_paths(
             defect_path=f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/",
             bulk_path=f"{self.YTOS_EXAMPLE_DIR}/Bulk/",
             dielectric=self.ytos_dielectric,
-        )
+        ).defect_entry
         assert int_F_minus1_ent.degeneracy_factors["spin degeneracy"] == 1
         vr = get_vasprun(f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/vasprun.xml.gz", parse_projected_eigen=True)
         assert get_magnetization_from_vasprun(vr) == 0
@@ -3536,7 +3535,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             self._check_DefectsParser(dp)
             with warnings.catch_warnings(record=True) as w:
                 sym_degen_df = dp.get_defect_thermodynamics().get_symmetries_and_degeneracies()
-            print([str(warning.message) for warning in w])
+            _print_warning_info(w)
             assert not w
 
             expected_site_multiplicity = {"C4v": 2.0, "Cs": 8.0, "C1": 16.0}[expected_site_sym]
@@ -3593,7 +3592,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     sym_degen_df = dp.get_defect_thermodynamics().get_symmetries_and_degeneracies(
                         **regen_symprec_settings
                     )
-                print([str(warning.message) for warning in w])
+                _print_warning_info(w)
                 assert not w
                 expected_site_multiplicity = {"C4v": 2.0, "Cs": 8.0, "C1": 16.0}[regen_expected_site_sym]
                 expected_orientational_degeneracy = get_orientational_degeneracy(
@@ -3629,12 +3628,12 @@ class ReorderedParsingTestCase(unittest.TestCase):
         """
         Test parsing CdTe bulk vasp_gam example.
         """
-        parsed_v_cd_m2 = defect_entry_from_paths(
+        parsed_v_cd_m2 = DefectParser.from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
+        ).defect_entry
         uncorrected_energy = 7.4475896
         assert np.isclose(
             parsed_v_cd_m2.get_ediff() - sum(parsed_v_cd_m2.corrections.values()),
@@ -3660,18 +3659,18 @@ class ReorderedParsingTestCase(unittest.TestCase):
         Test Kumagai defect correction parser can handle mismatched atomic
         orders.
         """
-        parsed_v_cd_m2_orig = defect_entry_from_paths(
+        parsed_v_cd_m2_orig = DefectParser.from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
-        parsed_v_cd_m2_alt = defect_entry_from_paths(
+        ).defect_entry
+        parsed_v_cd_m2_alt = DefectParser.from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
+        ).defect_entry
         # should use Kumagai correction by default when OUTCARs available
         assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt.get_ediff())
         assert np.isclose(
@@ -3680,12 +3679,12 @@ class ReorderedParsingTestCase(unittest.TestCase):
 
         # test where the ordering is all over the shop; v_Cd_-2 POSCAR with a Te atom, then 31 randomly
         # ordered Cd atoms, then 31 randomly ordered Te atoms:
-        parsed_v_cd_m2_alt2 = defect_entry_from_paths(
+        parsed_v_cd_m2_alt2 = DefectParser.from_paths(
             defect_path=f"{self.CdTe_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
+        ).defect_entry
         # should use Kumagai correction by default when OUTCARs available
         assert np.isclose(parsed_v_cd_m2_orig.get_ediff(), parsed_v_cd_m2_alt2.get_ediff())
         assert np.isclose(
@@ -3698,18 +3697,18 @@ class ReorderedParsingTestCase(unittest.TestCase):
         orders.
         """
         shutil.move(f"{self.v_Cd_m2_path}/OUTCAR.gz", f"{self.v_Cd_m2_path}/hidden_otcr.gz")  # use FNV
-        parsed_v_cd_m2_orig = defect_entry_from_paths(
+        parsed_v_cd_m2_orig = DefectParser.from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
-        parsed_v_cd_m2_alt = defect_entry_from_paths(
+        ).defect_entry
+        parsed_v_cd_m2_alt = DefectParser.from_paths(
             defect_path=self.v_Cd_m2_path,
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam_alt",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
+        ).defect_entry
         shutil.move(f"{self.v_Cd_m2_path}/hidden_otcr.gz", f"{self.v_Cd_m2_path}/OUTCAR.gz")  # move back
 
         # should use Freysoldt correction by default when OUTCARs not available
@@ -3724,12 +3723,12 @@ class ReorderedParsingTestCase(unittest.TestCase):
             f"{self.CdTe_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/OUTCAR.gz",
             f"{self.CdTe_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
         )  # use FNV
-        parsed_v_cd_m2_alt2 = defect_entry_from_paths(
+        parsed_v_cd_m2_alt2 = DefectParser.from_paths(
             defect_path=f"{self.CdTe_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam",
             bulk_path=f"{self.CdTe_corrections_dir}/bulk_vasp_gam",
             dielectric=self.CdTe_dielectric,
             charge_state=-2,
-        )
+        ).defect_entry
         shutil.move(
             f"{self.CdTe_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/hidden_otcr.gz",
             f"{self.CdTe_corrections_dir}/v_Cd_-2_choppy_changy_vasp_gam/OUTCAR.gz",
