@@ -10,15 +10,21 @@ from collections.abc import Sequence
 from itertools import combinations, product
 
 import numpy as np
-from pymatgen.core.sites import PeriodicSite
-from pymatgen.core.structure import Composition, Lattice, Structure
 from tqdm import tqdm
 
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry
 from doped.thermodynamics import _ensure_list
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
-from doped.utils.efficiency import Hashabledict, _cached_Composition_init, _Composition__eq__
+from doped.utils.efficiency import (
+    Composition,
+    Hashabledict,
+    Lattice,
+    PeriodicSite,
+    Structure,
+    _cached_Composition_init,
+    _Composition__eq__,
+)
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
@@ -312,7 +318,7 @@ def get_defect_in_supercell(
                 fake_target_supercell_w_big_supercell_lattice,
                 fake_big_supercell,
                 allow_subset=True,  # allow subset to match, likely different number of atoms here
-                max_stol=0.1,
+                max_stol=0.5,
             )
             if trans_to_match_target is not None:
                 break
@@ -841,7 +847,7 @@ def _orient_to_match_target(
         supercell_matrix=transformation[0],
         trans_vector=transformation[1],
         mapping=transformation[2],
-        new_lattice="struct1",
+        # new_lattice="struct1",  # struct1 by default, no warning if not possible
         ignored_species=["X"],  # ignore X site
     )
 
@@ -913,7 +919,13 @@ def _get_candidate_supercell_sites(
     # which can be inscribed in the target supercell
     # either way, this portion of the workflow is not a bottleneck (rather `get_orientation..` is)
     possible_new_supercell_sites = [
-        PeriodicSite(site.specie, site.coords, lattice=target_supercell.lattice, coords_are_cartesian=True)
+        PeriodicSite(
+            site.species,
+            site.coords,
+            lattice=target_supercell.lattice,
+            coords_are_cartesian=True,
+            skip_checks=True,
+        )
         for site in big_supercell.sites
         if is_within_frac_bounds(target_supercell.lattice, site.coords, tol=edge_tol)
     ]
@@ -1100,7 +1112,7 @@ def _get_matching_sites_from_s1_then_s2(
     single_defect_subcell_sites = []
 
     # Uses linear assignment per species for unambiguous optimal matching, for template_struct sites
-    mapping = get_site_mapping_indices(template_struct, struct1_pool, frac_coords=False)
+    mapping = get_site_mapping_indices(template_struct, struct1_pool, frac_coords=False, threshold=np.inf)
     pool1_indices = [  # mapping entries are (dist, template_idx, pool_idx)
         pool_idx
         for _, template_idx, pool_idx in mapping

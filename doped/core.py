@@ -376,8 +376,9 @@ class DefectEntry(thermo.DefectEntry):
         to be a lower bound estimate of the true charge correction error.
 
         The defect coordinates are taken as the relaxed defect site by default
-        (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
-        but this can be overridden with the ``defect_frac_coords`` keyword argument.
+        (``DefectEntry.defect_supercell_site``) -- which is the bulk site for
+        vacancies, but this can be overridden with the ``defect_frac_coords``
+        keyword argument.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
