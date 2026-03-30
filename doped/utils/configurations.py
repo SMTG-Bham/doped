@@ -4,6 +4,7 @@ diagrams, for potential energy surfaces (PESs), Nudged Elastic Band (NEB), non-
 radiative recombination calculations etc.
 """
 
+import contextlib
 import os
 import warnings
 from functools import lru_cache
@@ -12,7 +13,7 @@ import numpy as np
 from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.util.typing import PathLike
 
-from doped.utils.efficiency import StructureMatcher_scan_stol
+from doped.utils.efficiency import StructureMatcher_scan_stol, get_element_min_max_bond_length_dict
 
 
 def get_transformation_from_s2_to_s1(
@@ -94,8 +95,8 @@ def apply_s2_to_s1_transformation(
     This will give a fully symmetry-equivalent orientation (i.e. **will not
     change the actual geometry**) of ``struct2``, except if ``struct1`` and
     ``struct2`` have different inequivalent lattices (e.g. different space
-    groups) `and` ``new_lattice`` is ``"struct1"``. This function uses an
-    accelerated version of the
+    groups) `and` ``new_lattice`` is explicitly set to ``"struct1"``. This
+    function uses an accelerated version of the
     :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
     method, extended to ensure the correct atomic indices matching and lattice
     vector definitions.
@@ -136,8 +137,12 @@ def apply_s2_to_s1_transformation(
             symmetry-equivalent version of ``struct2.lattice``) is used.
             Default is ``None``, where ``new_lattice`` is set to ``"struct1"``
             if ``struct1`` and ``struct2`` have equivalent lattices (expected
-            to be the case for defect NEBs/CC diagrams), and ``"s2_like_s1"``
-            otherwise.
+            to be the case for defect NEBs/CC diagrams) and using the
+            ``struct1`` lattice returns a fully symmetry-equivalent structure,
+            or ``"s2_like_s1"`` otherwise.
+            If ``new_lattice`` is explicitly set to ``"struct1"`` and this
+            causes an inequivalent structure to be returned, a warning will be
+            raised.
 
     Returns:
         Structure:
@@ -166,6 +171,7 @@ def apply_s2_to_s1_transformation(
     # get new_lattice choice:
     from doped.utils.symmetry import are_equivalent_lattices  # avoid circular import
 
+    explicit_lattice_choice = new_lattice is not None
     if not are_equivalent_lattices(struct1.lattice, struct2.lattice):
         warnings.warn(
             "The lattices of the two input structures have been detected to be (symmetry-)inequivalent. "
@@ -185,6 +191,8 @@ def apply_s2_to_s1_transformation(
     if not new_lattice:
         return trans_struct
 
+    orig_min_max_bond_lengths = get_element_min_max_bond_length_dict(trans_struct)
+
     lattice = (
         struct1.lattice
         if new_lattice == "struct1"
@@ -200,18 +208,52 @@ def apply_s2_to_s1_transformation(
             f"``'struct2'``, or ``'s2_like_s1'``."
         )
 
-    return Structure.from_sites(
+    trans_struct_w_lattice_choice = Structure.from_sites(
         [  # sometimes this get_s2_like_s1 doesn't fully work as desired, giving different (but equivalent)
             PeriodicSite(  # lattice vectors (e.g. a=(010) instead of (100) etc.), so we redefine with the
-                site.specie,  # chosen lattice to be sure
+                site.species,  # chosen lattice to be sure
                 site.frac_coords,
                 lattice,
                 properties=site.properties,
                 to_unit_cell=False,
+                skip_checks=True,
             )
             for site in trans_struct.sites
         ]
     )
+
+    # in some cases, if the match between structures isn't perfect, then swapping the lattices here can
+    # lead to a structural change, which is not desired. So here we test this by looking at the min/max
+    # smallest bond lengths in the structure:
+    trans_struct_w_lattice_choice_min_max_bond_lengths = get_element_min_max_bond_length_dict(
+        trans_struct_w_lattice_choice
+    )
+    min_min_dist_change = 1e-4
+    with contextlib.suppress(Exception):
+        min_min_dist_change = max(
+            {
+                elt: max(
+                    np.abs(
+                        orig_min_max_bond_lengths[elt]
+                        - trans_struct_w_lattice_choice_min_max_bond_lengths[elt]
+                    )
+                )
+                for elt in orig_min_max_bond_lengths
+                if elt not in (ignored_species or [])
+            }.values()
+        )
+
+    if min_min_dist_change > 1e-2:
+        if not explicit_lattice_choice:
+            return trans_struct  # return without the new lattice, as it changes the structure
+
+        warnings.warn(
+            f"The chosen `new_lattice` ({new_lattice}) changes the minimum/maximum smallest bond lengths "
+            f"by more than 1%: {min_min_dist_change:.2f} Å; i.e. changing the structure, which is "
+            f"typically not desired!"
+        )
+
+    return trans_struct_w_lattice_choice
 
 
 def orient_s2_like_s1(
@@ -230,7 +272,7 @@ def orient_s2_like_s1(
     This will give a fully symmetry-equivalent orientation (i.e. **will not
     change the actual geometry**) of ``struct2``, except if ``struct1`` and
     ``struct2`` have different inequivalent lattices (e.g. different space
-    groups) `and` ``new_lattice`` is ``"struct1"``.
+    groups) `and` ``new_lattice`` is explicitly set to ``"struct1"``.
 
     This corresponds to minimising the root-mean-square displacement for the
     shortest `linear` path from ``struct1`` to a symmetry-equivalent definition
@@ -257,8 +299,12 @@ def orient_s2_like_s1(
             symmetry-equivalent version of ``struct2.lattice``) is used.
             Default is ``None``, where ``new_lattice`` is set to ``"struct1"``
             if ``struct1`` and ``struct2`` have equivalent lattices (expected
-            to be the case for defect NEBs/CC diagrams), and ``"s2_like_s1"``
-            otherwise.
+            to be the case for defect NEBs/CC diagrams) and using the
+            ``struct1`` lattice returns a fully symmetry-equivalent structure,
+            or ``"s2_like_s1"`` otherwise.
+            If ``new_lattice`` is explicitly set to ``"struct1"`` and this
+            causes an inequivalent structure to be returned, a warning will be
+            raised.
         verbose (bool):
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
@@ -334,7 +380,7 @@ def orient_s2_like_s1(
         print(f"ΔQ(s1/s2_like_s1) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å")
 
     # TODO: Add (optional) check for atom mapping here? Currently doesn't warn if we still have mismatch
-    # in lattice definitions
+    # in lattice definitions -- important
 
     return struct2_really_like_struct1
 
@@ -587,7 +633,8 @@ def write_path_structures(
     but have mis-matching orientations/ positions (such that they do not
     correspond to the shortest linear path between them), a warning will be
     raised. See the ``doped`` configuration coordinate / NEB path generation
-    tutorial for a deeper explanation. (TODO)
+    `tutorial <https://doped.readthedocs.io/en/latest/CCD_NEB_tutorial.html>`__
+    for a deeper explanation.
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is written (in other words,
@@ -640,5 +687,5 @@ def write_path_structures(
             struct.to(filename=f"{path_to_folder}/POSCAR", fmt="poscar")
 
 
-# TODO: Quick tests
+# TODO: Tests!
 # TODO: Re-orient directly in generation functions, but with option not to?

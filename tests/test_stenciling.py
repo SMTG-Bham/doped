@@ -24,6 +24,7 @@ from test_utils import (
 from doped.analysis import DefectParser, defect_site_from_structures
 from doped.core import DefectEntry
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils.configurations import apply_s2_to_s1_transformation
 from doped.utils.displacements import plot_site_displacements
 
 # use doped efficiency functions for speed in structure-matching testing
@@ -649,3 +650,53 @@ class DefectStencilingTest(unittest.TestCase):
             self.single_MgO_dp.defect_entry, stenciled_supercell, corresponding_bulk
         )
         return plot_stenciled_vs_original_displacements(stenciled_entry, self.single_MgO_dp.defect_entry)
+
+    def test_new_lattice_apply_s2_to_s1_transformation(self):
+        """
+        Test the ``new_lattice`` behaviour and warnings in
+        ``apply_s2_to_s1_transformation``.
+
+        The general behaviour of this function is indirectly tested by the many
+        integration tests in ``doped``, as well as ``pymatgen`` tests which use
+        mostly the same code.
+        """
+        with warnings.catch_warnings(record=True) as w:
+            transformed_struct = apply_s2_to_s1_transformation(
+                self.Se_20A_bulk_supercell,
+                self.Se_20A_bulk_supercell,
+                np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]]),
+                np.array([0, 0, 0]),
+                [],
+                # new_lattice="struct1",  # default when ``new_lattice`` is ``None``, but reverts to
+            )  # ``s2_like_s1`` if lattice swap changes the structure
+
+        _print_warning_info(w)
+        assert not w
+
+        s2_like_s1_struct = apply_s2_to_s1_transformation(
+            self.Se_20A_bulk_supercell,
+            self.Se_20A_bulk_supercell,
+            np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]]),
+            np.array([0, 0, 0]),
+            [],
+            new_lattice="s2_like_s1",
+        )
+
+        assert StructureMatcher_scan_stol(transformed_struct, s2_like_s1_struct, "fit", max_stol=0.01)
+
+        with warnings.catch_warnings(record=True) as w:
+            transformed_struct = apply_s2_to_s1_transformation(
+                self.Se_20A_bulk_supercell,
+                self.Se_20A_bulk_supercell,
+                np.array([[0, 0, -1], [0, 1, 0], [1, 0, 0]]),
+                np.array([0, 0, 0]),
+                [],
+                new_lattice="struct1",  # uses s1 lattice, but throws warning because it gives an
+            )  # inequivalent structure
+
+        _print_warning_info(w)
+        assert (
+            "The chosen `new_lattice` (struct1) changes the minimum/maximum smallest bond lengths by "
+            "more than 1%: 0.15 Å; i.e. changing the structure, which is typically not desired!"
+            in str(w[0].message)
+        )
