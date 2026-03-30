@@ -132,8 +132,9 @@ def _get_min_image_distance_from_matrix(
     _fcoords, dists, _idxs, _images = lattice.get_points_in_sphere(
         np.array([[0, 0, 0]]), [0, 0, 0], r=max_min_dist * 1.01, zip_results=False
     )
-    dists.sort()
-    min_dist = dists[1]  # second in list is min image (first is itself, zero)
+    dists = np.array(dists)
+    dists = dists[dists > 0]
+    min_dist = np.min(dists)  # second in list is min image (first is itself, zero)
     if min_dist <= 0:
         raise ValueError(
             "Minimum image distance less than or equal to zero! This is possibly due to a co-planar / "
@@ -433,6 +434,71 @@ def _P_matrix_sort_func(
     )
 
 
+def _argmin_p_matrix_sort(P_batch: np.ndarray, cell: np.ndarray, eff: float) -> int:
+    """
+    Index of the best ``P`` in ``P_batch`` under the same ordering as
+    ``_P_matrix_sort_func(P, cell, eff)``, without a Python loop (vectorised).
+    """
+    P_batch = np.asarray(P_batch)
+    transformed = P_batch @ cell
+    norms = np.linalg.norm(transformed, axis=2)
+    d = norms / eff - 1.0
+    cubic_metric = np.round(np.sum(d * d, axis=1), 4)
+
+    abs_P = np.abs(P_batch)
+    abs_sum = np.sum(abs_P, axis=(1, 2))
+    diag_P = np.diagonal(P_batch, axis1=1, axis2=2)
+    abs_diag_sum = np.sum(np.abs(diag_P), axis=1)
+    abs_sum_off_diag = abs_sum - abs_diag_sum
+    diag_sum = np.sum(diag_P, axis=1)
+    num_negs = np.sum(P_batch < 0, axis=(1, 2))
+    max_abs = np.max(abs_P, axis=(1, 2))
+
+    P_sorted = np.sort(P_batch.reshape(-1, 9), axis=1)
+    num_equals = np.sum(np.diff(P_sorted, axis=1) == 0, axis=1)
+
+    sym_m = (
+        (P_batch[:, 0, 1] == P_batch[:, 1, 0])
+        & (P_batch[:, 0, 2] == P_batch[:, 2, 0])
+        & (P_batch[:, 1, 2] == P_batch[:, 2, 1])
+    )
+    diag_m = sym_m & (P_batch[:, 0, 1] == 0) & (P_batch[:, 0, 2] == 0) & (P_batch[:, 1, 2] == 0)
+    ge3 = num_equals >= 3
+    symmetric = np.where(ge3, sym_m, False)
+    is_diagonal = np.where(ge3, diag_m, False)
+
+    t = transformed
+    lat_sym = (
+        np.isclose(t[:, 0, 1], t[:, 1, 0])
+        & np.isclose(t[:, 0, 2], t[:, 2, 0])
+        & np.isclose(t[:, 1, 2], t[:, 2, 1])
+    )
+    lat_diag = lat_sym & np.isclose(t[:, 0, 1], 0) & np.isclose(t[:, 0, 2], 0) & np.isclose(t[:, 1, 2], 0)
+
+    not_is_diag = (~is_diagonal).astype(np.int8)
+    not_lat_diag = (~lat_diag).astype(np.int8)
+    not_lat_sym = (~lat_sym).astype(np.int8)
+    not_sym = (~symmetric).astype(np.int8)
+
+    order = np.lexsort(
+        (
+            -diag_sum.astype(np.float64),
+            -abs_diag_sum.astype(np.float64),
+            -num_equals.astype(np.float64),
+            max_abs.astype(np.float64),
+            num_negs.astype(np.float64),
+            abs_sum.astype(np.float64),
+            abs_sum_off_diag.astype(np.float64),
+            not_sym,
+            not_lat_sym,
+            not_lat_diag,
+            cubic_metric.astype(np.float64),
+            not_is_diag,
+        )
+    )
+    return int(order[0])
+
+
 def _lean_sort_func(P):
     abs_P = np.abs(P)
     abs_sum = np.sum(abs_P)
@@ -560,11 +626,11 @@ def _get_optimal_P(
         poss_P.extend(valid_P[matching_indices])
 
     eff_norm_cubic_length = Lattice(np.matmul(next(iter(poss_P)), norm_cell)).volume ** (1 / 3)
-    poss_P.sort(key=lambda x: _P_matrix_sort_func(x, norm_cell, eff_norm_cubic_length))
     if verbose:
         print(f"{label} number of possible P matrices with best score (poss_P): {len(poss_P)}")
 
-    optimal_P = poss_P[0]
+    optimal_P = poss_P[_argmin_p_matrix_sort(poss_P, norm_cell, eff_norm_cubic_length)]
+
     # check if P is equivalent to a scalar multiple of the identity matrix
     optimal_P = _check_and_return_scalar_matrix(optimal_P, cell)
 
