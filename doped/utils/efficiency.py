@@ -155,7 +155,7 @@ def _fast_dict_deepcopy_max_two_levels(d: dict) -> dict:
 
 @lru_cache(maxsize=int(1e5))
 def _cached_Composition_init(comp_input):
-    return Composition(comp_input)
+    return Composition(comp_input).copy()  # copy to avoid mutability issues with cached objects
 
 
 def _cache_ready_Composition_init(comp_input):
@@ -291,7 +291,9 @@ def get_all_distances(
 
     See :meth:`~pymatgen.core.lattice.get_all_distances`.
     """
-    return _cached_get_all_distances(self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2))
+    return _cached_get_all_distances(
+        self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2)
+    ).copy()
 
 
 Lattice.get_all_distances = get_all_distances
@@ -447,7 +449,7 @@ def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
 
     Refactored from ``pymatgen`` to allow caching, to boost efficiency.
     """
-    return _original_get_symmetry_operations(self)  # call the original method, now a cacheable class
+    return _original_get_symmetry_operations(self).copy()  # call the orig method, now a cacheable class
 
 
 SpacegroupAnalyzer.__hash__ = _sga__hash__
@@ -961,7 +963,7 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     if not np.allclose(fractional_shift, 0):
         voronoi_struct.translate_sites(range(len(voronoi_struct)), fractional_shift, frac_coords=True)
 
-    return voronoi_struct.sites
+    return voronoi_struct.sites.copy()  # copy() to help avoid mutability issues with cached outputs
 
 
 def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:

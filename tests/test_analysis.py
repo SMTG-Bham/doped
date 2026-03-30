@@ -920,7 +920,6 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, w = _create_dp_and_capture_warnings(
             self.Sb2Si2Te6_EXAMPLE_DIR,
             dielectric=self.Sb2Si2Te6_dielectric,
-            json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
             attempt_periodicity_restoration=False,
         )

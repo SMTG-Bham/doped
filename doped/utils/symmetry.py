@@ -524,7 +524,8 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    return np.array(lattice.get_all_distances(fcoords, fcoords))
+    # copy() to help avoid mutability issues with cached outputs:
+    return np.array(lattice.get_all_distances(fcoords, fcoords)).copy()
 
 
 def cluster_coords(
@@ -700,7 +701,7 @@ def get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float]:
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     """
     Get a list of all equivalent sites of the input fractional coordinates in
     ``structure``.
@@ -764,6 +765,10 @@ def get_all_equiv_sites(
             ``structure``, either as ``pymatgen`` |PeriodicSite| objects or
             as fractional coordinates (depending on the value of
             ``just_frac_coords``).
+
+        If ``return_symprec_and_dist_tol_factor`` is ``True`` (default is
+        ``False``), also returns the final ``symprec`` and ``dist_tol_factor``
+        values used for the equivalent site generation.
     """
     try:
         return _cache_ready_get_all_equiv_sites(
@@ -802,8 +807,8 @@ def _cache_ready_get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-):
-    return _raw_get_all_equiv_sites(
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
+    output = _raw_get_all_equiv_sites(
         frac_coords,
         structure,
         symprec,
@@ -814,6 +819,12 @@ def _cache_ready_get_all_equiv_sites(
         fixed_symprec_and_dist_tol_factor,
         verbose,
     )
+    # copy() to help avoid mutability issues with cached outputs:
+    if not return_symprec_and_dist_tol_factor:
+        assert isinstance(output, list)
+        return output.copy()
+
+    return output[0].copy(), output[1], output[2]
 
 
 _TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])
@@ -829,7 +840,7 @@ def _raw_get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-):
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     # ensure sites have the same property keys, otherwise can cause issues with pymatgen primitive
     # structure determination:
     if (
@@ -2078,7 +2089,8 @@ def _cache_ready_get_primitive_structure(
     if clean:
         prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
+    # copy() to help avoid mutability issues with cached outputs:
+    return prim_structs.copy() if return_all else _get_best_pos_det_structure(prim_structs[0]).copy()
 
 
 def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, SpacegroupAnalyzer]:
