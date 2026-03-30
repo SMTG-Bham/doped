@@ -23,6 +23,7 @@ from pymatgen.analysis.structure_matcher import (
     StructureMatcher,
 )
 from pymatgen.core.composition import Composition, DummySpecies
+from pymatgen.core.lattice import Lattice
 from pymatgen.core.periodic_table import Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Molecule, Structure
@@ -31,6 +32,8 @@ from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmOp
 from scipy.spatial import Voronoi
 
 if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
     from doped.core import Vacancy
 
 # Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
@@ -256,6 +259,42 @@ def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08
 
 PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 PeriodicSite.__hash__ = _periodic_site__hash__
+
+
+# Lattice overrides:
+_orig_lattice_get_all_distances = Lattice.get_all_distances
+
+
+@lru_cache(maxsize=int(1e2))
+def _cached_get_all_distances(self: Lattice, frac_coords1: tuple, frac_coords2: tuple):
+    return _orig_lattice_get_all_distances(self, np.array(frac_coords1), np.array(frac_coords2))
+
+
+def array_to_tuple(array: "ArrayLike | tuple") -> tuple:
+    """
+    Convert an array-like input to tuple.
+    """
+    array = np.array(array)
+    if array.ndim == 1:
+        return tuple(array)
+    return tuple(map(tuple, array))
+
+
+def get_all_distances(
+    self,
+    frac_coords1: "ArrayLike",
+    frac_coords2: "ArrayLike",
+) -> NDArray[np.float64]:
+    """
+    Get the distances between two lists of coordinates taking into account
+    periodic boundary conditions and the lattice.
+
+    See :meth:`~pymatgen.core.lattice.get_all_distances`.
+    """
+    return _cached_get_all_distances(self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2))
+
+
+Lattice.get_all_distances = get_all_distances
 
 # Structure overrides:
 
@@ -495,7 +534,8 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
     r"""
     Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
     given |Structure|, where ``min_bond_length`` and ``max_bond_length`` are
-    the minimum and maximum bond lengths for each element in the structure.
+    the minimum and maximum `smallest` interatomic bond lengths for each
+    element in the structure.
 
     Args:
         structure (Structure):
@@ -910,7 +950,7 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     sm = StructureMatcher(primitive_cell=False, attempt_supercell=True)
     mapping = sm.get_supercell_matrix(structure, prim_structure)
     voronoi_struct = Structure.from_sites(
-        [PeriodicSite("X", fpos, structure.lattice) for fpos in prim_vnodes]
+        [PeriodicSite(Composition("X"), fpos, structure.lattice, skip_checks=True) for fpos in prim_vnodes]
     )  # Structure with Voronoi nodes as sites
     voronoi_struct.make_supercell(mapping)  # Map back to the supercell
 
