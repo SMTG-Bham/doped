@@ -236,10 +236,6 @@ class DefectEntry(thermo.DefectEntry):
         else:
             self.name = name
 
-    # TODO: Add `from_structures` method to
-    # doped DefectEntry?? (Yeah would prob be useful function to have for porting over stuff from other
-    # codes etc)
-
     def to_json(self, filename: PathLike | None = None):
         """
         Save the |DefectEntry| object to a json file, which can be reloaded
@@ -1681,6 +1677,69 @@ class DefectEntry(thermo.DefectEntry):
             fig=fig,
             style_file=style_file,
         )
+
+
+def template_defect_entry_from_structures(
+    bulk_supercell: Structure, defect_supercell: Structure, **kwargs
+) -> DefectEntry:
+    """
+    Helper function to create a template/partial |DefectEntry| from the input
+    bulk and defect supercells.
+
+    Uses ``defect_and_info_from_structures`` to extract the defect structural
+    information, and creates a corresponding |DefectEntry| object (which has
+    no ``bulk_entry`` and a fake zero-energy ``sc_entry``, and so cannot be
+    used for energy analyses). Primarily intended for internal usage in
+    ``doped`` parsing/analysis functions, but can be useful in other workflows.
+
+    Args:
+        bulk_supercell (Structure):
+            The bulk supercell structure.
+        defect_supercell (Structure):
+            The defect supercell structure.
+        **kwargs:
+            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
+            (such as ``symprec``, ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
+            ``symprec``, ``dist_tol_factor``) in the
+            ``defect_and_info_from_structures`` function.
+
+    Returns:
+        DefectEntry:
+            A partial |DefectEntry| object containing the defect and defect
+            site information, but no ``bulk_entry`` and a zero-energy
+            ``sc_entry``.
+    """
+    from doped.analysis import defect_and_info_from_structures
+
+    (
+        defect,
+        defect_site,
+        defect_structure_metadata,
+    ) = defect_and_info_from_structures(
+        bulk_supercell,
+        defect_supercell,
+        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
+    )
+
+    return DefectEntry(
+        # pmg attributes:
+        defect=defect,  # this corresponds to _unrelaxed_ defect
+        charge_state=0,
+        sc_entry=ComputedStructureEntry(
+            structure=bulk_supercell,
+            energy=0.0,  # needs to be set, so set to 0.0
+        ),
+        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
+        bulk_entry=None,
+        # doped attributes:
+        name="Partial Defect Entry",
+        defect_supercell_site=defect_site,  # _relaxed_ defect site
+        defect_supercell=defect_supercell,
+        bulk_supercell=bulk_supercell,
+        calculation_metadata=defect_structure_metadata,  # only structural metadata here
+    )
 
 
 def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:

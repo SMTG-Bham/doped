@@ -27,12 +27,8 @@ from pymatgen.util.typing import PathLike
 
 from doped import suppress_logging
 from doped.analysis import defect_site_from_structures
-from doped.core import DefectEntry, _parse_procar
-from doped.utils.parsing import (
-    _partial_defect_entry_from_structures,
-    get_magnetization_from_vasprun,
-    get_nelect_from_vasprun,
-)
+from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
+from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
 from doped.utils.plotting import _get_backend
 
 with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
@@ -436,7 +432,7 @@ def get_eigenvalue_analysis(
 
         bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
         defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
-        defect_entry = _partial_defect_entry_from_structures(
+        defect_entry = template_defect_entry_from_structures(
             bulk_vr.final_structure, defect_vr.final_structure, oxi_state="Undetermined", multiplicity=1
         )
 

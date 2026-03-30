@@ -31,7 +31,7 @@ from scipy.spatial.distance import squareform
 from sympy import Eq, Expr, simplify, solve, symbols
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry
+from doped.core import Defect, DefectEntry, template_defect_entry_from_structures
 from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure
 from doped.utils.parsing import (
@@ -40,7 +40,6 @@ from doped.utils.parsing import (
     _get_defect_supercell_frac_coords,
     _get_defect_supercell_site,
     _get_unrelaxed_defect_structure,
-    _partial_defect_entry_from_structures,
     get_site_mapping_indices,
 )
 
@@ -3134,7 +3133,7 @@ def point_symmetry_from_structure(
             )
 
     if bulk_structure is not None:
-        defect_entry = _partial_defect_entry_from_structures(
+        defect_entry = template_defect_entry_from_structures(
             bulk_structure,
             structure,
             oxi_state="Undetermined",

@@ -26,11 +26,6 @@ from pymatgen.util.typing import PathLike, SpeciesLike
 
 from doped.core import DefectEntry, remove_site_oxi_state
 
-try:
-    from pymatgen.core.entries import ComputedStructureEntry
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import ComputedStructureEntry
-
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing
 def _get_potcar_summary_stats() -> dict:
@@ -1712,69 +1707,6 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
     }.items():
         if getattr(defect_entry, attr_name, None) is None or overwrite:
             setattr(defect_entry, attr_name, value)
-
-
-def _partial_defect_entry_from_structures(
-    bulk_supercell: Structure, defect_supercell: Structure, **kwargs
-) -> DefectEntry:
-    """
-    Helper function to create a partial |DefectEntry| from the input bulk and
-    defect supercells.
-
-    Uses ``defect_and_info_from_structures`` to extract the defect structural
-    information, and creates a corresponding |DefectEntry| object (which has
-    no ``bulk_entry`` and a fake zero-energy ``sc_entry``, and so cannot be
-    used for energy analyses). Primarily intended for internal usage in
-    ``doped`` parsing/analysis functions.
-
-    Args:
-        bulk_supercell (Structure):
-            The bulk supercell structure.
-        defect_supercell (Structure):
-            The defect supercell structure.
-        **kwargs:
-            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
-            ``symprec``, ``dist_tol_factor``) in the
-            ``defect_and_info_from_structures`` function.
-
-    Returns:
-        DefectEntry:
-            A partial |DefectEntry| object containing the defect and defect
-            site information, but no ``bulk_entry`` and a zero-energy
-            ``sc_entry``.
-    """
-    from doped.analysis import defect_and_info_from_structures
-
-    (
-        defect,
-        defect_site,
-        defect_structure_metadata,
-    ) = defect_and_info_from_structures(
-        bulk_supercell,
-        defect_supercell,
-        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
-    )
-
-    return DefectEntry(
-        # pmg attributes:
-        defect=defect,  # this corresponds to _unrelaxed_ defect
-        charge_state=0,
-        sc_entry=ComputedStructureEntry(
-            structure=bulk_supercell,
-            energy=0.0,  # needs to be set, so set to 0.0
-        ),
-        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-        bulk_entry=None,
-        # doped attributes:
-        name="Partial Defect Entry",
-        defect_supercell_site=defect_site,  # _relaxed_ defect site
-        defect_supercell=defect_supercell,
-        bulk_supercell=bulk_supercell,
-        calculation_metadata=defect_structure_metadata,  # only structural metadata here
-    )
 
 
 def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:
