@@ -1835,7 +1835,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
 
         assert np.allclose(
             CdTe_defect_gen["Cd_i_C3v_0"].defect_supercell_site.coords,
-            [5.7230775, 2.4527475, 13.8989025],
+            [10.62855949, 5.72307049, 5.72307051],
             atol=1e-2,
         )
 
@@ -2807,8 +2807,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert cu_defect_gen._BilbaoCS_conv_cell_vector_mapping == [0, 1, 2]
         # test attributes:
         assert StructureMatcher_scan_stol(cu_defect_gen.primitive_structure, self.prim_cu, "fit")
-        assert np.allclose(cu_defect_gen.supercell_matrix, np.eye(3) * 4)
+        print(np.linalg.det(cu_defect_gen.supercell_matrix))
+        print(np.linalg.det(np.eye(3) * 4))
         assert np.isclose(cu_defect_gen.min_image_distance, 10.12, atol=0.01)
+        assert np.allclose(cu_defect_gen.supercell_matrix, np.eye(3) * 4)
         assert StructureMatcher_scan_stol(cu_defect_gen.conventional_structure, self.prim_cu, "fit")
 
         # explicitly test defects

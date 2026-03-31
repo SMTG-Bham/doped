@@ -1140,6 +1140,7 @@ def get_ideal_supercell_matrix(
     force_cubic: bool = False,
     force_diagonal: bool = False,
     ideal_threshold: float = 0.1,
+    verbose: bool = False,
     pbar: tqdm | None = None,
 ) -> np.ndarray | None:
     """
@@ -1200,6 +1201,9 @@ def get_ideal_supercell_matrix(
             trialled, and will instead be returned if they yield an ideal
             transformation matrix.
             (Default = 0.1; i.e. 10% larger than the minimum size)
+        verbose (bool):
+            Whether to print out extra information about the supercell search.
+            (Default = False)
         pbar (tqdm):
             ``tqdm`` progress bar object to update (for internal ``doped``
             usage). Default is ``None``.
@@ -1238,6 +1242,7 @@ def get_ideal_supercell_matrix(
         structure.lattice.matrix,
         target_size=target_size,
         return_min_dist=True,
+        verbose=verbose,
     )
 
     while best_min_dist < min_image_distance:
@@ -1250,6 +1255,7 @@ def get_ideal_supercell_matrix(
             structure.lattice.matrix,
             target_size=target_size,
             return_min_dist=True,
+            verbose=verbose,
         )
 
     # check if supercell matrix is ideal (diagonal expansion of primitive or conventional cells), otherwise
@@ -1266,6 +1272,7 @@ def get_ideal_supercell_matrix(
                 structure.lattice.matrix,
                 target_size=alt_target_size,
                 return_min_dist=True,
+                verbose=verbose,
             )
             alt_optimal_P = supercells._check_and_return_scalar_matrix(
                 alt_optimal_P, structure.lattice.matrix
