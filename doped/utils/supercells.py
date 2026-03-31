@@ -88,7 +88,9 @@ def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
 
 
 def _get_min_image_distance_from_matrix(
-    matrix: np.ndarray, normalised: bool = False, break_if_less_than: float | None = None
+    matrix: np.ndarray,
+    normalised: bool = False,
+    break_if_less_than: float | None = None,
 ) -> float | tuple[float, float]:
     """
     Get the minimum image distance (i.e. minimum distance between periodic
@@ -117,17 +119,24 @@ def _get_min_image_distance_from_matrix(
             break value if ``break_if_less_than`` is not None.
     """
     # Note that the max hypothetical min image distance in a 3D lattice is sixth root of 2 times the
-    # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems
-    # while of course the minimum possible min image distance is the minimum cell vector length
+    # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems,
+    # which is also the cell vector length. In near-cubic cells, the minimum image distance is typically
+    # approximately equal to the minimum cell vector length. So, the max possible min image distance is
+    # typically in the range: ``(~0.8*min_cell_length, min_cell_length]``, for near-cubic cells
+    # (see Figure 1; doped JOSS)
     lattice = Lattice(matrix)
     if break_if_less_than is not None:
-        min_cell_length = np.min(lattice.abc)
+        min_cell_length = round(np.min(lattice.abc), 4)
         if min_cell_length < break_if_less_than:
+            # round to 4 dp to avoid issues with tiny numerical differences
             return min_cell_length, break_if_less_than
 
-    volume = 1 if normalised else lattice.volume
-    eff_cubic_length = volume ** (1 / 3)
-    max_min_dist = eff_cubic_length * (2 ** (1 / 6))  # max hypothetical min image distance in 3D lattice
+    if normalised:
+        max_min_dist = 2 ** (1 / 6)
+    else:
+        volume = lattice.volume
+        eff_cubic_length = volume ** (1 / 3)
+        max_min_dist = eff_cubic_length * 2 ** (1 / 6)  # max hypothetical min image distance in 3D lattice
 
     _fcoords, dists, _idxs, _images = lattice.get_points_in_sphere(
         np.array([[0, 0, 0]]), [0, 0, 0], r=max_min_dist * 1.01, zip_results=False
