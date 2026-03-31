@@ -255,7 +255,9 @@ def cell_metric(
     (``get_deviation_from_optimal_cell_shape``), described in
     https://wiki.fysik.dtu.dk/ase/tutorials/defects/defects.html
     which previously did not account for rotational invariance (now fixed;
-    https://gitlab.com/ase/ase/-/merge_requests/3404) and has less flexibility.
+    https://gitlab.com/ase/ase/-/merge_requests/3404,
+    https://gitlab.com/ase/ase/-/merge_requests/3616).
+
 
     Args:
         cell_matrix (np.ndarray):
@@ -276,8 +278,8 @@ def cell_metric(
     Returns:
         float: Cell metric (0 is perfect score).
     """
-    # TODO: Update to use ``eval_length_deviation`` and ``eval_shape_deviation`` from
-    #  https://gitlab.com/ase/ase/-/merge_requests/3616, when merged.
+    # Note that ``eval_length_deviation`` and ``eval_shape_deviation`` from ASE >=3.25 also now implement
+    # this functionality
     if eff_cubic_length is None:
         eff_cubic_length = np.abs(np.linalg.det(cell_matrix)) ** (1 / 3)
     norms = np.linalg.norm(cell_matrix, axis=1)
@@ -946,111 +948,3 @@ def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) 
             pmg_supercell_dict[i] = {}
 
     return pmg_supercell_dict
-
-
-def find_optimal_cell_shape(
-    cell: np.ndarray,
-    target_size: int,
-    target_shape: str = "SC",
-    limit: int = 2,
-    return_score: bool = False,
-    verbose: bool = False,
-) -> np.ndarray | tuple[np.ndarray, float]:
-    r"""
-    Find the transformation matrix that produces a supercell corresponding to
-    ``target_size`` unit cells that most closely approximates the shape defined
-    by ``target_shape``.
-
-    This is an updated version of ASE's ``find_optimal_cell_shape`` function,
-    fixed to be rotationally-invariant (now fixed in ASE with MR 3404) and
-    having significant efficiency improvements, and then secondarily sorted by
-    the (fixed) cell metric (in ``doped``), and then by some other criteria to
-    give the cleanest output.
-
-    Note: This function will be deprecated by the updates in
-    https://gitlab.com/ase/ase/-/merge_requests/3616, which improves
-    performance, and will be removed once that MR is merged. (TODO)
-
-    Finds the optimal supercell transformation matrix by calculating the
-    deviation of the possible supercell matrices from an ideal simple cubic (if
-    target = "SC") or face-centred cubic (if target = "FCC") matrix, and then
-    taking that with the best (lowest) score by evaluating the root mean square
-    (RMS) difference of the vector lengths from that of the idealised values
-    (i.e. the corresponding SC/FCC lattice vector lengths for the given cell
-    volume).
-
-    For target = "SC", the idealised lattice vector length is the effective
-    cubic length (i.e. the cube root of the volume), while for "FCC" it is
-    2^(1/6) (~1.12) times the effective cubic length.
-
-    Args:
-        cell (np.ndarray):
-            Unit cell matrix for which to find a supercell transformation.
-        target_size (int):
-            Target supercell size (in number of ``cell``\s).
-        target_shape (str):
-            Target cell shape, for which to calculate the normalised deviation
-            score from. Either "SC" for simple cubic or "FCC" for face-centred
-            cubic. Default = "SC"
-        limit (int):
-            Supercell matrices are searched for by first identifying the ideal
-            (fractional) transformation matrix (P) that would yield a perfectly
-            SC/FCC supercell with volume equal to ``target_size``, and then
-            scanning over all matrices where the elements are within
-            +/-``limit`` of the ideal P matrix elements (rounded to the nearest
-            integer). (Default = 2)
-        return_score (bool):
-            Whether to return the cell metric score as a second return value.
-            (Default = False)
-        verbose (bool):
-            Whether to print out extra information. (Default = False)
-
-    Returns:
-        np.ndarray | tuple[np.ndarray, float]:
-            The supercell transformation matrix (P), and if ``return_score``
-            is ``True``, the cell metric (where 0 is perfect score).
-    """
-    # Set up target metric
-    if target_shape.lower() in {"sc", "simple-cubic"}:
-        target_shape = "SC"
-        target_metric = np.eye(3)
-    elif target_shape.lower() in {"fcc", "face-centered cubic"}:
-        target_shape = "FCC"
-        target_metric = 0.5 * np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]], dtype=float)
-
-    (
-        valid_P,
-        norm_cell,
-        unique_cell_matrices,
-        unique_hashes,
-        eigvals_rounded,
-    ) = _get_candidate_P_arrays(
-        cell=cell,
-        target_size=target_size,
-        limit=limit,
-        verbose=verbose,
-        target_metric=target_metric,
-        target_shape=target_shape,
-    )
-
-    score_list = [
-        cell_metric(cell_matrix, target=target_shape, rms=False) for cell_matrix in unique_cell_matrices
-    ]
-    best_msd = np.min(score_list)
-    if verbose:
-        print(f"Best score: {np.sqrt(best_msd)}")
-
-    best_score_indices = np.where(np.array(score_list) == best_msd)[0]
-
-    optimal_P = _get_optimal_P(
-        valid_P=valid_P,
-        selected_indices=best_score_indices,
-        unique_hashes=unique_hashes,
-        eigvals_rounded=eigvals_rounded,
-        norm_cell=norm_cell,
-        verbose=verbose,
-        target_shape=target_shape,
-        cell=cell,
-    )
-
-    return (optimal_P, np.sqrt(best_msd)) if return_score else optimal_P
