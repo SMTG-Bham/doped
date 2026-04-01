@@ -2663,6 +2663,7 @@ def point_symmetry_from_defect_entry(
     relaxed: bool = True,
     verbose: bool | None = None,
     return_periodicity_breaking: bool = False,
+    attempt_periodicity_restoration: bool = True,
     **kwargs,
 ) -> str | tuple[str, bool]:
     r"""
@@ -2744,7 +2745,13 @@ def point_symmetry_from_defect_entry(
             If ``True``, also returns a boolean specifying if the supercell has
             been detected to break the crystal periodicity (and hence not be
             able to return a reliable `relaxed` point symmetry) or not. Mainly
-            for internal ``doped`` usage. Default is ``False``.
+            for internal ``doped`` usage, and always ``False`` if ``relaxed``
+            is ``False``. Default is ``False``.
+        attempt_periodicity_restoration (bool):
+            If ``True`` and periodicity-breaking is detected, will attempt to
+            restore periodicity by stenciling the relaxed defect geometry into
+            a supercell which retains periodicity, and then getting the point
+            symmetry for that. Default is ``True``.
         **kwargs:
             Additional keyword arguments to pass to ``get_all_equiv_sites``,
             such as ``dist_tol_factor`` and
@@ -2756,12 +2763,91 @@ def point_symmetry_from_defect_entry(
             ``return_periodicity_breaking = True``, a boolean specifying if the
             supercell has been detected to break the crystal periodicity).
     """
+    with warnings.catch_warnings(record=True) as w:
+        result = _point_symmetry_from_defect_entry(
+            defect_entry,
+            symprec=symprec,
+            relaxed=relaxed,
+            verbose=verbose,
+            return_periodicity_breaking=relaxed,  # always return periodicity-breaking if relaxed=True
+            **kwargs,
+        )
+
+    if not (relaxed and attempt_periodicity_restoration):
+        for warning in w:
+            warnings.warn(warning.message, warning.category)
+        return result
+
+    assert isinstance(result, tuple)  # typing
+    relaxed_point_group, periodicity_breaking = result
+
+    if periodicity_breaking and attempt_periodicity_restoration:
+        with contextlib.suppress(Exception):
+            from doped.utils.stenciling import get_defect_in_supercell
+            from doped.utils.supercells import get_min_image_distance
+
+            primitive = defect_entry.defect.structure
+            min_expansion_factor = get_min_image_distance(
+                defect_entry.bulk_supercell
+            ) / get_min_image_distance(primitive)
+            target_supercell = primitive * np.ceil(min_expansion_factor)
+
+            periodicity_restored_defect_supercell, periodicity_restored_bulk_supercell = (
+                get_defect_in_supercell(
+                    defect_entry,
+                    target_supercell,
+                    check_bulk=False,
+                )
+            )
+            periodicity_restored_defect_entry = template_defect_entry_from_structures(
+                periodicity_restored_bulk_supercell,
+                periodicity_restored_defect_supercell,
+            )
+            with warnings.catch_warnings(record=True) as w:
+                result = _point_symmetry_from_defect_entry(
+                    periodicity_restored_defect_entry,
+                    symprec=symprec,
+                    relaxed=relaxed,
+                    verbose=verbose,
+                    return_periodicity_breaking=True,
+                    **kwargs,
+                )
+            assert isinstance(result, tuple)  # typing
+            relaxed_point_group, periodicity_breaking = result
+
+    for warning in w:
+        warnings.warn(warning.message, warning.category)
+
+    return (
+        relaxed_point_group
+        if not return_periodicity_breaking
+        else (relaxed_point_group, periodicity_breaking)
+    )
+
+
+def _point_symmetry_from_defect_entry(
+    defect_entry: DefectEntry,
+    symprec: float | None = None,
+    relaxed: bool = True,
+    verbose: bool | None = None,
+    return_periodicity_breaking: bool = False,
+    **kwargs,
+) -> str | tuple[str, bool]:
+    r"""
+    Internal function to get the defect site point symmetry from a
+    |DefectEntry| object.
+
+    See ``point_symmetry_from_defect_entry``
+    for full documentation.
+    """
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
         # slight distortions present in the unrelaxed material).
     periodicity_breaking_verbose = verbose is not False  # None/True -> True, False -> False
     equiv_sites_verbose = verbose is True  # True -> True, None/False -> False
+    if not relaxed:
+        return_periodicity_breaking = False  # always False when relaxed=False
 
     # from spglib docs: For atomic positions, roughly speaking, two position vectors x and x' in
     # Cartesian coordinates are considered to be the same if |x' - x| < symprec. The angle distortion
@@ -3120,7 +3206,9 @@ def point_symmetry_from_structure(
         **kwargs:
             Additional keyword arguments to pass to ``get_all_equiv_sites``,
             such as ``dist_tol_factor`` and
-            ``fixed_symprec_and_dist_tol_factor``.
+            ``fixed_symprec_and_dist_tol_factor``, and
+            ``point_symmetry_from_defect_entry``, such as
+            ``attempt_periodicity_restoration``.
 
     Returns:
         str:
@@ -3462,7 +3550,8 @@ def get_orientational_degeneracy(
         **kwargs:
             Additional keyword arguments to pass to ``get_all_equiv_sites``,
             such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-            and ``verbose``.
+            and ``verbose``, and to ``point_symmetry_from_defect_entry``, such
+            as ``attempt_periodicity_restoration``.
 
     Returns:
         float: Orientational degeneracy factor for the defect.

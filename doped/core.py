@@ -1158,7 +1158,9 @@ class DefectEntry(thermo.DefectEntry):
                 ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
                 ``verbose``, and/or |Defect| initialization (such as
                 ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
-                ``defect_and_info_from_structures`` function.
+                ``defect_and_info_from_structures`` function, or
+                ``point_symmetry_from_defect_entry``, such as
+                ``attempt_periodicity_restoration``.
         """
         from doped.utils.parsing import (
             _num_electrons_from_charge_state,
@@ -1178,7 +1180,12 @@ class DefectEntry(thermo.DefectEntry):
                     **{
                         k: v
                         for k, v in kwargs.items()
-                        if k in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
+                        if k
+                        in [
+                            "dist_tol_factor",
+                            "fixed_symprec_and_dist_tol_factor",
+                            "attempt_periodicity_restoration",
+                        ]
                     },
                 )
                 assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)

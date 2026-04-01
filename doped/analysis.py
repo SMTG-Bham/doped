@@ -31,12 +31,7 @@ from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.core import (
-    Defect,
-    DefectEntry,
-    guess_and_set_oxi_states_with_timeout,
-    template_defect_entry_from_structures,
-)
+from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import (
     get_defect_name_from_defect,
     get_defect_name_from_entry,
@@ -68,7 +63,6 @@ from doped.utils.parsing import (
     total_charge_from_vasprun,
 )
 from doped.utils.plotting import format_defect_name
-from doped.utils.supercells import get_min_image_distance
 from doped.utils.symmetry import (
     _frac_coords_sort_func,
     get_equiv_frac_coords_in_primitive,
@@ -2186,62 +2180,25 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
             which retains periodicity, and then getting the point symmetry for
             that.
     """
-
-    def _get_point_symm_and_periodicity_breaking(defect_entry: DefectEntry, **kwargs):
-        return point_symmetry_from_defect_entry(
-            defect_entry,
-            relaxed=True,
-            verbose=kwargs.get("verbose", False),
-            return_periodicity_breaking=True,
-            **{
-                k: v
-                for k, v in kwargs.items()
-                if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor"]
-            },
-        )
-
-    with warnings.catch_warnings(record=True) as w:
-        point_symm_and_periodicity_breaking = _get_point_symm_and_periodicity_breaking(
-            defect_entry, **kwargs
-        )
-
-    assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
-    relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
-    if periodicity_breaking and kwargs.get("attempt_periodicity_restoration", True):
-        # try to restore periodicity by stenciling into a supercell which retains periodicity, and then
-        # getting the point symmetry for that
-        with contextlib.suppress(Exception):
-            primitive = defect_entry.defect.structure
-            min_expansion_factor = get_min_image_distance(
-                defect_entry.bulk_supercell
-            ) / get_min_image_distance(
-                primitive
-            )  # expand to encompass relaxed defect supercell
-            target_supercell = primitive * np.ceil(
-                min_expansion_factor
-            )  # diagonal exp; preserve periodicity
-
-            from doped.utils.stenciling import get_defect_in_supercell
-
-            periodicity_restored_defect_supercell, periodicity_restored_bulk_supercell = (
-                get_defect_in_supercell(
-                    defect_entry,
-                    target_supercell,
-                    check_bulk=False,
-                )
-            )
-            periodicity_restored_defect_entry = template_defect_entry_from_structures(
-                periodicity_restored_bulk_supercell,
-                periodicity_restored_defect_supercell,
-            )
-            with warnings.catch_warnings(record=True) as w:
-                point_symm_and_periodicity_breaking = _get_point_symm_and_periodicity_breaking(
-                    periodicity_restored_defect_entry, **kwargs
-                )
-            relaxed_point_group, periodicity_breaking = point_symm_and_periodicity_breaking
-
-    for warning in w:  # raises if last attempt at point symmetry determination has periodicity breaking
-        warnings.warn(warning.message, warning.category)
+    result = point_symmetry_from_defect_entry(
+        defect_entry,
+        relaxed=True,
+        verbose=kwargs.get("verbose", False),
+        return_periodicity_breaking=True,
+        **{
+            k: v
+            for k, v in kwargs.items()
+            if k
+            in [
+                "symprec",
+                "dist_tol_factor",
+                "fixed_symprec_and_dist_tol_factor",
+                "attempt_periodicity_restoration",
+            ]
+        },
+    )
+    assert isinstance(result, tuple)  # typing
+    relaxed_point_group, periodicity_breaking = result
 
     bulk_site_point_group = point_symmetry_from_defect_entry(
         defect_entry,

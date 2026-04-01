@@ -426,6 +426,7 @@ def get_defect_name_from_entry(
     element_list: list | None = None,
     symprec: float | None = None,
     relaxed: bool = True,
+    **kwargs,
 ):
     r"""
     Get the doped/SnB defect name from a |DefectEntry| object.
@@ -473,12 +474,17 @@ def get_defect_name_from_entry(
             `in the unrelaxed bulk supercell`, otherwise tries to determine the
             point symmetry of the relaxed defect in the defect supercell).
             Default is ``True``.
+        **kwargs:
+            Additional keyword arguments to pass to
+            ``point_symmetry_from_defect_entry``, such as ``dist_tol_factor``,
+            ``fixed_symprec_and_dist_tol_factor``, ``verbose``, or
+            ``attempt_periodicity_restoration``.
 
     Returns:
         str: Defect name.
     """
     point_group_symbol = symmetry.point_symmetry_from_defect_entry(
-        defect_entry, symprec=symprec, relaxed=relaxed
+        defect_entry, symprec=symprec, relaxed=relaxed, **kwargs
     )
 
     return (
