@@ -761,7 +761,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         for w in [symm_w, conc_w]:  # the dub
             print("Checking expected warnings")
-            if defect_thermo.bulk_formula in ["SiSbTe3", "ZnS"]:  # periodicity-breaking -> warning:
+            if defect_thermo.bulk_formula in ["ZnS"]:  # periodicity-breaking -> warning:
+                # Note: Previously Sb2Si2Te6 ("SiSbTe3") also threw this warning, but now with
+                # auto-stenciling periodicity restoration this issue no longer appears for it
                 assert any(
                     "The defect supercell has been detected to possibly have" in str(warn.message)
                     for warn in w

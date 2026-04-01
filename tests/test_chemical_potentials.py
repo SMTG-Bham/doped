@@ -690,7 +690,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
     def test_vaspruns_none_parsed(self):
         with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
-            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", "./")
+            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", module_path)
         _print_warning_info(w)  # for debugging
         assert not w
         print(e.value)  # for debugging

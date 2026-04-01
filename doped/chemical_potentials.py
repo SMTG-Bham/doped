@@ -2720,7 +2720,7 @@ class CompetingPhasesAnalyzer(MSONable):
                             self.vasprun_paths.append(vr_path)
 
                         else:
-                            skipped_folders += [f"{p} or {p}/{subfolder}"]
+                            skipped_folders.append(f"{p} or {p}/{subfolder}")
         else:
             raise ValueError(
                 "`path` should either be a path to a folder (with competing phase "
