@@ -2976,107 +2976,114 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         v_O_1_degeneracy_factor = np.prod(list(v_O_1.degeneracy_factors.values()))
         v_O_2_degeneracy_factor = np.prod(list(v_O_2.degeneracy_factors.values()))
         summed_degeneracy_factors = v_O_1_degeneracy_factor + v_O_2_degeneracy_factor
-        assert (
-            site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
-            < v_O_1.bulk_site_concentration * (v_O_1_degeneracy_factor / (1 + summed_degeneracy_factors))
-        ).all()
-        assert (  # actually exceeds the final asymptotic limit here, due to higher v_O_1 E_F
-            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
-            > v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + summed_degeneracy_factors))
-        ).all()  # though v_O_1 has a larger degeneracy factor (16 vs 4), so it dominates at higher temps
-        assert (  # but still less than absolute max limit of g/(1+g)
-            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
-            < v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + v_O_2_degeneracy_factor))
-        ).all()
-        assert np.allclose(
-            site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 3.5510e22, rtol=1e-3
-        )
-        assert np.allclose(
-            site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.0576e22, rtol=1e-3
-        )
-
-        assert (
-            dilute_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
-            > site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
-        ).all()
-        assert (
-            dilute_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
-            > site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
-        ).all()
-
-        # asymptotic limit when including site competition is N_sites * g/(1+g), for dilute limit here
-        # we exceed this:
-        assert (
-            dilute_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
-            > v_O_1.bulk_site_concentration * (v_O_1_degeneracy_factor / (1 + summed_degeneracy_factors))
-        ).all()
-        assert (
-            dilute_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
-            > v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + summed_degeneracy_factors))
-        ).all()
-
-        # asymptotic limit for per-site defect concentration with a positive formation energy,
-        # with respect to temperature, is the degeneracy factor g (when excluding site competition):
-        assert (
-            dilute_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
-            < v_O_1.bulk_site_concentration * v_O_1_degeneracy_factor
-        ).all()
-        assert (
-            dilute_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
-            < v_O_2.bulk_site_concentration * v_O_2_degeneracy_factor
-        ).all()
-
-        fig, ax = plt.subplots()
-        x = np.concatenate((np.linspace(10, 400, 100), np.linspace(400, 4000, 500)))
-
-        for i, T in enumerate(x):
-            conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(
-                temperature=T,
-                limit="O-poor",
-                fermi_level=v_O_2.calculation_metadata["gap"] - 0.4,
-                skip_formatting=True,
-                site_competition=False,
+        with warnings.catch_warnings():  # ignore pandas lexsort performance warnings (these are small dfs,
+            # so it is best not to sort indices (as suggested by the warning, to allow fast multi-indexing)
+            warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+            assert (
+                site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
+                < v_O_1.bulk_site_concentration
+                * (v_O_1_degeneracy_factor / (1 + summed_degeneracy_factors))
+            ).all()
+            assert (  # actually exceeds the final asymptotic limit here, due to higher v_O_1 E_F
+                site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
+                > v_O_2.bulk_site_concentration
+                * (v_O_2_degeneracy_factor / (1 + summed_degeneracy_factors))
+            ).all()  # though v_O_1 has larger degeneracy factor (16 vs 4), so it dominates at higher temps
+            assert (  # but still less than absolute max limit of g/(1+g)
+                site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
+                < v_O_2.bulk_site_concentration * (v_O_2_degeneracy_factor / (1 + v_O_2_degeneracy_factor))
+            ).all()
+            assert np.allclose(
+                site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"], 3.5510e22, rtol=1e-3
             )
-            ax.plot(
-                T,
-                conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"],
-                marker="o",
-                c="C0",
-                alpha=0.4,
-                label="q=+1, Dilute Approx" if i == len(x) - 1 else None,
-            )
-            ax.plot(
-                T,
-                conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"],
-                marker="o",
-                c="C1",
-                alpha=0.4,
-                label="q=+2, Dilute Approx" if i == len(x) - 1 else None,
+            assert np.allclose(
+                site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"], 1.0576e22, rtol=1e-3
             )
 
-            conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(
-                temperature=T,
-                limit="O-poor",
-                fermi_level=v_O_2.calculation_metadata["gap"] - 0.4,
-                skip_formatting=True,
-                site_competition=True,
-            )
-            ax.plot(
-                T,
-                conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"],
-                marker="o",
-                c="C2",
-                alpha=0.4,
-                label="q=+1, w/Site Comp" if i == len(x) - 1 else None,
-            )
-            ax.plot(
-                T,
-                conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"],
-                marker="o",
-                c="C3",
-                alpha=0.4,
-                label="q=+2, w/Site Comp" if i == len(x) - 1 else None,
-            )
+            assert (
+                dilute_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
+                > site_comp_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
+            ).all()
+            assert (
+                dilute_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
+                > site_comp_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
+            ).all()
+
+            # asymptotic limit when including site competition is N_sites * g/(1+g), for dilute limit here
+            # we exceed this:
+            assert (
+                dilute_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
+                > v_O_1.bulk_site_concentration
+                * (v_O_1_degeneracy_factor / (1 + summed_degeneracy_factors))
+            ).all()
+            assert (
+                dilute_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
+                > v_O_2.bulk_site_concentration
+                * (v_O_2_degeneracy_factor / (1 + summed_degeneracy_factors))
+            ).all()
+
+            # asymptotic limit for per-site defect concentration with a positive formation energy,
+            # with respect to temperature, is the degeneracy factor g (when excluding site competition):
+            assert (
+                dilute_conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"]
+                < v_O_1.bulk_site_concentration * v_O_1_degeneracy_factor
+            ).all()
+            assert (
+                dilute_conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"]
+                < v_O_2.bulk_site_concentration * v_O_2_degeneracy_factor
+            ).all()
+
+            fig, ax = plt.subplots()
+            x = np.concatenate((np.linspace(10, 400, 100), np.linspace(400, 4000, 500)))
+
+            for i, T in enumerate(x):
+                conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(
+                    temperature=T,
+                    limit="O-poor",
+                    fermi_level=v_O_2.calculation_metadata["gap"] - 0.4,
+                    skip_formatting=True,
+                    site_competition=False,
+                )
+                ax.plot(
+                    T,
+                    conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"],
+                    marker="o",
+                    c="C0",
+                    alpha=0.4,
+                    label="q=+1, Dilute Approx" if i == len(x) - 1 else None,
+                )
+                ax.plot(
+                    T,
+                    conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"],
+                    marker="o",
+                    c="C1",
+                    alpha=0.4,
+                    label="q=+2, Dilute Approx" if i == len(x) - 1 else None,
+                )
+
+                conc_df = STO_wo_Al_thermo.get_equilibrium_concentrations(
+                    temperature=T,
+                    limit="O-poor",
+                    fermi_level=v_O_2.calculation_metadata["gap"] - 0.4,
+                    skip_formatting=True,
+                    site_competition=True,
+                )
+                ax.plot(
+                    T,
+                    conc_df.loc[("vac_O", 1)]["Concentration (cm^-3)"],
+                    marker="o",
+                    c="C2",
+                    alpha=0.4,
+                    label="q=+1, w/Site Comp" if i == len(x) - 1 else None,
+                )
+                ax.plot(
+                    T,
+                    conc_df.loc[("vac_O", 2)]["Concentration (cm^-3)"],
+                    marker="o",
+                    c="C3",
+                    alpha=0.4,
+                    label="q=+2, w/Site Comp" if i == len(x) - 1 else None,
+                )
 
         ax.axhline(v_O_2.bulk_site_concentration, color="black", linestyle="--", label="Oxygen Sites")
         ax.axhline(

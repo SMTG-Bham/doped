@@ -16,7 +16,7 @@ import numpy as np
 from pymatgen.core.structure import PeriodicSite, Structure
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
-from doped import analysis
+from doped.analysis import DefectParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 
@@ -192,25 +192,25 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
             if os.path.isdir(f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}") and "v_Cd" in i:
                 print(f"Parsing {i}...")
                 defect_path = f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}/vasp_ncl"
-                cls.v_Cd_dict[i] = analysis.defect_entry_from_paths(
+                cls.v_Cd_dict[i] = DefectParser.from_paths(
                     defect_path,
                     cls.CdTe_bulk_data_dir,
-                    cls.CdTe_dielectric,
+                    dielectric=cls.CdTe_dielectric,
                     charge_state=int(i.split("_")[-1]),  # test manually specifying charge states here
-                )
+                ).defect_entry
 
         cls.ytos_dielectric = [40.7, 40.7, 25.2]  # from legacy Materials Project
-        cls.F_O_1_entry = analysis.defect_entry_from_paths(
+        cls.F_O_1_entry = DefectParser.from_paths(
             defect_path=f"{cls.ytos_example_dir}/F_O_1",
             bulk_path=f"{cls.ytos_example_dir}/Bulk",
             dielectric=cls.ytos_dielectric,
-        )
+        ).defect_entry
 
-        cls.Te_i_2_ent = analysis.defect_entry_from_paths(
+        cls.Te_i_2_ent = DefectParser.from_paths(
             defect_path=f"{cls.CdTe_example_dir}/Int_Te_3_2/vasp_ncl",
             bulk_path=f"{cls.CdTe_bulk_data_dir}",
             dielectric=9.13,
-        )
+        ).defect_entry
 
     @custom_mpl_image_compare("v_Cd_-2_FNV_plot.png")
     def test_plot_freysoldt(self):

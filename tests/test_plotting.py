@@ -18,7 +18,7 @@ from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir
 
-from doped import analysis
+from doped.analysis import DefectParser
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 
@@ -385,7 +385,9 @@ class DefectPlottingTestCase(unittest.TestCase):
         chempots = loadfn(f"{data_dir}/V2O5/chempots.json")
 
         defect_dict = {
-            defect: analysis.defect_entry_from_paths(f"{data_dir}/V2O5/{defect}", bulk_path, dielectric)
+            defect: DefectParser.from_paths(
+                f"{data_dir}/V2O5/{defect}", bulk_path, dielectric=dielectric
+            ).defect_entry
             for defect in [dir for dir in os.listdir(f"{data_dir}/V2O5") if "v_O" in dir]
         }  # charge auto-determined (as neutral)
         thermo = DefectThermodynamics(list(defect_dict.values()))

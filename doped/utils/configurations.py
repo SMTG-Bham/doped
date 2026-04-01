@@ -148,7 +148,11 @@ def apply_s2_to_s1_transformation(
         Structure:
             ``struct2`` transformed to ``struct1`` as closely as possible.
     """
-    temp = struct2.copy()
+    s2 = struct2.copy().remove_species(ignored_species) if ignored_species else struct2  # ignore ignored
+    sites = list(s2)
+    sites.extend([site for site in struct2 if site not in s2])  # append ignored sites at the end
+
+    temp = Structure.from_sites(sites)  # make copy of struct2 with ignored species at the end
     temp.make_supercell(supercell_matrix)  # make supercell
     temp.translate_sites(list(range(len(temp))), trans_vector)  # translate by fractional vector
 
@@ -163,7 +167,7 @@ def apply_s2_to_s1_transformation(
     sites = [temp.sites[i] for i in mapping if i is not None]  # get sites in correct order (from mapping)
 
     if include_ignored_species:  # add back in ignored species
-        start = round(len(temp) / len(struct2) * len(sites))
+        start = round(len(temp) / len(struct2) * len(s2))
         sites.extend(temp.sites[start:])
 
     trans_struct = Structure.from_sites(sites)
@@ -372,6 +376,10 @@ def orient_s2_like_s1(
             f"ΔQ(s1/s2_like_s1_doped) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å\n"
             f"which should always be less than or equal to the previous two values... Please report this "
             f"case to the doped developers!"
+            f"\n{struct1}"
+            f"\n{struct2}"
+            f"\n{struct2_like_struct1}"
+            f"\n{struct2_really_like_struct1}"
         )
 
     if verbose:
@@ -405,13 +413,14 @@ def get_dQ(struct1: Structure, struct2: Structure, ignored_species: list[str] | 
             structures, assuming matched atomic indices. Returns ``np.inf`` if
             the structures are not matching.
     """
-    ignored_species = ignored_species or []
+    struct1_sites = [site for site in struct1 if site.specie.symbol not in (ignored_species or [])]
+    struct2_sites = [site for site in struct2 if site.specie.symbol not in (ignored_species or [])]
+
     try:
         return np.sqrt(
             sum(
                 (a.distance(b) ** 2) * a.specie.atomic_mass
-                for a, b in zip(struct1, struct2, strict=False)
-                if (a.specie.symbol not in ignored_species and b.specie.symbol not in ignored_species)
+                for a, b in zip(struct1_sites, struct2_sites, strict=True)
             )
         )  # TODO: Option to reorient if not matching?
         # which should then match output of when using get_linear_assignment_solution or

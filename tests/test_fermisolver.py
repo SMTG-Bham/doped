@@ -320,12 +320,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             )
         )
         # drop Dopant row, included as column instead:
-        cls.CdTe_anneal_800K_eff_1e16_conc_df = cls.CdTe_anneal_800K_eff_1e16_conc_df.drop(
-            "Dopant", errors="ignore"
-        )
-        cls.CdTe_anneal_800K_eff_1e16_per_charge_F_conc_df = (
-            cls.CdTe_anneal_800K_eff_1e16_per_charge_F_conc_df.drop("Dopant", errors="ignore")
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+            cls.CdTe_anneal_800K_eff_1e16_conc_df = cls.CdTe_anneal_800K_eff_1e16_conc_df.drop(
+                "Dopant", errors="ignore"
+            )
+            cls.CdTe_anneal_800K_eff_1e16_per_charge_F_conc_df = (
+                cls.CdTe_anneal_800K_eff_1e16_per_charge_F_conc_df.drop("Dopant", errors="ignore")
+            )
         cls.CdTe_anneal_800K_eff_1e16_conc_df["Dopant (cm^-3)"] = 1e16
         cls.CdTe_anneal_800K_eff_1e16_per_charge_F_conc_df["Dopant (cm^-3)"] = 1e16
 
@@ -2341,7 +2343,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         fermi_level, e_conc, h_conc, conc_df = self.CdTe_thermo.get_fermi_level_and_concentrations(
             **conc_kwargs, per_site=True, skip_formatting=True
         )
-        conc_df = conc_df.drop(index="Dopant")  # cut dopant row from conc_df
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+            conc_df = conc_df.drop(index="Dopant")  # cut dopant row from conc_df
         pd.testing.assert_series_equal(
             results[(True, True)]["Concentration (per site)"],
             conc_df["Concentration (per site)"],

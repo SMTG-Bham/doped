@@ -999,6 +999,8 @@ class DefectEntry(thermo.DefectEntry):
         Checks that there is no double counting of finite-size charge
         corrections, in the defect_entry.corrections dict.
         """
+        if len(self.corrections) < 2:
+            return  # break early for efficiency; if <2 corrections, no chance of double counting
         matching_finite_size_correction_keys = {
             key
             for key in self.corrections
@@ -1169,7 +1171,7 @@ class DefectEntry(thermo.DefectEntry):
         from doped.utils.symmetry import get_orientational_degeneracy, point_symmetry_from_defect_entry
 
         reparse = symprec is not None or bulk_symprec is not None
-        if "relaxed point symmetry" not in self.calculation_metadata or reparse:
+        if reparse or "relaxed point symmetry" not in self.calculation_metadata:
             try:
                 point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
                     self,
@@ -1198,7 +1200,7 @@ class DefectEntry(thermo.DefectEntry):
                 warnings.warn(
                     f"Unable to determine relaxed point group symmetry for {self.name}, got error:\n{e!r}"
                 )
-        if "bulk site symmetry" not in self.calculation_metadata or reparse:
+        if reparse or "bulk site symmetry" not in self.calculation_metadata:
             try:
                 self.calculation_metadata["bulk site symmetry"] = point_symmetry_from_defect_entry(
                     self,
@@ -1224,10 +1226,10 @@ class DefectEntry(thermo.DefectEntry):
                 **structure_metadata_kwargs,
             )  # re-determines site positions / multiplicities
 
-        if (
+        if reparse or (
             all(x in self.calculation_metadata for x in ["relaxed point symmetry", "bulk site symmetry"])
             and "orientational degeneracy" not in self.degeneracy_factors
-        ) or reparse:
+        ):
             try:
                 self.degeneracy_factors["orientational degeneracy"] = get_orientational_degeneracy(
                     relaxed_point_group=self.calculation_metadata["relaxed point symmetry"],
@@ -1461,8 +1463,8 @@ class DefectEntry(thermo.DefectEntry):
             # setting to 1e-50 can cause some oddities with the site competition routine (doesn't affect
             # main results as it only affects low concentration defects though)
             per_site_concentration = np.maximum(exp_factor * degeneracy_factor, 1e-150)
-            if site_competition:
-                per_site_concentration /= 1 + per_site_concentration
+            if site_competition:  # use 1 - 1/(1+x) instead of x/(1+x); equivalent but more stable
+                per_site_concentration = 1.0 - 1.0 / (1.0 + per_site_concentration)
             elif site_competition is not None:  # cap max at 100% site concentration (obvs unphysical at
                 # this point anyway, this just makes it less so and stabilises some numerics)
                 # note that this sets the max at N_sites, rather than N_site * g_config,
@@ -1535,7 +1537,7 @@ class DefectEntry(thermo.DefectEntry):
                 self.name,
                 self.sc_entry_energy,
                 self.bulk_entry_energy,
-                tuple(sorted(self.corrections.values())),
+                tuple(sorted(self.corrections.items())),
             )
         )
 

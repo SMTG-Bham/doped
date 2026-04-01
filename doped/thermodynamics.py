@@ -835,13 +835,7 @@ class DefectThermodynamics(MSONable):
         if isinstance(defect_entries, list):
             defect_entries = {entry.name: entry for entry in defect_entries}
 
-        self._defect_entries = defect_entries
-        self._chempots, self._el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
-        self._dist_tol = dist_tol
-        self.check_compatibility = check_compatibility
-        self.skip_dos_check = skip_dos_check
-
-        # get and check VBM/bandgap values:
+        # get and check VBM/bandgap values first; used in defect entry setting
         def _raise_VBM_band_gap_value_error(vals, type="VBM"):
             raise ValueError(
                 f"{type} values for defects in `defect_dict` do not match within 0.05 eV of each other, "
@@ -854,29 +848,28 @@ class DefectThermodynamics(MSONable):
         self.vbm = vbm
         self.band_gap = band_gap
         if self.vbm is None or self.band_gap is None:
-            vbm_vals = [
-                defect_entry.calculation_metadata.get("vbm")
-                for defect_entry in self.defect_entries.values()
+            vbm_vals: list = [
+                defect_entry.calculation_metadata.get("vbm") for defect_entry in defect_entries.values()
             ]
             vbm_vals = [vbm for vbm in vbm_vals if vbm is not None]
             band_gap_vals = [
                 defect_entry.calculation_metadata.get(
                     "band_gap", defect_entry.calculation_metadata.get("gap")
                 )
-                for defect_entry in self.defect_entries.values()
+                for defect_entry in defect_entries.values()
             ]
             band_gap_vals = [band_gap for band_gap in band_gap_vals if band_gap is not None]
 
             # get the max difference in VBM & band_gap vals:
-            if vbm_vals and max(vbm_vals) - min(vbm_vals) > 0.05 and self.vbm is None:
-                _raise_VBM_band_gap_value_error(vbm_vals, type="VBM")
-            elif vbm_vals and self.vbm is None:
-                self.vbm = vbm_vals[0]
+            if vbm_vals and self.vbm is None:
+                if max(vbm_vals) - min(vbm_vals) > 0.05:
+                    _raise_VBM_band_gap_value_error(vbm_vals, type="VBM")
+                self.vbm = next(iter(vbm_vals))
 
             if band_gap_vals and max(band_gap_vals) - min(band_gap_vals) > 0.05 and self.band_gap is None:
                 _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
             elif band_gap_vals and self.band_gap is None:
-                self.band_gap = band_gap_vals[0]
+                self.band_gap = next(iter(band_gap_vals))
 
         for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:
             if i is None:
@@ -885,10 +878,17 @@ class DefectThermodynamics(MSONable):
                     f"(calculation_metadata attributes). Please specify the {name} in the function input."
                 )
 
-        self.bulk_dos = bulk_dos  # use setter method, needs to be after setting VBM
+        # all required to be set before parsing defect entries:
+        self.check_compatibility = check_compatibility
+        self._chempots, self._el_refs = _parse_chempots(chempots, el_refs, update_el_refs=True)
+        self._dist_tol = dist_tol
 
-        # order entries for deterministic behaviour (particularly for plotting)
-        self._sort_parse_and_check_entries()
+        # defect_entries setter runs ``self._sort_parse_and_check_entries()``, to order entries for
+        # deterministic behaviour; particularly important for plotting and tabulation
+        self.defect_entries = defect_entries
+
+        self.skip_dos_check = skip_dos_check
+        self.bulk_dos = bulk_dos  # use setter method, needs to be after setting VBM
 
         bulk_entry = next(iter(self.defect_entries.values())).bulk_entry
         if bulk_entry is not None:
@@ -1400,6 +1400,28 @@ class DefectThermodynamics(MSONable):
                     f"{defect_entry.name}: \n{concatenated_warnings}"
                 )
 
+    def _get_bulk_comp_and_energy_per_atom_mode_values(self):
+        """
+        Helper function to get the mode values of the bulk composition and
+        energy per atom for the defect entries in this |DefectThermodynamics|
+        object.
+
+        Returns:
+            tuple:
+                The mode values of the bulk composition and energy per atom for
+                the defect entries in this |DefectThermodynamics| object, as a
+                tuple of (bulk_comp, bulk_energy_per_atom).
+        """
+        bulk_comps: list[Composition] = []
+        bulk_energies_per_atom: list[float] = []
+        for entry in self._defect_entries.values():
+            bulk = entry.bulk_entry
+            comp = bulk.composition
+            bulk_comps.append(comp)
+            bulk_energies_per_atom.append(bulk.energy / comp.num_atoms)
+
+        return statistics.mode(bulk_comps), statistics.mode(bulk_energies_per_atom)
+
     def _check_bulk_chempots_compatibility(self, chempots: dict | None = None):
         r"""
         Helper function to quickly check if the supplied chemical potentials
@@ -1435,25 +1457,23 @@ class DefectThermodynamics(MSONable):
         if chempots is None and self.chempots is None:
             return
 
-        bulk_comps = [entry.bulk_entry.composition for entry in self.defect_entries.values()]
-        bulk_energies_per_atom = [
-            entry.bulk_entry.energy / entry.bulk_entry.composition.num_atoms
-            for entry in self.defect_entries.values()
-        ]
-        # get most common bulk composition and energy per atom:
-        bulk_comp = statistics.mode(bulk_comps)
-        bulk_energy_per_atom = statistics.mode(bulk_energies_per_atom)
+        if not hasattr(self, "_bulk_comp_mode") or not hasattr(self, "_bulk_energy_per_atom_mode"):
+            self._bulk_comp_mode, self._bulk_energy_per_atom_mode = (
+                self._get_bulk_comp_and_energy_per_atom_mode_values()
+            )
+
         bulk_chempot_energy_per_atom = (
-            raw_energy_from_chempots(bulk_comp, chempots or self.chempots) / bulk_comp.num_atoms
+            raw_energy_from_chempots(self._bulk_comp_mode, chempots or self.chempots)
+            / self._bulk_comp_mode.num_atoms
         )
 
-        if abs(bulk_energy_per_atom - bulk_chempot_energy_per_atom) > 0.025:
+        if abs(self._bulk_energy_per_atom_mode - bulk_chempot_energy_per_atom) > 0.025:
             warnings.warn(  # 0.05 eV intrinsic defect formation energy error tolerance, taking per-atom
                 # chempot error and multiplying by 2 to account for how this would affect antisite
                 # formation energies (extreme case)
                 f"Note that the raw (DFT) energy of the bulk supercell calculation "
-                f"({bulk_energy_per_atom:.2f} eV/atom) differs from that expected from the supplied "
-                f"chemical potentials ({bulk_chempot_energy_per_atom:.2f} eV/atom) by >0.025 eV. "
+                f"({self._bulk_energy_per_atom_mode:.2f} eV/atom) differs from that expected from the "
+                f"supplied chemical potentials ({bulk_chempot_energy_per_atom:.2f} eV/atom) by >0.025 eV. "
                 f"In some rare cases this might be expected (if intentionally using different defect / "
                 f"chemical potential settings for well-founded reasons), but otherwise will give "
                 f"inaccuracies of similar magnitude in the predicted formation energies!"
@@ -1490,8 +1510,7 @@ class DefectThermodynamics(MSONable):
         if isinstance(defect_entries, list):  # append 'pre_formatting' so we don't overwrite any existing
             defect_entries = {f"{entry.name}_pre_formatting": entry for entry in defect_entries}
 
-        self._defect_entries.update(defect_entries)  # add new entries and format names
-        self._sort_parse_and_check_entries()
+        self.defect_entries = {**self._defect_entries, **defect_entries}  # add new entries and format
 
     @property
     def defect_entries(self):
@@ -1509,6 +1528,16 @@ class DefectThermodynamics(MSONable):
         information (transition levels etc).
         """
         self._defect_entries = input_defect_entries
+        if self.check_compatibility:
+            # in ``_check_bulk_chempots_compatibility`` we compare the bulk energy per atom using the mode
+            # (most common) value of bulk composition across defect entries. ``statistics.mode`` is costly
+            # when run many times for many entries, so we cache the result, and only update when
+            # ``defect_entries`` is updated (and ``self.check_compatibility`` is ``True``, such that
+            # ``_check_bulk_chempots_compatibility()`` will be called):
+            self._bulk_comp_mode, self._bulk_energy_per_atom_mode = (
+                self._get_bulk_comp_and_energy_per_atom_mode_values()
+            )
+
         self._sort_parse_and_check_entries()
 
     @property
@@ -3405,6 +3434,9 @@ class DefectThermodynamics(MSONable):
             chempots, el_refs, limit
         )  # warns about chempots/limit choices if necessary
 
+        # build reverse lookup for cluster numbers (avoids repeated linear scan in conc loop below):
+        _entry_to_cluster = {entry: k for k, v in self.clustered_defect_entries.items() for entry in v}
+
         # Note: DataFrame initialisation from the list of dicts here actually ends up contributing a
         # non-negligible compute cost (~10%), which could be made faster by using a dict of lists/arrays
         # which is possible, but would make the code much less readable (e.g. for implementing site
@@ -3435,11 +3467,6 @@ class DefectThermodynamics(MSONable):
                     else None
                 )  # only calculate if needed
 
-                # this could be refactored if DefectEntry finding became a bottleneck (currently not)
-                cluster_number = next(
-                    k for k, v in self.clustered_defect_entries.items() if defect_entry in v
-                )
-
                 charge = (
                     defect_entry.charge_state
                     if skip_formatting
@@ -3452,7 +3479,7 @@ class DefectThermodynamics(MSONable):
                         "Concentration (cm^-3)": raw_concentration,
                         "Formation Energy (eV)": round(formation_energy, 3),
                         "Concentration (per site)": per_site_concentration,
-                        "Lattice Site Index": cluster_number,
+                        "Lattice Site Index": _entry_to_cluster[defect_entry],  # cluster index
                     }
                 )
 
@@ -5742,7 +5769,9 @@ class FermiSolver(MSONable):
                 concentrations[column] = value
 
             # drop Dopant row, included as column instead
-            concentrations = concentrations.drop("Dopant", errors="ignore")
+            with warnings.catch_warnings():  # dropping on a non-lexsorted multi-index, fine as small df
+                warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+                concentrations = concentrations.drop("Dopant", errors="ignore")
 
         else:  # py-sc-fermi
             defect_system = self._generate_annealed_defect_system(

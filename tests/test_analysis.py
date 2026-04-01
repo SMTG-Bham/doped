@@ -221,6 +221,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                 f"{self.CdTe_EXAMPLE_DIR}/v_Cd_-2/vasp_ncl/LOCPOT.gz",
             )
 
+        mpl.pyplot.close("all")  # close any open plots
+
     def _check_DefectsParser(self, dp, skip_corrections=False):
         # check generating thermo and plot:
         thermo = dp.get_defect_thermodynamics()

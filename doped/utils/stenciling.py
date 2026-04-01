@@ -217,7 +217,6 @@ def get_defect_in_supercell(
             generated defect supercell (see explanations above).
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest for debugging
-    # TODO: Re-run timings!
     pbar = tqdm(
         total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
     )  # tqdm progress bar. 100% is completion

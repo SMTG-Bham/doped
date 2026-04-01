@@ -983,7 +983,7 @@ def plot_displacements_ellipsoid(
             fig, axs = plt.subplots(1, 2, figsize=(14, 6))
 
             # Part 1: Displacement Distribution Box Plot
-            axs[0].boxplot(disp_df["Displacement"], vert=True, patch_artist=True)
+            axs[0].boxplot(disp_df["Displacement"], orientation="vertical", patch_artist=True)
             axs[0].set_title("Displacement Norm Distribution")
             axs[0].set_ylabel("Displacement Norm (Å)")
             axs[0].grid(False)
