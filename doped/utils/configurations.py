@@ -279,8 +279,7 @@ def apply_s2_to_s1_transformation(
 
         warnings.warn(
             f"The chosen `new_lattice` ({new_lattice}) changes the minimum/maximum smallest bond lengths "
-            f"by more than 1%: {min_min_dist_change:.2f} Å; i.e. changing the structure, which is "
-            f"typically not desired!"
+            f"by more than 1%; i.e. changing the structure, which is typically not desired!"
         )
 
     return trans_struct_w_lattice_choice

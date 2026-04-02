@@ -367,7 +367,8 @@ class DefectStencilingTest(unittest.TestCase):
 
         def reference_fn(name, stenciled):
             reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
-            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit")
+            # faster with ``primitive_cell=False`` when primitive reduction not possible:
+            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit", primitive_cell=False)
 
         self._run_stenciling_loop(
             self.Se_20A_bulk_supercell, "20Å_Stenciled", "_20Å", reference_fn=reference_fn
@@ -382,7 +383,8 @@ class DefectStencilingTest(unittest.TestCase):
 
         def reference_fn(name, stenciled):
             reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
-            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit")
+            # faster with ``primitive_cell=False`` when primitive reduction not possible:
+            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit", primitive_cell=False)
 
         self._run_stenciling_loop(
             self.Se_20A_bulk_supercell,
@@ -402,7 +404,8 @@ class DefectStencilingTest(unittest.TestCase):
 
         def reference_fn(name, stenciled):
             reference_struct = Structure.from_file(f"{self.Se_example_dir}/{name}_20Å_Stenciled_POSCAR")
-            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit")
+            # faster with ``primitive_cell=False`` when primitive reduction not possible:
+            assert StructureMatcher_scan_stol(reference_struct, stenciled, "fit", primitive_cell=False)
 
         self._run_stenciling_loop(
             self.Se_20A_bulk_supercell,
@@ -697,6 +700,6 @@ class DefectStencilingTest(unittest.TestCase):
         _print_warning_info(w)
         assert (
             "The chosen `new_lattice` (struct1) changes the minimum/maximum smallest bond lengths by "
-            "more than 1%: 0.15 Å; i.e. changing the structure, which is typically not desired!"
+            "more than 1%; i.e. changing the structure, which is typically not desired!"
             in str(w[0].message)
         )

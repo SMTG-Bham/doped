@@ -11,6 +11,7 @@ Tests for ``DefectThermodynamics.plot()`` are in the separate ``test_plotting.py
 
 import os
 import random
+import typing
 import unittest
 import warnings
 from copy import deepcopy
@@ -74,24 +75,44 @@ def _inject_capsys(request, capsys):
 
 
 class DefectThermodynamicsSetupMixin(unittest.TestCase):
-    def setUp(self):
-        self.CdTe_defect_thermo = deepcopy(self.orig_CdTe_defect_thermo)
-        self.CdTe_defect_dict = deepcopy(self.orig_CdTe_defect_dict)
-        self.YTOS_defect_thermo = deepcopy(self.orig_YTOS_defect_thermo)
-        self.YTOS_defect_dict = deepcopy(self.orig_YTOS_defect_dict)
-        self.Sb2Se3_defect_thermo = deepcopy(self.orig_Sb2Se3_defect_thermo)
-        self.Sb2Se3_defect_dict = deepcopy(self.orig_Sb2Se3_defect_dict)
-        self.Sb2Si2Te6_defect_thermo = deepcopy(self.orig_Sb2Si2Te6_defect_thermo)
-        self.Sb2Si2Te6_defect_dict = deepcopy(self.orig_Sb2Si2Te6_defect_dict)
-        self.V2O5_defect_thermo = deepcopy(self.orig_V2O5_defect_thermo)
-        self.V2O5_defect_dict = deepcopy(self.orig_V2O5_defect_dict)
-        self.MgO_defect_thermo = deepcopy(self.orig_MgO_defect_thermo)
-        self.MgO_defect_dict = deepcopy(self.orig_MgO_defect_dict)
-        self.Sb2O5_defect_thermo = deepcopy(self.orig_Sb2O5_defect_thermo)
-        self.ZnS_defect_thermo = deepcopy(self.orig_ZnS_defect_thermo)
+    # ``DefectThermodynamics`` / dicts of ``DefectEntry`` objects are lazily deepcopied from their
+    # ``orig_*`` class-level counterparts on first access per test (via ``__getattr__``), to avoid
+    # expensive deepcopies of unused attributes in ``setUp``:
+    _lazy_deepcopy_attrs: typing.ClassVar[set] = {
+        "CdTe_defect_thermo",
+        "CdTe_defect_dict",
+        "YTOS_defect_thermo",
+        "YTOS_defect_dict",
+        "Sb2Se3_defect_thermo",
+        "Sb2Se3_defect_dict",
+        "Sb2Si2Te6_defect_thermo",
+        "Sb2Si2Te6_defect_dict",
+        "V2O5_defect_thermo",
+        "V2O5_defect_dict",
+        "MgO_defect_thermo",
+        "MgO_defect_dict",
+        "Sb2O5_defect_thermo",
+        "ZnS_defect_thermo",
+        "Se_ext_no_pnict_thermo",
+        "Se_pnict_thermo",
+    }
 
-        self.Se_ext_no_pnict_thermo = deepcopy(self.orig_Se_ext_no_pnict_thermo)
-        self.Se_pnict_thermo = deepcopy(self.orig_Se_pnict_thermo)  # primarily used in test_plotting.py
+    def __getattr__(self, name):
+        """
+        Lazily deep-copy the specified attribute from its ``orig_*`` class-
+        level counterpart on first access per test.
+        """
+        if name in DefectThermodynamicsSetupMixin._lazy_deepcopy_attrs:
+            val = deepcopy(getattr(self, f"orig_{name}"))
+            setattr(self, name, val)
+            return val
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def setUp(self):
+        # Clear any lazily-deepcopied instance attributes from the previous test:
+        for attr in self._lazy_deepcopy_attrs:
+            self.__dict__.pop(attr, None)
+
         self.cdte_chempot_warning_message = (
             "Note that the raw (DFT) energy of the bulk supercell calculation (-3.37 eV/atom) differs "
             "from that expected from the supplied chemical potentials (-3.50 eV/atom) by >0.025 eV. In "
@@ -3371,7 +3392,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         Test the ``get_equilibrium_fermi_level`` method and its various
         options.
         """
-        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo = self.defect_thermo
 
         for kwargs in [
             {},  # straight up defaults
@@ -3491,7 +3512,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             for warn in w
         )
 
-        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo = self.defect_thermo
         defect_thermo.chempots = None
         fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level,
@@ -3509,7 +3530,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         """
         fd_up_fdos = deepcopy(self.fermi_dos)
         fd_up_fdos.energies -= 0.1
-        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo = self.defect_thermo
 
         for func, kwargs in [
             (DefectThermodynamics, {"defect_entries": defect_thermo.defect_entries}),
@@ -3539,7 +3560,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         fd_up_fdos = scissor_dos(+0.2, fd_up_fdos)
         fd_up_fdos.energies -= 0.1  # so VBM in same place
 
-        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo = self.defect_thermo
         for func, kwargs in [
             (DefectThermodynamics, {"defect_entries": defect_thermo.defect_entries}),
             (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
@@ -3558,7 +3579,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         Test the ``get_fermi_level_and_concentrations`` method and its various
         options.
         """
-        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo = self.defect_thermo
 
         prev_df = None
         for kwargs in [
@@ -3953,7 +3974,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             for warn in w
         )
 
-        defect_thermo = deepcopy(self.defect_thermo)
+        defect_thermo = self.defect_thermo
         defect_thermo.chempots = None
         fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_fermi_level_and_concentrations,

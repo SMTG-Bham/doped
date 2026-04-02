@@ -69,7 +69,9 @@ default_supercell_gen_kwargs = {
 }
 
 
-def _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed=False):
+def _check_defect_entry(
+    defect_entry, defect_name, defect_gen, oriented_conv_structure, charge_states_removed=False
+):
     print(f"Checking DefectEntry {defect_name} attributes")
     assert defect_entry.name == defect_name
     assert defect_entry.charge_state == int(defect_name.split("_")[-1])
@@ -87,13 +89,6 @@ def _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_rem
 
     # only run more intensive checks on neutral entries, as charged entries are just copies of this
     if defect_entry.charge_state == 0 and "Co1 H12 Br2 O6" not in defect_gen.primitive_structure.formula:
-        struc_wout_oxi = defect_gen.primitive_structure.copy()
-        struc_wout_oxi.remove_oxidation_states()
-        sga = SpacegroupAnalyzer(struc_wout_oxi)
-        conventional_structure, conv_sga = get_spglib_conv_structure(sga)
-        reoriented_conv_structure = swap_axes(
-            conventional_structure, defect_gen._BilbaoCS_conv_cell_vector_mapping
-        )
         assert np.allclose(
             defect_entry.conventional_structure.lattice.matrix,
             defect_entry.defect.conventional_structure.lattice.matrix,
@@ -101,7 +96,7 @@ def _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_rem
         )
         assert np.allclose(
             np.abs(defect_entry.conventional_structure.lattice.matrix),
-            np.abs(reoriented_conv_structure.lattice.matrix),
+            np.abs(oriented_conv_structure.lattice.matrix),
             atol=1e-3,
         )  # may also have multiplied axes by -1 to get a positive determinant
         # test no unwanted structure reordering
@@ -1111,8 +1106,17 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                             set(Poscar(structure).site_symbols)
                         )  # no duplicates
 
+        prim_struct = defect_gen.primitive_structure.copy().remove_oxidation_states()
+        sga = SpacegroupAnalyzer(prim_struct)
+        conventional_structure, conv_sga = get_spglib_conv_structure(sga)
+        reoriented_conv_structure = swap_axes(
+            conventional_structure, defect_gen._BilbaoCS_conv_cell_vector_mapping
+        )
+
         for defect_name, defect_entry in defect_gen.defect_entries.items():
-            _check_defect_entry(defect_entry, defect_name, defect_gen, charge_states_removed)
+            _check_defect_entry(
+                defect_entry, defect_name, defect_gen, reoriented_conv_structure, charge_states_removed
+            )
 
         random_name, random_defect_entry = random.choice(list(defect_gen.defect_entries.items()))
         self._random_equiv_supercell_sites_check(random_defect_entry)

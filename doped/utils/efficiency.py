@@ -254,7 +254,7 @@ def cache_ready_PeriodicSite__eq__(self, other):
     )
 
 
-@lru_cache(maxsize=int(1e6))  # maxsize on the order of 400 Mb
+@lru_cache(maxsize=int(2e3))  # maxsize on the order of 1 Mb
 def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08):
     """
     Cached version of ``np.allclose``, taking tuples as inputs (so that they
@@ -724,6 +724,11 @@ def StructureMatcher_scan_stol(
     different species but the same element (e.g. "S2-" & "S0+") will be
     considered match-able). This can be controlled with
     ``sm_kwargs['comparator']``.
+
+    Note: If you know reduction to primitive cells is not possible/needed, then
+    setting ``primitive_cell=False`` in ``sm_kwargs`` can significantly speed
+    up matching here (by avoiding expensive reduction to primitive cells for
+    large structures).
 
     Args:
         struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.

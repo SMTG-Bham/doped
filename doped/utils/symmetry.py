@@ -2108,7 +2108,7 @@ def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, Space
     SGN 216).
     """
     possible_conv_structs_and_sgas = []
-    for _i in range(4):
+    for _i in range(3):
         struct = sga.get_conventional_standard_structure()
         possible_conv_structs_and_sgas.append((struct, sga))
         sga = get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
