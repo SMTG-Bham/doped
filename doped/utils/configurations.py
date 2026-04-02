@@ -99,7 +99,11 @@ def apply_s2_to_s1_transformation(
     function uses an accelerated version of the
     :meth:`~pymatgen.analysis.structure_matcher.StructureMatcher.get_s2_like_s1`
     method, extended to ensure the correct atomic indices matching and lattice
-    vector definitions.
+    vector definitions, as well as allowing for cases where ``mapping`` does
+    not include all sites in ``struct2`` (e.g. when using a subset of sites to
+    do matching and determine the transformation matrix and translation vector,
+    as in the stenciling workflow, without needing the ordering of sites in the
+    ``Structure`` objects to match).
 
     Templated from the ``pymatgen`` ``StructureMatcher`` class, to allow direct
     usage without repeating the expensive ``get_transformation`` call (e.g.
@@ -122,8 +126,8 @@ def apply_s2_to_s1_transformation(
             ``None`` if there is no corresponding site), and the other items
             are the remaining site indices of ``struct2``.
         include_ignored_species (bool):
-            Whether to include ignored species in the output structure.
-            Default: ``True``
+            Whether to include ignored species / sites not in ``mapping`` in
+            the output structure. Default: ``True``
         ignored_species (list[str] | None):
             List of species to ignore in ``struct1`` (for mapping), should
             match that used for ``get_transformation_from_s2_to_s1`` (if used
@@ -148,11 +152,16 @@ def apply_s2_to_s1_transformation(
         Structure:
             ``struct2`` transformed to ``struct1`` as closely as possible.
     """
-    s2 = struct2.copy().remove_species(ignored_species) if ignored_species else struct2  # ignore ignored
-    sites = list(s2)
-    sites.extend([site for site in struct2 if site not in s2])  # append ignored sites at the end
+    ignored_set = set(ignored_species) if ignored_species else None
+    if ignored_set:  # equivalent but more efficient version of code in ``get_s2_like_s1``
+        kept_sites: list[PeriodicSite] = []
+        ignored_sites: list[PeriodicSite] = []
+        for site in struct2:  # only one pass over ``struct2``, and compare based on species not sites
+            (kept_sites if site.specie.symbol not in ignored_set else ignored_sites).append(site)
+        temp = Structure.from_sites(kept_sites + ignored_sites)  # ignored species at end
+    else:
+        temp = struct2.copy()
 
-    temp = Structure.from_sites(sites)  # make copy of struct2 with ignored species at the end
     temp.make_supercell(supercell_matrix)  # make supercell
     temp.translate_sites(list(range(len(temp))), trans_vector)  # translate by fractional vector
 
@@ -166,9 +175,11 @@ def apply_s2_to_s1_transformation(
 
     sites = [temp.sites[i] for i in mapping if i is not None]  # get sites in correct order (from mapping)
 
-    if include_ignored_species:  # add back in ignored species
-        start = round(len(temp) / len(struct2) * len(s2))
-        sites.extend(temp.sites[start:])
+    if include_ignored_species:  # add back in ignored species / any sites not in ``mapping``
+        # note that this differs slightly from the ``pymatgen`` ``StructureMatcher`` implementation, which
+        # assumes that any sites not in ``mapping`` are ignored species (not the case when using a subset
+        # of sites to determine the transformation matrix and translation vector, as in stenciling)
+        sites.extend([temp.sites[i] for i in range(len(temp)) if i not in mapping])
 
     trans_struct = Structure.from_sites(sites)
 
@@ -195,7 +206,16 @@ def apply_s2_to_s1_transformation(
     if not new_lattice:
         return trans_struct
 
-    orig_min_max_bond_lengths = get_element_min_max_bond_length_dict(trans_struct)
+    # Note: ``get_element_min_max_bond_length_dict`` can take a bit of time when run repeatedly with large
+    # structures (due to the expensive O(N^2) distance matrix calculation). For large structures (N>50), we
+    # therefore only use a subset of sites for this check (not all sites are required)
+    if len(trans_struct) > 50:  # take a subset of the structure to get the min/max bond lengths
+        sampled_indices = np.random.choice(len(trans_struct), size=50, replace=False)
+        test_trans_struct = Structure.from_sites([trans_struct.sites[i] for i in sampled_indices])
+    else:
+        test_trans_struct = trans_struct
+
+    orig_min_max_bond_lengths = get_element_min_max_bond_length_dict(test_trans_struct)
 
     lattice = (
         struct1.lattice
@@ -229,9 +249,15 @@ def apply_s2_to_s1_transformation(
     # in some cases, if the match between structures isn't perfect, then swapping the lattices here can
     # lead to a structural change, which is not desired. So here we test this by looking at the min/max
     # smallest bond lengths in the structure:
-    trans_struct_w_lattice_choice_min_max_bond_lengths = get_element_min_max_bond_length_dict(
-        trans_struct_w_lattice_choice
-    )
+    if len(trans_struct_w_lattice_choice) > 50:
+        trans_struct_w_lattice_choice_min_max_bond_lengths = get_element_min_max_bond_length_dict(
+            Structure.from_sites([trans_struct_w_lattice_choice.sites[i] for i in sampled_indices])
+        )
+    else:
+        trans_struct_w_lattice_choice_min_max_bond_lengths = get_element_min_max_bond_length_dict(
+            trans_struct_w_lattice_choice
+        )
+
     min_min_dist_change = 1e-4
     with contextlib.suppress(Exception):
         min_min_dist_change = max(

@@ -2507,25 +2507,20 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # test get_defect_name_from_entry relaxed/unrelaxed warnings:
         with warnings.catch_warnings(record=True) as w:
             warnings.resetwarnings()
-            # suggested check function in `get_defect_name_from_entry`:
-            for defect_name, defect_entry in ytos_defect_gen.items():
+            # randomly test 10 entries, as this requires stenciling to restore periodicity, so can be
+            # slow if iterating over the ~220 entries in this defect gen set; 10 entries takes ~50s
+            for defect_name, defect_entry in random.sample(list(ytos_defect_gen.items()), k=10):
                 print(defect_name)
                 print(
                     get_defect_name_from_entry(defect_entry, relaxed=False),
                     get_defect_name_from_entry(defect_entry),
                 )
-        if w:
-            _print_warning_info(w)
-        # assert len(w) == 1  # printed each time
-        assert all(
-            "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has detected "
-            "that the defect supercell is likely a non-scalar matrix" in str(warning.message)
-            for warning in w
-        )
+        _print_warning_info(w)
+        assert not w  # previously gave periodicity-breaking warning with `relaxed = True`, now avoided due
+        # to successful auto-periodicity-restoration with stenciling w/``point_symmetry_from_defect_entry``
 
         # save reduced defect gen to json
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
-
         reduced_ytos_defect_gen.to_json(f"{data_dir}/ytos_defect_gen.json")  # for testing in test_vasp.py
 
     def test_ytos_no_generate_supercell(self):

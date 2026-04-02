@@ -848,17 +848,20 @@ class DefectThermodynamics(MSONable):
         self.vbm = vbm
         self.band_gap = band_gap
         if self.vbm is None or self.band_gap is None:
-            vbm_vals: list = [
-                defect_entry.calculation_metadata.get("vbm") for defect_entry in defect_entries.values()
-            ]
-            vbm_vals = [vbm for vbm in vbm_vals if vbm is not None]
-            band_gap_vals = [
-                defect_entry.calculation_metadata.get(
-                    "band_gap", defect_entry.calculation_metadata.get("gap")
-                )
+            vbm_vals: list[float] = [
+                defect_entry.calculation_metadata["vbm"]
                 for defect_entry in defect_entries.values()
+                if defect_entry.calculation_metadata.get("vbm") is not None
             ]
-            band_gap_vals = [band_gap for band_gap in band_gap_vals if band_gap is not None]
+            band_gap_vals: list[float] = [
+                val
+                for defect_entry in defect_entries.values()
+                for val in (
+                    defect_entry.calculation_metadata.get("band_gap"),
+                    defect_entry.calculation_metadata.get("gap"),
+                )
+                if val is not None
+            ]
 
             # get the max difference in VBM & band_gap vals:
             if vbm_vals and self.vbm is None:
@@ -866,9 +869,9 @@ class DefectThermodynamics(MSONable):
                     _raise_VBM_band_gap_value_error(vbm_vals, type="VBM")
                 self.vbm = next(iter(vbm_vals))
 
-            if band_gap_vals and max(band_gap_vals) - min(band_gap_vals) > 0.05 and self.band_gap is None:
-                _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
-            elif band_gap_vals and self.band_gap is None:
+            if band_gap_vals and self.band_gap is None:
+                if max(band_gap_vals) - min(band_gap_vals) > 0.05:
+                    _raise_VBM_band_gap_value_error(band_gap_vals, type="band_gap")
                 self.band_gap = next(iter(band_gap_vals))
 
         for i, name in [(self.vbm, "VBM eigenvalue"), (self.band_gap, "band gap value")]:

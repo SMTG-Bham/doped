@@ -52,7 +52,7 @@ def _composition__hash__(self):
     return hash(frozenset(self._data.items()))
 
 
-@lru_cache(maxsize=int(1e8))
+@lru_cache(maxsize=int(1e5))  # maxsize on the order of 30 Mb
 def doped_Composition_eq_func(self_hash, other_hash):
     r"""
     Update equality function for |Composition| instances, which breaks early
@@ -235,6 +235,9 @@ def cache_ready_PeriodicSite__eq__(self, other):
     Custom ``__eq__`` method for |PeriodicSite| instances, using a cached
     equality function to speed up comparisons.
     """
+    if self is other:
+        return True
+
     needed_attrs = ("_species", "coords", "properties")
 
     if not all(hasattr(other, attr) for attr in needed_attrs):
@@ -243,12 +246,15 @@ def cache_ready_PeriodicSite__eq__(self, other):
     return (
         self._species == other._species  # should always work fine (and is faster) if Site initialised
         # without ``skip_checks`` (default)
-        and cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
+        and (
+            self.coords is other.coords  # if coords are the same object
+            or cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
+        )
         and self.properties == other.properties
     )
 
 
-@lru_cache(maxsize=int(1e8))
+@lru_cache(maxsize=int(1e6))  # maxsize on the order of 400 Mb
 def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08):
     """
     Cached version of ``np.allclose``, taking tuples as inputs (so that they
@@ -265,7 +271,7 @@ PeriodicSite.__hash__ = _periodic_site__hash__
 _orig_lattice_get_all_distances = Lattice.get_all_distances
 
 
-@lru_cache(maxsize=int(1e2))
+@lru_cache(maxsize=int(1e4))  # maxsize on the order of 20 Mb for typical use cases
 def _cached_get_all_distances(self: Lattice, frac_coords1: tuple, frac_coords2: tuple):
     return _orig_lattice_get_all_distances(self, np.array(frac_coords1), np.array(frac_coords2))
 
@@ -566,6 +572,10 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
         idx for elt in sm_kwargs.get("ignored_species", []) for idx in element_idx_dict.get(elt, [])
     ]
 
+    # Note: The repeated distance_matrix call here, particularly when this function is called twice in
+    # ``apply_s2_to_s1_transformation()``, can become expensive for large structures (due to the NxN
+    # distance calculation). In ``apply_s2_to_s1_transformation()``, where this function is called
+    # twice, we sub-select sites in the structure to run the min/max bond lengths test, for this reason
     distance_matrix = structure.distance_matrix
     np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
     distance_matrix[:, ignored_indices] = np.inf  # set ignored indices to np.inf to ignore these distances
