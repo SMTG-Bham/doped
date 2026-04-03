@@ -16,7 +16,7 @@ import numpy as np
 from pymatgen.core.structure import PeriodicSite, Structure
 from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir, module_path
 
-from doped.analysis import DefectParser
+from doped.analysis import DefectParser, DefectsParser
 from doped.core import DefectEntry, Vacancy
 from doped.corrections import get_freysoldt_correction, get_kumagai_correction
 
@@ -188,16 +188,11 @@ class CorrectionsPlottingTestCase(unittest.TestCase):
 
         cls.v_Cd_dict = {}  # dictionary of parsed vacancy defect entries
 
-        for i in os.listdir(f"{cls.CdTe_example_dir}/v_Cd_example_data"):
-            if os.path.isdir(f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}") and "v_Cd" in i:
-                print(f"Parsing {i}...")
-                defect_path = f"{cls.CdTe_example_dir}/v_Cd_example_data/{i}/vasp_ncl"
-                cls.v_Cd_dict[i] = DefectParser.from_paths(
-                    defect_path,
-                    cls.CdTe_bulk_data_dir,
-                    dielectric=cls.CdTe_dielectric,
-                    charge_state=int(i.split("_")[-1]),  # test manually specifying charge states here
-                ).defect_entry
+        cls.v_Cd_dict = DefectsParser(
+            f"{cls.CdTe_example_dir}/v_Cd_example_data",
+            bulk_path=cls.CdTe_bulk_data_dir,
+            dielectric=cls.CdTe_dielectric,
+        ).defect_dict
 
         cls.ytos_dielectric = [40.7, 40.7, 25.2]  # from legacy Materials Project
         cls.F_O_1_entry = DefectParser.from_paths(

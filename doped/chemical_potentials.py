@@ -3160,7 +3160,7 @@ class CompetingPhasesAnalyzer(MSONable):
         if splits == 1:
             string += "\\begin{tabular}" + ("{ccccc}" if kpoints_col else "{cccc}") + "\n"
             string += "\\hline\n"
-            string += column_names_string + " \\\\ \\hline \n"
+            string += column_names_string + " \\\\ \\hline\n"
             for i in formation_energy_data:
                 kpoints = i.get("k-points", "0x0x0").split("x")
                 fe = i["Formation Energy (eV/fu)"]
@@ -3174,13 +3174,13 @@ class CompetingPhasesAnalyzer(MSONable):
                     + f"{i['Energy above Hull (eV/atom)']:.3f}"
                     + (f" & {kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}" if kpoints_col else "")
                     + " & "
-                    + f"{fe:.3f} \\\\ \n"
+                    + f"{fe:.3f} \\\\\n"
                 )
 
         elif splits == 2:
             string += "\\begin{tabular}" + ("{ccccc|ccccc}" if kpoints_col else "{cccc|cccc}") + "\n"
             string += "\\hline\n"
-            string += column_names_string + " & " + column_names_string + " \\\\ \\hline \n"
+            string += column_names_string + " & " + column_names_string + " \\\\ \\hline\n"
 
             mid = len(formation_energy_data) // 2
             first_half = formation_energy_data[:mid]
@@ -3219,7 +3219,7 @@ class CompetingPhasesAnalyzer(MSONable):
                         else ""
                     )
                     + " & "
-                    + f"{fe2:.3f} \\\\ \n"
+                    + f"{fe2:.3f} \\\\\n"
                 )
 
         string += "\\hline\n"
