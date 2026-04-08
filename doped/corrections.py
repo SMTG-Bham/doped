@@ -61,6 +61,7 @@ from doped.utils.parsing import (
     _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
     get_locpot,
+    get_site_mapping_indices,
     get_wigner_seitz_radius,
 )
 from doped.utils.plotting import _get_backend, format_defect_name
@@ -444,7 +445,6 @@ def get_kumagai_correction(
     with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
         try:
             from pydefect.analyzer.calc_results import CalcResults
-            from pydefect.analyzer.defect_structure_comparator import DefectStructureComparator
             from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
             from pydefect.corrections.ewald import Ewald
             from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
@@ -462,8 +462,8 @@ def get_kumagai_correction(
         calc_results: CalcResults,
         perfect_calc_results: CalcResults,
         dielectric_tensor: np.ndarray,
+        defect_coords: np.ndarray | list,
         defect_region_radius: float | None = None,
-        defect_coords: np.ndarray | list | None = None,
         accuracy: float = defaults.ewald_accuracy,
         unit_conversion: float = 180.95128169876497,
         excluded_indices: list | None = None,
@@ -481,27 +481,44 @@ def get_kumagai_correction(
         """
         if calc_results.structure.lattice != perfect_calc_results.structure.lattice:
             raise SupercellError("The lattice constants for defect and perfect models are different")
-        structure_analyzer = DefectStructureComparator(
-            calc_results.structure, perfect_calc_results.structure
-        )
-        if defect_coords is None:
-            defect_coords = structure_analyzer.defect_center_coord
         lattice = calc_results.structure.lattice
         sites, rel_coords = [], []
 
         excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
 
-        for d, p in structure_analyzer.atom_mapping.items():
-            if d not in excluded_indices:
+        mapping = get_site_mapping_indices(
+            calc_results.structure, perfect_calc_results.structure, threshold=np.inf
+        )
+
+        for _d_to_p_dist, d, p in mapping:
+            if d not in excluded_indices and not any(i is None for i in [d, p]):
                 specie = str(calc_results.structure[d].specie)
                 frac_coords = calc_results.structure[d].frac_coords
                 distance, _ = lattice.get_distance_and_image(defect_coords, frac_coords)
                 pot = calc_results.potentials[d] - perfect_calc_results.potentials[p]
                 sites.append(PotentialSite(specie, distance, pot, None))
-                coord = calc_results.structure[d].frac_coords
-                rel_coords.append([x - y for x, y in zip(coord, defect_coords, strict=False)])
+                rel_coords.append([x - y for x, y in zip(frac_coords, defect_coords, strict=False)])
 
         ewald = Ewald(lattice.matrix, dielectric_tensor, accuracy=accuracy)
+
+        # Monkey-patch pydefect Ewald functions to vectorise the calculations (otherwise can be slow):
+        from scipy.special import erfc
+
+        def ewald_real(self, include_self: bool, shift: list[float]) -> float:
+            R = np.asarray(list(self.r_lattice_set(include_self, shift)))  # (N, 3)
+            rMr = np.einsum("ij,jk,ik->i", R, self.epsilon_inv, R)
+            root = np.sqrt(rMr)
+            return np.sum(erfc(self.mod_ewald_param * root) / root) / (4 * np.pi * self.root_epsilon)
+
+        def ewald_rec(self, coord) -> float:
+            cart_coord = coord @ self.lattice
+            G = np.asarray(list(self.g_lattice_set()))  # (N, 3)
+            gEg = np.einsum("ij,jk,ik->i", G, self.dielectric_tensor, G)
+            phase = np.cos(G @ cart_coord)
+            return np.sum(np.exp(-gEg / (4 * self.mod_ewald_param**2)) / gEg * phase) / self.volume
+
+        Ewald.ewald_real = ewald_real
+        Ewald.ewald_rec = ewald_rec
         point_charge_correction = -ewald.lattice_energy * charge**2 if charge else 0.0
 
         if defect_region_radius is None:
