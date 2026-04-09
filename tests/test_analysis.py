@@ -87,6 +87,83 @@ def _remove_metadata_keys_from_dict(d: dict) -> dict:
     return d
 
 
+def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
+    """
+    General ``DefectsParser`` checks, for use across many tests.
+    """
+    # check generating thermo and plot:
+    thermo = dp.get_defect_thermodynamics(**thermo_kwargs)
+    with warnings.catch_warnings(record=True) as w:
+        thermo.plot()
+    assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
+
+    # test attributes:
+    print("Testing attributes")
+    assert isinstance(dp.processes, int)
+    assert isinstance(dp.output_path, str)
+    assert dp.skip_corrections == skip_corrections
+    assert len(dp.defect_folders) >= len(dp.defect_dict)
+
+    for name, defect_entry in dp.defect_dict.items():
+        print(f"Checking {name}")
+        assert name == defect_entry.name
+        if defect_entry.charge_state != 0 and not skip_corrections:
+            assert sum(defect_entry.corrections.values()) != 0
+        assert defect_entry.get_ediff()  # can get ediff fine
+        assert defect_entry.calculation_metadata  # has metadata
+
+        # spin degeneracy is simple for our normal test cases: (others tested separately)
+        if not any(x in defect_entry.name for x in ["Bipolaron", "v_Ca_+1", "v_Ca_0"]):
+            assert defect_entry.degeneracy_factors[
+                "spin degeneracy"
+            ] == _simple_spin_degeneracy_from_num_electrons(
+                _num_electrons_from_charge_state(defect_entry.defect_supercell, defect_entry.charge_state)
+            )
+
+        print(
+            "Should be the same:",
+            len(defect_entry.defect.equivalent_sites),
+            defect_entry.defect.multiplicity,
+            defect_entry.defect.get_multiplicity(symprec=dp.kwargs.get("bulk_symprec", 0.01)),
+        )  # debugging
+        assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
+        assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
+            symprec=dp.kwargs.get("bulk_symprec", 0.01)
+        )
+        assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
+
+        from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
+        from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
+
+        defect_type_dict = {
+            DefectType.Vacancy: pmg_Vacancy,
+            DefectType.Substitution: pmg_Substitution,
+        }
+        # test that custom doped multiplicity function matches pymatgen function (which is only
+        # defined for Vacancies/Substitutions, and fails with periodicity-breaking cells (but
+        # don't have them here with defects now defined in primitive cells, but periodicity breaking
+        # supercells tested in test_generation.py)
+        if defect_entry.defect.defect_type in defect_type_dict:
+            assert (
+                defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(defect_entry.defect)
+                == defect_entry.defect.get_multiplicity()
+            )
+
+    # check __repr__ info:
+    assert all(
+        i in dp.__repr__()
+        for i in [
+            "doped DefectsParser for bulk composition",
+            f"with {len(dp.defect_dict)} parsed defect entries in self.defect_dict. "
+            "Available attributes",
+            "bulk_path",
+            "error_tolerance",
+            "Available methods",
+            "get_defect_thermodynamics",
+        ]
+    )
+
+
 class DefectsParsingTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -223,81 +300,6 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         mpl.pyplot.close("all")  # close any open plots
 
-    def _check_DefectsParser(self, dp, skip_corrections=False):
-        # check generating thermo and plot:
-        thermo = dp.get_defect_thermodynamics()
-        with warnings.catch_warnings(record=True) as w:
-            thermo.plot()
-        assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
-
-        # test attributes:
-        print("Testing attributes")
-        assert isinstance(dp.processes, int)
-        assert isinstance(dp.output_path, str)
-        assert dp.skip_corrections == skip_corrections
-        assert len(dp.defect_folders) >= len(dp.defect_dict)
-
-        for name, defect_entry in dp.defect_dict.items():
-            print(f"Checking {name}")
-            assert name == defect_entry.name
-            if defect_entry.charge_state != 0 and not skip_corrections:
-                assert sum(defect_entry.corrections.values()) != 0
-            assert defect_entry.get_ediff()  # can get ediff fine
-            assert defect_entry.calculation_metadata  # has metadata
-
-            # spin degeneracy is simple for our normal test cases: (others tested separately)
-            if not any(x in defect_entry.name for x in ["Bipolaron", "v_Ca_+1", "v_Ca_0"]):
-                assert defect_entry.degeneracy_factors[
-                    "spin degeneracy"
-                ] == _simple_spin_degeneracy_from_num_electrons(
-                    _num_electrons_from_charge_state(
-                        defect_entry.defect_supercell, defect_entry.charge_state
-                    )
-                )
-
-            print(
-                "Should be the same:",
-                len(defect_entry.defect.equivalent_sites),
-                defect_entry.defect.multiplicity,
-                defect_entry.defect.get_multiplicity(symprec=dp.kwargs.get("bulk_symprec", 0.01)),
-            )  # debugging
-            assert len(defect_entry.defect.equivalent_sites) == defect_entry.defect.multiplicity
-            assert defect_entry.defect.multiplicity == defect_entry.defect.get_multiplicity(
-                symprec=dp.kwargs.get("bulk_symprec", 0.01)
-            )
-            assert defect_entry.defect.site in defect_entry.defect.equivalent_sites
-
-            from pymatgen.analysis.defects.core import Substitution as pmg_Substitution
-            from pymatgen.analysis.defects.core import Vacancy as pmg_Vacancy
-
-            defect_type_dict = {
-                DefectType.Vacancy: pmg_Vacancy,
-                DefectType.Substitution: pmg_Substitution,
-            }
-            # test that custom doped multiplicity function matches pymatgen function (which is only
-            # defined for Vacancies/Substitutions, and fails with periodicity-breaking cells (but
-            # don't have them here with defects now defined in primitive cells, but periodicity breaking
-            # supercells tested in test_generation.py)
-            if defect_entry.defect.defect_type in defect_type_dict:
-                assert (
-                    defect_type_dict[defect_entry.defect.defect_type].get_multiplicity(defect_entry.defect)
-                    == defect_entry.defect.get_multiplicity()
-                )
-
-        # check __repr__ info:
-        assert all(
-            i in dp.__repr__()
-            for i in [
-                "doped DefectsParser for bulk composition",
-                f"with {len(dp.defect_dict)} parsed defect entries in self.defect_dict. "
-                "Available attributes",
-                "bulk_path",
-                "error_tolerance",
-                "Available methods",
-                "get_defect_thermodynamics",
-            ]
-        )
-
     def _check_parsed_CdTe_defect_energies(self, dp):
         """
         Explicitly check some formation energies for CdTe defects.
@@ -391,7 +393,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             assert CdTe_dp.subfolder == "vasp_ncl"  # automatically determined
             assert CdTe_dp.bulk_band_gap_vr is None
 
-        self._check_DefectsParser(CdTe_dp)
+        check_DefectsParser(CdTe_dp)
         assert (
             os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
             or os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "test_pop.json"))  # custom json name
@@ -578,7 +580,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "corrections, but none was provided" in str(warn.message)
             for warn in w
         )
-        self._check_DefectsParser(dp, skip_corrections=True)
+        check_DefectsParser(dp, skip_corrections=True)
         assert not os.path.exists(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
 
         bes, fig = dp.defect_dict["Te_Cd_+1"].get_eigenvalue_analysis(plot=True)
@@ -642,7 +644,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, _w = _create_dp_and_capture_warnings(
             output_path=self.CdTe_EXAMPLE_DIR, skip_corrections=True, parse_projected_eigen=False
         )
-        self._check_DefectsParser(dp, skip_corrections=True)
+        check_DefectsParser(dp, skip_corrections=True)
 
     def test_DefectsParser_CdTe_aniso_dielectric(self):
         # anisotropic dielectric
@@ -702,7 +704,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             )
             for warn in w
         )
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
 
     def test_DefectsParser_CdTe_kpoints_mismatch(self):
         dp, w = _create_dp_and_capture_warnings(
@@ -768,7 +770,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             json_filename="YTOS_example_defect_dict.json",
         )  # for testing in test_thermodynamics.py
         assert not w
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
 
         # spot check some multiplicities:
         assert dp.defect_dict["F_O_1"].defect.multiplicity == 1  # O_D4h site
@@ -798,7 +800,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             json_filename="YTOS_example_defect_dict.json",
         )  # for testing in test_thermodynamics.py
         assert not w  # hidden files ignored
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -819,7 +821,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )  # for testing in test_thermodynamics.py
         assert not w  # hidden files ignored
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -832,7 +834,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
         )
         assert not w
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         return thermo.plot()  # no chempots for YTOS formation energy plot test
 
@@ -871,7 +873,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             json_filename="Sb2Se3_O_example_defect_dict.json",
         )  # for testing in test_thermodynamics.py
         assert not w  # no warnings
-        self._check_DefectsParser(Sb2Se3_O_dp)
+        check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
         dumpfn(
             Sb2Se3_O_thermo, os.path.join(self.Sb2Se3_DATA_DIR, "Sb2Se3_O_example_thermo.json")
@@ -888,7 +890,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             dielectric=self.Sb2Se3_dielectric,
         )
         assert not w  # no warnings
-        self._check_DefectsParser(Sb2Se3_O_dp)
+        check_DefectsParser(Sb2Se3_O_dp)
         Sb2Se3_O_thermo = Sb2Se3_O_dp.get_defect_thermodynamics()
         assert np.isclose(Sb2Se3_O_thermo.get_formation_energy("O_Se_Cs_Sb2.65_-2"), -1.84684, atol=1e-3)
 
@@ -915,7 +917,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             in str(warn.message)
             for warn in w
         )
-        self._check_DefectsParser(Sb2Se3_O_dp)
+        check_DefectsParser(Sb2Se3_O_dp)
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV_and_periodicity_breaking_handling(self):
@@ -938,7 +940,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         # Sb2Si2Te6 supercell breaks periodicity, but we don't throw warning when just parsing defects
         assert all("The defect supercell has been detected" not in str(warning.message) for warning in w)
 
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
@@ -1018,7 +1020,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert not w  # no warnings
         assert len(dp.defect_dict) == 3  # only three inequivalent neutral V_O present
 
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
 
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
         v2o5_thermo = dp.get_defect_thermodynamics(chempots=v2o5_chempots)
@@ -1051,7 +1053,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for warning in w
         )
         assert len(dp.defect_dict) == 3  # only 3 defects, 2 duplicates warned and omitted
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
         v2o5_chempots = loadfn(os.path.join(self.V2O5_DATA_DIR, "chempots.json"))
         thermo.chempots = v2o5_chempots
@@ -1102,7 +1104,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         assert len(dp.defect_dict) == 3
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
 
         # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
         assert dp.defect_dict["vac_O_2"].calculation_metadata["relaxed point symmetry"] == "C2v"
@@ -1271,7 +1273,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )  # only warned once
 
         assert len(dp.defect_dict) == 17
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
         thermo = dp.get_defect_thermodynamics()
 
         with warnings.catch_warnings(record=True) as w:
@@ -1320,7 +1322,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         dp, w = _create_dp_and_capture_warnings(self.SOLID_SOLUTION_DATA_DIR, parse_projected_eigen=False)
         assert not w
         assert len(dp.defect_dict) == 1
-        self._check_DefectsParser(dp, skip_corrections=True)
+        check_DefectsParser(dp, skip_corrections=True)
         thermo = dp.get_defect_thermodynamics()
 
         with warnings.catch_warnings(record=True) as w:
@@ -1347,7 +1349,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert not w
         assert len(dp.defect_dict) == 4
-        self._check_DefectsParser(dp, skip_corrections=True)
+        check_DefectsParser(dp, skip_corrections=True)
 
         # v_Ca_+1 is an odd quartet state (S = 3/2, multiplicity = 4), and v_Ca_0 is a triplet states,
         # ISPIN = 2 calculations, manually checked. Looks like they could be band occupancies
@@ -1382,7 +1384,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert not w
         assert len(dp.defect_dict) == 1
-        self._check_DefectsParser(dp, skip_corrections=True)
+        check_DefectsParser(dp, skip_corrections=True)
 
         # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
@@ -1397,7 +1399,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert not w
         assert len(dp.defect_dict) == 1
-        self._check_DefectsParser(dp, skip_corrections=True)
+        check_DefectsParser(dp, skip_corrections=True)
 
         # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
@@ -1439,7 +1441,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 == correction_warning
             )
             assert len(dp.defect_dict) == 2
-            self._check_DefectsParser(dp)
+            check_DefectsParser(dp)
 
         # Note that we have artificially modified the energy of ``sub_1_O_on_Se_1`` to be 0.17 eV lower,
         # so that it is found to be (just about) stable in the band gap for the purposes of this test
@@ -3516,7 +3518,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
         assert dp.defect_dict["v_Cd_C2v_Bipolaron_S0_0"].degeneracy_factors["spin degeneracy"] == 1
         assert dp.defect_dict["v_Cd_C2v_Bipolaron_S1_0"].degeneracy_factors["spin degeneracy"] == 3
-        self._check_DefectsParser(dp)
+        check_DefectsParser(dp)
 
         # previously caused an error, with magnetization being parsed as negative value due to
         # N_spin_down > N_spin_up, now spin degeneracy correctly determined from absolute magnetization
@@ -3552,7 +3554,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 output_path=self.YTOS_EXAMPLE_DIR, dielectric=self.ytos_dielectric, **symprec_settings
             )
             assert not w
-            self._check_DefectsParser(dp)
+            check_DefectsParser(dp)
             with warnings.catch_warnings(record=True) as w:
                 sym_degen_df = dp.get_defect_thermodynamics().get_symmetries_and_degeneracies()
             _print_warning_info(w)
