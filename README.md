@@ -80,6 +80,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
+- R. Wu & J. J. Acton, S. Wang and A. M. Ganose **_On the possibility of hybrid chalcogenide perovskite photovoltaics_** [_arXiv_](https://doi.org/10.48550/arXiv.2604.06555) 2026
 - P. Panagis Filippatos, T. J. P. Irons, N. Kuganathan and A. Chroneos **_First-principles calculations of quantum defects in bulk WS<sub>2</sub>: Effect of carbon doping in spin-photon interfaces_** [_Physical Review B_](https://doi.org/10.1103/d3bx-gnhq) 2026
 - P. Panagis Filippatos and A. Chroneos **_Carbon substitutional spin defects in bulk hBN using r2SCAN_** [_Low Temperature Physics_](https://doi.org/10.1063/10.0043202) 2026
 - N. Singh et al. **_Data-driven discovery of high-performance quaternary chalcogenide photovoltaics_** [_Physical Review Applied_](https://doi.org/10.1103/r77p-wl3l) 2026
