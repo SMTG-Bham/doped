@@ -11,6 +11,7 @@ import contextlib
 import inspect
 import logging
 import multiprocessing
+import os
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 
@@ -71,6 +72,54 @@ def _ignore_pmg_warnings():
 
 
 _ignore_pmg_warnings()
+
+
+class ParameterOrderWarning(FutureWarning):
+    """
+    Warning about the ``(bulk, defect)`` -> ``(defect, bulk)`` parameter
+    ordering change for some functions in ``doped`` v4.0.
+
+    TODO: Remove in v4.1.
+    """
+
+
+def _check_parameter_order_warning():
+    """
+    Check if the parameter order warning should be shown, based on the
+    ``DOPED_WARN_PARAMETER_ORDER`` environment variable.
+
+    Defaults to ``True`` if the environment variable is not set.
+    """
+    env = os.environ.get("DOPED_WARN_PARAMETER_ORDER")
+    if env is None:
+        return True
+    return env.lower() not in ("0", "false", "no")
+
+
+if _check_parameter_order_warning():
+    # Show ParameterOrderWarning for external callers (once per call site), but
+    # suppress for internal doped calls (where the new ordering is already correct):
+    warnings.filterwarnings("once", category=ParameterOrderWarning)
+    warnings.filterwarnings("ignore", category=ParameterOrderWarning, module=r"^doped")
+else:
+    warnings.filterwarnings("ignore", category=ParameterOrderWarning)
+
+
+def _warn_parameter_order(func_name: str, stacklevel: int = 3):
+    """
+    Emit a ``ParameterOrderWarning`` for the given function name.
+    """
+    if not _check_parameter_order_warning():
+        return
+    warnings.warn(
+        f"In doped v4.0, the parameter ordering for `{func_name}` was changed from "
+        f"`(bulk_..., defect_..., ...)` to `(defect_..., bulk_..., ...)`. Please ensure your code uses "
+        f"the correct ordering (and/or uses keyword arguments rather than positional arguments). This "
+        f"warning can be disabled by setting the environment variable DOPED_WARN_PARAMETER_ORDER=false, "
+        f"and will be removed in doped v4.1.",
+        ParameterOrderWarning,
+        stacklevel=stacklevel,
+    )
 
 
 def _doped_obj_properties_methods(obj):

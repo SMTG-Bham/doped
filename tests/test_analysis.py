@@ -2165,7 +2165,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         bulk_sc_structure = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Bulk/POSCAR")
         initial_defect_structure = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Int_F_-1/Relaxed_CONTCAR")
         (def_type, comp_diff) = get_defect_type_and_composition_diff(
-            bulk_sc_structure, initial_defect_structure
+            initial_defect_structure, bulk_sc_structure
         )
         assert def_type == "interstitial"
         assert comp_diff == {"F": 1}
@@ -2174,7 +2174,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_site_idx,
             defect_site_idx,
             unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_sc_structure, initial_defect_structure)
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(initial_defect_structure, bulk_sc_structure)
         assert bulk_site_idx is None
         assert def_type == "interstitial"
         assert defect_site_idx == len(unrelaxed_defect_structure) - 1
@@ -2199,7 +2199,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         (
             def_type,
             comp_diff,
-        ) = get_defect_type_and_composition_diff(bulk_sc_structure, initial_defect_structure)
+        ) = get_defect_type_and_composition_diff(initial_defect_structure, bulk_sc_structure)
         assert def_type == "substitution"
         assert comp_diff == {"Cd": -1, "U": 1}
         (
@@ -2207,7 +2207,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             bulk_site_idx,
             defect_site_idx,
             unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_sc_structure, initial_defect_structure)
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(initial_defect_structure, bulk_sc_structure)
         assert def_type == "substitution"
         assert bulk_site_idx == 0
         assert defect_site_idx == 63  # last site in structure
@@ -2578,7 +2578,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             for defect_entry in [entry for entry in defect_gen.values() if entry.charge_state == 0]:
                 print(defect_entry.defect, defect_entry.defect_supercell_site)
                 assert defect_name_from_structures(
-                    defect_entry.bulk_supercell, defect_entry.defect_supercell
+                    defect_entry.defect_supercell, defect_entry.bulk_supercell
                 ) == get_defect_name_from_defect(defect_entry.defect)
 
                 # Can't use defect.structure/defect.defect_structure because might be vacancy in a 1/2
@@ -2621,8 +2621,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                         guessed_initial_defect_structure,
                         unrelaxed_defect_structure,
                     ) = defect_from_structures(
-                        defect_entry.bulk_supercell,
                         rattled_defect_supercell,
+                        defect_entry.bulk_supercell,
                         return_all_info=True,
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )
@@ -2702,8 +2702,8 @@ class DefectsParsingTestCase(unittest.TestCase):
                         guessed_initial_defect_structure,
                         unrelaxed_defect_structure,
                     ) = defect_from_structures(
-                        rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         defect_entry.defect_supercell,
+                        rattle(defect_entry.bulk_supercell, stdev=stdev).copy(),
                         return_all_info=True,
                         oxi_state="Undetermined",  # doesn't matter here so skip
                     )

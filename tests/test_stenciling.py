@@ -122,7 +122,7 @@ def _make_stenciled_defect_entry(
         _defect_site_index,
         bulk_site_index,
         _unrelaxed_defect_structure,
-    ) = defect_site_from_structures(corresponding_bulk, stenciled_supercell, return_all_info=True)
+    ) = defect_site_from_structures(stenciled_supercell, corresponding_bulk, return_all_info=True)
     stenciled_entry.defect_supercell_site = defect_site
     stenciled_entry.sc_defect_frac_coords = defect_site.frac_coords
     # pop any previously-calculated site displacement data:
@@ -179,9 +179,9 @@ def _validate_stenciled_supercell(
     )
 
     # 2. Composition check: defect type and composition difference are correct
-    defect_type, comp_diff = get_defect_type_and_composition_diff(target_supercell, stenciled_supercell)
+    defect_type, comp_diff = get_defect_type_and_composition_diff(stenciled_supercell, target_supercell)
     orig_defect_type, orig_comp_diff = get_defect_type_and_composition_diff(
-        defect_entry.bulk_supercell, orig_supercell
+        orig_supercell, defect_entry.bulk_supercell
     )
     assert defect_type == orig_defect_type, f"Defect type mismatch: {defect_type} != {orig_defect_type}"
     assert comp_diff == orig_comp_diff, f"Composition diff mismatch: {comp_diff} != {orig_comp_diff}"
@@ -195,7 +195,7 @@ def _validate_stenciled_supercell(
         f"({bulk_min_bond_length:.3f} Å * {min_dist_tol_factor})"
     )  # we multiply min by 0.999 to account for small numerical differences
 
-    stenciled_defect_site = defect_site_from_structures(corresponding_bulk, stenciled_supercell)
+    stenciled_defect_site = defect_site_from_structures(stenciled_supercell, corresponding_bulk)
     assert isinstance(stenciled_defect_site, PeriodicSite)  # typing
     stenciled_defect_frac_coords = stenciled_defect_site.frac_coords
 

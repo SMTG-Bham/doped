@@ -1,7 +1,7 @@
 {
     "@class": "DefectThermodynamics",
     "@module": "doped.thermodynamics",
-    "@version": "3.2.1",
+    "@version": "4.0.0",
     "band_gap": 3.3084000000000007,
     "bulk_dos": null,
     "bulk_formula": "ZnS",
@@ -11,7 +11,7 @@
         "inter_26_Al_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -10484,7 +10484,7 @@
         "inter_26_Al_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -20438,7 +20438,7 @@
         "inter_26_Al_3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -30040,7 +30040,7 @@
         "inter_27_Al_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -40522,7 +40522,7 @@
         "inter_27_Al_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -50476,7 +50476,7 @@
         "inter_27_Al_3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -60430,7 +60430,7 @@
         "inter_29_Al_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -70912,7 +70912,7 @@
         "inter_29_Al_3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -81394,7 +81394,7 @@
         "sub_1_Al_on_Zn_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -90825,7 +90825,7 @@
         "sub_1_Al_on_Zn_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -99526,7 +99526,7 @@
         "sub_1_Al_on_Zn_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -108957,7 +108957,7 @@
         "vac_1_Zn_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -118308,7 +118308,7 @@
         "vac_1_Zn_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -127659,7 +127659,7 @@
         "vac_1_Zn_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -136281,7 +136281,7 @@
         "vac_2_S_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -144903,7 +144903,7 @@
         "vac_2_S_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -154254,7 +154254,7 @@
         "vac_2_S_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "3.2.1",
+            "@version": "4.0.0",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,

@@ -24,6 +24,7 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vas
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
 
+from doped import _warn_parameter_order
 from doped.core import DefectEntry, remove_site_oxi_state
 
 
@@ -350,7 +351,7 @@ def _get_output_files_and_check_if_multiple(
 
 
 def get_defect_type_and_composition_diff(
-    bulk: Structure | Composition, defect: Structure | Composition
+    defect: Structure | Composition, bulk: Structure | Composition
 ) -> tuple[str, dict]:
     """
     Get the difference in composition between a bulk structure and a defect
@@ -360,10 +361,10 @@ def get_defect_type_and_composition_diff(
     extrinsic species and code efficiency/robustness improvements.
 
     Args:
-        bulk (Structure | Composition):
-            The bulk structure or composition.
         defect (Structure | Composition):
             The defect structure or composition.
+        bulk (Structure | Composition):
+            The bulk structure or composition.
 
     Returns:
         tuple[str, dict[str, int]]:
@@ -371,6 +372,7 @@ def get_defect_type_and_composition_diff(
             and the composition difference between the bulk and defect
             structures as a dictionary.
     """
+    _warn_parameter_order("get_defect_type_and_composition_diff")  # TODO: Remove in doped v4.1
     bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
     defect_comp = defect.composition if isinstance(defect, Structure) else defect
 
@@ -399,8 +401,8 @@ def get_defect_type_and_composition_diff(
 
 
 def get_defect_type_site_idxs_and_unrelaxed_structure(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
+    bulk_supercell: Structure,
 ) -> tuple[str, int | None, int | None, Structure]:
     """
     Get the defect type, site (indices in the bulk and defect supercells) and
@@ -414,10 +416,10 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     improvements.
 
     Args:
-        bulk_supercell (Structure):
-            The bulk supercell structure.
         defect_supercell (Structure):
             The defect supercell structure.
+        bulk_supercell (Structure):
+            The bulk supercell structure.
 
     Returns:
         defect_type (str):
@@ -434,8 +436,11 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             pristine bulk structure with the `final` relaxed interstitial site
             for interstitials.
     """
+    _warn_parameter_order(  # TODO: Remove in doped v4.1
+        "get_defect_type_site_idxs_and_unrelaxed_structure"
+    )
 
-    def process_substitution(bulk_supercell, defect_supercell, composition_diff):
+    def process_substitution(defect_supercell, bulk_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
@@ -478,7 +483,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
         )
         return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
 
-    def process_vacancy(bulk_supercell, defect_supercell, composition_diff):
+    def process_vacancy(defect_supercell, bulk_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
         bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
             bulk_supercell, old_species
@@ -498,7 +503,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
         )
         return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
 
-    def process_interstitial(bulk_supercell, defect_supercell, composition_diff):
+    def process_interstitial(defect_supercell, bulk_supercell, composition_diff):
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
         bulk_new_species_coords, bulk_new_species_idx = get_coords_and_idx_of_species(
@@ -538,14 +543,14 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     }
 
     try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
+        defect_type, comp_diff = get_defect_type_and_composition_diff(defect_supercell, bulk_supercell)
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
             f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
         ) from exc
 
-    return (defect_type, *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff))
+    return (defect_type, *handlers[defect_type](defect_supercell, bulk_supercell, comp_diff))
 
 
 def _get_species_from_composition_diff(composition_diff, el_change):
@@ -821,8 +826,8 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
 
 
 def check_atom_mapping_far_from_defect(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
+    bulk_supercell: Structure,
     defect_coords: np.ndarray[float],
     coords_are_cartesian: bool = False,
     displacement_tol: float = 0.5,
@@ -840,10 +845,10 @@ def check_atom_mapping_far_from_defect(
     the largest sphere which can fit in the cell.
 
     Args:
-        bulk_supercell (Structure):
-            The bulk structure.
         defect_supercell (Structure):
             The defect structure.
+        bulk_supercell (Structure):
+            The bulk structure.
         defect_coords (np.ndarray[float]):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
@@ -861,6 +866,7 @@ def check_atom_mapping_far_from_defect(
         bool:
             Returns ``False`` if a mismatch is detected, else ``True``.
     """
+    _warn_parameter_order("check_atom_mapping_far_from_defect")  # TODO: Remove in doped v4.1
     far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     wigner_seitz_radius = get_wigner_seitz_radius(bulk_supercell.lattice)
     defect_frac_coords = (
@@ -1162,10 +1168,10 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
 
 def _compare_potcar_symbols(
-    bulk_potcar_symbols,
     defect_potcar_symbols,
-    bulk_name="bulk",
+    bulk_potcar_symbols,
     defect_name="defect",
+    bulk_name="bulk",
     warn=True,
     only_matching_elements=False,
 ):
@@ -1176,6 +1182,7 @@ def _compare_potcar_symbols(
     Returns True if the symbols match, otherwise returns a list of the symbols
     for the bulk and defect calculations.
     """
+    _warn_parameter_order("_compare_potcar_symbols")  # TODO: Remove in doped v4.1
     if only_matching_elements:
         defect_elements = [symbol["titel"].split()[1].split("_")[0] for symbol in defect_potcar_symbols]
         symbols_to_check = [
@@ -1219,12 +1226,12 @@ def _compare_potcar_symbols(
 
 
 def _compare_kpoints(
-    bulk_actual_kpoints,
     defect_actual_kpoints,
-    bulk_kpoints=None,
+    bulk_actual_kpoints,
     defect_kpoints=None,
-    bulk_name="bulk",
+    bulk_kpoints=None,
     defect_name="defect",
+    bulk_name="bulk",
     warn=True,
 ):
     """
@@ -1234,6 +1241,7 @@ def _compare_kpoints(
     Returns ``True`` if the KPOINTS match, otherwise returns a list of the
     KPOINTS for the bulk and defect calculations.
     """
+    _warn_parameter_order("_compare_kpoints")  # TODO: Remove in doped v4.1
     # sort kpoints, in case same KPOINTS just different ordering:
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
     sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
@@ -1275,12 +1283,12 @@ def _compare_kpoints(
 
 
 def _compare_incar_tags(
-    bulk_incar_dict: dict[str, str | int | float],
     defect_incar_dict: dict[str, str | int | float],
+    bulk_incar_dict: dict[str, str | int | float],
     fatal_incar_mismatch_tags: dict[str, str | int | float] | None = None,
     ignore_tags: set[str] | None = None,
-    bulk_name: str = "bulk",
     defect_name: str = "defect",
+    bulk_name: str = "bulk",
     warn: bool = True,
 ):
     """
@@ -1289,6 +1297,7 @@ def _compare_incar_tags(
     Returns True if no mismatching tags are found, otherwise returns a list of
     the mismatching tags.
     """
+    _warn_parameter_order("_compare_incar_tags")  # TODO: Remove in doped v4.1
     if fatal_incar_mismatch_tags is None:
         fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults in VASP
             "AEXX": 0.25,  # default 0.25
@@ -1686,8 +1695,8 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
         defect_site,
         defect_structure_metadata,
     ) = defect_and_info_from_structures(
-        bulk_supercell,
         defect_supercell,
+        bulk_supercell,
         **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
     )
     if not getattr(defect_entry, "calculation_metadata", None):

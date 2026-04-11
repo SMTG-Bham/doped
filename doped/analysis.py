@@ -30,7 +30,13 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
+from doped import (
+    _doped_obj_properties_methods,
+    _ignore_pmg_warnings,
+    _warn_parameter_order,
+    get_mp_context,
+    pool_manager,
+)
 from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import (
     get_defect_name_from_defect,
@@ -188,8 +194,8 @@ def check_and_set_defect_entry_name(
 
 
 def defect_site_from_structures(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
+    bulk_supercell: Structure,
     return_all_info: bool = False,
 ) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure]:
     """
@@ -197,10 +203,10 @@ def defect_site_from_structures(
     structures, returning the corresponding |PeriodicSite|.
 
     Args:
-        bulk_supercell (Structure):
-            Bulk supercell structure.
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site.
+        bulk_supercell (Structure):
+            Bulk supercell structure.
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
             see return signature. (Default: ``False``)
@@ -227,18 +233,19 @@ def defect_site_from_structures(
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
+    _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
     try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
             defect_type,
             bulk_site_index,
             defect_site_index,
             unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(bulk_supercell, defect_supercell)
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(defect_supercell, bulk_supercell)
 
     except RuntimeError as exc:
         check_atom_mapping_far_from_defect(
-            bulk_supercell,
             defect_supercell,
+            bulk_supercell,
             guess_defect_position(defect_supercell),
             coords_are_cartesian=True,
         )
@@ -273,8 +280,8 @@ def defect_site_from_structures(
 
 
 def defect_from_structures(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
+    bulk_supercell: Structure,
     return_all_info: bool = False,
     skip_atom_mapping_check: bool = False,
     **kwargs,
@@ -296,10 +303,10 @@ def defect_from_structures(
       their unrelaxed positions).
 
     Args:
-        bulk_supercell (Structure):
-            Bulk supercell structure.
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site and type.
+        bulk_supercell (Structure):
+            Bulk supercell structure.
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
             see return signature. (Default: ``False``)
@@ -347,6 +354,7 @@ def defect_from_structures(
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
+    _warn_parameter_order("defect_from_structures")  # TODO: Remove in doped v4.1
     (
         defect_site,
         defect_type,
@@ -354,11 +362,11 @@ def defect_from_structures(
         defect_site_index,
         bulk_site_index,
         unrelaxed_defect_structure,
-    ) = defect_site_from_structures(bulk_supercell, defect_supercell, return_all_info=True)
+    ) = defect_site_from_structures(defect_supercell, bulk_supercell, return_all_info=True)
 
     if not skip_atom_mapping_check:
         check_atom_mapping_far_from_defect(
-            bulk_supercell, defect_supercell, defect_site_in_bulk.frac_coords
+            defect_supercell, bulk_supercell, defect_site_in_bulk.frac_coords
         )
         # Note: This function checks (and warns, if necessary) for large mismatches between defect and bulk
         # supercells, where a common case is a symmetry-equivalent bulk supercell but with a different
@@ -470,8 +478,8 @@ def defect_from_structures(
 
 
 def defect_and_info_from_structures(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
+    bulk_supercell: Structure,
     skip_atom_mapping_check: bool = False,
     initial_defect_structure_path: PathLike | None = None,
     **kwargs,
@@ -485,10 +493,10 @@ def defect_and_info_from_structures(
     defect structure, and the unrelaxed defect structure).
 
     Args:
-        bulk_supercell (Structure):
-            Bulk supercell structure.
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site and type.
+        bulk_supercell (Structure):
+            Bulk supercell structure.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
             bulk and defect supercell lattice definitions are matched
@@ -541,6 +549,7 @@ def defect_and_info_from_structures(
                   unrelaxed vacancy/substitution site, or final `relaxed` site
                   for interstitials).
     """
+    _warn_parameter_order("defect_and_info_from_structures")  # TODO: Remove in doped v4.1
     defect_structure_metadata = {}
 
     # identify defect site, structural information, and create defect object:
@@ -558,8 +567,8 @@ def defect_and_info_from_structures(
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
         ) = defect_from_structures(
-            bulk_supercell,
             defect_supercell,
+            bulk_supercell,
             skip_atom_mapping_check=skip_atom_mapping_check,
             return_all_info=True,
             **kwargs,
@@ -579,8 +588,8 @@ def defect_and_info_from_structures(
             guessed_initial_defect_structure,
             unrelaxed_defect_structure,
         ) = defect_from_structures(
-            bulk_supercell,
             defect_structure_for_ID,
+            bulk_supercell,
             skip_atom_mapping_check=skip_atom_mapping_check,
             return_all_info=True,
             **kwargs,
@@ -706,15 +715,15 @@ def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
     )
 
 
-def defect_name_from_structures(bulk_supercell: Structure, defect_supercell: Structure, **kwargs) -> str:
+def defect_name_from_structures(defect_supercell: Structure, bulk_supercell: Structure, **kwargs) -> str:
     """
     Get the doped/SnB defect name using the bulk and defect structures.
 
     Args:
-        bulk_supercell (Structure):
-            Bulk (pristine) structure.
         defect_supercell (Structure):
             Defect structure.
+        bulk_supercell (Structure):
+            Bulk (pristine) structure.
         **kwargs:
             Keyword arguments to pass to ``defect_from_structures`` (such as
             ``oxi_state``, ``multiplicity``, ``symprec``, ``dist_tol_factor``,
@@ -723,11 +732,15 @@ def defect_name_from_structures(bulk_supercell: Structure, defect_supercell: Str
     Returns:
         str: Defect name.
     """
+    _warn_parameter_order("defect_name_from_structures")  # TODO: Remove in doped v4.1
     # set oxi_state and multiplicity to avoid wasting time trying to auto-determine when unnecessary here
     default_init_kwargs = {"oxi_state": "Undetermined", "multiplicity": 1}
     default_init_kwargs.update(kwargs)
     defect = defect_from_structures(
-        bulk_supercell, defect_supercell, return_all_info=False, **default_init_kwargs  # type: ignore
+        defect_supercell,
+        bulk_supercell,
+        return_all_info=False,
+        **default_init_kwargs,  # type: ignore
     )
     assert isinstance(defect, Defect)  # mypy typing
 
@@ -1374,8 +1387,7 @@ def _get_calculation_folders_for_parsing(
         parent_root = out_root.parent
         calc_files_df = _get_calc_files_df(parent_root)
         files_not_found_error = FileNotFoundError(
-            f"No calculation folders with any of {_CALC_OUTPUT_MASK} in filenames found under "
-            f"{out_root}."
+            f"No calculation folders with any of {_CALC_OUTPUT_MASK} in filenames found under {out_root}."
         )
         if calc_files_df.empty:  # no calculation output files found
             raise files_not_found_error
@@ -2530,8 +2542,8 @@ class DefectParser:
             defect_site,
             defect_structure_metadata,
         ) = defect_and_info_from_structures(
-            bulk_supercell,
             defect_supercell,
+            bulk_supercell,
             **{
                 k.replace("bulk_", ""): v
                 for k, v in kwargs.items()
@@ -2925,24 +2937,24 @@ class DefectParser:
         }
 
         incar_mismatches = _compare_incar_tags(
-            run_metadata["bulk_incar"],
             run_metadata["defect_incar"],
+            run_metadata["bulk_incar"],
         )
         self.defect_entry.calculation_metadata["mismatching_INCAR_tags"] = (
             incar_mismatches if not (isinstance(incar_mismatches, bool)) else False
         )
         potcar_mismatches = _compare_potcar_symbols(
-            run_metadata["bulk_potcar_symbols"],
             run_metadata["defect_potcar_symbols"],
+            run_metadata["bulk_potcar_symbols"],
         )
         self.defect_entry.calculation_metadata["mismatching_POTCAR_symbols"] = (
             potcar_mismatches if not (isinstance(potcar_mismatches, bool)) else False
         )
         kpoint_mismatches = _compare_kpoints(
-            run_metadata["bulk_actual_kpoints"],
             run_metadata["defect_actual_kpoints"],
-            run_metadata["bulk_kpoints"],
+            run_metadata["bulk_actual_kpoints"],
             run_metadata["defect_kpoints"],
+            run_metadata["bulk_kpoints"],
         )
         self.defect_entry.calculation_metadata["mismatching_KPOINTS"] = (
             kpoint_mismatches if not (isinstance(kpoint_mismatches, bool)) else False

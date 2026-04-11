@@ -2800,8 +2800,8 @@ def point_symmetry_from_defect_entry(
                 )
             )
             periodicity_restored_defect_entry = template_defect_entry_from_structures(
-                periodicity_restored_bulk_supercell,
                 periodicity_restored_defect_supercell,
+                periodicity_restored_bulk_supercell,
             )
             with warnings.catch_warnings(record=True) as w:
                 result = _point_symmetry_from_defect_entry(
@@ -3234,8 +3234,8 @@ def point_symmetry_from_structure(
 
     if bulk_structure is not None:
         defect_entry = template_defect_entry_from_structures(
-            bulk_structure,
             structure,
+            bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
             skip_atom_mapping_check=skip_atom_mapping_check,

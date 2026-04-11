@@ -231,7 +231,7 @@ def get_defect_in_supercell(
             if len(defect_entry) > 2:
                 orig_defect_frac_coords = np.array(defect_entry[2])
             else:
-                defect_site = defect_site_from_structures(orig_bulk_supercell, orig_supercell)
+                defect_site = defect_site_from_structures(orig_supercell, orig_bulk_supercell)
                 assert isinstance(defect_site, PeriodicSite)
                 orig_defect_frac_coords = defect_site.frac_coords
         else:
@@ -433,8 +433,8 @@ def get_defect_in_supercell(
 
         if check_bulk:  # check orientation
             bulk_mismatch_warning = not check_atom_mapping_far_from_defect(
-                target_supercell,
                 oriented_new_bulk_supercell,  # could use defect or bulk supercell here, bulk cleaner
+                target_supercell,
                 [0.5, 0.5, 0.5],  # 'defect' site choice irrelevant here
                 warning=False,
             )
@@ -485,9 +485,9 @@ def get_defect_in_supercell(
             )
 
     assert (
-        get_defect_type_and_composition_diff(orig_bulk_supercell, orig_supercell)[1]
+        get_defect_type_and_composition_diff(orig_supercell, orig_bulk_supercell)[1]
         == get_defect_type_and_composition_diff(
-            oriented_new_bulk_supercell, oriented_new_defect_supercell
+            oriented_new_defect_supercell, oriented_new_bulk_supercell
         )[1]
     ), (
         f"Output composition ({oriented_new_defect_supercell.composition}) does not match expected "
@@ -1123,7 +1123,9 @@ def _get_matching_sites_from_s1_then_s2(
     species_coord_dict = {}  # avoid recomputing coords for each site
     for element in struct2_pool.composition.elements:
         species_coord_dict[element.symbol] = get_coords_and_idx_of_species(
-            single_defect_subcell_sites, element.symbol, frac_coords=True  # frac_coords
+            single_defect_subcell_sites,
+            element.symbol,
+            frac_coords=True,  # frac_coords
         )[0]
 
     struct2_pool_dists_to_template_centre = struct2_pool.lattice.get_all_distances(

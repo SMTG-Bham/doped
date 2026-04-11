@@ -768,10 +768,12 @@ def find_ideal_supercell(
     )
     # recalculate min dists (reduces numerical errors inherited from transformations)
     sc_min_dist = round(
-        _get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3  # type: ignore
+        _get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)),
+        3,  # type: ignore
     )
     fcc_min_dist = round(
-        _get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3  # type: ignore
+        _get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)),
+        3,  # type: ignore
     )
 
     sc_fcc_P_and_min_dists = [

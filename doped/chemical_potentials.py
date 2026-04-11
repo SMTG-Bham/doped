@@ -2449,8 +2449,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 incar_template_entry = sorted_entries_with_incar_data[0]
                 for entry in entries:
                     incar_mismatches = _compare_incar_tags(
-                        incar_template_entry.data["incar"],
                         entry.data["incar"],
+                        incar_template_entry.data["incar"],
                         ignore_tags={"NKRED"},  # no NKRED mismatch warnings for competing phases
                         warn=False,
                     )  # warned collectively below if any mismatches
@@ -2494,8 +2494,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 potcar_template_entry = sorted_entries_with_potcar_data[0]
                 for entry in entries:
                     potcar_mismatches = _compare_potcar_symbols(
-                        potcar_template_entry.data["potcar_symbols"],
                         entry.data["potcar_symbols"],
+                        potcar_template_entry.data["potcar_symbols"],
                         warn=False,
                         only_matching_elements=True,
                     )  # warned collectively below if any mismatches

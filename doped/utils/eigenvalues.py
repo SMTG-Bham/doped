@@ -25,7 +25,7 @@ from pymatgen.core.structure import PeriodicSite
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
-from doped import suppress_logging
+from doped import _warn_parameter_order, suppress_logging
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
 from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
@@ -184,10 +184,10 @@ def make_band_edge_orbital_infos(
 
 
 def get_band_edge_info(
-    bulk_vr: Vasprun,
     defect_vr: Vasprun,
-    bulk_procar: PathLike | Procar | None = None,
+    bulk_vr: Vasprun,
     defect_procar: PathLike | Procar | None = None,
+    bulk_procar: PathLike | Procar | None = None,
     defect_supercell_site: PeriodicSite | None = None,
     neighbor_cutoff_factor: float = 1.3,
 ) -> tuple[BandEdgeOrbitalInfos, EdgeInfo, EdgeInfo]:
@@ -200,29 +200,29 @@ def get_band_edge_info(
     https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
 
     Args:
-        bulk_vr (Vasprun):
-            |Vasprun| object of the bulk supercell calculation. If
-            ``bulk_procar`` is not provided, then this must have the
-            ``projected_eigenvalues`` attribute (i.e. from a calculation with
-            ``LORBIT > 10`` in the ``INCAR`` and parsed with
-            ``parse_projected_eigen = True`` (default)).
         defect_vr (Vasprun):
             |Vasprun| object of the defect supercell calculation. If
             ``defect_procar`` is not provided, then this must have the
             ``projected_eigenvalues`` attribute (i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
             ``parse_projected_eigen = True`` (default)).
-        bulk_procar (PathLike, Procar):
-            Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
-            ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
-            object, for the reference bulk supercell calculation. Not required
-            if the supplied ``bulk_vr`` was parsed with
-            ``parse_projected_eigen = True`` (default). Default is ``None``.
+        bulk_vr (Vasprun):
+            |Vasprun| object of the bulk supercell calculation. If
+            ``bulk_procar`` is not provided, then this must have the
+            ``projected_eigenvalues`` attribute (i.e. from a calculation with
+            ``LORBIT > 10`` in the ``INCAR`` and parsed with
+            ``parse_projected_eigen = True`` (default)).
         defect_procar (PathLike, Procar):
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the defect supercell calculation. Not required if the
             supplied ``defect_vr`` was parsed with
+            ``parse_projected_eigen = True`` (default). Default is ``None``.
+        bulk_procar (PathLike, Procar):
+            Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
+            ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
+            object, for the reference bulk supercell calculation. Not required
+            if the supplied ``bulk_vr`` was parsed with
             ``parse_projected_eigen = True`` (default). Default is ``None``.
         defect_supercell_site (PeriodicSite):
             |PeriodicSite| object of the defect site in the defect supercell,
@@ -240,6 +240,7 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects for the
         bulk VBM and CBM.
     """
+    _warn_parameter_order("get_band_edge_info")  # TODO: Remove in doped v4.1
     band_edge_prop = band_edge_properties_from_vasprun(bulk_vr)
 
     if bulk_procar is not None:
@@ -252,8 +253,8 @@ def get_band_edge_info(
 
     if defect_supercell_site is None:
         defect_supercell_site = defect_site_from_structures(
-            bulk_vr.final_structure,
             defect_vr.final_structure,
+            bulk_vr.final_structure,
         )
         assert isinstance(defect_supercell_site, PeriodicSite)  # typing
 
@@ -433,7 +434,7 @@ def get_eigenvalue_analysis(
         bulk_vr = bulk_vr if isinstance(bulk_vr, Vasprun) else Vasprun(bulk_vr)
         defect_vr = defect_vr if isinstance(defect_vr, Vasprun) else Vasprun(defect_vr)
         defect_entry = template_defect_entry_from_structures(
-            bulk_vr.final_structure, defect_vr.final_structure, oxi_state="Undetermined", multiplicity=1
+            defect_vr.final_structure, bulk_vr.final_structure, oxi_state="Undetermined", multiplicity=1
         )
 
     # TODO: Allow just bulk and 'defect_vr' to be passed directly for this function, so it can be used

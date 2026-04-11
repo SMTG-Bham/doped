@@ -910,9 +910,12 @@ class DefectThermodynamics(MSONable):
         defect_entries_dict: dict[str, DefectEntry] = {}
         for entry in self.defect_entries.values():
             # rename defect entry names in dict if necessary ("_a", "_b"...)
-            entry_name, [
-                defect_entries_dict,
-            ] = _rename_key_and_dicts(
+            (
+                entry_name,
+                [
+                    defect_entries_dict,
+                ],
+            ) = _rename_key_and_dicts(
                 entry.name,
                 [
                     defect_entries_dict,
@@ -1366,33 +1369,33 @@ class DefectThermodynamics(MSONable):
             with warnings.catch_warnings(record=True) as captured_warnings:
                 run_metadata = defect_entry.calculation_metadata["run_metadata"]
                 # compare defect and bulk:
-                _compare_incar_tags(run_metadata["bulk_incar"], run_metadata["defect_incar"])
+                _compare_incar_tags(run_metadata["defect_incar"], run_metadata["bulk_incar"])
                 _compare_potcar_symbols(
-                    run_metadata["bulk_potcar_symbols"], run_metadata["defect_potcar_symbols"]
+                    run_metadata["defect_potcar_symbols"], run_metadata["bulk_potcar_symbols"]
                 )
                 _compare_kpoints(
-                    run_metadata["bulk_actual_kpoints"],
                     run_metadata["defect_actual_kpoints"],
-                    run_metadata["bulk_kpoints"],
+                    run_metadata["bulk_actual_kpoints"],
                     run_metadata["defect_kpoints"],
+                    run_metadata["bulk_kpoints"],
                 )
 
                 # compare bulk and reference bulk:
                 _compare_incar_tags(
-                    reference_run_metadata["bulk_incar"],
                     run_metadata["bulk_incar"],
+                    reference_run_metadata["bulk_incar"],
                     defect_name=f"other bulk (for {reference_defect_entry.name})",
                 )
                 _compare_potcar_symbols(
-                    reference_run_metadata["bulk_potcar_symbols"],
                     run_metadata["bulk_potcar_symbols"],
+                    reference_run_metadata["bulk_potcar_symbols"],
                     defect_name=f"other bulk (for {reference_defect_entry.name})",
                 )
                 _compare_kpoints(
-                    reference_run_metadata["bulk_actual_kpoints"],
                     run_metadata["defect_actual_kpoints"],
-                    reference_run_metadata["bulk_kpoints"],
+                    reference_run_metadata["bulk_actual_kpoints"],
                     run_metadata["defect_kpoints"],
+                    reference_run_metadata["bulk_kpoints"],
                     defect_name=f"other bulk (for {reference_defect_entry.name})",
                 )
 
@@ -5068,8 +5071,7 @@ class FermiSolver(MSONable):
             from py_sc_fermi.dos import DOS
         except ImportError as exc:  # py-sc-fermi activation attempted but not installed
             finishing_message = (
-                ", but py-sc-fermi is not installed, so only the doped FermiSolver "
-                "backend is available!"
+                ", but py-sc-fermi is not installed, so only the doped FermiSolver backend is available!"
             )
             message = (
                 error_message + finishing_message

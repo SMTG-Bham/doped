@@ -912,9 +912,12 @@ def _get_formation_energy_lines(defect_thermodynamics, dft_chempots, xlim):
     for defect_entry_list in defect_thermodynamics.all_entries.values():
         for defect_entry in defect_entry_list:
             # all_lines name includes charge state:
-            defect_name_w_charge, [
-                all_lines_xy,
-            ] = _rename_key_and_dicts(  # in case entries with the
+            (
+                defect_name_w_charge,
+                [
+                    all_lines_xy,
+                ],
+            ) = _rename_key_and_dicts(  # in case entries with the
                 # same name
                 defect_entry.name,
                 [

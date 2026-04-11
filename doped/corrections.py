@@ -126,7 +126,7 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
     if not isinstance(locpot_or_outcar, Locpot | Outcar | dict):
         raise TypeError(
             f"`{obj_type}` input must be either a path to a {obj_type.upper()} file or a pymatgen "
-            f"{obj_type.upper()[0]+obj_type[1:]} object, but got {type(locpot_or_outcar)} instead."
+            f"{obj_type.upper()[0] + obj_type[1:]} object, but got {type(locpot_or_outcar)} instead."
         )
 
     return locpot_or_outcar

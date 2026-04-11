@@ -715,7 +715,7 @@ def write_path_structures(
 
     for i, path_struct_dict in enumerate(path_struct_dicts):
         for folder, struct in path_struct_dict.items():
-            PES_dir = f"PES_{i+1}" if len(path_struct_dicts) > 1 else ""
+            PES_dir = f"PES_{i + 1}" if len(path_struct_dicts) > 1 else ""
             path_to_folder = f"{output_dir}/{PES_dir}/{folder}"
             os.makedirs(path_to_folder, exist_ok=True)
             struct.to(filename=f"{path_to_folder}/POSCAR", fmt="poscar")

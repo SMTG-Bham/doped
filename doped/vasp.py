@@ -677,7 +677,7 @@ def scaled_ediff(natoms: int, ediff_per_atom: float = 2e-7, max_ediff: float = 1
     Returns:
         float: Scaled ``EDIFF`` value.
     """
-    ediff = float(f"{natoms*ediff_per_atom:.1g}")
+    ediff = float(f"{natoms * ediff_per_atom:.1g}")
     return min(ediff, max_ediff)
 
 
@@ -1084,7 +1084,7 @@ class DefectRelaxSet(MSONable):
 
         except Exception:
             warnings.warn(
-                f"The specified kpoint settings ({self.user_kpoints_settings,}) do not give a "
+                f"The specified kpoint settings ({self.user_kpoints_settings}) do not give a "
                 f"grid-like k-point mesh and so the appropriate NKRED settings cannot be "
                 f"automatically determined. Either set NKRED manually using `user_incar_settings` "
                 f"with `vasp_std`/`write_std`, or adjust your k-point settings."
