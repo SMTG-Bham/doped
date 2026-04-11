@@ -3017,7 +3017,7 @@ class CompetingPhasesAnalyzer(MSONable):
         if not extrinsic_elements:  # intrinsic only
             self.chempots = self.intrinsic_chempots
         elif missing_extrinsic:
-            raise ValueError(  # TODO: Test this
+            raise ValueError(
                 f"Elemental reference phase for the specified extrinsic species "
                 f"{[elt.symbol for elt in missing_extrinsic]} was not parsed, but is necessary for "
                 f"chemical potential calculations. Please ensure that this phase is present in the "
@@ -3033,7 +3033,7 @@ class CompetingPhasesAnalyzer(MSONable):
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
             print(chempots_df)
 
-        return chempots_df  # TODO: Test chempots df as a property
+        return chempots_df
 
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:

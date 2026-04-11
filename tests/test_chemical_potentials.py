@@ -553,6 +553,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             assert next(iter(chempots_df["La-Limiting Phase"])) == "La2Zr2O7"
             assert np.isclose(next(iter(chempots_df["La"])), -9.46298748)
 
+    def test_calculate_chempots_missing_extrinsic_elemental_reference(self):
+        """
+        Extrinsic μ limits require a parsed elemental reference for that
+        species.
+        """
+        with pytest.raises(ValueError, match="Elemental reference phase for the specified extrinsic"):
+            self.zro2_cpa.calculate_chempots(extrinsic_species="La", verbose=False)
+
     def test_unstable_host_chempots(self):
         """
         Test the chemical potentials parsing when the host phase is unstable.
