@@ -42,6 +42,27 @@ def _compare_chempot_dicts(dict1, dict2):
             assert np.isclose(val, dict2[key], atol=1e-5)
 
 
+def _check_entries_dict_behaviour(obj):
+    first_key = obj.entries[0].data["doped_name"]
+    second_key = obj.entries[1].data["doped_name"]
+    assert obj[first_key] is obj.entries[0]
+    assert obj[1] is obj.entries[1]
+    assert obj[:1] == [obj.entries[0]]
+    assert len(obj) == len(obj.entries)
+    assert first_key in obj
+    assert obj.entries[1] in obj
+    assert list(obj) == [entry.data["doped_name"] for entry in obj.entries]
+    assert obj.get(second_key) is obj.entries[1]
+    assert obj.get("Missing_Key") is None
+    assert obj.get("Missing_Key", obj.entries[0]) is obj.entries[0]
+    assert list(obj.keys()) == [entry.data["doped_name"] for entry in obj.entries]
+    assert list(obj.values()) == obj.entries
+    assert list(obj.items()) == [(entry.data["doped_name"], entry) for entry in obj.entries]
+
+    with pytest.raises(KeyError):
+        _ = obj["Missing_Key"]
+
+
 class CompetingPhasesTestCase(unittest.TestCase):
     def setUp(self):
         self.cdte = Structure.from_file(os.path.join(EXAMPLE_DIR, "CdTe/relaxed_primitive_POSCAR"))
@@ -87,25 +108,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 assert np.isclose(entry.data["energy_per_atom"], -4.94795546875)
                 assert np.isclose(entry.energy, -4.94795546875 * 2)
 
-        # test dict behaviour:
-        first_key = cp.entries[0].data["doped_name"]
-        second_key = cp.entries[1].data["doped_name"]
-        assert cp[first_key] is cp.entries[0]
-        assert cp[1] is cp.entries[1]
-        assert cp[:1] == [cp.entries[0]]
-        assert len(cp) == len(cp.entries)
-        assert first_key in cp
-        assert cp.entries[1] in cp
-        assert list(cp) == [entry.data["doped_name"] for entry in cp.entries]
-        assert cp.get(second_key) is cp.entries[1]
-        assert cp.get("Missing_Key") is None
-        assert cp.get("Missing_Key", cp.entries[0]) is cp.entries[0]
-        assert list(cp.keys()) == [entry.data["doped_name"] for entry in cp.entries]
-        assert list(cp.values()) == cp.entries
-        assert list(cp.items()) == [(entry.data["doped_name"], entry) for entry in cp.entries]
-
-        with pytest.raises(KeyError):
-            _ = cp["Missing_Key"]
+        _check_entries_dict_behaviour(cp)  # test dict behaviour
 
     def test_make_molecule_in_a_box(self):
         allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
@@ -964,6 +967,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         for chempots_df in [cpa.chempots_df, cpa.calculate_chempots()]:
             for el_ref in intrinsic_el_refs:
                 assert el_ref in chempots_df.columns
+
+        _check_entries_dict_behaviour(cpa)  # test dict behaviour
 
         # test formation energy df:
         for kwargs in [
