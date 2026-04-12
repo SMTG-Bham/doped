@@ -4171,6 +4171,22 @@ class DefectThermodynamics(MSONable):
             annealing_defect_concentrations,
         )
 
+    def get_quenched_fermi_level_and_concentrations(self, *args, **kwargs):
+        r"""
+        Deprecated alias for :meth:`get_fermi_level_and_concentrations`.
+
+        .. deprecated:: 4.0
+            Use :meth:`get_fermi_level_and_concentrations` instead; this name will be removed in v4.1.
+        """
+        warnings.warn(
+            "`DefectThermodynamics.get_quenched_fermi_level_and_concentrations` is deprecated "
+            "and will be removed in the next minor release (v4.1); use "
+            "`DefectThermodynamics.get_fermi_level_and_concentrations` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_fermi_level_and_concentrations(*args, **kwargs)
+
     def _get_constrained_concentrations(
         self,
         fermi_level: float,
@@ -4516,11 +4532,6 @@ class DefectThermodynamics(MSONable):
         Returns an iterator over the ``defect_entries`` dictionary.
         """
         return iter(self.defect_entries)
-
-
-DefectThermodynamics.get_quenched_fermi_level_and_concentrations = (
-    DefectThermodynamics.get_fermi_level_and_concentrations
-)  # for backwards compatibility, to be removed in next major release
 
 
 def _check_chempots_and_limit_settings(chempots: dict | None = None, limit: str | None = None):

@@ -1443,6 +1443,9 @@ class CompetingPhases:
     # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
     # same composition (oxidation states), to good accuracy, so do this for pre-screening
     # Also, can use symmetry with SOC total energy calculations, have tested this.
+    # TODO: ``vasp_std_setup`` should be renamed (``relaxation_setup`` or something similar,
+    #  maybe ``write_...`` for consistency with other file-writing functions (same for convergence setup?)
+    #  and then deprecate
 
     def vasp_std_setup(
         self,
