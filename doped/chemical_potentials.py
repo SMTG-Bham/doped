@@ -1816,7 +1816,7 @@ def get_doped_chempots_from_entries(
     return _round_floats(chempots, 4)
 
 
-class ChemicalPotentialGrid:
+class ChemicalPotentialGrid(MSONable):
     """
     A class to represent a grid in chemical potential space and to perform
     operations such as generating a grid within the convex hull of given
@@ -1887,6 +1887,40 @@ class ChemicalPotentialGrid:
         self = cls.__new__(cls)  # skip init function
         self.vertices = vertices
         return self
+
+    def as_dict(self) -> dict:
+        """
+        Returns:
+            JSON-serializable dict representation of |ChemicalPotentialGrid|.
+        """
+        return {
+            "@module": self.__class__.__module__,
+            "@class": self.__class__.__name__,
+            "vertices": {
+                "index": self.vertices.index.tolist(),
+                "columns": self.vertices.columns.tolist(),
+                "data": self.vertices.to_numpy().tolist(),
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ChemicalPotentialGrid":
+        """
+        Reconstitute a |ChemicalPotentialGrid| object from a dict
+        representation created using ``as_dict()``.
+
+        Args:
+            d (dict): dict representation of |ChemicalPotentialGrid|.
+
+        Returns:
+            |ChemicalPotentialGrid| object
+        """
+        vertices = pd.DataFrame(
+            d["vertices"]["data"],
+            index=d["vertices"]["index"],
+            columns=d["vertices"]["columns"],
+        )
+        return cls.from_dataframe(vertices)
 
     def get_grid(
         self,

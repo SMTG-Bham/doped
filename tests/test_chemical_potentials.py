@@ -1523,6 +1523,24 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         return _plot_Na2FePO4F_chempot_grid(grid_df)
 
 
+class ChemicalPotentialGridMSONableTestCase(unittest.TestCase):
+    def tearDown(self):
+        if_present_rm("cpg.json")
+
+    def test_to_from_dict(self):
+        chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
+        grid = chemical_potentials.ChemicalPotentialGrid(chempots)
+
+        grid_dict = grid.as_dict()
+        grid_from_dict = chemical_potentials.ChemicalPotentialGrid.from_dict(grid_dict)
+        assert grid.vertices.equals(grid_from_dict.vertices)
+
+        dumpfn(grid_dict, "cpg.json")
+        reloaded_grid = loadfn("cpg.json")
+        assert isinstance(reloaded_grid, chemical_potentials.ChemicalPotentialGrid)
+        assert grid.vertices.equals(reloaded_grid.vertices)
+
+
 def _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.05):
     # get the average Fe and P chempots, then plot a heatmap plot of the others at these fixed values:
     middle_mu_Fe = (
