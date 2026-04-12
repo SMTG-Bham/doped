@@ -2657,11 +2657,9 @@ class CompetingPhasesAnalyzer(MSONable):
             if np.isinf(formation_energy) or np.isnan(formation_energy):
                 warnings.warn(
                     f"Entry for {entry.reduced_formula} has an infinite/NaN calculated formation energy, "
-                    f"indicating an issue with parsing, and so will be skipped for calculating the "
-                    f"chemical potential limits."
+                    f"indicating an issue with parsing. This may cause failures in chemical potential "
+                    f"analyses, and should be checked!"
                 )
-                # TODO: Update to remove this entry
-                continue
 
             # set energies above hull of entries in the intrinsic phase diagram
             entry.data["energy_above_hull"] = self.phase_diagram.get_e_above_hull(entry)
