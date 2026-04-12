@@ -90,6 +90,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         if_present_rm("CompetingPhases")
+        if_present_rm("cp.json")
 
     def _check_ZrO2_cp_init(self, cp, num_stable_entries=4):
         for i, entry in enumerate(cp.entries):
@@ -109,6 +110,32 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 assert np.isclose(entry.energy, -4.94795546875 * 2)
 
         _check_entries_dict_behaviour(cp)  # test dict behaviour
+
+    def _compare_cps(self, cp_a, cp_b):
+        def cleanse_entries(entries):
+            for entry in entries:
+                entry.entry_id = None
+            return entries
+
+        for attr in cp_a.__dict__:
+            val_a = getattr(cp_a, attr)
+            val_b = getattr(cp_b, attr)
+
+            if attr in {"entries", "intrinsic_entries", "extrinsic_entries", "MP_full_pd_entries"}:
+                assert cleanse_entries(val_a) == cleanse_entries(val_b)
+            elif hasattr(val_a, "as_dict") and hasattr(val_b, "as_dict"):
+                assert val_a.as_dict() == val_b.as_dict()
+            else:
+                assert val_a == val_b
+
+    def _check_cp_json_roundtrip(self, cp):
+        cp_dict = cp.as_dict()
+        cp_from_dict = chemical_potentials.CompetingPhases.from_dict(cp_dict)
+        self._compare_cps(cp, cp_from_dict)
+
+        dumpfn(cp_dict, "cp.json")
+        reloaded_cp = loadfn("cp.json")
+        self._compare_cps(cp, reloaded_cp)
 
     def test_make_molecule_in_a_box(self):
         allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
@@ -136,6 +163,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self._check_ZrO2_cp_init(cp)
         assert "Zr4O" not in [e.name for e in cp.entries]  # not bordering or potentially with EaH
         assert not cp.MP_doc_dicts
+        self._check_cp_json_roundtrip(cp)
 
     def test_init_full_phase_diagram(self):
         cp = chemical_potentials.CompetingPhases(
@@ -146,6 +174,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         zro2_full_pd_entry_list = self.zro2_entry_list[:4] + ["Zr4O"] + self.zro2_entry_list[4:]
         assert [entry.name for entry in cp.entries] == zro2_full_pd_entry_list
         self._check_ZrO2_cp_init(cp, num_stable_entries=5)  # Zr4O is on hull
+        self._check_cp_json_roundtrip(cp)
 
     def test_init_ZnSe(self):
         """
@@ -170,6 +199,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not znse2_entry.data["molecule"]
         assert np.isclose(znse2_entry.energy_per_atom, -3.394683861)
         assert np.isclose(znse2_entry.energy, -3.394683861 * 12)
+        self._check_cp_json_roundtrip(cp)
 
     def test_init_YTOS(self):
         # 144 phases on Y-Ti-O-S MP phase diagram
@@ -183,6 +213,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # 149 phases on Y-Ti-O-S MP full phase diagram, 4 extra O2 phases removed
         assert len(cp.entries) == 145
         self.check_O2_entry(cp)
+        self._check_cp_json_roundtrip(cp)
 
     def check_O2_entry(self, cp):
         # assert only one O2 phase present (molecular entry):
@@ -257,6 +288,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             else:
                 assert len(cp.entries) == 68
             self.check_O2_entry(cp)
+            self._check_cp_json_roundtrip(cp)
 
     def test_unknown_host(self):
         """

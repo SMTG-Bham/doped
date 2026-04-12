@@ -23,7 +23,7 @@ from labellines import labelLines
 from matplotlib import colors
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
-from monty.json import MSONable
+from monty.json import MontyDecoder, MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -808,8 +808,7 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
         entry_names = [get_and_set_competing_phase_name(entry, regenerate=False) for entry in entries]
 
 
-# TODO: Make these classes MSONable
-class CompetingPhases:
+class CompetingPhases(MSONable):
     def __init__(
         self,
         composition: str | Composition | Structure,
@@ -1688,6 +1687,60 @@ class CompetingPhases:
             f"(in self.entries):\n{joined_entry_list}\n\n"
             f"Available attributes:\n{properties}\n\nAvailable methods:\n{methods}"
         )
+
+    def as_dict(self) -> dict:
+        """
+        Returns:
+            JSON-serializable dict representation of |CompetingPhases|.
+        """
+        attrs_to_store = [
+            "energy_above_hull",
+            "full_phase_diagram",
+            "extrinsic",
+            "full_sub_approach",
+            "codoping",
+            "api_key",
+            "bulk_structure",
+            "composition",
+            "chemsys",
+            "MP_full_pd_entries",
+            "MP_full_pd",
+            "MP_bulk_computed_entry",
+            "entries",
+            "MP_doc_dicts",
+            "intrinsic_species",
+            "intrinsic_entries",
+            "extrinsic_species",
+            "extrinsic_entries",
+            "MP_intrinsic_full_pd_entries",
+            "intrinsic_MP_doc_dicts",
+        ]
+        d = {"@module": self.__class__.__module__, "@class": self.__class__.__name__}
+        for attr in attrs_to_store:
+            if hasattr(self, attr):
+                value = getattr(self, attr)
+                if attr == "extrinsic" and isinstance(value, set):
+                    value = sorted(value)
+                d[attr] = value
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CompetingPhases":
+        """
+        Reconstitute a |CompetingPhases| object from a dict representation
+        created using ``as_dict()``.
+
+        Args:
+            d (dict): dict representation of |CompetingPhases|.
+
+        Returns:
+            |CompetingPhases| object
+        """
+        competing_phases = cls.__new__(cls)  # skip __init__ and avoid MP re-querying
+        for key, value in d.items():
+            if key not in {"@module", "@class", "@version"}:
+                setattr(competing_phases, key, MontyDecoder().process_decoded(value))
+        return competing_phases
 
 
 def get_doped_chempots_from_entries(
