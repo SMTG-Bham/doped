@@ -87,6 +87,26 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 assert np.isclose(entry.data["energy_per_atom"], -4.94795546875)
                 assert np.isclose(entry.energy, -4.94795546875 * 2)
 
+        # test dict behaviour:
+        first_key = cp.entries[0].data["doped_name"]
+        second_key = cp.entries[1].data["doped_name"]
+        assert cp[first_key] is cp.entries[0]
+        assert cp[1] is cp.entries[1]
+        assert cp[:1] == [cp.entries[0]]
+        assert len(cp) == len(cp.entries)
+        assert first_key in cp
+        assert cp.entries[1] in cp
+        assert list(cp) == [entry.data["doped_name"] for entry in cp.entries]
+        assert cp.get(second_key) is cp.entries[1]
+        assert cp.get("Missing_Key") is None
+        assert cp.get("Missing_Key", cp.entries[0]) is cp.entries[0]
+        assert list(cp.keys()) == [entry.data["doped_name"] for entry in cp.entries]
+        assert list(cp.values()) == cp.entries
+        assert list(cp.items()) == [(entry.data["doped_name"], entry) for entry in cp.entries]
+
+        with pytest.raises(KeyError):
+            _ = cp["Missing_Key"]
+
     def test_make_molecule_in_a_box(self):
         allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
         for element in allowed_gaseous_elements:
@@ -758,9 +778,6 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert len(lst_fols_cpa.elements) == 2
         self._compare_cpas(lst_fols_cpa, cpa)
         self._general_cpa_check(lst_fols_cpa)
-
-        # TODO: all_folders = [path.split("/relax")[0] for path in all_paths] should work in future code
-        #  (i.e. only needing to specify top folder and auto detecting the subfolders)
 
     def test_vaspruns_hidden_files(self):
         with open(f"{self.zro2_path}/._OUTCAR", "w") as f:

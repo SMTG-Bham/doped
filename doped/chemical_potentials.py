@@ -809,7 +809,6 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
 
 
 # TODO: Make these classes MSONable
-# TODO: Make entries sub-selectable using dict indexing like DefectsGenerator
 class CompetingPhases:
     def __init__(
         self,
@@ -1615,6 +1614,68 @@ class CompetingPhases:
 
         return formatted_entries
 
+    @property
+    def entries_dict(self) -> dict[str, ComputedEntry]:
+        """
+        Mapping of ``doped`` competing phase names to entries.
+        """
+        entries_dict: dict[str, ComputedEntry] = {}
+        for entry in self.entries:
+            doped_name = get_and_set_competing_phase_name(entry, regenerate=False)
+            if doped_name in entries_dict:
+                raise KeyError(
+                    f"Duplicate competing phase key encountered in `self.entries`: {doped_name}. "
+                    "Please regenerate entries / entry names to ensure uniqueness."
+                )
+            entries_dict[doped_name] = entry
+        return entries_dict
+
+    def __getattr__(self, attr):
+        """
+        Redirect unknown attribute/method lookups to the entries dictionary.
+        """
+        try:
+            super().__getattribute__(attr)
+        except AttributeError as exc:
+            if attr == "entries":
+                raise exc
+            return getattr(self.entries_dict, attr)
+
+    def __getitem__(self, key):
+        """
+        Make the object subscriptable.
+
+        String keys index by ``entry.data["doped_name"]`` (dict-like), while
+        integer / slice keys use list-style indexing on ``self.entries``.
+        """
+        if isinstance(key, str):
+            return self.entries_dict[key]
+        return self.entries[key]
+
+    def __contains__(self, item):
+        """
+        Return ``True`` if ``item`` is in the entries.
+
+        For string inputs this checks ``entry.data["doped_name"]`` keys, while
+        for non-strings this falls back to list-style membership in
+        ``self.entries``.
+        """
+        if isinstance(item, str):
+            return item in self.entries_dict
+        return item in self.entries
+
+    def __len__(self):
+        """
+        Return the number of competing phase entries.
+        """
+        return len(self.entries)
+
+    def __iter__(self) -> Iterator[str]:
+        """
+        Return an iterator over ``entry.data["doped_name"]`` keys.
+        """
+        return iter(self.entries_dict)
+
     def __repr__(self):
         """
         Returns a string representation of the ``CompetingPhases`` object.
@@ -2277,6 +2338,7 @@ def entries_from_chempot_limits(chempots_dict):
 
 
 class CompetingPhasesAnalyzer(MSONable):
+    # TODO: Make entries subscriptable as for CompetingPhases
     def __init__(
         self,
         composition: str | Composition,
@@ -2386,6 +2448,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 directories.
         """
         # TODO: Use smart subfolder detection as in DefectsParser, and update docstring!
+        #  e.g. all_folders = [path.split("/relax")[0] for path in all_paths]  (i.e. only needing to
+        #  specify top folder and auto detecting the subfolders)
         self.composition = Composition(composition)
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
         self.intrinsic_elements = self.elements.copy()
