@@ -2457,6 +2457,43 @@ class CompetingPhasesAnalyzer(MSONable):
             else:  # extrinsic
                 extrinsic_entries.append(entry)
 
+        # check elemental references (both intrinsic and extrinsic) have been parsed; and error/warn if not
+        all_parsed_entry_element_symbols = {
+            el.symbol for entry in entries for el in entry.composition.elements
+        }
+        missing_elemental_refs = sorted(all_parsed_entry_element_symbols - set(self.elemental_energies))
+        if missing_elemental_refs:
+            missing_intrinsic = sorted(set(self.intrinsic_elements) & set(missing_elemental_refs))
+            if missing_intrinsic:
+                raise ValueError(
+                    f"No elemental reference phase was parsed for host element(s): {missing_intrinsic}, "
+                    f"which is required for chemical potential analyses (phase diagram construction). "
+                    f"Please ensure unary (reference) calculations are included for each element in "
+                    f"{self.composition.reduced_formula}."
+                )
+            warnings.warn(  # otherwise we are (just) missing extrinsic elemental references
+                f"No elemental reference phase (required for chemical potential analysis) was parsed for "
+                f"element(s): {missing_elemental_refs}, but these appear in some parsed (extrinsic) "
+                f"competing phase entries. Entries containing these elements will be excluded from "
+                f"analysis. Add the missing unary reference calculations to include them."
+            )
+
+            def _entry_contains_missing_elemental_ref(
+                entry: ComputedEntry | ComputedStructureEntry,
+            ) -> bool:
+                return any(el.symbol in missing_elemental_refs for el in entry.composition.elements)
+
+            filtered_entries = [e for e in entries if not _entry_contains_missing_elemental_ref(e)]
+            if not filtered_entries:
+                raise ValueError(
+                    "After excluding phases containing elements without elemental reference entries, "
+                    "no computed entries remained!"
+                )
+            extrinsic_entries = [
+                e for e in extrinsic_entries if not _entry_contains_missing_elemental_ref(e)
+            ]
+            self.entries = filtered_entries
+
         if not bulk_comp_entries:
             intrinsic_compositions = (
                 {entry.composition.reduced_formula for entry in intrinsic_entries}
@@ -2574,17 +2611,8 @@ class CompetingPhasesAnalyzer(MSONable):
         self.extrinsic_elements = sorted(self.extrinsic_elements, key=_element_sort_func)
         self.elemental_energies = dict(
             sorted(self.elemental_energies.items(), key=lambda x: _element_sort_func(x[0]))
-        )
+        )  # comprises all elements for which at least 1 elemental (unary) phase has been parsed
         self.elements += self.extrinsic_elements
-
-        # TODO: Warn if any missing elemental phases and remove any entries with them in composition,
-        #  and remove from element lists?
-        # set(Composition(d["Formula"]).elements).issubset(self.composition.elements)
-        # or (
-        #         extrinsic_elements
-        #         and any(
-        #     elt in Composition(d["Formula"]).elements for elt in extrinsic_elements)
-        # )
 
         self.intrinsic_phase_diagram = PhaseDiagram(
             intrinsic_entries,

@@ -616,6 +616,34 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         with pytest.raises(ValueError, match="Elemental reference phase for the specified extrinsic"):
             self.zro2_cpa.calculate_chempots(extrinsic_species="La", verbose=False)
 
+    def test_from_entries_warns_and_prunes_phases_without_elemental_reference(self):
+        """
+        Compounds containing an element without a parsed unary reference are
+        dropped, with a warning, so intrinsic chemical potentials still build.
+        """
+        entries_no_la_metal = [
+            e for e in self.la_zro2_cpa.entries if e.composition.reduced_formula != "La"
+        ]
+        with warnings.catch_warnings(record=True) as w:
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries_no_la_metal)
+
+        assert any(
+            "No elemental reference phase was parsed for element(s): ['La']" in str(warning.message)
+            for warning in w
+        )
+        assert not any("La" in e.composition for e in cpa.entries)
+        assert "La" not in cpa.extrinsic_elements
+        assert len(cpa.elements) == 2
+        pd.testing.assert_frame_equal(cpa.chempots_df, self.zro2_cpa.chempots_df)
+
+    def test_from_entries_raises_when_host_element_lacks_elemental_reference(self):
+        entries_no_o2 = [e for e in self.zro2_cpa.entries if e.composition.reduced_formula != "O2"]
+        with pytest.raises(
+            ValueError,
+            match="No elemental reference phase was parsed for host element",
+        ):
+            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries_no_o2)
+
     def test_unstable_host_chempots(self):
         """
         Test the chemical potentials parsing when the host phase is unstable.
