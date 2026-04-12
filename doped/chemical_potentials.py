@@ -1230,10 +1230,9 @@ class CompetingPhases:
                             phase for phase in limit.split("-") if sub_el in phase
                         }
                         # only add to MP_extrinsic_bordering_phases when only 1 extrinsic bordering phase
-                        # (i.e. ``full_sub_approach=False`` behaviour):
-                        if len(  # this should always give the same number of facets as the bulk PD
+                        # (i.e. ``full_sub_approach=False`` behaviour)
+                        if len(
                             extrinsic_bordering_phases
-                            # TODO: Explicitly test this for all cases in tests
                         ) == 1 and not extrinsic_bordering_phases.issubset(MP_extrinsic_bordering_phases):
                             MP_extrinsic_bordering_phases.extend(extrinsic_bordering_phases)
 
@@ -4110,9 +4109,9 @@ def get_X_poor_limit(X: str, chempots: dict):
     return X_poor_limit
 
 
+# TODO: Can we just integrate this function to `CompetingPhaseAnalyzer`, so you just pass in a list of
+#  extrinsic species and it does the right thing?
 def combine_extrinsic(first: dict, second: dict, extrinsic_species: str) -> dict:
-    # TODO: Can we just integrate this to `CompetingPhaseAnalyzer`, so you just pass in a list of
-    # extrinsic species and it does the right thing?
     """
     Combines chemical potential limits for different extrinsic species.
 

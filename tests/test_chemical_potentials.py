@@ -628,7 +628,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries_no_la_metal)
 
         assert any(
-            "No elemental reference phase was parsed for element(s): ['La']" in str(warning.message)
+            "No elemental reference phase (required for chemical potential analysis) was parsed for "
+            "element(s): ['La']" in str(warning.message)
             for warning in w
         )
         assert not any("La" in e.composition for e in cpa.entries)
