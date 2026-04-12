@@ -2,11 +2,13 @@
 Tests for the ``doped.chemical_potentials`` module.
 """
 
+import glob
 import os
 import shutil
 import unittest
 import warnings
 from copy import deepcopy
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,6 +19,7 @@ from pymatgen.core.composition import Composition
 from pymatgen.core.structure import Structure
 from test_utils import (
     EXAMPLE_DIR,
+    _potcars_available,
     _print_warning_info,
     _run_func_and_capture_stdout_warnings,
     api_key,
@@ -245,19 +248,71 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ]:
             kwargs = {**unknown_host_cp_kwargs, **cp_settings}
             print(f"Testing with settings: {kwargs}")
+            potcar_spec = not _potcars_available()
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**kwargs)
-                cp.convergence_setup(potcar_spec=True)  # test methods
-                cp.vasp_std_setup(potcar_spec=True)  # test methods
+                cp.convergence_setup(potcar_spec=potcar_spec)  # test methods
+                cp.vasp_std_setup(potcar_spec=potcar_spec)  # test methods
             _print_warning_info(w)  # for debugging
-            assert len(w) == 3  # no MP entry, and structure not available twice (convergence and vasp_std)
+            user_warnings = [x for x in w if x.category is UserWarning]
+            assert len(user_warnings) == 3  # no MP host; no-structure notice x2 (convergence + vasp_std)
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
-                w[0].message
+                user_warnings[0].message
             )
-            assert (
-                "Structure for entry Cu2SiSe4 not available; input files will not be generated for "
-                "this entry."
-            ) in str(w[-1].message)
+            for uw in user_warnings[1:]:
+                msg = str(uw.message)
+                assert "no structure is available" in msg.lower()
+                assert "placeholder" in msg.lower()
+                assert "incar" in msg.lower()
+                assert "potcar" in msg.lower()
+                assert "non-metallic" in msg.lower()
+                assert "non-magnetic" in msg.lower()
+            bulk_ph = [e for e in cp.entries if e.name == "Cu2SiSe4" and not hasattr(e, "structure")]
+            assert len(bulk_ph) == 1
+            assert os.path.isdir("CompetingPhases")
+            cu2sise4_folder = "CompetingPhases/Cu2SiSe4_NA_EaH_0"
+            assert os.path.isdir(cu2sise4_folder)
+
+            def _check_potcar(directory, potcar_spec=potcar_spec):
+                """
+                Check POTCAR/POTCAR.spec in ``directory`` for Cu, Si, Se.
+                """
+                if potcar_spec:
+                    with open(os.path.join(directory, "POTCAR.spec"), encoding="utf-8") as f:
+                        pot_lines = [ln.strip() for ln in f.readlines() if ln.strip()]
+                    assert pot_lines == ["Cu", "Si", "Se"]
+                else:
+                    potcar_text = Path(os.path.join(directory, "POTCAR")).read_text(errors="replace")
+                    for sym in ("Cu", "Si", "Se"):
+                        assert sym in potcar_text
+                    assert "TITEL" in potcar_text or "PAW_" in potcar_text
+
+            # check vasp_std inputs
+            vasp_std = f"{cu2sise4_folder}/vasp_std"
+            assert os.path.isfile(f"{vasp_std}/INCAR")
+            if potcar_spec:
+                assert not os.path.isfile(f"{vasp_std}/POTCAR")
+            with open(f"{vasp_std}/INCAR", encoding="utf-8") as f:
+                incar_std_lines = f.readlines()
+            assert any(line == "GGA = Pe\n" for line in incar_std_lines)
+            assert any(line == "ISIF = 3\n" for line in incar_std_lines)
+            assert any(line.strip().startswith("AEXX = 0.25") for line in incar_std_lines)
+            _check_potcar(vasp_std)
+            assert not os.path.exists(f"{vasp_std}/POSCAR")  # no structure available, so no POSCAR written
+            assert not os.path.exists(f"{vasp_std}/KPOINTS")  # no structure available, so no KPOINTS
+
+            # check kpoint_converge inputs
+            kpt_incars = sorted(glob.glob(f"{cu2sise4_folder}/kpoint_converge/k*/INCAR"))
+            assert kpt_incars
+            kpt_dir = os.path.dirname(kpt_incars[0])
+            with open(kpt_incars[0], encoding="utf-8") as f:
+                incar_k_lines = f.readlines()
+            assert any(line == "GGA = Ps\n" for line in incar_k_lines)
+            assert any(line == "NSW = 0\n" for line in incar_k_lines)
+            assert any(line == "ISMEAR = 0\n" for line in incar_k_lines)
+            _check_potcar(kpt_dir)
+            assert len(os.listdir("CompetingPhases")) > 0  # other phases still get inputs
+
             if kwargs.get("full_phase_diagram"):
                 assert len(cp.entries) == 29
             elif kwargs.get("energy_above_hull") == 0.0:
@@ -1126,8 +1181,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     def setUpClass(cls):
         cls.chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
         cls.grid = chemical_potentials.ChemicalPotentialGrid(cls.chempots)
-        cls.api_key = "UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv"
-        cls.na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F", api_key=cls.api_key)
+        cls.na2fepo4f_cp = chemical_potentials.CompetingPhases("Na2FePO4F", api_key=api_key)
         na2fepo4f_doped_chempots = chemical_potentials.get_doped_chempots_from_entries(
             cls.na2fepo4f_cp.entries, "Na2FePO4F"
         )

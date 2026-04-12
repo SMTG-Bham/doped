@@ -63,6 +63,10 @@ def _check_nelect_nupdown_error(message):
     )
 
 
+def _check_nelect_structure_charge_error(message):
+    return "NELECT (i.e. structure charge) INCAR flag cannot be set" in str(message)
+
+
 def _check_nupdown_neutral_cell_warning(message):
     return all(
         x in str(message)
@@ -316,6 +320,23 @@ class DefectDictSetTest(unittest.TestCase):
         self.kpts_nelect_nupdown_check(dds, 2, 482, 0)  # 100/Å⁻³ for CdTe supercell
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
+
+    def test_charged_doped_dict_set_no_potcars(self):
+        r"""
+        Test that ``DopedDictSet.incar`` raises ``ValueError`` for charged
+        structures when ``POTCAR``\s are unavailable.
+        """
+        kpts = {"reciprocal_density": 100}
+        dds_charged = DopedDictSet(self.prim_cdte.copy(), charge_state=1, user_kpoints_settings=kpts)
+        dds_neutral = DopedDictSet(self.prim_cdte.copy(), charge_state=0, user_kpoints_settings=kpts)
+        if _potcars_available():
+            _incar = dds_charged.incar  # should not raise
+            _incar = dds_neutral.incar
+        else:
+            with pytest.raises(ValueError) as e:
+                _incar = dds_charged.incar
+            assert _check_nelect_structure_charge_error(e.value)
+            _incar = dds_neutral.incar  # neutral should not raise error, regardless
 
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}

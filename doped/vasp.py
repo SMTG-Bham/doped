@@ -155,6 +155,7 @@ class DopedDictSet(VaspInputSet):
         user_potcar_settings: dict | None = None,
         auto_kpar: bool = True,
         poscar_comment: str | None = None,
+        charge_state: int = 0,
         **kwargs,
     ):
         r"""
@@ -189,12 +190,17 @@ class DopedDictSet(VaspInputSet):
             poscar_comment (str):
                 Comment line to use for ``POSCAR`` file. Default is structure
                 formula.
+            charge_state (int):
+                Total charge of the structure (just to determine if warnings
+                should be thrown in the case of ``INCAR`` write attempts
+                without ``POTCAR`` information -- where ``NELECT``
             **kwargs:
                 Additional kwargs to pass to ``VaspInputSet``.
         """
         _ignore_pmg_warnings()
         self.auto_kpar = auto_kpar
         self.poscar_comment = poscar_comment or structure.formula
+        self.charge_state = charge_state
 
         if user_incar_settings is not None:
             if "EDIFF_PER_ATOM" in user_incar_settings:
@@ -259,7 +265,10 @@ class DopedDictSet(VaspInputSet):
     def incar(self):
         """
         Returns the ``Incar`` object generated from the ``VaspInputSet``
-        config, with a warning if ``KPAR > 1`` and only one k-point.
+        config, with a warning if ``KPAR > 1`` and only one k-point, and with
+        ``NELECT`` set according to ``self.charge_state`` if it is non-zero (or
+        throws a warning for non-zero charge states with no ``POTCAR``
+        information available to set ``NELECT`` appropriately).
         """
         incar_obj = super().incar
 
@@ -275,6 +284,22 @@ class DopedDictSet(VaspInputSet):
             # check KPAR setting is reasonable for number of KPOINTS
             warnings.warn("KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1")
             incar_obj["KPAR"] = "1  # Only one k-point (Γ-only)"
+
+        try:
+            # getting NELECT can take time with many file IO calls, so only call once
+            nelect = incar_obj.get("NELECT", self.nelect)
+            if self.charge_state != 0:  # only set NELECT in the INCAR if non-neutral (easier copying of
+                incar_obj["NELECT"] = nelect  # INCARs for different supercell sizes etc)
+
+        except Exception as e:  # POTCARs unavailable, so NELECT (and NUPDOWN) can't be set
+            # if it's a neutral structure, then this is ok, otherwise break
+            if self.charge_state != 0:
+                raise ValueError(
+                    "NELECT (i.e. structure charge) INCAR flag cannot be set due to the non-availability "
+                    "of POTCARs!\n(see the doped docs Installation page: "
+                    "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                    "this up)."
+                ) from e
 
         return incar_obj
 
@@ -330,6 +355,182 @@ class DopedDictSet(VaspInputSet):
             doped_kpoints.comment = "KPOINTS from doped"
 
         return doped_kpoints
+
+    @property
+    def nelect(self):
+        r"""
+        Number of electrons (``NELECT``) for the given structure and charge
+        state.
+
+        This is equal to the sum of valence electrons (``ZVAL``) of the
+        ``POTCAR``\s for each atom in the structure (supercell), minus the
+        charge state.
+        """
+        neutral_nelect = super().nelect
+        return neutral_nelect - self.charge_state
+
+    def write_input(
+        self,
+        output_path: PathLike,
+        poscar: bool = True,
+        rattle: bool = False,
+        make_dir_if_not_present: bool = True,
+        include_cif: bool = False,
+        potcar_spec: bool = False,
+        zip_output: bool = False,
+        snb: bool = False,
+        stdev: float | None = None,
+        d_min: float | None = None,
+        kpoints: bool = True,
+    ):
+        r"""
+        Writes out all input to a directory.
+
+        Refactored slightly from ``pymatgen`` ``VaspInputSet.write_input()`` to
+        allow checking of user ``POTCAR`` setup, generation of rattled
+        structures, and sub-selection of ``POSCAR`` / ``KPOINTS`` file writing.
+
+        Args:
+            output_path (PathLike):
+                Directory to output the ``VASP`` input files.
+            poscar (bool):
+                If True, write the ``POSCAR`` to the generated folder as well.
+                If ``rattle=True``, this will be a rattled structure, otherwise
+                the unperturbed defect structure. (default: True)
+            rattle (bool):
+                If writing ``POSCAR``, apply random displacements to all atomic
+                positions in the structure using the |ShakeNBreak| algorithm;
+                i.e. with the displacement distances randomly drawn from a
+                Gaussian distribution of standard deviation equal to 10% of the
+                nearest neighbour distance and using a Monte Carlo algorithm to
+                penalise displacements that bring atoms closer than 80% of the
+                nearest neighbour distance.
+                ``stdev`` and ``d_min`` can also be given as input kwargs.
+                This is intended to be used as a fallback option for breaking
+                symmetry to partially aid location of global minimum (defect)
+                geometries, if |ShakeNBreak| structure-searching is being
+                skipped. However, rattling still only finds the ground-state
+                structure for <~30% of known cases of energy-lowering
+                reconstructions relative to an unperturbed (defect) structure.
+                (default: False)
+            make_dir_if_not_present (bool):
+                Set to ``True`` if you want the directory (and the whole path)
+                to be created if it is not present. (default: True)
+            include_cif (bool):
+                Whether to write a CIF file in the output
+                directory for easier opening by VESTA. (default: False)
+            potcar_spec (bool):
+                Instead of writing ``POTCAR``, write a ``POTCAR.spec`` file.
+                This is intended to help sharing an input set with people who
+                might not have a license to specific ``POTCAR`` files. Given a
+                ``POTCAR.spec`` file, the specific ``POTCAR`` file can be
+                re-generated using ``pymatgen`` with the ``generate_potcar``
+                function in the ``pymatgen`` CLI. (default: False)
+            zip_output (bool):
+                Whether to zip each ``VASP`` input file written to the output
+                directory. (default: False)
+            snb (bool):
+                If input structures are from |ShakeNBreak| (so ``POSCAR``\s
+                aren't 'unperturbed') -- only really intended for internal use
+                by |ShakeNBreak|. (default: False)
+            stdev (float):
+                Standard deviation for the Gaussian distribution of
+                displacements for the |ShakeNBreak| rattling algorithm (if
+                ``rattle`` is ``True``). If ``None`` (default) this is set to
+                10% of the nearest neighbour distance in the structure.
+            d_min (float):
+                Minimum interatomic distance (in Angstroms) in the rattled
+                structure (if ``rattle`` is ``True``). Monte Carlo rattle moves
+                that put atoms at distances less than this will be heavily
+                penalised. Default is to set this to 80% of the nearest
+                neighbour distance in the structure.
+            kpoints (bool):
+                Whether to write ``KPOINTS`` file to the generated folder.
+                Default is ``True``.
+        """
+        potcars = True if potcar_spec else self._check_user_potcars(poscar=poscar, snb=snb)
+
+        if poscar and rattle:
+            try:
+                from shakenbreak.distortions import rattle as SnB_rattle
+            except ImportError as e:
+                raise ImportError(
+                    "ShakeNBreak must be installed (pip install shakenbreak) to use the rattle option!"
+                ) from e
+            self.structure: Structure = SnB_rattle(self.structure, stdev=stdev, d_min=d_min)
+
+        if poscar and potcars and kpoints:  # write everything, use VaspInputSet.write_input()
+            try:
+                super().write_input(
+                    output_path,
+                    make_dir_if_not_present=make_dir_if_not_present,
+                    include_cif=include_cif,
+                    potcar_spec=potcar_spec,
+                    zip_output=zip_output,
+                )
+            except ValueError as e:
+                if not str(e).startswith("NELECT") or not potcar_spec:
+                    raise e
+
+                os.makedirs(output_path, exist_ok=True)
+                with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
+                    pot_spec_file.write("\n".join(self.potcar_symbols))
+
+                self.kpoints.write_file(f"{output_path}/KPOINTS")
+                self.poscar.write_file(f"{output_path}/POSCAR")
+
+        else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
+            os.makedirs(output_path, exist_ok=True)
+
+            # if not POTCARs and charge_state not 0, then skip INCAR write attempt (POSCARs and KPOINTS
+            # will be written (if ``poscar``/``kpoints`` are ``True``), and user already warned):
+            if potcars or self.charge_state == 0:
+                self.incar.write_file(f"{output_path}/INCAR")
+
+            if potcars:
+                if potcar_spec:
+                    with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
+                        pot_spec_file.write("\n".join(self.potcar_symbols))
+                else:
+                    self.potcar.write_file(f"{output_path}/POTCAR")
+
+            if kpoints:
+                self.kpoints.write_file(f"{output_path}/KPOINTS")
+
+            if poscar:
+                self.poscar.write_file(f"{output_path}/POSCAR")
+
+    def _check_user_potcars(self, poscar: bool = False, snb: bool = False) -> bool:
+        r"""
+        Check and warn the user if ``POTCAR``\s are not set up with
+        ``pymatgen``.
+        """
+        potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
+        if not potcars:
+            potcar_warning_string = (
+                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
+                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
+                "this up). This is required to generate `POTCAR` files and set the `NELECT` and "
+                "`NUPDOWN` `INCAR` tags"
+            )
+            if poscar:
+                if self.charge_state != 0:
+                    warnings.warn(  # snb is hidden flag for ShakeNBreak (as the POSCARs aren't
+                        # unperturbed in that case)
+                        f"{potcar_warning_string}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
+                        f"`KPOINTS` files will be generated."
+                    )
+                    return False
+
+            elif self.charge_state != 0:  # only KPOINTS can be written so no good
+                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
+
+            # if at this point, means charge_state == 0, so neutral INCAR can be generated
+            warnings.warn(f"{potcar_warning_string}, so `POTCAR` files will not be generated.")
+
+            return False
+
+        return True
 
     def __repr__(self):
         """
@@ -394,10 +595,8 @@ class DefectDictSet(DopedDictSet):
                 Additional kwargs to pass to ``VaspInputSet``.
         """
         _ignore_pmg_warnings()
-        self.charge_state = charge_state
         self.poscar_comment = (
-            poscar_comment
-            or f"{structure.formula} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
+            poscar_comment or f"{structure.formula} {'+' if charge_state > 0 else ''}{charge_state}"
         )
         custom_user_incar_settings = user_incar_settings or {}
 
@@ -431,6 +630,7 @@ class DefectDictSet(DopedDictSet):
             user_potcar_settings=user_potcar_settings,
             force_gamma=kwargs.pop("force_gamma", True),  # force gamma-centred k-points by default
             poscar_comment=self.poscar_comment,
+            charge_state=charge_state,
             **kwargs,
         )
         self.user_incar_settings = custom_user_incar_settings
@@ -440,7 +640,7 @@ class DefectDictSet(DopedDictSet):
     def incar(self):
         """
         Returns the ``Incar`` object generated from ``DopedDictSet``, with
-        ``NELECT`` and ``NUPDOWN`` set accordingly.
+        ``NUPDOWN`` set accordingly.
 
         See https://doped.readthedocs.io/en/latest/Tips.html#spin
         for discussion about appropriate ``NUPDOWN``/``MAGMOM`` settings.
@@ -455,9 +655,6 @@ class DefectDictSet(DopedDictSet):
             else:
                 nup_0_str = "0  # see https://doped.readthedocs.io/en/latest/Tips.html#spin"
                 incar_obj["NUPDOWN"] = nup_0_str  # just set to 0 upon file writing by pymatgen anyway
-
-            if self.charge_state != 0:  # only set NELECT in the INCAR if non-neutral (easier copying of
-                incar_obj["NELECT"] = nelect  # INCARs for different supercell sizes etc)
 
         except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
             # if it's a neutral defect, then this is ok (warn the user and write files), otherwise break
@@ -481,176 +678,6 @@ class DefectDictSet(DopedDictSet):
             )
 
         return incar_obj
-
-    @property
-    def nelect(self):
-        r"""
-        Number of electrons (``NELECT``) for the given structure and charge
-        state.
-
-        This is equal to the sum of valence electrons (``ZVAL``) of the
-        ``POTCAR``\s for each atom in the structure (supercell), minus the
-        charge state.
-        """
-        neutral_nelect = super().nelect
-        return neutral_nelect - self.charge_state
-
-    def _check_user_potcars(self, poscar: bool = False, snb: bool = False) -> bool:
-        r"""
-        Check and warn the user if ``POTCAR``\s are not set up with
-        ``pymatgen``.
-        """
-        potcars = any("VASP_PSP_DIR" in i for i in SETTINGS)
-        if not potcars:
-            potcar_warning_string = (
-                "POTCAR directory not set up with pymatgen (see the doped docs Installation page: "
-                "https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
-                "this up). This is required to generate `POTCAR` files and set the `NELECT` and "
-                "`NUPDOWN` `INCAR` tags"
-            )
-            if poscar:
-                if self.charge_state != 0:
-                    warnings.warn(  # snb is hidden flag for ShakeNBreak (as the POSCARs aren't
-                        # unperturbed in that case)
-                        f"{potcar_warning_string}, so only {'' if snb else '(unperturbed) '}`POSCAR` and "
-                        f"`KPOINTS` files will be generated."
-                    )
-                    return False
-
-            elif self.charge_state != 0:  # only KPOINTS can be written so no good
-                raise ValueError(f"{potcar_warning_string}, so no input files will be generated.")
-
-            # if at this point, means charge_state == 0, so neutral INCAR can be generated
-            warnings.warn(f"{potcar_warning_string}, so `POTCAR` files will not be generated.")
-
-            return False
-
-        return True
-
-    def write_input(
-        self,
-        output_path: PathLike,
-        poscar: bool = True,
-        rattle: bool = False,
-        make_dir_if_not_present: bool = True,
-        include_cif: bool = False,
-        potcar_spec: bool = False,
-        zip_output: bool = False,
-        snb: bool = False,
-        stdev: float | None = None,
-        d_min: float | None = None,
-    ):
-        """
-        Writes out all input to a directory.
-
-        Refactored slightly from ``pymatgen`` ``VaspInputSet.write_input()`` to
-        allow checking of user ``POTCAR`` setup, and generation of rattled
-        structures.
-
-        Args:
-            output_path (PathLike):
-                Directory to output the ``VASP`` input files.
-            poscar (bool):
-                If True, write the ``POSCAR`` to the generated folder as well.
-                If ``rattle=True``, this will be a rattled structure, otherwise
-                the unperturbed defect structure. (default: True)
-            rattle (bool):
-                If writing ``POSCAR``, apply random displacements to all atomic
-                positions in the structure using the |ShakeNBreak| algorithm;
-                i.e. with the displacement distances randomly drawn from a
-                Gaussian distribution of standard deviation equal to 10% of the
-                nearest neighbour distance and using a Monte Carlo algorithm to
-                penalise displacements that bring atoms closer than 80% of the
-                nearest neighbour distance.
-                ``stdev`` and ``d_min`` can also be given as input kwargs.
-                This is intended to be used as a fallback option for breaking
-                symmetry to partially aid location of global minimum defect
-                geometries, if |ShakeNBreak| structure-searching is being
-                skipped. However, rattling still only finds the ground-state
-                structure for <~30% of known cases of energy-lowering
-                reconstructions relative to an unperturbed defect structure.
-                (default: False)
-            make_dir_if_not_present (bool):
-                Set to ``True`` if you want the directory (and the whole path)
-                to be created if it is not present. (default: True)
-            include_cif (bool):
-                Whether to write a CIF file in the output
-                directory for easier opening by VESTA. (default: False)
-            potcar_spec (bool):
-                Instead of writing the POTCAR, write a "POTCAR.spec".
-                This is intended to help sharing an input set with people who
-                might not have a license to specific Potcar files. Given a
-                ``POTCAR.spec`` file, the specific POTCAR file can be
-                re-generated using ``pymatgen`` with the ``generate_potcar``
-                function in the ``pymatgen`` CLI. (default: False)
-            zip_output (bool):
-                Whether to zip each VASP input file written to the output
-                directory. (default: False)
-            snb (bool):
-                If input structures are from |ShakeNBreak| (so POSCARs aren't
-                'unperturbed') -- only really intended for internal use by
-                |ShakeNBreak|. (default: False)
-            stdev (float):
-                Standard deviation for the Gaussian distribution of
-                displacements for the |ShakeNBreak| rattling algorithm. If
-                ``None`` (default) this is set to 10% of the nearest neighbour
-                distance in the structure.
-            d_min (float):
-                Minimum interatomic distance (in Angstroms) in the rattled
-                structure. Monte Carlo rattle moves that put atoms at distances
-                less than this will be heavily penalised. Default is to set
-                this to 80% of the nearest neighbour distance in the structure.
-        """
-        potcars = True if potcar_spec else self._check_user_potcars(poscar=poscar, snb=snb)
-
-        if poscar and rattle:
-            try:
-                from shakenbreak.distortions import rattle as SnB_rattle
-            except ImportError as e:
-                raise ImportError(
-                    "ShakeNBreak must be installed (pip install shakenbreak) to use the rattle option!"
-                ) from e
-            self.structure: Structure = SnB_rattle(self.structure, stdev=stdev, d_min=d_min)
-
-        if poscar and potcars:  # write everything, use VaspInputSet.write_input()
-            try:
-                super().write_input(
-                    output_path,
-                    make_dir_if_not_present=make_dir_if_not_present,
-                    include_cif=include_cif,
-                    potcar_spec=potcar_spec,
-                    zip_output=zip_output,
-                )
-            except ValueError as e:
-                if not str(e).startswith("NELECT") or not potcar_spec:
-                    raise e
-
-                os.makedirs(output_path, exist_ok=True)
-                with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
-                    pot_spec_file.write("\n".join(self.potcar_symbols))
-
-                self.kpoints.write_file(f"{output_path}/KPOINTS")
-                self.poscar.write_file(f"{output_path}/POSCAR")
-
-        else:  # use `write_file()`s rather than `write_input()` to avoid writing POSCARs/POTCARs
-            os.makedirs(output_path, exist_ok=True)
-
-            # if not POTCARs and charge_state not 0, but ``poscar`` is true, then skip INCAR
-            # write attempt (POSCARs and KPOINTS will be written, and user already warned):
-            if potcars or self.charge_state == 0 or not poscar:
-                self.incar.write_file(f"{output_path}/INCAR")
-
-            if potcars:
-                if potcar_spec:
-                    with zopen(os.path.join(output_path, "POTCAR.spec"), "wt") as pot_spec_file:
-                        pot_spec_file.write("\n".join(self.potcar_symbols))
-                else:
-                    self.potcar.write_file(f"{output_path}/POTCAR")
-
-            self.kpoints.write_file(f"{output_path}/KPOINTS")
-
-            if poscar:
-                self.poscar.write_file(f"{output_path}/POSCAR")
 
     def __repr__(self):
         """

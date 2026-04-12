@@ -27,7 +27,7 @@ from monty.json import MSONable
 from monty.serialization import loadfn
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
-from pymatgen.core import SETTINGS, Composition, Element, Structure
+from pymatgen.core import SETTINGS, Composition, Element, Lattice, Structure
 from pymatgen.ext.matproj import MPRester, MPRestError
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
@@ -724,6 +724,29 @@ def get_and_set_competing_phase_name(
     return entry.data.get("doped_name")
 
 
+def _nominal_structure_for_input_writing(composition: Composition) -> Structure:
+    """
+    Build a sparse cubic cell with the correct stoichiometry so VASP input sets
+    can be written when an entry has no crystal structure (e.g. MP-missing host
+    composition represented only by a hull-energy ``ComputedEntry``).
+    """
+    int_comp, _factor = composition.get_reduced_composition_and_factor()
+    species: list[Element | str] = []
+    for el in sorted(int_comp.elements, key=lambda e: e.symbol):
+        species.extend([el] * int(int_comp[el]))
+    n = len(species)
+    lat_a = 100.0
+    lattice = Lattice.cubic(lat_a)
+    cart_coords = [[(lat_a / n) * (i + 1), lat_a / 2, lat_a / 2] for i in range(n)]
+    return Structure(
+        lattice,
+        species,
+        cart_coords,
+        coords_are_cartesian=True,
+        properties={"_is_nominal_structure": True},
+    )
+
+
 def _get_competing_phase_folder_name(
     entry: ComputedStructureEntry | ComputedEntry, regenerate=False, ndigits=3
 ) -> str:
@@ -1024,8 +1047,7 @@ class CompetingPhases:
                             "database_IDs": {},
                         },
                     },
-                )  # TODO: Later need to add handling for file writing for this (POTCAR and INCAR assuming
-                # non-metallic, non-magnetic, with warning and recommendations
+                )
 
             if self.MP_bulk_computed_entry not in formatted_entries:
                 formatted_entries.append(self.MP_bulk_computed_entry)
@@ -1291,13 +1313,15 @@ class CompetingPhases:
         """
         return [entry for entry in self.entries if entry.data.get("molecule")]
 
-    def _iter_entries_with_types(self) -> Iterable[tuple[ComputedEntry, str]]:
+    def _iter_entries_with_types(self) -> Iterable[tuple[ComputedEntry, str, Structure]]:
         """
-        Yield tuples ``(entry, type)`` for non-metallic, metallic and molecular
-        entries in ``self.entries``.
+        Yield ``(entry, type, structure)`` for non-metallic, metallic and
+        molecular entries in ``self.entries``.
 
-        Centralises the unknown-structure warning/skip logic so callers only
-        handle valid entries.
+        When no structure exists in the entry (e.g. MP-missing bulk represented
+        by a hull-energy ``ComputedEntry``), emits a ``UserWarning`` and
+        supplies a nominal large-cell ``Structure`` so that ``INCAR`` and
+        ``POTCAR`` files can still be written.
         """
         for entry_list, type in [
             (self.nonmetallic_entries, "non-metals"),
@@ -1307,11 +1331,17 @@ class CompetingPhases:
             for entry in entry_list:
                 if not hasattr(entry, "structure"):
                     warnings.warn(
-                        f"Structure for entry {entry.name} not available; input files will not be "
-                        f"generated for this entry."
+                        f"No structure is available for '{entry.name}'. This is likely because the phase "
+                        f"is a placeholder (e.g. a hull-energy estimate for a composition with no "
+                        f"Materials Project crystal structure). INCAR and POTCAR files will be written "
+                        f"assuming a non-metallic, non-magnetic material (when determining smearing / "
+                        f"magnetic moment input settings), and POTCAR ordering according to the printed "
+                        f"composition. One should of course check that these choices are appropriate!"
                     )
-                    continue
-                yield entry, type
+                    structure = _nominal_structure_for_input_writing(entry.composition)
+                else:
+                    structure = entry.structure
+                yield entry, type, structure
 
     # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
     #  write_files option, for ready integration with high-throughput workflows
@@ -1362,7 +1392,7 @@ class CompetingPhases:
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
 
-        for entry, type in self._iter_entries_with_types():
+        for entry, type, structure in self._iter_entries_with_types():
             if "molecule" in type:
                 continue  # no molecular entries as they don't need convergence testing
 
@@ -1376,7 +1406,7 @@ class CompetingPhases:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
                 dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                    structure=entry.structure,
+                    structure=structure,
                     user_incar_settings=uis,
                     user_kpoints_settings={"reciprocal_density": min_k},
                     user_potcar_settings=user_potcar_settings or {},
@@ -1395,6 +1425,10 @@ class CompetingPhases:
                         f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
                         f"/{kname}"
                     )
+                    if structure.properties.get("_is_nominal_structure", False):
+                        # don't write POSCAR or KPOINTS files for nominal structures:
+                        kwargs.update({"poscar": False, "kpoints": False})
+
                     dict_set.write_input(fname, **kwargs)
 
         if self.molecular_entries:
@@ -1461,7 +1495,7 @@ class CompetingPhases:
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
 
-        for entry, type in self._iter_entries_with_types():
+        for entry, type, structure in self._iter_entries_with_types():
             if "molecule" in type:
                 user_kpoints_settings = Kpoints().from_dict(
                     {
@@ -1485,7 +1519,7 @@ class CompetingPhases:
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
                 dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
-                    structure=entry.structure,
+                    structure=structure,
                     user_incar_settings=uis,
                     user_kpoints_settings=user_kpoints_settings,
                     user_potcar_settings=user_potcar_settings or {},
@@ -1494,6 +1528,10 @@ class CompetingPhases:
                 )
 
                 fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
+                if structure.properties.get("_is_nominal_structure", False):
+                    # don't write POSCAR or KPOINTS files for nominal structures:
+                    kwargs.update({"poscar": False, "kpoints": False})
+
                 dict_set.write_input(fname, **kwargs)
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
