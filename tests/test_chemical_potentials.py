@@ -8,7 +8,6 @@ import shutil
 import unittest
 import warnings
 from copy import deepcopy
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,6 +16,7 @@ import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
 from pymatgen.core.structure import Structure
+from pymatgen.io.vasp.inputs import Potcar
 from test_utils import (
     EXAMPLE_DIR,
     _potcars_available,
@@ -337,10 +337,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
                         pot_lines = [ln.strip() for ln in f.readlines() if ln.strip()]
                     assert pot_lines == ["Cu", "Si", "Se"]
                 else:
-                    potcar_text = Path(os.path.join(directory, "POTCAR")).read_text(errors="replace")
+                    written_potcar = Potcar.from_file(os.path.join(directory, "POTCAR"))
                     for sym in ("Cu", "Si", "Se"):
-                        assert sym in potcar_text
-                    assert "TITEL" in potcar_text or "PAW_" in potcar_text
+                        assert any(
+                            potcar_symbol.startswith(sym) for potcar_symbol in written_potcar.symbols
+                        )
 
             # check vasp_std inputs
             vasp_std = f"{cu2sise4_folder}/vasp_std"
@@ -368,6 +369,30 @@ class CompetingPhasesTestCase(unittest.TestCase):
             _check_potcar(kpt_dir)
             assert len(os.listdir("CompetingPhases")) > 0  # other phases still get inputs
 
+            # check all other written phase folders (excluding unknown-host placeholder) have full inputs
+            other_phase_folders = [
+                os.path.join("CompetingPhases", folder)
+                for folder in os.listdir("CompetingPhases")
+                if os.path.join("CompetingPhases", folder) != cu2sise4_folder
+                and os.path.isdir(os.path.join("CompetingPhases", folder))
+            ]
+            assert other_phase_folders
+            for phase_folder in other_phase_folders:
+                # vasp_std inputs
+                phase_vasp_std = os.path.join(phase_folder, "vasp_std")
+                assert os.path.isdir(phase_vasp_std)
+                assert os.path.isfile(os.path.join(phase_vasp_std, "INCAR"))
+                assert os.path.isfile(os.path.join(phase_vasp_std, "KPOINTS"))
+                assert os.path.isfile(os.path.join(phase_vasp_std, "POSCAR"))
+
+                # kpoint_converge inputs
+                phase_k_dirs = sorted(glob.glob(f"{phase_folder}/kpoint_converge/k*"))
+                assert phase_k_dirs
+                for k_dir in phase_k_dirs:
+                    assert os.path.isfile(os.path.join(k_dir, "INCAR"))
+                    assert os.path.isfile(os.path.join(k_dir, "KPOINTS"))
+                    assert os.path.isfile(os.path.join(k_dir, "POSCAR"))
+
             if kwargs.get("full_phase_diagram"):
                 assert len(cp.entries) == 29
             elif kwargs.get("energy_above_hull") == 0.0:
@@ -377,8 +402,6 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
-
-            # TODO: Spot check all input files in all other written folders
 
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
