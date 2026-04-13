@@ -1340,8 +1340,6 @@ class CompetingPhases(MSONable):
                     structure = entry.structure
                 yield entry, type, structure
 
-    # TODO: Return dict of DictSet objects for this and vasp_std_setup() functions, as well as
-    #  write_files option, for ready integration with high-throughput workflows
     # TODO: Have option to only write extrinsic files to output (in case regenerated when adding calcs
     #  for dopants etc, here and with vasp_std_setup)?
     # TODO: Smart file/folder overwriting handling (like in SnB?)
@@ -1352,13 +1350,19 @@ class CompetingPhases(MSONable):
         user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
+        write_files: bool = True,
         **kwargs,
-    ):
-        """
+    ) -> dict[str, DopedDictSet]:
+        r"""
         Generates VASP input files for k-points convergence testing for
-        competing phases, using PBEsol (GGA) DFT by default. Automatically sets
-        the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0 if not.
-        Recommended to use with https://github.com/kavanase/vaspup2.0.
+        competing phases, using PBEsol (GGA) DFT by default.
+
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
+        Returns a dictionary of ``DopedDictSet`` objects (subclasses of
+        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which contains the input
+        file settings, and writes to file if ``write_files`` is ``True``
+        (default).
 
         Args:
             kpoints_metals (tuple):
@@ -1381,13 +1385,23 @@ class CompetingPhases(MSONable):
                 input as strings with quotation marks. See
                 ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
                 settings.
+            write_files (bool):
+                Whether to write VASP input files to disk (default: ``True``).
+                If ``False``, returns the generated ``DopedDictSet`` objects
+                without writing files.
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
+
+        Returns:
+            dict[str, DopedDictSet]:
+                Mapping of output folder paths to generated ``DopedDictSet``\s
+                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
         # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
+        dict_sets: dict[str, DopedDictSet] = {}
 
         for entry, type, structure in self._iter_entries_with_types():
             if "molecule" in type:
@@ -1412,6 +1426,7 @@ class CompetingPhases(MSONable):
                 )
 
                 for kpoint in range(min_k, max_k, step_k):
+                    dict_set = deepcopy(dict_set)
                     dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
                     kname = (
                         "k"
@@ -1422,11 +1437,14 @@ class CompetingPhases(MSONable):
                         f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
                         f"/{kname}"
                     )
+                    dict_sets[fname] = dict_set
+                    write_kwargs = copy.deepcopy(kwargs)
                     if structure.properties.get("_is_nominal_structure", False):
                         # don't write POSCAR or KPOINTS files for nominal structures:
-                        kwargs.update({"poscar": False, "kpoints": False})
+                        write_kwargs.update({"poscar": False, "kpoints": False})
 
-                    dict_set.write_input(fname, **kwargs)
+                    if write_files:
+                        dict_set.write_input(fname, **write_kwargs)
 
         if self.molecular_entries:
             print(
@@ -1434,6 +1452,7 @@ class CompetingPhases(MSONable):
                 f"({', '.join([e.name for e in self.molecular_entries])} in this case), do not require "
                 f"k-point convergence testing, as Γ-only sampling is sufficient."
             )
+        return dict_sets
 
     # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
     #  chemical potentials (-> Guidelines perspective)
@@ -1451,15 +1470,22 @@ class CompetingPhases(MSONable):
         user_potcar_functional="PBE",
         user_potcar_settings=None,
         user_incar_settings=None,
+        write_files: bool = True,
         **kwargs,
-    ):
-        """
-        Generates VASP input files for ``vasp_std`` relaxations of the
-        competing phases, using HSE06 (hybrid DFT) DFT by default.
+    ) -> dict[str, DopedDictSet]:
+        r"""
+        Generates VASP input files for relaxations of the competing phases,
+        using HSE06 (hybrid DFT) DFT by default.
+
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
         if not. Note that any changes to the default ``INCAR``/``POTCAR``
         settings should be consistent with those used for the defect supercell
         calculations.
+
+        Returns a dictionary of ``DopedDictSet`` objects (subclasses of
+        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which contains the input
+        file settings, and writes to file if ``write_files`` is ``True``
+        (default).
 
         Args:
             kpoints_metals (int):
@@ -1482,8 +1508,17 @@ class CompetingPhases(MSONable):
                 input as strings with quotation marks. See
                 ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for the
                 default settings.
+            write_files (bool):
+                Whether to write VASP input files to disk (default: ``True``).
+                If ``False``, returns the generated ``DopedDictSet`` objects
+                without writing files.
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
+
+        Returns:
+            dict[str, DopedDictSet]:
+                Mapping of output folder paths to generated ``DopedDictSet``\s
+                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
 
@@ -1494,6 +1529,7 @@ class CompetingPhases(MSONable):
             base_incar_settings.update(default_HSE_set["INCAR"])
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
+        dict_sets: dict[str, DopedDictSet] = {}
 
         for entry, type, structure in self._iter_entries_with_types():
             if "molecule" in type:
@@ -1528,11 +1564,16 @@ class CompetingPhases(MSONable):
                 )
 
                 fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
+                dict_sets[fname] = dict_set
+                write_kwargs = copy.deepcopy(kwargs)
                 if structure.properties.get("_is_nominal_structure", False):
                     # don't write POSCAR or KPOINTS files for nominal structures:
-                    kwargs.update({"poscar": False, "kpoints": False})
+                    write_kwargs.update({"poscar": False, "kpoints": False})
 
-                dict_set.write_input(fname, **kwargs)
+                if write_files:
+                    dict_set.write_input(fname, **write_kwargs)
+
+        return dict_sets
 
     def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
         """

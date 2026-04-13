@@ -378,10 +378,26 @@ class CompetingPhasesTestCase(unittest.TestCase):
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
 
+            # TODO: Spot check all input files in all other written folders
+
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         # potcar spec doesn't need potcars set up for pmg and it still works
-        cp.convergence_setup(potcar_spec=True)
+        if_present_rm("CompetingPhases")
+        dict_sets_no_write = cp.convergence_setup(potcar_spec=True, write_files=False)
+        assert dict_sets_no_write
+        assert not os.path.exists("CompetingPhases")
+        no_write_key = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1"
+        assert no_write_key in dict_sets_no_write
+        no_write_dict_set = dict_sets_no_write[no_write_key]
+        assert no_write_dict_set.kpoints.kpts[0] == (2, 1, 1)
+        assert no_write_dict_set.potcar_symbols[0] == "Zr_sv"
+        assert no_write_dict_set.incar["GGA"] == "Ps"
+        assert no_write_dict_set.incar["NSW"] == 0
+
+        dict_sets = cp.convergence_setup(potcar_spec=True, write_files=True)
+        assert dict_sets
+        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
         assert len(cp.metallic_entries) == 6
         assert cp.metallic_entries[0].data["summary"]["band_gap"] == 0
         assert not cp.nonmetallic_entries[0].data["molecule"]
@@ -391,6 +407,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
         # test if it writes out the files correctly
         Zro2_EaH_0pt009_folder = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1/"
         assert os.path.exists(Zro2_EaH_0pt009_folder)
+        assert "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1" in dict_sets
+        dict_set = dict_sets["CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1"]
+        assert dict_set.kpoints.kpts[0] == (2, 1, 1)
+        assert dict_set.potcar_symbols[0] == "Zr_sv"
+        assert dict_set.incar["GGA"] == "Ps"
+        assert dict_set.incar["NSW"] == 0
         with open(f"{Zro2_EaH_0pt009_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "2 1 1\n"
@@ -406,7 +428,22 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def test_vasp_std_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
-        cp.vasp_std_setup(potcar_spec=True)
+        if_present_rm("CompetingPhases")
+        dict_sets_no_write = cp.vasp_std_setup(potcar_spec=True, write_files=False)
+        assert len(dict_sets_no_write) == len(cp)  # one per entry
+        assert not os.path.exists("CompetingPhases")
+        no_write_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"
+        assert no_write_key in dict_sets_no_write
+        no_write_dict_set = dict_sets_no_write[no_write_key]
+        assert no_write_dict_set.kpoints.kpts[0] == (4, 4, 4)
+        assert no_write_dict_set.potcar_symbols == ["Zr_sv", "O"]
+        assert no_write_dict_set.incar["AEXX"] == 0.25
+        assert no_write_dict_set.incar["ISIF"] == 3
+        assert no_write_dict_set.incar["GGA"] == "Pe"
+
+        dict_sets = cp.vasp_std_setup(potcar_spec=True, write_files=True)
+        assert len(dict_sets) == len(cp)  # one per entry
+        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
         assert len(cp.nonmetallic_entries) == 6
         assert len(cp.metallic_entries) == 6
         assert len(cp.molecular_entries) == 1
@@ -417,6 +454,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         ZrO2_EaH_0_std_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std/"
         assert os.path.exists(ZrO2_EaH_0_std_folder)
+        assert "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std" in dict_sets
+        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"]
+        assert dict_set.kpoints.kpts[0] == (4, 4, 4)
+        assert dict_set.potcar_symbols == ["Zr_sv", "O"]
+        assert dict_set.incar["AEXX"] == 0.25
+        assert dict_set.incar["ISIF"] == 3
+        assert dict_set.incar["GGA"] == "Pe"
         with open(f"{ZrO2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert "KPOINTS from doped, with reciprocal_density = 64/Å" in contents[0]
@@ -432,6 +476,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         O2_EaH_0_std_folder = "CompetingPhases/O2_mmm_EaH_0/vasp_std"
         assert os.path.exists(O2_EaH_0_std_folder)
+        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_std"]
+        assert o2_dict_set.kpoints.kpts[0] == (1, 1, 1)
         with open(f"{O2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
             assert contents[3] == "1 1 1\n"
@@ -439,6 +485,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         struct = Structure.from_file(f"{O2_EaH_0_std_folder}/POSCAR")
         assert np.isclose(struct.sites[0].frac_coords, [0.49983339, 0.5, 0.50016672]).all()
         assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
+        assert struct == o2_dict_set.poscar.structure
 
     def test_api_keys_errors(self):
         api_key_error = ValueError(
