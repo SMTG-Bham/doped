@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition
+from pymatgen.core.entries import ComputedEntry
 from pymatgen.core.structure import Structure
 from pymatgen.io.vasp.inputs import Potcar
 from test_utils import (
@@ -143,14 +144,30 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_make_molecule_in_a_box(self):
         allowed_gaseous_elements = ["O2", "N2", "H2", "F2", "Cl2"]
         for element in allowed_gaseous_elements:
-            structure, total_magnetization = chemical_potentials.make_molecule_in_a_box(element)
-            if element == "O2":
-                assert total_magnetization == 2
-            else:
-                assert total_magnetization == 0
+            structure = chemical_potentials.make_molecule_in_a_box(element)
             assert structure.composition.reduced_formula == element
             assert structure.num_sites == 2
             assert np.isclose(structure.volume, 30**3)
+
+        # Triplet O2 vs closed-shell X2 magnetization is stored on the molecular
+        # ``ComputedStructureEntry`` (used by ``_set_spin_polarisation``), not on
+        # the bare ``Structure`` from ``make_molecule_in_a_box``:
+        o2_mol = chemical_potentials.make_molecular_entry(
+            ComputedEntry(
+                "O",
+                -1.0,
+                data={"energy_per_atom": -1.0, "formula_pretty": "O2"},
+            )
+        )
+        assert o2_mol.data["summary"]["total_magnetization"] == 2
+        h2_mol = chemical_potentials.make_molecular_entry(
+            ComputedEntry(
+                "H",
+                -0.5,
+                data={"energy_per_atom": -0.5, "formula_pretty": "H2"},
+            )
+        )
+        assert h2_mol.data["summary"]["total_magnetization"] == 0
 
         with pytest.raises(ValueError) as exc:
             chemical_potentials.make_molecule_in_a_box("Te")
@@ -1399,8 +1416,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "There are mismatching INCAR tags",
             "['O2']:",
             "Where ZrO2 was used as the reference entry calculation.",
-            "[('HFSCREEN', 0.20786986, 0.2), ('LREAL', 'Auto      ! projection operators: autom', "
-            "False)]",
+            "[('HFSCREEN', 0.20786986, 0.2), ('LREAL', 'Auto      ! projection operators: autom', False)]",
         ]
         assert all(any(i in str(warning.message) for warning in w) for i in expected_mismatching_info)
         self._general_cpa_check(cpa)

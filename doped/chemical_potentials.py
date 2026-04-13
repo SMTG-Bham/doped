@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
 from pathlib import Path
 from re import sub
-from typing import Any
+from typing import Any, overload
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,6 +25,7 @@ from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import loadfn
+from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Lattice, Structure
@@ -103,7 +104,7 @@ default_get_entries_kwargs = {
 }
 
 
-def make_molecule_in_a_box(element: str):
+def make_molecule_in_a_box(element: str) -> Structure:
     """
     Generate an X2 'molecule-in-a-box' structure for the input element X, (i.e.
     a 30 Å cuboid supercell with a single X2 molecule in the centre).
@@ -117,15 +118,8 @@ def make_molecule_in_a_box(element: str):
             Element symbol of the molecule to generate.
 
     Returns:
-        Structure, formula and total magnetization:
-
-        structure (Structure):
-            ``pymatgen`` |Structure| object of the molecule in a box.
-        formula (str):
-            Chemical formula of the molecule in a box.
-        total_magnetization (int):
-            Total magnetization of the molecule in a box
-            (0 for all X2 except O2 which has a triplet ground state (S = 1)).
+        Structure:
+            ``pymatgen`` |Structure| of the molecule in a box.
     """
     element = sub(r"\d+$", "", element)  # remove digits in case provided as X2 etc
     if element not in elemental_diatomic_bond_lengths:
@@ -135,15 +129,12 @@ def make_molecule_in_a_box(element: str):
 
     lattice = np.array([[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]])
     bond_length = elemental_diatomic_bond_lengths[element]
-    structure = Structure(
+    return Structure(
         lattice=lattice,
         species=[element, element],
         coords=[[15, 15, 15], [15, 15, 15 + bond_length]],
         coords_are_cartesian=True,
     )
-    total_magnetization = 0 if element != "O" else 2  # O2 has a triplet ground state (S = 1)
-
-    return structure, total_magnetization
 
 
 def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntry:
@@ -152,7 +143,11 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     input elemental ``ComputedEntry``.
 
     The formula of the input ``computed_entry`` must be one of the supported
-    diatomic molecules (O2, N2, H2, F2, Cl2).
+    diatomic molecules (O2, N2, H2, F2, Cl2). The magnetization of the output
+    molecular entry (as in ``entry.data["summary"]["total_magnetization"]``) is
+    set to 0 for all X2 except O2, which has a triplet ground state (S = 1) --
+    this is then used to set spin polarisation input settings (``ISPIN`` and
+    ``NUPDOWN`` in ``VASP``) appropriately, with ``_set_spin_polarisation()``.
 
     Args:
         computed_entry (ComputedEntry):
@@ -165,7 +160,7 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     assert len(computed_entry.composition.elements) == 1  # Elemental!
     formula = computed_entry.data.get("formula_pretty", "N/A")
     element = computed_entry.composition.elements[0].symbol
-    struct, total_magnetization = make_molecule_in_a_box(element)
+    struct = make_molecule_in_a_box(element)
     molecular_entry = ComputedStructureEntry(
         structure=struct,
         energy=computed_entry.energy_per_atom * 2,  # set entry energy to be hull energy
@@ -184,7 +179,7 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     molecular_entry.data["material_id"] = "mp-0"
     molecular_entry.data["summary"] = {
         "band_gap": None,
-        "total_magnetization": total_magnetization,
+        "total_magnetization": 0 if element != "O" else 2,  # O2 has a triplet ground state (S = 1)
         "theoretical": False,
         "database_IDs": {},
     }
@@ -192,7 +187,12 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     return molecular_entry
 
 
-def _renormalise_entry(entry, renormalisation_energy_per_atom, name=None, description=None):
+def _renormalise_entry(
+    entry: ComputedEntry | ComputedStructureEntry,
+    renormalisation_energy_per_atom: float,
+    name: str | None = None,
+    description: str | None = None,
+) -> ComputedEntry | ComputedStructureEntry:
     """
     Regenerate the input entry (``ComputedEntry``/``ComputedStructureEntry``)
     with an energy per atom `decreased` by ``renormalisation_energy_per_atom``,
@@ -229,7 +229,7 @@ def _renormalise_entry(entry, renormalisation_energy_per_atom, name=None, descri
 
 def get_chempots_from_phase_diagram(
     bulk_computed_entry: ComputedEntry, phase_diagram: PhaseDiagram
-) -> dict:
+) -> dict[str, dict]:
     """
     Get the chemical potential limits for the bulk computed entry in the
     supplied phase diagram.
@@ -264,7 +264,7 @@ def get_chempots_from_phase_diagram(
     return phase_diagram.get_all_chempots(bulk_computed_entry.composition.reduced_composition)
 
 
-def _get_all_chemsyses(chemsys: str | list[str]):
+def _get_all_chemsyses(chemsys: str | list[str]) -> list[str]:
     """
     Convert a chemical system (``chemsys``) string (in the old/usual "A-B-C" or
     ["A", "B", "C"] formats, used on Materials Project website) to format
@@ -288,8 +288,8 @@ def get_entries_in_chemsys(
     api_key: str | None = None,
     energy_above_hull: float | None = None,
     bulk_composition: str | Composition | None = None,
-    **kwargs,
-):
+    **kwargs: Any,
+) -> list[ComputedStructureEntry]:
     r"""
     Convenience function to get a list of ``ComputedStructureEntry``\s for an
     input chemical system, using ``MPRester.get_entries_in_chemsys()``.
@@ -371,8 +371,8 @@ def get_entries(
     chemsys_formula_id_criteria: str | dict[str, Any],
     api_key: str | None = None,
     bulk_composition: str | Composition | None = None,
-    **kwargs,
-):
+    **kwargs: Any,
+) -> list[ComputedStructureEntry]:
     r"""
     Convenience function to get a list of ``ComputedStructureEntry``\s for an
     input single composition/formula, chemical system, MPID or full criteria,
@@ -419,7 +419,7 @@ def get_entries(
     return entries
 
 
-def _parse_MP_API_key(api_key: str | None = None):
+def _parse_MP_API_key(api_key: str | None = None) -> str:
     """
     Parse the Materials Project (MP) API key, either from the input argument or
     from the environment variable ``PMG_MAPI_KEY``, throwing an error if it is
@@ -471,7 +471,7 @@ def get_MP_summary_dicts(
     entries: list[ComputedEntry] | None = None,
     chemsys: str | list[str] | None = None,
     api_key: str | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> dict[str, dict]:
     r"""
     Get the corresponding Materials Project (MP) summary dictionaries for
@@ -549,7 +549,7 @@ def _entries_sort_func(
     entry: ComputedEntry,
     use_e_per_atom: bool = False,
     bulk_composition: str | Composition | dict | list | None = None,
-):
+) -> tuple[float, bool, int, list[tuple[int, int]], str]:
     r"""
     Function to sort ``ComputedEntry``\s by energy above hull, then if
     composition matches ``bulk_composition`` (if provided), then by the number
@@ -570,11 +570,12 @@ def _entries_sort_func(
             Default is ``None`` (don't sort according to this).
 
     Returns:
-        tuple:
-            Tuple of ``True``/``False`` (if composition matches bulk
-            composition), the energy above hull (or energy per atom), number of
-            elements in the formula, and sorted (group, row) list of elements
-            in the formula, and the formula name.
+        tuple[float, bool, int, list[tuple[int, int]], str]:
+            Sort key: energy above hull (or energy per atom if
+            ``use_e_per_atom``), whether the composition differs from the bulk
+            composition (when ``bulk_composition`` is set), number of species
+            in ``entry.name``, periodic-table ordering tuples for each element,
+            then ``entry.name``.
     """
     bulk_reduced_comp = Composition(bulk_composition).reduced_composition if bulk_composition else None
     return (
@@ -591,7 +592,7 @@ def prune_entries_to_border_candidates(
     bulk_computed_entry: ComputedEntry,
     phase_diagram: PhaseDiagram | None = None,
     energy_above_hull: float = 0.05,
-):
+) -> list[ComputedEntry]:
     """
     Given an input list of ``ComputedEntry``/``ComputedStructureEntry``s
     (``entries``) and a single entry for the host material
@@ -684,7 +685,9 @@ def prune_entries_to_border_candidates(
 
 
 def get_and_set_competing_phase_name(
-    entry: ComputedStructureEntry | ComputedEntry, regenerate=False, ndigits=3
+    entry: ComputedStructureEntry | ComputedEntry,
+    regenerate: bool = False,
+    ndigits: int = 3,
 ) -> str:
     """
     Get the ``doped`` name for a competing phase entry from the Materials
@@ -754,7 +757,9 @@ def _nominal_structure_for_input_writing(composition: Composition) -> Structure:
 
 
 def _get_competing_phase_folder_name(
-    entry: ComputedStructureEntry | ComputedEntry, regenerate=False, ndigits=3
+    entry: ComputedStructureEntry | ComputedEntry,
+    regenerate: bool = False,
+    ndigits: int = 3,
 ) -> str:
     """
     Get the ``doped`` `folder` name for a competing phase entry from the
@@ -787,7 +792,9 @@ def _get_competing_phase_folder_name(
     return get_and_set_competing_phase_name(entry, regenerate=regenerate, ndigits=ndigits).replace("/", "")
 
 
-def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry | ComputedEntry]) -> None:
+def _name_entries_and_handle_duplicates(
+    entries: list[ComputedStructureEntry | ComputedEntry],
+) -> None:
     """
     Set ``entry.data["doped_name"]`` for each ``ComputedEntry`` in ``entries``,
     using ``get_and_set_competing_phase_name``, increasing ``ndigits``
@@ -1450,8 +1457,7 @@ class CompetingPhases(MSONable):
                         continue  # this set of kpoints already generated, bump reciprocal density more
 
                     fname = (
-                        f"{output_path}/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
-                        f"/{kname}"
+                        f"{output_path}/{_get_competing_phase_folder_name(entry)}/kpoint_converge/{kname}"
                     )
                     dict_sets[fname] = dict_set
                     _generated_kpoints_folders.append(kname)
@@ -1468,8 +1474,6 @@ class CompetingPhases(MSONable):
                 f"do not require k-point convergence testing, as Γ-only sampling is sufficient."
             )
         return dict_sets
-
-    # TODO: Missing typing in this module
 
     def write_kpoint_convergence_files(
         self,
@@ -1804,7 +1808,12 @@ class CompetingPhases(MSONable):
 
         return dict_sets
 
-    def _set_spin_polarisation(self, incar_settings, user_incar_settings, entry):
+    def _set_spin_polarisation(
+        self,
+        incar_settings: dict,
+        user_incar_settings: dict,
+        entry: ComputedEntry,
+    ) -> None:
         """
         If the entry has a non-zero total magnetization (greater than the
         default tolerance of 0.1), set ``ISPIN`` to 2 (allowing spin
@@ -1825,7 +1834,7 @@ class CompetingPhases(MSONable):
 
         # otherwise ISPIN not set, so no spin polarisation
 
-    def _set_default_metal_smearing(self, incar_settings, user_incar_settings):
+    def _set_default_metal_smearing(self, incar_settings: dict, user_incar_settings: dict) -> None:
         """
         Set the smearing parameters to the ``doped`` defaults for metallic
         phases (i.e. ``ISMEAR`` = 2 (Methfessel-Paxton) and ``SIGMA`` = 0.2
@@ -1834,7 +1843,7 @@ class CompetingPhases(MSONable):
         incar_settings["ISMEAR"] = user_incar_settings.get("ISMEAR", 2)
         incar_settings["SIGMA"] = user_incar_settings.get("SIGMA", 0.2)
 
-    def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]):
+    def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]) -> list[ComputedEntry]:
         r"""
         Given an input list of ``ComputedEntry`` objects, adds a
         ``ComputedStructureEntry`` for each diatomic elemental phase (O2, N2,
@@ -1899,7 +1908,7 @@ class CompetingPhases(MSONable):
             entries_dict[doped_name] = entry
         return entries_dict
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Any:
         """
         Redirect unknown attribute/method lookups to the entries dictionary.
         """
@@ -1910,7 +1919,13 @@ class CompetingPhases(MSONable):
             raise AttributeError(attr)
         return getattr(self.entries_dict, attr)
 
-    def __getitem__(self, key):
+    @overload
+    def __getitem__(self, key: str | int) -> ComputedEntry | ComputedStructureEntry: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> list[ComputedEntry | ComputedStructureEntry]: ...
+
+    def __getitem__(self, key: str | int | slice) -> ComputedEntry | list[ComputedEntry]:
         """
         Make the object subscriptable.
 
@@ -1921,7 +1936,7 @@ class CompetingPhases(MSONable):
             return self.entries_dict[key]
         return self.entries[key]
 
-    def __contains__(self, item):
+    def __contains__(self, item: str | ComputedEntry | ComputedStructureEntry) -> bool:
         """
         Return ``True`` if ``item`` is in the entries.
 
@@ -1933,7 +1948,7 @@ class CompetingPhases(MSONable):
             return item in self.entries_dict
         return item in self.entries
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Return the number of competing phase entries.
         """
@@ -1945,7 +1960,7 @@ class CompetingPhases(MSONable):
         """
         return iter(self.entries_dict)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Returns a string representation of the ``CompetingPhases`` object.
         """
@@ -2650,7 +2665,9 @@ def _griddata_linear_in_hull(
     return np.hstack((X_inside, values_inside.reshape(-1, 1)))  # (N, k+1)
 
 
-def entries_from_chempot_limits(chempots_dict):
+def entries_from_chempot_limits(
+    chempots_dict: dict[str, dict],
+) -> list[ComputedEntry]:
     """
     Generate a list of ``ComputedEntry`` objects from a ``doped`` dictionary of
     chemical potential limits.
@@ -2661,7 +2678,7 @@ def entries_from_chempot_limits(chempots_dict):
     heatmap plotting).
 
     Args:
-        chempots_dict (dict):
+        chempots_dict (dict[str, dict]):
             ``doped`` chemical potential limits dictionary, as output by
             ``CompetingPhasesAnalyzer.chempots``, having the keys:
 
@@ -2838,7 +2855,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def _from_entries(
         self, entries: list[ComputedEntry | ComputedStructureEntry], check_compatibility: bool = True
-    ):
+    ) -> None:
         r"""
         Initialises the |CompetingPhasesAnalyzer| object from a list of
         ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
@@ -3114,7 +3131,7 @@ class CompetingPhasesAnalyzer(MSONable):
         verbose: bool = True,
         processes: int | None = None,
         check_compatibility: bool = True,
-    ):
+    ) -> None:
         r"""
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
         generating ``ComputedStructureEntry``\s and then continuing
@@ -3263,7 +3280,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
         return self._from_entries(self.entries, check_compatibility=check_compatibility)
 
-    def _collect_vaspruns_from_list(self, path_list: list[PathLike]):
+    def _collect_vaspruns_from_list(self, path_list: list[PathLike]) -> None:
         """
         Populate ``self.vasprun_paths`` from a list of paths, where each entry
         can be a direct ``vasprun.xml(.gz)`` path or a directory containing
@@ -3283,7 +3300,7 @@ class CompetingPhasesAnalyzer(MSONable):
         path: PathLike,
         subfolder: PathLike | None = "vasp_std",
         verbose: bool = True,
-    ):
+    ) -> None:
         """
         Recursively search ``path`` for ``vasprun.xml(.gz)`` files, using the
         :func:`~doped.utils.parsing._find_calc_outputs` helper for file
@@ -3416,7 +3433,7 @@ class CompetingPhasesAnalyzer(MSONable):
         extrinsic_species: str | Element | list[str] | list[Element] | None = None,
         sort_by: str | None = None,
         verbose: bool = True,
-    ):
+    ) -> pd.DataFrame:
         """
         Calculates the chemical potential limits for the host composition
         (``self.composition``).
@@ -3490,7 +3507,9 @@ class CompetingPhasesAnalyzer(MSONable):
 
         return chempots_df
 
-    def _calculate_extrinsic_chempot_lims(self, extrinsic_elements, chempots_df):
+    def _calculate_extrinsic_chempot_lims(
+        self, extrinsic_elements: list[Element], chempots_df: pd.DataFrame
+    ) -> None:
         # TODO: At present, this does not work for codoping I believe?
         # for each intrinsic chemical potential limit, find the most stable extrinsic competing phase
         # (equivalent to most negative μ_extrinsic_elt):
@@ -3551,7 +3570,7 @@ class CompetingPhasesAnalyzer(MSONable):
         # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
         self.chempots = _round_floats(chempot_lims_w_extrinsic, 4)
 
-    def to_LaTeX_table(self, splits=1, prune_polymorphs=True) -> str:
+    def to_LaTeX_table(self, splits: int = 1, prune_polymorphs: bool = True) -> str:
         """
         A very simple function to print out the competing phase formation
         energies in a LaTeX table format, showing the formula, space group,
@@ -3794,7 +3813,7 @@ class CompetingPhasesAnalyzer(MSONable):
             entries_dict[doped_name] = entry
         return entries_dict
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Any:
         """
         Redirect unknown attribute/method lookups to the entries dictionary.
         """
@@ -3805,7 +3824,16 @@ class CompetingPhasesAnalyzer(MSONable):
             raise AttributeError(attr)
         return getattr(self.entries_dict, attr)
 
-    def __getitem__(self, key):
+    @overload
+    def __getitem__(self, key: str) -> ComputedEntry: ...
+
+    @overload
+    def __getitem__(self, key: int) -> ComputedEntry: ...
+
+    @overload
+    def __getitem__(self, key: slice) -> list[ComputedEntry]: ...
+
+    def __getitem__(self, key: str | int | slice) -> ComputedEntry | list[ComputedEntry]:
         """
         Make the object subscriptable.
 
@@ -3816,7 +3844,7 @@ class CompetingPhasesAnalyzer(MSONable):
             return self.entries_dict[key]
         return self.entries[key]
 
-    def __contains__(self, item):
+    def __contains__(self, item: str | ComputedEntry | ComputedStructureEntry) -> bool:
         """
         Return ``True`` if ``item`` is in the entries.
 
@@ -3828,7 +3856,7 @@ class CompetingPhasesAnalyzer(MSONable):
             return item in self.entries_dict
         return item in self.entries
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Return the number of competing phase entries.
         """
@@ -3901,7 +3929,7 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         return ChemicalPotentialGrid(self.chempots)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Returns a string representation of the |CompetingPhasesAnalyzer|
         object.
@@ -4300,7 +4328,7 @@ def _get_line_intersections(
 
 
 def _add_line_labels(
-    intersections: list,
+    intersections: Sequence[NDArray[np.floating[Any]]],
     lines: dict[str, plt.Line2D],
     x_range: float,
     y_range: float,
@@ -4417,8 +4445,9 @@ def _parse_entry_from_vasprun_and_catch_exception(
 
 
 def _possible_label_positions_from_bbox_intersections(
-    intersections: list[float] | np.ndarray[float], positions_per_line=3
-) -> np.ndarray[float]:
+    intersections: Sequence[NDArray[np.floating[Any]]] | NDArray[np.floating[Any]],
+    positions_per_line: int = 3,
+) -> NDArray[np.floating[Any]]:
     """
     From a list or array of ``intersections``, which contains the intersections
     of lines with a plot bounding box (limits) and thus has shape ``(N_lines,
@@ -4460,8 +4489,11 @@ def _possible_label_positions_from_bbox_intersections(
 
 
 def _find_best_label_positions(
-    poss_label_positions, x_range=1, y_range=1, return_best_norm_dist=False
-) -> np.ndarray | tuple[np.ndarray, float]:
+    poss_label_positions: NDArray[np.floating[Any]],
+    x_range: float = 1,
+    y_range: float = 1,
+    return_best_norm_dist: bool = False,
+) -> NDArray[np.floating[Any]] | tuple[NDArray[np.floating[Any]], float]:
     """
     From an array of possible label positions, find the best possible
     combination of label positions which maximises the distance between labels
@@ -4527,7 +4559,8 @@ def _find_best_label_positions(
     return best_combo
 
 
-def get_X_rich_limit(X: str, chempots: dict):
+# TODO: Handle tie conditions
+def get_X_rich_limit(X: str, chempots: dict) -> str:
     """
     Determine the chemical potential limit of the input chempots dict which
     corresponds to the most X-rich conditions.
@@ -4538,6 +4571,10 @@ def get_X_rich_limit(X: str, chempots: dict):
         chempots (dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
+
+    Returns:
+        str: The name of the chemical potential limit corresponding to the most
+        X-rich conditions.
     """
     candidate_limits = [
         (limit, chempot_dict[X]) for limit, chempot_dict in chempots["limits"].items() if X in chempot_dict
@@ -4547,7 +4584,7 @@ def get_X_rich_limit(X: str, chempots: dict):
     return max(candidate_limits, key=lambda limit_chempot: limit_chempot[1])[0]
 
 
-def get_X_poor_limit(X: str, chempots: dict):
+def get_X_poor_limit(X: str, chempots: dict) -> str:
     """
     Determine the chemical potential limit of the input chempots dict which
     corresponds to the most X-poor conditions.
@@ -4558,6 +4595,10 @@ def get_X_poor_limit(X: str, chempots: dict):
         chempots (dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
+
+    Returns:
+        str: The name of the chemical potential limit corresponding to the most
+        X-poor conditions.
     """
     candidate_limits = [
         (limit, chempot_dict[X]) for limit, chempot_dict in chempots["limits"].items() if X in chempot_dict
