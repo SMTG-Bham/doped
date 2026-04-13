@@ -283,8 +283,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {cp_settings}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
-                cp.convergence_setup(potcar_spec=True)  # test methods
-                cp.vasp_std_setup(potcar_spec=True)  # test methods
+                cp.write_kpoint_convergence_files(potcar_spec=True)  # test methods
+                cp.write_relaxation_files(potcar_spec=True)  # test methods
             _print_warning_info(w)  # for debugging
             if cp_settings.get("full_phase_diagram"):
                 assert len(cp.entries) == 172
@@ -309,8 +309,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
             potcar_spec = not _potcars_available()
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**kwargs)
-                cp.convergence_setup(potcar_spec=potcar_spec)  # test methods
-                cp.vasp_std_setup(potcar_spec=potcar_spec)  # test methods
+                cp.write_kpoint_convergence_files(potcar_spec=potcar_spec)  # test methods
+                cp.write_relaxation_files(potcar_spec=potcar_spec)  # test methods
             _print_warning_info(w)  # for debugging
             user_warnings = [x for x in w if x.category is UserWarning]
             assert len(user_warnings) == 3  # no MP host; no-structure notice x2 (convergence + vasp_std)
@@ -407,11 +407,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
             shutil.rmtree("CompetingPhases")  # clean up for next iteration of test
 
-    def test_convergence_setup(self):
+    def test_write_kpoint_convergence_files(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         # potcar spec doesn't need potcars set up for pmg and it still works
         if_present_rm("CompetingPhases")
-        dict_sets_no_write = cp.convergence_setup(potcar_spec=True, write_files=False)
+        dict_sets_no_write = cp.get_kpoint_convergence_sets()
         assert dict_sets_no_write
         assert not os.path.exists("CompetingPhases")
         no_write_key = "CompetingPhases/ZrO2_Pbca_EaH_0.009/kpoint_converge/k2,1,1"
@@ -422,7 +422,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert no_write_dict_set.incar["GGA"] == "Ps"
         assert no_write_dict_set.incar["NSW"] == 0
 
-        dict_sets = cp.convergence_setup(potcar_spec=True, write_files=True)
+        dict_sets = cp.write_kpoint_convergence_files(potcar_spec=True)
         assert dict_sets
         assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
         assert len(cp.metallic_entries) == 6
@@ -455,18 +455,18 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         # existing folders should warn and be overwritten with new settings
         with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
-            cp.convergence_setup(
-                potcar_spec=True, write_files=True, user_incar_settings={"NSW": 7, "GGA": "Ps"}
+            cp.write_kpoint_convergence_files(
+                potcar_spec=True, user_incar_settings={"NSW": 7, "GGA": "Ps"}
             )
         with open(f"{Zro2_EaH_0pt009_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any(line == "NSW = 7\n" for line in contents)
             assert not any(line == "NSW = 0\n" for line in contents)
 
-    def test_vasp_std_setup(self):
+    def test_write_relaxation_files(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
-        dict_sets_no_write = cp.vasp_std_setup(potcar_spec=True, write_files=False)
+        dict_sets_no_write = cp.get_relaxation_sets()
         assert len(dict_sets_no_write) == len(cp)  # one per entry
         assert not os.path.exists("CompetingPhases")
         no_write_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"
@@ -478,7 +478,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert no_write_dict_set.incar["ISIF"] == 3
         assert no_write_dict_set.incar["GGA"] == "Pe"
 
-        dict_sets = cp.vasp_std_setup(potcar_spec=True, write_files=True)
+        dict_sets = cp.write_relaxation_files(potcar_spec=True)
         assert len(dict_sets) == len(cp)  # one per entry
         assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
         assert len(cp.nonmetallic_entries) == 6
@@ -500,7 +500,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert dict_set.incar["GGA"] == "Pe"
         with open(f"{ZrO2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
-            assert "KPOINTS from doped, with reciprocal_density = 64/Å" in contents[0]
+            assert "KPOINTS from doped, with reciprocal_density = 64.0/Å" in contents[0]
             assert contents[3] == "4 4 4\n"
 
         with open(f"{ZrO2_EaH_0_std_folder}/POTCAR.spec", encoding="utf-8") as file:
@@ -526,7 +526,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
         # existing folders should warn and be overwritten with new settings
         with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
-            cp.vasp_std_setup(potcar_spec=True, write_files=True, user_incar_settings={"ISIF": 2})
+            cp.write_relaxation_files(potcar_spec=True, user_incar_settings={"ISIF": 2})
         with open(f"{ZrO2_EaH_0_std_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert "ISIF = 2\n" in contents
@@ -536,7 +536,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         custom_dir = "CustomOutputDir"
 
-        conv_sets = cp.convergence_setup(potcar_spec=True, write_files=True, output_path=custom_dir)
+        conv_sets = cp.write_kpoint_convergence_files(potcar_spec=True, output_path=custom_dir)
         assert conv_sets
         assert not os.path.exists("CompetingPhases")
         assert all(key.startswith(f"{custom_dir}/") for key in conv_sets)
@@ -545,13 +545,44 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert os.path.isfile(os.path.join(sample_key, "INCAR"))
         if_present_rm(custom_dir)
 
-        std_sets = cp.vasp_std_setup(potcar_spec=True, write_files=True, output_path=custom_dir)
+        std_sets = cp.write_relaxation_files(potcar_spec=True, output_path=custom_dir)
         assert std_sets
         assert not os.path.exists("CompetingPhases")
         assert all(key.startswith(f"{custom_dir}/") for key in std_sets)
         sample_key = next(iter(std_sets))
         assert os.path.exists(sample_key)
         assert os.path.isfile(os.path.join(sample_key, "INCAR"))
+
+    def test_deprecated_convergence_setup(self):
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        if_present_rm("CompetingPhases")
+        with pytest.warns(DeprecationWarning, match="convergence_setup.*deprecated"):
+            dict_sets = cp.convergence_setup(potcar_spec=True)
+        assert dict_sets
+        assert os.path.exists("CompetingPhases")
+
+    def test_deprecated_vasp_std_setup(self):
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        if_present_rm("CompetingPhases")
+        with pytest.warns(DeprecationWarning, match="vasp_std_setup.*deprecated"):
+            dict_sets = cp.vasp_std_setup(potcar_spec=True)
+        assert dict_sets
+        assert os.path.exists("CompetingPhases")
+
+    def test_get_kpoint_convergence_sets(self):
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        dict_sets = cp.get_kpoint_convergence_sets()
+        assert dict_sets
+        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert not os.path.exists("CompetingPhases")
+
+    def test_get_relaxation_sets(self):
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        dict_sets = cp.get_relaxation_sets()
+        assert dict_sets
+        assert len(dict_sets) == len(cp)
+        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in dict_sets.values())
+        assert not os.path.exists("CompetingPhases")
 
     def test_api_keys_errors(self):
         api_key_error = ValueError(
@@ -706,7 +737,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         ]
 
         if_present_rm("CompetingPhases")
-        conv_dict_sets = self.La_ZrO2_cp.convergence_setup(
+        conv_dict_sets = self.La_ZrO2_cp.write_kpoint_convergence_files(
             kpoints_metals=(5, 10, 5),
             kpoints_nonmetals=(5, 10, 5),
             potcar_spec=True,
@@ -726,7 +757,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             assert not os.path.exists(f"CompetingPhases/{name}")
 
         if_present_rm("CompetingPhases")
-        std_dict_sets = self.La_ZrO2_cp.vasp_std_setup(
+        std_dict_sets = self.La_ZrO2_cp.write_relaxation_files(
             potcar_spec=True,
             extrinsic_only=True,
         )

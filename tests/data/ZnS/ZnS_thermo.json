@@ -1,7 +1,7 @@
 {
     "@class": "DefectThermodynamics",
     "@module": "doped.thermodynamics",
-    "@version": "4.0.0",
+    "@version": "3.2.1",
     "band_gap": 3.3084000000000007,
     "bulk_dos": null,
     "bulk_formula": "ZnS",
@@ -11,7 +11,7 @@
         "inter_26_Al_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -5906,7 +5906,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.29098653981063105
+                "kumagai_charge_correction": 0.2909865398106364
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -5921,14 +5921,14 @@
                             0.14610323
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.19107932259162208,
+                        "point_charge_correction": 0.19107932259162264,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.636280758507644,
-                                "pc_potential": -0.11295278730949217,
+                                "pc_potential": -0.11295278730948934,
                                 "potential": -0.17130000000000223,
                                 "specie": "Zn"
                             },
@@ -5982,7 +5982,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.657476155524884,
-                                "pc_potential": -0.11293206116423217,
+                                "pc_potential": -0.11293206116423123,
                                 "potential": -0.1960000000000015,
                                 "specie": "Zn"
                             },
@@ -5991,7 +5991,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.385953283979394,
-                                "pc_potential": -0.13437354517099773,
+                                "pc_potential": -0.13437354517099553,
                                 "potential": -0.25150000000000006,
                                 "specie": "Zn"
                             },
@@ -6000,7 +6000,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.858192392293977,
-                                "pc_potential": -0.13556739605740054,
+                                "pc_potential": -0.13556739605739238,
                                 "potential": -0.25330000000000297,
                                 "specie": "Zn"
                             },
@@ -6117,7 +6117,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.439925683188184,
-                                "pc_potential": -0.13154164943577498,
+                                "pc_potential": -0.13154164943577124,
                                 "potential": -0.23990000000000222,
                                 "specie": "Zn"
                             },
@@ -6126,7 +6126,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.743935050007579,
-                                "pc_potential": -0.13757930214958566,
+                                "pc_potential": -0.1375793021495778,
                                 "potential": -0.2656000000000027,
                                 "specie": "Zn"
                             },
@@ -6216,7 +6216,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.633068585338571,
-                                "pc_potential": -0.1097659531183081,
+                                "pc_potential": -0.10976595311830621,
                                 "potential": -0.25379999999999825,
                                 "specie": "S"
                             },
@@ -6234,7 +6234,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.470533090052107,
-                                "pc_potential": -0.10401313534027443,
+                                "pc_potential": -0.10401313534027065,
                                 "potential": -0.1530000000000058,
                                 "specie": "S"
                             },
@@ -6252,7 +6252,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.396305556105115,
-                                "pc_potential": -0.12175138043368137,
+                                "pc_potential": -0.12175138043367197,
                                 "potential": -0.21460000000000434,
                                 "specie": "S"
                             },
@@ -6261,7 +6261,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.655577990748053,
-                                "pc_potential": -0.1449295467314905,
+                                "pc_potential": -0.14492954673148564,
                                 "potential": -0.23340000000000316,
                                 "specie": "S"
                             },
@@ -6279,7 +6279,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.4224036213993765,
-                                "pc_potential": -0.10713196646432607,
+                                "pc_potential": -0.10713196646432373,
                                 "potential": -0.23319999999999652,
                                 "specie": "S"
                             },
@@ -6369,7 +6369,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.405567885035488,
-                                "pc_potential": -0.12201460119516669,
+                                "pc_potential": -0.12201460119515775,
                                 "potential": -0.2189999999999941,
                                 "specie": "S"
                             },
@@ -6378,7 +6378,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.660543633463877,
-                                "pc_potential": -0.14426782589046638,
+                                "pc_potential": -0.1442678258904601,
                                 "potential": -0.24370000000000402,
                                 "specie": "S"
                             },
@@ -6405,7 +6405,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.9779004817125765,
-                                "pc_potential": -0.10387780847269724,
+                                "pc_potential": -0.10387780847269316,
                                 "potential": -0.19310000000000116,
                                 "specie": "S"
                             },
@@ -6489,11 +6489,20 @@
                                 "pc_potential": null,
                                 "potential": -0.16289999999999338,
                                 "specie": "S"
+                            },
+                            {
+                                "@class": "PotentialSite",
+                                "@module": "pydefect.corrections.efnv_correction",
+                                "@version": "0.9.9",
+                                "distance": 2.2336964075776473,
+                                "pc_potential": null,
+                                "potential": -0.45229999999999393,
+                                "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.0070379016373331976
+                "kumagai_charge_correction_error": 0.007037901637333245
             },
             "defect": {
                 "@class": "Interstitial",
@@ -10484,7 +10493,7 @@
         "inter_26_Al_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -16379,7 +16388,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 1.0084171719685813
+                "kumagai_charge_correction": 1.008417171968616
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -16394,7 +16403,7 @@
                             0.12172468
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.7643172903664883,
+                        "point_charge_correction": 0.7643172903664905,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -16464,7 +16473,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.991346359608416,
-                                "pc_potential": -0.27650490644712894,
+                                "pc_potential": -0.2765049064471183,
                                 "potential": -0.4237000000000002,
                                 "specie": "Zn"
                             },
@@ -16473,7 +16482,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.133521193754008,
-                                "pc_potential": -0.27204413401451666,
+                                "pc_potential": -0.2720441340145132,
                                 "potential": -0.43900000000000006,
                                 "specie": "Zn"
                             },
@@ -16590,7 +16599,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.137863120700914,
-                                "pc_potential": -0.27253185260945784,
+                                "pc_potential": -0.2725318526094494,
                                 "potential": -0.40700000000000003,
                                 "specie": "Zn"
                             },
@@ -16599,7 +16608,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.993894526144226,
-                                "pc_potential": -0.2762192817096934,
+                                "pc_potential": -0.2762192817096774,
                                 "potential": -0.44080000000000297,
                                 "specie": "Zn"
                             },
@@ -16689,7 +16698,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.007021825713025,
-                                "pc_potential": -0.21639511967789535,
+                                "pc_potential": -0.21639511967788497,
                                 "potential": -0.3329999999999984,
                                 "specie": "S"
                             },
@@ -16707,7 +16716,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.042082477668195,
-                                "pc_potential": -0.1765104415063263,
+                                "pc_potential": -0.17651044150630213,
                                 "potential": -0.2775000000000034,
                                 "specie": "S"
                             },
@@ -16725,7 +16734,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.073336759552002,
-                                "pc_potential": -0.23884590773854955,
+                                "pc_potential": -0.23884590773852382,
                                 "potential": -0.3387000000000029,
                                 "specie": "S"
                             },
@@ -16734,7 +16743,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.044212602341718,
-                                "pc_potential": -0.28260455717378596,
+                                "pc_potential": -0.28260455717377153,
                                 "potential": -0.40109999999999957,
                                 "specie": "S"
                             },
@@ -16743,7 +16752,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.029867760843301,
-                                "pc_potential": -0.20553984403384667,
+                                "pc_potential": -0.2055398440338288,
                                 "potential": -0.32330000000000325,
                                 "specie": "S"
                             },
@@ -16752,7 +16761,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.019398264024613,
-                                "pc_potential": -0.23439112399717396,
+                                "pc_potential": -0.23439112399716927,
                                 "potential": -0.3499000000000052,
                                 "specie": "S"
                             },
@@ -16842,7 +16851,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.075630802678484,
-                                "pc_potential": -0.23832447823664196,
+                                "pc_potential": -0.23832447823662284,
                                 "potential": -0.3353999999999928,
                                 "specie": "S"
                             },
@@ -16851,7 +16860,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.041396103797814,
-                                "pc_potential": -0.2815022840877871,
+                                "pc_potential": -0.2815022840877635,
                                 "potential": -0.3965999999999923,
                                 "specie": "S"
                             },
@@ -16869,7 +16878,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.044388715287229,
-                                "pc_potential": -0.21058220454327117,
+                                "pc_potential": -0.21058220454324575,
                                 "potential": -0.31170000000000186,
                                 "specie": "S"
                             },
@@ -16878,7 +16887,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.034083859143186,
-                                "pc_potential": -0.2285046930092734,
+                                "pc_potential": -0.2285046930092511,
                                 "potential": -0.34149999999999636,
                                 "specie": "S"
                             },
@@ -16975,7 +16984,7 @@
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.012264271497495859
+                "kumagai_charge_correction_error": 0.012264271497493236
             },
             "defect": {
                 "@class": "Interstitial",
@@ -20438,7 +20447,7 @@
         "inter_26_Al_3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -26333,7 +26342,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 1.9003001805755724
+                "kumagai_charge_correction": 1.9003001805756339
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -26348,7 +26357,7 @@
                             0.12578357
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 1.719713903324599,
+                        "point_charge_correction": 1.7197139033246038,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -26418,7 +26427,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.972530910485222,
-                                "pc_potential": -0.41384427750138636,
+                                "pc_potential": -0.4138442775013699,
                                 "potential": -0.5020000000000024,
                                 "specie": "Zn"
                             },
@@ -26427,7 +26436,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.127299145474163,
-                                "pc_potential": -0.4092391505312755,
+                                "pc_potential": -0.40923915053126514,
                                 "potential": -0.547500000000003,
                                 "specie": "Zn"
                             },
@@ -26544,7 +26553,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.109204370092353,
-                                "pc_potential": -0.40787908054686206,
+                                "pc_potential": -0.4078790805468376,
                                 "potential": -0.45580000000000354,
                                 "specie": "Zn"
                             },
@@ -26553,7 +26562,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.993683503058014,
-                                "pc_potential": -0.415380384898953,
+                                "pc_potential": -0.4153803848989262,
                                 "potential": -0.5469000000000008,
                                 "specie": "Zn"
                             },
@@ -26643,7 +26652,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.03202713189823,
-                                "pc_potential": -0.3258192120352335,
+                                "pc_potential": -0.32581921203522834,
                                 "potential": -0.3914999999999935,
                                 "specie": "S"
                             },
@@ -26661,7 +26670,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.052102602528353,
-                                "pc_potential": -0.26399191284892765,
+                                "pc_potential": -0.26399191284892387,
                                 "potential": -0.2942999999999927,
                                 "specie": "S"
                             },
@@ -26679,7 +26688,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.019652560162562,
-                                "pc_potential": -0.3547649697504431,
+                                "pc_potential": -0.35476496975041527,
                                 "potential": -0.35649999999999693,
                                 "specie": "S"
                             },
@@ -26688,7 +26697,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.03957928021458,
-                                "pc_potential": -0.42382613615732934,
+                                "pc_potential": -0.4238261361573157,
                                 "potential": -0.4801999999999964,
                                 "specie": "S"
                             },
@@ -26697,7 +26706,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0469855958375724,
-                                "pc_potential": -0.30974104051989826,
+                                "pc_potential": -0.3097410405198775,
                                 "potential": -0.3872999999999962,
                                 "specie": "S"
                             },
@@ -26706,7 +26715,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.024403465264513,
-                                "pc_potential": -0.35364455097630615,
+                                "pc_potential": -0.3536445509762845,
                                 "potential": -0.42099999999999227,
                                 "specie": "S"
                             },
@@ -26796,7 +26805,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0234873086314025,
-                                "pc_potential": -0.35411208213752465,
+                                "pc_potential": -0.35411208213749495,
                                 "potential": -0.34489999999999554,
                                 "specie": "S"
                             },
@@ -26805,7 +26814,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.035040390940516,
-                                "pc_potential": -0.4220893078463663,
+                                "pc_potential": -0.4220893078463479,
                                 "potential": -0.4654000000000025,
                                 "specie": "S"
                             },
@@ -26823,7 +26832,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.062740488652537,
-                                "pc_potential": -0.3178230403559103,
+                                "pc_potential": -0.3178230403558797,
                                 "potential": -0.3555999999999955,
                                 "specie": "S"
                             },
@@ -26832,7 +26841,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.07306276109876,
-                                "pc_potential": -0.3454088933890132,
+                                "pc_potential": -0.3454088933889986,
                                 "potential": -0.41140000000000043,
                                 "specie": "S"
                             },
@@ -26929,7 +26938,7 @@
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.033327141156814226
+                "kumagai_charge_correction_error": 0.03332714115681224
             },
             "defect": {
                 "@class": "Interstitial",
@@ -30040,7 +30049,7 @@
         "inter_27_Al_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -35935,7 +35944,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.312616545084085
+                "kumagai_charge_correction": 0.312616545084091
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -35950,14 +35959,14 @@
                             0.27504907
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.19107932259162208,
+                        "point_charge_correction": 0.19107932259162264,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.063812765713756,
-                                "pc_potential": -0.12934761297619327,
+                                "pc_potential": -0.12934761297618871,
                                 "potential": -0.26500000000000057,
                                 "specie": "Zn"
                             },
@@ -35966,7 +35975,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.034487660113184,
-                                "pc_potential": -0.08202553431353579,
+                                "pc_potential": -0.08202553431353375,
                                 "potential": -0.21890000000000143,
                                 "specie": "Zn"
                             },
@@ -35984,7 +35993,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.627322180750021,
-                                "pc_potential": -0.06730868184859562,
+                                "pc_potential": -0.06730868184859028,
                                 "potential": -0.1512000000000029,
                                 "specie": "Zn"
                             },
@@ -36011,7 +36020,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.8407538490530175,
-                                "pc_potential": -0.12723626341340324,
+                                "pc_potential": -0.12723626341339977,
                                 "potential": -0.24090000000000344,
                                 "specie": "Zn"
                             },
@@ -36020,7 +36029,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.4587174559938045,
-                                "pc_potential": -0.11140695474494504,
+                                "pc_potential": -0.11140695474493875,
                                 "potential": -0.2322000000000024,
                                 "specie": "Zn"
                             },
@@ -36029,7 +36038,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.013063824495989,
-                                "pc_potential": -0.1379617100613366,
+                                "pc_potential": -0.1379617100613308,
                                 "potential": -0.2978000000000023,
                                 "specie": "Zn"
                             },
@@ -36128,7 +36137,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.082284543305774,
-                                "pc_potential": -0.11028741700629004,
+                                "pc_potential": -0.11028741700628233,
                                 "potential": -0.24540000000000006,
                                 "specie": "Zn"
                             },
@@ -36155,7 +36164,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.812986046952207,
-                                "pc_potential": -0.13782443311343068,
+                                "pc_potential": -0.1378244331134239,
                                 "potential": -0.26810000000000045,
                                 "specie": "Zn"
                             },
@@ -36245,7 +36254,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.19574782084384,
-                                "pc_potential": -0.13056877898880623,
+                                "pc_potential": -0.1305687789887982,
                                 "potential": -0.26770000000000493,
                                 "specie": "S"
                             },
@@ -36263,7 +36272,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.706483340062982,
-                                "pc_potential": -0.10458447471784678,
+                                "pc_potential": -0.10458447471783626,
                                 "potential": -0.21129999999999427,
                                 "specie": "S"
                             },
@@ -36281,7 +36290,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.703637885601347,
-                                "pc_potential": -0.09776867270700465,
+                                "pc_potential": -0.09776867270700168,
                                 "potential": -0.20459999999999923,
                                 "specie": "S"
                             },
@@ -36290,7 +36299,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.617609202326491,
-                                "pc_potential": -0.14128924728890277,
+                                "pc_potential": -0.14128924728889697,
                                 "potential": -0.2668000000000035,
                                 "specie": "S"
                             },
@@ -36299,7 +36308,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.385326555228216,
-                                "pc_potential": -0.1277492488649431,
+                                "pc_potential": -0.12774924886493652,
                                 "potential": -0.27079999999999416,
                                 "specie": "S"
                             },
@@ -36371,7 +36380,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.911540599970089,
-                                "pc_potential": -0.1043804359660475,
+                                "pc_potential": -0.10438043596604656,
                                 "potential": -0.20109999999999673,
                                 "specie": "S"
                             },
@@ -36398,7 +36407,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.903665248134728,
-                                "pc_potential": -0.09934821457816961,
+                                "pc_potential": -0.09934821457816805,
                                 "potential": -0.19530000000000314,
                                 "specie": "S"
                             },
@@ -36407,7 +36416,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.903353053312872,
-                                "pc_potential": -0.139616759531145,
+                                "pc_potential": -0.1396167595311359,
                                 "potential": -0.25619999999999266,
                                 "specie": "S"
                             },
@@ -36531,7 +36540,7 @@
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.005039288079385916
+                "kumagai_charge_correction_error": 0.005039288079386106
             },
             "defect": {
                 "@class": "Interstitial",
@@ -40522,7 +40531,7 @@
         "inter_27_Al_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -46417,7 +46426,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 1.008152503712149
+                "kumagai_charge_correction": 1.008152503712182
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -46432,7 +46441,7 @@
                             0.12497699
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.7643172903664883,
+                        "point_charge_correction": 0.7643172903664905,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -46502,7 +46511,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.99138353693377,
-                                "pc_potential": -0.27645068551656155,
+                                "pc_potential": -0.27645068551653923,
                                 "potential": -0.4239000000000033,
                                 "specie": "Zn"
                             },
@@ -46511,7 +46520,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.136599629348469,
-                                "pc_potential": -0.2721110927362249,
+                                "pc_potential": -0.27211109273622647,
                                 "potential": -0.4388000000000005,
                                 "specie": "Zn"
                             },
@@ -46628,7 +46637,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.137022360913159,
-                                "pc_potential": -0.27248199550522334,
+                                "pc_potential": -0.27248199550522173,
                                 "potential": -0.40710000000000335,
                                 "specie": "Zn"
                             },
@@ -46637,7 +46646,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.996224186036304,
-                                "pc_potential": -0.2762773744644909,
+                                "pc_potential": -0.2762773744644667,
                                 "potential": -0.44060000000000343,
                                 "specie": "Zn"
                             },
@@ -46727,7 +46736,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.008297553396408,
-                                "pc_potential": -0.21646408462818262,
+                                "pc_potential": -0.21646408462816566,
                                 "potential": -0.3329999999999984,
                                 "specie": "S"
                             },
@@ -46745,7 +46754,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.041598533866511,
-                                "pc_potential": -0.1764701101960482,
+                                "pc_potential": -0.17647011019603343,
                                 "potential": -0.2775000000000034,
                                 "specie": "S"
                             },
@@ -46763,7 +46772,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0716998362768715,
-                                "pc_potential": -0.2387572503027488,
+                                "pc_potential": -0.23875725030272338,
                                 "potential": -0.3387000000000029,
                                 "specie": "S"
                             },
@@ -46772,7 +46781,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.044104607855767,
-                                "pc_potential": -0.28261722110776494,
+                                "pc_potential": -0.28261722110775833,
                                 "potential": -0.4007000000000005,
                                 "specie": "S"
                             },
@@ -46781,7 +46790,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.032482395601314,
-                                "pc_potential": -0.20562451983233632,
+                                "pc_potential": -0.20562451983231309,
                                 "potential": -0.32319999999999993,
                                 "specie": "S"
                             },
@@ -46790,7 +46799,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.021372052054376,
-                                "pc_potential": -0.2344433729860415,
+                                "pc_potential": -0.23444337298603554,
                                 "potential": -0.3494000000000028,
                                 "specie": "S"
                             },
@@ -46880,7 +46889,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.073183611812743,
-                                "pc_potential": -0.23823003215174937,
+                                "pc_potential": -0.23823003215172678,
                                 "potential": -0.3353000000000037,
                                 "specie": "S"
                             },
@@ -46889,7 +46898,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.042634824031909,
-                                "pc_potential": -0.2815163624242111,
+                                "pc_potential": -0.28151636242419537,
                                 "potential": -0.3961000000000041,
                                 "specie": "S"
                             },
@@ -46907,7 +46916,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0430895333783035,
-                                "pc_potential": -0.21054818806619682,
+                                "pc_potential": -0.21054818806617515,
                                 "potential": -0.31210000000000093,
                                 "specie": "S"
                             },
@@ -46916,7 +46925,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.035737891675717,
-                                "pc_potential": -0.22856121666261653,
+                                "pc_potential": -0.22856121666260115,
                                 "potential": -0.340999999999994,
                                 "specie": "S"
                             },
@@ -47013,7 +47022,7 @@
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.01224457538184513
+                "kumagai_charge_correction_error": 0.012244575381843616
             },
             "defect": {
                 "@class": "Interstitial",
@@ -50476,7 +50485,7 @@
         "inter_27_Al_3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -56371,7 +56380,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 1.9010486136731237
+                "kumagai_charge_correction": 1.901048613673192
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -56386,7 +56395,7 @@
                             0.12683685
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 1.719713903324599,
+                        "point_charge_correction": 1.7197139033246038,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -56456,7 +56465,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.972372991333025,
-                                "pc_potential": -0.4138208098397281,
+                                "pc_potential": -0.41382080983970926,
                                 "potential": -0.502200000000002,
                                 "specie": "Zn"
                             },
@@ -56465,7 +56474,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.128166769114191,
-                                "pc_potential": -0.409262503216267,
+                                "pc_potential": -0.40926250321624064,
                                 "potential": -0.547900000000002,
                                 "specie": "Zn"
                             },
@@ -56582,7 +56591,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.108996554513828,
-                                "pc_potential": -0.4078597182135706,
+                                "pc_potential": -0.40785971821355127,
                                 "potential": -0.45640000000000214,
                                 "specie": "Zn"
                             },
@@ -56591,7 +56600,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.993132350305617,
-                                "pc_potential": -0.4154023416856017,
+                                "pc_potential": -0.4154023416855767,
                                 "potential": -0.5471000000000004,
                                 "specie": "Zn"
                             },
@@ -56681,7 +56690,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.030213661803106,
-                                "pc_potential": -0.32585563214242785,
+                                "pc_potential": -0.32585563214241137,
                                 "potential": -0.3918000000000035,
                                 "specie": "S"
                             },
@@ -56699,7 +56708,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.051496669653819,
-                                "pc_potential": -0.26403931431440636,
+                                "pc_potential": -0.26403931431437855,
                                 "potential": -0.29470000000000596,
                                 "specie": "S"
                             },
@@ -56717,7 +56726,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.020445018311685,
-                                "pc_potential": -0.3547756101339573,
+                                "pc_potential": -0.3547756101339394,
                                 "potential": -0.35710000000000264,
                                 "specie": "S"
                             },
@@ -56726,7 +56735,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.039662773082119,
-                                "pc_potential": -0.42384331575367573,
+                                "pc_potential": -0.42384331575365547,
                                 "potential": -0.4802999999999997,
                                 "specie": "S"
                             },
@@ -56735,7 +56744,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.047549346162188,
-                                "pc_potential": -0.30979333601114334,
+                                "pc_potential": -0.30979333601113485,
                                 "potential": -0.3872999999999962,
                                 "specie": "S"
                             },
@@ -56744,7 +56753,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.02366938519619,
-                                "pc_potential": -0.3536860965935775,
+                                "pc_potential": -0.35368609659356576,
                                 "potential": -0.4210999999999956,
                                 "specie": "S"
                             },
@@ -56834,7 +56843,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.02270830818682,
-                                "pc_potential": -0.3540989800942509,
+                                "pc_potential": -0.35409898009421037,
                                 "potential": -0.3452999999999946,
                                 "specie": "S"
                             },
@@ -56843,7 +56852,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.036566948134407,
-                                "pc_potential": -0.42212053069874134,
+                                "pc_potential": -0.4221205306987324,
                                 "potential": -0.4655999999999949,
                                 "specie": "S"
                             },
@@ -56861,7 +56870,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.059645219370349,
-                                "pc_potential": -0.3176715554415045,
+                                "pc_potential": -0.3176715554414781,
                                 "potential": -0.3555999999999955,
                                 "specie": "S"
                             },
@@ -56870,7 +56879,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.074677466330231,
-                                "pc_potential": -0.34544160756803055,
+                                "pc_potential": -0.34544160756800324,
                                 "potential": -0.41150000000000375,
                                 "specie": "S"
                             },
@@ -56967,7 +56976,7 @@
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.03327089537736752
+                "kumagai_charge_correction_error": 0.03327089537736618
             },
             "defect": {
                 "@class": "Interstitial",
@@ -60430,7 +60439,7 @@
         "inter_29_Al_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -66325,7 +66334,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 1.0089303146173139
+                "kumagai_charge_correction": 1.0089303146173358
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -66340,7 +66349,7 @@
                             0.87057562
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.7643172903664883,
+                        "point_charge_correction": 0.7643172903664905,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -66428,7 +66437,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.137708227859305,
-                                "pc_potential": -0.27248896133565187,
+                                "pc_potential": -0.2724889613356465,
                                 "potential": -0.4078000000000017,
                                 "specie": "Zn"
                             },
@@ -66437,7 +66446,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.994593075102417,
-                                "pc_potential": -0.27626348494241165,
+                                "pc_potential": -0.2762634849423969,
                                 "potential": -0.44120000000000203,
                                 "specie": "Zn"
                             },
@@ -66563,7 +66572,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.991550963271393,
-                                "pc_potential": -0.2764661316695892,
+                                "pc_potential": -0.2764661316695773,
                                 "potential": -0.4244000000000021,
                                 "specie": "Zn"
                             },
@@ -66572,7 +66581,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.134403910235582,
-                                "pc_potential": -0.27209103817272184,
+                                "pc_potential": -0.27209103817272434,
                                 "potential": -0.4394000000000027,
                                 "specie": "Zn"
                             },
@@ -66698,7 +66707,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.029995632115047,
-                                "pc_potential": -0.20560215295252565,
+                                "pc_potential": -0.20560215295252285,
                                 "potential": -0.3234999999999957,
                                 "specie": "S"
                             },
@@ -66716,7 +66725,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.034260330032604,
-                                "pc_potential": -0.22847278721569167,
+                                "pc_potential": -0.22847278721568193,
                                 "potential": -0.34090000000000487,
                                 "specie": "S"
                             },
@@ -66788,7 +66797,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0423556601810615,
-                                "pc_potential": -0.1765027411437761,
+                                "pc_potential": -0.17650274114376638,
                                 "potential": -0.2768999999999977,
                                 "specie": "S"
                             },
@@ -66806,7 +66815,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.07312034246143,
-                                "pc_potential": -0.23822549075872176,
+                                "pc_potential": -0.23822549075871013,
                                 "potential": -0.33629999999999427,
                                 "specie": "S"
                             },
@@ -66815,7 +66824,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.04298658546247,
-                                "pc_potential": -0.2815233513645155,
+                                "pc_potential": -0.2815233513644973,
                                 "potential": -0.3970999999999947,
                                 "specie": "S"
                             },
@@ -66824,7 +66833,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.007329968974922,
-                                "pc_potential": -0.2164551110862523,
+                                "pc_potential": -0.21645511108625165,
                                 "potential": -0.33310000000000173,
                                 "specie": "S"
                             },
@@ -66851,7 +66860,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.020315905496238,
-                                "pc_potential": -0.2343733034785107,
+                                "pc_potential": -0.23437330347850632,
                                 "potential": -0.3492999999999995,
                                 "specie": "S"
                             },
@@ -66896,7 +66905,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0716347167699105,
-                                "pc_potential": -0.2387600267450112,
+                                "pc_potential": -0.23876002674498703,
                                 "potential": -0.33969999999999345,
                                 "specie": "S"
                             },
@@ -66905,7 +66914,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.044590436406374,
-                                "pc_potential": -0.28262452739625316,
+                                "pc_potential": -0.28262452739624877,
                                 "potential": -0.4017000000000053,
                                 "specie": "S"
                             },
@@ -66914,14 +66923,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0432620433908095,
-                                "pc_potential": -0.21055972198258996,
+                                "pc_potential": -0.21055972198256703,
                                 "potential": -0.3114000000000061,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.012325470346428178
+                "kumagai_charge_correction_error": 0.01232547034642659
             },
             "defect": {
                 "@class": "Interstitial",
@@ -70912,7 +70921,7 @@
         "inter_29_Al_3": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -76807,7 +76816,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 1.900906300077196
+                "kumagai_charge_correction": 1.90090630007727
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -76822,7 +76831,7 @@
                             0.87391195
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 1.719713903324599,
+                        "point_charge_correction": 1.7197139033246038,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -76910,7 +76919,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.108909486829997,
-                                "pc_potential": -0.4078493962724591,
+                                "pc_potential": -0.4078493962724384,
                                 "potential": -0.45610000000000284,
                                 "specie": "Zn"
                             },
@@ -76919,7 +76928,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.993094036724013,
-                                "pc_potential": -0.41541365820209486,
+                                "pc_potential": -0.41541365820207554,
                                 "potential": -0.5473000000000035,
                                 "specie": "Zn"
                             },
@@ -77045,7 +77054,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.971870727813789,
-                                "pc_potential": -0.4138112797809518,
+                                "pc_potential": -0.41381127978092214,
                                 "potential": -0.5020000000000024,
                                 "specie": "Zn"
                             },
@@ -77054,7 +77063,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.127822721249798,
-                                "pc_potential": -0.40924997698585414,
+                                "pc_potential": -0.4092499769858165,
                                 "potential": -0.547900000000002,
                                 "specie": "Zn"
                             },
@@ -77180,7 +77189,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.047930022537666,
-                                "pc_potential": -0.30978654670283223,
+                                "pc_potential": -0.30978654670281813,
                                 "potential": -0.38700000000000045,
                                 "specie": "S"
                             },
@@ -77198,7 +77207,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0745115343884954,
-                                "pc_potential": -0.3454239390345947,
+                                "pc_potential": -0.3454239390345796,
                                 "potential": -0.4119000000000028,
                                 "specie": "S"
                             },
@@ -77270,7 +77279,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.051834624176811,
-                                "pc_potential": -0.26412594520621924,
+                                "pc_potential": -0.26412594520620464,
                                 "potential": -0.2942999999999927,
                                 "specie": "S"
                             },
@@ -77288,7 +77297,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.023652056057642,
-                                "pc_potential": -0.35409203822629864,
+                                "pc_potential": -0.3540920382262624,
                                 "potential": -0.3447999999999922,
                                 "specie": "S"
                             },
@@ -77297,7 +77306,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.037166586879295,
-                                "pc_potential": -0.422128913115102,
+                                "pc_potential": -0.42212891311508877,
                                 "potential": -0.465999999999994,
                                 "specie": "S"
                             },
@@ -77306,7 +77315,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.033073956090027,
-                                "pc_potential": -0.3258829470292734,
+                                "pc_potential": -0.32588294702925313,
                                 "potential": -0.39119999999999777,
                                 "specie": "S"
                             },
@@ -77333,7 +77342,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.024051055513391,
-                                "pc_potential": -0.3536481260327081,
+                                "pc_potential": -0.35364812603270296,
                                 "potential": -0.42199999999999704,
                                 "specie": "S"
                             },
@@ -77378,7 +77387,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.019533081405756,
-                                "pc_potential": -0.35475306906288107,
+                                "pc_potential": -0.35475306906284526,
                                 "potential": -0.35660000000000025,
                                 "specie": "S"
                             },
@@ -77387,7 +77396,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.039951900984185,
-                                "pc_potential": -0.4238610452706337,
+                                "pc_potential": -0.42386104527060403,
                                 "potential": -0.4805999999999955,
                                 "specie": "S"
                             },
@@ -77396,14 +77405,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.059846549793167,
-                                "pc_potential": -0.31760860089928616,
+                                "pc_potential": -0.317608600899256,
                                 "potential": -0.35549999999999216,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.03339511179650454
+                "kumagai_charge_correction_error": 0.0333951117965035
             },
             "defect": {
                 "@class": "Interstitial",
@@ -81394,7 +81403,7 @@
         "sub_1_Al_on_Zn_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -87246,7 +87255,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": -0.054895826657900215
+                "kumagai_charge_correction": -0.054895826657895136
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -87261,14 +87270,14 @@
                             0.74398405
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.19107932259162208,
+                        "point_charge_correction": 0.19107932259162264,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.620824342714728,
-                                "pc_potential": 0.08223423325260983,
+                                "pc_potential": 0.08223423325260669,
                                 "potential": -0.1186000000000007,
                                 "specie": "Zn"
                             },
@@ -87340,7 +87349,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.639921258262056,
-                                "pc_potential": 0.13326451898771927,
+                                "pc_potential": 0.13326451898771519,
                                 "potential": -0.13370000000000104,
                                 "specie": "Zn"
                             },
@@ -87349,7 +87358,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.648416471307729,
-                                "pc_potential": 0.10840904772352705,
+                                "pc_potential": 0.10840904772351576,
                                 "potential": -0.13280000000000314,
                                 "specie": "Zn"
                             },
@@ -87358,7 +87367,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.647285983995135,
-                                "pc_potential": 0.08991768243528112,
+                                "pc_potential": 0.08991768243527343,
                                 "potential": -0.13300000000000267,
                                 "specie": "Zn"
                             },
@@ -87367,7 +87376,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.652511516307619,
-                                "pc_potential": 0.10936231397329288,
+                                "pc_potential": 0.10936231397328958,
                                 "potential": -0.12980000000000302,
                                 "specie": "Zn"
                             },
@@ -87376,7 +87385,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.689141532816911,
-                                "pc_potential": 0.13279683324162533,
+                                "pc_potential": 0.13279683324162267,
                                 "potential": -0.13400000000000034,
                                 "specie": "Zn"
                             },
@@ -87412,7 +87421,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.701551365701937,
-                                "pc_potential": 0.076088226528755,
+                                "pc_potential": 0.07608822652875093,
                                 "potential": -0.11340000000000217,
                                 "specie": "Zn"
                             },
@@ -87475,7 +87484,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.55860309757772,
-                                "pc_potential": 0.13503055448268933,
+                                "pc_potential": 0.13503055448268556,
                                 "potential": -0.13770000000000238,
                                 "specie": "Zn"
                             },
@@ -87484,7 +87493,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.647774429016781,
-                                "pc_potential": 0.10846333556871099,
+                                "pc_potential": 0.10846333556871225,
                                 "potential": -0.1294000000000004,
                                 "specie": "Zn"
                             },
@@ -87493,7 +87502,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.648408212214965,
-                                "pc_potential": 0.10939765993025273,
+                                "pc_potential": 0.10939765993024912,
                                 "potential": -0.12730000000000175,
                                 "specie": "Zn"
                             },
@@ -87502,7 +87511,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.523534845041965,
-                                "pc_potential": 0.1345207931019755,
+                                "pc_potential": 0.13452079310197643,
                                 "potential": -0.13890000000000313,
                                 "specie": "Zn"
                             },
@@ -87529,7 +87538,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.62445880287995,
-                                "pc_potential": 0.07633680631054338,
+                                "pc_potential": 0.07633680631053913,
                                 "potential": -0.10870000000000246,
                                 "specie": "Zn"
                             },
@@ -87538,7 +87547,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.701286620262088,
-                                "pc_potential": 0.08657951062196312,
+                                "pc_potential": 0.0865795106219614,
                                 "potential": -0.11580000000000013,
                                 "specie": "Zn"
                             },
@@ -87619,7 +87628,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.030278740167295,
-                                "pc_potential": 0.10351694398306358,
+                                "pc_potential": 0.1035169439830551,
                                 "potential": -0.13859999999999673,
                                 "specie": "S"
                             },
@@ -87628,7 +87637,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.998326755069562,
-                                "pc_potential": 0.11773723605824843,
+                                "pc_potential": 0.11773723605824027,
                                 "potential": -0.13989999999999725,
                                 "specie": "S"
                             },
@@ -87655,7 +87664,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.079734176019082,
-                                "pc_potential": 0.08833877814477578,
+                                "pc_potential": 0.08833877814477155,
                                 "potential": -0.13700000000000045,
                                 "specie": "S"
                             },
@@ -87718,7 +87727,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.989004794986659,
-                                "pc_potential": 0.11797859406889138,
+                                "pc_potential": 0.11797859406888385,
                                 "potential": -0.1513000000000062,
                                 "specie": "S"
                             },
@@ -87745,7 +87754,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.007109027441828,
-                                "pc_potential": 0.10868434184981779,
+                                "pc_potential": 0.10868434184981575,
                                 "potential": -0.15739999999999554,
                                 "specie": "S"
                             },
@@ -87754,7 +87763,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.042533798555846,
-                                "pc_potential": 0.14075622290608586,
+                                "pc_potential": 0.14075622290608192,
                                 "potential": -0.15729999999999222,
                                 "specie": "S"
                             },
@@ -87763,7 +87772,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.998081805533323,
-                                "pc_potential": 0.11749635482632391,
+                                "pc_potential": 0.1174963548263203,
                                 "potential": -0.14029999999999632,
                                 "specie": "S"
                             },
@@ -87808,7 +87817,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.112777822604574,
-                                "pc_potential": 0.11538675466817894,
+                                "pc_potential": 0.11538675466817563,
                                 "potential": -0.14499999999999602,
                                 "specie": "S"
                             },
@@ -87817,7 +87826,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.038423367533633,
-                                "pc_potential": 0.10508369500648707,
+                                "pc_potential": 0.10508369500647907,
                                 "potential": -0.1414000000000044,
                                 "specie": "S"
                             },
@@ -87826,14 +87835,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.035303812641066,
-                                "pc_potential": 0.141247995068187,
+                                "pc_potential": 0.14124799506818073,
                                 "potential": -0.15749999999999886,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.006489225374250178
+                "kumagai_charge_correction_error": 0.0064892253742501625
             },
             "defect": {
                 "@class": "Substitution",
@@ -90825,7 +90834,7 @@
         "sub_1_Al_on_Zn_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -99526,7 +99535,7 @@
         "sub_1_Al_on_Zn_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -105378,7 +105387,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.26514066634548866
+                "kumagai_charge_correction": 0.26514066634549527
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -105393,14 +105402,14 @@
                             0.74793819
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.19107932259162208,
+                        "point_charge_correction": 0.19107932259162264,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.630703705496517,
-                                "pc_potential": -0.08222729795847022,
+                                "pc_potential": -0.08222729795845987,
                                 "potential": -0.15490000000000137,
                                 "specie": "Zn"
                             },
@@ -105427,7 +105436,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.636980391406355,
-                                "pc_potential": -0.07245464623755443,
+                                "pc_potential": -0.07245464623754314,
                                 "potential": -0.15230000000000032,
                                 "specie": "Zn"
                             },
@@ -105472,7 +105481,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.667186784405399,
-                                "pc_potential": -0.13301890168853128,
+                                "pc_potential": -0.13301890168852076,
                                 "potential": -0.2115000000000009,
                                 "specie": "Zn"
                             },
@@ -105481,7 +105490,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.646829522606043,
-                                "pc_potential": -0.10885355044293969,
+                                "pc_potential": -0.10885355044292808,
                                 "potential": -0.19120000000000203,
                                 "specie": "Zn"
                             },
@@ -105490,7 +105499,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.668223455332013,
-                                "pc_potential": -0.08992028780643997,
+                                "pc_potential": -0.08992028780643276,
                                 "potential": -0.13210000000000122,
                                 "specie": "Zn"
                             },
@@ -105499,7 +105508,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.665413197565134,
-                                "pc_potential": -0.10927592452805861,
+                                "pc_potential": -0.10927592452804918,
                                 "potential": -0.19060000000000343,
                                 "specie": "Zn"
                             },
@@ -105508,7 +105517,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.676082034641041,
-                                "pc_potential": -0.13322117179163268,
+                                "pc_potential": -0.13322117179162546,
                                 "potential": -0.21160000000000068,
                                 "specie": "Zn"
                             },
@@ -105517,7 +105526,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.652419196394842,
-                                "pc_potential": -0.08446617427033541,
+                                "pc_potential": -0.08446617427032913,
                                 "potential": -0.15940000000000154,
                                 "specie": "Zn"
                             },
@@ -105544,7 +105553,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.657536168574119,
-                                "pc_potential": -0.07634448326846405,
+                                "pc_potential": -0.0763444832684631,
                                 "potential": -0.13880000000000337,
                                 "specie": "Zn"
                             },
@@ -105571,7 +105580,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.624843183425191,
-                                "pc_potential": -0.07243387465647193,
+                                "pc_potential": -0.07243387465646407,
                                 "potential": -0.15220000000000056,
                                 "specie": "Zn"
                             },
@@ -105607,7 +105616,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.572869041265577,
-                                "pc_potential": -0.13473893050150473,
+                                "pc_potential": -0.134738930501498,
                                 "potential": -0.22530000000000072,
                                 "specie": "Zn"
                             },
@@ -105616,7 +105625,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.641353503786532,
-                                "pc_potential": -0.10885529379051326,
+                                "pc_potential": -0.1088552937905051,
                                 "potential": -0.19470000000000098,
                                 "specie": "Zn"
                             },
@@ -105625,7 +105634,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.6646112629465835,
-                                "pc_potential": -0.10930822710517882,
+                                "pc_potential": -0.10930822710517536,
                                 "potential": -0.19400000000000261,
                                 "specie": "Zn"
                             },
@@ -105634,7 +105643,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.584462289749528,
-                                "pc_potential": -0.13496406442516495,
+                                "pc_potential": -0.13496406442516104,
                                 "potential": -0.22500000000000142,
                                 "specie": "Zn"
                             },
@@ -105661,7 +105670,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.673438667298796,
-                                "pc_potential": -0.07629188722653668,
+                                "pc_potential": -0.07629188722653166,
                                 "potential": -0.1410000000000018,
                                 "specie": "Zn"
                             },
@@ -105670,7 +105679,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.6525806520610935,
-                                "pc_potential": -0.08447708919375484,
+                                "pc_potential": -0.08447708919375044,
                                 "potential": -0.15970000000000084,
                                 "specie": "Zn"
                             },
@@ -105751,7 +105760,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0459752317481374,
-                                "pc_potential": -0.10274329491878074,
+                                "pc_potential": -0.1027432949187729,
                                 "potential": -0.1787000000000063,
                                 "specie": "S"
                             },
@@ -105760,7 +105769,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.050925748216695,
-                                "pc_potential": -0.11894912672932761,
+                                "pc_potential": -0.11894912672932229,
                                 "potential": -0.18290000000000362,
                                 "specie": "S"
                             },
@@ -105787,7 +105796,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.061485404302235,
-                                "pc_potential": -0.08842820940623612,
+                                "pc_potential": -0.08842820940623314,
                                 "potential": -0.1570999999999998,
                                 "specie": "S"
                             },
@@ -105850,7 +105859,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.018663255974264,
-                                "pc_potential": -0.1171525651517308,
+                                "pc_potential": -0.11715256515173174,
                                 "potential": -0.18829999999999814,
                                 "specie": "S"
                             },
@@ -105877,7 +105886,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.019610374457034,
-                                "pc_potential": -0.10805389360052736,
+                                "pc_potential": -0.10805389360052092,
                                 "potential": -0.17510000000000048,
                                 "specie": "S"
                             },
@@ -105886,7 +105895,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.034074043360995,
-                                "pc_potential": -0.140682673566647,
+                                "pc_potential": -0.14068267356664432,
                                 "potential": -0.209699999999998,
                                 "specie": "S"
                             },
@@ -105895,7 +105904,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.053733902578351,
-                                "pc_potential": -0.11871404796550242,
+                                "pc_potential": -0.1187140479654966,
                                 "potential": -0.17780000000000484,
                                 "specie": "S"
                             },
@@ -105940,7 +105949,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.045487235034221,
-                                "pc_potential": -0.11438575526609827,
+                                "pc_potential": -0.11438575526610094,
                                 "potential": -0.19029999999999347,
                                 "specie": "S"
                             },
@@ -105949,7 +105958,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.048136169334241,
-                                "pc_potential": -0.10549123778360338,
+                                "pc_potential": -0.10549123778359161,
                                 "potential": -0.1816000000000031,
                                 "specie": "S"
                             },
@@ -105958,14 +105967,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.028032002533164,
-                                "pc_potential": -0.141152453119488,
+                                "pc_potential": -0.14115245311948393,
                                 "potential": -0.21639999999999304,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.002037647375359814
+                "kumagai_charge_correction_error": 0.0020376473753599606
             },
             "defect": {
                 "@class": "Substitution",
@@ -108957,7 +108966,7 @@
         "vac_1_Zn_-1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -114770,7 +114779,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.2723686715754393
+                "kumagai_charge_correction": 0.27236867157544653
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -114785,7 +114794,7 @@
                             0.75
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.19107932259162208,
+                        "point_charge_correction": 0.19107932259162264,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -114864,7 +114873,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.711827578393544,
-                                "pc_potential": 0.13360344923247908,
+                                "pc_potential": 0.13360344923247733,
                                 "potential": 0.2151999999999994,
                                 "specie": "Zn"
                             },
@@ -114873,7 +114882,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.690235603033814,
-                                "pc_potential": 0.10962171054974704,
+                                "pc_potential": 0.10962171054973667,
                                 "potential": 0.20779999999999887,
                                 "specie": "Zn"
                             },
@@ -114882,7 +114891,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.6357833980218,
-                                "pc_potential": 0.08991685089078423,
+                                "pc_potential": 0.08991685089077496,
                                 "potential": 0.15419999999999945,
                                 "specie": "Zn"
                             },
@@ -114900,7 +114909,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.626492437357877,
-                                "pc_potential": 0.13242483876829997,
+                                "pc_potential": 0.13242483876829683,
                                 "potential": 0.24129999999999896,
                                 "specie": "Zn"
                             },
@@ -114963,7 +114972,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.649915853331765,
-                                "pc_potential": 0.07300176876659578,
+                                "pc_potential": 0.07300176876659091,
                                 "potential": 0.1479999999999997,
                                 "specie": "Zn"
                             },
@@ -114999,7 +115008,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.589446640351012,
-                                "pc_potential": 0.13525691946434795,
+                                "pc_potential": 0.1352569194643428,
                                 "potential": 0.23239999999999839,
                                 "specie": "Zn"
                             },
@@ -115008,7 +115017,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.665854049103894,
-                                "pc_potential": 0.10955638377245562,
+                                "pc_potential": 0.10955638377245028,
                                 "potential": 0.2099999999999973,
                                 "specie": "Zn"
                             },
@@ -115026,7 +115035,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.51167625410221,
-                                "pc_potential": 0.13402628597288407,
+                                "pc_potential": 0.13402628597287575,
                                 "potential": 0.2559999999999967,
                                 "specie": "Zn"
                             },
@@ -115053,7 +115062,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.656118914392678,
-                                "pc_potential": 0.07671093203492296,
+                                "pc_potential": 0.07671093203491983,
                                 "potential": 0.1485999999999983,
                                 "specie": "Zn"
                             },
@@ -115143,7 +115152,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.001012584872813,
-                                "pc_potential": 0.1023958943161825,
+                                "pc_potential": 0.10239589431617135,
                                 "potential": 0.1734000000000009,
                                 "specie": "S"
                             },
@@ -115152,7 +115161,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.01617980561242,
-                                "pc_potential": 0.11858108636212297,
+                                "pc_potential": 0.11858108636211621,
                                 "potential": 0.21739999999999782,
                                 "specie": "S"
                             },
@@ -115179,7 +115188,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.974798776012703,
-                                "pc_potential": 0.08654467449877724,
+                                "pc_potential": 0.08654467449876735,
                                 "potential": 0.16859999999999786,
                                 "specie": "S"
                             },
@@ -115242,7 +115251,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.003863948466961,
-                                "pc_potential": 0.1178024285743861,
+                                "pc_potential": 0.11780242857437888,
                                 "potential": 0.1676000000000073,
                                 "specie": "S"
                             },
@@ -115269,7 +115278,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.977290589581529,
-                                "pc_potential": 0.10788958046656244,
+                                "pc_potential": 0.10788958046655334,
                                 "potential": 0.16460000000000719,
                                 "specie": "S"
                             },
@@ -115278,7 +115287,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.970041669695578,
-                                "pc_potential": 0.14011953466551932,
+                                "pc_potential": 0.1401195346655151,
                                 "potential": 0.21129999999999427,
                                 "specie": "S"
                             },
@@ -115287,7 +115296,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.042967157929619,
-                                "pc_potential": 0.11846258017391624,
+                                "pc_potential": 0.1184625801739098,
                                 "potential": 0.2125999999999948,
                                 "specie": "S"
                             },
@@ -115332,7 +115341,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.052993999694997,
-                                "pc_potential": 0.11510349677566477,
+                                "pc_potential": 0.11510349677566414,
                                 "potential": 0.16899999999999693,
                                 "specie": "S"
                             },
@@ -115341,7 +115350,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.06054274924414,
-                                "pc_potential": 0.10675383721518523,
+                                "pc_potential": 0.106753837215173,
                                 "potential": 0.1740000000000066,
                                 "specie": "S"
                             },
@@ -115350,14 +115359,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.994282601210039,
-                                "pc_potential": 0.1407301168066339,
+                                "pc_potential": 0.14073011680662526,
                                 "potential": 0.22100000000000364,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.004511940484317274
+                "kumagai_charge_correction_error": 0.004511940484317255
             },
             "defect": {
                 "@class": "Vacancy",
@@ -118308,7 +118317,7 @@
         "vac_1_Zn_-2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -124121,7 +124130,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.928093721705233
+                "kumagai_charge_correction": 0.9280937217052581
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -124136,7 +124145,7 @@
                             0.75
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.7643172903664883,
+                        "point_charge_correction": 0.7643172903664905,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -124215,7 +124224,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.727534466363191,
-                                "pc_potential": 0.2679786166751611,
+                                "pc_potential": 0.26797861667515793,
                                 "potential": 0.373899999999999,
                                 "specie": "Zn"
                             },
@@ -124224,7 +124233,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.714314363393176,
-                                "pc_potential": 0.219972177211686,
+                                "pc_potential": 0.21997217721166842,
                                 "potential": 0.32949999999999946,
                                 "specie": "Zn"
                             },
@@ -124233,7 +124242,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.581704519517656,
-                                "pc_potential": 0.17971681687010294,
+                                "pc_potential": 0.1797168168700885,
                                 "potential": 0.2447999999999979,
                                 "specie": "Zn"
                             },
@@ -124251,7 +124260,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.60944021230609,
-                                "pc_potential": 0.2638943069389506,
+                                "pc_potential": 0.2638943069389337,
                                 "potential": 0.3752999999999993,
                                 "specie": "Zn"
                             },
@@ -124287,7 +124296,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.622143393526331,
-                                "pc_potential": 0.1501488248130089,
+                                "pc_potential": 0.15014882481299666,
                                 "potential": 0.24569999999999936,
                                 "specie": "Zn"
                             },
@@ -124314,7 +124323,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.657612224417586,
-                                "pc_potential": 0.1461955463742253,
+                                "pc_potential": 0.14619554637421495,
                                 "potential": 0.24669999999999703,
                                 "specie": "Zn"
                             },
@@ -124350,7 +124359,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.599585862680136,
-                                "pc_potential": 0.2710974684166661,
+                                "pc_potential": 0.2710974684166526,
                                 "potential": 0.39259999999999806,
                                 "specie": "Zn"
                             },
@@ -124359,7 +124368,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.689013130661751,
-                                "pc_potential": 0.2199010894390215,
+                                "pc_potential": 0.21990108943901335,
                                 "potential": 0.3329999999999984,
                                 "specie": "Zn"
                             },
@@ -124377,7 +124386,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.49156956175648,
-                                "pc_potential": 0.2671403497606744,
+                                "pc_potential": 0.2671403497606735,
                                 "potential": 0.3948999999999998,
                                 "specie": "Zn"
                             },
@@ -124404,7 +124413,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.6313855224473,
-                                "pc_potential": 0.15354419889424567,
+                                "pc_potential": 0.15354419889424065,
                                 "potential": 0.2345999999999968,
                                 "specie": "Zn"
                             },
@@ -124413,7 +124422,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.62163907447192,
-                                "pc_potential": 0.16850548120432882,
+                                "pc_potential": 0.16850548120431658,
                                 "potential": 0.26179999999999737,
                                 "specie": "Zn"
                             },
@@ -124494,7 +124503,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.9834872377753365,
-                                "pc_potential": 0.20472018768786127,
+                                "pc_potential": 0.20472018768782863,
                                 "potential": 0.2728000000000037,
                                 "specie": "S"
                             },
@@ -124503,7 +124512,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.998561513564095,
-                                "pc_potential": 0.23647409797084998,
+                                "pc_potential": 0.2364740979708393,
                                 "potential": 0.2879999999999967,
                                 "specie": "S"
                             },
@@ -124530,7 +124539,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.964466687781441,
-                                "pc_potential": 0.1717614535165919,
+                                "pc_potential": 0.17176145351658875,
                                 "potential": 0.23510000000000275,
                                 "specie": "S"
                             },
@@ -124593,7 +124602,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.01721344144344,
-                                "pc_potential": 0.2365349594738335,
+                                "pc_potential": 0.23653495947382064,
                                 "potential": 0.2931999999999988,
                                 "specie": "S"
                             },
@@ -124620,7 +124629,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.944108971839272,
-                                "pc_potential": 0.2156907389984433,
+                                "pc_potential": 0.21569073899842067,
                                 "potential": 0.2708999999999975,
                                 "specie": "S"
                             },
@@ -124629,7 +124638,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.943290711886432,
-                                "pc_potential": 0.279709971445428,
+                                "pc_potential": 0.2797099714454192,
                                 "potential": 0.34149999999999636,
                                 "specie": "S"
                             },
@@ -124638,7 +124647,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.025581803224285,
-                                "pc_potential": 0.23614522911150204,
+                                "pc_potential": 0.23614522911149952,
                                 "potential": 0.28230000000000643,
                                 "specie": "S"
                             },
@@ -124683,7 +124692,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.063700334517797,
-                                "pc_potential": 0.23093974556140975,
+                                "pc_potential": 0.23093974556141322,
                                 "potential": 0.29519999999999413,
                                 "specie": "S"
                             },
@@ -124692,7 +124701,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.071426107720284,
-                                "pc_potential": 0.21435163721565256,
+                                "pc_potential": 0.21435163721563497,
                                 "potential": 0.2755999999999972,
                                 "specie": "S"
                             },
@@ -124701,14 +124710,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.974213454737316,
-                                "pc_potential": 0.2810245733635174,
+                                "pc_potential": 0.28102457336349856,
                                 "potential": 0.34770000000000323,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.011237886716793486
+                "kumagai_charge_correction_error": 0.011237886716793087
             },
             "defect": {
                 "@class": "Vacancy",
@@ -127659,7 +127668,7 @@
         "vac_1_Zn_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -136281,7 +136290,7 @@
         "vac_2_S_0": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -144903,7 +144912,7 @@
         "vac_2_S_1": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -150716,7 +150725,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.031741659094051855
+                "kumagai_charge_correction": 0.03174165909405907
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -150731,7 +150740,7 @@
                             0.9375
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.19107932259162208,
+                        "point_charge_correction": 0.19107932259162264,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -150756,7 +150765,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.060171822920692,
-                                "pc_potential": -0.14086992168512633,
+                                "pc_potential": -0.14086992168511972,
                                 "potential": 0.004499999999996618,
                                 "specie": "Zn"
                             },
@@ -150765,7 +150774,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.002561260559283,
-                                "pc_potential": -0.10847446127572553,
+                                "pc_potential": -0.10847446127572537,
                                 "potential": 0.03919999999999746,
                                 "specie": "Zn"
                             },
@@ -150783,7 +150792,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.010798881607188,
-                                "pc_potential": -0.11719452820733738,
+                                "pc_potential": -0.11719452820733486,
                                 "potential": 0.030799999999999272,
                                 "specie": "Zn"
                             },
@@ -150828,7 +150837,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.065938147240847,
-                                "pc_potential": -0.08913921506465469,
+                                "pc_potential": -0.08913921506464748,
                                 "potential": 0.05479999999999663,
                                 "specie": "Zn"
                             },
@@ -150855,7 +150864,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.063340506897037,
-                                "pc_potential": -0.11898486099265274,
+                                "pc_potential": -0.11898486099264238,
                                 "potential": 0.03089999999999904,
                                 "specie": "Zn"
                             },
@@ -150864,7 +150873,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.04186031771728,
-                                "pc_potential": -0.14135014594930112,
+                                "pc_potential": -0.1413501459492942,
                                 "potential": -0.001100000000000989,
                                 "specie": "Zn"
                             },
@@ -150873,7 +150882,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.047016973334364,
-                                "pc_potential": -0.10304773034595213,
+                                "pc_potential": -0.10304773034594178,
                                 "potential": 0.036599999999999966,
                                 "specie": "Zn"
                             },
@@ -150891,7 +150900,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.026545294196667,
-                                "pc_potential": -0.10534958674614825,
+                                "pc_potential": -0.10534958674613726,
                                 "potential": 0.03779999999999717,
                                 "specie": "Zn"
                             },
@@ -150900,7 +150909,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.058155967348102,
-                                "pc_potential": -0.11436171877632836,
+                                "pc_potential": -0.11436171877632113,
                                 "potential": 0.02949999999999875,
                                 "specie": "Zn"
                             },
@@ -150981,7 +150990,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.042641580226878,
-                                "pc_potential": -0.11857131807443082,
+                                "pc_potential": -0.11857131807441952,
                                 "potential": 0.034499999999997755,
                                 "specie": "Zn"
                             },
@@ -151026,7 +151035,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.625072616082531,
-                                "pc_potential": -0.08222772080392424,
+                                "pc_potential": -0.08222772080391513,
                                 "potential": 0.08950000000000102,
                                 "specie": "S"
                             },
@@ -151053,7 +151062,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.629298372461743,
-                                "pc_potential": -0.07197442636308214,
+                                "pc_potential": -0.07197442636307005,
                                 "potential": 0.09610000000000696,
                                 "specie": "S"
                             },
@@ -151098,7 +151107,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.703697447421332,
-                                "pc_potential": -0.13346345779429208,
+                                "pc_potential": -0.13346345779429036,
                                 "potential": 0.033699999999996066,
                                 "specie": "S"
                             },
@@ -151107,7 +151116,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.682295051200779,
-                                "pc_potential": -0.10954666572039644,
+                                "pc_potential": -0.10954666572038875,
                                 "potential": 0.050499999999999545,
                                 "specie": "S"
                             },
@@ -151116,7 +151125,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.644119065942602,
-                                "pc_potential": -0.08991953374376682,
+                                "pc_potential": -0.08991953374376321,
                                 "potential": 0.11260000000000048,
                                 "specie": "S"
                             },
@@ -151134,7 +151143,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.654028867449773,
-                                "pc_potential": -0.13283801266332457,
+                                "pc_potential": -0.13283801266331924,
                                 "potential": 0.037599999999997635,
                                 "specie": "S"
                             },
@@ -151170,7 +151179,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.649727325479552,
-                                "pc_potential": -0.07603129268680704,
+                                "pc_potential": -0.07603129268680485,
                                 "potential": 0.10710000000000264,
                                 "specie": "S"
                             },
@@ -151197,7 +151206,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.634740782286054,
-                                "pc_potential": -0.07267836633203044,
+                                "pc_potential": -0.0726783663320237,
                                 "potential": 0.09149999999999636,
                                 "specie": "S"
                             },
@@ -151233,7 +151242,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.581647077162662,
-                                "pc_potential": -0.13506744114965785,
+                                "pc_potential": -0.13506744114964922,
                                 "potential": 0.021200000000007435,
                                 "specie": "S"
                             },
@@ -151242,7 +151251,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.660744586139505,
-                                "pc_potential": -0.1094597283869798,
+                                "pc_potential": -0.10945972838697383,
                                 "potential": 0.04810000000000514,
                                 "specie": "S"
                             },
@@ -151251,7 +151260,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.631694079236716,
-                                "pc_potential": -0.1083242824435645,
+                                "pc_potential": -0.10832428244355696,
                                 "potential": 0.059799999999995634,
                                 "specie": "S"
                             },
@@ -151260,7 +151269,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.545369385632066,
-                                "pc_potential": -0.13449130269563497,
+                                "pc_potential": -0.13449130269562745,
                                 "potential": 0.024299999999996658,
                                 "specie": "S"
                             },
@@ -151287,7 +151296,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.655348720055232,
-                                "pc_potential": -0.07640054254300319,
+                                "pc_potential": -0.07640054254300147,
                                 "potential": 0.10550000000000637,
                                 "specie": "S"
                             },
@@ -151303,7 +151312,7 @@
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.003311060706453989
+                "kumagai_charge_correction_error": 0.0033110607064542443
             },
             "defect": {
                 "@class": "Vacancy",
@@ -154254,7 +154263,7 @@
         "vac_2_S_2": {
             "@class": "DefectEntry",
             "@module": "doped.core",
-            "@version": "4.0.0",
+            "@version": "3.2.1",
             "_BilbaoCS_conv_cell_vector_mapping": [
                 0,
                 1,
@@ -160067,7 +160076,7 @@
             "conv_cell_frac_coords": null,
             "conventional_structure": null,
             "corrections": {
-                "kumagai_charge_correction": 0.40592413019994616
+                "kumagai_charge_correction": 0.40592413019997625
             },
             "corrections_metadata": {
                 "kumagai_charge_correction": {
@@ -160082,7 +160091,7 @@
                             0.9375
                         ],
                         "defect_region_radius": 6.6191432521788425,
-                        "point_charge_correction": 0.7643172903664883,
+                        "point_charge_correction": 0.7643172903664905,
                         "sites": [
                             {
                                 "@class": "PotentialSite",
@@ -160107,7 +160116,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.029227057284553,
-                                "pc_potential": -0.2812564805261541,
+                                "pc_potential": -0.2812564805261529,
                                 "potential": -0.13540000000000063,
                                 "specie": "Zn"
                             },
@@ -160116,7 +160125,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.028230890934273,
-                                "pc_potential": -0.2171367132820882,
+                                "pc_potential": -0.21713671328208098,
                                 "potential": -0.06910000000000238,
                                 "specie": "Zn"
                             },
@@ -160134,7 +160143,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.03427369182537,
-                                "pc_potential": -0.23538959137988721,
+                                "pc_potential": -0.23538959137988189,
                                 "potential": -0.09690000000000154,
                                 "specie": "Zn"
                             },
@@ -160179,7 +160188,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.0755917293176,
-                                "pc_potential": -0.17785694143293826,
+                                "pc_potential": -0.1778569414329185,
                                 "potential": -0.026900000000001256,
                                 "specie": "Zn"
                             },
@@ -160206,7 +160215,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.065443552833383,
-                                "pc_potential": -0.23847013553172877,
+                                "pc_potential": -0.23847013553170304,
                                 "potential": -0.06930000000000192,
                                 "specie": "Zn"
                             },
@@ -160215,7 +160224,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.033411846646187,
-                                "pc_potential": -0.2824139346142242,
+                                "pc_potential": -0.28241393461420883,
                                 "potential": -0.14310000000000045,
                                 "specie": "Zn"
                             },
@@ -160224,7 +160233,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.035566284966569,
-                                "pc_potential": -0.20576032846123574,
+                                "pc_potential": -0.20576032846122883,
                                 "potential": -0.07540000000000191,
                                 "specie": "Zn"
                             },
@@ -160242,7 +160251,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.080235601158193,
-                                "pc_potential": -0.21317091312563838,
+                                "pc_potential": -0.2131709131256227,
                                 "potential": -0.07060000000000244,
                                 "specie": "Zn"
                             },
@@ -160251,7 +160260,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.065040201431623,
-                                "pc_potential": -0.2296090563535225,
+                                "pc_potential": -0.22960905635350806,
                                 "potential": -0.09530000000000172,
                                 "specie": "Zn"
                             },
@@ -160332,7 +160341,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.061417386314345,
-                                "pc_potential": -0.23771504059890408,
+                                "pc_potential": -0.23771504059888304,
                                 "potential": -0.06530000000000058,
                                 "specie": "Zn"
                             },
@@ -160377,7 +160386,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.634834948030491,
-                                "pc_potential": -0.1644572231712305,
+                                "pc_potential": -0.16445722317121197,
                                 "potential": 0.04049999999999443,
                                 "specie": "S"
                             },
@@ -160404,7 +160413,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.627686701436926,
-                                "pc_potential": -0.14472360826210662,
+                                "pc_potential": -0.14472360826209155,
                                 "potential": 0.04800000000000182,
                                 "specie": "S"
                             },
@@ -160449,7 +160458,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.696366175094545,
-                                "pc_potential": -0.26690241660046676,
+                                "pc_potential": -0.26690241660046266,
                                 "potential": -0.061800000000005184,
                                 "specie": "S"
                             },
@@ -160458,7 +160467,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.648906561701503,
-                                "pc_potential": -0.21783278682612173,
+                                "pc_potential": -0.21783278682609816,
                                 "potential": -0.03700000000000614,
                                 "specie": "S"
                             },
@@ -160467,7 +160476,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.6683303674035885,
-                                "pc_potential": -0.1798466333384121,
+                                "pc_potential": -0.17984663333839956,
                                 "potential": 0.0835000000000008,
                                 "specie": "S"
                             },
@@ -160476,7 +160485,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.6355160175692,
-                                "pc_potential": -0.21704696386507566,
+                                "pc_potential": -0.21704696386506186,
                                 "potential": -0.01680000000000348,
                                 "specie": "S"
                             },
@@ -160485,7 +160494,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 7.6881456034743945,
-                                "pc_potential": -0.26639246652534315,
+                                "pc_potential": -0.2663924665253394,
                                 "potential": -0.06969999999999743,
                                 "specie": "S"
                             },
@@ -160494,7 +160503,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.643280135953654,
-                                "pc_potential": -0.16805375019781674,
+                                "pc_potential": -0.16805375019779162,
                                 "potential": 0.0062999999999959755,
                                 "specie": "S"
                             },
@@ -160521,7 +160530,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.6418163571830116,
-                                "pc_potential": -0.15285646996718538,
+                                "pc_potential": -0.1528564699671816,
                                 "potential": 0.06220000000000425,
                                 "specie": "S"
                             },
@@ -160548,7 +160557,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.635527367798862,
-                                "pc_potential": -0.1446328907133287,
+                                "pc_potential": -0.1446328907133067,
                                 "potential": 0.05480000000000018,
                                 "specie": "S"
                             },
@@ -160584,7 +160593,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.5798562431489,
-                                "pc_potential": -0.2697344001168929,
+                                "pc_potential": -0.26973440011687694,
                                 "potential": -0.08270000000000266,
                                 "specie": "S"
                             },
@@ -160593,7 +160602,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.650750814156263,
-                                "pc_potential": -0.21810833726305456,
+                                "pc_potential": -0.21810833726303855,
                                 "potential": -0.037599999999997635,
                                 "specie": "S"
                             },
@@ -160602,7 +160611,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.6397059168840435,
-                                "pc_potential": -0.21741168354314888,
+                                "pc_potential": -0.21741168354312437,
                                 "potential": -0.015900000000002024,
                                 "specie": "S"
                             },
@@ -160611,7 +160620,7 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 8.577189176875791,
-                                "pc_potential": -0.2695260998304254,
+                                "pc_potential": -0.2695260998304182,
                                 "potential": -0.09210000000000207,
                                 "specie": "S"
                             },
@@ -160647,14 +160656,14 @@
                                 "@module": "pydefect.corrections.efnv_correction",
                                 "@version": "0.9.9",
                                 "distance": 6.634525716435348,
-                                "pc_potential": -0.16730963655488593,
+                                "pc_potential": -0.16730963655487652,
                                 "potential": 0.06189999999999429,
                                 "specie": "S"
                             }
                         ]
                     }
                 },
-                "kumagai_charge_correction_error": 0.013203730523638168
+                "kumagai_charge_correction_error": 0.013203730523638052
             },
             "defect": {
                 "@class": "Vacancy",

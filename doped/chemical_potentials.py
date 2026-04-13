@@ -77,6 +77,8 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
+# TODO: Get genAI to try make code in this module more readable. Could do with some informative
+#  comments, in complex workflows, typing etc.
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
     "formula_pretty",
@@ -1345,51 +1347,39 @@ class CompetingPhases(MSONable):
                     structure = _nominal_structure_for_input_writing(entry.composition)
                 yield entry, category, structure
 
-    def convergence_setup(
+    def get_kpoint_convergence_sets(
         self,
-        kpoints_metals=(40, 1000, 5),
-        kpoints_nonmetals=(5, 120, 5),
-        user_potcar_functional="PBE",
-        user_potcar_settings=None,
-        user_incar_settings=None,
-        write_files: bool = True,
+        kpoints_metals: tuple[float, float, float] = (40.0, 1000.0, 5.0),
+        kpoints_nonmetals: tuple[float, float, float] = (5.0, 120.0, 5.0),
+        user_incar_settings: dict | None = None,
+        user_potcar_functional: str = "PBE",
+        user_potcar_settings: dict | None = None,
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
-        **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
-        Generates VASP input files for k-points convergence testing for
-        competing phases, using PBEsol (GGA) DFT by default.
+        Generates a dictionary of ``DopedDictSet``\s (subclasses of
+        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) for k-point convergence
+        testing of competing phases, using PBEsol (GGA) DFT by default.
 
-        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
-        Returns a dictionary of ``DopedDictSet`` objects (subclasses of
-        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which contains the input
-        file settings, and writes to file if ``write_files`` is ``True``
-        (default).
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic)
+        or 0 if not.
 
         Args:
-            kpoints_metals (tuple):
+            kpoints_metals (tuple[float, float, float]):
                 Kpoint density per inverse volume (Å^-3) to be tested for
                 metallic entries (those with zero band gap), as a
                 ``(min, max, step)`` tuple. Note that only unique kpoint
                 combinations are generated, so small step sizes (as default)
                 just results in each k-points choice between ``min`` and
                 ``max`` being included.
-            kpoints_nonmetals (tuple):
+            kpoints_nonmetals (tuple[float, float, float]):
                 Kpoint density per inverse volume (Å^-3) to be tested for
                 non-metallic entries (those with a non-zero band gap), as a
                 ``(min, max, step)`` tuple. Note that only unique kpoint
                 combinations are generated, so small step sizes (as default)
                 just results in each k-points choice between ``min`` and
                 ``max`` being included.
-            user_potcar_functional (str):
-                POTCAR functional to use. Default is "PBE" and if this fails,
-                tries "PBE_52", then "PBE_54".
-            user_potcar_settings (dict):
-                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
-                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
-                set.
             user_incar_settings (dict):
                 Override the default INCAR settings e.g.
                 ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
@@ -1397,29 +1387,29 @@ class CompetingPhases(MSONable):
                 input as strings with quotation marks. See
                 ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
                 settings.
-            write_files (bool):
-                Whether to write VASP input files to disk (default: ``True``).
-                If ``False``, returns the generated ``DopedDictSet`` objects
-                without writing files.
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
+                set.
             extrinsic_only (bool):
-                If ``True``, only generate/write inputs for
+                If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
                 existing intrinsic competing-phases set). Default is ``False``
-                (generate/write inputs for all entries).
+                (generate inputs for all entries).
             output_path (PathLike):
-                Top-level output directory name. Default is
-                ``"CompetingPhases"``.
-            **kwargs:
-                Additional kwargs to pass to ``DictSet.write_input()``
+                Top-level output directory name (used as a key prefix).
+                Default is ``"CompetingPhases"``.
 
         Returns:
             dict[str, DopedDictSet]:
                 Mapping of output folder paths to generated ``DopedDictSet``\s
                 (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
-        # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
-        base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
+        base_incar_settings.update(user_incar_settings or {})
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
@@ -1430,7 +1420,6 @@ class CompetingPhases(MSONable):
             if category == "molecules":
                 continue  # no molecular entries as they don't need convergence testing
 
-            # kpoints should be set as (min, max, step)
             min_k, max_k, step_k = kpoints_by_metallicity[category]
             incar_settings = copy.deepcopy(base_incar_settings or {})
             self._set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
@@ -1439,7 +1428,7 @@ class CompetingPhases(MSONable):
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                dict_set = DopedDictSet(  # ``doped`` DopedDictSet for quicker IO functions
                     structure=structure,
                     user_incar_settings=incar_settings,
                     user_kpoints_settings={"reciprocal_density": min_k},
@@ -1449,7 +1438,7 @@ class CompetingPhases(MSONable):
                 )
 
                 _generated_kpoints_folders = []
-                for kpoint in range(min_k, max_k, step_k):
+                for kpoint in np.arange(min_k, max_k, step_k):
                     dict_set = deepcopy(dict_set)
                     dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
                     kname = (
@@ -1465,16 +1454,6 @@ class CompetingPhases(MSONable):
                         f"/{kname}"
                     )
                     dict_sets[fname] = dict_set
-                    write_kwargs = copy.deepcopy(kwargs)
-                    if structure.properties.get("_is_nominal_structure", False):
-                        # don't write POSCAR or KPOINTS files for nominal structures:
-                        write_kwargs.update({"poscar": False, "kpoints": False})
-
-                    if write_files:
-                        if os.path.exists(fname):
-                            warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
-                        dict_set.write_input(fname, **write_kwargs)
-
                     _generated_kpoints_folders.append(kname)
 
         molecular_entries_to_report = (
@@ -1490,48 +1469,51 @@ class CompetingPhases(MSONable):
             )
         return dict_sets
 
-    # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
-    #  chemical potentials (-> Guidelines perspective)
-    # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
-    # same composition (oxidation states), to good accuracy, so do this for pre-screening
-    # Also, can use symmetry with SOC total energy calculations, have tested this.
-    # TODO: ``vasp_std_setup`` should be renamed (``relaxation_setup`` or something similar,
-    #  maybe ``write_...`` for consistency with other file-writing functions (same for convergence setup?)
-    #  and then deprecate
+    # TODO: Missing typing in this module
 
-    def vasp_std_setup(
+    def write_kpoint_convergence_files(
         self,
-        kpoints_metals=200,
-        kpoints_nonmetals=64,  # MPRelaxSet default
-        user_potcar_functional="PBE",
-        user_potcar_settings=None,
-        user_incar_settings=None,
-        write_files: bool = True,
+        kpoints_metals: tuple[float, float, float] = (40.0, 1000.0, 5.0),
+        kpoints_nonmetals: tuple[float, float, float] = (5.0, 120.0, 5.0),
+        user_incar_settings: dict | None = None,
+        user_potcar_functional: str = "PBE",
+        user_potcar_settings: dict | None = None,
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
-        Generates VASP input files for relaxations of the competing phases,
-        using HSE06 (hybrid DFT) DFT by default.
+        Generates and writes VASP input files for k-point convergence testing
+        of competing phases, using PBEsol (GGA) DFT by default.
 
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
-        if not. Note that any changes to the default ``INCAR``/``POTCAR``
-        settings should be consistent with those used for the defect supercell
-        calculations.
-
-        Returns a dictionary of ``DopedDictSet`` objects (subclasses of
-        :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which contains the input
-        file settings, and writes to file if ``write_files`` is ``True``
-        (default).
+        if not. Recommended to use with https://github.com/kavanase/vaspup2.0.
+        Returns the corresponding dictionary of ``DopedDictSet`` objects
+        (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
+        contain the input file settings.
 
         Args:
-            kpoints_metals (int):
-                Kpoint density per inverse volume (Å^-3) for metals.
-                Default is 200.
-            kpoints_nonmetals (int):
-                Kpoint density per inverse volume (Å^-3) for nonmetals
-                (default is 64, the default for ``MPRelaxSet``).
+            kpoints_metals (tuple[float, float, float]):
+                Kpoint density per inverse volume (Å^-3) to be tested for
+                metallic entries (those with zero band gap), as a
+                ``(min, max, step)`` tuple. Note that only unique kpoint
+                combinations are generated, so small step sizes (as default)
+                just results in each k-points choice between ``min`` and
+                ``max`` being included.
+            kpoints_nonmetals (tuple[float, float, float]):
+                Kpoint density per inverse volume (Å^-3) to be tested for
+                non-metallic entries (those with a non-zero band gap), as a
+                ``(min, max, step)`` tuple. Note that only unique kpoint
+                combinations are generated, so small step sizes (as default)
+                just results in each k-points choice between ``min`` and
+                ``max`` being included.
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g.
+                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
+                any non-numerical or non-``True``/``False`` flags need to be
+                input as strings with quotation marks. See
+                ``doped/VASP_sets/PBEsol_ConvergenceSet.yaml`` for the default
+                settings.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
@@ -1539,22 +1521,11 @@ class CompetingPhases(MSONable):
                 Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
                 ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
                 set.
-            user_incar_settings (dict):
-                Override the default INCAR settings e.g.
-                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``. Note that
-                any non-numerical or non-``True``/``False`` flags need to be
-                input as strings with quotation marks. See
-                ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for the
-                default settings.
-            write_files (bool):
-                Whether to write VASP input files to disk (default: ``True``).
-                If ``False``, returns the generated ``DopedDictSet`` objects
-                without writing files.
             extrinsic_only (bool):
-                If ``True``, only generate/write inputs for
+                If ``True``, only generate inputs for
                 ``self.extrinsic_entries`` (useful when adding dopants to an
                 existing intrinsic competing-phases set). Default is ``False``
-                (generate/write inputs for all entries).
+                (generate inputs for all entries).
             output_path (PathLike):
                 Top-level output directory name. Default is
                 ``"CompetingPhases"``.
@@ -1566,16 +1537,108 @@ class CompetingPhases(MSONable):
                 Mapping of output folder paths to generated ``DopedDictSet``\s
                 (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
+        dict_sets = self.get_kpoint_convergence_sets(
+            kpoints_metals=kpoints_metals,
+            kpoints_nonmetals=kpoints_nonmetals,
+            user_potcar_functional=user_potcar_functional,
+            user_potcar_settings=user_potcar_settings,
+            user_incar_settings=user_incar_settings,
+            extrinsic_only=extrinsic_only,
+            output_path=output_path,
+        )
+        return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
+
+    def convergence_setup(self, **kwargs) -> dict[str, DopedDictSet]:
+        r"""
+        Deprecated alias for :meth:`write_kpoint_convergence_files`.
+
+        .. deprecated:: 4.0
+            Use :meth:`write_kpoint_convergence_files` instead; this name will
+            be removed in v4.1.
+        """
+        warnings.warn(
+            "`CompetingPhases.convergence_setup` is deprecated and will be removed in the next "
+            "minor release (v4.1); use `CompetingPhases.write_kpoint_convergence_files` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.write_kpoint_convergence_files(**kwargs)
+
+    # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
+    #  chemical potentials (-> Guidelines perspective)
+    # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
+    # same composition (oxidation states), to good accuracy, so do this for pre-screening
+    # Also, can use symmetry with SOC total energy calculations, have tested this.
+
+    def get_relaxation_sets(
+        self,
+        kpoints_metals: float = 200.0,
+        kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
+        user_incar_settings: dict | None = None,
+        user_potcar_functional: str = "PBE",
+        user_potcar_settings: dict | None = None,
+        extrinsic_only: bool = False,
+        output_path: PathLike = "CompetingPhases",
+    ) -> dict[str, DopedDictSet]:
+        r"""
+        Generates ``DopedDictSet``\s for relaxations of the competing phases,
+        using HSE06 (hybrid DFT) by default (consistent with the default input
+        settings for defect calculations in :mod:`doped.vasp`).
+
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
+
+        Args:
+            kpoints_metals (float):
+                Kpoint density per inverse volume (Å^-3) for metallic entries
+                (those with zero band gap). Default is 200 Å^-3. Note that you
+                may want to specify custom k-point settings for each material
+                individually based on convergence testing to minimise cost.
+            kpoints_nonmetals (float):
+                Kpoint density per inverse volume (Å^-3) for non-metallic
+                entries (those with non-zero band gap). Default is 64 Å^-3,
+                matching the ``MPRelaxSet`` default). Note that you may want to
+                specify custom k-point settings for each material individually
+                based on convergence testing to minimise cost.
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g.
+                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+                Note that any non-numerical or non-``True``/``False`` flags
+                need to be input as strings with quotation marks.
+                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
+                the default settings.
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
+                set.
+            extrinsic_only (bool):
+                If ``True``, only generate inputs for
+                ``self.extrinsic_entries`` (useful when adding dopants to an
+                existing intrinsic competing-phases set). Default is ``False``
+                (generate inputs for all entries).
+            output_path (PathLike):
+                Top-level output directory name (used as a key prefix).
+                Default is ``"CompetingPhases"``.
+
+        Returns:
+            dict[str, DopedDictSet]:
+                Mapping of output folder paths to generated ``DopedDictSet``\s
+                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+        """
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
 
-        # True (hybrid) by default for vasp_std relaxations; accept bool, or string like "True"/"False":
         lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
         if isinstance(lhfcalc, str):
             lhfcalc = lhfcalc.lower().startswith("t")
         if lhfcalc:
             base_incar_settings.update(default_HSE_set["INCAR"])
 
-        base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
+        base_incar_settings.update(user_incar_settings or {})
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
@@ -1596,15 +1659,15 @@ class CompetingPhases(MSONable):
 
             incar_settings = copy.deepcopy(base_incar_settings or {})
             if category == "molecules":
-                incar_settings["ISIF"] = 2  # can't change the volume
-                incar_settings["KPAR"] = 1  # can't use k-point parallelization, gamma only
+                incar_settings["ISIF"] = 2  # don't change the volume
+                incar_settings["KPAR"] = 1  # don't use k-point parallelization, gamma only
             self._set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
             if category == "metals":
                 self._set_default_metal_smearing(incar_settings, user_incar_settings or {})
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
-                dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
+                dict_set = DopedDictSet(  # ``doped`` DopedDictSet for quicker IO functions
                     structure=structure,
                     user_incar_settings=incar_settings,
                     user_kpoints_settings=user_kpoints_settings,
@@ -1615,15 +1678,129 @@ class CompetingPhases(MSONable):
 
                 fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/vasp_std"
                 dict_sets[fname] = dict_set
-                write_kwargs = copy.deepcopy(kwargs)
-                if structure.properties.get("_is_nominal_structure", False):
-                    # don't write POSCAR or KPOINTS files for nominal structures:
-                    write_kwargs.update({"poscar": False, "kpoints": False})
 
-                if write_files:
-                    if os.path.exists(fname):
-                        warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
-                    dict_set.write_input(fname, **write_kwargs)
+        return dict_sets
+
+    def write_relaxation_files(
+        self,
+        kpoints_metals: float = 200.0,
+        kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
+        user_incar_settings: dict | None = None,
+        user_potcar_functional: str = "PBE",
+        user_potcar_settings: dict | None = None,
+        extrinsic_only: bool = False,
+        output_path: PathLike = "CompetingPhases",
+        **kwargs,
+    ) -> dict[str, DopedDictSet]:
+        r"""
+        Generates and writes VASP input files for relaxations of the competing
+        phases, using HSE06 (hybrid DFT) by default (consistent with the
+        default input settings for defect calculations in :mod:`doped.vasp`).
+
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
+
+        Note that this function uses a single kpoint density setting each for
+        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+        molecules (Gamma-only), while one will often want to specify custom
+        k-point settings for each material individually based on convergence
+        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+        cost.
+
+        Returns the corresponding dictionary of ``DopedDictSet`` objects
+        (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
+        contain the input file settings.
+
+        Args:
+            kpoints_metals (float):
+                Kpoint density per inverse volume (Å^-3) for metallic entries
+                (those with zero band gap). Default is 200 Å^-3. Note that you
+                may want to specify custom k-point settings for each material
+                individually based on convergence testing to minimise cost.
+            kpoints_nonmetals (float):
+                Kpoint density per inverse volume (Å^-3) for non-metallic
+                entries (those with non-zero band gap). Default is 64 Å^-3,
+                matching the ``MPRelaxSet`` default). Note that you may want to
+                specify custom k-point settings for each material individually
+                based on convergence testing to minimise cost.
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g.
+                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+                Note that any non-numerical or non-``True``/``False`` flags
+                need to be input as strings with quotation marks.
+                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
+                the default settings.
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
+                set.
+            extrinsic_only (bool):
+                If ``True``, only generate inputs for
+                ``self.extrinsic_entries`` (useful when adding dopants to an
+                existing intrinsic competing-phases set). Default is ``False``
+                (generate/write inputs for all entries).
+            output_path (PathLike):
+                Top-level output directory name. Default is
+                ``"CompetingPhases"``.
+            **kwargs:
+                Additional kwargs to pass to ``DictSet.write_input()``
+
+        Returns:
+            dict[str, DopedDictSet]:
+                Mapping of output folder paths to generated
+                ``DopedDictSet``\s (subclasses of
+                :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+        """
+        dict_sets = self.get_relaxation_sets(
+            kpoints_metals=kpoints_metals,
+            kpoints_nonmetals=kpoints_nonmetals,
+            user_potcar_functional=user_potcar_functional,
+            user_potcar_settings=user_potcar_settings,
+            user_incar_settings=user_incar_settings,
+            extrinsic_only=extrinsic_only,
+            output_path=output_path,
+        )
+        return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
+
+    def vasp_std_setup(self, **kwargs) -> dict[str, DopedDictSet]:
+        r"""
+        Deprecated alias for :meth:`write_relaxation_files`.
+
+        .. deprecated:: 4.0
+            Use :meth:`write_relaxation_files` instead; this name will be
+            removed in v4.1.
+        """
+        warnings.warn(
+            "`CompetingPhases.vasp_std_setup` is deprecated and will be removed in the next minor "
+            "release (v4.1); use `CompetingPhases.write_relaxation_files` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.write_relaxation_files(**kwargs)
+
+    def _write_competing_phase_dict_sets(
+        self, dict_sets: dict[str, DopedDictSet], **kwargs
+    ) -> dict[str, DopedDictSet]:
+        r"""
+        Write a dictionary of ``DopedDictSet``\s to their corresponding output
+        folders, warning if any already exist.
+
+        Skips writing ``POSCAR``/``KPOINTS`` for nominal structures.
+        """
+        for fname, dict_set in dict_sets.items():
+            write_kwargs = copy.deepcopy(kwargs)
+            if dict_set.structure.properties.get("_is_nominal_structure", False):
+                write_kwargs.update({"poscar": False, "kpoints": False})
+
+            with warnings.catch_warnings():
+                if os.path.exists(fname):
+                    warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
+                dict_set.write_input(fname, **write_kwargs)
 
         return dict_sets
 
@@ -3313,8 +3490,6 @@ class CompetingPhasesAnalyzer(MSONable):
 
         return chempots_df
 
-    # TODO: This code (in all this module) should be rewritten to be more readable (re-used and
-    #  uninformative variable names, missing informative comments, typing...)
     def _calculate_extrinsic_chempot_lims(self, extrinsic_elements, chempots_df):
         # TODO: At present, this does not work for codoping I believe?
         # for each intrinsic chemical potential limit, find the most stable extrinsic competing phase
