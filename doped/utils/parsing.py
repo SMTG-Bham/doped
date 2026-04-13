@@ -7,11 +7,15 @@ import itertools
 import os
 import re
 import warnings
+from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache, partialmethod
+from pathlib import Path
+from typing import Any
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
+import pandas as pd
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
@@ -348,6 +352,162 @@ def _get_output_files_and_check_if_multiple(
         os.path.join(path, output_file),
         False,
     )  # so `get_X()` will raise an informative FileNotFoundError
+
+
+_CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")
+"""
+Filename patterns that identify calculation output files.
+"""
+
+_SUBFOLDER_PRIORITY = [
+    "vasp_ncl",
+    "vasp_std",
+    "vasp_nkred_std",
+    "vasp_gam",
+    "singlepoint",
+    "final",
+    "relax",
+]
+"""
+Priority order when auto-detecting calculation subfolders.
+"""
+
+
+def _dataframe_of_files(root: Path) -> pd.DataFrame:
+    """
+    Get a dataframe with one row per file under ``root``, found recursively.
+
+    Hidden files/directories (names starting with ``"."``) and files
+    sitting directly in ``root`` (i.e. with only one path component
+    relative to ``root``) are excluded.
+
+    Columns: ``filename``, ``full_path``, ``folder_path``,
+    ``folder_in_root`` (the first path component relative to ``root``).
+
+    Args:
+        root (Path):
+            Path to the root directory.
+
+    Returns:
+        pd.DataFrame:
+            One row per discovered file.
+    """
+    root = Path(root)
+    rows: list[dict[str, Any]] = []
+    for f in root.rglob("*"):  # recursively find all files under root, ignoring hidden folders/files
+        if f.is_file():
+            relative_parts = f.relative_to(root).parts
+            if any(part.startswith(".") for part in relative_parts) or len(relative_parts) < 2:
+                continue  # ignore hidden files and folders, and files in root directory itself
+            rows.append(
+                {
+                    "filename": f.name,
+                    "full_path": f,
+                    "folder_path": f.parent,
+                    "folder_in_root": relative_parts[0],
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _get_calc_files_df(root: Path, calc_output_mask: Iterable[str] = _CALC_OUTPUT_MASK) -> pd.DataFrame:
+    """
+    Get a DataFrame of calculation output files (matching ``calc_output_mask``)
+    found recursively under ``root``, excluding hidden files/directories and
+    files sitting directly in ``root``.
+
+    This is a filtered view of :func:`_dataframe_of_files`.
+
+    Args:
+        root (Path):
+            Path to the root directory.
+        calc_output_mask (Iterable[str]):
+            Iterable of filename patterns to match.  Defaults to
+            ``_CALC_OUTPUT_MASK`` (``("vasprun.xml", "vasprun.xml.gz")``).
+            Matching is case-insensitive.
+
+    Returns:
+        pd.DataFrame:
+            One row per matching calculation output file.
+    """
+    files_df = _dataframe_of_files(root)
+    if files_df.empty:
+        return pd.DataFrame()
+    pattern = "|".join(map(re.escape, calc_output_mask))
+    return files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
+
+
+def _determine_subfolder(
+    files_df: pd.DataFrame,
+    candidate_folders: list[str] | None = None,
+    subfolder_priority: list[str] = _SUBFOLDER_PRIORITY,
+) -> str:
+    """
+    Pick the highest-priority calculation subfolder name present in
+    ``files_df`` (restricted to rows whose ``folder_in_root`` is in
+    ``candidate_folders``), or ``"."`` if none of the priority names are found.
+
+    Args:
+        files_df (pd.DataFrame):
+            DataFrame produced by :func:`_dataframe_of_files`, filtered
+            to calculation output files.
+        candidate_folders (list[str]):
+            Top-level folder names to consider. If ``None`` (default),
+            considers all top-level folder names.
+        subfolder_priority (list[str]):
+            Priority order for subfolder names.  Defaults to
+            ``_SUBFOLDER_PRIORITY``
+            (``["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam", "singlepoint", "final", "relax"]``).
+
+    Returns:
+        str:
+            The detected subfolder name, or ``"."``.
+    """
+    candidate_folder_df = (
+        files_df[files_df["folder_in_root"].isin(candidate_folders)]
+        if candidate_folders is not None
+        else files_df
+    )
+    for subfolder in subfolder_priority:
+        if any(subfolder in p.name for p in candidate_folder_df["folder_path"].unique()):
+            return subfolder
+    return "."
+
+
+def _find_calc_outputs(
+    output_path: PathLike,
+    subfolder: PathLike | None = None,
+) -> tuple[pd.DataFrame, list[str], str]:
+    """
+    Recursively find calculation output files under ``output_path`` and auto-
+    detect the calculation subfolder when ``subfolder`` is ``None``.
+
+    Shared discovery logic used by both :func:`~doped.analysis.DefectsParser`
+    and :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
+
+    Args:
+        output_path (PathLike):
+            Root directory to search.
+        subfolder (PathLike | None):
+            Explicit subfolder name (e.g. ``"vasp_std"``).  If
+            ``None``, auto-detected using ``_SUBFOLDER_PRIORITY``
+            (``["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam", "singlepoint", "final", "relax"]``).
+
+    Returns:
+        tuple[pd.DataFrame, list[str], str]:
+            ``(calc_files_df, candidate_folders, resolved_subfolder)``
+            where *resolved_subfolder* is ``"."`` when no priority
+            subfolder is found.
+    """
+    calc_files_df = _get_calc_files_df(Path(output_path))
+    if calc_files_df.empty:
+        return pd.DataFrame(), [], "."
+
+    candidate_folders = calc_files_df["folder_in_root"].unique().tolist()
+    resolved_subfolder = (
+        _determine_subfolder(calc_files_df, candidate_folders) if subfolder is None else str(subfolder)
+    )
+    return calc_files_df, candidate_folders, resolved_subfolder
 
 
 def get_defect_type_and_composition_diff(

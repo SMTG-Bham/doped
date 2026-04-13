@@ -9,14 +9,11 @@ calculations, with publication-quality outputs.
 
 import contextlib
 import os
-import re
 import warnings
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 import numpy as np
-import pandas as pd
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
 from pymatgen.analysis.defects import core
@@ -47,12 +44,16 @@ from doped.generation import (
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils.efficiency import StructureMatcher_scan_stol, _parse_site_species_str, get_voronoi_nodes
 from doped.utils.parsing import (
+    _CALC_OUTPUT_MASK,
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
+    _determine_subfolder,
+    _find_calc_outputs,
     _format_mismatching_incar_warning,
     _get_bulk_locpot_dict,
     _get_bulk_site_potentials,
+    _get_calc_files_df,
     _get_defect_supercell_frac_coords,
     _get_output_files_and_check_if_multiple,
     _multiple_files_warning,
@@ -107,13 +108,6 @@ _aniso_dielectric_but_using_locpot_warning = (
     "errors for very anisotropic systems and/or relatively small supercells!"
 )
 
-_CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")  # mask for identifying calculation files
-_SUBFOLDER_PRIORITY = [
-    "vasp_ncl",
-    "vasp_std",
-    "vasp_nkred_std",
-    "vasp_gam",
-]  # priority order for subfolders
 _BULK_FOLDER_PATTERN = "bulk"
 
 
@@ -1368,21 +1362,8 @@ def _get_calculation_folders_for_parsing(
     out_root = Path(output_path).resolve()
     user_set_subfolder = subfolder is not None
 
-    def _get_calc_files_df(root: Path) -> pd.DataFrame:
-        """
-        Get a DataFrame of calculation output files in folders under ``root``,
-        matching the ``_CALC_OUTPUT_MASK`` filter, recursively, ignoring hidden
-        files and folders.
-        """
-        files_df = _dataframe_of_files(root)  # dataframe of files in folders under ``root``
-        pattern = "|".join(map(re.escape, _CALC_OUTPUT_MASK))  # regex filter pattern for output files
-        return (
-            files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
-            if not files_df.empty
-            else pd.DataFrame()
-        )
+    calc_files_df, possible_defect_folders, detected_subfolder = _find_calc_outputs(out_root, subfolder)
 
-    calc_files_df = _get_calc_files_df(out_root)  # DataFrame of calculation output files
     if calc_files_df.empty:  # user may have specified defect sub-folder directly, so check one level up
         parent_root = out_root.parent
         calc_files_df = _get_calc_files_df(parent_root)
@@ -1403,12 +1384,13 @@ def _get_calculation_folders_for_parsing(
             raise files_not_found_error
         out_root = parent_root  # shift context to parent directory
 
-    else:
-        possible_defect_folders = calc_files_df["folder_in_root"].unique().tolist()
+        detected_subfolder = (
+            _determine_subfolder(calc_files_df, possible_defect_folders)
+            if not user_set_subfolder
+            else str(subfolder)
+        )
 
-    subfolder = (
-        _determine_subfolder(calc_files_df, possible_defect_folders) if subfolder is None else subfolder
-    )
+    subfolder = detected_subfolder
 
     possible_bulk_folders = [  # candidate bulk folders
         g
@@ -1431,56 +1413,6 @@ def _get_calculation_folders_for_parsing(
     bulk_path = _append_subfolder_if_needed(bulk_path, subfolder, user_set_subfolder)
 
     return defect_folders, str(out_root), str(subfolder), str(bulk_path)
-
-
-def _dataframe_of_files(root: Path) -> pd.DataFrame:
-    """
-    Get a dataframe with one row per file under *root*.
-
-    Args:
-        root (Path):
-            Path to the root directory.
-    """
-    rows: list[dict[str, Any]] = []
-    for f in root.rglob("*"):  # recursively find all files under root, ignoring hidden folders/files
-        if f.is_file():
-            relative_to_root_parts = f.relative_to(root).parts
-            if (
-                any(part.startswith(".") for part in relative_to_root_parts)
-                or len(relative_to_root_parts) < 2
-            ):  # ignore hidden files and folders, and files in root directory itself
-                continue
-            rows.append(
-                {
-                    "filename": f.name,
-                    "full_path": f,
-                    "folder_path": f.parent,
-                    "folder_in_root": f.relative_to(root).parts[0],
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _determine_subfolder(files_df: pd.DataFrame, defect_folders: list[str]) -> str:
-    """
-    Pick the highest-priority calculation subfolder name, or "." if none found.
-
-    Args:
-        files_df (pd.DataFrame):
-            DataFrame with one row per file in folders under ``out_root``.
-        defect_folders (list[str]):
-            List of defect calculation folders (in ``out_root``).
-
-    Returns:
-        str:
-            The highest-priority calculation subfolder name, or "." if none
-            found.
-    """
-    defect_folders_df = files_df[files_df["folder_in_root"].isin(defect_folders)]
-    for subfolder in _SUBFOLDER_PRIORITY:
-        if any(subfolder in p.name for p in defect_folders_df["folder_path"].unique()):
-            return subfolder
-    return "."
 
 
 def _resolve_bulk_path(

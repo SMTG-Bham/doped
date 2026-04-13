@@ -5,6 +5,7 @@ Tests for the ``doped.chemical_potentials`` module.
 import glob
 import os
 import shutil
+import tempfile
 import unittest
 import warnings
 from copy import deepcopy
@@ -31,6 +32,7 @@ from test_utils import (
 )
 
 from doped import chemical_potentials
+from doped.utils.parsing import _find_calc_outputs, _get_calc_files_df
 from doped.utils.symmetry import get_primitive_structure
 
 
@@ -992,23 +994,159 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             if_present_rm(f"{self.zro2_path}/{i}")
 
     def test_vaspruns_none_parsed(self):
-        with warnings.catch_warnings(record=True) as w, pytest.raises(FileNotFoundError) as e:
-            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", module_path)
-        _print_warning_info(w)  # for debugging
-        assert not w
-        print(e.value)  # for debugging
-        assert "No vasprun files have been parsed," in str(e.value)
+        with (
+            tempfile.TemporaryDirectory() as empty_dir,
+            pytest.raises(FileNotFoundError, match=r"No vasprun\.xml"),
+        ):
+            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", empty_dir)
+
+    def test_recursive_vasprun_discovery(self):
+        """
+        Test that vaspruns are found recursively and subfolder auto-detection
+        (subfolder=None) picks vasp_std when present.
+        """
+        cpa_default = chemical_potentials.CompetingPhasesAnalyzer(
+            "ZrO2", self.zro2_path, subfolder="vasp_std"
+        )
+        cpa_auto = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path, subfolder=None)
+        self._compare_cpas(cpa_default, cpa_auto)
+
+    def _build_mixed_subfolder_tree(self, tmp_path):
+        """
+        Build a directory tree with vaspruns in different subfolders.
+
+        Layout under ``tmp_path``::
+
+            ZrO2_EaH_0.0/vasp_ncl/vasprun.xml.gz  (from ZrO2_EaH_0.0)
+            Zr_EaH_0.0/vasp_ncl/vasprun.xml.gz    (from Zr_EaH_0.0)
+            O2_EaH_0.0/vasp_ncl/vasprun.xml.gz     (from O2_EaH_0.0)
+            Zr3O_EaH_0.0/vasp_std/vasprun.xml.gz  (should be IGNORED by vasp_ncl)
+
+        Returns the set of vasp_ncl vasprun paths (as resolved strings).
+        """
+        src = self.zro2_path
+        ncl_phases = ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]
+        std_decoy = "Zr3O_EaH_0.0"
+
+        ncl_paths = []
+        for phase in ncl_phases:
+            dest_dir = os.path.join(tmp_path, phase, "vasp_ncl")
+            os.makedirs(dest_dir)
+            dest = os.path.join(dest_dir, "vasprun.xml.gz")
+            shutil.copy2(os.path.join(src, phase, "vasp_std", "vasprun.xml.gz"), dest)
+            ncl_paths.append(os.path.realpath(dest))
+
+        decoy_dir = os.path.join(tmp_path, std_decoy, "vasp_std")
+        os.makedirs(decoy_dir)
+        shutil.copy2(
+            os.path.join(src, std_decoy, "vasp_std", "vasprun.xml.gz"),
+            os.path.join(decoy_dir, "vasprun.xml.gz"),
+        )
+        return set(ncl_paths)
+
+    def test_explicit_subfolder_ignores_others(self):
+        """
+        When ``subfolder="vasp_ncl"`` is given, vaspruns under ``vasp_std``
+        must not be parsed.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
+            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
+            assert len(cpa.vasprun_paths) == 3
+
+    def test_subfolder_auto_detect_picks_highest_priority(self):
+        """
+        With both ``vasp_ncl`` and ``vasp_std`` subfolders present,
+        ``subfolder=None`` must auto-pick ``vasp_ncl`` (highest priority).
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=None)
+            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
+            assert len(cpa.vasprun_paths) == 3
+
+    def test_subfolder_not_found_warning_and_fallback(self):
+        """
+        If the requested subfolder doesn't exist, a warning is emitted and all
+        discovered vaspruns are used as a fallback.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = self.zro2_path
+            for phase in ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]:
+                dest_dir = os.path.join(tmp_dir, phase, "vasp_std")
+                os.makedirs(dest_dir)
+                shutil.copy2(
+                    os.path.join(src, phase, "vasp_std", "vasprun.xml.gz"),
+                    os.path.join(dest_dir, "vasprun.xml.gz"),
+                )
+
+            with warnings.catch_warnings(record=True) as w:
+                cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder="vasp_ncl")
+            _print_warning_info(w)
+            assert any("No vasprun.xml files found in 'vasp_ncl'" in str(wn.message) for wn in w)
+            assert len(cpa.vasprun_paths) == 3
+
+    def test_no_subfolder_flat_layout(self):
+        """
+        When vaspruns live directly in phase folders (no subfolder),
+        ``subfolder=None`` should detect ``"."`` and parse all of them.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src = self.zro2_path
+            for phase in ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]:
+                dest_dir = os.path.join(tmp_dir, phase)
+                os.makedirs(dest_dir)
+                shutil.copy2(
+                    os.path.join(src, phase, "vasp_std", "vasprun.xml.gz"),
+                    os.path.join(dest_dir, "vasprun.xml.gz"),
+                )
+
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=None)
+            assert len(cpa.vasprun_paths) == 3
+
+    def test_find_calc_outputs_shared_helper(self):
+        """
+        Direct tests for the shared ``_find_calc_outputs`` and
+        ``_get_calc_files_df`` helpers in ``doped.utils.parsing``.
+        """
+        from pathlib import Path
+
+        calc_df = _get_calc_files_df(Path(self.zro2_path))
+        assert not calc_df.empty
+        assert set(calc_df["filename"].unique()) == {"vasprun.xml.gz"}
+        assert len(calc_df["folder_in_root"].unique()) == 8
+
+        calc_df, folders, subfolder = _find_calc_outputs(self.zro2_path)
+        assert not calc_df.empty
+        assert len(folders) == 8
+        assert subfolder == "vasp_std"
+
+        calc_df, folders, subfolder = _find_calc_outputs(self.zro2_path, subfolder="vasp_gam")
+        assert not calc_df.empty
+        assert subfolder == "vasp_gam"
+
+        with tempfile.TemporaryDirectory() as empty_dir:
+            calc_df, folders, subfolder = _find_calc_outputs(empty_dir)
+            assert calc_df.empty
+            assert folders == []
+            assert subfolder == "."
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._build_mixed_subfolder_tree(tmp_dir)
+            calc_df, folders, subfolder = _find_calc_outputs(tmp_dir, subfolder=None)
+            assert subfolder == "vasp_ncl"
 
     def test_latex_table(self):
         cpa = self.zro2_cpa
 
         def _test_latex_table(cpa=cpa, ref_filename="default.tex", **kwargs):
-            out, text, w = _run_func_and_capture_stdout_warnings(cpa.to_LaTeX_table, **kwargs)
-            assert not out
+            return_str, stdout, w = _run_func_and_capture_stdout_warnings(cpa.to_LaTeX_table, **kwargs)
+            assert not stdout
             assert not w
 
             with open(f"{data_dir}/ZrO2_LaTeX_Tables/test.tex", "w+") as f:
-                f.write(text)
+                f.write(return_str)
 
             with (
                 open(f"{data_dir}/ZrO2_LaTeX_Tables/{ref_filename}") as reference_f,
@@ -1149,6 +1287,8 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )
             elif attr == "entries":
                 assert cleanse_entries(cpa_a.entries) == cleanse_entries(cpa_b.entries)
+            elif attr in ("vasprun_paths", "parsed_folders"):
+                assert sorted(getattr(cpa_a, attr)) == sorted(getattr(cpa_b, attr))
             else:
                 assert getattr(cpa_a, attr) == getattr(cpa_b, attr)
 
@@ -1337,7 +1477,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
         _print_warning_info(w)  # for debugging
         for expected_warning in [
-            f"Multiple `vasprun.xml` files found in directory: "
+            f"Multiple `vasprun.xml` files found in competing phase directory: "
             f"{data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Br_EaH=0",
             f"vasprun.xml file at {data_dir}/Sn_in_Cs2AgBiBr6_CompetingPhases/Bi_EaH=0/vasprun.xml.gz"
             f" is corrupted/incomplete. Attempting to continue parsing but may fail!",

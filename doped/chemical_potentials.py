@@ -42,8 +42,10 @@ from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_potcar_symbols,
+    _find_calc_outputs,
     _format_mismatching_incar_warning,
     _get_output_files_and_check_if_multiple,
+    _multiple_files_warning,
     get_magnetization_from_vasprun,
     get_vasprun,
 )
@@ -2552,18 +2554,22 @@ class CompetingPhasesAnalyzer(MSONable):
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
             entries (PathLike, list[PathLike], list[ComputedEntry], list[ComputedStructureEntry]):
                 Either a path to the base folder containing the VASP outputs
-                (e.g. ``"CompetingPhases"``; default; with subfolders like:
-                ``formula_EaH_X/vasp_std/vasprun.xml(.gz)``, or
-                ``formula_EaH_X/vasprun.xml(.gz)``) or a list of paths to
-                ``vasprun.xml(.gz)`` files. Alternatively, can be a list of
-                ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+                (e.g. ``"CompetingPhases"``; default), which is searched
+                recursively for ``vasprun.xml(.gz)`` files, or a list of
+                paths to ``vasprun.xml(.gz)`` files / directories.
+                Alternatively, can be a list of ``ComputedEntry``\s /
+                ``ComputedStructureEntry``\s.
             subfolder (PathLike):
-                The subfolder in which your vasprun.xml(.gz) output files
-                are located (e.g. a file-structure like:
-                ``formula_EaH_X/{subfolder}/vasprun.xml(.gz)``), if ``entries``
-                is a path to a base folder with VASP outputs. Default is to
-                search for ``vasp_std`` subfolders, or directly in the
-                ``formula_EaH_X`` folders.
+                Restrict parsing to ``vasprun.xml(.gz)`` files inside
+                directories with this name (e.g. ``"vasp_std"``; default) --
+                i.e. with a file-structure like:
+                ``{Formula}_{spg}_EaH_{EaH}/{subfolder}/vasprun.xml(.gz)``)
+                Set to ``None`` to auto-detect the subfolder: the
+                highest-priority name among ``_SUBFOLDER_PRIORITY``
+                (``vasp_ncl``, ``vasp_std``, ``vasp_nkred_std``, ``vasp_gam``,
+                ``singlepoint``, ``final``, ``relax``) present in the
+                discovered paths is used; if none match, all found vaspruns are
+                parsed.
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found),
@@ -2652,68 +2658,6 @@ class CompetingPhasesAnalyzer(MSONable):
             )
         else:
             self._from_entries(entries, check_compatibility=check_compatibility)
-
-    @property
-    def entries_dict(self) -> dict[str, ComputedEntry]:
-        """
-        Mapping of ``doped`` competing phase names to entries.
-        """
-        entries_dict: dict[str, ComputedEntry] = {}
-        for entry in self.entries:
-            doped_name = get_and_set_competing_phase_name(entry, regenerate=False)
-            if doped_name in entries_dict:
-                raise KeyError(
-                    f"Duplicate competing phase key encountered in `self.entries`: {doped_name}. "
-                    "Please regenerate entries / entry names to ensure uniqueness."
-                )
-            entries_dict[doped_name] = entry
-        return entries_dict
-
-    def __getattr__(self, attr):
-        """
-        Redirect unknown attribute/method lookups to the entries dictionary.
-        """
-        # ``__getattr__`` is only called when normal lookup has already failed; ``entries`` is
-        # accessed by ``entries_dict`` so guard against infinite recursion during partially-
-        # initialised states:
-        if attr == "entries":
-            raise AttributeError(attr)
-        return getattr(self.entries_dict, attr)
-
-    def __getitem__(self, key):
-        """
-        Make the object subscriptable.
-
-        String keys index by ``entry.data["doped_name"]`` (dict-like), while
-        integer / slice keys use list-style indexing on ``self.entries``.
-        """
-        if isinstance(key, str):
-            return self.entries_dict[key]
-        return self.entries[key]
-
-    def __contains__(self, item):
-        """
-        Return ``True`` if ``item`` is in the entries.
-
-        For string inputs this checks ``entry.data["doped_name"]`` keys, while
-        for non-strings this falls back to list-style membership in
-        ``self.entries``.
-        """
-        if isinstance(item, str):
-            return item in self.entries_dict
-        return item in self.entries
-
-    def __len__(self):
-        """
-        Return the number of competing phase entries.
-        """
-        return len(self.entries)
-
-    def __iter__(self) -> Iterator[str]:
-        """
-        Return an iterator over ``entry.data["doped_name"]`` keys.
-        """
-        return iter(self.entries_dict)
 
     def _from_entries(
         self, entries: list[ComputedEntry | ComputedStructureEntry], check_compatibility: bool = True
@@ -3000,20 +2944,28 @@ class CompetingPhasesAnalyzer(MSONable):
         initialisation with the ``CompetingPhasesAnalyzer._from_entries``
         method.
 
+        Recursively searches for ``vasprun.xml(.gz)`` files under ``path``.
+        When ``subfolder`` is set (default ``"vasp_std"``), only vaspruns
+        inside directories with that name are used.  When ``subfolder`` is
+        ``None``, the highest-priority subfolder present
+        (``vasp_ncl`` > ``vasp_std`` > ``vasp_nkred_std`` > ``vasp_gam`` >
+        ``singlepoint`` > ``final`` > ``relax``) is auto-detected; if none of
+        these are found, all discovered ``vasprun.xml(.gz)`` files are parsed.
+
+        If ``path`` is a list, each element may be a direct path to a
+        ``vasprun.xml(.gz)`` file **or** to a directory containing one,
+        which will be located via a recursive search.
+
         Args:
             path (PathLike or list):
                 Either a path to the base folder containing competing phase
-                calculation outputs (e.g.
-                ``path/formula_EaH_X/{subfolder}/vasprun.xml(.gz)``, or
-                ``path/formula_EaH_X/vasprun.xml(.gz)``), or a list of
-                strings/Paths to ``vasprun.xml(.gz)`` files.
+                calculation outputs (searched recursively for
+                ``vasprun.xml(.gz)`` files), or a list of paths to
+                ``vasprun.xml(.gz)`` files / directories.
             subfolder (PathLike):
-                The subfolder containing vasprun.xml(.gz) output files in
-                each calculation directory within ``path`` (e.g. a file
-                hierarchy like:
-                ``path/formula_EaH_X/{subfolder}/vasprun.xml(.gz)``). Default
-                is to search for ``vasp_std`` subfolders, or directly in the
-                ``formula_EaH_X`` folder.
+                Restrict to ``vasprun.xml(.gz)`` files in directories with
+                this name.  Default is ``"vasp_std"``.  Set to ``None`` to
+                auto-detect the subfolder (see above).
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found).
@@ -3030,79 +2982,20 @@ class CompetingPhasesAnalyzer(MSONable):
                 by comparing their ``INCAR`` and ``POTCAR`` settings.
                 Default is ``True``.
         """
-        # TODO: Change this to just recursively search for vaspruns within the specified path (also
-        #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
-        #  subfolders are found) -- see how this is done in DefectsParser in analysis.py, using the
-        #  default glob criteria and multiple vaspruns warnings
-        # TODO: Use smart subfolder detection as in DefectsParser, and update docstring!
-        #  e.g. all_folders = [path.split("/relax")[0] for path in all_paths]  (i.e. only needing to
-        #  specify top folder and auto detecting the subfolders)
-        skipped_folders = []
-
-        if isinstance(path, list):  # if path is just a list of all competing phases
-            for entry_path in path:
-                entry_path_str = str(entry_path)
-                if "vasprun.xml" in entry_path_str and not entry_path_str.startswith("."):
-                    self.vasprun_paths.append(entry_path)
-                    continue
-
-                # try to find the file -- will always pick the first match for vasprun.xml*
-                # TODO: Deal with this:
-                vasprun_matches = list(Path(entry_path).glob("vasprun.xml*"))
-                if vasprun_matches:
-                    self.vasprun_paths.append(str(next(iter(vasprun_matches))))
-                else:
-                    skipped_folders.append(entry_path)
-
+        if isinstance(path, list):
+            self._collect_vaspruns_from_list(path)
         elif isinstance(path, PathLike):
-            for folder in os.listdir(path):
-                folder_path = os.path.join(path, folder)
-                if not (os.path.isdir(folder_path) and not str(folder).startswith(".")):
-                    continue
-
-                # First look for vasprun.xml in the ``subfolder`` directory (e.g. ``vasp_std``),
-                # falling back to the parent folder itself:
-                candidate_dirs = [f"{folder_path}/{subfolder}", folder_path]
-                for candidate_dir in candidate_dirs:
-                    vasprun_path: str | None = None
-                    multiple = False
-                    with contextlib.suppress(FileNotFoundError):
-                        vasprun_path, multiple = _get_output_files_and_check_if_multiple(
-                            "vasprun.xml", candidate_dir
-                        )
-                    if vasprun_path and os.path.exists(vasprun_path):
-                        if multiple:
-                            warnings.warn(
-                                f"Multiple `vasprun.xml` files found in directory: {candidate_dir}. "
-                                f"Using {vasprun_path} to parse the calculation energy and metadata."
-                            )
-                        self.vasprun_paths.append(vasprun_path)
-                        break
-                else:
-                    skipped_folders.append(f"{folder} or {folder}/{subfolder}")
+            self._collect_vaspruns_from_directory(path, subfolder, verbose)
         else:
             raise ValueError(
                 "`path` should either be a path to a folder (with competing phase "
                 "calculations), or a list of paths to vasprun.xml(.gz) files."
             )
 
-        # only warn about skipped folders that are recognised calculation folders (containing a material
-        # composition in the name, or 'EaH' in the name)
-        skipped_folders_for_warning = []
-        for folder_name in skipped_folders:
-            parsed_compositions = []
-            for name_token in folder_name.split(" or ")[0].split("_"):
-                with contextlib.suppress(ValueError):
-                    parsed_compositions.append(Composition(name_token))
-            if "EaH" in folder_name or parsed_compositions:
-                skipped_folders_for_warning.append(folder_name)
-
-        if skipped_folders_for_warning and verbose:
-            parent_folder_string = f" (in {path})" if isinstance(path, PathLike) else ""
-            warnings.warn(
-                f"vasprun.xml files could not be found in the following "
-                f"directories{parent_folder_string}, and so they will be skipped for parsing:\n"
-                + "\n".join(skipped_folders_for_warning)
+        if not self.vasprun_paths:
+            raise FileNotFoundError(
+                f"No vasprun.xml(.gz) files found under '{path}'. Please check that the folder structure "
+                f"and input parameters are in the correct format (see docs/tutorials)."
             )
 
         # Ignore POTCAR warnings when loading vasprun.xml
@@ -3193,54 +3086,76 @@ class CompetingPhasesAnalyzer(MSONable):
 
         return self._from_entries(self.entries, check_compatibility=check_compatibility)
 
-    def as_dict(self) -> dict:
+    def _collect_vaspruns_from_list(self, path_list: list[PathLike]):
         """
-        Returns:
-            JSON-serializable dict representation of
-            |CompetingPhasesAnalyzer|.
+        Populate ``self.vasprun_paths`` from a list of paths, where each entry
+        can be a direct ``vasprun.xml(.gz)`` path or a directory containing
+        one.
         """
-        return {
-            "@module": self.__class__.__module__,
-            "@class": self.__class__.__name__,
-            "composition": self.composition.as_dict(),
-            "entries": self.entries,
-            "unstable_host": self.unstable_host,
-            "bulk_entry": self.bulk_entry,
-            "parsed_folders": self.parsed_folders,
-            "vasprun_paths": self.vasprun_paths,
-        }
+        for entry_path in path_list:
+            if "vasprun.xml" in str(entry_path) and not str(entry_path).startswith("."):
+                self.vasprun_paths.append(entry_path)
+                continue
 
-    @classmethod
-    def from_dict(cls, d: dict) -> "CompetingPhasesAnalyzer":
+            vasprun_path = self._find_vasprun_in_directory(entry_path)
+            if vasprun_path is not None:
+                self.vasprun_paths.append(vasprun_path)
+
+    def _collect_vaspruns_from_directory(
+        self,
+        path: PathLike,
+        subfolder: PathLike | None = "vasp_std",
+        verbose: bool = True,
+    ):
         """
-        Reconstitute a |CompetingPhasesAnalyzer| object from a dict
-        representation created using ``as_dict()``.
-
-        Args:
-            d (dict): dict representation of |CompetingPhasesAnalyzer|.
-
-        Returns:
-            |CompetingPhasesAnalyzer| object
+        Recursively search ``path`` for ``vasprun.xml(.gz)`` files, using the
+        :func:`~doped.utils.parsing._find_calc_outputs` helper for file
+        discovery and subfolder auto-detection.
         """
-        entries = d["entries"]
+        root = Path(path)
+        if not root.is_dir():
+            raise FileNotFoundError(f"No such file or directory: '{path}'")
 
-        def get_entry(entry_or_dict):
-            if isinstance(entry_or_dict, dict):
-                try:
-                    return ComputedStructureEntry.from_dict(entry_or_dict)
-                except Exception:
-                    return ComputedEntry.from_dict(entry_or_dict)
-            return entry_or_dict
+        calc_files_df, _folders, resolved_subfolder = _find_calc_outputs(root, subfolder)
+        if calc_files_df.empty:
+            return
 
-        cpa = cls(
-            composition=Composition.from_dict(d["composition"]),
-            entries=[get_entry(entry) for entry in entries],
-        )
-        cpa.unstable_host = d.get("unstable_host", cpa.unstable_host)
-        cpa.bulk_entry = get_entry(d.get("bulk_entry", cpa.bulk_entry))
-        cpa.parsed_folders = d.get("parsed_folders", cpa.parsed_folders)
-        cpa.vasprun_paths = d.get("vasprun_paths", cpa.vasprun_paths)
-        return cpa
+        if resolved_subfolder != ".":  # actual subfolder found
+            filtered = calc_files_df[
+                calc_files_df["folder_path"].apply(lambda p: p.name == resolved_subfolder)
+            ]
+            if not filtered.empty:
+                calc_files_df = filtered
+            elif verbose:
+                warnings.warn(
+                    f"No vasprun.xml files found in '{resolved_subfolder}' subfolders under {path}. "
+                    f"Using all {len(calc_files_df)} vasprun.xml files found."
+                )
+
+        for directory in sorted(calc_files_df["folder_path"].unique()):
+            vasprun_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", str(directory))
+            if vasprun_path and os.path.exists(vasprun_path):
+                if multiple:
+                    _multiple_files_warning(
+                        "vasprun.xml", directory, vasprun_path, dir_type="competing phase"
+                    )
+                self.vasprun_paths.append(vasprun_path)
+
+    @staticmethod
+    def _find_vasprun_in_directory(directory: PathLike) -> str | None:
+        """
+        Find a single ``vasprun.xml(.gz)`` in ``directory``.
+
+        Returns the path as a string, or ``None`` if not found.
+        """
+        vasprun_path, multiple = None, False
+        with contextlib.suppress(FileNotFoundError):
+            vasprun_path, multiple = _get_output_files_and_check_if_multiple("vasprun.xml", str(directory))
+        if vasprun_path and os.path.exists(vasprun_path):
+            if multiple:
+                _multiple_files_warning("vasprun.xml", directory, vasprun_path, dir_type="competing phase")
+            return str(vasprun_path)
+        return None
 
     def get_formation_energy_df(
         self,
@@ -3398,18 +3313,6 @@ class CompetingPhasesAnalyzer(MSONable):
 
         return chempots_df
 
-    @property
-    def chempot_grid(self) -> ChemicalPotentialGrid:
-        """
-        ``ChemicalPotentialGrid`` object for the chemical potential limits of
-        the host composition.
-
-        This object can be used for plotting and numerical analyses of chemical
-        stability regions. See the ``ChemicalPotentialGrid`` class for more
-        details.
-        """
-        return ChemicalPotentialGrid(self.chempots)
-
     # TODO: This code (in all this module) should be rewritten to be more readable (re-used and
     #  uninformative variable names, missing informative comments, typing...)
     def _calculate_extrinsic_chempot_lims(self, extrinsic_elements, chempots_df):
@@ -3439,8 +3342,8 @@ class CompetingPhasesAnalyzer(MSONable):
 
         # move limiting phase columns to the end (for cases with multiple extrinsic elements)
         chempots_df = chempots_df[
-            [c for c in chempots_df.columns if "-Limiting Phase" not in c]
-            + [c for c in chempots_df.columns if "-Limiting Phase" in c]
+            [col for col in chempots_df.columns if "-Limiting Phase" not in col]
+            + [col for col in chempots_df.columns if "-Limiting Phase" in col]
         ]
 
         # reverse engineer chemical potential limits dict with extrinsic entries
@@ -3473,7 +3376,7 @@ class CompetingPhasesAnalyzer(MSONable):
         # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
         self.chempots = _round_floats(chempot_lims_w_extrinsic, 4)
 
-    def to_LaTeX_table(self, splits=1, prune_polymorphs=True):
+    def to_LaTeX_table(self, splits=1, prune_polymorphs=True) -> str:
         """
         A very simple function to print out the competing phase formation
         energies in a LaTeX table format, showing the formula, space group,
@@ -3557,9 +3460,9 @@ class CompetingPhasesAnalyzer(MSONable):
 
         string += "\\hline\n"
         string += "\\end{tabular}\n"
-        string += "\\end{table}"
+        string += "\\end{table}\n"
 
-        print(string)
+        return string
 
     def plot_chempot_heatmap(
         self,
@@ -3699,6 +3602,129 @@ class CompetingPhasesAnalyzer(MSONable):
             style_file=style_file,
             **kwargs,
         )
+
+    @property
+    def entries_dict(self) -> dict[str, ComputedEntry]:
+        """
+        Mapping of ``doped`` competing phase names to entries.
+        """
+        entries_dict: dict[str, ComputedEntry] = {}
+        for entry in self.entries:
+            doped_name = get_and_set_competing_phase_name(entry, regenerate=False)
+            if doped_name in entries_dict:
+                raise KeyError(
+                    f"Duplicate competing phase key encountered in `self.entries`: {doped_name}. "
+                    "Please regenerate entries / entry names to ensure uniqueness."
+                )
+            entries_dict[doped_name] = entry
+        return entries_dict
+
+    def __getattr__(self, attr):
+        """
+        Redirect unknown attribute/method lookups to the entries dictionary.
+        """
+        # ``__getattr__`` is only called when normal lookup has already failed; ``entries`` is
+        # accessed by ``entries_dict`` so guard against infinite recursion during partially-
+        # initialised states:
+        if attr == "entries":
+            raise AttributeError(attr)
+        return getattr(self.entries_dict, attr)
+
+    def __getitem__(self, key):
+        """
+        Make the object subscriptable.
+
+        String keys index by ``entry.data["doped_name"]`` (dict-like), while
+        integer / slice keys use list-style indexing on ``self.entries``.
+        """
+        if isinstance(key, str):
+            return self.entries_dict[key]
+        return self.entries[key]
+
+    def __contains__(self, item):
+        """
+        Return ``True`` if ``item`` is in the entries.
+
+        For string inputs this checks ``entry.data["doped_name"]`` keys, while
+        for non-strings this falls back to list-style membership in
+        ``self.entries``.
+        """
+        if isinstance(item, str):
+            return item in self.entries_dict
+        return item in self.entries
+
+    def __len__(self):
+        """
+        Return the number of competing phase entries.
+        """
+        return len(self.entries)
+
+    def __iter__(self) -> Iterator[str]:
+        """
+        Return an iterator over ``entry.data["doped_name"]`` keys.
+        """
+        return iter(self.entries_dict)
+
+    def as_dict(self) -> dict:
+        """
+        Returns:
+            JSON-serializable dict representation of
+            |CompetingPhasesAnalyzer|.
+        """
+        return {
+            "@module": self.__class__.__module__,
+            "@class": self.__class__.__name__,
+            "composition": self.composition.as_dict(),
+            "entries": self.entries,
+            "unstable_host": self.unstable_host,
+            "bulk_entry": self.bulk_entry,
+            "parsed_folders": self.parsed_folders,
+            "vasprun_paths": self.vasprun_paths,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "CompetingPhasesAnalyzer":
+        """
+        Reconstitute a |CompetingPhasesAnalyzer| object from a dict
+        representation created using ``as_dict()``.
+
+        Args:
+            d (dict): dict representation of |CompetingPhasesAnalyzer|.
+
+        Returns:
+            |CompetingPhasesAnalyzer| object
+        """
+        entries = d["entries"]
+
+        def get_entry(entry_or_dict):
+            if isinstance(entry_or_dict, dict):
+                try:
+                    return ComputedStructureEntry.from_dict(entry_or_dict)
+                except Exception:
+                    return ComputedEntry.from_dict(entry_or_dict)
+            return entry_or_dict
+
+        cpa = cls(
+            composition=Composition.from_dict(d["composition"]),
+            entries=[get_entry(entry) for entry in entries],
+        )
+        cpa.unstable_host = d.get("unstable_host", cpa.unstable_host)
+        cpa.bulk_entry = get_entry(d.get("bulk_entry", cpa.bulk_entry))
+        cpa.parsed_folders = d.get("parsed_folders", cpa.parsed_folders)
+        cpa.vasprun_paths = d.get("vasprun_paths", cpa.vasprun_paths)
+        return cpa
+
+    @property
+    def chempot_grid(self) -> ChemicalPotentialGrid:
+        """
+        ``ChemicalPotentialGrid`` object for the chemical potential limits of
+        the host composition.
+
+        This object can be used for plotting and numerical analyses of chemical
+        stability regions. See the ``ChemicalPotentialGrid`` class for more
+        details.
+        """
+        return ChemicalPotentialGrid(self.chempots)
 
     def __repr__(self):
         """
