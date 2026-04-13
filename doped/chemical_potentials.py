@@ -781,13 +781,12 @@ def _get_competing_phase_folder_name(
     return get_and_set_competing_phase_name(entry, regenerate=regenerate, ndigits=ndigits).replace("/", "")
 
 
-def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
+def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry | ComputedEntry]) -> None:
     """
-    Given an input list of ``ComputedStructureEntry`` objects, sets the
-    ``entry.data["doped_name"]`` values using
-    ``get_and_set_competing_phase_name``, and increases ``ndigits`` (rounding
-    for energy above hull in name) dynamically from 3 -> 4 -> 5 to ensure no
-    duplicate names.
+    Set ``entry.data["doped_name"]`` for each ``ComputedEntry`` in ``entries``,
+    using ``get_and_set_competing_phase_name``, increasing ``ndigits``
+    (rounding for energy above hull in name) dynamically from 3 -> 4 -> 5 on
+    any entries with duplicate names, to ensure unique naming.
     """
     ndigits = 3
     entry_names = [get_and_set_competing_phase_name(entry, ndigits=ndigits) for entry in entries]
@@ -801,10 +800,10 @@ def _name_entries_and_handle_duplicates(entries: list[ComputedStructureEntry]):
                 f"{get_and_set_competing_phase_name(duplicate_entries[0])}!"
             )
             break
-        _duplicate_entry_names = [
+        # regenerate names for duplicates only; ``entry_names`` then picks up the set values via
+        # ``regenerate=False`` (which returns the already-updated ``entry.data["doped_name"]``):
+        for entry in duplicate_entries:
             get_and_set_competing_phase_name(entry, regenerate=True, ndigits=ndigits)
-            for entry in duplicate_entries
-        ]
         entry_names = [get_and_set_competing_phase_name(entry, regenerate=False) for entry in entries]
 
 
@@ -1310,23 +1309,27 @@ class CompetingPhases(MSONable):
         """
         return [entry for entry in self.entries if entry.data.get("molecule")]
 
-    def _iter_entries_with_types(self) -> Iterable[tuple[ComputedEntry, str, Structure]]:
+    def _iter_entries_with_categories(self) -> Iterator[tuple[ComputedEntry, str, Structure]]:
         """
-        Yield ``(entry, type, structure)`` for non-metallic, metallic and
-        molecular entries in ``self.entries``.
+        Yield ``(entry, category, structure)`` tuples for all entries in
+        ``self.entries``, where ``category`` is one of ``"non-metals"``,
+        ``"metals"`` or ``"molecules"``.
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
         by a hull-energy ``ComputedEntry``), emits a ``UserWarning`` and
         supplies a nominal large-cell ``Structure`` so that ``INCAR`` and
         ``POTCAR`` files can still be written.
         """
-        for entry_list, type in [
+        categorised_entries = [
             (self.nonmetallic_entries, "non-metals"),
             (self.metallic_entries, "metals"),
             (self.molecular_entries, "molecules"),
-        ]:
+        ]
+        for entry_list, category in categorised_entries:
             for entry in entry_list:
-                if not hasattr(entry, "structure"):
+                if hasattr(entry, "structure"):
+                    structure = entry.structure
+                else:
                     warnings.warn(
                         f"No structure is available for '{entry.name}'. This is likely because the phase "
                         f"is a placeholder (e.g. a hull-energy estimate for a composition with no "
@@ -1336,9 +1339,7 @@ class CompetingPhases(MSONable):
                         f"composition. One should of course check that these choices are appropriate!"
                     )
                     structure = _nominal_structure_for_input_writing(entry.composition)
-                else:
-                    structure = entry.structure
-                yield entry, type, structure
+                yield entry, category, structure
 
     def convergence_setup(
         self,
@@ -1364,11 +1365,19 @@ class CompetingPhases(MSONable):
 
         Args:
             kpoints_metals (tuple):
-                Kpoint density per inverse volume (Å^-3) to be tested in
-                ``(min, max, step)`` format for metals
+                Kpoint density per inverse volume (Å^-3) to be tested for
+                metallic entries (those with zero band gap), as a
+                ``(min, max, step)`` tuple. Note that only unique kpoint
+                combinations are generated, so small step sizes (as default)
+                just results in each k-points choice between ``min`` and
+                ``max`` being included.
             kpoints_nonmetals (tuple):
-                Kpoint density per inverse volume (Å^-3) to be tested in
-                ``(min, max, step)`` format for nonmetals
+                Kpoint density per inverse volume (Å^-3) to be tested for
+                non-metallic entries (those with a non-zero band gap), as a
+                ``(min, max, step)`` tuple. Note that only unique kpoint
+                combinations are generated, so small step sizes (as default)
+                just results in each k-points choice between ``min`` and
+                ``max`` being included.
             user_potcar_functional (str):
                 POTCAR functional to use. Default is "PBE" and if this fails,
                 tries "PBE_52", then "PBE_54".
@@ -1408,30 +1417,31 @@ class CompetingPhases(MSONable):
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
-        for entry, type, structure in self._iter_entries_with_types():
+        for entry, category, structure in self._iter_entries_with_categories():
             if extrinsic_only and entry not in extrinsic_entries:
                 continue
-            if "molecule" in type:
+            if category == "molecules":
                 continue  # no molecular entries as they don't need convergence testing
 
             # kpoints should be set as (min, max, step)
-            min_k, max_k, step_k = kpoints_by_metallicity[type]
-            uis = copy.deepcopy(base_incar_settings or {})
-            self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
-            if type == "metals":
-                self._set_default_metal_smearing(uis, user_incar_settings or {})
+            min_k, max_k, step_k = kpoints_by_metallicity[category]
+            incar_settings = copy.deepcopy(base_incar_settings or {})
+            self._set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
+            if category == "metals":
+                self._set_default_metal_smearing(incar_settings, user_incar_settings or {})
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
                 dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
                     structure=structure,
-                    user_incar_settings=uis,
+                    user_incar_settings=incar_settings,
                     user_kpoints_settings={"reciprocal_density": min_k},
                     user_potcar_settings=user_potcar_settings or {},
                     user_potcar_functional=user_potcar_functional,
                     force_gamma=True,
                 )
 
+                _generated_kpoints_folders = []
                 for kpoint in range(min_k, max_k, step_k):
                     dict_set = deepcopy(dict_set)
                     dict_set.user_kpoints_settings = {"reciprocal_density": kpoint}
@@ -1440,6 +1450,9 @@ class CompetingPhases(MSONable):
                         + ("_" * (dict_set.kpoints.kpts[0][0] // 10))
                         + ",".join(str(k) for k in dict_set.kpoints.kpts[0])
                     )
+                    if kname in _generated_kpoints_folders:
+                        continue  # this set of kpoints already generated, bump reciprocal density more
+
                     fname = (
                         f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
                         f"/{kname}"
@@ -1454,6 +1467,8 @@ class CompetingPhases(MSONable):
                         if os.path.exists(fname):
                             warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
                         dict_set.write_input(fname, **write_kwargs)
+
+                    _generated_kpoints_folders.append(kname)
 
         molecular_entries_to_report = (
             [entry for entry in self.molecular_entries if entry in extrinsic_entries]
@@ -1542,44 +1557,45 @@ class CompetingPhases(MSONable):
         """
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
 
-        lhfcalc = (
-            True if user_incar_settings is None else user_incar_settings.get("LHFCALC", True)
-        )  # True (hybrid) by default for vasp_std relaxations
-        if lhfcalc or (isinstance(lhfcalc, str) and lhfcalc.lower().startswith("t")):
+        # True (hybrid) by default for vasp_std relaxations; accept bool, or string like "True"/"False":
+        lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
+        if isinstance(lhfcalc, str):
+            lhfcalc = lhfcalc.lower().startswith("t")
+        if lhfcalc:
             base_incar_settings.update(default_HSE_set["INCAR"])
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
         dict_sets: dict[str, DopedDictSet] = {}
         extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
-        for entry, type, structure in self._iter_entries_with_types():
+        for entry, category, structure in self._iter_entries_with_categories():
             if extrinsic_only and entry not in extrinsic_entries:
                 continue
-            if "molecule" in type:
+            if category == "molecules":
                 user_kpoints_settings = Kpoints().from_dict(
                     {
                         "comment": "Gamma-only kpoints for molecule-in-a-box",
                         "generation_style": "Gamma",
                     }
                 )
-            elif "non-metals" in type:
+            elif category == "non-metals":
                 user_kpoints_settings = {"reciprocal_density": kpoints_nonmetals}
             else:  # metals
                 user_kpoints_settings = {"reciprocal_density": kpoints_metals}
 
-            uis = copy.deepcopy(base_incar_settings or {})
-            if type == "molecules":
-                uis["ISIF"] = 2  # can't change the volume
-                uis["KPAR"] = 1  # can't use k-point parallelization, gamma only
-            self._set_spin_polarisation(uis, user_incar_settings or {}, entry)
-            if type == "metals":
-                self._set_default_metal_smearing(uis, user_incar_settings or {})
+            incar_settings = copy.deepcopy(base_incar_settings or {})
+            if category == "molecules":
+                incar_settings["ISIF"] = 2  # can't change the volume
+                incar_settings["KPAR"] = 1  # can't use k-point parallelization, gamma only
+            self._set_spin_polarisation(incar_settings, user_incar_settings or {}, entry)
+            if category == "metals":
+                self._set_default_metal_smearing(incar_settings, user_incar_settings or {})
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
                 dict_set = DopedDictSet(  # use ``doped`` DopedDictSet for quicker IO functions
                     structure=structure,
-                    user_incar_settings=uis,
+                    user_incar_settings=incar_settings,
                     user_kpoints_settings=user_kpoints_settings,
                     user_potcar_settings=user_potcar_settings or {},
                     user_potcar_functional=user_potcar_functional,
@@ -1699,12 +1715,12 @@ class CompetingPhases(MSONable):
         """
         Redirect unknown attribute/method lookups to the entries dictionary.
         """
-        try:
-            super().__getattribute__(attr)
-        except AttributeError as exc:
-            if attr == "entries":
-                raise exc
-            return getattr(self.entries_dict, attr)
+        # ``__getattr__`` is only called when normal lookup has already failed; ``entries`` is
+        # accessed by ``entries_dict`` so guard against infinite recursion during partially-
+        # initialised states:
+        if attr == "entries":
+            raise AttributeError(attr)
+        return getattr(self.entries_dict, attr)
 
     def __getitem__(self, key):
         """
@@ -1872,11 +1888,11 @@ def get_doped_chempots_from_entries(
     }
 
     # relate the limits to the elemental energies
-    for limit, chempot_dict in chempots["limits"].items():
-        relative_chempot_dict = copy.deepcopy(chempot_dict)
-        for e in relative_chempot_dict:
-            relative_chempot_dict[e] -= chempots["elemental_refs"][e]
-        chempots["limits_wrt_el_refs"].update({limit: relative_chempot_dict})
+    elemental_refs = chempots["elemental_refs"]
+    chempots["limits_wrt_el_refs"] = {
+        limit: {el: mu - elemental_refs[el] for el, mu in chempot_dict.items()}
+        for limit, chempot_dict in chempots["limits"].items()
+    }
 
     # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
     return _round_floats(chempots, 4)
@@ -2646,12 +2662,12 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         Redirect unknown attribute/method lookups to the entries dictionary.
         """
-        try:
-            super().__getattribute__(attr)
-        except AttributeError as exc:
-            if attr == "entries":
-                raise exc
-            return getattr(self.entries_dict, attr)
+        # ``__getattr__`` is only called when normal lookup has already failed; ``entries`` is
+        # accessed by ``entries_dict`` so guard against infinite recursion during partially-
+        # initialised states:
+        if attr == "entries":
+            raise AttributeError(attr)
+        return getattr(self.entries_dict, attr)
 
     def __getitem__(self, key):
         """
@@ -3403,18 +3419,18 @@ class CompetingPhasesAnalyzer(MSONable):
                 chempots_df.loc[limit, f"{extrinsic_elt.symbol}-Limiting Phase"] = "N/A"
                 for entry in self.extrinsic_entries:
                     formation_energy = self.phase_diagram.get_form_energy(entry)
-                    mu_extrinsic = (
-                        formation_energy
-                        - sum(
-                            [
-                                chempot_series[elt.symbol] * entry.composition[elt]
-                                for elt in self.composition.elements
-                            ]
-                        )
-                    ) / entry.composition[extrinsic_elt]
-                    if mu_extrinsic < chempots_df.loc[limit, extrinsic_elt.symbol] and (
-                        mu_extrinsic not in [-np.inf, np.inf, np.nan]
-                    ):  # lower energy entry & μ_extrinsic_elt, and finite
+                    intrinsic_chempot_contribution = sum(
+                        chempot_series[elt.symbol] * entry.composition[elt]
+                        for elt in self.composition.elements
+                    )
+                    mu_extrinsic = (formation_energy - intrinsic_chempot_contribution) / entry.composition[
+                        extrinsic_elt
+                    ]
+                    # lower energy entry & μ_extrinsic_elt, and finite:
+                    if (
+                        np.isfinite(mu_extrinsic)
+                        and mu_extrinsic < chempots_df.loc[limit, extrinsic_elt.symbol]
+                    ):
                         chempots_df.loc[limit, extrinsic_elt.symbol] = _custom_round(mu_extrinsic, 4)
                         chempots_df.loc[limit, f"{extrinsic_elt.symbol}-Limiting Phase"] = entry.name
 
@@ -3425,7 +3441,7 @@ class CompetingPhasesAnalyzer(MSONable):
         ]
 
         # reverse engineer chemical potential limits dict with extrinsic entries
-        chempot_lim_dict_list = chempots_df.copy().to_dict(orient="records")
+        chempot_lim_dict_list = chempots_df.to_dict(orient="records")
         chempot_lims_w_extrinsic = {
             "elemental_refs": self.elemental_energies,
             "limits_wrt_el_refs": {},
@@ -3444,11 +3460,11 @@ class CompetingPhasesAnalyzer(MSONable):
             chempot_lims_w_extrinsic["limits_wrt_el_refs"][key] = new_vals
 
         # relate the limits to the elemental energies
-        for limit, chempot_dict in chempot_lims_w_extrinsic["limits_wrt_el_refs"].items():
-            relative_chempot_dict = copy.deepcopy(chempot_dict)
-            for e in relative_chempot_dict:
-                relative_chempot_dict[e] += chempot_lims_w_extrinsic["elemental_refs"][e]
-            chempot_lims_w_extrinsic["limits"].update({limit: relative_chempot_dict})
+        elemental_refs = chempot_lims_w_extrinsic["elemental_refs"]
+        chempot_lims_w_extrinsic["limits"] = {
+            limit: {el: mu + elemental_refs[el] for el, mu in chempot_dict.items()}
+            for limit, chempot_dict in chempot_lims_w_extrinsic["limits_wrt_el_refs"].items()
+        }
 
         # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
         self.chempots = _round_floats(chempot_lims_w_extrinsic, 4)
@@ -4220,7 +4236,7 @@ def _parse_entry_from_vasprun_and_catch_exception(
         )
         electronic_converged = vasprun.converged_electronic
         ionic_converged = vasprun.converged_ionic
-        folder = vasprun_path.rstrip(".gz").rstrip("vasprun.xml")
+        folder = str(vasprun_path).removesuffix(".gz").removesuffix("vasprun.xml")
         return entry, folder, electronic_converged, ionic_converged
     except Exception as e:
         return str(e), vasprun_path, False, False

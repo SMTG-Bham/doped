@@ -402,6 +402,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
             # check naming of fake entry
             assert "Cu2SiSe4_NA_EaH_0" in [entry.data["doped_name"] for entry in cp.entries]
+            shutil.rmtree("CompetingPhases")  # clean up for next iteration of test
 
     def test_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
