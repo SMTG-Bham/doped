@@ -90,6 +90,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         if_present_rm("CompetingPhases")
+        if_present_rm("CustomOutputDir")
         if_present_rm("cp.json")
 
     def _check_ZrO2_cp_init(self, cp, num_stable_entries=4):
@@ -528,6 +529,27 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert "ISIF = 2\n" in contents
             assert "ISIF = 3\n" not in contents
+
+    def test_custom_output_path(self):
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        custom_dir = "CustomOutputDir"
+
+        conv_sets = cp.convergence_setup(potcar_spec=True, write_files=True, output_path=custom_dir)
+        assert conv_sets
+        assert not os.path.exists("CompetingPhases")
+        assert all(key.startswith(f"{custom_dir}/") for key in conv_sets)
+        sample_key = next(iter(conv_sets))
+        assert os.path.exists(sample_key)
+        assert os.path.isfile(os.path.join(sample_key, "INCAR"))
+        if_present_rm(custom_dir)
+
+        std_sets = cp.vasp_std_setup(potcar_spec=True, write_files=True, output_path=custom_dir)
+        assert std_sets
+        assert not os.path.exists("CompetingPhases")
+        assert all(key.startswith(f"{custom_dir}/") for key in std_sets)
+        sample_key = next(iter(std_sets))
+        assert os.path.exists(sample_key)
+        assert os.path.isfile(os.path.join(sample_key, "INCAR"))
 
     def test_api_keys_errors(self):
         api_key_error = ValueError(

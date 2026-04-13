@@ -1352,6 +1352,7 @@ class CompetingPhases(MSONable):
         user_incar_settings=None,
         write_files: bool = True,
         extrinsic_only: bool = False,
+        output_path: PathLike = "CompetingPhases",
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
@@ -1403,6 +1404,9 @@ class CompetingPhases(MSONable):
                 ``self.extrinsic_entries`` (useful when adding dopants to an
                 existing intrinsic competing-phases set). Default is ``False``
                 (generate/write inputs for all entries).
+            output_path (PathLike):
+                Top-level output directory name. Default is
+                ``"CompetingPhases"``.
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
 
@@ -1411,7 +1415,6 @@ class CompetingPhases(MSONable):
                 Mapping of output folder paths to generated ``DopedDictSet``\s
                 (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
-        # TODO: Make CompetingPhases top folder name an optional parameter
         # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
@@ -1456,7 +1459,7 @@ class CompetingPhases(MSONable):
                         continue  # this set of kpoints already generated, bump reciprocal density more
 
                     fname = (
-                        f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
+                        f"{output_path}/{_get_competing_phase_folder_name(entry)}/kpoint_converge"
                         f"/{kname}"
                     )
                     dict_sets[fname] = dict_set
@@ -1503,6 +1506,7 @@ class CompetingPhases(MSONable):
         user_incar_settings=None,
         write_files: bool = True,
         extrinsic_only: bool = False,
+        output_path: PathLike = "CompetingPhases",
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
@@ -1549,6 +1553,9 @@ class CompetingPhases(MSONable):
                 ``self.extrinsic_entries`` (useful when adding dopants to an
                 existing intrinsic competing-phases set). Default is ``False``
                 (generate/write inputs for all entries).
+            output_path (PathLike):
+                Top-level output directory name. Default is
+                ``"CompetingPhases"``.
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
 
@@ -1604,7 +1611,7 @@ class CompetingPhases(MSONable):
                     force_gamma=True,
                 )
 
-                fname = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/vasp_std"
+                fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/vasp_std"
                 dict_sets[fname] = dict_set
                 write_kwargs = copy.deepcopy(kwargs)
                 if structure.properties.get("_is_nominal_structure", False):
