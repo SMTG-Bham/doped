@@ -449,6 +449,16 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
 
+        # existing folders should warn and be overwritten with new settings
+        with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
+            cp.convergence_setup(
+                potcar_spec=True, write_files=True, user_incar_settings={"NSW": 7, "GGA": "Ps"}
+            )
+        with open(f"{Zro2_EaH_0pt009_folder}/INCAR", encoding="utf-8") as file:
+            contents = file.readlines()
+            assert any(line == "NSW = 7\n" for line in contents)
+            assert not any(line == "NSW = 0\n" for line in contents)
+
     def test_vasp_std_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
@@ -509,6 +519,14 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(struct.sites[0].frac_coords, [0.49983339, 0.5, 0.50016672]).all()
         assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
         assert struct == o2_dict_set.poscar.structure
+
+        # existing folders should warn and be overwritten with new settings
+        with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
+            cp.vasp_std_setup(potcar_spec=True, write_files=True, user_incar_settings={"ISIF": 2})
+        with open(f"{ZrO2_EaH_0_std_folder}/INCAR", encoding="utf-8") as file:
+            contents = file.readlines()
+            assert "ISIF = 2\n" in contents
+            assert "ISIF = 3\n" not in contents
 
     def test_api_keys_errors(self):
         api_key_error = ValueError(
@@ -601,11 +619,21 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
     # TODO: Need to add tests for co-doping, full_sub_approach, full_phase_diagram etc!!
     def setUp(self):
         CompetingPhasesTestCase.setUp(self)
+        self.La_ZrO2_cp = chemical_potentials.CompetingPhases(
+            "ZrO2", extrinsic="La", api_key=api_key
+        )  # default energy_above_hull=0.05
 
     def tearDown(self):
         CompetingPhasesTestCase.tearDown(self)
 
     def test_init(self):
+        assert len(self.La_ZrO2_cp.extrinsic_entries) == 3
+        assert len(self.La_ZrO2_cp.entries) == 21
+        assert self.La_ZrO2_cp.extrinsic_entries[2].name == "La"  # definite ordering, same 1,2 as before
+        assert all(entry.data["energy_above_hull"] == 0 for entry in self.La_ZrO2_cp.extrinsic_entries[:2])
+        assert all(entry.data["energy_above_hull"] != 0 for entry in self.La_ZrO2_cp.extrinsic_entries[2:])
+        assert len(self.La_ZrO2_cp.intrinsic_entries) == 18
+
         ex_cp = chemical_potentials.CompetingPhases(
             "ZrO2", extrinsic="La", energy_above_hull=0, api_key=api_key
         )
@@ -618,16 +646,6 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         # names of intrinsic entries: ['Zr', 'O2', 'Zr3O', 'ZrO2']
         assert len(ex_cp.intrinsic_entries) == 4
         assert [entry.name for entry in ex_cp.intrinsic_entries] == self.zro2_entry_list[:4]
-
-        cp = chemical_potentials.CompetingPhases(
-            "ZrO2", extrinsic="La", api_key=api_key
-        )  # default energy_above_hull=0.05
-        assert len(cp.extrinsic_entries) == 3
-        assert len(cp.entries) == 21
-        assert cp.extrinsic_entries[2].name == "La"  # definite ordering, same 1st & 2nd as before
-        assert all(entry.data["energy_above_hull"] == 0 for entry in ex_cp.extrinsic_entries[:2])
-        assert all(entry.data["energy_above_hull"] != 0 for entry in cp.extrinsic_entries[2:])
-        assert len(cp.intrinsic_entries) == 18
 
     def test_structure_input(self):
         for struct, name in [
@@ -651,6 +669,54 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
                 for extrinsic_entry in entries_list:
                     assert "K" in extrinsic_entry.data["doped_name"]
                     assert "K" in extrinsic_entry.name
+
+    def test_extrinsic_only_setup(self):
+        extrinsic_folder_names = [
+            chemical_potentials._get_competing_phase_folder_name(entry)
+            for entry in self.La_ZrO2_cp.extrinsic_entries
+        ]
+        intrinsic_folder_names = [
+            chemical_potentials._get_competing_phase_folder_name(entry)
+            for entry in self.La_ZrO2_cp.intrinsic_entries
+        ]
+
+        if_present_rm("CompetingPhases")
+        conv_dict_sets = self.La_ZrO2_cp.convergence_setup(
+            kpoints_metals=(5, 10, 5),
+            kpoints_nonmetals=(5, 10, 5),
+            potcar_spec=True,
+            extrinsic_only=True,
+        )
+        assert conv_dict_sets
+        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in conv_dict_sets.values())
+        assert all(
+            any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in conv_dict_sets
+        )
+        assert all(
+            not any(f"/{name}/" in f"/{key}/" for name in intrinsic_folder_names) for key in conv_dict_sets
+        )
+        for name in extrinsic_folder_names:
+            assert os.path.isdir(f"CompetingPhases/{name}/kpoint_converge")
+        for name in intrinsic_folder_names:
+            assert not os.path.exists(f"CompetingPhases/{name}")
+
+        if_present_rm("CompetingPhases")
+        std_dict_sets = self.La_ZrO2_cp.vasp_std_setup(
+            potcar_spec=True,
+            extrinsic_only=True,
+        )
+        assert std_dict_sets
+        assert all(isinstance(v, chemical_potentials.DopedDictSet) for v in std_dict_sets.values())
+        assert all(
+            any(f"/{name}/" in f"/{key}/" for name in extrinsic_folder_names) for key in std_dict_sets
+        )
+        assert all(
+            not any(f"/{name}/" in f"/{key}/" for name in intrinsic_folder_names) for key in std_dict_sets
+        )
+        for name in extrinsic_folder_names:
+            assert os.path.isdir(f"CompetingPhases/{name}/vasp_std")
+        for name in intrinsic_folder_names:
+            assert not os.path.exists(f"CompetingPhases/{name}")
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):

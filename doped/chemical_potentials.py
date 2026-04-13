@@ -1340,9 +1340,6 @@ class CompetingPhases(MSONable):
                     structure = entry.structure
                 yield entry, type, structure
 
-    # TODO: Have option to only write extrinsic files to output (in case regenerated when adding calcs
-    #  for dopants etc, here and with vasp_std_setup)?
-    # TODO: Smart file/folder overwriting handling (like in SnB?)
     def convergence_setup(
         self,
         kpoints_metals=(40, 1000, 5),
@@ -1351,6 +1348,7 @@ class CompetingPhases(MSONable):
         user_potcar_settings=None,
         user_incar_settings=None,
         write_files: bool = True,
+        extrinsic_only: bool = False,
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
@@ -1389,6 +1387,11 @@ class CompetingPhases(MSONable):
                 Whether to write VASP input files to disk (default: ``True``).
                 If ``False``, returns the generated ``DopedDictSet`` objects
                 without writing files.
+            extrinsic_only (bool):
+                If ``True``, only generate/write inputs for
+                ``self.extrinsic_entries`` (useful when adding dopants to an
+                existing intrinsic competing-phases set). Default is ``False``
+                (generate/write inputs for all entries).
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
 
@@ -1397,13 +1400,17 @@ class CompetingPhases(MSONable):
                 Mapping of output folder paths to generated ``DopedDictSet``\s
                 (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
+        # TODO: Make CompetingPhases top folder name an optional parameter
         # by default uses PBEsol, but easy to switch to PBE or PBE+U using user_incar_settings
         base_incar_settings = copy.deepcopy(pbesol_convrg_set["INCAR"])
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
         kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
         dict_sets: dict[str, DopedDictSet] = {}
+        extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
         for entry, type, structure in self._iter_entries_with_types():
+            if extrinsic_only and entry not in extrinsic_entries:
+                continue
             if "molecule" in type:
                 continue  # no molecular entries as they don't need convergence testing
 
@@ -1444,13 +1451,20 @@ class CompetingPhases(MSONable):
                         write_kwargs.update({"poscar": False, "kpoints": False})
 
                     if write_files:
+                        if os.path.exists(fname):
+                            warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
                         dict_set.write_input(fname, **write_kwargs)
 
-        if self.molecular_entries:
+        molecular_entries_to_report = (
+            [entry for entry in self.molecular_entries if entry in extrinsic_entries]
+            if extrinsic_only
+            else self.molecular_entries
+        )
+        if molecular_entries_to_report:
             print(
                 f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
-                f"({', '.join([e.name for e in self.molecular_entries])} in this case), do not require "
-                f"k-point convergence testing, as Γ-only sampling is sufficient."
+                f"({', '.join([e.name for e in molecular_entries_to_report])} in this case), "
+                f"do not require k-point convergence testing, as Γ-only sampling is sufficient."
             )
         return dict_sets
 
@@ -1471,6 +1485,7 @@ class CompetingPhases(MSONable):
         user_potcar_settings=None,
         user_incar_settings=None,
         write_files: bool = True,
+        extrinsic_only: bool = False,
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
@@ -1512,6 +1527,11 @@ class CompetingPhases(MSONable):
                 Whether to write VASP input files to disk (default: ``True``).
                 If ``False``, returns the generated ``DopedDictSet`` objects
                 without writing files.
+            extrinsic_only (bool):
+                If ``True``, only generate/write inputs for
+                ``self.extrinsic_entries`` (useful when adding dopants to an
+                existing intrinsic competing-phases set). Default is ``False``
+                (generate/write inputs for all entries).
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
 
@@ -1530,8 +1550,11 @@ class CompetingPhases(MSONable):
 
         base_incar_settings.update(user_incar_settings or {})  # user_incar_settings override defaults
         dict_sets: dict[str, DopedDictSet] = {}
+        extrinsic_entries = getattr(self, "extrinsic_entries", [])
 
         for entry, type, structure in self._iter_entries_with_types():
+            if extrinsic_only and entry not in extrinsic_entries:
+                continue
             if "molecule" in type:
                 user_kpoints_settings = Kpoints().from_dict(
                     {
@@ -1571,6 +1594,8 @@ class CompetingPhases(MSONable):
                     write_kwargs.update({"poscar": False, "kpoints": False})
 
                 if write_files:
+                    if os.path.exists(fname):
+                        warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
                     dict_set.write_input(fname, **write_kwargs)
 
         return dict_sets
@@ -2574,9 +2599,6 @@ class CompetingPhasesAnalyzer(MSONable):
                 parsed, if ``entries`` was given as a path / paths to
                 directories.
         """
-        # TODO: Use smart subfolder detection as in DefectsParser, and update docstring!
-        #  e.g. all_folders = [path.split("/relax")[0] for path in all_paths]  (i.e. only needing to
-        #  specify top folder and auto detecting the subfolders)
         self.composition = Composition(composition)
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
         self.intrinsic_elements = self.elements.copy()
@@ -2985,6 +3007,9 @@ class CompetingPhasesAnalyzer(MSONable):
         #  currently doesn't seem to revert to searching for vaspruns in the base folder if no vasp_std
         #  subfolders are found) -- see how this is done in DefectsParser in analysis.py, using the
         #  default glob criteria and multiple vaspruns warnings
+        # TODO: Use smart subfolder detection as in DefectsParser, and update docstring!
+        #  e.g. all_folders = [path.split("/relax")[0] for path in all_paths]  (i.e. only needing to
+        #  specify top folder and auto detecting the subfolders)
         skipped_folders = []
 
         if isinstance(path, list):  # if path is just a list of all competing phases
