@@ -730,18 +730,20 @@ def _nominal_structure_for_input_writing(composition: Composition) -> Structure:
     can be written when an entry has no crystal structure (e.g. MP-missing host
     composition represented only by a hull-energy ``ComputedEntry``).
     """
-    int_comp, _factor = composition.get_reduced_composition_and_factor()
+    reduced_comp, _factor = composition.get_reduced_composition_and_factor()
     species: list[Element | str] = []
-    for el in sorted(int_comp.elements, key=lambda e: e.symbol):
-        species.extend([el] * int(int_comp[el]))
-    n = len(species)
-    lat_a = 100.0
-    lattice = Lattice.cubic(lat_a)
-    cart_coords = [[(lat_a / n) * (i + 1), lat_a / 2, lat_a / 2] for i in range(n)]
+    for element in sorted(reduced_comp.elements, key=lambda el: el.symbol):
+        species.extend([element] * int(reduced_comp[element]))
+
+    lattice_parameter = 100.0
+    site_spacing = lattice_parameter / len(species)
+    cart_coords = [
+        [site_spacing * (i + 1), lattice_parameter / 2, lattice_parameter / 2] for i in range(len(species))
+    ]
     return Structure(
-        lattice,
-        species,
-        cart_coords,
+        lattice=Lattice.cubic(lattice_parameter),
+        species=species,
+        coords=cart_coords,
         coords_are_cartesian=True,
         properties={"_is_nominal_structure": True},
     )
@@ -1797,14 +1799,14 @@ class CompetingPhases(MSONable):
             "MP_intrinsic_full_pd_entries",
             "intrinsic_MP_doc_dicts",
         ]
-        d = {"@module": self.__class__.__module__, "@class": self.__class__.__name__}
+        serialised = {"@module": self.__class__.__module__, "@class": self.__class__.__name__}
         for attr in attrs_to_store:
             if hasattr(self, attr):
                 value = getattr(self, attr)
                 if attr == "extrinsic" and isinstance(value, set):
                     value = sorted(value)
-                d[attr] = value
-        return d
+                serialised[attr] = value
+        return serialised
 
     @classmethod
     def from_dict(cls, d: dict) -> "CompetingPhases":
@@ -2270,27 +2272,27 @@ def _intersect_hull_with_plane(
         np.ndarray:
             Coordinates of intersections between the convex hull and the plane.
     """
-    lo, hi = vertices[:, axis].min(), vertices[:, axis].max()
-    if value < lo - tol or value > hi + tol:
+    axis_min, axis_max = vertices[:, axis].min(), vertices[:, axis].max()
+    if value < axis_min - tol or value > axis_max + tol:
         raise ValueError(f"The plane {axis} = {value} does not meet the hull.")
 
-    pts = []
+    intersection_points = []
     # for each edge, check if it crosses the plane:
     for i, j in itertools.combinations(range(len(vertices)), 2):
-        v_i, v_j = vertices[i], vertices[j]
-        d_i = v_i[axis] - value  # vector from plane to vertex i, along axis
-        d_j = v_j[axis] - value  # vector from plane to vertex j, along axis
+        vertex_i, vertex_j = vertices[i], vertices[j]
+        signed_dist_i = vertex_i[axis] - value  # signed distance from plane along ``axis``
+        signed_dist_j = vertex_j[axis] - value
 
-        if d_i * d_j < 0:  # opposite signs in vectors -> crossing
-            t = d_i / (d_i - d_j)  # 0 < t < 1  (fraction along path)
-            pts.append(v_i + t * (v_j - v_i))  # intersection point
+        if signed_dist_i * signed_dist_j < 0:  # opposite signs -> edge crosses the plane
+            # fraction along the edge at which the crossing occurs (0 < frac < 1):
+            frac = signed_dist_i / (signed_dist_i - signed_dist_j)
+            intersection_points.append(vertex_i + frac * (vertex_j - vertex_i))
+        else:  # edge does not cross; include any endpoint that lies on the plane:
+            for signed_dist, vertex in ((signed_dist_i, vertex_i), (signed_dist_j, vertex_j)):
+                if abs(signed_dist) <= tol:
+                    intersection_points.append(vertex)
 
-        else:  # check if endpoint is on plane:
-            for d, v in zip([d_i, d_j], [v_i, v_j], strict=False):
-                if abs(d) <= tol:
-                    pts.append(v)
-
-    return np.asarray(pts)
+    return np.asarray(intersection_points)
 
 
 def _lattice_in_hull(
@@ -2486,22 +2488,24 @@ def entries_from_chempot_limits(chempots_dict):
         list[ComputedEntry]:
             List of ``ComputedEntry`` objects, with energies per formula unit.
     """
-    phase_energies = defaultdict(list)
+    phase_energies: dict[str, list[float]] = defaultdict(list)
 
     for limit, chempots in chempots_dict["limits"].items():
-        phases = limit.split("-")
-        for ph in phases:
-            comp = Composition(ph)
-            phase_energies[ph].append(
-                sum(comp[el] * float(chempots[str(el)]) for el in comp.elements)  # total energy per fu
-            )
+        for phase in limit.split("-"):
+            composition = Composition(phase)
+            phase_energies[phase].append(
+                sum(composition[el] * float(chempots[str(el)]) for el in composition.elements)
+            )  # total energy per formula unit from summed chemical potentials:
 
     # average duplicates (should all be the same energy anyway)
-    entries = [ComputedEntry(ph, sum(Es) / len(Es)) for ph, Es in phase_energies.items()]
+    entries = [
+        ComputedEntry(phase, sum(energies) / len(energies)) for phase, energies in phase_energies.items()
+    ]
 
-    for el, mu_el in chempots_dict.get("elemental_refs", {}).items():  # ensure elt refs included
-        if el not in phase_energies:
-            entries.append(ComputedEntry(el, float(mu_el)))
+    # ensure elemental references are included as entries:
+    for element, elemental_chempot in chempots_dict.get("elemental_refs", {}).items():
+        if element not in phase_energies:
+            entries.append(ComputedEntry(element, float(elemental_chempot)))
 
     return entries
 
@@ -3029,58 +3033,46 @@ class CompetingPhasesAnalyzer(MSONable):
         skipped_folders = []
 
         if isinstance(path, list):  # if path is just a list of all competing phases
-            for p in path:
-                if "vasprun.xml" in str(p) and not str(p).startswith("."):
-                    self.vasprun_paths.append(p)
+            for entry_path in path:
+                entry_path_str = str(entry_path)
+                if "vasprun.xml" in entry_path_str and not entry_path_str.startswith("."):
+                    self.vasprun_paths.append(entry_path)
+                    continue
 
                 # try to find the file -- will always pick the first match for vasprun.xml*
                 # TODO: Deal with this:
-                elif len(list(Path(p).glob("vasprun.xml*"))) > 0:
-                    vsp = next(iter(Path(p).glob("vasprun.xml*")))
-                    self.vasprun_paths.append(str(vsp))
-
+                vasprun_matches = list(Path(entry_path).glob("vasprun.xml*"))
+                if vasprun_matches:
+                    self.vasprun_paths.append(str(next(iter(vasprun_matches))))
                 else:
-                    skipped_folders.append(p)
+                    skipped_folders.append(entry_path)
 
         elif isinstance(path, PathLike):
-            for p in os.listdir(path):
-                if os.path.isdir(os.path.join(path, p)) and not str(p).startswith("."):
-                    vr_path = "null_directory"
+            for folder in os.listdir(path):
+                folder_path = os.path.join(path, folder)
+                if not (os.path.isdir(folder_path) and not str(folder).startswith(".")):
+                    continue
+
+                # First look for vasprun.xml in the ``subfolder`` directory (e.g. ``vasp_std``),
+                # falling back to the parent folder itself:
+                candidate_dirs = [f"{folder_path}/{subfolder}", folder_path]
+                for candidate_dir in candidate_dirs:
+                    vasprun_path: str | None = None
+                    multiple = False
                     with contextlib.suppress(FileNotFoundError):
-                        vr_path, multiple = _get_output_files_and_check_if_multiple(
-                            "vasprun.xml", f"{os.path.join(path, p)}/{subfolder}"
+                        vasprun_path, multiple = _get_output_files_and_check_if_multiple(
+                            "vasprun.xml", candidate_dir
                         )
+                    if vasprun_path and os.path.exists(vasprun_path):
                         if multiple:
-                            folder_name = (
-                                f"{os.path.join(path, p)}/{subfolder}"
-                                if subfolder
-                                else os.path.join(path, p)
-                            )
                             warnings.warn(
-                                f"Multiple `vasprun.xml` files found in directory: {folder_name}. Using "
-                                f"{vr_path} to parse the calculation energy and metadata."
+                                f"Multiple `vasprun.xml` files found in directory: {candidate_dir}. "
+                                f"Using {vasprun_path} to parse the calculation energy and metadata."
                             )
-
-                    if os.path.exists(vr_path):
-                        self.vasprun_paths.append(vr_path)
-
-                    else:
-                        with contextlib.suppress(FileNotFoundError):
-                            vr_path, multiple = _get_output_files_and_check_if_multiple(
-                                "vasprun.xml", os.path.join(path, p)
-                            )
-                            if multiple:
-                                warnings.warn(
-                                    f"Multiple `vasprun.xml` files found in directory: "
-                                    f"{os.path.join(path, p)}. Using {vr_path} to parse the calculation "
-                                    f"energy and metadata."
-                                )
-
-                        if os.path.exists(vr_path):
-                            self.vasprun_paths.append(vr_path)
-
-                        else:
-                            skipped_folders.append(f"{p} or {p}/{subfolder}")
+                        self.vasprun_paths.append(vasprun_path)
+                        break
+                else:
+                    skipped_folders.append(f"{folder} or {folder}/{subfolder}")
         else:
             raise ValueError(
                 "`path` should either be a path to a folder (with competing phase "
@@ -3091,11 +3083,11 @@ class CompetingPhasesAnalyzer(MSONable):
         # composition in the name, or 'EaH' in the name)
         skipped_folders_for_warning = []
         for folder_name in skipped_folders:
-            comps = []
-            for i in folder_name.split(" or ")[0].split("_"):
+            parsed_compositions = []
+            for name_token in folder_name.split(" or ")[0].split("_"):
                 with contextlib.suppress(ValueError):
-                    comps.append(Composition(i))
-            if "EaH" in folder_name or comps:
+                    parsed_compositions.append(Composition(name_token))
+            if "EaH" in folder_name or parsed_compositions:
                 skipped_folders_for_warning.append(folder_name)
 
         if skipped_folders_for_warning and verbose:
@@ -3122,11 +3114,14 @@ class CompetingPhasesAnalyzer(MSONable):
             def _estimate_uncompressed_vasprun_size(vasprun_path: PathLike) -> float:
                 return (os.path.getsize(vasprun_path) / 1e6) * (20 if vasprun_path.endswith(".gz") else 1)
 
-            vasprun_sizes_MB = [_estimate_uncompressed_vasprun_size(v) for v in self.vasprun_paths] or [0]
-            mp = get_mp_context()
+            vasprun_sizes_MB = [
+                _estimate_uncompressed_vasprun_size(vasprun_path) for vasprun_path in self.vasprun_paths
+            ] or [0]
+            mp_context = get_mp_context()
             if sum(vasprun_sizes_MB) - max(vasprun_sizes_MB) > 100:
                 # only multiprocess as much as makes sense:
-                processes = min(max(1, mp.cpu_count() - 1), sum(1 for s in vasprun_sizes_MB if s > 20) - 1)
+                num_large_vaspruns = sum(1 for size in vasprun_sizes_MB if size > 20)
+                processes = min(max(1, mp_context.cpu_count() - 1), num_large_vaspruns - 1)
             else:
                 processes = 1
 
@@ -3274,13 +3269,13 @@ class CompetingPhasesAnalyzer(MSONable):
                 Whether to skip rounding the energies to 3 decimal places
                 (1 meV/atom or meV/fu) for cleanliness. Default is ``False``.
         """
-        data = []
+        rows = []
         for entry in self.entries:
-            comp = entry.composition
-            formulas_per_unit = comp.get_reduced_composition_and_factor()[1]
-            kpoints_data = entry.data.get("kpoints", None)
-            kpoints = (
-                "x".join(str(x) for x in kpoints_data[0])
+            composition = entry.composition
+            formula_units = composition.get_reduced_composition_and_factor()[1]
+            kpoints_data = entry.data.get("kpoints")
+            kpoints_string = (
+                "x".join(str(k) for k in kpoints_data[0])
                 if (kpoints_data and len(kpoints_data) == 1)
                 else "N/A"
             )
@@ -3290,19 +3285,20 @@ class CompetingPhasesAnalyzer(MSONable):
                 .split("_EaH_")[0]
             )
 
-            d = {
-                "Formula": comp.reduced_formula,
-                "Space Group": space_group,
-                "Energy above Hull (eV/atom)": entry.data.get("energy_above_hull", "N/A"),
-                "Formation Energy (eV/fu)": self.phase_diagram.get_form_energy(entry) / formulas_per_unit,
-                "Formation Energy (eV/atom)": self.phase_diagram.get_form_energy_per_atom(entry),
-                "DFT Energy (eV/fu)": entry.energy / formulas_per_unit,
-                "DFT Energy (eV/atom)": entry.energy_per_atom,
-                "k-points": kpoints,
-            }
-            data.append(d)
+            rows.append(
+                {
+                    "Formula": composition.reduced_formula,
+                    "Space Group": space_group,
+                    "Energy above Hull (eV/atom)": entry.data.get("energy_above_hull", "N/A"),
+                    "Formation Energy (eV/fu)": self.phase_diagram.get_form_energy(entry) / formula_units,
+                    "Formation Energy (eV/atom)": self.phase_diagram.get_form_energy_per_atom(entry),
+                    "DFT Energy (eV/fu)": entry.energy / formula_units,
+                    "DFT Energy (eV/atom)": entry.energy_per_atom,
+                    "k-points": kpoints_string,
+                }
+            )
 
-        formation_energy_df = pd.DataFrame(data)
+        formation_energy_df = pd.DataFrame(rows)
 
         if prune_polymorphs:  # only keep the lowest energy polymorphs
             indices = formation_energy_df.groupby("Formula")["DFT Energy (eV/atom)"].idxmin()
@@ -3441,23 +3437,24 @@ class CompetingPhasesAnalyzer(MSONable):
         ]
 
         # reverse engineer chemical potential limits dict with extrinsic entries
-        chempot_lim_dict_list = chempots_df.to_dict(orient="records")
-        chempot_lims_w_extrinsic = {
+        chempot_row_dicts = chempots_df.to_dict(orient="records")
+        chempot_lims_w_extrinsic: dict[str, dict] = {
             "elemental_refs": self.elemental_energies,
             "limits_wrt_el_refs": {},
             "limits": {},
         }
 
-        for i, d in enumerate(chempot_lim_dict_list):
-            key = (
-                list(self.intrinsic_chempots["limits_wrt_el_refs"].keys())[i]
-                + "-"
-                + "-".join(d[col_name] for col_name in d if "Limiting Phase" in col_name)
+        intrinsic_limits_wrt_el_refs = list(self.intrinsic_chempots["limits_wrt_el_refs"].items())
+        for (intrinsic_limit, intrinsic_chempots), chempot_row in zip(
+            intrinsic_limits_wrt_el_refs, chempot_row_dicts, strict=True
+        ):
+            limiting_phase_suffix = "-".join(
+                chempot_row[col_name] for col_name in chempot_row if "Limiting Phase" in col_name
             )
-            new_vals = list(self.intrinsic_chempots["limits_wrt_el_refs"].values())[i]
+            limit_key = f"{intrinsic_limit}-{limiting_phase_suffix}"
             for extrinsic_elt in extrinsic_elements:
-                new_vals[f"{extrinsic_elt.symbol}"] = d[f"{extrinsic_elt.symbol}"]
-            chempot_lims_w_extrinsic["limits_wrt_el_refs"][key] = new_vals
+                intrinsic_chempots[extrinsic_elt.symbol] = chempot_row[extrinsic_elt.symbol]
+            chempot_lims_w_extrinsic["limits_wrt_el_refs"][limit_key] = intrinsic_chempots
 
         # relate the limits to the elemental energies
         elemental_refs = chempot_lims_w_extrinsic["elemental_refs"]
@@ -3517,25 +3514,28 @@ class CompetingPhasesAnalyzer(MSONable):
             + " & $\\Delta E_f$ (eV/fu)"
         )
 
+        def _format_row_cells(row: dict) -> str:
+            r"""
+            Render one competing-phase entry as LaTeX table cells (no trailing
+            ``\\\\``).
+            """
+            formula_cell = "\\ce{" + row["Formula"] + "}"
+            space_group_cell = latexify_spacegroup(row.get("Space Group", "N/A"))
+            eah_cell = f"{row['Energy above Hull (eV/atom)']:.3f}"
+            formation_energy_cell = f"{row['Formation Energy (eV/fu)']:.3f}"
+            cells = [formula_cell, space_group_cell, eah_cell]
+            if kpoints_col:
+                k1, k2, k3 = row.get("k-points", "0x0x0").split("x")
+                cells.append(f"{k1}$\\times${k2}$\\times${k3}")
+            cells.append(formation_energy_cell)
+            return " & ".join(cells)
+
         if splits == 1:
             string += "\\begin{tabular}" + ("{ccccc}" if kpoints_col else "{cccc}") + "\n"
             string += "\\hline\n"
             string += column_names_string + " \\\\ \\hline\n"
-            for i in formation_energy_data:
-                kpoints = i.get("k-points", "0x0x0").split("x")
-                fe = i["Formation Energy (eV/fu)"]
-                string += (
-                    "\\ce{"
-                    + i["Formula"]
-                    + "}"
-                    + " & "
-                    + latexify_spacegroup(i.get("Space Group", "N/A"))
-                    + " & "
-                    + f"{i['Energy above Hull (eV/atom)']:.3f}"
-                    + (f" & {kpoints[0]}$\\times${kpoints[1]}$\\times${kpoints[2]}" if kpoints_col else "")
-                    + " & "
-                    + f"{fe:.3f} \\\\\n"
-                )
+            for row in formation_energy_data:
+                string += _format_row_cells(row) + " \\\\\n"
 
         elif splits == 2:
             string += "\\begin{tabular}" + ("{ccccc|ccccc}" if kpoints_col else "{cccc|cccc}") + "\n"
@@ -3545,42 +3545,8 @@ class CompetingPhasesAnalyzer(MSONable):
             mid = len(formation_energy_data) // 2
             first_half = formation_energy_data[:mid]
             last_half = formation_energy_data[mid:]
-
-            for i, j in zip(first_half, last_half, strict=False):
-                kpoints1 = i.get("k-points", "0x0x0").split("x")
-                fe1 = i["Formation Energy (eV/fu)"]
-                kpoints2 = j.get("k-points", "0x0x0").split("x")
-                fe2 = j["Formation Energy (eV/fu)"]
-                string += (
-                    "\\ce{"
-                    + i["Formula"]
-                    + "}"
-                    + " & "
-                    + latexify_spacegroup(i.get("Space Group", "N/A"))
-                    + " & "
-                    + f"{i['Energy above Hull (eV/atom)']:.3f}"
-                    + (
-                        f" & {kpoints1[0]}$\\times${kpoints1[1]}$\\times${kpoints1[2]}"
-                        if kpoints_col
-                        else ""
-                    )
-                    + " & "
-                    + f"{fe1:.3f} & "
-                    + "\\ce{"
-                    + j["Formula"]
-                    + "}"
-                    + " & "
-                    + latexify_spacegroup(j.get("Space Group", "N/A"))
-                    + " & "
-                    + f"{j['Energy above Hull (eV/atom)']:.3f}"
-                    + (
-                        f" & {kpoints2[0]}$\\times${kpoints2[1]}$\\times${kpoints2[2]}"
-                        if kpoints_col
-                        else ""
-                    )
-                    + " & "
-                    + f"{fe2:.3f} \\\\\n"
-                )
+            for left_row, right_row in zip(first_half, last_half, strict=False):
+                string += _format_row_cells(left_row) + " & " + _format_row_cells(right_row) + " \\\\\n"
 
         string += "\\hline\n"
         string += "\\end{tabular}\n"
@@ -4365,17 +4331,12 @@ def get_X_rich_limit(X: str, chempots: dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
     """
-    X_rich_limit = None
-    X_rich_limit_chempot = None
-    for limit, chempot_dict in chempots["limits"].items():
-        if X in chempot_dict and (X_rich_limit is None or chempot_dict[X] > X_rich_limit_chempot):
-            X_rich_limit = limit
-            X_rich_limit_chempot = chempot_dict[X]
-
-    if X_rich_limit is None:
+    candidate_limits = [
+        (limit, chempot_dict[X]) for limit, chempot_dict in chempots["limits"].items() if X in chempot_dict
+    ]
+    if not candidate_limits:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
-
-    return X_rich_limit
+    return max(candidate_limits, key=lambda limit_chempot: limit_chempot[1])[0]
 
 
 def get_X_poor_limit(X: str, chempots: dict):
@@ -4390,17 +4351,12 @@ def get_X_poor_limit(X: str, chempots: dict):
             The chemical potential limits dict, as returned by
             ``CompetingPhasesAnalyzer.chempots``
     """
-    X_poor_limit = None
-    X_poor_limit_chempot = None
-    for limit, chempot_dict in chempots["limits"].items():
-        if X in chempot_dict and (X_poor_limit is None or chempot_dict[X] < X_poor_limit_chempot):
-            X_poor_limit = limit
-            X_poor_limit_chempot = chempot_dict[X]
-
-    if X_poor_limit is None:
+    candidate_limits = [
+        (limit, chempot_dict[X]) for limit, chempot_dict in chempots["limits"].items() if X in chempot_dict
+    ]
+    if not candidate_limits:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
-
-    return X_poor_limit
+    return min(candidate_limits, key=lambda limit_chempot: limit_chempot[1])[0]
 
 
 # TODO: Can we just integrate this function to `CompetingPhaseAnalyzer`, so you just pass in a list of
@@ -4442,39 +4398,30 @@ def combine_extrinsic(first: dict, second: dict, extrinsic_species: str) -> dict
     if extrinsic_species not in second["elemental_refs"]:
         raise ValueError("extrinsic species is not present in the second dictionary")
 
-    cpa1 = copy.deepcopy(first)
-    cpa2 = copy.deepcopy(second)
-    new_limits = {}
-    for (k1, v1), (k2, v2) in zip(
-        list(cpa1["limits"].items()), list(cpa2["limits"].items()), strict=False
-    ):
-        if k2.rsplit("-", 1)[0] in k1:
-            new_key = k1 + "-" + k2.rsplit("-", 1)[1]
-        else:
-            raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
+    first_chempots = copy.deepcopy(first)
+    second_chempots = copy.deepcopy(second)
 
-        v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_limits[new_key] = v1
+    def _merge_limits(first_limits: dict[str, dict], second_limits: dict[str, dict]) -> dict[str, dict]:
+        merged: dict[str, dict] = {}
+        for (first_key, first_vals), (second_key, second_vals) in zip(
+            first_limits.items(), second_limits.items(), strict=False
+        ):
+            if second_key.rsplit("-", 1)[0] not in first_key:
+                raise ValueError(
+                    "The limits aren't matching, make sure you've used the correct dictionary"
+                )
+            merged_key = f"{first_key}-{second_key.rsplit('-', 1)[1]}"
+            first_vals[extrinsic_species] = second_vals.pop(extrinsic_species)
+            merged[merged_key] = first_vals
+        return merged
 
-    new_limits_wrt_el_refs = {}
-    for (k1, v1), (k2, v2) in zip(
-        list(cpa1["limits_wrt_el_refs"].items()),
-        list(cpa2["limits_wrt_el_refs"].items()),
-        strict=False,
-    ):
-        if k2.rsplit("-", 1)[0] in k1:
-            new_key = k1 + "-" + k2.rsplit("-", 1)[1]
-        else:
-            raise ValueError("The limits aren't matching, make sure you've used the correct dictionary")
-
-        v1[extrinsic_species] = v2.pop(extrinsic_species)
-        new_limits_wrt_el_refs[new_key] = v1
-
-    new_elements = copy.deepcopy(cpa1["elemental_refs"])
-    new_elements[extrinsic_species] = copy.deepcopy(cpa2["elemental_refs"])[extrinsic_species]
+    merged_elemental_refs = copy.deepcopy(first_chempots["elemental_refs"])
+    merged_elemental_refs[extrinsic_species] = second_chempots["elemental_refs"][extrinsic_species]
 
     return {
-        "elemental_refs": new_elements,
-        "limits": new_limits,
-        "limits_wrt_el_refs": new_limits_wrt_el_refs,
+        "elemental_refs": merged_elemental_refs,
+        "limits": _merge_limits(first_chempots["limits"], second_chempots["limits"]),
+        "limits_wrt_el_refs": _merge_limits(
+            first_chempots["limits_wrt_el_refs"], second_chempots["limits_wrt_el_refs"]
+        ),
     }
