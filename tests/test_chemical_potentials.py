@@ -1910,3 +1910,280 @@ def _plot_Na2FePO4F_chempot_grid(grid_df, atol=0.05):
     ax.set_xlabel("μ$_{Na}$ (eV)")
     ax.set_ylabel("μ$_{O}$ (eV)")
     return fig
+
+
+class TestGetXRichPoorLimit(unittest.TestCase):
+    """
+    Test ``get_X_rich_poor_limit``, particularly behaviour when several facets
+    share the same μ_X extremum.
+    """
+
+    def test_rich_tie_first_refinement_max_mu_other(self):
+        chempots = {
+            "limits": {
+                "A": {"Cu": -1.0, "O": -5.0},
+                "B": {"Cu": -1.0, "O": -4.0},
+            },  # Cu-rich tie: falls back to max μ_O -> B (more O-rich)
+            "elemental_refs": {},
+            "limits_wrt_el_refs": {},
+        }  # typical chempots dict structure
+        assert (
+            chemical_potentials.get_X_rich_poor_limit(
+                "Cu", chempots, bulk_composition="Cu2O", warn_if_multiple=False
+            )
+            == "B"
+        )
+
+    def test_rich_tie_first_refinement_max_mu_other_w_slight_diff(self):
+        chempots = {
+            "limits": {
+                "A": {"Cu": -1.002, "O": -5.0},
+                "B": {"Cu": -1.0, "O": -4.0},
+            }
+        }  # Cu-rich tie (slightly different but within default `tol`): falls back to max μ_O -> B
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert (
+                chemical_potentials.get_X_rich_poor_limit(
+                    "Cu", chempots, bulk_composition="Cu2O", warn_if_multiple=True
+                )
+                == "B"
+            )
+
+    def test_poor_tie_first_refinement_min_mu_other(self):
+        chempots = {
+            "limits": {
+                "A": {"Cu": -5.0, "O": -2.0},
+                "B": {"Cu": -5.0, "O": -3.0},
+            },
+        }
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert (
+                chemical_potentials.get_X_rich_poor_limit(
+                    "Cu",
+                    chempots,
+                    rich=False,
+                    bulk_composition="Cu2O",  # warn by default
+                )
+                == "B"
+            )
+
+    def test_no_tie_same_as_simple_extremum(self):
+        chempots = {
+            "limits": {
+                "Cd-CdTe": {"Cd": -0.5, "Te": -1.5},
+                "CdTe-Te": {"Cd": -2.0, "Te": -1.0},
+            },
+        }
+        with warnings.catch_warnings(record=True) as w:
+            assert chemical_potentials.get_X_rich_poor_limit("Te", chempots) == "CdTe-Te"
+            assert chemical_potentials.get_X_rich_poor_limit("Te", chempots, rich=False) == "Cd-CdTe"
+
+        _print_warning_info(w)  # for debugging
+        assert not w
+
+    def test_tie_w_manual_tol(self):
+        chempots = {  # same chempots dict as test above, but now with tol > 0.5 eV
+            "limits": {
+                "Cd-CdTe": {"Cd": -0.5, "Te": -1.5},
+                "CdTe-Te": {"Cd": -2.0, "Te": -1.0},
+            },
+        }
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert chemical_potentials.get_X_rich_poor_limit("Te", chempots, tol=0.6) == "Cd-CdTe"
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert chemical_potentials.get_X_rich_poor_limit("Te-poor", chempots, tol=0.6) == "CdTe-Te"
+
+    def test_rich_poor_string_input_overrides_rich(self):
+        chempots = {
+            "limits": {
+                "Cd-CdTe": {"Cd": -0.5, "Te": -3.0},
+                "CdTe-Te": {"Cd": -2.0, "Te": -1.0},
+            },
+        }
+        with warnings.catch_warnings(record=True) as w:
+            # "X-rich"/"X-poor" string should override the ``rich`` kwarg:
+            assert chemical_potentials.get_X_rich_poor_limit("Te-rich", chempots, rich=False) == "CdTe-Te"
+            assert chemical_potentials.get_X_rich_poor_limit("Te-poor", chempots, rich=True) == "Cd-CdTe"
+
+        _print_warning_info(w)  # for debugging
+        assert not w
+
+    def test_invalid_X_raises(self):
+        chempots = {"limits": {"A": {"Cu": -1.0}}, "elemental_refs": {}, "limits_wrt_el_refs": {}}
+        with pytest.raises(ValueError, match="Invalid input for X"):
+            chemical_potentials.get_X_rich_poor_limit("NotAnElement", chempots)
+
+    def test_bulk_first_in_tiebreak_order(self):
+        # Same μ_Cu; bulk Cu2O -> intrinsic O before Mn (despite Mn being more electronegatively-similar);
+        # first refinement uses max μ_O -> Cu2O-MnO3 here
+        chempots = {
+            "limits": {  # hypothetical examples
+                "Cu2O-MnO2": {"Cu": -1.0, "O": -5.0, "Mn": -1.0},
+                "Cu2O-MnO3": {"Cu": -1.0, "O": -4.0, "Mn": -10.0},
+            },
+        }
+        with warnings.catch_warnings(record=True) as w:
+            lim = chemical_potentials.get_X_rich_poor_limit(
+                "Cu", chempots, bulk_composition="Cu2O", warn_if_multiple=False
+            )
+        _print_warning_info(w)  # for debugging
+        assert not w
+        assert lim == "Cu2O-MnO3"
+
+    def test_element_ordering_CuZnMn(self):
+        """
+        In ``get_X_rich_poor_limit`` we auto-detect the bulk composition as the
+        phase appearing in every limit name.
+
+        Here "Cu" is in both (elemental host composition), "Mn"/"Zn" are not
+        (extrinsic). In the tie on μ_Cu with no other intrinsic element, the
+        ordering then falls to extrinsic elements sorted by electronegativity
+        similarity to Cu. Cu(1.90), Mn(1.55), Zn(1.65) -> Zn is more
+        electronegatively-similar to Cu than Mn, so Zn is considered first; the
+        max μ_Zn among tied limits lives in "Cu-Zn" here.
+        """
+        chempots = {
+            "limits": {
+                "Cu-Mn": {"Cu": -1.0, "Mn": -0.5, "Zn": -5.0},
+                "Cu-Zn": {"Cu": -1.0, "Mn": -5.0, "Zn": -0.5},
+            },
+        }
+        assert chemical_potentials.get_X_rich_poor_limit("Cu", chempots) == "Cu-Zn"
+
+    def test_element_ordering_AgBiS2(self):
+        """
+        Test that in a tie-break with a multi-cation composition, A-rich (Ag-
+        rich) falls back to the most B-rich (where A and B are the cations; Bi-
+        rich here) option of the A-rich options.
+        """
+        chempots = {
+            "limits": {
+                "AgBiS2-Ag2S-Bi2S3": {"Ag": -1.0, "Bi": -0.5, "S": -5.0},
+                "AgBiS2-AgS2-Bi5S7": {"Ag": -1.005, "Bi": -5.0, "S": -0.5},
+            },
+        }
+        assert chemical_potentials.get_X_rich_poor_limit("Ag", chempots) == "AgBiS2-Ag2S-Bi2S3"
+
+    def test_lexicographic_fallback_tiny_range(self):
+        # All μ values tied to within tol for every element -> must fall through to the
+        # lexicographic ``max``/``min`` fallback at the end of the function.
+        chempots = {
+            "limits": {
+                "A": {"Cu": -1.0, "O": -1.0},
+                "B": {"Cu": -1.0, "O": -1.0},
+            },
+        }
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert (
+                chemical_potentials.get_X_rich_poor_limit(
+                    "Cu",
+                    chempots,
+                    bulk_composition="Cu2O",
+                )
+                == "B"  # max between A and B
+            )
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert (
+                chemical_potentials.get_X_rich_poor_limit(
+                    "Cu",
+                    chempots,
+                    rich=False,
+                    bulk_composition="Cu2O",
+                )
+                == "A"  # min between A and B
+            )
+
+    def test_raises_missing_element(self):
+        chempots = {"limits": {"A": {"O": -1.0}}, "elemental_refs": {}, "limits_wrt_el_refs": {}}
+        with pytest.raises(ValueError, match="Could not find Cu"):
+            chemical_potentials.get_X_rich_poor_limit("Cu", chempots)
+
+    def test_deprecated_aliases_warn_and_forward(self):
+        chempots = {
+            "limits": {
+                "Cd-CdTe": {"Cd": -0.5, "Te": -3.0},
+                "CdTe-Te": {"Cd": -2.0, "Te": -1.0},
+            },
+        }
+        with pytest.warns(DeprecationWarning, match="get_X_rich_limit.*deprecated"):
+            assert chemical_potentials.get_X_rich_limit("Te", chempots) == "CdTe-Te"
+        with pytest.warns(DeprecationWarning, match="get_X_poor_limit.*deprecated"):
+            assert chemical_potentials.get_X_poor_limit("Te", chempots) == "Cd-CdTe"
+
+
+class TestSb2Si2Te6Chempots(unittest.TestCase):
+    """
+    Build a hypothetical ``Sb2Si2Te6`` chempots dict (via the MP Sb-Si-Te
+    entries and a below-hull bulk entry) and exercise the downstream
+    ``plot_chempot_heatmap`` and ``get_X_rich_poor_limit`` code paths.
+
+    The heatmap plots previously failed for this system because the stability
+    region is a simple simplex (a single triangular domain with only three
+    vertices, which causes Delaunay triangulation to fail) that the old
+    grid/labelling code did not handle natively.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        Sb_Si_Te_entries = chemical_potentials.get_entries_in_chemsys("Sb-Si-Te", api_key=api_key)
+        phase_diagram = chemical_potentials.PhaseDiagram(Sb_Si_Te_entries)
+        # fake bulk entry 50 meV below the convex hull so SbSiTe3 becomes
+        # stable and we can extract its chempot limits:
+        bulk_entry = ComputedEntry(
+            Composition("Sb2Si2Te6"),
+            phase_diagram.get_hull_energy(Composition("Sb2Si2Te6")) - 0.05,
+            data={
+                "energy_above_hull": 0.0,
+                "material_id": "mp-0",
+                "molecule": False,
+                "summary": {
+                    "band_gap": None,
+                    "total_magnetization": None,
+                    "database_IDs": {},
+                },
+            },
+        )
+        cls.chempots = chemical_potentials.get_doped_chempots_from_entries(
+            [bulk_entry, *Sb_Si_Te_entries], Composition("Sb2Si2Te6")
+        )
+
+    def _plot_heatmap_no_warnings(self, **kwargs):
+        # simple-simplex stability region: previously failed due to the grid/
+        # labelling code not handling single-triangle domains natively.
+        with warnings.catch_warnings(record=True) as w:
+            fig = chemical_potentials.plot_chempot_heatmap(
+                self.chempots, composition="Sb2Si2Te6", **kwargs
+            )
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="Sb2Si2Te6_chempot_heatmap_default.png")
+    def test_Sb2Si2Te6_chempot_heatmap_default(self):
+        return self._plot_heatmap_no_warnings()
+
+    @custom_mpl_image_compare(filename="Sb2Si2Te6_chempot_heatmap_default.png")
+    def test_Sb2Si2Te6_chempot_heatmap_cartesian(self):
+        """
+        Should give same plot, just testing Cartesian grid generation.
+        """
+        return self._plot_heatmap_no_warnings(cartesian=True)
+
+    def test_Si_rich_limit_degeneracy(self):
+        """
+        Si-rich is degenerate between ``SbTe2-SiSbTe3-Si`` and
+        ``SiSbTe3-SiTe2-Si`` (both at μ_Si = 0).
+
+        The tie-break sorts the remaining bulk elements by electronegativity
+        similarity to Si (χ=1.90): Sb (χ=2.05, Δ=0.15) is closer than Te
+        (χ=2.10, Δ=0.20), so Sb is considered first, and the most Sb-rich
+        tied limit (``SbTe2-SiSbTe3-Si``, μ_Sb ≈ -0.408) wins over
+        ``SiSbTe3-SiTe2-Si`` (μ_Sb ≈ -0.483).
+        """
+        # chempots_df = pd.DataFrame.from_dict(self.chempots["limits_wrt_el_refs"], orient="index")
+        # print("\nSb2Si2Te6 chempots (wrt elemental refs):")
+        # print(chempots_df)  # for debugging/checking
+        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
+            assert (
+                chemical_potentials.get_X_rich_poor_limit("Si-rich", self.chempots) == "SbTe2-SiSbTe3-Si"
+            )

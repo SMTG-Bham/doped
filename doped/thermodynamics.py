@@ -33,12 +33,7 @@ from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods
-from doped.chemical_potentials import (
-    ChemicalPotentialGrid,
-    get_X_poor_limit,
-    get_X_rich_limit,
-    plot_chempot_heatmap,
-)
+from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
 from doped.core import (
     DefectEntry,
     _get_dft_chempots,
@@ -98,10 +93,8 @@ def _parse_limit(chempots: dict, limit: str | None = None):
             _raise_limit_with_user_chempots_error(no_chempots=True)
         if "No User Chemical Potentials" in chempots["limits"]:
             _raise_limit_with_user_chempots_error(no_chempots=False)
-        if "rich" in limit:
-            limit = get_X_rich_limit(limit.split("-")[0], chempots)
-        elif "poor" in limit:
-            limit = get_X_poor_limit(limit.split("-")[0], chempots)
+        if "rich" in limit or "poor" in limit:
+            limit = get_X_rich_poor_limit(limit, chempots)
 
     return limit
 
@@ -126,9 +119,11 @@ def get_rich_poor_limit_dict(chempots: dict) -> dict:
 
     comps = {comp for key in chempots["limits"] for comp in key.split("-")}
     elts = {element.symbol for comp in comps for element in Composition(comp).elements}
-    limit_dict = {f"{elt}-rich": get_X_rich_limit(elt, chempots) for elt in elts}
-    limit_dict.update({f"{elt}-poor": get_X_poor_limit(elt, chempots) for elt in elts})
-    return limit_dict
+    return {
+        f"{elt}-{rich_or_poor}": get_X_rich_poor_limit(elt, chempots, rich=(rich_or_poor == "rich"))
+        for elt in elts
+        for rich_or_poor in ["rich", "poor"]
+    }
 
 
 def _get_limit_name_from_dict(limit, limit_rich_poor_dict, bracket=False):
@@ -1823,7 +1818,8 @@ class DefectThermodynamics(MSONable):
                   in ``chempots``.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2048,7 +2044,8 @@ class DefectThermodynamics(MSONable):
                   chemical potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2193,7 +2190,8 @@ class DefectThermodynamics(MSONable):
                   ``chempots`` is a single chemical potential limit.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2386,7 +2384,8 @@ class DefectThermodynamics(MSONable):
                   ``chempots`` is a single chemical potential limit.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -2692,7 +2691,8 @@ class DefectThermodynamics(MSONable):
                   ``chempots``.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -3359,7 +3359,8 @@ class DefectThermodynamics(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -3698,7 +3699,8 @@ class DefectThermodynamics(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -3954,7 +3956,8 @@ class DefectThermodynamics(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in the ``(self.)chempots["limits"]`` dictionary.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -6048,7 +6051,8 @@ class FermiSolver(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -6299,7 +6303,8 @@ class FermiSolver(MSONable):
                   potential limit in the ``chempots`` dict.
                 - ``"X-rich"/"X-poor"`` where ``X`` is an element in the
                   system, in which case the most X-rich/poor limit will be used
-                  (e.g. "Li-rich").
+                  (e.g. "Li-rich") -- see
+                  :func:`~doped.chemical_potentials.get_X_rich_poor_limit`.
                 - A key in ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 The latter two options can only be used if ``chempots`` is in
@@ -6504,8 +6509,10 @@ class FermiSolver(MSONable):
             limits (list[str] | None):
                 The chemical potential limits to interpolate between, as a list
                 containing two strings. Each string should be in the format
-                ``"X-rich"/"X-poor"``, where X is an element in the system, or
-                a key in ``(self.defect_thermodynamics.)chempots["limits"]``.
+                ``"X-rich"/"X-poor"`` (see
+                :func:`~doped.chemical_potentials.get_X_rich_poor_limit`),
+                where X is an element in the system, or a key in
+                ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 If not provided, ``chempots`` must be specified as a list of
                 two single chemical potential dictionaries for single limits,
@@ -6757,8 +6764,10 @@ class FermiSolver(MSONable):
                 The chemical potential limits to scan over, as a list of
                 strings, if ``chempots`` was provided / is present in the
                 ``doped`` format. Each string should be in the format
-                ``"X-rich"/"X-poor"``, where X is an element in the system, or
-                a key in ``(self.defect_thermodynamics.)chempots["limits"]``.
+                ``"X-rich"/"X-poor"`` (see
+                :func:`~doped.chemical_potentials.get_X_rich_poor_limit`),
+                where X is an element in the system, or a key in
+                ``(self.defect_thermodynamics.)chempots["limits"]``.
 
                 If ``None`` (default) and ``chempots`` is in the ``doped``
                 format (rather than a list of single chemical potential

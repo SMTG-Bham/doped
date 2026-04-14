@@ -1255,8 +1255,8 @@ class CompetingPhases(MSONable):
 
                     # check that extrinsic competing phases list is not empty (according to PyCDT
                     # chemical potential handling this can happen (despite purposely neglecting these
-                    # "over-dependent" facets above), but no known cases... (apart from when `extrinsic`
-                    # actually contains an intrinsic element, which we handle above anyway)
+                    # "over-dependent" limits (facets) above), but no known cases... (apart from when
+                    # `extrinsic` actually contains an intrinsic element, which we handle above anyway)
                     if not single_bordering_sub_el_entries:
                         # self.entries += sub_el_entries
                         raise RuntimeError(
@@ -4572,53 +4572,198 @@ def _find_best_label_positions(
     return best_combo
 
 
-# TODO: Handle tie conditions
-def get_X_rich_limit(X: str, chempots: dict) -> str:
+def get_X_rich_poor_limit(
+    X: str,
+    chempots: dict,
+    rich: bool = True,
+    warn_if_multiple: bool = True,
+    tol: float = 0.01,
+    bulk_composition: str | Composition | None = None,
+) -> str:
     """
-    Determine the chemical potential limit of the input chempots dict which
-    corresponds to the most X-rich conditions.
+    Determine the chemical potential limit of the input ``chempots`` dict with
+    extremal μ_X -- maximum μ_X for X-rich (``rich = True``; default) or
+    minimum μ_X for X-poor (``rich = False``).
+
+    If there are multiple chemical potential limits with the same extremal μ_X
+    within an energy tolerance ``tol`` in eV (0.01 eV by default), a warning is
+    thrown (if ``warn_if_multiple`` is ``True``, default) and the tie is broken
+    by firstly sorting the other elements by:
+
+    - Whether or not they are in the bulk composition, prioritising elements in
+      the bulk composition (this aids determinism in this function output).
+    - Electronegativity similarity to the extremal element ``X``, with more
+      electronegatively-similar elements prioritised (such that in e.g. a
+      multi-cation composition ``(A,B)Z``, 'A-rich' here will resolve to the
+      A-rich limit with the most B-rich chemical potential -- i.e. the most
+      'cation-rich' limit).
+
+    Then, for each element Y in the sorted list, the ``max`` / ``min`` (for
+    rich / poor respectively) of the μ_Y values among the still-tied limits is
+    taken as μ_Y^*, and only limits with ``|μ_Y - μ_Y^*| < tol`` are kept. The
+    process repeats until one limit remains, which is then returned. This is
+    mostly equivalent to choosing the lexicographic ``max`` / ``min``
+    (μ_Y, ...) tuple for X-rich/poor respectively, with a numerical tolerance
+    ``tol``.
+
+    This implementation is similar to that of
+    ``FormationEnergyDiagram.get_chempots()`` in ``pymatgen.analysis.defects``,
+    but using electronegativity instead of electron affinity.
 
     Args:
         X (str):
-            Elemental species (e.g. "Te")
+            Element symbol for the extremum species (e.g. "Te"), or a string as
+            ``"X-rich"`` or ``"X-poor"`` where ``X`` is the extremum element --
+            ``rich`` will be set automatically in this latter case (e.g.
+            ``rich`` will be set to ``False`` for ``"Te-poor"``).
         chempots (dict):
             The chemical potential limits dict, as returned by
-            ``CompetingPhasesAnalyzer.chempots``
+            ``CompetingPhasesAnalyzer.chempots`` (i.e. containing
+            ``"limits"`` mapping limit names to ``{element: absolute μ}``).
+        rich (bool):
+            Whether to use the maximum μ_X (X-rich; ``True``) or minimum μ_X
+            (X-poor; ``False``). Default is ``True``.
+            Note that this setting will be overwritten if the ``X`` input is
+            given as a ``"X-rich"`` / ``"X-poor"`` string (e.g. ``rich`` will
+            be set to ``False`` for ``X = "Te-poor"``).
+        warn_if_multiple (bool):
+            Whether to warn if there are multiple chemical potential limits
+            with the same extremal μ_X within an energy tolerance ``tol`` in
+            eV. Default is ``True``.
+        tol (float):
+            Energy tolerance in eV. Limits whose μ_X satisfies
+            ``|μ_X - μ_X^*| < tol``, with μ_X^* being the extremal value, are
+            treated as tied. Default is 0.01 eV.
+        bulk_composition (str | Composition | None):
+            Host composition for intrinsic-vs-extrinsic ordering in ties. If
+            ``None`` (default), auto-determines the bulk composition from the
+            ``chempots`` dict (i.e. the composition which is present for each
+            limit).
 
     Returns:
-        str: The name of the chemical potential limit corresponding to the most
-        X-rich conditions.
+        str:
+            The key in ``chempots["limits"]`` for the chosen limit.
     """
-    candidate_limits = [
-        (limit, chempot_dict[X]) for limit, chempot_dict in chempots["limits"].items() if X in chempot_dict
-    ]
-    if not candidate_limits:
+    # parse X:
+    if "rich" in X.lower():
+        X = X.split("-")[0]
+        rich = True
+    elif "poor" in X.lower():
+        X = X.split("-")[0]
+        rich = False
+    else:
+        try:
+            _ref = Element(X)
+        except Exception as exc:
+            raise ValueError(
+                f"Invalid input for X: {X}. Must be an element symbol or a string as 'X-rich' or 'X-poor' "
+                f"where X is the extremum element (e.g. 'Te-rich' or 'Te-poor')."
+            ) from exc
+
+    limits: dict[str, dict[str, float]] = chempots["limits"]  # same result with limits_wrt_el_refs
+    X_chempots = [(limit, limit_dict[X]) for limit, limit_dict in limits.items() if X in limit_dict]
+    if not X_chempots:
         raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
-    return max(candidate_limits, key=lambda limit_chempot: limit_chempot[1])[0]
+
+    ref = Element(X)
+
+    def pauling_similar_first(sym: str) -> float:
+        a, b = Element(sym).X, ref.X  # electronegativities
+        if a is None or b is None:
+            return np.inf  # no electronegativity data available
+        af, bf = float(a), float(b)
+        return np.inf if np.isnan(af) or np.isnan(bf) else abs(af - bf)
+
+    target = (
+        max(chempot for _limit, chempot in X_chempots)
+        if rich
+        else min(chempot for _limit, chempot in X_chempots)
+    )
+    tied = [limit for limit, chempot in X_chempots if abs(chempot - target) < tol]
+    if len(tied) == 1:
+        return next(iter(tied))  # only one limit with the same extremal μ_X, return it
+
+    if warn_if_multiple:
+        tied_list = ", ".join(sorted(tied))
+        min_max_str = "maximum" if rich else "minimum"
+        rich_poor_str = "rich" if rich else "poor"
+        warnings.warn(
+            f"Multiple chemical potential limits are degenerate within tol={tol:.3f} eV for the "
+            f"{min_max_str} ({rich_poor_str}) μ_{X}: [{tied_list}]. Choosing the most {rich_poor_str} "
+            f"limit for the most electronegatively-similar element(s) to {X}, of all tied limits (see "
+            f"``get_X_rich_poor_limit`` docstring for details). If using the thermodynamics functions, "
+            f"one can input the specific limit (e.g. 'Cd-CdTe' instead of 'Cd-rich') to avoid this "
+            f"warning."
+        )
+
+    symbols = set().union(*(limits[limit] for limit in tied))
+    if bulk_composition is None and len(chempots["limits"]) > 1:  # auto-determine bulk composition
+        # (outside of the edge case of only one limit -- e.g. chemically unstable materials; can't
+        # auto-determine in those cases so we skip bulk composition filtering)
+        # bulk composition is the only one present in every limit (limits are "X-Y-Z" strings):
+        limit_comps = [set(limit.split("-")) for limit in chempots["limits"]]
+        bulk_composition = next(iter(set.intersection(*limit_comps)))
+
+    if bulk_composition is not None:
+        bulk = {element.symbol for element in Composition(bulk_composition).elements}
+        intr = sorted(
+            (element for element in symbols if element in bulk and element != X),
+            key=pauling_similar_first,
+        )
+        extr = sorted((element for element in symbols if element not in bulk), key=pauling_similar_first)
+        el_order = intr + extr
+    else:
+        el_order = sorted((element for element in symbols if element != X), key=pauling_similar_first)
+
+    for element in el_order:
+        extremal = (
+            max(limits[lim][element] for lim in tied)
+            if rich
+            else min(limits[lim][element] for lim in tied)
+        )
+        tied = [lim for lim in tied if abs(limits[lim][element] - extremal) < tol]  # overwrites ``tied``
+        if len(tied) == 1:
+            return next(iter(tied))
+
+    # edge case handling; should very rarely get to this point (unless dealing with tiny chempot ranges)
+    def mus_tuple(limit: str) -> tuple[float, ...]:
+        return tuple(limits[limit][element] for element in el_order)
+
+    if rich:
+        return max(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
+    return min(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
 
 
-def get_X_poor_limit(X: str, chempots: dict) -> str:
+def get_X_rich_limit(X: str, chempots: dict, **kwargs) -> str:
     """
-    Determine the chemical potential limit of the input chempots dict which
-    corresponds to the most X-poor conditions.
+    Deprecated alias for ``get_X_rich_poor_limit(..., rich=True)``.
 
-    Args:
-        X (str):
-            Elemental species (e.g. "Te")
-        chempots (dict):
-            The chemical potential limits dict, as returned by
-            ``CompetingPhasesAnalyzer.chempots``
-
-    Returns:
-        str: The name of the chemical potential limit corresponding to the most
-        X-poor conditions.
+    Will be removed in ``doped`` 4.1; use
+    :func:`get_X_rich_poor_limit(X, chempots, rich=True, ...)` instead.
     """
-    candidate_limits = [
-        (limit, chempot_dict[X]) for limit, chempot_dict in chempots["limits"].items() if X in chempot_dict
-    ]
-    if not candidate_limits:
-        raise ValueError(f"Could not find {X} in the chemical potential limits dict:\n{chempots}")
-    return min(candidate_limits, key=lambda limit_chempot: limit_chempot[1])[0]
+    warnings.warn(
+        "`get_X_rich_limit` is deprecated and will be removed in doped 4.1; use "
+        "`get_X_rich_poor_limit(X, chempots, rich=True, ...)` instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_X_rich_poor_limit(X, chempots, rich=True, **kwargs)
+
+
+def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
+    """
+    Deprecated alias for ``get_X_rich_poor_limit(..., rich=False)``.
+
+    Will be removed in ``doped`` 4.1; use
+    :func:`get_X_rich_poor_limit(X, chempots, rich=False, ...)` instead.
+    """
+    warnings.warn(
+        "`get_X_poor_limit` is deprecated and will be removed in doped 4.1; use "
+        "`get_X_rich_poor_limit(X, chempots, rich=False, ...)` instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return get_X_rich_poor_limit(X, chempots, rich=False, **kwargs)
 
 
 # TODO: Can we just integrate this function to `CompetingPhaseAnalyzer`, so you just pass in a list of
