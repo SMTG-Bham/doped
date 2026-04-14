@@ -2274,7 +2274,7 @@ class ChemicalPotentialGrid(MSONable):
                 A ``DataFrame`` containing the points within the convex hull.
                 Each row represents a point in the grid.
         """
-        if fixed_elements is not None:
+        if fixed_elements:
             return self.get_constrained_grid(
                 fixed_elements, n_points, cartesian, decimal_places, drop_duplicates, include_vertices
             )
@@ -2542,12 +2542,15 @@ def _lattice_in_hull(
     if vertices.ndim != 2:
         raise ValueError("`vertices` must be a 2-D array (N_points, N_dimensions)")
 
-    delaunay_tri = Delaunay(vertices, qhull_options=qhull_options)  # setup Delaunay triangulation
+    k = vertices.shape[-1]  # dimensionality (k ≥ 2)
     # vertices defines the polytope (k-D polyhedron) of the convex hull; shape (N, k)
     # we then tessellate the hull with Delaunay triangulation, which breaks the polytope into a set of
     # k-D simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
     # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc)
-    k = vertices.shape[-1]  # dimensionality (k ≥ 2)
+    if vertices.shape[0] == k + 1:  # Input is already a single simplex; no triangulation needed
+        simplices = np.array([np.arange(k + 1)])
+    else:  # setup Delaunay triangulation
+        simplices = Delaunay(vertices, qhull_options=qhull_options).simplices
 
     # generate a grid of barycentric coordinates (i.e. weighted averages of the vertices) which are inside
     # the convex hull; for this the total weight should sum to 1, so generate tuples (n0,..,nk) with
@@ -2572,7 +2575,7 @@ def _lattice_in_hull(
     # reasonable to large ``n_points``, so shouldn't be an issue in practice.
     n_points_per_dim = 0
     unscaled_bary_coords: list[tuple[int, ...]] = []
-    while len(unscaled_bary_coords) * len(delaunay_tri.simplices) < n_points:
+    while len(unscaled_bary_coords) * len(simplices) < n_points:
         n_points_per_dim += 1
         unscaled_bary_coords = list(_compositions(n_points_per_dim, k))
         if n_points_per_dim > max(n_points, 1):  # should never happen
@@ -2589,9 +2592,7 @@ def _lattice_in_hull(
     # more precision is needed in output predictions, can just scale ``n_points`` as needed). Can always
     # be implemented if needed
 
-    verts_per_simplex = vertices[
-        delaunay_tri.simplices
-    ]  # shape (S, k+1, k); where S is the number of simplices
+    verts_per_simplex = vertices[simplices]  # shape (S, k+1, k); where S is the number of simplices
 
     # Vectorised Cartesian coordinates (and interpolated values if dependent_var is provided):
     # points_inside: (S, L, k) -> reshape -> (S*L, k)
@@ -2599,7 +2600,7 @@ def _lattice_in_hull(
     if Y is None:
         return points_inside
 
-    vals_per_simplex = Y[delaunay_tri.simplices]  # (S, k+1)
+    vals_per_simplex = Y[simplices]  # (S, k+1)
     # values_inside: (S, L) -> reshape -> (S*L,)
     Y_inside = np.einsum("LK,SK->SL", bary_coords, vals_per_simplex).ravel()
     return np.hstack((points_inside, Y_inside.reshape(-1, 1)))
@@ -2633,12 +2634,25 @@ def _griddata_linear_in_hull(
          np.ndarray: (m,) float array of interpolated values within the
          convex hull, with NaN values outside the hull.
     """
-    _n, k = np.shape(X)
+    n, k = np.shape(X)
     # Delaunay triangulation breaks our k-D polyhedron (polytope) of the convex hull into k-D
     # simplices (e.g. triangles in 2D, tetrahedra in 3D; simplest possible polytope in k-D space),
-    # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc):
-    delaunay_tri = Delaunay(X, qhull_options=qhull_options)  # setup Delaunay triangulation
-    simplex_indices = delaunay_tri.find_simplex(xi, tol=tol)  # simplex indices; (L,), where L is len(xi)
+    # which each have k+1 vertices (e.g. 3 vertices for triangles, 4 vertices for tetrahedra, etc).
+
+    if n == k + 1:  # Qhull's lifted-hull Delaunay needs N >= k+2 points, so handle single-simplex cases:
+        simplices = np.arange(k + 1)[None, :]  # (1, k+1); S = 1
+        Tinv = np.linalg.inv((X[:k] - X[k]).T)  # (k, k); T has columns (v_i - v_k)
+        transform = np.empty((1, k + 1, k))  # (1, k+1, k)
+        transform[0, :k, :], transform[0, k, :] = Tinv, X[k]  # (k, k) and (k,)
+        lam_xi = (xi - X[k]) @ Tinv.T  # (L, k)
+        bary = np.concatenate([lam_xi, 1.0 - lam_xi.sum(axis=1, keepdims=True)], axis=1)  # (L, k+1)
+        simplex_indices = np.where(np.all(bary >= -tol, axis=1), 0, -1)  # (L,)
+    else:  # setup Delaunay triangulation
+        delaunay_tri = Delaunay(X, qhull_options=qhull_options)
+        simplex_indices = delaunay_tri.find_simplex(xi, tol=tol)  # simplex indices; (L,) -> L is len(xi)
+        simplices = delaunay_tri.simplices  # (S, k+1)
+        transform = delaunay_tri.transform  # (S, k+1, k)
+
     inside_hull = simplex_indices >= 0  # outside = -1; tol treats near-edge as inside; (L,)
     if not inside_hull.any():  # no inside points, return array of NaNs of shape (L,)
         raise ValueError("No points found inside convex hull (of chemical potentials)")
@@ -2652,13 +2666,12 @@ def _griddata_linear_in_hull(
     #   For each simplex i:  T_i c = x - r_i, with c[:-1] first d barycentric coordinates,
     #   and c_last = 1 - sum(c[:-1])
     # (This mirrors what ``LinearNDInterpolator`` does under the hood)
-    Ti = delaunay_tri.transform[simplex_indices[inside_hull]]  # (N, k+1, k)
+    Ti = transform[simplex_indices[inside_hull]]  # (N, k+1, k)
     Xdif = X_inside - Ti[:, -1, :]  # x - r, shape (N, k)
     lam = np.einsum("Nij,Nj->Ni", Ti[:, :k, :], Xdif)  # first k barycentrics; (N, k)
     bary_coords = np.concatenate([lam, 1.0 - lam.sum(axis=1, keepdims=True)], axis=1)  # (N, k+1)
 
-    vertex_indices_of_simplices = delaunay_tri.simplices[simplex_indices[inside_hull]]  # (N, k+1)
-    # where delaunay_tri.simplices is (S, k+1))
+    vertex_indices_of_simplices = simplices[simplex_indices[inside_hull]]  # (N, k+1)
     vertex_values_of_simplices = Y[vertex_indices_of_simplices]  # (N, k+1)
     values_inside = np.einsum("Ni,Ni->N", bary_coords, vertex_values_of_simplices)  # N
     # combine input xi points (which are inside hull) with interpolated values for returned output:
