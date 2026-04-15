@@ -1290,7 +1290,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                 "but can be important for concentrations/doping/Fermi level behaviour",
                 "You can manually check (and edit) the computed defect point",
             ]
-        )
+        )  # auto-stenciling not possible with ZnS
 
         vacancy_and_sub_rows = symm_df[
             np.array(["vac" in i for i in symm_df.index.get_level_values("Defect")])

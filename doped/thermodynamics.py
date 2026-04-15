@@ -126,10 +126,28 @@ def get_rich_poor_limit_dict(chempots: dict) -> dict:
     }
 
 
-def _get_limit_name_from_dict(limit, limit_rich_poor_dict, bracket=False):
+def _get_rich_poor_limit_name_from_dict(
+    limit: str, limit_rich_poor_dict: dict[str, str], bracket: bool = False
+) -> str:
+    """
+    Given a chemical potential limit ``limit``, get the corresponding key in
+    ``limit_rich_poor_dict`` (which should be a dict of ``{rich/poor limit
+    name: limit}`` (e.g. ``{"Mg-rich": "MgO-Mg"...}``)) where ``limit`` is a
+    value.
+
+    Favours 'rich' limits over 'poor' (e.g. 'O-rich' favoured over 'Mg-poor'
+    for MgO), and includes the actual limit name in parentheses in the output
+    if ``bracket`` is ``True``.
+    """
     if limit_rich_poor_dict and limit in limit_rich_poor_dict.values():
+        # sort dict to favour 'rich' before 'poor' (e.g. 'O-rich' favoured over 'Mg-poor' for MgO)
+        sorted_rich_poor_dict = dict(
+            sorted(
+                limit_rich_poor_dict.items(), key=lambda item: ("rich" in item[0], item[0]), reverse=True
+            )
+        )
         # get first key with matching value:
-        x_rich_poor = list(limit_rich_poor_dict.keys())[list(limit_rich_poor_dict.values()).index(limit)]
+        x_rich_poor = list(sorted_rich_poor_dict.keys())[list(sorted_rich_poor_dict.values()).index(limit)]
         return f"{x_rich_poor} ({limit})" if bracket else x_rich_poor
     return limit
 
@@ -2307,14 +2325,14 @@ class DefectThermodynamics(MSONable):
         return pd.DataFrame(
             [
                 [
-                    _get_limit_name_from_dict(
+                    _get_rich_poor_limit_name_from_dict(
                         limiting_donor_intercept_row["limit"], limit_dict, bracket=True
                     ),
                     limiting_donor_intercept_row["name"],
                     round(limiting_donor_intercept_row["intercept"], 3),
                 ],
                 [
-                    _get_limit_name_from_dict(
+                    _get_rich_poor_limit_name_from_dict(
                         limiting_acceptor_intercept_row["limit"], limit_dict, bracket=True
                     ),
                     limiting_acceptor_intercept_row["name"],
@@ -2333,7 +2351,7 @@ class DefectThermodynamics(MSONable):
         (chemical potential limits) in ``chempots`` and returning the most
         p/n-type conditions, or for a given chemical potential limit (if
         ``limit`` is set or ``chempots`` corresponds to a single chemical
-        potential limit; i.e. {element symbol: chemical potential}).
+        potential limit; i.e. ``{element symbol: chemical potential}``).
 
         Doping window is defined by the formation energy of the lowest energy
         compensating defect species at the corresponding band edge (i.e. VBM
@@ -2484,7 +2502,9 @@ class DefectThermodynamics(MSONable):
             limiting_intercept_row = intercepts_df.iloc[intercepts_df[idx]["intercept"].idxmax()]
             limiting_intercept_rows.append(
                 [
-                    _get_limit_name_from_dict(limiting_intercept_row["limit"], limit_dict, bracket=True),
+                    _get_rich_poor_limit_name_from_dict(
+                        limiting_intercept_row["limit"], limit_dict, bracket=True
+                    ),
                     limiting_intercept_row["name"],
                     round(limiting_intercept_row["intercept"], 3),
                 ]
