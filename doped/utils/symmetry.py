@@ -2797,6 +2797,7 @@ def point_symmetry_from_defect_entry(
                     defect_entry,
                     target_supercell,
                     check_bulk=False,
+                    show_pbar=False,  # may be called during defect parsing etc, so don't show progress bar
                 )
             )
             periodicity_restored_defect_entry = template_defect_entry_from_structures(

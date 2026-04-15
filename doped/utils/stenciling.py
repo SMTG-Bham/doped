@@ -57,6 +57,7 @@ def get_defect_in_supercell(
     min_dist_tol_factor_range: float | range | list | np.ndarray | None = None,
     min_dist_warning_tol_factor: float = 0.9,
     orientation_template_radii_range: float | range | list | np.ndarray | None = None,
+    show_pbar: bool = True,
 ) -> tuple[Structure, Structure]:
     """
     Re-generate a (relaxed) defect structure in a (arbitrarily) different
@@ -209,6 +210,8 @@ def get_defect_in_supercell(
             with ``target_supercell``). Default is ``None``, in which case the
             default test range of ``[0.8, 1.0, 0.6, 0.4, 1.2]`` is used. It is
             expected that this parameter should rarely be required to tune.
+        show_pbar (bool):
+            Whether to show a ``tqdm`` progress bar. Default is ``True``.
 
     Returns:
         tuple[Structure, Structure]:
@@ -217,10 +220,13 @@ def get_defect_in_supercell(
             generated defect supercell (see explanations above).
     """
     # Note to self; using Pycharm breakpoints throughout is likely easiest for debugging
-    pbar = tqdm(
-        total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
-    )  # tqdm progress bar. 100% is completion
-    pbar.set_description("Getting super-supercell (relaxed defect + bulk sites)")
+    if show_pbar:
+        pbar = tqdm(
+            total=100, bar_format="{desc}{percentage:.1f}%|{bar}| [{elapsed},  {rate_fmt}{postfix}]"
+        )  # tqdm progress bar. 100% is completion
+        pbar.set_description("Getting super-supercell (relaxed defect + bulk sites)")
+    else:
+        pbar = None
 
     bulk_mismatch_warning = False
 
@@ -328,8 +334,9 @@ def get_defect_in_supercell(
             oriented_big_bulk_supercell = big_bulk_supercell
             oriented_big_defect_supercell = big_defect_supercell
 
-        pbar.update(20)  # 20% of progress bar
-        pbar.set_description("Getting sites in border region")
+        if pbar is not None:
+            pbar.update(20)  # 20% of progress bar
+            pbar.set_description("Getting sites in border region")
 
         # translate structure to put defect at the centre of the big supercell (w/frac_coords)
         big_supercell_defect_site = next(
@@ -366,8 +373,9 @@ def get_defect_in_supercell(
             min_dist_warning_tol_factor=min_dist_warning_tol_factor,
             pbar=pbar,
         )
-        pbar.update(15)  # 55% of progress bar
-        pbar.set_description("Ensuring matching orientation w/target_supercell")
+        if pbar is not None:
+            pbar.update(15)  # 55% of progress bar
+            pbar.set_description("Ensuring matching orientation w/target_supercell")
 
         # now we try to re-orient the new defect (and bulk) supercells to match the orientation of the
         # input ``target_supercell``. First we orient the generated _bulk_ supercell to match the
@@ -409,11 +417,13 @@ def get_defect_in_supercell(
             for i, site in enumerate(oriented_new_defect_supercell.sites)
             if site.specie.symbol == "X"
         )
-        pbar.update(35)  # 90% of progress bar
+        if pbar is not None:
+            pbar.update(35)  # 90% of progress bar
 
         if target_frac_coords is not False:
             # Scan symm_ops to try and place defect closest to target_frac_coords as possible
-            pbar.set_description("Placing defect closest to target_frac_coords")
+            if pbar is not None:
+                pbar.set_description("Placing defect closest to target_frac_coords")
 
             target_symm_op = _scan_symm_ops_to_place_site_closest_to_frac_coords(
                 target_supercell, oriented_new_defect_site, target_frac_coords
@@ -439,10 +449,12 @@ def get_defect_in_supercell(
                 warning=False,
             )
 
-        pbar.update(pbar.total - pbar.n)  # set to 100% of progress bar
+        if pbar is not None:
+            pbar.update(pbar.total - pbar.n)  # set to 100% of progress bar
 
     finally:
-        pbar.close()
+        if pbar is not None:
+            pbar.close()
 
     if bulk_mismatch_warning:  # print warning after closing pbar; cleaner
         warnings.warn(
@@ -955,7 +967,7 @@ def _remove_overlapping_sites(
     candidate_new_supercell_sites: list[PeriodicSite],
     def_new_supercell_sites_to_check: list[PeriodicSite],
     bulk_min_bond_length: float | None = None,
-    pbar: tqdm = None,
+    pbar: tqdm | None = None,
 ) -> list[PeriodicSite]:
     """
     Remove sites in ``candidate_new_supercell_sites`` which overlap (within 50%
