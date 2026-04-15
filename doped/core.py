@@ -17,7 +17,7 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
-from doped import _doped_obj_properties_methods, _warn_parameter_order, get_mp_context
+from doped import _doped_obj_properties_methods, _warn_parameter_order, get_mp_context, suppress_logging
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -31,16 +31,17 @@ if TYPE_CHECKING:
     import plotly.graph_objects as go
     from matplotlib.pyplot import Figure
 
-    from doped import suppress_logging
 
-    with suppress_logging(), warnings.catch_warnings():  # type: ignore
-        try:
-            from pydefect.analyzer.band_edge_states import BandEdgeStates
-        except ImportError:
-            warnings.warn(
-                "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, "
-                "and can be installed with `pip install pydefect`."
-            )
+with suppress_logging(), warnings.catch_warnings():
+    try:  # just for type-checking here, but not run in ``TYPE_CHECKING`` block
+        # as ``pydefect`` calls ``vise.defaults`` which suppresses all user
+        # warnings with ``warnings.simplefilter("ignore", UserWarning)``, so
+        # here we use the ``warnings.catch_warnings()`` context manager to
+        # avoid warnings filter mutation
+        from pydefect.analyzer.band_edge_states import BandEdgeStates
+    except ImportError:
+        BandEdgeStates = None  # type: ignore[assignment,misc]
+
 
 try:
     from pymatgen.core.entries import ComputedEntry, ComputedStructureEntry

@@ -18,18 +18,6 @@ from importlib.metadata import PackageNotFoundError, version
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
-try:
-    import vise.util.logger
-
-    vise.util.logger.get_logger = (
-        logging.getLogger
-    )  # to avoid repeated vise INFO messages with Parallel code
-except ImportError:
-    warnings.warn(
-        "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "
-        "be installed with `pip install pydefect`."
-    )
-
 # set __version__ for older users who use this convention:
 try:
     __version__ = version("doped")  # from package metadata (pyproject.toml)
@@ -48,6 +36,23 @@ def suppress_logging(level=logging.CRITICAL):
         yield
     finally:
         logging.disable(previous_level)  # restore the original logging level
+
+
+with suppress_logging(), warnings.catch_warnings():
+    # warnings context manager shouldn't be necessary in this case, as vise.util.logger doesn't import
+    # ``vise.defaults`` (where the problematic ``warnings.simplefile("ignore", UserWarning)`` call is, but
+    # we still use it here just in case another vise import is added to ``vise.util.logger``
+    try:
+        import vise.util.logger
+
+        vise.util.logger.get_logger = (
+            logging.getLogger
+        )  # to avoid repeated vise INFO messages with Parallel code
+    except ImportError:
+        warnings.warn(
+            "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, "
+            "and can be installed with `pip install pydefect`."
+        )
 
 
 def _ignore_pmg_warnings():
