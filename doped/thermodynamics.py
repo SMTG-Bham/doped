@@ -47,7 +47,6 @@ from doped.utils.parsing import (
     _compare_kpoints,
     _compare_potcar_symbols,
     _get_bulk_supercell,
-    _get_defect_supercell_site,
     get_nelect_from_vasprun,
     get_vasprun,
 )
@@ -358,7 +357,7 @@ def group_defects_by_distance(
     r"""
     Given an input list of |DefectEntry| objects, returns a dictionary of
     defect entries clustered according to the given ``dist_tol`` distance
-    tolerance (between symmetry-equivalent sites in the bulk supercell) and
+    tolerance (between symmetry-equivalent sites in the bulk structure) and
     clustering ``method``; format: ``{cluster index: {DefectEntry, ...}}``.
 
     This is used to group together different defect entries (different charge
@@ -388,7 +387,7 @@ def group_defects_by_distance(
             (Default: 1.5)
         symprec (float):
             Symmetry precision for finding equivalent sites in the bulk
-            supercell, for site clustering. Default is 0.1 (matching ``doped``
+            structure, for site clustering. Default is 0.1 (matching ``doped``
             default for point symmetry determination for relaxed defect
             supercells).
         method (str):
@@ -404,10 +403,10 @@ def group_defects_by_distance(
     Returns:
         dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
     """
-    bulk_supercell = _get_bulk_supercell(entry_list[0])
-    bulk_lattice = bulk_supercell.lattice
-    bulk_supercell_sga = get_sga(bulk_supercell, symprec=symprec)
-    symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+    bulk_structure = entry_list[0].defect.structure
+    bulk_lattice = bulk_structure.lattice
+    bulk_sga = get_sga(bulk_structure, symprec=symprec)
+    symm_bulk_struct = bulk_sga.get_symmetrized_structure()
 
     equiv_sites_entries_dict: dict[tuple[tuple[float, float, float], ...], list[DefectEntry]] = (
         defaultdict(list)
@@ -426,22 +425,21 @@ def group_defects_by_distance(
     #    already members of an earlier defect entry cluster.
 
     for entry in entry_list:
-        # TODO: Try using defect structure (now defined in primitive, and doesn't have potential
-        #  periodicity-breaking issues), time and see how much faster, and fall back to old approach if
-        #  any issues
-        entry_bulk_supercell = _get_bulk_supercell(entry)
-        if entry_bulk_supercell.lattice != bulk_lattice:
-            # recalculate if bulk supercell differs
-            bulk_supercell_sga = get_sga(entry_bulk_supercell, symprec=symprec)
-            symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
-
-        # need to use relaxed defect site if bulk_site not in calculation_metadata:
-        bulk_site = entry.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(entry)
-        assert bulk_site is not None, "No bulk site found in defect entry calculation metadata!"
+        # using primitive structure rather than bulk supercell here should mostly avoid
+        # periodicity-breaking issues
+        entry_bulk_structure = entry.defect.structure
+        entry_bulk_site = entry.defect.site
+        if entry_bulk_structure.lattice != bulk_lattice:  # recalculate if bulk structure differs
+            # TODO: This is insufficient, need to try get_s2_like_s1 (and apply to defect site too),
+            #  or just warn
+            bulk_sga = get_sga(bulk_structure, symprec=symprec)
+            symm_bulk_struct = bulk_sga.get_symmetrized_structure()
 
         # get min distances to each equiv_site_tuple for previously checked defect entries:
         min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
-            bulk_site.lattice.get_all_distances(bulk_site.frac_coords, list(equiv_site_tuple)).min()
+            entry_bulk_site.lattice.get_all_distances(
+                entry_bulk_site.frac_coords, list(equiv_site_tuple)
+            ).min()
             for equiv_site_tuple in equiv_sites_entries_dict
         ]
 
@@ -452,21 +450,27 @@ def group_defects_by_distance(
             equiv_sites_entries_dict[list(equiv_sites_entries_dict.keys())[idxmin]].append(entry)
 
         else:  # no exact match found, add new entry
-            try:
+            if equiv_sites := entry.defect.equivalent_sites:
                 equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                    tuple(site.frac_coords) for site in symm_bulk_struct.find_equivalent_sites(bulk_site)
+                    tuple(site.frac_coords) for site in equiv_sites
                 )
-            except ValueError:  # likely interstitials, need to add equiv sites to tuple
-                equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                    tuple(frac_coords)  # type: ignore
-                    for frac_coords in get_all_equiv_sites(
-                        bulk_site.frac_coords,
-                        symm_bulk_struct,
-                        symprec=symprec,
-                        just_frac_coords=True,
-                        return_symprec_and_dist_tol_factor=False,
+            else:
+                try:
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        tuple(site.frac_coords)
+                        for site in symm_bulk_struct.find_equivalent_sites(entry_bulk_site)
                     )
-                )
+                except ValueError:  # likely interstitials, need to add equiv sites to tuple
+                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                        tuple(frac_coords)  # type: ignore
+                        for frac_coords in get_all_equiv_sites(
+                            entry_bulk_site.frac_coords,
+                            symm_bulk_struct,
+                            symprec=symprec,
+                            just_frac_coords=True,
+                            return_symprec_and_dist_tol_factor=False,
+                        )
+                    )
 
             equiv_sites_entries_dict[equiv_site_tuple].append(entry)
 
@@ -477,7 +481,7 @@ def group_defects_by_distance(
     # clusters (see workflow comment above), using ``np.where(cn == n)[0]`` to get the indices of ``cn`` /
     # ``all_frac_coords`` which are in cluster ``n``, and then also by index for deterministic behaviour:
     # centroid usually best method to avoid large daisy-chaining effects with many defects:
-    cn = cluster_coords(all_frac_coords, bulk_supercell, dist_tol=dist_tol, method=method)
+    cn = cluster_coords(all_frac_coords, bulk_structure, dist_tol=dist_tol, method=method)
     unique_clusters = sorted(
         set(cn), key=lambda n: (len(np.where(cn == n)[0]), min(np.where(cn == n)[0])), reverse=True
     )
@@ -2491,6 +2495,9 @@ class DefectThermodynamics(MSONable):
             limit_dict = get_rich_poor_limit_dict(chempots)
         except ValueError:
             limit_dict = {}
+
+        # TODO: One should scan over the full chemical potential grid though right? As the maximised
+        #  window may not always be at a chemical potential limit???
 
         # get the most p/n-type limit, by getting the limit with the maximum min-intercept, where
         # min-intercept is the min intercept for that limit (i.e. the compensating intercept)

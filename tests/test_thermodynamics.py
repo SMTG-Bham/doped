@@ -908,9 +908,16 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             and len(defect_thermo.defect_entries) < 20
             and len(defect_thermo.defect_entries) > 3
         ):  # CdTe example defects
-            self._check_CdTe_example_dist_tol(defect_thermo, 4)  # 1.5 Å default
+            # Int_Te_3_Unperturbed_1 is 1.24 Å from Int_Te_3_1 and 0.7 Å from Int_Te_3_2, the latter of
+            # which are 1.73 Å apart from each other.
+            # So, all Int_Te_3 merged with default dist_tol = 1.5 Å (or higher):
+            self._check_CdTe_example_dist_tol(defect_thermo, 3)  # 1.5 Å default
             self._set_and_check_dist_tol(2.0, defect_thermo, 3)
-            self._set_and_check_dist_tol(1.0, defect_thermo, 5)
+            # for dist_tol < 1.24 Å (but greater than 0.7 Å), Int_Te_3_Unperturbed_1 and Int_Te_3_2 are
+            # merged but Int_Te_3_1 it on its own:
+            self._set_and_check_dist_tol(1.2, defect_thermo, 4)
+            # no Int_Te_3 interstitials merged for dist_tol < 0.7 Å:
+            self._set_and_check_dist_tol(0.5, defect_thermo, 5)
 
         # test mismatching chempot warnings:
         print("Checking mismatching chempots")
@@ -1241,8 +1248,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         Test outputs of transition level functions for CdTe.
         """
         assert self.CdTe_defect_thermo.transition_level_map == {
-            "Int_Te_3_a": {0.08967094380236373: [2, 1]},
-            "Int_Te_3_b": {},
+            "Int_Te_3": {0.03497090517885537: [2, 1]},
             "Te_Cd": {},
             "v_Cd": {0.47047144459596113: [0, -2]},
         }
@@ -1254,6 +1260,93 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Transition level ε(0/-1*) at 0.542 eV above the VBM",
         ]
 
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels
+        )
+        assert not result
+        assert not w
+        for i in (
+            tl_info
+            + tl_info_not_all
+            + [
+                "Defect: Int_Te_3\x1b",
+                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+        for i in [*tl_info_all, "Int_Te_3_a", "*", "Int_Te_3_b", "Int_Te_3_Unperturbed"]:
+            assert i not in tl_output
+
+        result, tl_output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_defect_thermo.print_transition_levels, all=True
+        )
+        assert not result
+        assert not w
+        for i in (
+            tl_info
+            + tl_info_all
+            + [
+                "Defect: Int_Te_3\x1b",
+                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                "Transition level ε(+2/+1*) at 0.090 eV above the VBM",
+            ]
+        ):
+            assert i in tl_output
+
+        for i in tl_info_not_all:
+            assert i not in tl_output
+
+        def _test_default_all_Int_Te_3_merged_print_TLs():
+            result, tl_output, w = _run_func_and_capture_stdout_warnings(
+                self.CdTe_defect_thermo.print_transition_levels
+            )
+            assert not result
+            assert not w
+            for i in (
+                tl_info
+                + tl_info_not_all
+                + [
+                    "Defect: Int_Te_3\x1b",
+                    "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                ]
+            ):
+                assert i in tl_output
+            for i in [
+                *tl_info_all,
+                "Defect: Int_Te_3_a",
+                "Defect: Int_Te_3_b",
+                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+            ]:
+                assert i not in tl_output
+
+            result, tl_output, w = _run_func_and_capture_stdout_warnings(
+                self.CdTe_defect_thermo.print_transition_levels, all=True
+            )
+            assert not result
+            assert not w
+            for i in (
+                tl_info
+                + tl_info_all
+                + [
+                    "Defect: Int_Te_3\x1b",
+                    "Transition level ε(+2/+1) at 0.035 eV above the VBM",
+                ]
+            ):
+                assert i in tl_output
+
+            for i in [
+                *tl_info_not_all,
+                "Defect: Int_Te_3_a",
+                "Defect: Int_Te_3_b",
+                "Transition level ε(+2/+1) at 0.090 eV above the VBM",
+            ]:
+                assert i not in tl_output
+
+        _test_default_all_Int_Te_3_merged_print_TLs()  # test default
+        self.CdTe_defect_thermo.dist_tol = 2.0
+        _test_default_all_Int_Te_3_merged_print_TLs()  # same merging as default
+
+        self.CdTe_defect_thermo.dist_tol = 1.0
         result, tl_output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.print_transition_levels
         )
@@ -1299,44 +1392,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ]:
             assert i not in tl_output
 
-        self.CdTe_defect_thermo.dist_tol = 2.0
-        result, tl_output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_defect_thermo.print_transition_levels
-        )
-        assert not result
-        assert not w
-        for i in (
-            tl_info
-            + tl_info_not_all
-            + [
-                "Defect: Int_Te_3\x1b",
-                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
-            ]
-        ):
-            assert i in tl_output
-        for i in [*tl_info_all, "Int_Te_3_a", "*", "Int_Te_3_b", "Int_Te_3_Unperturbed"]:
-            assert i not in tl_output
-
-        result, tl_output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_defect_thermo.print_transition_levels, all=True
-        )
-        assert not result
-        assert not w
-        for i in (
-            tl_info
-            + tl_info_all
-            + [
-                "Defect: Int_Te_3\x1b",
-                "Transition level ε(+2/+1) at 0.035 eV above the VBM",
-                "Transition level ε(+2/+1*) at 0.090 eV above the VBM",
-            ]
-        ):
-            assert i in tl_output
-
-        for i in tl_info_not_all:
-            assert i not in tl_output
-
-        self.CdTe_defect_thermo.dist_tol = 1.0
+        self.CdTe_defect_thermo.dist_tol = 0.5
         result, tl_output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.print_transition_levels
         )
@@ -1385,6 +1441,20 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             assert i not in tl_output
 
     def test_get_transition_levels_CdTe(self):
+        def _test_default_all_Int_Te_3_merged_tl_df(tl_df):
+            assert tl_df.shape == (3, 2)
+            assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-2)"]
+            assert list(tl_df.iloc[0]) == [0.47, True]
+            assert list(tl_df.index.to_numpy()[1]) == ["Te_Cd", "None"]
+            assert list(tl_df.iloc[1]) == [np.inf, False]
+            assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3", "ε(+2/+1)"]
+            assert list(tl_df.iloc[2]) == [0.035, True]
+
+        _test_default_all_Int_Te_3_merged_tl_df(self.CdTe_defect_thermo.get_transition_levels())
+        self.CdTe_defect_thermo.dist_tol = 2.0
+        _test_default_all_Int_Te_3_merged_tl_df(self.CdTe_defect_thermo.get_transition_levels())
+
+        self.CdTe_defect_thermo.dist_tol = 1.2
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
         assert tl_df.shape == (4, 2)
         assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "ε(+2/+1)"]
@@ -1399,47 +1469,37 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
         assert list(tl_df.iloc[4]) == [np.inf, False, 0]
 
-        self.CdTe_defect_thermo.dist_tol = 2.0
-        tl_df = self.CdTe_defect_thermo.get_transition_levels()
-        assert tl_df.shape == (3, 2)
-        assert list(tl_df.iloc[0]) == [0.47, True]
-        assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-2)"]
-        assert list(tl_df.iloc[1]) == [np.inf, False]
-        assert list(tl_df.index.to_numpy()[1]) == ["Te_Cd", "None"]
-        assert list(tl_df.iloc[2]) == [0.035, True]
-        assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3", "ε(+2/+1)"]
-
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
         assert tl_df.shape == (5, 3)
-        assert list(tl_df.iloc[0]) == [0.542, True, 1]
         assert list(tl_df.index.to_numpy()[0]) == ["v_Cd", "ε(0/-1*)"]
-        assert list(tl_df.iloc[1]) == [0.399, True, 1]
+        assert list(tl_df.iloc[0]) == [0.542, True, 1]
         assert list(tl_df.index.to_numpy()[1]) == ["v_Cd", "ε(-1*/-2)"]
-        assert list(tl_df.iloc[2]) == [np.inf, False, 0]
+        assert list(tl_df.iloc[1]) == [0.399, True, 1]
         assert list(tl_df.index.to_numpy()[2]) == ["Te_Cd", "None"]
-        assert list(tl_df.iloc[3]) == [0.035, True, 0]
-        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3", "ε(+2/+1)"]
-        assert list(tl_df.iloc[4]) == [0.09, True, 1]
-        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3", "ε(+2/+1*)"]
+        assert list(tl_df.iloc[2]) == [np.inf, False, 0]
+        assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "ε(+2/+1)"]
+        assert list(tl_df.iloc[3]) == [0.09, True, 0]
+        assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
+        assert list(tl_df.iloc[4]) == [np.inf, False, 0]
 
-        self.CdTe_defect_thermo.dist_tol = 1.0
+        self.CdTe_defect_thermo.dist_tol = 0.5
         tl_df = self.CdTe_defect_thermo.get_transition_levels()
         assert tl_df.shape == (5, 2)
-        assert list(tl_df.iloc[2]) == [np.inf, False]
         assert list(tl_df.index.to_numpy()[2]) == ["Int_Te_3_a", "None"]
-        assert list(tl_df.iloc[3]) == [np.inf, False]
+        assert list(tl_df.iloc[2]) == [np.inf, False]
         assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_b", "None"]
-        assert list(tl_df.iloc[4]) == [np.inf, False]
+        assert list(tl_df.iloc[3]) == [np.inf, False]
         assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_Unperturbed", "None"]
+        assert list(tl_df.iloc[4]) == [np.inf, False]
 
         tl_df = self.CdTe_defect_thermo.get_transition_levels(all=True)
         assert tl_df.shape == (6, 3)
-        assert list(tl_df.iloc[3]) == [np.inf, False, 0]
         assert list(tl_df.index.to_numpy()[3]) == ["Int_Te_3_a", "None"]
-        assert list(tl_df.iloc[4]) == [np.inf, False, 0]
+        assert list(tl_df.iloc[3]) == [np.inf, False, 0]
         assert list(tl_df.index.to_numpy()[4]) == ["Int_Te_3_b", "None"]
-        assert list(tl_df.iloc[5]) == [np.inf, False, 0]
+        assert list(tl_df.iloc[4]) == [np.inf, False, 0]
         assert list(tl_df.index.to_numpy()[5]) == ["Int_Te_3_Unperturbed", "None"]
+        assert list(tl_df.iloc[5]) == [np.inf, False, 0]
 
     def test_get_symmetries_degeneracies(self):
         """
@@ -2770,10 +2830,11 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             ("v_Cd_-1", -np.inf),
             ("v_Cd_-2", 1.028),
             ("Te_Cd_+1", np.inf),
-            ("Int_Te_3_Unperturbed_1", 1.4092),
-            ("Int_Te_3_1", np.inf),
-            ("Int_Te_3_2", 0.08967),
+            ("Int_Te_3_Unperturbed_1", -np.inf),
+            ("Int_Te_3_1", 1.4636),
+            ("Int_Te_3_2", 0.03497),
         ]:
+            print(f"Testing {defect_entry}...")
             assert np.isclose(
                 self.CdTe_defect_thermo._get_in_gap_fermi_level_stability_window(defect_entry),
                 stability_window,

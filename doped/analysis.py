@@ -446,16 +446,17 @@ def defect_from_structures(
             if k not in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
         }
 
-    for_monty_defect = {  # initialise doped Defect object, needs to use defect site in bulk (which for
-        # substitutions differs from defect_site)
-        "@module": "doped.core",
-        "@class": defect_type.capitalize(),
-        "structure": primitive_structure,
-        "site": equiv_defect_sites_in_prim[0],
-        "equivalent_sites": equiv_defect_sites_in_prim,
-        **kwargs,
-    }  # define the Defect object in the primitive structure, matching the approach for generation
-    defect = MontyDecoder().process_decoded(for_monty_defect)
+    defect = MontyDecoder().process_decoded(  # initialise doped Defect object
+        {
+            "@module": "doped.core",
+            "@class": defect_type.capitalize(),
+            "structure": primitive_structure,  # defined in primitive structure, matching defect generation
+            # defect site in bulk (differs from defect_site for substitutions)
+            "site": equiv_defect_sites_in_prim[0],
+            "equivalent_sites": equiv_defect_sites_in_prim,
+            **kwargs,
+        }
+    )
 
     if not return_all_info:
         return defect
@@ -999,9 +1000,10 @@ class DefectsParser:
                         self._parse_defect_and_catch_warnings, self.defect_folders
                     )
 
-                pbar.set_description(
-                    f"Parsing {self.defect_folders[0]}/{self.subfolder}".replace("/.", "")
-                )
+                if self.defect_folders:
+                    pbar.set_description(
+                        f"Parsing {self.defect_folders[0]}/{self.subfolder}".replace("/.", "")
+                    )
                 for (
                     parsed_defect_entry,
                     defect_folder,

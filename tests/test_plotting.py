@@ -16,7 +16,7 @@ import pytest
 from matplotlib.colors import ListedColormap
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin
-from test_utils import EXAMPLE_DIR, custom_mpl_image_compare, data_dir
+from test_utils import EXAMPLE_DIR, _print_warning_info, custom_mpl_image_compare, data_dir
 
 from doped.analysis import DefectParser
 from doped.thermodynamics import DefectThermodynamics
@@ -67,7 +67,7 @@ class DefectPlottingTestCase(unittest.TestCase):
     def test_plot_YTOS(self):
         with warnings.catch_warnings(record=True) as w:
             plot = self.YTOS_thermo.plot()  # no chempots
-        print([str(warn.message) for warn in w])  # for debugging
+        _print_warning_info(w)  # for debugging
         assert len(w) == 2
         assert any("All formation energies for" in str(warn.message) for warn in w)
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
@@ -467,8 +467,8 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_default_CdTe_plot_no_chempots(self):
         with warnings.catch_warnings(record=True) as w:
             plot = self.CdTe_defect_thermo.plot()
-        print([str(warn.message) for warn in w])  # for debugging
-        assert len(w) == 3
+        _print_warning_info(w)  # for debugging
+        assert len(w) == 2  # formation energy warning for Int_Te_3, and no chempots
         assert any("All formation energies for" in str(warn.message) for warn in w)
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot
@@ -586,7 +586,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         cdte_defect_thermo = DefectThermodynamics(cdte_defect_dict)
         with warnings.catch_warnings(record=True) as w:
             plot = cdte_defect_thermo.plot()
-        print([str(warn.message) for warn in w])  # for debugging
+        _print_warning_info(w)  # for debugging
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         assert any(
             "All formation energies for as_1_Te_on_Cd are below zero across the entire band gap range. "
@@ -603,7 +603,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
         print(self.Sb2O5_defect_thermo.transition_level_map)
         with warnings.catch_warnings(record=True) as w:
             plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
-        print([str(warn.message) for warn in w])  # for debugging
+        _print_warning_info(w)  # for debugging
         assert not w
         return plot
 
@@ -614,7 +614,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
             self.Sb2O5_defect_thermo.dist_tol = 10
             print(self.Sb2O5_defect_thermo.transition_level_map)
             plot = self.Sb2O5_defect_thermo.plot(limit="O-poor")
-        print([str(warn.message) for warn in w])  # for debugging
+        _print_warning_info(w)  # for debugging
         assert not w
         return plot
 
@@ -740,8 +740,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
             "H$_i$$_{-a}$",
             "H$_i$$_{-b}$",
             "Br$_i$",
-            "F$_i$$_{-a}$",
-            "F$_i$$_{-b}$",
+            "F$_i$",
         ]:
             assert i in legend_txt
 
@@ -860,7 +859,7 @@ class DefectThermodynamicsPlotsTestCase(DefectThermodynamicsSetupMixin):
     def test_Bi_Se_all_entries_unrecognised_colormap_plot(self):
         with warnings.catch_warnings(record=True) as w:
             fig = self.Bi_Se_thermo.plot(limit="Se-rich", all_entries=True, colormap="Well shiii")
-        print([str(warn.message) for warn in w])
+        _print_warning_info(w)
         assert any("Colormap 'Well shiii' not found in" in str(warn.message) for warn in w)
         assert any("Defaulting to 'tab10' colormap" in str(warn.message) for warn in w)
         return fig

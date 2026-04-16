@@ -375,12 +375,15 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert any(
             "All formation energies for Int_Te_3" in str(warn.message) for warn in w
         )  # renamed to Int_Te_3_a with lowered dist_tol
-        if dist_tol < 0.2:
+        # Int_Te_3_Unperturbed_1 merged w/Int_Te_3_1 (~1.24 Å apart) w/default dist_tol = 1.5 Å
+        # Int_Te_3_Unperturbed_1 is 0.7 Å from Int_Te_3_2, which is 1.73 Å from Int_Te_3_1
+        # Int_Te_3_Unperturbed_1 not merged with other interstitials for dist_tol < 0.7 Å:
+        if dist_tol < 0.65:
             assert any(
                 "All formation energies for Int_Te_3_Unperturbed" in str(warn.message) for warn in w
             )
         else:
-            assert all(  # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5
+            assert all(
                 "All formation energies for Int_Te_3_Unperturbed" not in str(warn.message) for warn in w
             )
 
@@ -511,7 +514,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         # test with reduced dist_tol:
-        # Int_Te_3_Unperturbed merged with Int_Te_3 with default dist_tol = 1.5, now no longer merged:
+        # Int_Te_3_Unperturbed merged w/Int_Te_3 (~1.24 Å apart) w/default dist_tol = 1.5 Å, not with 0.1 Å
         self._check_default_CdTe_DefectsParser_outputs(default_dp, w, dist_tol=0.1)
 
         # test reloading |DefectsParser|
