@@ -1274,7 +1274,9 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         assert len(dp.defect_dict) == 17
         check_DefectsParser(dp)
-        thermo = dp.get_defect_thermodynamics()
+        with warnings.catch_warnings(record=True) as w:
+            thermo = dp.get_defect_thermodynamics()
+        assert not w  # no warnings (e.g. for grouping defects by distance etc)
 
         with warnings.catch_warnings(record=True) as w:
             symm_df = thermo.get_symmetries_and_degeneracies()

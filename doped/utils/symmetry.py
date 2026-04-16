@@ -84,8 +84,8 @@ def _check_spglib_version():
         )  # previously also had to do conda or special pip install settings, with spglib <2.5
 
 
-_check_spglib_version()
 _set_spglib_warnings_error_handling_env_var()
+_check_spglib_version()
 
 
 def _round_floats(obj, places: int = 5):
