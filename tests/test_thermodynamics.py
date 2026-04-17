@@ -939,7 +939,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 )
             )[0]
             for entry in defect_thermo.defect_entries.values()
-        ]
+        ]  # takes about 20 seconds in total locally, for the loop over all ~50 defect entries (x3 thermos)
+        # in ``test_CdTe_all_intrinsic_defects``
         print(np.mean(guessed_def_pos_deviations))
         first_entry = next(iter(defect_thermo.defect_entries.values()))
         assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.2
@@ -985,19 +986,20 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print("Finished checking dists")
 
     def _check_dist_tol_equiv_dists(self, defect_thermo):
-        flattenedclustered_defect_entries_by_type = {
+        # Note: This can be slow at times due to many repeated ``get_min_dist_between_equiv_sites`` calls
+        flattened_clustered_defect_entries_by_type = {
             f"{defect_type}_{cn}": cluster
             for defect_type, cluster_subdict in (defect_thermo.clustered_defect_entries_by_type.items())
             for cn, cluster in cluster_subdict.items()
         }
         for method, cluster_dict in [
             ("centroid", defect_thermo.clustered_defect_entries),
-            ("single", flattenedclustered_defect_entries_by_type),
+            ("single", flattened_clustered_defect_entries_by_type),
         ]:
             print(f"Checking dist_tol for {method} clustering")
             for cluster in cluster_dict.values():
                 cluster_list = list(cluster)
-                if len(cluster) == 1:
+                if len(cluster) == 1:  # no other entries to get min dist to
                     continue
                 for entry in cluster_list:
                     min_dist = 100
@@ -1007,6 +1009,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                         min_dist = min(min_dist, get_min_dist_between_equiv_sites(entry, other_entry))
 
                     print(f"Checking dist_tol for {entry.name}")
+                    # get_min_dist_between_equiv_sites checks min dists in the primitive cells now
+                    # by default, so this works even for periodicity-breaking supercells now:
                     assert min_dist < defect_thermo.dist_tol  # min dist less than dist_tol
 
                     # pick some random entries from other clusters and check distances:
@@ -1060,7 +1064,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
             print(f"Checking {name}; initialisation from dict")
             defect_thermo = DefectThermodynamics(defect_dict)  # test init with dict
-            self._check_defect_thermo(defect_thermo, defect_dict)  # default values
+            self._check_defect_thermo(defect_thermo, defect_dict, check_dists=False)  # default values
             self.capsys.readouterr()  # clear previous stdout, if passed
 
             if "V2O5" in name:
@@ -1075,6 +1079,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     defect_dict,
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
+                    check_dists=False,  # for test efficiency
                 )
                 self.capsys.readouterr()  # clear previous stdout, if passed
 
@@ -1087,6 +1092,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     defect_dict,
                     chempots=self.V2O5_chempots,
                     el_refs=self.V2O5_chempots["elemental_refs"],
+                    check_dists=False,  # for test efficiency
                 )
                 self.capsys.readouterr()  # clear previous stdout, if passed
 
@@ -1183,7 +1189,12 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "input."
         ) in str(exc.value)
 
-        thermo_wout_metadata = DefectThermodynamics(defect_entries_wout_metadata, vbm=1.65, band_gap=1.499)
+        thermo_wout_metadata, output, w = _run_func_and_capture_stdout_warnings(
+            DefectThermodynamics, defect_entries_wout_metadata, vbm=1.65, band_gap=1.499
+        )
+        assert not output
+        _print_warning_info(w)
+        assert not w
         self._check_defect_thermo(thermo_wout_metadata, check_dists=check_dists)  # default values
 
         defect_entries_wout_metadata_or_degeneracy = random.sample(
@@ -2273,7 +2284,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ):
             cdte_defect_dict = loadfn(os.path.join(module_path, f"data/{name}.json.gz"))
             cdte_defect_thermo = DefectThermodynamics(deepcopy(cdte_defect_dict))  # don't overwrite symm
-            # only run min-dists check with first set of defects (expensive)
+            # only run min-dists check with first set of defects (can be expensive)
             self._check_defect_thermo(cdte_defect_thermo, cdte_defect_dict, check_dists=(i == 0))
 
         # test "CdTe_defect_dict_old_names", regenerate thermo as calling symmetry methods above with

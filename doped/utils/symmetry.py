@@ -38,7 +38,6 @@ from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    _get_defect_supercell_site,
     _get_unrelaxed_defect_structure,
     get_site_mapping_indices,
 )
@@ -449,7 +448,6 @@ def apply_symm_op_to_struct(
     if rotate_lattice:
         if not fractional:
             rotated_lattice = Lattice([symm_op.apply_rotation_only(row) for row in struct._lattice.matrix])
-
         else:
             rotated_lattice = Lattice(np.dot(symm_op.rotation_matrix, struct._lattice.matrix))
     else:
@@ -546,8 +544,11 @@ def cluster_coords(
     Nearest Point algorithm and is the recommended choice for ``method`` when
     ``dist_tol`` is small, but can be sensitive to how many fractional
     coordinates are included in ``fcoords`` (allowing for daisy-chaining of
-    sites to give large spaced-out clusters), while ``"centroid"`` or
-    ``"ward"`` are good choices to avoid this issue.
+    sites to give large spaced-out clusters), while ``"average"`` or
+    ``"complete"`` (furthest point algorithm) are good choices to avoid this
+    issue. ``"centroid"``/``"median"``/``"ward"`` should not be used for
+    ``method`` as they assume a flat Euclidean space, which is violated with
+    PBC distances.
 
     See the ``scipy`` API docs for more info.
 
@@ -563,11 +564,17 @@ def cluster_coords(
             tolerance will be clustered together (when ``method = "single"``,
             giving the Nearest Point algorithm, as is the default).
         method (str):
-            Clustering algorithm to use with ``linkage()`` (default:
-            ``"single"``).
+            Clustering algorithm to use with ``linkage()``. Default is
+            ``"single"`` (recommended for small ``dist_tol``), while
+            ``"average"`` or ``"complete"`` are recommended with medium/large
+            ``dist_tol`` (e.g. for candidate interstitial site clustering or
+            defect site clustering (for determining defect site competition)).
+            ``"centroid"``/``"median"``/``"ward"`` should not be used for
+            as they assume a flat Euclidean space, which is violated with PBC
+            distances.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
-            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+            linkage matrix, used with ``fcluster()``. Default: ``"distance"``.
 
     Returns:
         np.ndarray:
@@ -581,9 +588,20 @@ def cluster_coords(
     lattice = structure if isinstance(structure, Lattice) else structure.lattice
     condensed_m = squareform(get_distance_matrix(fcoords, lattice), checks=False)
     z = linkage(condensed_m, method=method)
-    # Note: with method = "centroid", the z distances are the distances between
-    # cluster centroids, while for method = "single", the z distances are the
-    # minimum distances between all points in different clusters
+    # Note: with method = "single", the z distances are the minimum pairwise distance between any point in
+    # one and any point in the other cluster (so two clusters should merge when any site in one is within
+    # ``dist_tol`` of any site in the other, and kept separate when all points in one are >``dist_tol``
+    # away from all points in the other), which of course can easily lead to daisy-chaining (for medium /
+    # large dist_tol values).
+    # With method = "complete", the z distances are instead the maximum pairwise distance between any point
+    # in one and any point in the other cluster (so two clusters should merge only when _every_ site in one
+    # is within ``dist_tol`` of _every_ site in the other cluster). Clusters are thus compact and bounded
+    # -- the diameter of any cluster is guaranteed <= ``dist_tol``, with every pair of sites within a
+    # cluster within ``dist_tol`` of each other.
+    # With method = "average", the z distances are the mean pairwise distance across all point pairs (one
+    # from each cluster), so two clusters should merge only when the average distance drops below
+    # ``dist_tol``. This is a compromise; less chain-prone than "single", less outlier-sensitive than
+    # "complete". Mean within-cluster distance is controlled, but individual pairs can exceed ``dist_tol``.
     return fcluster(z, dist_tol, criterion=criterion)
 
 
@@ -592,7 +610,7 @@ def doped_cluster_frac_coords(
     structure: Structure,
     tol: float = 0.55,
     symm_pref_dist_factor: float = 0.85,
-    method: str = "centroid",
+    method: str = "average",
     criterion: str = "distance",
 ) -> np.typing.NDArray:
     """
@@ -616,7 +634,10 @@ def doped_cluster_frac_coords(
 
     In ``pymatgen-analysis-defects``, the average cluster position is used,
     which breaks symmetries and is less easy to manipulate in the following
-    interstitial generation functions.
+    interstitial generation functions. ``pymatgen-analysis-defects`` also uses
+    the default ``"single"`` method for site clustering, which can lead to
+    large unwanted daisy-chaining effects, unintentionally grouping
+    interstitials with distances far larger than ``tol``.
 
     Args:
         fcoords (ArrayLike):
@@ -630,12 +651,19 @@ def doped_cluster_frac_coords(
             symmetry-favoured sites vs distance-to-host-favoured sites, for
             which to prefer symmetry-favoured sites. Default is 0.85.
         method (str):
-            Clustering algorithm to use with ``linkage()`` (default:
-            ``"centroid"``, better than the ``scipy`` default of ``"single``
-            for interstitial generation to avoid daisy-chaining clusters).
+            Clustering algorithm to use with ``linkage()``. Default is
+            ``"average"``, which is typically better than the ``scipy`` default
+            of ``"single`` for interstitial generation, as it avoids
+            unintentional daisy-chaining effects. Another reasonable choice is
+            ``"complete"``, which ensures that no two sites in a given cluster
+            are more than ``tol`` apart. See the docstrings and source code of
+            :func:`~doped.utils.symmetry.cluster_coords` for more details.
+            ``"centroid"``/``"median"``/``"ward"`` should not be used for
+            as they assume a flat Euclidean space, which is violated with PBC
+            distances.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
-            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+            linkage matrix, used with ``fcluster()`` Default is ``"distance"``.
 
     Returns:
         np.typing.NDArray: Clustered fractional coordinates.
@@ -943,10 +971,13 @@ def cluster_sites_by_dist_tol(
             Distance tolerance for clustering, in Å (default: 0.01).
         method (str):
             Clustering algorithm to use with ``scipy``\'s ``linkage()``
-            clustering function in ``cluster_coords`` (default: ``"single"``).
+            clustering function in ``cluster_coords``. Default is ``"single"``,
+            which is the ``scipy`` default and is typically recommended when
+            ``dist_tol`` is small. See the docstrings and source code of
+            :func:`~doped.utils.symmetry.cluster_coords` for more details.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
-            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+            linkage matrix, used with ``fcluster()``. Default: ``"distance"``.
 
     Returns:
         list[PeriodicSite | np.ndarray[float]]:
@@ -975,8 +1006,6 @@ def cluster_sites_by_dist_tol(
     return [unique_sites[np.where(cn == n)[0][0]] for n in set(cn)]  # take 1st of each cluster
 
 
-# TODO: Should use equiv frac coords in primitive instead here, to avoid any possible issues with
-#  periodicity-breaking cells
 def get_min_dist_between_equiv_sites(
     site_1: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     site_2: PeriodicSite | Sequence[float] | Defect | DefectEntry,
@@ -1051,76 +1080,53 @@ def get_min_dist_between_equiv_sites(
             ``dist_tol_factor``) if ``return_symprec_and_dist_tol_factor`` is
             ``True``.
     """
-
-    def _parse_site_to_frac_coords(site):
-        if isinstance(site, PeriodicSite):
-            return site.frac_coords
-        if isinstance(site, DefectEntry):
-            return _get_defect_supercell_frac_coords(site)
-        if isinstance(site, Defect):
-            return site.site.frac_coords
-        return site
-
-    frac_coords_1 = _parse_site_to_frac_coords(site_1)
-    frac_coords_2 = _parse_site_to_frac_coords(site_2)
     if structure is None:
-        for site in [site_1, site_2]:
+        for site in [site_2, site_1]:  # if both ``DefectEntry``s/``Defect``s, take structure from site_1
             if isinstance(site, DefectEntry):
-                structure = _get_bulk_supercell(site)
-                break
-            if isinstance(site, Defect):
+                structure = site.defect.structure
+            elif isinstance(site, Defect):
                 structure = site.structure
-                break
     if structure is None:
         raise ValueError(
             "Structure must be provided if site_1 and site_2 are not DefectEntry or Defect objects."
         )
 
-    bulk_lattice = structure.lattice
-    bulk_supercell_sga, symprec = get_sga_and_symprec(structure, symprec=symprec)
-    symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+    def _parse_site_to_PeriodicSite(site):
+        if isinstance(site, DefectEntry):
+            return site.defect.site
+        if isinstance(site, Defect):
+            return site.site
+        if isinstance(site, PeriodicSite):
+            return site
+        return None  # frac coords provided, not site
 
-    def _get_equiv_frac_coords_symprec_and_dist_tol(
-        frac_coords, site, symprec=symprec, dist_tol_factor=dist_tol_factor
-    ):
-        try:
-            bulk_site = site.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(site)
-        except AttributeError:  # not a DefectEntry
-            try:
-                bulk_site = site.site
-            except AttributeError:  # not a Defect
-                bulk_site = None
+    def _parse_site_to_frac_coords(site):
+        if periodic_site := _parse_site_to_PeriodicSite(site):
+            return periodic_site.frac_coords
+        return site  # otherwise ``site`` should be frac coords
 
-        equiv_sites = []
-        if bulk_site is not None:
-            with contextlib.suppress(ValueError):  # faster, but will fail for interstitials
-                equiv_sites = [i.frac_coords for i in symm_bulk_struct.find_equivalent_sites(bulk_site)]
+    primitive = get_primitive_structure(structure)
 
-        if not equiv_sites:
-            equiv_sites, symprec, dist_tol_factor = get_all_equiv_sites(
-                frac_coords,
-                symm_bulk_struct,
-                symprec=symprec,
-                dist_tol_factor=dist_tol_factor,
-                just_frac_coords=True,
-                return_symprec_and_dist_tol_factor=True,
-                fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
-                verbose=verbose,
-            )
+    def _get_equiv_fcoords_symprec_and_dist_tol(site, symprec=symprec, dist_tol_factor=dist_tol_factor):
+        frac_coords = _parse_site_to_frac_coords(site)
+        equiv_fcoords, symprec, dist_tol_factor = get_equiv_frac_coords_in_primitive(
+            frac_coords,
+            primitive,
+            structure,
+            symprec=symprec,
+            dist_tol_factor=dist_tol_factor,
+            return_symprec_and_dist_tol_factor=True,
+            fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+            verbose=verbose,
+        )
 
-        return equiv_sites, symprec, dist_tol_factor
+        return equiv_fcoords, symprec, dist_tol_factor
 
-    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_frac_coords_symprec_and_dist_tol(
-        frac_coords_1, site_1
-    )
-    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_frac_coords_symprec_and_dist_tol(
-        frac_coords_2, site_2
-    )
+    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_1)
+    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_2)
 
-    min_dist = np.min(bulk_lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
-    if return_symprec_and_dist_tol_factor:
-        return min_dist, symprec, dist_tol_factor
-    return min_dist
+    min_dist = np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
+    return (min_dist, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else min_dist
 
 
 def _get_symm_dataset_of_struct_with_all_equiv_sites(
