@@ -41,6 +41,7 @@ from doped.core import (
     _orientational_degeneracy_warning,
 )
 from doped.generation import sort_defect_entries
+from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
 from doped.utils.parsing import (
     _compare_incar_tags,
@@ -352,7 +353,7 @@ def group_defects_by_distance(
     entry_list: list[DefectEntry],
     dist_tol: float = 1.5,
     symprec: float = 0.1,
-    method: str = "centroid",
+    method: str = "average",
 ) -> dict[int, set[DefectEntry]]:
     r"""
     Given an input list of |DefectEntry| objects, returns a dictionary of
@@ -391,29 +392,31 @@ def group_defects_by_distance(
             default for point symmetry determination for relaxed defect
             supercells).
         method (str):
-            Clustering algorithm to use with the ``scipy`` ``linkage()``
-            function. Default is ``"centroid"`` (typically best when handling
-            many defects, avoiding large daisy-chaining effects).
-            Recommended choices include ``"centroid"`` (which clusters sites
-            based on the distance between cluster centroids, vs ``dist_tol``)
-            or ``"single"`` (clusters based on the minimum distance between any
-            pair of sites, vs ``dist_tol``). See ``scipy`` ``linkage()`` for
-            other choices.
+            Clustering algorithm to use with ``linkage()``. Default is
+            ``"average"``, which is typically better than the ``scipy`` default
+            of ``"single`` for defect site clustering, as it avoids
+            unintentional daisy-chaining effects. Another reasonable choice is
+            ``"complete"``, which ensures that no two sites in a given cluster
+            are more than ``tol`` apart. See the docstrings and source code of
+            :func:`~doped.utils.symmetry.cluster_coords` for more details.
+            ``"centroid"``/``"median"``/``"ward"`` should not be used for
+            as they assume a flat Euclidean space, which is violated with PBC
+            distances.
 
     Returns:
         dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
     """
-    bulk_structure = entry_list[0].defect.structure
-    bulk_lattice = bulk_structure.lattice
+    reference_entry = entry_list[0]
+    bulk_structure = reference_entry.defect.structure
     bulk_sga = get_sga(bulk_structure, symprec=symprec)
     symm_bulk_struct = bulk_sga.get_symmetrized_structure()
 
-    equiv_sites_entries_dict: dict[tuple[tuple[float, float, float], ...], list[DefectEntry]] = (
+    equiv_fcoords_entries_dict: dict[tuple[tuple[float, float, float], ...], list[DefectEntry]] = (
         defaultdict(list)
-    )  # {(equiv defect sites): entry list}}
+    )  # {(equiv defect site frac coords): entry list}}
 
     # Clustering Workflow:
-    # 1. Generate ``equiv_sites_entries_dict``: {(equiv defect sites): entry list}, initially joining
+    # 1. Generate ``equiv_fcoords_entries_dict``: {(equiv defect sites): entry list}, initially joining
     #    together any entries which are within min(0.05, dist_tol) Å of each other (i.e. (near-)exact
     #    matches).
     # 2. Cluster equivalent defect sites using ``cluster_coords`` with ``dist_tol``.
@@ -429,52 +432,84 @@ def group_defects_by_distance(
         # periodicity-breaking issues
         entry_bulk_structure = entry.defect.structure
         entry_bulk_site = entry.defect.site
-        if entry_bulk_structure.lattice != bulk_lattice:  # recalculate if bulk structure differs
-            # TODO: This is insufficient, need to try get_s2_like_s1 (and apply to defect site too),
-            #  or just warn
-            bulk_sga = get_sga(bulk_structure, symprec=symprec)
-            symm_bulk_struct = bulk_sga.get_symmetrized_structure()
+        entry_equiv_sites = getattr(entry.defect, "equivalent_sites", None)
+        if entry_bulk_structure != bulk_structure:
+            # bulk structures differ, so need to try transforming the ``entry_bulk_site`` (and equiv sites)
+            # to match the ``bulk_structure`` used for all defect entries here
+            trans = get_transformation_from_s2_to_s1(bulk_structure, entry_bulk_structure)
+            if trans is not None:
+                supercell_matrix, trans_vector, mapping = trans
+                extended = entry_bulk_structure.copy()
+                # extend bulk structure to include defect site:
+                extended.append(entry_bulk_site.species, entry_bulk_site.frac_coords)
+                if entry_equiv_sites:
+                    extended.extend(entry_equiv_sites)
+                reoriented_extended = apply_s2_to_s1_transformation(
+                    bulk_structure,
+                    extended,
+                    supercell_matrix,
+                    trans_vector,
+                    mapping,
+                    new_lattice="struct1",  # ``bulk_structure`` lattice
+                )
+                entry_bulk_site = reoriented_extended[len(bulk_structure)]  # get reoriented defect site
+                entry_bulk_structure = bulk_structure
+                if entry_equiv_sites:
+                    entry_equiv_sites = reoriented_extended[len(bulk_structure) + 1 :]
 
-        # get min distances to each equiv_site_tuple for previously checked defect entries:
+            else:
+                warnings.warn(
+                    f"The bulk primitive structure for defect entry '{entry.name}' differs from that of "
+                    f"the reference entry ({reference_entry.name}; first in ``entry_list``), and "
+                    f"automatic reorientation failed. This may lead to incorrect site clustering, which "
+                    f"could affect defect concentration calculations (mostly only in extremely high "
+                    f"concentration regimes)."
+                )
+
+        # get min distances to each equiv_fcoords_tuple for previously checked defect entries:
         min_dist_list = [  # min dist for all equiv site tuples, in case multiple less than dist_tol
             entry_bulk_site.lattice.get_all_distances(
-                entry_bulk_site.frac_coords, list(equiv_site_tuple)
+                entry_bulk_site.frac_coords, list(equiv_fcoords_tuple)
             ).min()
-            for equiv_site_tuple in equiv_sites_entries_dict
+            for equiv_fcoords_tuple in equiv_fcoords_entries_dict
         ]
 
         if min_dist_list and min(min_dist_list) < min(
             0.05, dist_tol
         ):  # near-exact match, add to corresponding entry list
             idxmin = np.argmin(min_dist_list)  # entry list
-            equiv_sites_entries_dict[list(equiv_sites_entries_dict.keys())[idxmin]].append(entry)
+            equiv_fcoords_entries_dict[list(equiv_fcoords_entries_dict.keys())[idxmin]].append(entry)
 
         else:  # no exact match found, add new entry
-            if equiv_sites := entry.defect.equivalent_sites:
-                equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                    tuple(site.frac_coords) for site in equiv_sites
+            if entry_equiv_sites:
+                equiv_fcoords_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                    tuple(site.frac_coords) for site in entry_equiv_sites
                 )
             else:
                 try:
-                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        tuple(site.frac_coords)
-                        for site in symm_bulk_struct.find_equivalent_sites(entry_bulk_site)
+                    equiv_fcoords_tuple = (
+                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                            tuple(site.frac_coords)
+                            for site in symm_bulk_struct.find_equivalent_sites(entry_bulk_site)
+                        )
                     )
                 except ValueError:  # likely interstitials, need to add equiv sites to tuple
-                    equiv_site_tuple = tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                        tuple(frac_coords)  # type: ignore
-                        for frac_coords in get_all_equiv_sites(
-                            entry_bulk_site.frac_coords,
-                            symm_bulk_struct,
-                            symprec=symprec,
-                            just_frac_coords=True,
-                            return_symprec_and_dist_tol_factor=False,
+                    equiv_fcoords_tuple = (
+                        tuple(  # tuple because lists aren't hashable (can't be dict keys)
+                            tuple(frac_coords)  # type: ignore
+                            for frac_coords in get_all_equiv_sites(
+                                entry_bulk_site.frac_coords,
+                                symm_bulk_struct,
+                                symprec=symprec,
+                                just_frac_coords=True,
+                                return_symprec_and_dist_tol_factor=False,
+                            )
                         )
                     )
 
-            equiv_sites_entries_dict[equiv_site_tuple].append(entry)
+            equiv_fcoords_entries_dict[equiv_fcoords_tuple].append(entry)
 
-    all_frac_coords = list(chain.from_iterable(equiv_sites_entries_dict.keys()))
+    all_frac_coords = list(chain.from_iterable(equiv_fcoords_entries_dict.keys()))
 
     # cn is an array of cluster numbers, of length ``len(all_frac_coords)``, so we take the set of
     # cluster numbers ``n`` to get unique cluster numbers, sort by cluster size to favour larger
@@ -488,19 +523,19 @@ def group_defects_by_distance(
 
     clustered_defect_entries: dict[int, set[DefectEntry]] = {}  # {cluster index: {DefectEntry, ...}}
 
-    def map_coords_to_keys(equiv_sites_entries_dict):
+    def map_coords_to_keys(equiv_fcoords_entries_dict):
         coord_to_key_map = {}
-        for key in equiv_sites_entries_dict:
+        for key in equiv_fcoords_entries_dict:
             for coord in key:
                 coord_to_key_map[coord] = key
         return coord_to_key_map
 
     # Pre-compute the map for quick look-up
-    coord_to_key_map = map_coords_to_keys(equiv_sites_entries_dict)
+    coord_to_key_map = map_coords_to_keys(equiv_fcoords_entries_dict)
 
     for n in unique_clusters:
         defect_entries = chain.from_iterable(  # get the corresponding defect entries:
-            equiv_sites_entries_dict.get(  # get corresponding key and thus entries
+            equiv_fcoords_entries_dict.get(  # get corresponding key and thus entries
                 coord_to_key_map[all_frac_coords[i]], []
             )
             for i in np.where(cn == n)[0]
