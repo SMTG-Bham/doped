@@ -106,6 +106,8 @@ Studies using ``doped``, so far
 ===============================
 
 - A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
+- D\. Halbing et al. **Oxygen Vacancy Evolution at Li** :sub:`x` **V** :sub:`2` **O** :sub:`5` **/LiPON Solid State Electrochemical Interfaces Using Depth Resolved Cathodoluminescence Spectroscopy** `ACS Applied Materials & Interfaces <https://doi.org/10.1021/acsami.5c25104>`__ 2026
+- K\. Li et al. **Resonant Doping in Binary Sb(V)-oxide Sb₂O₅ for High-Mobility Transparent Conductors** `ChemRxiv <https://doi.org/10.26434/chemrxiv.15001890/v1>`__ 2026
 - R\. Wu & J. J. Acton, S. Wang and A. M. Ganose **On the possibility of hybrid chalcogenide perovskite photovoltaics** `arXiv <https://doi.org/10.48550/arXiv.2604.06555>`__ 2026
 - P\. Panagis Filippatos, T. J. P. Irons, N. Kuganathan and A. Chroneos **First-principles calculations of quantum defects in bulk WS₂: Effect of carbon doping in spin-photon interfaces** `Physical Review B <https://doi.org/10.1103/d3bx-gnhq>`__ 2026
 - P\. Panagis Filippatos and A. Chroneos **Carbon substitutional spin defects in bulk hBN using r2SCAN** `Low Temperature Physics <https://doi.org/10.1063/10.0043202>`__ 2026
