@@ -3387,6 +3387,88 @@ def _check_doping_windows_dopability_limits_df(doping_df):
     assert doping_df.shape == (2, 3)
 
 
+def test_Sb2S3_doping_interior_grid_scan():
+    """
+    Verify that ``get_doping_windows`` / ``get_dopability_limits`` scan over
+    interior chemical potential grid points (in addition to the vertex limits)
+    and return an interior optimum when it beats every vertex.
+
+    Sb2S3 has an interior-point (non-vertex/limit chemical potential) optimum
+    for the p-type doping window and dopability limit; at ~(μ_Sb=-0.35,
+    μ_S=-0.18) the p-type doping window is ~0.18 eV larger (i.e. more p-type
+    dopable) than at any vertex of the Sb-S chemical potential stability
+    region, and at ~(μ_Sb=-0.55, μ_S=-0.05) the p-type dopability limit is
+    slightly (0.012 eV) lower (more p-type dopable) than at any vertex, which
+    is a good check that we correctly sample and return interior points.
+
+    Here the doping windows are negative anyway (no doping window persay), but
+    still less negative at the interior chemical potential point.
+    """
+    sb2s3_thermo = loadfn(os.path.join(EXAMPLE_DIR, "Sb2S3/Sb2S3_thermo.json.gz"))
+
+    # with ``n_points=0`` (vertex-only), p-type is at the ``S-rich`` vertex:
+    dw_vertex = sb2s3_thermo.get_doping_windows(n_points=0)
+    dl_vertex = sb2s3_thermo.get_dopability_limits(n_points=0)
+    _check_doping_windows_dopability_limits_df(dw_vertex)
+    _check_doping_windows_dopability_limits_df(dl_vertex)
+    assert set(dw_vertex.loc["p-type"]).issubset({"S-rich (Sb2S3-S)", "Int_S_1_4", -1.097})
+    assert set(dl_vertex.loc["p-type"]).issubset({"S-rich (Sb2S3-S)", "Int_S_1_4", 0.274})
+
+    # with default interior grid scan, p-type switches to an interior point:
+    dw_grid = sb2s3_thermo.get_doping_windows()
+    dl_grid = sb2s3_thermo.get_dopability_limits()
+    _check_doping_windows_dopability_limits_df(dw_grid)
+    _check_doping_windows_dopability_limits_df(dl_grid)
+    assert dw_grid.loc["p-type", "limit"].startswith("interior (")
+    assert dl_grid.loc["p-type", "limit"].startswith("interior (")
+    # interior optima are strictly better than every vertex; for the p-type doping window this means a
+    # larger (less negative) value (more room before donor compensation at the VBM), and for the p-type
+    # dopability limit this means a smaller (more VBM-ward) Fermi-level position (further p-type doping
+    # is possible before compensating donors form):
+    assert (
+        dw_grid.loc["p-type", "Doping Window (eV at VBM/CBM)"]
+        > dw_vertex.loc["p-type", "Doping Window (eV at VBM/CBM)"]
+    )
+    assert (
+        dl_grid.loc["p-type", "Dopability Limit (eV from VBM/CBM)"]
+        < dl_vertex.loc["p-type", "Dopability Limit (eV from VBM/CBM)"]
+    )
+    # the n-type limit is at a vertex for both, and should be identical (no ties -> vertex retained):
+    assert dw_grid.loc["n-type", "limit"] == dw_vertex.loc["n-type", "limit"]
+    assert dl_grid.loc["n-type", "limit"] == dl_vertex.loc["n-type", "limit"]
+
+
+def test_Cu2SiSe3_dopability_interior_grid_scan():
+    """
+    As for ``test_Sb2S3_doping_interior_grid_scan``, but for the ternary system
+    Cu2SiSe3, which covers the barycentric ``ChemicalPotentialGrid`` path in
+    ``_get_doping_scan_points`` (whereas Sb2S3 is binary and hits the 1D
+    linear-interpolation branch).
+
+    The p-type dopability limit is ~0.04 eV lower (more VBM-ward) at an
+    interior chemical potential point than at any vertex of the Cu-Si-Se
+    stability region.
+    """
+    cu2sise3_thermo = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_thermo.json"))
+
+    dl_vertex = cu2sise3_thermo.get_dopability_limits(n_points=0)
+    _check_doping_windows_dopability_limits_df(dl_vertex)
+    assert set(dl_vertex.loc["p-type"]).issubset({"Se-rich (Cu2SiSe3-Se-CuSe)", "Int_Se_2", -0.729})
+
+    dl_grid = cu2sise3_thermo.get_dopability_limits()
+    _check_doping_windows_dopability_limits_df(dl_grid)
+    assert dl_grid.loc["p-type", "limit"].startswith("interior (")
+    # same compensating defect, but a more VBM-ward intercept than the best vertex:
+    assert dl_grid.loc["p-type", "Compensating Defect"] == "Int_Se_2"
+    assert dl_grid.loc["p-type", "Dopability Limit (eV from VBM/CBM)"] == pytest.approx(-0.770, abs=5e-3)
+    assert (
+        dl_grid.loc["p-type", "Dopability Limit (eV from VBM/CBM)"]
+        < dl_vertex.loc["p-type", "Dopability Limit (eV from VBM/CBM)"]
+    )
+    # n-type optimum is at a vertex, unchanged by the grid scan:
+    assert dl_grid.loc["n-type", "limit"] == dl_vertex.loc["n-type", "limit"]
+
+
 def _check_CdTe_mismatch_fermi_dos_warning(output, w):
     print([str(warn.message) for warn in w])  # for debugging
     assert not output

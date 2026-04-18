@@ -10,7 +10,7 @@ import os
 import statistics
 import warnings
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain, product
@@ -2188,8 +2188,68 @@ class DefectThermodynamics(MSONable):
             f"DefectThermodynamics.defect_entries, which have names:\n{list(self.defect_entries.keys())}"
         )
 
+    def _prepare_doping_scan(
+        self,
+        chempots: dict | None,
+        limit: str | None,
+        el_refs: dict | None,
+        n_points: int,
+        name: str,
+    ) -> tuple[dict, dict | None, list[tuple[str, dict | None]], dict]:
+        """
+        Common setup for ``get_dopability_limits`` / ``get_doping_windows``.
+
+        Validates ``chempots``/``el_refs``, builds the chemical-potential scan
+        points (vertex limits + optional interior grid), and the rich/poor
+        ``limit_dict`` for output labelling. ``name`` is inserted into the
+        error message raised when no chemical potentials are available.
+        """
+        chempots, el_refs = self._get_chempots(
+            chempots, el_refs
+        )  # returns ``self.chempots`` if ``chempots`` is ``None``
+        if chempots is None:
+            raise ValueError(
+                f"No chemical potentials supplied or present in "
+                f"DefectThermodynamics.chempots, so {name} cannot be calculated."
+            )
+        limit = _parse_limit(chempots, limit)
+        scan_points: list[tuple[str, dict | None]] = (
+            [(limit, None)] if limit is not None else _get_doping_scan_points(chempots, n_points=n_points)
+        )
+        try:
+            limit_dict = get_rich_poor_limit_dict(chempots)
+        except ValueError:
+            limit_dict = {}
+        return chempots, el_refs, scan_points, limit_dict
+
+    def _iter_scan_point_charged_entries(
+        self,
+        scan_points: list[tuple[str, dict | None]],
+        chempots: dict,
+    ) -> Iterator[tuple[str, dict, str | None, "DefectEntry"]]:
+        """
+        Yield ``(point_label, fe_chempots, fe_limit, entry)`` for each charged
+        stable defect entry at each chemical potential scan point.
+
+        For vertex points (``point_chempots is None``) the full ``chempots``
+        dict is passed along with the vertex label; for interior points a
+        single-limit ``{element: formal_chempot}`` dict is passed with
+        ``fe_limit=None``.
+        """
+        for point_label, point_chempots in scan_points:
+            fe_chempots = chempots if point_chempots is None else point_chempots
+            fe_limit = point_label if point_chempots is None else None
+            for entry in self.all_stable_entries:
+                if entry.charge_state == 0:
+                    continue
+                yield point_label, fe_chempots, fe_limit, entry
+
     def get_dopability_limits(
-        self, chempots: dict | None = None, limit: str | None = None, el_refs: dict | None = None
+        self,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
+        n_points: int = 100,
     ) -> pd.DataFrame:
         r"""
         Find the dopability limits of the defect system, searching over all
@@ -2267,6 +2327,16 @@ class DefectThermodynamics(MSONable):
                 the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
+            n_points (int):
+                Approximate number of interior chemical potential grid points
+                to scan (in addition to the chemical potential (vertex) limits)
+                to identify the optimal p/n-type conditions, as the extrema
+                (which are piecewise-linear concave/convex functions of the
+                chemical potentials) can, in complex cases, occur at interior
+                points rather than vertex limits. Set to ``0`` to only scan
+                over vertex limits (faster but less comprehensive). Ignored
+                if ``limit`` is given or there is only a single chemical
+                potential limit. Defaults to 100.
 
         Returns:
             ``pandas`` ``DataFrame`` of dopability limits, with columns:
@@ -2274,116 +2344,45 @@ class DefectThermodynamics(MSONable):
             p/n-type where 'Dopability limit' values are the corresponding
             Fermi level positions in eV, relative to the VBM (``self.vbm``).
         """
-        chempots, el_refs = self._get_chempots(
-            chempots, el_refs
-        )  # returns self.chempots if chempots is None
-        if chempots is None:
-            raise ValueError(
-                "No chemical potentials supplied or present in "
-                "DefectThermodynamics.chempots, so dopability limits cannot be calculated."
-            )
-
-        limit = _parse_limit(chempots, limit)
-        limits = [limit] if limit is not None else list(chempots["limits"].keys())
+        chempots, el_refs, scan_points, limit_dict = self._prepare_doping_scan(
+            chempots, limit, el_refs, n_points, name="dopability limits"
+        )
 
         donor_intercepts: list[tuple] = []
         acceptor_intercepts: list[tuple] = []
-
-        for entry in self.all_stable_entries:
-            if entry.charge_state > 0:  # donor
-                # formation energy is y = mx + c where m = charge_state, c = vbm_formation_energy
-                # so x-intercept is -c/m:
-                donor_intercepts.extend(
-                    (
-                        limit,
-                        entry.name,
-                        -self.get_formation_energy(
-                            entry,
-                            chempots=chempots,
-                            limit=limit,
-                            el_refs=el_refs,
-                            fermi_level=0,
-                        )
-                        / entry.charge_state,
-                    )
-                    for limit in limits
+        for point_label, fe_chempots, fe_limit, entry in self._iter_scan_point_charged_entries(
+            scan_points, chempots
+        ):
+            # formation energy (FE) = q*E_F + c; where c = VBM FE, so x-intercept is -VBM_FE/q:
+            intercept = (
+                -self.get_formation_energy(
+                    entry, chempots=fe_chempots, limit=fe_limit, el_refs=el_refs, fermi_level=0
                 )
-            elif entry.charge_state < 0:  # acceptor
-                acceptor_intercepts.extend(
-                    (
-                        limit,
-                        entry.name,
-                        -self.get_formation_energy(
-                            entry,
-                            chempots=chempots,
-                            limit=limit,
-                            el_refs=el_refs,
-                            fermi_level=0,
-                        )
-                        / entry.charge_state,
-                    )
-                    for limit in limits
-                )
-
-        if not donor_intercepts:
-            donor_intercepts = [("N/A", "N/A", -np.inf)]
-        if not acceptor_intercepts:
-            acceptor_intercepts = [("N/A", "N/A", np.inf)]
-
-        donor_intercepts_df = pd.DataFrame(donor_intercepts, columns=["limit", "name", "intercept"])
-        acceptor_intercepts_df = pd.DataFrame(acceptor_intercepts, columns=["limit", "name", "intercept"])
+                / entry.charge_state
+            )
+            (donor_intercepts if entry.charge_state > 0 else acceptor_intercepts).append(
+                (point_label, entry.name, intercept)
+            )
 
         # get the most p/n-type limit, by getting the limit with the minimum/maximum max/min-intercept,
         # where max/min-intercept is the max/min intercept for that limit (i.e. the compensating intercept)
-        idx = (
-            donor_intercepts_df.groupby("limit")["intercept"].transform("max")
-            == donor_intercepts_df["intercept"]
-        )
-        limiting_donor_intercept_row = donor_intercepts_df.iloc[
-            donor_intercepts_df[idx]["intercept"].idxmin()
-        ]
-        idx = (
-            acceptor_intercepts_df.groupby("limit")["intercept"].transform("min")
-            == acceptor_intercepts_df["intercept"]
-        )
-        limiting_acceptor_intercept_row = acceptor_intercepts_df.iloc[
-            acceptor_intercepts_df[idx]["intercept"].idxmax()
-        ]
-
-        if limiting_donor_intercept_row["intercept"] > limiting_acceptor_intercept_row["intercept"]:
+        donor_row = _get_limiting_intercept_row(donor_intercepts, "max", "idxmin", fallback=-np.inf)
+        acceptor_row = _get_limiting_intercept_row(acceptor_intercepts, "min", "idxmax", fallback=np.inf)
+        if donor_row["intercept"] > acceptor_row["intercept"]:
             warnings.warn(
                 "Donor and acceptor doping limits intersect at negative defect formation energies "
                 "(unphysical)!"
             )
-
-        try:
-            limit_dict = get_rich_poor_limit_dict(chempots)
-        except ValueError:
-            limit_dict = {}
-
-        return pd.DataFrame(
-            [
-                [
-                    _get_rich_poor_limit_name_from_dict(
-                        limiting_donor_intercept_row["limit"], limit_dict, bracket=True
-                    ),
-                    limiting_donor_intercept_row["name"],
-                    round(limiting_donor_intercept_row["intercept"], 3),
-                ],
-                [
-                    _get_rich_poor_limit_name_from_dict(
-                        limiting_acceptor_intercept_row["limit"], limit_dict, bracket=True
-                    ),
-                    limiting_acceptor_intercept_row["name"],
-                    round(limiting_acceptor_intercept_row["intercept"], 3),
-                ],
-            ],
-            columns=["limit", "Compensating Defect", "Dopability Limit (eV from VBM/CBM)"],
-            index=["p-type", "n-type"],
+        return _format_limiting_doping_result(
+            [donor_row, acceptor_row], limit_dict, "Dopability Limit (eV from VBM/CBM)"
         )
 
     def get_doping_windows(
-        self, chempots: dict | None = None, limit: str | None = None, el_refs: dict | None = None
+        self,
+        chempots: dict | None = None,
+        limit: str | None = None,
+        el_refs: dict | None = None,
+        n_points: int = 100,
     ) -> pd.DataFrame:
         r"""
         Find the doping windows of the defect system, searching over all limits
@@ -2461,6 +2460,16 @@ class DefectThermodynamics(MSONable):
                 the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
+            n_points (int):
+                Approximate number of interior chemical potential grid points
+                to scan (in addition to the chemical potential (vertex) limits)
+                to identify the optimal p/n-type conditions, as the extrema
+                (which are piecewise-linear concave/convex functions of the
+                chemical potentials) can, in complex cases, occur at interior
+                points rather than vertex limits. Set to ``0`` to only scan
+                over vertex limits (faster but less comprehensive). Ignored
+                if ``limit`` is given or there is only a single chemical
+                potential limit. Defaults to 100.
 
         Returns:
             ``pandas`` ``DataFrame`` of doping windows, with columns:
@@ -2468,95 +2477,40 @@ class DefectThermodynamics(MSONable):
             where 'Doping Window' values are the corresponding doping windows
             in eV.
         """
-        chempots, el_refs = self._get_chempots(
-            chempots, el_refs
-        )  # returns self.chempots if chempots is None
-        if chempots is None:
-            raise ValueError(
-                "No chemical potentials supplied or present in "
-                "DefectThermodynamics.chempots, so doping windows cannot be calculated."
-            )
-
-        limit = _parse_limit(chempots, limit)
-        limits = [limit] if limit is not None else list(chempots["limits"].keys())
+        chempots, el_refs, scan_points, limit_dict = self._prepare_doping_scan(
+            chempots, limit, el_refs, n_points, name="doping windows"
+        )
 
         vbm_donor_intercepts: list[tuple] = []
         cbm_acceptor_intercepts: list[tuple] = []
-
-        for entry in self.all_stable_entries:
-            if entry.charge_state > 0:  # donor
-                vbm_donor_intercepts.extend(
-                    (
-                        limit,
-                        entry.name,
-                        self.get_formation_energy(
-                            entry,
-                            chempots=chempots,
-                            limit=limit,
-                            el_refs=el_refs,
-                            fermi_level=0,
-                        ),
-                    )
-                    for limit in limits
+        for point_label, fe_chempots, fe_limit, entry in self._iter_scan_point_charged_entries(
+            scan_points, chempots
+        ):
+            intercepts = vbm_donor_intercepts if entry.charge_state > 0 else cbm_acceptor_intercepts
+            intercepts.append(
+                (
+                    point_label,
+                    entry.name,
+                    self.get_formation_energy(
+                        entry,
+                        chempots=fe_chempots,
+                        limit=fe_limit,
+                        el_refs=el_refs,
+                        fermi_level=0 if entry.charge_state > 0 else self.band_gap,  # type: ignore[arg-type]
+                    ),
                 )
-            elif entry.charge_state < 0:  # acceptor
-                cbm_acceptor_intercepts.extend(
-                    (
-                        limit,
-                        entry.name,
-                        self.get_formation_energy(
-                            entry,
-                            chempots=chempots,
-                            limit=limit,
-                            el_refs=el_refs,
-                            fermi_level=self.band_gap,  # type: ignore[arg-type]
-                        ),
-                    )
-                    for limit in limits
-                )
-        if not vbm_donor_intercepts:
-            vbm_donor_intercepts = [("N/A", "N/A", np.inf)]
-        if not cbm_acceptor_intercepts:
-            cbm_acceptor_intercepts = [("N/A", "N/A", -np.inf)]
-
-        vbm_donor_intercepts_df = pd.DataFrame(
-            vbm_donor_intercepts, columns=["limit", "name", "intercept"]
-        )
-        cbm_acceptor_intercepts_df = pd.DataFrame(
-            cbm_acceptor_intercepts, columns=["limit", "name", "intercept"]
-        )
-
-        try:
-            limit_dict = get_rich_poor_limit_dict(chempots)
-        except ValueError:
-            limit_dict = {}
-
-        # TODO: One should scan over the full chemical potential grid though right? As the maximised
-        #  window may not always be at a chemical potential limit???
+            )
 
         # get the most p/n-type limit, by getting the limit with the maximum min-intercept, where
         # min-intercept is the min intercept for that limit (i.e. the compensating intercept)
-        limiting_intercept_rows = []
-        for intercepts_df in [vbm_donor_intercepts_df, cbm_acceptor_intercepts_df]:
-            idx = (
-                intercepts_df.groupby("limit")["intercept"].transform("min") == intercepts_df["intercept"]
-            )
-            limiting_intercept_row = intercepts_df.iloc[intercepts_df[idx]["intercept"].idxmax()]
-            limiting_intercept_rows.append(
-                [
-                    _get_rich_poor_limit_name_from_dict(
-                        limiting_intercept_row["limit"], limit_dict, bracket=True
-                    ),
-                    limiting_intercept_row["name"],
-                    round(limiting_intercept_row["intercept"], 3),
-                ]
-            )
-
-        return pd.DataFrame(
-            limiting_intercept_rows,
-            columns=["limit", "Compensating Defect", "Doping Window (eV at VBM/CBM)"],
-            index=["p-type", "n-type"],
-        )
+        rows = [
+            _get_limiting_intercept_row(intercepts, "min", "idxmax", fallback=fallback)
+            for intercepts, fallback in [
+                (vbm_donor_intercepts, np.inf),
+                (cbm_acceptor_intercepts, -np.inf),
+            ]
+        ]
+        return _format_limiting_doping_result(rows, limit_dict, "Doping Window (eV at VBM/CBM)")
 
     def prune_to_stable_entries(
         self,
@@ -4720,6 +4674,122 @@ def _format_per_site_concentration(raw_concentration: float):
     if raw_concentration > 1e-5:
         return f"{raw_concentration:.3%}"
     return f"{raw_concentration * 100:.3e} %"
+
+
+def _format_limiting_doping_result(
+    rows: list["pd.Series"],
+    limit_dict: dict,
+    value_col_name: str,
+) -> pd.DataFrame:
+    """
+    Format the (p-type, n-type) limiting rows for the ``DataFrame`` returned by
+    ``get_dopability_limits`` / ``get_doping_windows``.
+    """
+    return pd.DataFrame(
+        [
+            [
+                _get_rich_poor_limit_name_from_dict(row["limit"], limit_dict, bracket=True),
+                row["name"],
+                round(row["intercept"], 3),
+            ]
+            for row in rows
+        ],
+        columns=["limit", "Compensating Defect", value_col_name],
+        index=["p-type", "n-type"],
+    )
+
+
+def _get_limiting_intercept_row(
+    intercepts: list[tuple], inner_agg: str, outer_agg: str, fallback: float = np.inf, rounding_dp: int = 4
+) -> pd.Series:
+    """
+    Select the limiting row from a list of ``(limit, name, intercept)`` tuples,
+    for use in ``get_dopability_limits``/``get_doping_windows``.
+
+    For each chemical potential point, we first pick the intercept that
+    constrains that point most (``inner_agg``, e.g. ``"max"`` for donor
+    dopability intercepts), then across points we pick the one giving the
+    most favourable such constraint (``outer_agg``, e.g. ``"idxmin"``).
+    Intercepts are rounded to ``rounding_dp`` d.p. for group/tie-break
+    comparisons, so float precision (e.g. 6-decimal rounding of grid-point
+    coordinates) doesn't cause interior points to be picked over vertex limits
+    when they give effectively the same intercept (``idxmax``/``idxmin`` return
+    the first index on ties, and vertex rows are always listed first).
+    """
+    intercept_df = pd.DataFrame(
+        intercepts or [("N/A", "N/A", fallback)], columns=["limit", "name", "intercept"]
+    )
+    intercept_df["_r"] = intercept_df["intercept"].round(rounding_dp)
+    mask = intercept_df.groupby("limit")["_r"].transform(inner_agg) == intercept_df["_r"]
+    return intercept_df.iloc[getattr(intercept_df[mask]["_r"], outer_agg)()]
+
+
+def _get_doping_scan_points(
+    chempots: dict,
+    n_points: int = 100,
+) -> list[tuple[str, dict | None]]:
+    r"""
+    Build a list of chemical potential points to scan for doping analyses
+    (``get_dopability_limits``/``get_doping_windows``).
+
+    All vertex chemical potential limits are always included (with
+    ``chempot_dict=None``, meaning the caller should pass the full ``chempots``
+    dict and select the limit by label). Additional `interior` chemical
+    potential grid points (i.e. non-vertex; convex combinations of the
+    vertices) are included if ``n_points > 0`` and there are at least two
+    vertex limits. Interior grid points are returned as single-limit chempots
+    dicts in ``{element: formal_chempot, ...}`` (i.e. wrt the ``el_refs``)
+    form.
+
+    Args:
+        chempots (dict):
+            Chemical potentials dictionary in the ``doped`` format (i.e.
+            ``{"limits": {limit_name: {element: chempot, ...}, ...}, ...}``).
+        n_points (int):
+            Target number of grid points to generate. If ``<= 0``, only vertex
+            limits are returned. Defaults to 100.
+
+    Returns:
+        list:
+            List of ``(label, chempot_dict)`` tuples, with
+            ``chempot_dict=None`` for vertex points and a
+            ``{element: formal_chempot, ...}`` dict for interior points.
+    """
+    limits = list(chempots["limits"].keys())
+    points: list[tuple[str, dict | None]] = [(lim, None) for lim in limits]  # ``None`` w/vertex limits
+    if n_points <= 0 or len(limits) < 2:
+        return points
+
+    limits_wrt_el_refs = chempots.get("limits_wrt_el_refs", chempots["limits"])
+    n_elements = len(next(iter(limits_wrt_el_refs.values())))
+
+    interior_chempot_dicts: list[dict] = []
+    try:
+        if n_elements == 2:
+            start = limits_wrt_el_refs[limits[0]]
+            end = limits_wrt_el_refs[limits[-1]]
+            all_points = get_interpolated_chempots(start, end, n_points)
+            interior_chempot_dicts = all_points[1:-1]  # drop endpoints (== vertex limits)
+        elif n_elements >= 3:
+            grid_df = ChemicalPotentialGrid(chempots).get_grid(
+                n_points=n_points,
+                cartesian=False,
+                decimal_places=6,
+                include_vertices=False,
+            )
+            interior_chempot_dicts = [
+                {k.split("_")[1].split()[0]: v for k, v in chempot_series.to_dict().items()}
+                for _idx, chempot_series in grid_df.iterrows()
+            ]
+    except (ValueError, IndexError):
+        # e.g. <2D chempot space, or degenerate polytope (too few vertices for ConvexHull)
+        interior_chempot_dicts = []
+
+    for chempot_dict in interior_chempot_dicts:
+        label = "interior (" + ", ".join(f"μ_{el}={v:.3f}" for el, v in chempot_dict.items()) + ")"
+        points.append((label, chempot_dict))
+
+    return points
 
 
 def get_fermi_dos(dos_vr: PathLike | Vasprun):

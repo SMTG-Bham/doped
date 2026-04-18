@@ -4704,16 +4704,17 @@ def get_X_rich_poor_limit(
         limit_comps = [set(limit.split("-")) for limit in chempots["limits"]]
         bulk_composition = next(iter(set.intersection(*limit_comps)))
 
+    # sort by pauling EN similarity first, then alphabetically (to aid determinism):
+    def _sort_key(sym: str) -> tuple[float, str]:
+        return pauling_similar_first(sym), sym
+
     if bulk_composition is not None:
         bulk = {element.symbol for element in Composition(bulk_composition).elements}
-        intr = sorted(
-            (element for element in symbols if element in bulk and element != X),
-            key=pauling_similar_first,
-        )
-        extr = sorted((element for element in symbols if element not in bulk), key=pauling_similar_first)
+        intr = sorted((element for element in symbols if element in bulk and element != X), key=_sort_key)
+        extr = sorted((element for element in symbols if element not in bulk), key=_sort_key)
         el_order = intr + extr
     else:
-        el_order = sorted((element for element in symbols if element != X), key=pauling_similar_first)
+        el_order = sorted((element for element in symbols if element != X), key=_sort_key)
 
     for element in el_order:
         extremal = (
