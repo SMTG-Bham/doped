@@ -48,6 +48,7 @@ from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure, 
 from doped.utils.supercells import get_min_image_distance, min_dist
 from doped.utils.symmetry import (
     get_BCS_conventional_structure,
+    get_min_dist_between_equiv_sites,
     get_spglib_conv_structure,
     summed_dist,
     swap_axes,
@@ -426,7 +427,7 @@ O_i_D4h          [0,-1,-2]              [0.000,0.000,0.500]  2b
 
         self.lmno_primitive = Structure.from_file(f"{data_dir}/Li2Mn3NiO8_POSCAR")
         self.lmno_defect_gen_string = (
-            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 167 defect "
+            "DefectsGenerator for input composition Li2Mn3NiO8, space group P4_332 with 182 defect "
             "entries created."
         )
         self.lmno_defect_gen_info = (
@@ -460,24 +461,28 @@ Interstitials    Guessed Charges    Conv. Cell Coords    Wyckoff
 ---------------  -----------------  -------------------  ---------
 Li_i_C1_Ni1.82   [+1,0]             [0.021,0.278,0.258]  24e
 Li_i_C1_O1.78    [+1,0]             [0.233,0.492,0.492]  24e
-Li_i_C2          [+1,0]             [0.074,0.375,0.324]  12d
+Li_i_C2_Li1.84   [+1,0]             [0.073,0.177,0.125]  12d
+Li_i_C2_Li1.87   [+1,0]             [0.161,0.375,0.410]  12d
+Li_i_C2_Li1.89   [+1,0]             [0.074,0.375,0.324]  12d
 Li_i_C3          [+1,0]             [0.497,0.497,0.497]  8c
-Li_i_D3          [+1,0]             [0.125,0.125,0.125]  4a
 Mn_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
 Mn_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
-Mn_i_C2          [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
+Mn_i_C2_Li1.84   [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
+Mn_i_C2_Li1.87   [+4,+3,+2,+1,0]    [0.161,0.375,0.410]  12d
+Mn_i_C2_Li1.89   [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
 Mn_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
-Mn_i_D3          [+4,+3,+2,+1,0]    [0.125,0.125,0.125]  4a
 Ni_i_C1_Ni1.82   [+4,+3,+2,+1,0]    [0.021,0.278,0.258]  24e
 Ni_i_C1_O1.78    [+4,+3,+2,+1,0]    [0.233,0.492,0.492]  24e
-Ni_i_C2          [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
+Ni_i_C2_Li1.84   [+4,+3,+2,+1,0]    [0.073,0.177,0.125]  12d
+Ni_i_C2_Li1.87   [+4,+3,+2,+1,0]    [0.161,0.375,0.410]  12d
+Ni_i_C2_Li1.89   [+4,+3,+2,+1,0]    [0.074,0.375,0.324]  12d
 Ni_i_C3          [+4,+3,+2,+1,0]    [0.497,0.497,0.497]  8c
-Ni_i_D3          [+4,+3,+2,+1,0]    [0.125,0.125,0.125]  4a
 O_i_C1_Ni1.82    [0,-1,-2]          [0.021,0.278,0.258]  24e
 O_i_C1_O1.78     [0,-1,-2]          [0.233,0.492,0.492]  24e
-O_i_C2           [0,-1,-2]          [0.074,0.375,0.324]  12d
+O_i_C2_Li1.84    [0,-1,-2]          [0.073,0.177,0.125]  12d
+O_i_C2_Li1.87    [0,-1,-2]          [0.161,0.375,0.410]  12d
+O_i_C2_Li1.89    [0,-1,-2]          [0.074,0.375,0.324]  12d
 O_i_C3           [0,-1,-2]          [0.497,0.497,0.497]  8c
-O_i_D3           [0,-1,-2]          [0.125,0.125,0.125]  4a
 \n"""
             "The number in the Wyckoff label is the site multiplicity/degeneracy of that defect in the "
             "conventional ('conv.') unit cell, which comprises 4 formula unit(s) of Li2Mn3NiO8.\n"
@@ -1127,7 +1132,61 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
                 defect_gen.structure.lattice.matrix,
                 atol=1e-3,
             )
+
+        self._check_interstitial_equiv_site_distances(defect_gen)
         print("Finished general DefectsGenerator check")
+
+    def _check_interstitial_equiv_site_distances(self, defect_gen, tol=0.55, max_other_entries=15):
+        """
+        Check that minimum distances between equivalent sites of all generated
+        (neutral -- to avoid redundant computation) interstitial entries of the
+        same species are above ``tol`` (0.55 Å by default, matching the default
+        ``tol`` used in ``doped_cluster_frac_coords``).
+
+        Different interstitial species share the same candidate sites (by
+        default), so the check is performed once for a given species (the first
+        appearing in the primitive structure composition).
+
+        For large, low-symmetry defect supercells (used as the ``primitive``
+        structure for symmetry analysis), each
+        ``get_min_dist_between_equiv_sites`` call is expensive, so at most
+        ``max_other_entries`` entries are randomly sub-sampled (giving at most
+        ``max_other_entries * (max_other_entries - 1) / 2`` pair equivalent
+        distance calculations).
+        """
+        neutral_interstitial_entries = []
+        species_to_test = next(iter(defect_gen.primitive_structure.composition.elements)).symbol
+        for entry in defect_gen.defect_entries.values():
+            if (
+                isinstance(entry.defect, Interstitial)
+                and entry.charge_state == 0
+                and entry.defect.site.specie.symbol
+            ) == species_to_test:
+                neutral_interstitial_entries.append(entry)
+
+        if len(neutral_interstitial_entries) > 1:
+            if len(neutral_interstitial_entries) > max_other_entries:
+                print(
+                    f"Sub-sampling {max_other_entries} of {len(neutral_interstitial_entries)} neutral "
+                    f"{species_to_test} interstitial entries for min equiv distance check (for efficiency)"
+                )
+                neutral_interstitial_entries = random.sample(
+                    neutral_interstitial_entries, max_other_entries
+                )
+            print(
+                f"Checking min equiv distances between {len(neutral_interstitial_entries)} generated "
+                f"neutral {species_to_test} interstitial sites (should all be > {tol} Å)"
+            )
+            for i, entry in enumerate(neutral_interstitial_entries):
+                for other_entry in neutral_interstitial_entries[i + 1 :]:
+                    min_dist = get_min_dist_between_equiv_sites(entry, other_entry)
+                    print(
+                        f"Min equiv distance between {entry.name} and {other_entry.name}: {min_dist:.3f} Å"
+                    )
+                    assert min_dist > tol, (
+                        f"Min equiv distance between {entry.name} and {other_entry.name} is "
+                        f"{min_dist:.3f} Å, which is not above tol ({tol} Å)."
+                    )
 
     def _random_equiv_supercell_sites_check(self, defect_entry):
         print(f"Randomly testing the equivalent supercell sites for {defect_entry.name}...")
@@ -2575,7 +2634,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert len(lmno_defect_gen.defects) == 3  # vacancies, substitutions, interstitials
         assert len(lmno_defect_gen.defects["vacancies"]) == 5
         assert len(lmno_defect_gen.defects["substitutions"]) == 15
-        assert len(lmno_defect_gen.defects["interstitials"]) == 20
+        assert len(lmno_defect_gen.defects["interstitials"]) == 24
 
         # explicitly test some relevant defect attributes
         assert lmno_defect_gen.defects["vacancies"][0].name == "v_Li"
@@ -2591,34 +2650,39 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         )  # prim = conv cell in LMNO
 
         # explicitly test defect entries
-        assert len(lmno_defect_gen.defect_entries) == 167
+        assert len(lmno_defect_gen.defect_entries) == 182
         assert str(lmno_defect_gen) == self.lmno_defect_gen_string  # __str__()
         # __repr__() tested in other tests, skipped here due to slight difference in rounding behaviour
         # between local and GH Actions
 
         # explicitly test defect entry attributes
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect.defect_type == DefectType.Interstitial
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_+2"].wyckoff == "12d"
         assert (
-            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect.multiplicity == 12
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].defect.defect_type
+            == DefectType.Interstitial
+        )
+        assert lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].wyckoff == "12d"
+        assert (
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].defect.multiplicity == 12
         )  # prim = conv structure in LMNO
         sc_frac_coords = np.array(
             [0.3125, 0.5625, 0.61366] if generate_supercell else [0.42616, 0.625, 0.82384]
         )
         assert np.allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].sc_defect_frac_coords,
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].sc_defect_frac_coords,
             sc_frac_coords,  # closest to [0.5, 0.5, 0.5]
             rtol=1e-2,
         )
-        assert lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect_supercell_site.specie.symbol == "Ni"
+        assert (
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].defect_supercell_site.specie.symbol == "Ni"
+        )
         conv_cell_frac_coords = [0.074, 0.375, 0.324]
         assert np.allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].conv_cell_frac_coords,
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].conv_cell_frac_coords,
             np.array(conv_cell_frac_coords),
             atol=1e-3,
         )
         assert np.allclose(
-            lmno_defect_gen.defect_entries["Ni_i_C2_+2"].defect.site.frac_coords,
+            lmno_defect_gen.defect_entries["Ni_i_C2_Li1.89_+2"].defect.site.frac_coords,
             np.array(conv_cell_frac_coords),
             atol=1e-3,
         )
