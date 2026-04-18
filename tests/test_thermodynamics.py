@@ -986,7 +986,9 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print("Finished checking dists")
 
     def _check_dist_tol_equiv_dists(self, defect_thermo):
-        # Note: This can be slow at times due to many repeated ``get_min_dist_between_equiv_sites`` calls
+        # Note: This can be slow at times due to many repeated ``get_min_dist_between_equiv_sites`` calls;
+        # we exploit the symmetry of ``get_min_dist_between_equiv_sites`` (i.e. ``d(a, b) == d(b, a)``) to
+        # halve the number of intra-cluster calls (upper-triangular iteration)
         flattened_clustered_defect_entries_by_type = {
             f"{defect_type}_{cn}": cluster
             for defect_type, cluster_subdict in (defect_thermo.clustered_defect_entries_by_type.items())
@@ -999,15 +1001,19 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             print(f"Checking dist_tol for {method} clustering")
             for cluster in cluster_dict.values():
                 cluster_list = list(cluster)
-                if len(cluster) == 1:  # no other entries to get min dist to
+                if len(cluster_list) == 1:  # no other entries to get min dist to
                     continue
-                for entry in cluster_list:
-                    min_dist = 100
-                    for other_entry in cluster_list:
-                        if entry == other_entry:
-                            continue
-                        min_dist = min(min_dist, get_min_dist_between_equiv_sites(entry, other_entry))
 
+                # compute each intra-cluster pair distance only once, updating per-entry minima on both
+                # sides (since ``get_min_dist_between_equiv_sites`` is symmetric):
+                min_dists = [float("inf")] * len(cluster_list)
+                for i, entry in enumerate(cluster_list):
+                    for j in range(i + 1, len(cluster_list)):
+                        pair_dist = get_min_dist_between_equiv_sites(entry, cluster_list[j])
+                        min_dists[i] = min(min_dists[i], pair_dist)
+                        min_dists[j] = min(min_dists[j], pair_dist)
+
+                for entry, min_dist in zip(cluster_list, min_dists, strict=True):
                     print(f"Checking dist_tol for {entry.name}")
                     # get_min_dist_between_equiv_sites checks min dists in the primitive cells now
                     # by default, so this works even for periodicity-breaking supercells now:
