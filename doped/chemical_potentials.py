@@ -1594,6 +1594,21 @@ class CompetingPhases(MSONable):
         settings should be consistent with those used for the defect supercell
         calculations.
 
+        Note that this function uses a single kpoint density setting each for
+        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+        molecules (Gamma-only), while one will often want to specify custom
+        k-point settings for each material individually based on convergence
+        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+        cost.
+
+        Note that, because these relaxations usually involve volume relaxation,
+        one should successively repeat the relaxation from the previous relaxed
+        geometry until convergence (no more significant volume changes), or use
+        a higher plane-wave cutoff energy (``ENCUT`` in ``VASP``) for the
+        volume relaxations (but using an energy cutoff consistent with any
+        defect calculations for a final single-point energy calculation), to
+        avoid spurious Pulay stress effects.
+
         Args:
             kpoints_metals (float):
                 Kpoint density per inverse volume (Å^-3) for metallic entries
@@ -1716,6 +1731,14 @@ class CompetingPhases(MSONable):
         Returns the corresponding dictionary of ``DopedDictSet`` objects
         (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`) which
         contain the input file settings.
+
+        Note that, because these relaxations usually involve volume relaxation,
+        one should successively repeat the relaxation from the previous relaxed
+        geometry until convergence (no more significant volume changes), or use
+        a higher plane-wave cutoff energy (``ENCUT`` in ``VASP``) for the
+        volume relaxations (but using an energy cutoff consistent with any
+        defect calculations for a final single-point energy calculation), to
+        avoid spurious Pulay stress effects.
 
         Args:
             kpoints_metals (float):
