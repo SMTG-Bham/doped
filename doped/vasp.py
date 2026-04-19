@@ -750,8 +750,9 @@ class DefectRelaxSet(MSONable):
         - ``DefectRelaxSet.vasp_ncl``:
             ``DefectDictSet`` for single-point (static) energy calculation with
             SOC included. Generated if ``soc=True``. If ``soc`` is not set,
-            then by default is only generated for systems with a max atomic
-            number (Z) >= 31 (i.e. further down the periodic table than Zn).
+            then by default is only generated for defect supercells with a max
+            atomic number (Z) >= 31 (i.e. further down the periodic table than
+            Zn).
 
         where ``DefectDictSet`` is an extension of ``pymatgen``'s
         ``VaspInputSet`` class for defect calculations, with ``incar``,
@@ -785,9 +786,9 @@ class DefectRelaxSet(MSONable):
             soc (bool):
                 Whether to generate ``vasp_ncl`` DefectDictSet attribute for
                 spin-orbit coupling single-point (static) energy calculations.
-                If not set, then by default is set to True if the max atomic
-                number (Z) in the structure is >= 31 (i.e. further down the
-                periodic table than Zn), otherwise ``False``.
+                If not set, then by default is set to ``True`` if the max
+                atomic number (Z) in the defect supercell is >= 31 (i.e.
+                further down the periodic table than Zn), otherwise ``False``.
             user_incar_settings (dict):
                 Dictionary of user ``INCAR`` settings (AEXX, NCORE etc.) to
                 override default settings. Highly recommended to look at output
@@ -835,9 +836,9 @@ class DefectRelaxSet(MSONable):
             vasp_ncl (DefectDictSet):
                 ``DefectDictSet`` for single-point (static) energy calculation
                 with SOC included. Generated if ``soc=True``. If ``soc`` is not
-                set, then by default is only generated for systems with a max
-                atomic number (Z) >= 31 (i.e. further down the periodic table
-                than Zn).
+                set, then by default is only generated for defect supercells
+                with a max atomic number (Z) >= 31 (i.e. further down the
+                periodic table than Zn).
             defect_supercell (Structure):
                 Supercell structure for defect calculations, taken from
                 ``defect_entry.defect_supercell`` (if defined), otherwise from
@@ -880,8 +881,8 @@ class DefectRelaxSet(MSONable):
                 ``DefectDictSet`` for single-point (static) energy calculation
                 of the `bulk` supercell with SOC included. Generated if
                 ``soc=True``. If ``soc`` is not set, then by default is only
-                generated for systems with a max atomic number (Z) >= 31 (i.e.
-                further down the periodic table than Zn).
+                generated when the defect supercell has a max atomic number
+                (Z) >= 31 (i.e. further down the periodic table than Zn).
 
             Input parameters are also set as attributes.
         """
@@ -1137,8 +1138,8 @@ class DefectRelaxSet(MSONable):
         ``LSORBIT = True``), using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is
         False, then this returns None and a warning. If the ``soc`` parameter
         is not set when initializing ``DefectRelaxSet``, then this is set to
-        True for systems with a max atomic number (Z) >= 31 (i.e. further down
-        the periodic table than Zn), otherwise False.
+        ``True`` for defect supercells with a max atomic number (Z) >= 31 (i.e.
+        further down the periodic table than Zn), otherwise ``False``.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
@@ -1244,8 +1245,8 @@ class DefectRelaxSet(MSONable):
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
-        input kpoint settings correspond to a Γ-only kpoint mesh (in which case
-        ``(bulk_)vasp_gam`` should be used).
+        input kpoint settings correspond to a Γ-only kpoint mesh (in which
+        case ``(bulk_)vasp_gam`` should be used).
 
         The bulk supercell only needs to be calculated once with the same
         settings as the final defect calculations, which is ``vasp_std`` if we
@@ -1298,9 +1299,9 @@ class DefectRelaxSet(MSONable):
     def bulk_vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
-        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
-        and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF
-        exchange part of the hybrid DFT calculation. By default, sets
+        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint
+        mesh) and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the
+        HF exchange part of the hybrid DFT calculation. By default, sets
         ``NKRED(X,Y,Z)`` to 2 or 3 in the directions for which the k-point grid
         is divisible by this factor. Returns None and a warning if the input
         kpoint settings correspond to a Γ-only kpoint mesh (in which case
@@ -1373,8 +1374,8 @@ class DefectRelaxSet(MSONable):
         ``LSORBIT = True``), using ``vasp_ncl``. If ``DefectRelaxSet.soc`` is
         False, then this returns None and a warning. If the ``soc`` parameter
         is not set when initializing ``DefectRelaxSet``, then this is set to
-        True for systems with a max atomic number (Z) >= 31 (i.e. further down
-        the periodic table than Zn), otherwise False.
+        ``True`` when the defect supercell has a max atomic number (Z) >= 31
+        (i.e. further down the periodic table than Zn), otherwise ``False``.
 
         See the ``RelaxSet.yaml`` and ``DefectSet.yaml`` files in the
         ``doped/VASP_sets`` folder for the default ``INCAR`` and ``KPOINT``
@@ -1839,7 +1840,7 @@ class DefectRelaxSet(MSONable):
         sampling is required. If ``POSCAR`` files are desired, set
         ``poscar=True``.
 
-        If ``DefectRelaxSet.soc`` is False, then this returns None and a
+        If ``DefectRelaxSet.soc`` is False, then this returns ``None`` and a
         warning. If the ``soc`` parameter is not set when initializing
         ``DefectRelaxSet``, then it is set to True for systems with a max
         atomic number (Z) >= 31 (i.e. further down the periodic table than Zn),
@@ -1976,8 +1977,8 @@ class DefectRelaxSet(MSONable):
         - ``vasp_ncl``:
             Singlepoint (static) energy calculation with SOC included.
             Generated if ``soc=True``. If ``soc`` is not set, then by default
-            is only generated for systems with a max atomic number (Z) >= 31
-            (i.e. further down the periodic table than Zn).
+            is only generated when the defect supercell has a max atomic number
+            (Z) >= 31 (i.e. further down the periodic table than Zn).
 
         If ``vasp_gam=True`` (not recommended) or ``self.vasp_std = None``
         (i.e. Γ-only `k`-point sampling converged for the kpoints settings
@@ -2211,8 +2212,9 @@ class DefectsSet(MSONable):
         - ``DefectRelaxSet.vasp_ncl``:
             ``DefectDictSet`` for single-point (static) energy calculation with
             SOC included. Generated if ``soc=True``. If ``soc`` is not set,
-            then by default is only generated for systems with a max atomic
-            number (Z) >= 31 (i.e. further down the periodic table than Zn).
+            then by default is only generated when the max atomic number (Z)
+            over all defect supercells is >= 31 (i.e. further down the periodic
+            table than Zn).
 
         where ``DefectDictSet`` is an extension of ``pymatgen``'s
         ``VaspInputSet`` class for defect calculations, with ``incar``,
@@ -2250,8 +2252,8 @@ class DefectsSet(MSONable):
                 Whether to generate ``vasp_ncl`` ``DefectDictSet`` attribute
                 for spin-orbit coupling single-point (static) energy
                 calculations. If not set, then by default is set to ``True`` if
-                the max atomic number (Z) in the structure is >= 31 (i.e.
-                further down the periodic table than Zn).
+                the max atomic number (Z) over all defect supercells is >= 31
+                (i.e. further down the periodic table than Zn).
             user_incar_settings (dict):
                 Dictionary of user ``INCAR`` settings (AEXX, NCORE etc.) to
                 override default settings. Highly recommended to look at output
@@ -2306,8 +2308,9 @@ class DefectsSet(MSONable):
                 ``DefectDictSet`` for single-point (static) energy calculation
                 of the `bulk` supercell with SOC included. Generated if
                 ``soc=True``. If ``soc`` is not set, then by default is only
-                generated for systems with a max atomic number (Z) >= 31 (i.e.
-                further down the periodic table than Zn).
+                generated if the max atomic number (Z) over all defect
+                supercells is >= 31 (i.e. further down the periodic table than
+                Zn).
             bulk_supercell (Structure):
                 Supercell structure of the bulk (pristine) material.
             json_obj (dict | |DefectsGenerator|):
@@ -2520,8 +2523,8 @@ class DefectsSet(MSONable):
         - ``vasp_ncl``:
             Singlepoint (static) energy calculation with SOC included.
             Generated if ``soc=True``. If ``soc`` is not set, then by default
-            is only generated for systems with a max atomic number (Z) >= 31
-            (i.e. further down the periodic table than Zn).
+            is only generated if the max atomic number (Z) over all defect
+            supercells is >= 31 (i.e. further down the periodic table than Zn).
 
         If ``vasp_gam=True`` (not recommended) or ``self.vasp_std = None``
         (i.e. Γ-only `k`-point sampling converged for the kpoints settings
