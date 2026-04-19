@@ -31,6 +31,7 @@ tutorials:
 .. toctree::
    :maxdepth: 2
 
+   quickstart_tutorial
    generation_tutorial
    parsing_tutorial
    thermodynamics_tutorial
