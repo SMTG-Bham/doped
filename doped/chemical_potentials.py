@@ -52,7 +52,13 @@ from doped.utils.parsing import (
 )
 from doped.utils.plotting import get_colormap
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
-from doped.vasp import MODULE_DIR, DopedDictSet, default_HSE_set, default_relax_set
+from doped.vasp import (
+    MODULE_DIR,
+    DopedDictSet,
+    default_HSE_set,
+    default_relax_set,
+    singleshot_incar_settings,
+)
 
 try:
     from pymatgen.core.entries import (
@@ -1568,12 +1574,6 @@ class CompetingPhases(MSONable):
         )
         return self.write_kpoint_convergence_files(**kwargs)
 
-    # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
-    #  chemical potentials (-> Guidelines perspective)
-    # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
-    # same composition (oxidation states), to good accuracy, so do this for pre-screening
-    # Also, can use symmetry with SOC total energy calculations, have tested this.
-
     def get_relaxation_sets(
         self,
         kpoints_metals: float = 200.0,
@@ -1696,7 +1696,7 @@ class CompetingPhases(MSONable):
                 )
 
                 fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/vasp_std"
-                dict_sets[fname] = dict_set
+                dict_sets[fname] = dict_set  # TODO: Output subfolder name should be optional; vasp_std
 
         return dict_sets
 
@@ -1809,6 +1809,291 @@ class CompetingPhases(MSONable):
             stacklevel=2,
         )
         return self.write_relaxation_files(**kwargs)
+
+    def get_singlepoint_sets(
+        self,
+        kpoints_metals: float = 200.0,
+        kpoints_nonmetals: float = 64.0,  # MPRelaxSet default
+        soc: bool | None = None,
+        user_incar_settings: dict | None = None,
+        user_potcar_functional: str = "PBE",
+        user_potcar_settings: dict | None = None,
+        extrinsic_only: bool = False,
+        output_path: PathLike = "CompetingPhases",
+        subfolder: PathLike | None = None,
+    ) -> dict[str, DopedDictSet]:
+        r"""
+        Generates ``DopedDictSet``\s for single-point (static) energy
+        calculations of the competing phases (i.e. ``NSW = 0``, ``IBRION = -1``
+        in ``VASP``), using HSE06 (hybrid DFT) by default (consistent with the
+        default input settings for defect calculations in :mod:`doped.vasp`).
+
+        These are expected to be used as the final energy calculation after
+        geometry relaxation (from :meth:`write_relaxation_files`), to obtain
+        accurate total energies with tight convergence settings.
+
+        If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
+        ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
+        default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
+        explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
+        where the max atomic number across all species (host and extrinsic) is
+        Z >= 31 (heavier than Zn), matching the convention in
+        :mod:`doped.vasp`.
+
+        Inclusion of SOC is crucial for accurate formation energies and
+        chemical potentials in heavy-element systems, as discussed in
+        |Guidelines Perspective|. However, non-SOC energies can generally be
+        reliably used to determine `relative` energies of polymorphs, of the
+        same composition/oxidation states, to good accuracy, which can be
+        useful for pre-screening (e.g. then only performing more expensive SOC
+        calculations on the ground-state polymorph of each potential competing
+        phase). Moreover, one typically turns off symmetry for SOC calculations
+        (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
+        crystal symmetries due to spin-space coupling. However, one generally
+        finds that total energies from SOC calculations with (``VASP``)
+        symmetry routines turned on give energies consistent with no-symmetry
+        calculations, and can be much faster. Thus by default we do not turn
+        off symmetry for SOC calculations here -- note that the electronic band
+        structure from these calculations is thus unreliable.
+
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
+
+        Note that this function uses a single kpoint density setting each for
+        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+        molecules (Gamma-only), while one will often want to specify custom
+        k-point settings for each material individually based on convergence
+        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+        cost.
+
+        Args:
+            kpoints_metals (float):
+                Kpoint density per inverse volume (Å^-3) for metallic entries
+                (those with zero band gap). Default is 200 Å^-3. Note that you
+                may want to specify custom k-point settings for each material
+                individually based on convergence testing to minimise cost.
+            kpoints_nonmetals (float):
+                Kpoint density per inverse volume (Å^-3) for non-metallic
+                entries (those with non-zero band gap). Default is 64 Å^-3,
+                matching the ``MPRelaxSet`` default). Note that you may want to
+                specify custom k-point settings for each material individually
+                based on convergence testing to minimise cost.
+            soc (bool):
+                Whether to include spin-orbit coupling (SOC), by setting
+                ``LSORBIT = True`` in ``VASP`` ``INCAR`` files. If not set
+                (when ``soc = None``; default), SOC is enabled when the max
+                atomic number across all species (host and extrinsic) is Z >=
+                31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
+                calculations, and the default ``subfolder`` name is set to
+                ``"vasp_ncl"`` when ``soc`` is ``True``.
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g.
+                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+                Note that any non-numerical or non-``True``/``False`` flags
+                need to be input as strings with quotation marks.
+                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
+                the default settings.
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
+                set.
+            extrinsic_only (bool):
+                If ``True``, only generate inputs for
+                ``self.extrinsic_entries`` (useful when adding dopants to an
+                existing intrinsic competing-phases set). Default is ``False``
+                (generate inputs for all entries).
+            output_path (PathLike):
+                Top-level output directory name (used as a key prefix).
+                Default is ``"CompetingPhases"``.
+            subfolder (PathLike):
+                Output folder structure is
+                ``<output_path>/<competing_phase_dir>/<subfolder>`` where
+                ``subfolder`` = 'SinglePoint' by default if ``soc`` is
+                ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
+                to write input files directly to
+                ``<output_path>/<competing_phase_dir>``, with no subfolders
+                created.
+
+        Returns:
+            dict[str, DopedDictSet]:
+                Mapping of output folder paths to generated ``DopedDictSet``\s
+                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+        """
+        if soc is None:
+            all_species = self.intrinsic_species + getattr(self, "extrinsic_species", [])
+            max_Z = max(Element(el).Z for el in all_species)
+            soc = max_Z >= 31
+
+            if soc:  # if SOC being automatically determined, print an info message
+                print(
+                    "Spin-orbit coupling (SOC) is being used by default for competing phase single-point "
+                    "calculations, as the heaviest element present (across intrinsic and extrinsic "
+                    "species) has an atomic number Z >= 31 -- consistent with the convention in "
+                    "`DefectsSet`. Set `soc` explicitly to control this behaviour (and suppress this "
+                    "message). As always, consistent settings with the defect supercell calculations "
+                    "should be used for the final single-point energy calculations.",
+                )
+
+        # build merged INCAR settings: singlepoint tags + SOC on top of user settings
+        sp_incar_settings = copy.deepcopy(singleshot_incar_settings)
+        if soc:
+            sp_incar_settings["LSORBIT"] = True
+        sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
+
+        # reuse relaxation set generation with the singlepoint INCAR overrides
+        dict_sets = self.get_relaxation_sets(
+            kpoints_metals=kpoints_metals,
+            kpoints_nonmetals=kpoints_nonmetals,
+            user_incar_settings=sp_incar_settings,
+            user_potcar_functional=user_potcar_functional,
+            user_potcar_settings=user_potcar_settings,
+            extrinsic_only=extrinsic_only,
+            output_path=output_path,
+            # TODO: Subfolder here
+        )
+
+        subfolder = subfolder or "vasp_ncl" if soc else "SinglePoint"
+
+        if soc:  # re-key from vasp_std to subfolder:
+            dict_sets = {key.replace("/vasp_std", f"/{subfolder}"): val for key, val in dict_sets.items()}
+
+        return dict_sets
+
+    def write_singlepoint_files(
+        self,
+        kpoints_metals: float = 200.0,
+        kpoints_nonmetals: float = 64.0,
+        soc: bool | None = None,
+        user_incar_settings: dict | None = None,
+        user_potcar_functional: str = "PBE",
+        user_potcar_settings: dict | None = None,
+        extrinsic_only: bool = False,
+        output_path: PathLike = "CompetingPhases",
+        subfolder: PathLike | None = None,
+        **kwargs,
+    ) -> dict[str, DopedDictSet]:
+        r"""
+        Generates and writes ``DopedDictSet``\s for single-point (static)
+        energy calculations of the competing phases (i.e. ``NSW = 0``, ``IBRION
+        = -1`` in ``VASP``), using HSE06 (hybrid DFT) by default (consistent
+        with the default input settings for defect calculations in
+        :mod:`doped.vasp`).
+
+        These are expected to be used as the final energy calculation after
+        geometry relaxation (from :meth:`write_relaxation_files`), to obtain
+        accurate total energies with tight convergence settings.
+
+        If ``soc=True``, spin-orbit coupling (SOC) is included (by setting
+        ``LSORBIT = True`` for ``VASP``) and the output subfolder name will
+        default to ``"vasp_ncl"`` (if not set otherwise). If ``soc`` is not
+        explicitly set (i.e. is ``None``), it defaults to ``True`` for systems
+        where the max atomic number across all species (host and extrinsic) is
+        Z >= 31 (heavier than Zn), matching the convention in
+        :mod:`doped.vasp`.
+
+        Inclusion of SOC is crucial for accurate formation energies and
+        chemical potentials in heavy-element systems, as discussed in
+        |Guidelines Perspective|. However, non-SOC energies can generally be
+        reliably used to determine `relative` energies of polymorphs, of the
+        same composition/oxidation states, to good accuracy, which can be
+        useful for pre-screening (e.g. then only performing more expensive SOC
+        calculations on the ground-state polymorph of each potential competing
+        phase). Moreover, one typically turns off symmetry for SOC calculations
+        (i.e. ``ISYM`` set to ``-1`` or ``0`` in ``VASP``), as SOC can break
+        crystal symmetries due to spin-space coupling. However, one generally
+        finds that total energies from SOC calculations with (``VASP``)
+        symmetry routines turned on give energies consistent with no-symmetry
+        calculations, and can be much faster. Thus by default we do not turn
+        off symmetry for SOC calculations here -- note that the electronic band
+        structure from these calculations is thus unreliable.
+
+        Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
+        if not. Note that any changes to the default ``INCAR``/``POTCAR``
+        settings should be consistent with those used for the defect supercell
+        calculations.
+
+        Note that this function uses a single kpoint density setting each for
+        metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
+        molecules (Gamma-only), while one will often want to specify custom
+        k-point settings for each material individually based on convergence
+        testing (e.g. using :meth:`get_kpoint_convergence_sets`) to minimise
+        cost.
+
+        Args:
+            kpoints_metals (float):
+                Kpoint density per inverse volume (Å^-3) for metallic entries
+                (those with zero band gap). Default is 200 Å^-3. Note that you
+                may want to specify custom k-point settings for each material
+                individually based on convergence testing to minimise cost.
+            kpoints_nonmetals (float):
+                Kpoint density per inverse volume (Å^-3) for non-metallic
+                entries (those with non-zero band gap). Default is 64 Å^-3,
+                matching the ``MPRelaxSet`` default). Note that you may want to
+                specify custom k-point settings for each material individually
+                based on convergence testing to minimise cost.
+            soc (bool):
+                Whether to include spin-orbit coupling (SOC), by setting
+                ``LSORBIT = True`` in ``VASP`` ``INCAR`` files. If not set
+                (when ``soc = None``; default), SOC is enabled when the max
+                atomic number across all species (host and extrinsic) is Z >=
+                31. The ``vasp_ncl`` executable is required to run ``VASP`` SOC
+                calculations, and the default ``subfolder`` name is set to
+                ``"vasp_ncl"`` when ``soc`` is ``True``.
+            user_incar_settings (dict):
+                Override the default INCAR settings e.g.
+                ``{"EDIFF": 1e-5, "LDAU": False, "ALGO": "All"}``.
+                Note that any non-numerical or non-``True``/``False`` flags
+                need to be input as strings with quotation marks.
+                See ``doped/VASP_sets/RelaxSet.yaml`` and ``HSESet.yaml`` for
+                the default settings.
+            user_potcar_functional (str):
+                POTCAR functional to use. Default is "PBE" and if this fails,
+                tries "PBE_52", then "PBE_54".
+            user_potcar_settings (dict):
+                Override the default POTCARs, e.g. {"Li": "Li_sv"}. See
+                ``doped/VASP_sets/PotcarSet.yaml`` for the default ``POTCAR``
+                set.
+            extrinsic_only (bool):
+                If ``True``, only generate inputs for
+                ``self.extrinsic_entries`` (useful when adding dopants to an
+                existing intrinsic competing-phases set). Default is ``False``
+                (generate inputs for all entries).
+            output_path (PathLike):
+                Top-level output directory name (used as a key prefix).
+                Default is ``"CompetingPhases"``.
+            subfolder (PathLike):
+                Output folder structure is
+                ``<output_path>/<competing_phase_dir>/<subfolder>`` where
+                ``subfolder`` = 'SinglePoint' by default if ``soc`` is
+                ``False``, or 'vasp_ncl' if ``soc`` is ``True``. Set to ``'.'``
+                to write input files directly to
+                ``<output_path>/<competing_phase_dir>``, with no subfolders
+                created.
+            **kwargs:
+                Additional kwargs to pass to ``DictSet.write_input()``
+
+        Returns:
+            dict[str, DopedDictSet]:
+                Mapping of output folder paths to generated ``DopedDictSet``\s
+                (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
+        """
+        dict_sets = self.get_singlepoint_sets(
+            kpoints_metals=kpoints_metals,
+            kpoints_nonmetals=kpoints_nonmetals,
+            soc=soc,
+            user_potcar_functional=user_potcar_functional,
+            user_potcar_settings=user_potcar_settings,
+            user_incar_settings=user_incar_settings,
+            extrinsic_only=extrinsic_only,
+            output_path=output_path,
+            subfolder=subfolder,
+        )
+        return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
 
     def _write_competing_phase_dict_sets(
         self, dict_sets: dict[str, DopedDictSet], **kwargs
