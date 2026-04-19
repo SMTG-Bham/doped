@@ -2253,27 +2253,32 @@ class DefectThermodynamics(MSONable):
     ) -> pd.DataFrame:
         r"""
         Find the dopability limits of the defect system, searching over all
-        limits (chemical potential limits) in ``chempots`` and returning the
-        most p/n-type conditions, or for a given chemical potential limit (if
-        ``limit`` is set or ``chempots`` corresponds to a single chemical
-        potential limit; i.e. {element symbol: chemical potential}).
+        stable chemical potentials (as defined by ``chempots``) and returning
+        the most p/n-type conditions, or for a given chemical potential limit
+        (if ``limit`` is set or ``chempots`` corresponds to a single chemical
+        potential limit; i.e. ``{element symbol: chemical potential, ...}``).
 
         The dopability limites are defined by the (first) Fermi level positions
         at which defect formation energies become negative as the Fermi level
         moves towards/beyond the band edges, thus determining the maximum
-        possible Fermi level range upon doping for this chemical potential
-        limit.
+        possible Fermi level range upon doping for a given chemical potential.
 
         Note that the Fermi level positions are given relative to ``self.vbm``,
         which is the VBM eigenvalue of the bulk supercell calculation by
         default, unless ``bulk_band_gap_vr`` is set during defect parsing.
 
-        This is computed by obtaining the formation energy for every stable
+        This is computed by obtaining the formation energies for every stable
         defect with non-zero charge, and then finding the highest Fermi level
         position at which a donor defect (positive charge) has zero formation
         energy (crosses the x-axis) -- giving the lower dopability limit, and
         the lowest Fermi level position at which an acceptor defect (negative
-        charge) has zero formation energy -- giving the upper dopability limit.
+        charge) has zero formation energy -- giving the upper dopability limit,
+        across accessible chemical potentials.
+
+        If the extrema occur at interior chemical potential points rather than
+        at the vertices (i.e. chemical potential limits), then 'Limit' name
+        used is ``'Interior (μ_X=...)'`` where ``(μ_X=...)`` are the chemical
+        potentials for that interior point.
 
         Args:
             chempots (dict):
@@ -2385,11 +2390,11 @@ class DefectThermodynamics(MSONable):
         n_points: int = 100,
     ) -> pd.DataFrame:
         r"""
-        Find the doping windows of the defect system, searching over all limits
-        (chemical potential limits) in ``chempots`` and returning the most
+        Find the doping windows of the defect system, searching over all stable
+        chemical potentials (as defined by ``chempots``) and returning the most
         p/n-type conditions, or for a given chemical potential limit (if
         ``limit`` is set or ``chempots`` corresponds to a single chemical
-        potential limit; i.e. ``{element symbol: chemical potential}``).
+        potential limit; i.e. ``{element symbol: chemical potential, ...}``).
 
         Doping window is defined by the formation energy of the lowest energy
         compensating defect species at the corresponding band edge (i.e. VBM
@@ -2407,6 +2412,11 @@ class DefectThermodynamics(MSONable):
         band edge, then its charge will be compensated by formation of the
         corresponding limiting defect species (rather than free carrier
         populations).
+
+        If the extrema occur at interior chemical potential points rather than
+        at the vertices (i.e. chemical potential limits), then 'Limit' name
+        used is ``'Interior (μ_X=...)'`` where ``(μ_X=...)`` are the chemical
+        potentials for that interior point.
 
         Args:
             chempots (dict):
@@ -4694,7 +4704,7 @@ def _format_limiting_doping_result(
             ]
             for row in rows
         ],
-        columns=["limit", "Compensating Defect", value_col_name],
+        columns=["Limit", "Compensating Defect", value_col_name],
         index=["p-type", "n-type"],
     )
 
@@ -4786,7 +4796,7 @@ def _get_doping_scan_points(
         interior_chempot_dicts = []
 
     for chempot_dict in interior_chempot_dicts:
-        label = "interior (" + ", ".join(f"μ_{el}={v:.3f}" for el, v in chempot_dict.items()) + ")"
+        label = "Interior (" + ", ".join(f"μ_{el}={v:.2f}" for el, v in chempot_dict.items()) + ")"
         points.append((label, chempot_dict))
 
     return points
