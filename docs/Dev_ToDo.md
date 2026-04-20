@@ -70,6 +70,5 @@
 - It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe.
 - Show example of extremum position for a defect/carrier concentration occurring at a non-limiting chemical potential (e.g. CdTe from SK thesis, V_S in Sb2S3 just about (https://pubs.acs.org/doi/10.1021/acsenergylett.4c02722)), as this is the main case where the `optimise` function is particularly powerful.
 - Configuration coordinate diagram generation tutorial, linked in other tutorials and codes (CarrierCapture.jl). For defect PESs for carrier capture or NEB calculations (don't use `IBRION = 2` for NEB), and tests.
-  - Tests for configuration coordinate diagram generation code
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - For v4.1; search for deprecation warnings and remove.

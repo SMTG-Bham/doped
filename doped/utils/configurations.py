@@ -721,5 +721,4 @@ def write_path_structures(
             struct.to(filename=f"{path_to_folder}/POSCAR", fmt="poscar")
 
 
-# TODO: Tests!
 # TODO: Re-orient directly in generation functions, but with option not to?
