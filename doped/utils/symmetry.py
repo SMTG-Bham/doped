@@ -64,6 +64,7 @@ def _set_spglib_warnings_error_handling_env_var():
     Set the SPGLIB environment variable to use new error handling.
     """
     os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"  # can be removed with spglib >=2.8
+    os.environ["SPGLIB_WARNING"] = "OFF"
 
 
 def _check_spglib_version():
