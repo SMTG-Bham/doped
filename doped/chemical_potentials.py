@@ -57,7 +57,7 @@ from doped.vasp import (
     DopedDictSet,
     default_HSE_set,
     default_relax_set,
-    singleshot_incar_settings,
+    singlepoint_incar_settings,
 )
 
 try:
@@ -1583,6 +1583,7 @@ class CompetingPhases(MSONable):
         user_potcar_settings: dict | None = None,
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
+        subfolder: PathLike = "Relax",
     ) -> dict[str, DopedDictSet]:
         r"""
         Generates ``DopedDictSet``\s for relaxations of the competing phases,
@@ -1643,6 +1644,12 @@ class CompetingPhases(MSONable):
             output_path (PathLike):
                 Top-level output directory name (used as a key prefix).
                 Default is ``"CompetingPhases"``.
+            subfolder (PathLike):
+                Output folder structure is
+                ``<output_path>/<competing_phase_dir>/<subfolder>``.
+                Default is ``"Relax"``. Set to ``"."`` to write input files
+                directly to ``<output_path>/<competing_phase_dir>``, with no
+                subfolders created.
 
         Returns:
             dict[str, DopedDictSet]:
@@ -1650,6 +1657,8 @@ class CompetingPhases(MSONable):
                 (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
+        if "EDIFF" in (user_incar_settings or {}):  # remove default EDIFF PER ATOM setting if EDIFF set
+            _ = base_incar_settings.pop("EDIFF_PER_ATOM")
 
         lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
         if isinstance(lhfcalc, str):
@@ -1695,8 +1704,8 @@ class CompetingPhases(MSONable):
                     force_gamma=True,
                 )
 
-                fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/vasp_std"
-                dict_sets[fname] = dict_set  # TODO: Output subfolder name should be optional; vasp_std
+                fname = f"{output_path}/{_get_competing_phase_folder_name(entry)}/{subfolder}"
+                dict_sets[fname] = dict_set
 
         return dict_sets
 
@@ -1709,6 +1718,7 @@ class CompetingPhases(MSONable):
         user_potcar_settings: dict | None = None,
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
+        subfolder: PathLike = "Relax",
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
@@ -1774,6 +1784,12 @@ class CompetingPhases(MSONable):
             output_path (PathLike):
                 Top-level output directory name. Default is
                 ``"CompetingPhases"``.
+            subfolder (PathLike):
+                Output folder structure is
+                ``<output_path>/<competing_phase_dir>/<subfolder>``.
+                Default is ``"Relax"``. Set to ``"."`` to write input files
+                directly to ``<output_path>/<competing_phase_dir>``, with no
+                subfolders created.
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
 
@@ -1791,6 +1807,7 @@ class CompetingPhases(MSONable):
             user_incar_settings=user_incar_settings,
             extrinsic_only=extrinsic_only,
             output_path=output_path,
+            subfolder=subfolder,
         )
         return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
 
@@ -1940,13 +1957,16 @@ class CompetingPhases(MSONable):
                 )
 
         # build merged INCAR settings: singlepoint tags + SOC on top of user settings
-        sp_incar_settings = copy.deepcopy(singleshot_incar_settings)
+        sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
         if soc:
             sp_incar_settings["LSORBIT"] = True
         sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
 
+        if subfolder is None:
+            subfolder = "vasp_ncl" if soc else "SinglePoint"
+
         # reuse relaxation set generation with the singlepoint INCAR overrides
-        dict_sets = self.get_relaxation_sets(
+        return self.get_relaxation_sets(
             kpoints_metals=kpoints_metals,
             kpoints_nonmetals=kpoints_nonmetals,
             user_incar_settings=sp_incar_settings,
@@ -1954,15 +1974,8 @@ class CompetingPhases(MSONable):
             user_potcar_settings=user_potcar_settings,
             extrinsic_only=extrinsic_only,
             output_path=output_path,
-            # TODO: Subfolder here
+            subfolder=subfolder,
         )
-
-        subfolder = subfolder or "vasp_ncl" if soc else "SinglePoint"
-
-        if soc:  # re-key from vasp_std to subfolder:
-            dict_sets = {key.replace("/vasp_std", f"/{subfolder}"): val for key, val in dict_sets.items()}
-
-        return dict_sets
 
     def write_singlepoint_files(
         self,
@@ -3041,7 +3054,7 @@ class CompetingPhasesAnalyzer(MSONable):
         entries: (
             PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry]
         ) = "CompetingPhases",
-        subfolder: PathLike | None = "vasp_std",
+        subfolder: PathLike | None = None,
         verbose: bool = True,
         processes: int | None = None,
         check_compatibility: bool = True,
@@ -3079,12 +3092,15 @@ class CompetingPhasesAnalyzer(MSONable):
                 directories with this name (e.g. ``"vasp_std"``; default) --
                 i.e. with a file-structure like:
                 ``{Formula}_{spg}_EaH_{EaH}/{subfolder}/vasprun.xml(.gz)``)
-                Set to ``None`` to auto-detect the subfolder: the
-                highest-priority name among ``_SUBFOLDER_PRIORITY``
-                (``vasp_ncl``, ``vasp_std``, ``vasp_nkred_std``, ``vasp_gam``,
-                ``singlepoint``, ``final``, ``relax``) present in the
-                discovered paths is used; if none match, all found vaspruns are
-                parsed.
+                If ``None`` (default), then auto-detects the subfolder: the
+                highest-priority name (case-insensitive) among
+                ``_SUBFOLDER_PRIORITY`` (``vasp_ncl``, ``singlepoint``,
+                ``final``, ``relax``, ``vasp_std``, ``vasp_nkred_std``,
+                ``vasp_gam``), `with calculation outputs` (``vasprun.xml(.gz)``
+                files) and present in the discovered paths, is used. If none
+                match, all found vaspruns are parsed. Set ``subfolder = "."``
+                to parse calculation files from the competing phase directory
+                with no subfolder.
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found),
@@ -3448,7 +3464,7 @@ class CompetingPhasesAnalyzer(MSONable):
     def _from_vaspruns(
         self,
         path: PathLike | list[PathLike] = "CompetingPhases",
-        subfolder: PathLike | None = "vasp_std",
+        subfolder: PathLike | None = None,
         verbose: bool = True,
         processes: int | None = None,
         check_compatibility: bool = True,
@@ -3460,12 +3476,14 @@ class CompetingPhasesAnalyzer(MSONable):
         method.
 
         Recursively searches for ``vasprun.xml(.gz)`` files under ``path``.
-        When ``subfolder`` is set (default ``"vasp_std"``), only vaspruns
-        inside directories with that name are used.  When ``subfolder`` is
-        ``None``, the highest-priority subfolder present
-        (``vasp_ncl`` > ``vasp_std`` > ``vasp_nkred_std`` > ``vasp_gam`` >
-        ``singlepoint`` > ``final`` > ``relax``) is auto-detected; if none of
-        these are found, all discovered ``vasprun.xml(.gz)`` files are parsed.
+        When ``subfolder`` is set, only vaspruns inside directories with that
+        name are used.  When ``subfolder`` is ``None`` (default), the
+        highest-priority subfolder present among ``_SUBFOLDER_PRIORITY``
+        (``vasp_ncl``, ``singlepoint``, ``final``, ``relax``, ``vasp_std``,
+        ``vasp_nkred_std``, ``vasp_gam``; case-insensitive),
+        `with calculation outputs` (``vasprun.xml(.gz)`` files) and present in
+        the discovered paths, is used. If none of these are found, all
+        discovered ``vasprun.xml(.gz)`` files are parsed.
 
         If ``path`` is a list, each element may be a direct path to a
         ``vasprun.xml(.gz)`` file **or** to a directory containing one,
@@ -3479,8 +3497,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 ``vasprun.xml(.gz)`` files / directories.
             subfolder (PathLike):
                 Restrict to ``vasprun.xml(.gz)`` files in directories with
-                this name.  Default is ``"vasp_std"``.  Set to ``None`` to
-                auto-detect the subfolder (see above).
+                this name.  Default is ``None``, in which case the subfolder is
+                auto-detected (see above).
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found).
@@ -3619,7 +3637,7 @@ class CompetingPhasesAnalyzer(MSONable):
     def _collect_vaspruns_from_directory(
         self,
         path: PathLike,
-        subfolder: PathLike | None = "vasp_std",
+        subfolder: PathLike | None = None,
         verbose: bool = True,
     ) -> None:
         """

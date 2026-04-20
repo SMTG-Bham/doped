@@ -300,8 +300,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
             print(f"Testing with settings: {cp_settings}")
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**cp_settings)
-                cp.write_kpoint_convergence_files(potcar_spec=True)  # test methods
-                cp.write_relaxation_files(potcar_spec=True)  # test methods
+                cp.write_kpoint_convergence_files(potcar_spec=True)
+                cp.write_relaxation_files(potcar_spec=True)
+                cp.write_singlepoint_files(soc=False, potcar_spec=True)
             _print_warning_info(w)  # for debugging
             if cp_settings.get("full_phase_diagram"):
                 assert len(cp.entries) == 172
@@ -326,17 +327,20 @@ class CompetingPhasesTestCase(unittest.TestCase):
             potcar_spec = not _potcars_available()
             with warnings.catch_warnings(record=True) as w:
                 cp = chemical_potentials.CompetingPhases(**kwargs)
-                cp.write_kpoint_convergence_files(potcar_spec=potcar_spec)  # test methods
-                cp.write_relaxation_files(potcar_spec=potcar_spec)  # test methods
+                cp.write_kpoint_convergence_files(potcar_spec=potcar_spec)
+                cp.write_relaxation_files(potcar_spec=potcar_spec)
+                cp.write_singlepoint_files(soc=False, potcar_spec=potcar_spec)
             _print_warning_info(w)  # for debugging
             user_warnings = [x for x in w if x.category is UserWarning]
-            assert len(user_warnings) == 3  # no MP host; no-structure notice x2 (convergence + vasp_std)
             assert "Note that no Materials Project (MP) database entry exists for Cu2SiSe4. Here" in str(
                 user_warnings[0].message
             )
-            for uw in user_warnings[1:]:
+            no_structure_warnings = [
+                uw for uw in user_warnings if "no structure is available" in str(uw.message).lower()
+            ]
+            assert len(no_structure_warnings) == 3  # one per write method
+            for uw in no_structure_warnings:
                 msg = str(uw.message)
-                assert "no structure is available" in msg.lower()
                 assert "placeholder" in msg.lower()
                 assert "incar" in msg.lower()
                 assert "potcar" in msg.lower()
@@ -363,19 +367,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
                             potcar_symbol.startswith(sym) for potcar_symbol in written_potcar.symbols
                         )
 
-            # check vasp_std inputs
-            vasp_std = f"{cu2sise4_folder}/vasp_std"
-            assert os.path.isfile(f"{vasp_std}/INCAR")
+            # check Relax inputs
+            relax_dir = f"{cu2sise4_folder}/Relax"
+            assert os.path.isfile(f"{relax_dir}/INCAR")
             if potcar_spec:
-                assert not os.path.isfile(f"{vasp_std}/POTCAR")
-            with open(f"{vasp_std}/INCAR", encoding="utf-8") as f:
+                assert not os.path.isfile(f"{relax_dir}/POTCAR")
+            with open(f"{relax_dir}/INCAR", encoding="utf-8") as f:
                 incar_std_lines = f.readlines()
             assert any(line == "GGA = Pe\n" for line in incar_std_lines)
             assert any(line == "ISIF = 3\n" for line in incar_std_lines)
             assert any(line.strip().startswith("AEXX = 0.25") for line in incar_std_lines)
-            _check_potcar(vasp_std)
-            assert not os.path.exists(f"{vasp_std}/POSCAR")  # no structure available, so no POSCAR written
-            assert not os.path.exists(f"{vasp_std}/KPOINTS")  # no structure available, so no KPOINTS
+            _check_potcar(relax_dir)
+            assert not os.path.exists(f"{relax_dir}/POSCAR")  # no structure available
+            assert not os.path.exists(f"{relax_dir}/KPOINTS")  # no structure available
 
             # check kpoint_converge inputs
             kpt_incars = sorted(glob.glob(f"{cu2sise4_folder}/kpoint_converge/k*/INCAR"))
@@ -387,6 +391,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert any(line == "NSW = 0\n" for line in incar_k_lines)
             assert any(line == "ISMEAR = 0\n" for line in incar_k_lines)
             _check_potcar(kpt_dir)
+
+            # check SinglePoint inputs for unknown-host placeholder
+            sp_dir = f"{cu2sise4_folder}/SinglePoint"
+            assert os.path.isfile(f"{sp_dir}/INCAR")
+            with open(f"{sp_dir}/INCAR", encoding="utf-8") as f:
+                incar_sp_lines = f.readlines()
+            assert any(line == "NSW = 0\n" for line in incar_sp_lines)
+            assert any(line.strip().startswith("AEXX = 0.25") for line in incar_sp_lines)
+            assert not any("ISIF" in line for line in incar_sp_lines)
+            _check_potcar(sp_dir)
+            assert not os.path.exists(f"{sp_dir}/POSCAR")  # no structure
+            assert not os.path.exists(f"{sp_dir}/KPOINTS")  # no structure
+
             assert len(os.listdir("CompetingPhases")) > 0  # other phases still get inputs
 
             # check all other written phase folders (excluding unknown-host placeholder) have full inputs
@@ -398,12 +415,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
             ]
             assert other_phase_folders
             for phase_folder in other_phase_folders:
-                # vasp_std inputs
-                phase_vasp_std = os.path.join(phase_folder, "vasp_std")
-                assert os.path.isdir(phase_vasp_std)
-                assert os.path.isfile(os.path.join(phase_vasp_std, "INCAR"))
-                assert os.path.isfile(os.path.join(phase_vasp_std, "KPOINTS"))
-                assert os.path.isfile(os.path.join(phase_vasp_std, "POSCAR"))
+                # Relax inputs
+                phase_relax = os.path.join(phase_folder, "Relax")
+                assert os.path.isdir(phase_relax)
+                assert os.path.isfile(os.path.join(phase_relax, "INCAR"))
+                assert os.path.isfile(os.path.join(phase_relax, "KPOINTS"))
+                assert os.path.isfile(os.path.join(phase_relax, "POSCAR"))
+
+                # SinglePoint inputs
+                phase_sp = os.path.join(phase_folder, "SinglePoint")
+                assert os.path.isdir(phase_sp)
+                assert os.path.isfile(os.path.join(phase_sp, "INCAR"))
+                assert os.path.isfile(os.path.join(phase_sp, "KPOINTS"))
+                assert os.path.isfile(os.path.join(phase_sp, "POSCAR"))
 
                 # kpoint_converge inputs
                 phase_k_dirs = sorted(glob.glob(f"{phase_folder}/kpoint_converge/k*"))
@@ -486,7 +510,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets_no_write = cp.get_relaxation_sets()
         assert len(dict_sets_no_write) == len(cp)  # one per entry
         assert not os.path.exists("CompetingPhases")
-        no_write_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"
+        no_write_key = "CompetingPhases/ZrO2_P2_1c_EaH_0/Relax"
         assert no_write_key in dict_sets_no_write
         no_write_dict_set = dict_sets_no_write[no_write_key]
         assert no_write_dict_set.kpoints.kpts[0] == (4, 4, 4)
@@ -506,10 +530,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert cp.molecular_entries[0].data["molecule"]
         assert not cp.nonmetallic_entries[0].data["molecule"]
 
-        ZrO2_EaH_0_std_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std/"
+        ZrO2_EaH_0_std_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/Relax/"
         assert os.path.exists(ZrO2_EaH_0_std_folder)
-        assert "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std" in dict_sets
-        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"]
+        assert "CompetingPhases/ZrO2_P2_1c_EaH_0/Relax" in dict_sets
+        dict_set = dict_sets["CompetingPhases/ZrO2_P2_1c_EaH_0/Relax"]
         assert dict_set.kpoints.kpts[0] == (4, 4, 4)
         assert dict_set.potcar_symbols == ["Zr_sv", "O"]
         assert dict_set.incar["AEXX"] == 0.25
@@ -528,9 +552,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert all(x in contents for x in ["AEXX = 0.25\n", "ISIF = 3\n", "GGA = Pe\n"])
 
-        O2_EaH_0_std_folder = "CompetingPhases/O2_mmm_EaH_0/vasp_std"
+        O2_EaH_0_std_folder = "CompetingPhases/O2_mmm_EaH_0/Relax"
         assert os.path.exists(O2_EaH_0_std_folder)
-        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_std"]
+        o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/Relax"]
         assert o2_dict_set.kpoints.kpts[0] == (1, 1, 1)
         with open(f"{O2_EaH_0_std_folder}/KPOINTS", encoding="utf-8") as file:
             contents = file.readlines()
@@ -569,6 +593,15 @@ class CompetingPhasesTestCase(unittest.TestCase):
         sample_key = next(iter(std_sets))
         assert os.path.exists(sample_key)
         assert os.path.isfile(os.path.join(sample_key, "INCAR"))
+        if_present_rm(custom_dir)
+
+        sp_sets = cp.write_singlepoint_files(soc=False, potcar_spec=True, output_path=custom_dir)
+        assert sp_sets
+        assert not os.path.exists("CompetingPhases")
+        assert all(key.startswith(f"{custom_dir}/") for key in sp_sets)
+        sample_key = next(iter(sp_sets))
+        assert os.path.exists(sample_key)
+        assert os.path.isfile(os.path.join(sample_key, "INCAR"))
 
     def test_deprecated_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
@@ -602,9 +635,9 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert not os.path.exists("CompetingPhases")
 
     def test_get_singlepoint_sets(self):
-        """
-        Test get_singlepoint_sets returns correct DopedDictSets without writing
-        files.
+        r"""
+        Test ``get_singlepoint_sets`` returns correct ``DopedDictSet``\s
+        without writing files.
         """
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         # ZrO2 has Zr (Z=40), so SOC defaults to True
@@ -627,11 +660,11 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert "ISIF" not in ds.incar  # not a relaxation
         assert ds.incar["AEXX"] == 0.25  # HSE06 by default
 
-        # explicitly disable SOC -> vasp_std subfolder, no LSORBIT
+        # explicitly disable SOC -> SinglePoint subfolder, no LSORBIT
         dict_sets_no_soc = cp.get_singlepoint_sets(soc=False)
-        assert all("vasp_std" in key for key in dict_sets_no_soc)
+        assert all("SinglePoint" in key for key in dict_sets_no_soc)
         assert all("vasp_ncl" not in key for key in dict_sets_no_soc)
-        sample_ds = dict_sets_no_soc["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"]
+        sample_ds = dict_sets_no_soc["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert "LSORBIT" not in sample_ds.incar
         assert sample_ds.incar["NSW"] == 0
 
@@ -643,7 +676,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
     def test_write_singlepoint_files(self):
         """
-        Test write_singlepoint_files generates correct input files.
+        Test ``write_singlepoint_files`` generates correct input files.
         """
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
@@ -679,13 +712,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert o2_dict_set.kpoints.kpts[0] == (1, 1, 1)
         assert o2_dict_set.incar["KPAR"] == 1
 
-        # test without SOC -> vasp_std subfolder
+        # test without SOC -> SinglePoint subfolder
         if_present_rm("CompetingPhases")
         _dict_sets_no_soc = cp.write_singlepoint_files(soc=False, potcar_spec=True)
-        ZrO2_std_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std/"
-        assert os.path.exists(ZrO2_std_folder)
+        ZrO2_sp_folder = "CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint/"
+        assert os.path.exists(ZrO2_sp_folder)
         assert not os.path.exists("CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_ncl")
-        with open(f"{ZrO2_std_folder}/INCAR", encoding="utf-8") as file:
+        with open(f"{ZrO2_sp_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any("NSW = 0" in line for line in contents)
             assert not any("LSORBIT" in line for line in contents)
@@ -699,13 +732,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets_custom = cp.write_singlepoint_files(
             soc=False, potcar_spec=True, user_incar_settings={"ALGO": "Normal"}
         )
-        ds_custom = dict_sets_custom["CompetingPhases/ZrO2_P2_1c_EaH_0/vasp_std"]
+        ds_custom = dict_sets_custom["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert ds_custom.incar["ALGO"] == "Normal"
         assert ds_custom.incar["NSW"] == 0  # singlepoint settings still applied
 
     def test_singlepoint_custom_output_path(self):
         """
-        Test write_singlepoint_files with custom output_path.
+        Test ``write_singlepoint_files`` with custom ``output_path``.
         """
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         custom_dir = "CustomOutputDir"
@@ -719,6 +752,102 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert os.path.exists(sample_key)
         assert os.path.isfile(os.path.join(sample_key, "INCAR"))
 
+    def test_subfolder_parameter(self):
+        """
+        Test subfolder parameter for relaxation and singlepoint methods.
+        """
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+
+        # relaxation: default subfolder is Relax
+        relax_sets = cp.get_relaxation_sets()
+        assert all("Relax" in key for key in relax_sets)
+
+        # relaxation: custom subfolder
+        relax_sets_custom = cp.get_relaxation_sets(subfolder="my_relax")
+        assert all("my_relax" in key for key in relax_sets_custom)
+        assert all("Relax" not in key for key in relax_sets_custom)
+
+        # write_relaxation_files: custom subfolder
+        if_present_rm("CompetingPhases")
+        cp.write_relaxation_files(potcar_spec=True, subfolder="relax_v2")
+        assert os.path.isdir("CompetingPhases/ZrO2_P2_1c_EaH_0/relax_v2")
+        assert os.path.isfile("CompetingPhases/ZrO2_P2_1c_EaH_0/relax_v2/INCAR")
+
+        # singlepoint: custom subfolder overrides default (vasp_ncl for SOC)
+        sp_sets = cp.get_singlepoint_sets(subfolder="my_sp")
+        assert all("my_sp" in key for key in sp_sets)
+        assert all("vasp_ncl" not in key for key in sp_sets)
+
+        # singlepoint soc=False: custom subfolder overrides default (SinglePoint)
+        sp_sets_nosoc = cp.get_singlepoint_sets(soc=False, subfolder="sp_nosoc")
+        assert all("sp_nosoc" in key for key in sp_sets_nosoc)
+        assert all("SinglePoint" not in key for key in sp_sets_nosoc)
+
+        # write_singlepoint_files: custom subfolder
+        if_present_rm("CompetingPhases")
+        cp.write_singlepoint_files(soc=False, potcar_spec=True, subfolder="sp_custom")
+        assert os.path.isdir("CompetingPhases/ZrO2_P2_1c_EaH_0/sp_custom")
+        assert os.path.isfile("CompetingPhases/ZrO2_P2_1c_EaH_0/sp_custom/INCAR")
+        if_present_rm("CompetingPhases")
+
+    def test_warnings_output(self):
+        """
+        Test warning/print outputs from ``CompetingPhases`` generation and
+        input-file methods.
+        """
+        if_present_rm("CompetingPhases")
+        cp, stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.CompetingPhases, "ZrO2", energy_above_hull=0.03, api_key=api_key
+        )
+        assert not stdout
+        assert not w
+
+        # SOC auto-detection prints info message (ZrO2 has Zr Z=40 >= 31)
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(cp.get_singlepoint_sets)
+        assert "Spin-orbit coupling (SOC) is being used by default" in stdout
+        assert "Z >= 31" in stdout
+        assert not w
+
+        # no SOC message when soc is explicitly set
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(cp.get_singlepoint_sets, soc=True)
+        assert "Spin-orbit coupling (SOC) is being used by default" not in stdout
+        assert not w
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(cp.get_singlepoint_sets, soc=False)
+        assert "Spin-orbit coupling (SOC) is being used by default" not in stdout
+        assert not w
+
+        # overwrite warning from write_relaxation_files
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_relaxation_files, potcar_spec=True
+        )
+        assert not w
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_relaxation_files, potcar_spec=True
+        )
+        assert len(w) == 1
+        assert any(
+            "already exists. Overwriting files." in str(warning.message)
+            for warning in w
+            if warning.category is UserWarning
+        )
+
+        # overwrite warning from write_singlepoint_files
+        if_present_rm("CompetingPhases")
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_singlepoint_files, potcar_spec=True
+        )
+        assert not w
+        _result, stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_singlepoint_files, potcar_spec=True
+        )
+        assert len(w) == 1
+        assert any(
+            "already exists. Overwriting files." in str(warning.message)
+            for warning in w
+            if warning.category is UserWarning
+        )
+        if_present_rm("CompetingPhases")
+
     def test_default_soc(self):
         """
         Test SOC default logic based on atomic numbers.
@@ -728,10 +857,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
         dict_sets = cp_heavy.get_singlepoint_sets()
         assert all("vasp_ncl" in key for key in dict_sets)
 
-        # MgO: Mg Z=12, O Z=8, both < 31, SOC should default False -> vasp_std
+        # MgO: Mg Z=12, O Z=8, both < 31, SOC should default False -> SinglePoint
         cp_light = chemical_potentials.CompetingPhases("MgO", energy_above_hull=0, api_key=api_key)
         dict_sets = cp_light.get_singlepoint_sets()
-        assert all("vasp_std" in key for key in dict_sets)
+        assert all("SinglePoint" in key for key in dict_sets)
         for ds in dict_sets.values():
             assert "LSORBIT" not in ds.incar
 
@@ -921,7 +1050,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             not any(f"/{name}/" in f"/{key}/" for name in intrinsic_folder_names) for key in std_dict_sets
         )
         for name in extrinsic_folder_names:
-            assert os.path.isdir(f"CompetingPhases/{name}/vasp_std")
+            assert os.path.isdir(f"CompetingPhases/{name}/Relax")
         for name in intrinsic_folder_names:
             assert not os.path.exists(f"CompetingPhases/{name}")
 
@@ -975,7 +1104,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         # MgO without extrinsic: all light elements, SOC defaults False
         cp_light = chemical_potentials.CompetingPhases("MgO", energy_above_hull=0, api_key=api_key)
         dict_sets_light = cp_light.get_singlepoint_sets()
-        assert all("vasp_std" in key for key in dict_sets_light)
+        assert all("SinglePoint" in key for key in dict_sets_light)
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):
@@ -1296,6 +1425,12 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir)  # subfolder=None by default
+            assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
+            assert len(cpa.vasprun_paths) == 3
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            ncl_paths = self._build_mixed_subfolder_tree(tmp_dir)
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=None)
             assert set(map(os.path.realpath, cpa.vasprun_paths)) == ncl_paths
             assert len(cpa.vasprun_paths) == 3
@@ -1336,7 +1471,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                     os.path.join(dest_dir, "vasprun.xml.gz"),
                 )
 
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir, subfolder=None)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", tmp_dir)
             assert len(cpa.vasprun_paths) == 3
 
     def test_find_calc_outputs_shared_helper(self):
@@ -1368,7 +1503,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             self._build_mixed_subfolder_tree(tmp_dir)
-            calc_df, folders, subfolder = _find_calc_outputs(tmp_dir, subfolder=None)
+            calc_df, folders, subfolder = _find_calc_outputs(tmp_dir)  # auto subfolder detection
             assert subfolder == "vasp_ncl"
 
     def test_latex_table(self):
