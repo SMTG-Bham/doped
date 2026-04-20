@@ -810,13 +810,14 @@ class DefectsParser:
                 Name of subfolder(s) within each defect calculation folder (in
                 the ``output_path`` directory) containing the VASP calculation
                 files to parse (e.g. ``vasp_ncl``, ``vasp_std``, ``vasp_gam``
-                etc.). If not specified, ``doped`` checks first for
-                ``vasp_ncl``, ``vasp_std``, ``vasp_gam`` subfolders with
-                calculation outputs (``vasprun.xml(.gz)`` files) and uses the
-                highest level VASP type (ncl > std > gam) found as
-                ``subfolder``, otherwise uses the defect calculation folder
-                itself with no subfolder (set ``subfolder = "."`` to enforce
-                this).
+                etc.). If not specified, ``doped`` checks, case-insensitively
+                and in order, for ``"vasp_ncl"``, ``"singlepoint"``,
+                ``"final"``, ``"relax"``, ``"vasp_std"``, ``"vasp_nkred_std"``,
+                ``"vasp_gam"`` subfolders (following ``_SUBFOLDER_PRIORITY``)
+                `with calculation outputs` (``vasprun.xml(.gz)`` files), and
+                uses the first matching subfolder name as ``subfolder``,
+                otherwise uses the defect calculation folder itself with no
+                subfolder (set ``subfolder = "."`` to enforce this).
             bulk_path (PathLike):
                 Path to bulk supercell reference calculation folder. If not
                 specified, searches for folder with name "X_bulk" in the
@@ -1330,13 +1331,14 @@ def _get_calculation_folders_for_parsing(
             be parsed. Default is current directory (".").
         subfolder (PathLike | None):
             Name of subfolder(s) within each calculation folder (in the
-            ``output_path`` directory) from which to parse. If not specified
-            (default), ``doped`` checks first for ``vasp_ncl``, ``vasp_std``,
-            ``vasp_gam`` subfolders with calculation outputs
-            (``vasprun.xml(.gz)`` files) and uses the highest level VASP type
-            (ncl > std > gam) found as ``subfolder``, otherwise uses the
-            defect calculation folder itself with no subfolder (set
-            ``subfolder = "."`` to enforce this).
+            ``output_path`` directory) from which to parse. If not specified,
+            (default), ``doped`` checks, case-insensitively and in order, for
+            ``"vasp_ncl"``, ``"singlepoint"``, ``"final"``, ``"relax"``,
+            ``"vasp_std"``, ``"vasp_nkred_std"``, ``"vasp_gam"`` subfolders
+            (following ``_SUBFOLDER_PRIORITY``) `with calculation outputs`
+            (``vasprun.xml(.gz)`` files), and uses the first matching subfolder
+            name as ``subfolder``, otherwise uses the defect calculation folder
+            itself with no subfolder (set ``subfolder = "."`` to enforce this).
         bulk_path (PathLike | None):
             Path to bulk reference calculation folder. If not specified,
             searches for folder with "bulk" in the name in the ``output_path``

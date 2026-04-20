@@ -36,7 +36,7 @@ from doped.vasp import (
     DopedKpoints,
     default_defect_relax_set,
     default_potcar_dict,
-    singleshot_incar_settings,
+    singlepoint_incar_settings,
 )
 
 
@@ -651,7 +651,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 assert parent_drs.vasp_std
             if "LSORBIT" in child_incar_settings and "LSORBIT" not in parent_drs.user_incar_settings:
                 assert child_incar_settings.pop("LSORBIT") is True
-                for k, v in singleshot_incar_settings.items():
+                for k, v in singlepoint_incar_settings.items():
                     assert child_incar_settings.pop(k) == v
                 assert parent_drs.soc
             if any("NKRED" in k for k in child_incar_settings) and all(
@@ -662,7 +662,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                         assert child_incar_settings.pop(k) in [2, 3]
                 assert parent_drs.vasp_nkred_std
             if "NSW" in child_incar_settings and "NSW" not in parent_drs.user_incar_settings:
-                for k, v in singleshot_incar_settings.items():  # bulk singleshots
+                for k, v in singlepoint_incar_settings.items():  # bulk singleshots
                     assert child_incar_settings.pop(k) == v
 
             print("Checking incar settings")

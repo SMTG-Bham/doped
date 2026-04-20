@@ -361,12 +361,12 @@ Filename patterns that identify calculation output files.
 
 _SUBFOLDER_PRIORITY = [
     "vasp_ncl",
-    "vasp_std",
-    "vasp_nkred_std",
-    "vasp_gam",
     "singlepoint",
     "final",
     "relax",
+    "vasp_std",
+    "vasp_nkred_std",
+    "vasp_gam",
 ]
 """
 Priority order when auto-detecting calculation subfolders.
@@ -457,7 +457,8 @@ def _determine_subfolder(
         subfolder_priority (list[str]):
             Priority order for subfolder names.  Defaults to
             ``_SUBFOLDER_PRIORITY``
-            (``["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam", "singlepoint", "final", "relax"]``).
+            (``["vasp_ncl", "singlepoint", "final", "relax", "vasp_std", "vasp_nkred_std", "vasp_gam"]``)
+            where folder names are compared case-insensitively.
 
     Returns:
         str:
@@ -469,7 +470,7 @@ def _determine_subfolder(
         else files_df
     )
     for subfolder in subfolder_priority:
-        if any(subfolder in p.name for p in candidate_folder_df["folder_path"].unique()):
+        if any(subfolder in p.name.lower() for p in candidate_folder_df["folder_path"].unique()):
             return subfolder
     return "."
 
@@ -491,7 +492,8 @@ def _find_calc_outputs(
         subfolder (PathLike | None):
             Explicit subfolder name (e.g. ``"vasp_std"``).  If
             ``None``, auto-detected using ``_SUBFOLDER_PRIORITY``
-            (``["vasp_ncl", "vasp_std", "vasp_nkred_std", "vasp_gam", "singlepoint", "final", "relax"]``).
+            (``["vasp_ncl", "singlepoint", "final", "relax", "vasp_std", "vasp_nkred_std", "vasp_gam"]``)
+            where folder names are compared case-insensitively.
 
     Returns:
         tuple[pd.DataFrame, list[str], str]:

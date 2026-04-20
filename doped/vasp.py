@@ -60,7 +60,7 @@ default_defect_relax_set = deep_dict_update(
     default_defect_relax_set, default_defect_set
 )  # defect set is just INCAR settings
 _ = default_defect_relax_set["INCAR"].pop("EDIFF_PER_ATOM")  # remove EDIFF_PER_ATOM and use defect EDIFF
-singleshot_incar_settings = {
+singlepoint_incar_settings = {
     "EDIFF": 1e-6,  # tight EDIFF for final energy and converged DOS
     "EDIFFG": None,  # no ionic relaxation, remove to avoid confusion
     "IBRION": -1,  # no ionic relaxation
@@ -1158,7 +1158,7 @@ class DefectRelaxSet(MSONable):
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singleshot_incar_settings)
+        user_incar_settings.update(singlepoint_incar_settings)
         user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
 
         return DefectDictSet(
@@ -1222,7 +1222,7 @@ class DefectRelaxSet(MSONable):
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singleshot_incar_settings)
+        user_incar_settings.update(singlepoint_incar_settings)
 
         return DefectDictSet(
             bulk_supercell,
@@ -1280,7 +1280,7 @@ class DefectRelaxSet(MSONable):
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singleshot_incar_settings)
+        user_incar_settings.update(singlepoint_incar_settings)
 
         return self._check_vstd_kpoints(
             DefectDictSet(
@@ -1348,7 +1348,7 @@ class DefectRelaxSet(MSONable):
 
         if any("VASP_PSP_DIR" in i for i in SETTINGS):  # POTCARs available
             user_incar_settings = copy.deepcopy(self.user_incar_settings)
-            user_incar_settings.update(singleshot_incar_settings)
+            user_incar_settings.update(singlepoint_incar_settings)
             user_incar_settings.update(  # add NKRED settings
                 {k: v for k, v in nkred_defect_dict_set.incar.as_dict().items() if "NKRED" in k}
             )
@@ -1398,7 +1398,7 @@ class DefectRelaxSet(MSONable):
             return None
 
         user_incar_settings = copy.deepcopy(self.user_incar_settings)
-        user_incar_settings.update(singleshot_incar_settings)
+        user_incar_settings.update(singlepoint_incar_settings)
         user_incar_settings.update({"LSORBIT": True})  # ISYM already 0
 
         return DefectDictSet(
