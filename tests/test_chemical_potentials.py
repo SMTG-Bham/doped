@@ -494,11 +494,21 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert any(line == "GGA = Ps\n" for line in contents)
             assert any(line == "NSW = 0\n" for line in contents)
 
-        # existing folders should warn and be overwritten with new settings
-        with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
-            cp.write_kpoint_convergence_files(
-                potcar_spec=True, user_incar_settings={"NSW": 7, "GGA": "Ps"}
-            )
+        # existing folders should warn and be overwritten with new settings (one ``UserWarning`` per
+        # existing folder, plus possible KPAR ``UserWarning``s for Γ-only molecular phases)
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_kpoint_convergence_files,
+            potcar_spec=True,
+            user_incar_settings={"NSW": 7, "GGA": "Ps"},
+        )
+        overwrite_w = [ww for ww in w if "already exists. Overwriting files." in str(ww.message)]
+        other_w = [ww for ww in w if ww not in overwrite_w]
+        assert len(overwrite_w) > 0
+        assert all(issubclass(ww.category, UserWarning) for ww in overwrite_w)
+        assert all(
+            issubclass(ww.category, UserWarning) and "KPOINTS are Γ-only" in str(ww.message)
+            for ww in other_w
+        )
         with open(f"{Zro2_EaH_0pt009_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert any(line == "NSW = 7\n" for line in contents)
@@ -565,9 +575,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert np.isclose(struct.sites[1].frac_coords, [0.49983339, 0.5, 0.5405135]).all()
         assert struct == o2_dict_set.poscar.structure
 
-        # existing folders should warn and be overwritten with new settings
-        with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
-            cp.write_relaxation_files(potcar_spec=True, user_incar_settings={"ISIF": 2})
+        # existing folders should warn and be overwritten with new settings (one ``UserWarning`` per
+        # existing folder, plus possible KPAR ``UserWarning``s for Γ-only molecular phases)
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_relaxation_files, potcar_spec=True, user_incar_settings={"ISIF": 2}
+        )
+        overwrite_w = [ww for ww in w if "already exists. Overwriting files." in str(ww.message)]
+        other_w = [ww for ww in w if ww not in overwrite_w]
+        assert len(overwrite_w) > 0
+        assert all(issubclass(ww.category, UserWarning) for ww in overwrite_w)
+        assert all(
+            issubclass(ww.category, UserWarning) and "KPOINTS are Γ-only" in str(ww.message)
+            for ww in other_w
+        )
         with open(f"{ZrO2_EaH_0_std_folder}/INCAR", encoding="utf-8") as file:
             contents = file.readlines()
             assert "ISIF = 2\n" in contents
@@ -606,16 +626,30 @@ class CompetingPhasesTestCase(unittest.TestCase):
     def test_deprecated_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
-        with pytest.warns(DeprecationWarning, match="convergence_setup.*deprecated"):
-            dict_sets = cp.convergence_setup(potcar_spec=True)
+        dict_sets, _stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.convergence_setup, potcar_spec=True
+        )
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "convergence_setup" in str(w[0].message)
+        assert "deprecated" in str(w[0].message)
         assert dict_sets
         assert os.path.exists("CompetingPhases")
 
     def test_deprecated_vasp_std_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
-        with pytest.warns(DeprecationWarning, match="vasp_std_setup.*deprecated"):
-            dict_sets = cp.vasp_std_setup(potcar_spec=True)
+        dict_sets, _stdout, w = _run_func_and_capture_stdout_warnings(cp.vasp_std_setup, potcar_spec=True)
+        deprecation_w = [ww for ww in w if issubclass(ww.category, DeprecationWarning)]
+        other_w = [ww for ww in w if ww not in deprecation_w]
+        assert len(deprecation_w) == 1
+        assert "vasp_std_setup" in str(deprecation_w[0].message)
+        assert "deprecated" in str(deprecation_w[0].message)
+        # only other possible warning is the Γ-only KPAR warning for the O2 molecule
+        assert all(
+            issubclass(ww.category, UserWarning) and "KPOINTS are Γ-only" in str(ww.message)
+            for ww in other_w
+        )
         assert dict_sets
         assert os.path.exists("CompetingPhases")
 
@@ -730,9 +764,19 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert not any("LSORBIT" in line for line in contents)
         assert not os.path.exists(f"{ZrO2_sp_folder}/POSCAR")  # no POSCAR by default
 
-        # overwrite warning
-        with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
-            cp.write_singlepoint_files(soc=False, potcar_spec=True)
+        # overwrite warning (one ``UserWarning`` per existing folder, plus possible KPAR
+        # ``UserWarning``s for Γ-only molecular phases)
+        _result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            cp.write_singlepoint_files, soc=False, potcar_spec=True
+        )
+        overwrite_w = [ww for ww in w if "already exists. Overwriting files." in str(ww.message)]
+        other_w = [ww for ww in w if ww not in overwrite_w]
+        assert len(overwrite_w) > 0
+        assert all(issubclass(ww.category, UserWarning) for ww in overwrite_w)
+        assert all(
+            issubclass(ww.category, UserWarning) and "KPOINTS are Γ-only" in str(ww.message)
+            for ww in other_w
+        )
 
         # user_incar_settings override
         if_present_rm("CompetingPhases")
@@ -2276,13 +2320,16 @@ class TestGetXRichPoorLimit(unittest.TestCase):
                 "B": {"Cu": -1.0, "O": -4.0},
             }
         }  # Cu-rich tie (slightly different but within default `tol`): falls back to max μ_O -> B
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert (
-                chemical_potentials.get_X_rich_poor_limit(
-                    "Cu", chempots, bulk_composition="Cu2O", warn_if_multiple=True
-                )
-                == "B"
-            )
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit,
+            "Cu",
+            chempots,
+            bulk_composition="Cu2O",
+            warn_if_multiple=True,
+        )
+        assert result == "B"
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
 
     def test_poor_tie_first_refinement_min_mu_other(self):
         chempots = {
@@ -2291,16 +2338,16 @@ class TestGetXRichPoorLimit(unittest.TestCase):
                 "B": {"Cu": -5.0, "O": -3.0},
             },
         }
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert (
-                chemical_potentials.get_X_rich_poor_limit(
-                    "Cu",
-                    chempots,
-                    rich=False,
-                    bulk_composition="Cu2O",  # warn by default
-                )
-                == "B"
-            )
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit,
+            "Cu",
+            chempots,
+            rich=False,
+            bulk_composition="Cu2O",  # warn by default
+        )
+        assert result == "B"
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
 
     def test_no_tie_same_as_simple_extremum(self):
         chempots = {
@@ -2323,10 +2370,19 @@ class TestGetXRichPoorLimit(unittest.TestCase):
                 "CdTe-Te": {"Cd": -2.0, "Te": -1.0},
             },
         }
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert chemical_potentials.get_X_rich_poor_limit("Te", chempots, tol=0.6) == "Cd-CdTe"
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert chemical_potentials.get_X_rich_poor_limit("Te-poor", chempots, tol=0.6) == "CdTe-Te"
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit, "Te", chempots, tol=0.6
+        )
+        assert result == "Cd-CdTe"
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
+
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit, "Te-poor", chempots, tol=0.6
+        )
+        assert result == "CdTe-Te"
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
 
     def test_rich_poor_string_input_overrides_rich(self):
         chempots = {
@@ -2408,25 +2464,26 @@ class TestGetXRichPoorLimit(unittest.TestCase):
                 "B": {"Cu": -1.0, "O": -1.0},
             },
         }
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert (
-                chemical_potentials.get_X_rich_poor_limit(
-                    "Cu",
-                    chempots,
-                    bulk_composition="Cu2O",
-                )
-                == "B"  # max between A and B
-            )
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert (
-                chemical_potentials.get_X_rich_poor_limit(
-                    "Cu",
-                    chempots,
-                    rich=False,
-                    bulk_composition="Cu2O",
-                )
-                == "A"  # min between A and B
-            )
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit,
+            "Cu",
+            chempots,
+            bulk_composition="Cu2O",
+        )
+        assert result == "B"  # max between A and B
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
+
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit,
+            "Cu",
+            chempots,
+            rich=False,
+            bulk_composition="Cu2O",
+        )
+        assert result == "A"  # min between A and B
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
 
     def test_raises_missing_element(self):
         chempots = {"limits": {"A": {"O": -1.0}}, "elemental_refs": {}, "limits_wrt_el_refs": {}}
@@ -2440,10 +2497,23 @@ class TestGetXRichPoorLimit(unittest.TestCase):
                 "CdTe-Te": {"Cd": -2.0, "Te": -1.0},
             },
         }
-        with pytest.warns(DeprecationWarning, match="get_X_rich_limit.*deprecated"):
-            assert chemical_potentials.get_X_rich_limit("Te", chempots) == "CdTe-Te"
-        with pytest.warns(DeprecationWarning, match="get_X_poor_limit.*deprecated"):
-            assert chemical_potentials.get_X_poor_limit("Te", chempots) == "Cd-CdTe"
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_limit, "Te", chempots
+        )
+        assert result == "CdTe-Te"
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "get_X_rich_limit" in str(w[0].message)
+        assert "deprecated" in str(w[0].message)
+
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_poor_limit, "Te", chempots
+        )
+        assert result == "Cd-CdTe"
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "get_X_poor_limit" in str(w[0].message)
+        assert "deprecated" in str(w[0].message)
 
 
 class TestSb2Si2Te6Chempots(unittest.TestCase):
@@ -2518,7 +2588,9 @@ class TestSb2Si2Te6Chempots(unittest.TestCase):
         # chempots_df = pd.DataFrame.from_dict(self.chempots["limits_wrt_el_refs"], orient="index")
         # print("\nSb2Si2Te6 chempots (wrt elemental refs):")
         # print(chempots_df)  # for debugging/checking
-        with pytest.warns(UserWarning, match="Multiple chemical potential limits are degenerate"):
-            assert (
-                chemical_potentials.get_X_rich_poor_limit("Si-rich", self.chempots) == "SbTe2-SiSbTe3-Si"
-            )
+        result, _stdout, w = _run_func_and_capture_stdout_warnings(
+            chemical_potentials.get_X_rich_poor_limit, "Si-rich", self.chempots
+        )
+        assert result == "SbTe2-SiSbTe3-Si"
+        assert len(w) == 1
+        assert "Multiple chemical potential limits are degenerate" in str(w[0].message)
