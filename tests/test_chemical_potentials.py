@@ -422,12 +422,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 assert os.path.isfile(os.path.join(phase_relax, "KPOINTS"))
                 assert os.path.isfile(os.path.join(phase_relax, "POSCAR"))
 
-                # SinglePoint inputs
+                # SinglePoint inputs: POSCARs are not written by default:
                 phase_sp = os.path.join(phase_folder, "SinglePoint")
                 assert os.path.isdir(phase_sp)
                 assert os.path.isfile(os.path.join(phase_sp, "INCAR"))
                 assert os.path.isfile(os.path.join(phase_sp, "KPOINTS"))
-                assert os.path.isfile(os.path.join(phase_sp, "POSCAR"))
+                assert not os.path.isfile(os.path.join(phase_sp, "POSCAR"))
 
                 # kpoint_converge inputs
                 phase_k_dirs = sorted(glob.glob(f"{phase_folder}/kpoint_converge/k*"))
@@ -705,12 +705,18 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert contents == ["Zr_sv\n", "O"]
 
+        # POSCAR is not written by default (single-point calcs use user-supplied relaxed structures)
+        assert not os.path.exists(f"{ZrO2_ncl_folder}/POSCAR")
+        # KPOINTS is still written by default
+        assert os.path.exists(f"{ZrO2_ncl_folder}/KPOINTS")
+
         # molecule entry should have KPAR=1 and gamma-only kpoints
         O2_ncl_folder = "CompetingPhases/O2_mmm_EaH_0/vasp_ncl"
         assert os.path.exists(O2_ncl_folder)
         o2_dict_set = dict_sets["CompetingPhases/O2_mmm_EaH_0/vasp_ncl"]
         assert o2_dict_set.kpoints.kpts[0] == (1, 1, 1)
         assert o2_dict_set.incar["KPAR"] == 1
+        assert not os.path.exists(f"{O2_ncl_folder}/POSCAR")
 
         # test without SOC -> SinglePoint subfolder
         if_present_rm("CompetingPhases")
@@ -722,6 +728,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             contents = file.readlines()
             assert any("NSW = 0" in line for line in contents)
             assert not any("LSORBIT" in line for line in contents)
+        assert not os.path.exists(f"{ZrO2_sp_folder}/POSCAR")  # no POSCAR by default
 
         # overwrite warning
         with pytest.warns(UserWarning, match=r"already exists\. Overwriting files\."):
@@ -735,6 +742,13 @@ class CompetingPhasesTestCase(unittest.TestCase):
         ds_custom = dict_sets_custom["CompetingPhases/ZrO2_P2_1c_EaH_0/SinglePoint"]
         assert ds_custom.incar["ALGO"] == "Normal"
         assert ds_custom.incar["NSW"] == 0  # singlepoint settings still applied
+
+        # ``poscar=True`` explicitly writes POSCAR files
+        if_present_rm("CompetingPhases")
+        cp.write_singlepoint_files(soc=False, potcar_spec=True, poscar=True)
+        assert os.path.isfile(f"{ZrO2_sp_folder}/POSCAR")
+        assert os.path.isfile(f"{ZrO2_sp_folder}/INCAR")
+        assert os.path.isfile(f"{ZrO2_sp_folder}/KPOINTS")
 
     def test_singlepoint_custom_output_path(self):
         """

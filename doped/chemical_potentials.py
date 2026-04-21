@@ -1988,6 +1988,7 @@ class CompetingPhases(MSONable):
         extrinsic_only: bool = False,
         output_path: PathLike = "CompetingPhases",
         subfolder: PathLike | None = None,
+        poscar: bool = False,
         **kwargs,
     ) -> dict[str, DopedDictSet]:
         r"""
@@ -2087,6 +2088,12 @@ class CompetingPhases(MSONable):
                 to write input files directly to
                 ``<output_path>/<competing_phase_dir>``, with no subfolders
                 created.
+            poscar (bool):
+                Whether to write ``POSCAR`` files. Defaults to ``False``, as
+                single-point (static) calculations are intended to be run on
+                `relaxed` structures (e.g. from relaxations with
+                :func:`write_relaxation_files`), so using the (unrelaxed)
+                Materials Project structure is typically undesirable.
             **kwargs:
                 Additional kwargs to pass to ``DictSet.write_input()``
 
@@ -2106,19 +2113,22 @@ class CompetingPhases(MSONable):
             output_path=output_path,
             subfolder=subfolder,
         )
-        return self._write_competing_phase_dict_sets(dict_sets, **kwargs)
+        return self._write_competing_phase_dict_sets(dict_sets, poscar=poscar, **kwargs)
 
     def _write_competing_phase_dict_sets(
-        self, dict_sets: dict[str, DopedDictSet], **kwargs
+        self, dict_sets: dict[str, DopedDictSet], poscar: bool = True, **kwargs
     ) -> dict[str, DopedDictSet]:
         r"""
         Write a dictionary of ``DopedDictSet``\s to their corresponding output
         folders, warning if any already exist.
 
-        Skips writing ``POSCAR``/``KPOINTS`` for nominal structures.
+        ``POSCAR`` writing is controlled by the ``poscar`` argument (default
+        ``True``). ``POSCAR``/``KPOINTS`` are always skipped for nominal
+        (placeholder) structures, regardless of ``poscar``.
         """
         for fname, dict_set in dict_sets.items():
             write_kwargs = copy.deepcopy(kwargs)
+            write_kwargs["poscar"] = poscar
             if dict_set.structure.properties.get("_is_nominal_structure", False):
                 write_kwargs.update({"poscar": False, "kpoints": False})
 
