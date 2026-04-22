@@ -31,6 +31,7 @@ from doped.analysis import (
     DefectsParser,
     defect_from_structures,
     defect_name_from_structures,
+    guess_defect_position,
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
@@ -3803,3 +3804,50 @@ def test_shallow_dopant_binding_energy():
     )
     assert np.isclose(cdte_shallow_acceptor_binding_energy, 0.0319, atol=0.001)
     assert np.isclose(cdte_exciton_binding_energy, 0.0104, atol=0.001)
+
+
+def test_guess_defect_position_with_bulk_supercell():
+    """
+    Test ``guess_defect_position`` with and without the optional
+    ``bulk_supercell`` argument, using stenciled trigonal Se example supercells
+    (intrinsic vacancy, intrinsic split-interstitial, and extrinsic
+    interstitial).
+    """
+    Se_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "Se")
+    bulk = Structure.from_file(os.path.join(Se_EXAMPLE_DIR, "Se_20Å_Supercell_POSCAR"))
+
+    # (1) Intrinsic vacancy v_Se_0: both approaches should get within ~1.25 Å of the true vacancy
+    # position (slightly off due to surrounding relaxation):
+    v_Se = Structure.from_file(os.path.join(Se_EXAMPLE_DIR, "v_Se_0_20Å_Stenciled_POSCAR"))
+    vac_frac_coords = bulk[  # true missing (vacancy) site: bulk site farthest from any defect site
+        int(np.argmax([min(s.distance(ds) for ds in v_Se.sites) for s in bulk.sites]))
+    ].frac_coords
+
+    guesses = {}
+    for label, kwargs in [("no_bulk", {}), ("with_bulk", {"bulk_supercell": bulk})]:
+        guess = guess_defect_position(v_Se, **kwargs)
+        guesses[label] = guess
+        assert (
+            v_Se.lattice.get_distance_and_image(
+                vac_frac_coords,
+                v_Se.lattice.get_fractional_coords(guess),
+            )[0]
+            < 1.3
+        )
+    # both approaches give similar answers for this case (<0.1 Å apart):
+    assert np.linalg.norm(guesses["no_bulk"] - guesses["with_bulk"]) < 0.1
+
+    # (2) Intrinsic split-interstitial Se_i_C2_0: weighted-COM estimator cannot resolve the two
+    # interstitial sites exactly, but both approaches should give finite coordinates and agree closely
+    # with each other:
+    Se_i = Structure.from_file(os.path.join(Se_EXAMPLE_DIR, "Se_i_C2_0_20Å_Stenciled_POSCAR"))
+    guess_no_bulk = guess_defect_position(Se_i)
+    guess_with_bulk = guess_defect_position(Se_i, bulk_supercell=bulk)
+    assert np.linalg.norm(guess_no_bulk - guess_with_bulk) < 0.5  # with 0.5 Å of each other
+
+    # (3) Extrinsic interstitial F_i_C2_1: single F site, so the short-circuit should return its exact
+    # coordinates in both cases:
+    F_i = Structure.from_file(os.path.join(Se_EXAMPLE_DIR, "F_i_C2_1_20Å_Stenciled_POSCAR"))
+    f_site = next(s for s in F_i.sites if s.specie.symbol == "F")
+    for kwargs in ({}, {"bulk_supercell": bulk}):
+        np.testing.assert_allclose(guess_defect_position(F_i, **kwargs), f_site.coords)

@@ -573,6 +573,10 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     relaxation), and the pristine bulk structure with the `final` relaxed
     interstitial site for interstitials.
 
+    Note that this assumes consistent cell definitions (lattice vectors and
+    bases) for the input defect and bulk supercells, and does not perform any
+    structural re-orientations.
+
     Initial draft contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
     refactored for extrinsic species and several code efficiency/robustness
     improvements.

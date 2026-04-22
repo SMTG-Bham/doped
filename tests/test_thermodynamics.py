@@ -939,11 +939,30 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 )
             )[0]
             for entry in defect_thermo.defect_entries.values()
-        ]  # takes about 20 seconds in total locally, for the loop over all ~50 defect entries (x3 thermos)
-        # in ``test_CdTe_all_intrinsic_defects``
+        ]
         print(np.mean(guessed_def_pos_deviations))
         first_entry = next(iter(defect_thermo.defect_entries.values()))
-        assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.2
+        # Note: V2O5 gives largest mismatch of test cases; average ~0.128*max(bulk_lattice.abc) mismatch:
+        assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.13
+
+        print("Checking defect position guessing with bulk supercell reference")
+        guessed_def_pos_deviations_w_bulk = [
+            entry.defect_supercell_site.distance_and_image_from_frac_coords(
+                entry.bulk_supercell.lattice.get_fractional_coords(
+                    guess_defect_position(entry.defect_supercell, bulk_supercell=entry.bulk_supercell)
+                )
+            )[0]
+            for entry in defect_thermo.defect_entries.values()
+        ]
+        print(np.mean(guessed_def_pos_deviations_w_bulk))
+        if defect_thermo.bulk_formula not in ["MgO", "ZnS"]:
+            # odd cases; guessing w/out bulk acc does slightly better
+            assert np.mean(guessed_def_pos_deviations_w_bulk) <= np.mean(guessed_def_pos_deviations)
+        else:
+            assert np.isclose(
+                np.mean(guessed_def_pos_deviations_w_bulk), np.mean(guessed_def_pos_deviations), atol=0.1
+            )
+        assert np.mean(guessed_def_pos_deviations) < np.max(first_entry.bulk_supercell.lattice.abc) * 0.13
 
         print("Checking dict attributes passed to defect_entries successfully")
         assert len(defect_thermo) == len(defect_thermo.defect_entries)  # __len__()
@@ -3379,7 +3398,7 @@ def _check_doping_windows_dopability_limits_df(doping_df):
         {
             "Compensating Defect",
             "Dopability Limit (eV from VBM/CBM)",
-            "limit",
+            "Limit",
             "Doping Window (eV at VBM/CBM)",
         }
     )
@@ -3419,8 +3438,8 @@ def test_Sb2S3_doping_interior_grid_scan():
     dl_grid = sb2s3_thermo.get_dopability_limits()
     _check_doping_windows_dopability_limits_df(dw_grid)
     _check_doping_windows_dopability_limits_df(dl_grid)
-    assert dw_grid.loc["p-type", "limit"].startswith("interior (")
-    assert dl_grid.loc["p-type", "limit"].startswith("interior (")
+    assert dw_grid.loc["p-type", "Limit"].startswith("Interior (")
+    assert dl_grid.loc["p-type", "Limit"].startswith("Interior (")
     # interior optima are strictly better than every vertex; for the p-type doping window this means a
     # larger (less negative) value (more room before donor compensation at the VBM), and for the p-type
     # dopability limit this means a smaller (more VBM-ward) Fermi-level position (further p-type doping
@@ -3434,8 +3453,8 @@ def test_Sb2S3_doping_interior_grid_scan():
         < dl_vertex.loc["p-type", "Dopability Limit (eV from VBM/CBM)"]
     )
     # the n-type limit is at a vertex for both, and should be identical (no ties -> vertex retained):
-    assert dw_grid.loc["n-type", "limit"] == dw_vertex.loc["n-type", "limit"]
-    assert dl_grid.loc["n-type", "limit"] == dl_vertex.loc["n-type", "limit"]
+    assert dw_grid.loc["n-type", "Limit"] == dw_vertex.loc["n-type", "Limit"]
+    assert dl_grid.loc["n-type", "Limit"] == dl_vertex.loc["n-type", "Limit"]
 
 
 def test_Cu2SiSe3_dopability_interior_grid_scan():
@@ -3457,7 +3476,7 @@ def test_Cu2SiSe3_dopability_interior_grid_scan():
 
     dl_grid = cu2sise3_thermo.get_dopability_limits()
     _check_doping_windows_dopability_limits_df(dl_grid)
-    assert dl_grid.loc["p-type", "limit"].startswith("interior (")
+    assert dl_grid.loc["p-type", "Limit"].startswith("Interior (")
     # same compensating defect, but a more VBM-ward intercept than the best vertex:
     assert dl_grid.loc["p-type", "Compensating Defect"] == "Int_Se_2"
     assert dl_grid.loc["p-type", "Dopability Limit (eV from VBM/CBM)"] == pytest.approx(-0.770, abs=5e-3)
@@ -3466,7 +3485,7 @@ def test_Cu2SiSe3_dopability_interior_grid_scan():
         < dl_vertex.loc["p-type", "Dopability Limit (eV from VBM/CBM)"]
     )
     # n-type optimum is at a vertex, unchanged by the grid scan:
-    assert dl_grid.loc["n-type", "limit"] == dl_vertex.loc["n-type", "limit"]
+    assert dl_grid.loc["n-type", "Limit"] == dl_vertex.loc["n-type", "Limit"]
 
 
 def _check_CdTe_mismatch_fermi_dos_warning(output, w):

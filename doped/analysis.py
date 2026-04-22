@@ -17,7 +17,8 @@ import numpy as np
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
 from pymatgen.analysis.defects import core
-from pymatgen.analysis.defects.finder import cosine_similarity, get_site_vecs
+from pymatgen.analysis.defects.finder import cosine_similarity
+from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
@@ -196,6 +197,10 @@ def defect_site_from_structures(
     Auto-determines the defect site from the supplied bulk and defect
     structures, returning the corresponding |PeriodicSite|.
 
+    Note that this assumes consistent cell definitions (lattice vectors and
+    bases) for the input defect and bulk supercells, and does not perform any
+    structural re-orientations.
+
     Args:
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site.
@@ -284,6 +289,10 @@ def defect_from_structures(
     Auto-determines the defect type and defect site from the supplied bulk and
     defect structures, and returns a corresponding |Defect| object with the
     defect site in the primitive structure.
+
+    Note that this assumes consistent cell definitions (lattice vectors and
+    bases) for the input defect and bulk supercells, and does not perform any
+    structural re-orientations.
 
     If ``return_all_info`` is set to true, then also returns:
 
@@ -487,6 +496,10 @@ def defect_and_info_from_structures(
     defect site indices in the defect and bulk supercells, the guessed initial
     defect structure, and the unrelaxed defect structure).
 
+    Note that this assumes consistent cell definitions (lattice vectors and
+    bases) for the input defect and bulk supercells, and does not perform any
+    structural re-orientations.
+
     Args:
         defect_supercell (Structure):
             Defect structure to use for identifying the defect site and type.
@@ -628,33 +641,131 @@ def defect_and_info_from_structures(
     )
 
 
-def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
+def _soap_species_union_for_guess(
+    *structures: Structure,
+) -> tuple[str, ...]:
+    """
+    Sorted element symbols (by atomic number) for use as the ``dscribe`` SOAP
+    ``species=`` list.
+
+    Use the union of all structures to be compared (defect and/or bulk) so that
+    descriptor vectors share the same length and feature layout. Returns
+    ``None`` if ``structures`` is empty.
+    """
+    syms: set[str] = set()
+    for struct in structures:
+        for el in struct.composition.elements:
+            syms.add(el.symbol)
+    return tuple(sorted(syms, key=lambda s: int(Element(s).Z))) if syms else ()
+
+
+def _get_soap_vecs_for_guess(
+    structure: Structure,
+    species: tuple[str, ...] | None = None,
+    n_jobs: int = 1,
+    r_cut: float = 5.0,
+    n_max: int = 6,
+    l_max: int = 4,
+) -> np.ndarray:
+    """
+    Get per-site SOAP vectors for ``structure``, using ``dscribe``.
+
+    If ``species`` is ``None``, uses the sorted element list of ``struct``
+    only for the set of possible species in the SOAP vectors. When comparing
+    structures with different sets of species, one should pass the `union` of
+    their elements for ``species``, so that SOAP vectors are comparable. Extra
+    elements not present in ``struct`` are allowed in ``species`` (their SOAP
+    channels are zero).
+
+    Refactored from the implementation in
+    :func:`pymatgen.analysis.defects.finder.get_soap_vec` to be more efficient
+    (using a leaner, but robust SOAP featurisation) and to properly include
+    species identities.
+    """
+    try:
+        from dscribe.descriptors import SOAP
+    except ImportError as err:
+        raise ImportError(
+            "dscribe is required for SOAP-based defect position guessing. Install e.g. with ``pip "
+            "install dscribe``."
+        ) from err
+
+    soap_desc = SOAP(
+        species=list(species or _soap_species_union_for_guess(structure)),
+        r_cut=r_cut,
+        n_max=n_max,
+        l_max=l_max,
+        periodic=True,
+    )
+    return soap_desc.create(structure.to_ase_atoms(), n_jobs=n_jobs)
+
+
+def guess_defect_position(
+    defect_supercell: Structure,
+    bulk_supercell: Structure | None = None,
+    soap_n_jobs: int = 1,
+    soap_r_cut: float = 5.0,
+    soap_n_max: int = 6,
+    soap_l_max: int = 4,
+) -> np.ndarray[float]:
     """
     Guess the position (in Cartesian coordinates) of a defect in an input
-    defect supercell, without a bulk/reference supercell.
+    defect supercell, optionally using a bulk/reference supercell (but not
+    required!).
 
     This is achieved by computing cosine dissimilarities between site SOAP
-    vectors (and the mean SOAP vectors for each species) and then determining
-    the centre of mass of sites, weighted by the squared cosine
-    dissimilarities. For accurate defect site determination, the
-    ``defect_from_structure`` function (or underlying code) is preferred. These
-    coordinates are unlikely to `directly` match the defect position
-    (especially in the presence of random noise), but should provide a pretty
-    good estimate in most cases. If the defect is an extrinsic interstitial /
-    substitution, then this will identify the exact defect site.
+    vectors and a reference, and then determining the centre of mass of the
+    squared cosine dissimilarities.
+
+    If no ``bulk_supercell`` is provided (default), each site's SOAP vector is
+    compared to the mean SOAP vector of all sites `of the same species` in
+    ``defect_supercell``. If a ``bulk_supercell`` is provided, each defect
+    supercell site's SOAP vector is instead compared to the SOAP vector of its
+    nearest site (by Cartesian distance, accounting for periodic boundary
+    conditions) in the bulk supercell, which typically gives a stronger signal
+    around the defect site. This assumes the defect and bulk supercells share
+    the same lattice and are in the same origin frame (as is the case for
+    supercells generated by ``doped``).
+
+    For accurate defect site determination, the ``defect_from_structures``
+    function (or underlying code) is preferred. These coordinates are unlikely
+    to `directly` match the defect position (especially in the presence of
+    random noise), but should provide a pretty good estimate in most cases. If
+    the defect is an extrinsic interstitial / substitution, then this will
+    identify the exact defect site.
+
+    **Performance:** Creating SOAP descriptors (via ``dscribe``) is usually
+    the bottleneck. You can: (1) set ``soap_n_jobs`` > 1 to parallelise over
+    site-centres; (2) tune ``soap_l_max`` / ``soap_n_max`` / ``soap_r_cut`` as
+    needed. Default hyperparameters are a compact real-species ``dscribe`` SOAP
+    (``n_max=6``, ``l_max=4``).
 
     Args:
         defect_supercell (Structure):
             Defect supercell structure.
+        bulk_supercell (Structure | None):
+            Optional bulk (pristine) reference supercell. When provided, site
+            cosine dissimilarities are computed relative to the nearest
+            matching bulk-supercell site (rather than the per-species mean in
+            the defect supercell). Assumes ``defect_supercell`` and
+            ``bulk_supercell`` share the same lattice/origin alignment.
+            Default is ``None``.
+        soap_n_jobs (int):
+            ``n_jobs`` passed to ``dscribe``'s
+            :meth:`~dscribe.descriptors.SOAP.create` (parallelise over site
+            centres). Default is 1 (no parallelisation).
+        soap_r_cut (float):
+            SOAP cut-off radius in Å (for ``dscribe``), default 5.0.
+        soap_n_max (int):
+            SOAP radial basis size (for ``dscribe``), default 6.
+        soap_l_max (int):
+            SOAP maximum angular momentum (for ``dscribe``), default 4.
 
     Returns:
         np.ndarray[float]:
             Guessed position of the defect in **Cartesian** coordinates.
     """
 
-    # Note from profiling: This function is pretty fast (e.g. ~25 s for ~1000 frames of a ~100-atom
-    # supercell on SK's 2021 MacBook Pro), but the main bottleneck is SOAP vector creation,
-    # if we ever needed to accelerate
     def cos_dissimilarity(vec1, vec2):
         return 1 - cosine_similarity(vec1, vec2)
 
@@ -667,23 +778,56 @@ def guess_defect_position(defect_supercell: Structure) -> np.ndarray[float]:
         if list(i_elt_dict.values()).count(elt.symbol) == 1:
             return defect_supercell.sites[list(i_elt_dict.values()).index(elt.symbol)].coords
 
-    soap_vecs = [site_vec.vec for site_vec in get_site_vecs(defect_supercell)]
-    elt_mean_soap_vec_dict = {
-        elt.symbol: np.mean(
-            [soap_vec for i, soap_vec in enumerate(soap_vecs) if i_elt_dict[i] == elt.symbol],
-            axis=0,
+    if bulk_supercell is not None:
+        soap_species = _soap_species_union_for_guess(defect_supercell, bulk_supercell)
+    else:
+        soap_species = None
+
+    soap_vecs = _get_soap_vecs_for_guess(
+        defect_supercell,
+        species=soap_species,
+        n_jobs=soap_n_jobs,
+        r_cut=soap_r_cut,
+        n_max=soap_n_max,
+        l_max=soap_l_max,
+    )
+
+    if bulk_supercell is not None:  # compare each defect-supercell site to its nearest bulk site
+        bulk_desc = _get_soap_vecs_for_guess(
+            bulk_supercell,
+            species=soap_species,
+            n_jobs=soap_n_jobs,
+            r_cut=soap_r_cut,
+            n_max=soap_n_max,
+            l_max=soap_l_max,
         )
-        for elt in defect_supercell.composition.elements
-    }
-    cos_dissimilarities = [
-        cos_dissimilarity(soap_vecs[i], elt_mean_soap_vec_dict[i_elt]) for i, i_elt in i_elt_dict.items()
-    ]
+        bulk_frac_coords = bulk_supercell.frac_coords
+        cos_dissimilarities = []
+        for i, site in enumerate(defect_supercell.sites):
+            dists = bulk_supercell.lattice.get_all_distances(site.frac_coords, bulk_frac_coords)[0]
+            nearest_bulk_idx = int(np.argmin(dists))
+            cos_dissimilarities.append(
+                cos_dissimilarity(soap_vecs[i], bulk_desc[nearest_bulk_idx]),
+            )
+    else:
+        elt_mean_soap_vec_dict = {
+            elt.symbol: np.mean(
+                [soap_vecs[i] for i, i_elt in i_elt_dict.items() if i_elt == elt.symbol],
+                axis=0,
+            )
+            for elt in defect_supercell.composition.elements
+        }
+        cos_dissimilarities = [
+            cos_dissimilarity(soap_vecs[i], elt_mean_soap_vec_dict[i_elt])
+            for i, i_elt in i_elt_dict.items()
+        ]
 
     rel_cos_dissimilarities = np.zeros(len(defect_supercell))
-    for elt in elt_mean_soap_vec_dict:
-        indices = [i for i, i_elt in i_elt_dict.items() if i_elt == elt]
-        avg_cos_dissimilarity = np.mean([cos_dissimilarities[i] for i in indices])
-        rel_cos_dissimilarities[indices] = np.array(cos_dissimilarities)[indices] / avg_cos_dissimilarity
+    for elt_symbol in set(i_elt_dict.values()):
+        indices = [i for i, i_elt in i_elt_dict.items() if i_elt == elt_symbol]
+        elt_cos_dissimilarities = np.array([cos_dissimilarities[i] for i in indices])
+        avg_cos_dissimilarity = max(np.mean(elt_cos_dissimilarities), 1e-6)  # avoid divide-by-zero
+        rel_cos_dissimilarities[indices] = elt_cos_dissimilarities / avg_cos_dissimilarity
 
     largest_outlier = defect_supercell.sites[
         np.where(rel_cos_dissimilarities == np.max(rel_cos_dissimilarities))[0][0]
