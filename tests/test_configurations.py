@@ -90,6 +90,44 @@ class TestGetDQ(ConfigurationsTestCase):
         dQ_none_ignored = get_dQ(self.V_Se_m1_supercell, self.V_Se_m2_supercell)
         assert not np.isclose(dQ_none_ignored, 0.0)
 
+    def test_reorient_true_matches_manual_reorientation(self):
+        """
+        ``reorient=True`` should compute ΔQ after internally applying
+        ``orient_s2_like_s1`` to ``struct2``.
+        """
+        dQ_no_reorient = get_dQ(self.V_Se_m1_supercell, self.V_Se_m2_supercell, reorient=False)
+        dQ_no_reorient_default = get_dQ(self.V_Se_m1_supercell, self.V_Se_m2_supercell)
+        assert np.isclose(dQ_no_reorient, dQ_no_reorient_default, atol=1e-6)
+
+        dQ_reorient_kwarg = get_dQ(self.V_Se_m1_supercell, self.V_Se_m2_supercell, reorient=True)
+        V_Se_m2_like_m1 = orient_s2_like_s1(self.V_Se_m1_supercell, self.V_Se_m2_supercell)
+        dQ_manual = get_dQ(self.V_Se_m1_supercell, V_Se_m2_like_m1)
+
+        assert np.isclose(dQ_reorient_kwarg, dQ_manual, atol=1e-6)
+        assert not np.isclose(dQ_no_reorient, dQ_manual, atol=1e-6)
+
+    def test_reorient_true_with_ignored_species(self):
+        """
+        ``ignored_species`` should also be respected when ``reorient=True``.
+        """
+        dQ_reorient_kwarg = get_dQ(
+            self.v_Cd_0.defect_supercell,
+            self.v_Cd_m1.defect_supercell,
+            ignored_species=["Te"],
+            reorient=True,
+        )
+        dQ_manual = get_dQ(
+            self.v_Cd_0.defect_supercell,
+            orient_s2_like_s1(
+                self.v_Cd_0.defect_supercell,
+                self.v_Cd_m1.defect_supercell,
+                ignored_species=["Te"],
+            ),
+            ignored_species=["Te"],
+        )
+
+        assert np.isclose(dQ_reorient_kwarg, dQ_manual, atol=1e-6)
+
 
 class TestOrientS2LikeS1(ConfigurationsTestCase):
     """

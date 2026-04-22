@@ -55,8 +55,8 @@ def get_transformation_from_s2_to_s1(
               ``struct2`` (or ``None`` if there is no corresponding site), and
               the other items are the remaining site indices of ``struct2``.
     """
-    if sm_kwargs.get("ignored_species"):  # ensure it's hashable!
-        sm_kwargs["ignored_species"] = tuple(sm_kwargs["ignored_species"])
+    if ignored_species := sm_kwargs.pop("ignored_species", None):  # ensure it's hashable!
+        sm_kwargs["ignored_species"] = tuple(ignored_species)
 
     return _cache_ready_get_transformation_from_s2_to_s1(struct1, struct2, **sm_kwargs)
 
@@ -421,23 +421,44 @@ def orient_s2_like_s1(
 get_s2_like_s1 = orient_s2_like_s1  # alias similar to pymatgen's get_s2_like_s1
 
 
-def get_dQ(struct1: Structure, struct2: Structure, ignored_species: list[str] | None = None) -> float:
+def get_dQ(
+    struct1: Structure,
+    struct2: Structure,
+    ignored_species: list[str] | None = None,
+    reorient: bool = False,
+    **sm_kwargs,
+) -> float:
     """
     Get the mass-weighted displacement (ΔQ in amu^(1/2)Å) between two
-    structures, assuming matched atomic indices.
+    structures, assuming matched atomic indices (unless ``reorient`` is set to
+    ``True``).
 
     Args:
         struct1 (Structure): Initial structure.
         struct2 (Structure): Final structure.
         ignored_species (list[str] | None):
-            List of species to ignore when computing ΔQ. Default: ``None``
+            List of species to ignore when computing ΔQ (and re-orienting, if
+            relevant). Default: ``None``
+        reorient (bool):
+            If ``True``, first re-orient ``struct2`` to match ``struct1``
+            using ``orient_s2_like_s1()`` (with ``ignored_species`` forwarded),
+            then compute ΔQ. Useful when input structures are symmetry-
+            equivalent but have mismatched orientations / site indices.
+            Default: ``False``
+        **sm_kwargs:
+            Additional keyword arguments to forward to ``orient_s2_like_s1()``
+            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``),
+            if/when re-orientation is performed.
 
     Returns:
         float:
             The mass-weighted displacement (ΔQ in amu^(1/2)Å) between the two
-            structures, assuming matched atomic indices. Returns ``np.inf`` if
-            the structures are not matching.
+            structures. Returns ``np.inf`` if the structures are not matching.
     """
+    if reorient:
+        reorient_kwargs = {**sm_kwargs, "ignored_species": ignored_species or []}
+        struct2 = orient_s2_like_s1(struct1, struct2, **reorient_kwargs)
+
     struct1_sites = [site for site in struct1 if site.specie.symbol not in (ignored_species or [])]
     struct2_sites = [site for site in struct2 if site.specie.symbol not in (ignored_species or [])]
 
@@ -447,8 +468,8 @@ def get_dQ(struct1: Structure, struct2: Structure, ignored_species: list[str] | 
                 (a.distance(b) ** 2) * a.specie.atomic_mass
                 for a, b in zip(struct1_sites, struct2_sites, strict=True)
             )
-        )  # TODO: Option to reorient if not matching?
-        # which should then match output of when using get_linear_assignment_solution or
+        )
+        # reorient=True should then match output of when using get_linear_assignment_solution or
         # get_site_mapping_indices (TODO: use in tests)
     except Exception:
         return np.inf  # if the structures are not matching, return inf
