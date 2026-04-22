@@ -63,8 +63,8 @@ def _get_sorted_nn_distances(structure, frac_coords, n_neighbours=12):
 
 def plot_stenciled_vs_original_displacements(stenciled_entry: DefectEntry, original_entry: DefectEntry):
     """
-    Create a 1x2 figure comparing site displacements of the the original DFT
-    defect entry (left) against the stenciled defect entry (right).
+    Create a 1x2 figure comparing site displacements of the original DFT defect
+    entry (left) against the stenciled defect entry (right).
 
     Args:
         stenciled_entry (DefectEntry):

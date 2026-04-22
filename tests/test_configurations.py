@@ -5,13 +5,12 @@ Tests for the ``doped.utils.configurations`` module.
 import os
 import tempfile
 import unittest
-import warnings
 
 import numpy as np
 import pytest
 from pymatgen.core.operations import SymmOp
 from pymatgen.core.structure import Structure
-from test_utils import EXAMPLE_DIR, _print_warning_info, _run_func_and_capture_stdout_warnings, data_dir
+from test_utils import EXAMPLE_DIR, _run_func_and_capture_stdout_warnings, data_dir
 
 from doped.core import DefectEntry
 from doped.thermodynamics import DefectThermodynamics
@@ -26,7 +25,7 @@ from doped.utils.configurations import (
     write_path_structures,
 )
 from doped.utils.supercells import min_dist
-from doped.utils.symmetry import point_symmetry_from_structure
+from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure
 
 
 class ConfigurationsTestCase(unittest.TestCase):
@@ -209,12 +208,17 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
             coords_are_cartesian=False,
         )
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            orient_s2_like_s1(self.V_Se_m1_supercell, stretched_V_Se_m2)
-
-        _print_warning_info(w)
-        assert any("(symmetry-)inequivalent" in str(warning.message) for warning in w)
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            orient_s2_like_s1, self.V_Se_m1_supercell, stretched_V_Se_m2
+        )
+        assert len(w) == 2
+        assert (
+            "The lattices of the two input structures have been detected to be ("
+            "symmetry-)inequivalent. "
+        ) in str(w[0].message)
+        assert ("Note that the lattice definitions may differ between the output structure") in str(
+            w[-1].message
+        )
 
     def test_mismatched_compositions_raises(self):
         """
@@ -364,6 +368,16 @@ class TestGetPathStructures(ConfigurationsTestCase):
         super().setUpClass()
         cls.V_Se_m2_like_m1 = orient_s2_like_s1(cls.V_Se_m1_supercell, cls.V_Se_m2_supercell)
 
+        # ``V_Se^-1`` supercell shifted by (1/3, 0, 0) — one primitive `a` lattice vector in this 3x3x1
+        # supercell — so the structure is periodically equivalent to ``V_Se_m1_supercell`` (same defect
+        # at a symmetry-equivalent site). ``orient_s2_like_s1()`` maps it back onto the unshifted
+        # ``V_Se_m1_supercell`` exactly (ΔQ_before large, ΔQ_after ~ 0), used to test the
+        # NEB-between-symmetry-equivalent-sites warning path:
+        cls.shifted_V_Se_m1 = cls.V_Se_m1_supercell.copy()
+        cls.shifted_V_Se_m1.translate_sites(
+            list(range(len(cls.shifted_V_Se_m1))), [1 / 3, 0, 0], to_unit_cell=True
+        )
+
     def test_neb_mode_default_n_images(self):
         """
         ``get_path_structures`` with default ``n_images=7`` (NEB mode) should
@@ -445,6 +459,178 @@ class TestGetPathStructures(ConfigurationsTestCase):
             disp_dict_2["delQ_0.0"].frac_coords, self.V_Se_m2_like_m1.frac_coords, atol=1e-6
         )
 
+    def test_reorient_default_with_matched_inputs(self):
+        """
+        With already-matched inputs (``struct2`` already re-oriented to match
+        ``struct1``), the default ``reorient=None`` should be a no-op in
+        practice: no warnings should be raised, and the result should match the
+        ``reorient=False`` case (which skips re-orientation entirely).
+        """
+        result_default, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_like_m1
+        )
+        assert not w
+
+        result_no_reorient, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_like_m1, reorient=False
+        )
+        assert not w
+        for key in result_default:
+            np.testing.assert_allclose(
+                result_default[key].frac_coords, result_no_reorient[key].frac_coords, atol=1e-6
+            )
+
+    def test_reorient_none_default_with_mismatched_inputs_warns_and_reorients(self):
+        """
+        With mismatched inputs (``struct2`` not re-oriented to match
+        ``struct1``) and the default ``reorient=None``, ``struct2`` should be
+        re-oriented (producing the same output as if re-oriented externally
+        with ``reorient=False``) and a warning should be raised indicating re-
+        orientation was required.
+
+        With ``reorient=True`` on mismatched inputs, ``struct2`` should be
+        re-oriented (matching the ``reorient=None`` re-oriented output) but
+        `no` re-orientation warning should be raised (user explicitly requested
+        re-orientation).
+        """
+        result, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_supercell
+        )
+        assert any(
+            "did not have a matching orientation" in str(warning.message)
+            and "reorient=False" in str(warning.message)
+            and "ΔQ decreased from" in str(warning.message)
+            for warning in w
+        )
+        assert len(w) == 1
+
+        # result should match pre-orienting ``struct2`` first (i.e. equivalent to feeding in
+        # ``V_Se_m2_like_m1`` with ``reorient=False``):
+        reference, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_like_m1, reorient=False
+        )
+        assert not w
+
+        # re-orientation with no warning with reorient=True:
+        result_true, _, w_true = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_supercell, reorient=True
+        )
+        assert not w_true
+
+        for key in result:
+            np.testing.assert_allclose(result[key].frac_coords, reference[key].frac_coords, atol=1e-6)
+            np.testing.assert_allclose(result_true[key].frac_coords, reference[key].frac_coords, atol=1e-6)
+
+    def test_reorient_false_skips_reorientation(self):
+        """
+        With ``reorient=False``, mismatched inputs should not be re-oriented
+        (``orient_s2_like_s1`` is not applied) and no warning should be raised,
+        even if re-orientation would have meaningfully reduced ΔQ.
+
+        The raw endpoint should differ from the re-oriented output (note:
+        ``pymatgen``'s ``Structure.interpolate`` still auto-sorts atoms to
+        match ``struct1`` via ``autosort_tol``, but this only reorders sites
+        and does not apply the supercell transformation / unit cell
+        translations performed by ``orient_s2_like_s1``).
+        """
+        result_no_reorient, stdout, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_supercell, reorient=False
+        )
+        assert not w
+        assert not stdout
+
+        result_reorient, stdout, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.V_Se_m2_supercell, reorient=True
+        )
+        assert not w
+        assert not stdout
+
+        # the two endpoint structures should differ (re-orientation has a real effect):
+        assert not np.allclose(
+            result_no_reorient["07"].frac_coords, result_reorient["07"].frac_coords, atol=1e-3
+        )
+
+    def test_neb_between_symmetry_equivalent_sites_warns_and_skips_reorient(self):
+        """
+        In NEB mode (``displacements=None``) with the default
+        ``reorient=None``, if re-orienting ``struct2`` would reduce ΔQ below
+        ``0.1`` amu^(1/2)Å, this is assumed to be an NEB between different
+        symmetry-equivalent configurations (where re-orientation would collapse
+        the intended migration path) and re-orientation should be `skipped`,
+        with a warning raised (mentioning the small mass-weighted atomic
+        displacement).
+
+        Here ``struct2`` is ``struct1`` shifted by one primitive lattice
+        vector (a symmetry-equivalent configuration in the supercell), so
+        ``orient_s2_like_s1`` would map it back onto ``struct1`` exactly
+        (ΔQ_after ~ 0).
+        """
+        result, stdout, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.shifted_V_Se_m1
+        )
+        assert not stdout
+        assert any(
+            "small mass-weighted atomic displacement" in str(warning.message)
+            and "symmetry-equivalent" in str(warning.message)
+            and "reorient" in str(warning.message)
+            for warning in w
+        )
+
+        # verify re-orientation was skipped by comparing against the ``reorient=True`` output (which
+        # `does` apply re-orientation, mapping ``shifted_V_Se_m1`` back onto ``V_Se_m1_supercell``
+        # exactly -- giving ΔQ ~ 0). With re-orientation skipped, the endpoint retains the lattice
+        # shift and ΔQ relative to ``V_Se_m1_supercell`` should be substantially larger:
+        result_reoriented, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.shifted_V_Se_m1, reorient=True
+        )
+        assert not w
+        assert get_dQ(self.V_Se_m1_supercell, result_reoriented["07"]) < 0.1
+        assert get_dQ(self.V_Se_m1_supercell, result["07"]) > 10
+        assert np.isclose(get_dQ(self.V_Se_m1_supercell, result["00"]), 0)
+        # note that result["07"] is still a re-`ordered` (but not reoriented) version of
+        # ``self.shifted_V_Se_m1``, due to the auto-sorting in ``Structure.interpolate()``
+        assert not np.isclose(get_dQ(self.shifted_V_Se_m1, result["07"]), 0)
+        assert np.isclose(
+            get_dQ(get_clean_structure(self.shifted_V_Se_m1), get_clean_structure(result["07"])), 0
+        )
+
+    def test_neb_between_symmetry_equivalent_sites_reorient_true_suppresses_warning(self):
+        """
+        With the same symmetry-equivalent NEB inputs but ``reorient=True``
+        explicit, re-orientation is forced and no warning is raised; the two
+        endpoint structures become effectively identical (ΔQ ~ 0 across all
+        images since ``struct2`` is mapped onto ``struct1``).
+        """
+        result, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures, self.V_Se_m1_supercell, self.shifted_V_Se_m1, reorient=True
+        )
+        assert not w
+
+        # after re-orientation, ``shifted_V_Se_m1`` maps back to ``V_Se_m1_supercell``, so all
+        # intermediate images should have ΔQ ~ 0 relative to ``V_Se_m1_supercell``:
+        for key in result:
+            assert get_dQ(self.V_Se_m1_supercell, result[key]) < 0.1
+
+    def test_cc_mode_between_symmetry_equivalent_sites_reorients(self):
+        """
+        In CC mode (``displacements`` set) the NEB-between-symmetry-equivalent-
+        sites skip heuristic should not trigger -- i.e. re-orientation proceeds
+        normally and the regular "re-oriented" warning is raised instead.
+        """
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            get_path_structures,
+            self.V_Se_m1_supercell,
+            self.shifted_V_Se_m1,
+            displacements=[0.0, 1.0],
+        )
+        assert any(
+            "did not have a matching orientation" in str(warning.message)
+            and "reorient=False" in str(warning.message)
+            for warning in w
+        )
+        assert not any("small mass-weighted atomic displacement" in str(warning.message) for warning in w)
+        assert len(w) == 1
+
     def test_cc_mode_different_displacements2(self):
         """
         Setting a different ``displacements2`` should use different fractional
@@ -471,15 +657,12 @@ class TestGetPathStructures(ConfigurationsTestCase):
             assert np.isclose(dQ, abs(d) * dQ_total, atol=1e-3)
 
 
-class TestWritePathStructures(ConfigurationsTestCase):
+class TestWritePathStructures(TestGetPathStructures):
     """
     Tests for ``write_path_structures``.
-    """
 
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.V_Se_m2_like_m1 = orient_s2_like_s1(cls.V_Se_m1_supercell, cls.V_Se_m2_supercell)
+    Inherits ``setupclass`` from ``TestGetPathStructures``.
+    """
 
     def test_neb_output_structure(self):
         """
@@ -493,7 +676,7 @@ class TestWritePathStructures(ConfigurationsTestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = os.path.join(tmpdir, "NEB_test")
             n_images = 3
-            write_path_structures(
+            result = write_path_structures(
                 self.V_Se_m1_supercell,
                 self.V_Se_m2_like_m1,
                 output_dir=output_dir,
@@ -501,6 +684,11 @@ class TestWritePathStructures(ConfigurationsTestCase):
             )
             for folder_name in ["00", "01", "02", "03"]:
                 assert os.path.isfile(os.path.join(output_dir, folder_name, "POSCAR"))
+
+            # the function should also return the structures dict (NEB mode -> single dict with the
+            # same keys as the written folder names):
+            assert isinstance(result, dict)
+            assert list(result) == ["00", "01", "02", "03"]
 
             # round-trip: written POSCARs can be reloaded with the right
             # composition, and ΔQ scales linearly with image index:
@@ -510,6 +698,8 @@ class TestWritePathStructures(ConfigurationsTestCase):
                 assert written.composition == self.V_Se_m1_supercell.composition
                 dQ = get_dQ(self.V_Se_m1_supercell, written)
                 assert np.isclose(dQ, (i / n_images) * dQ_total, atol=1e-3)
+                # returned structures should match what was written (w.r.t. ΔQ from struct1):
+                assert np.isclose(get_dQ(self.V_Se_m1_supercell, result[f"0{i}"]), dQ, atol=1e-5)
 
     def test_cc_output_structure(self):
         """
@@ -522,7 +712,7 @@ class TestWritePathStructures(ConfigurationsTestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = os.path.join(tmpdir, "CC_test")
             displacements = [-1.0, 0.0, 0.5, 1.0]
-            write_path_structures(
+            result = write_path_structures(
                 self.V_Se_m1_supercell,
                 self.V_Se_m2_like_m1,
                 output_dir=output_dir,
@@ -532,16 +722,118 @@ class TestWritePathStructures(ConfigurationsTestCase):
                 for d in displacements:
                     assert os.path.isfile(os.path.join(output_dir, pes, f"delQ_{d}", "POSCAR"))
 
+            # the function should also return the structures (CC mode -> tuple of two dicts with
+            # keys matching the ``delQ_<x>`` folder names under ``PES_1`` / ``PES_2``):
+            assert isinstance(result, tuple)
+            assert len(result) == 2
+            expected_keys = [f"delQ_{d}" for d in displacements]
+            assert list(result[0]) == expected_keys
+            assert list(result[1]) == expected_keys
+
             # re-read POSCARs and check ΔQ linear scaling w.r.t. the
             # corresponding endpoint:
             dQ_total = get_dQ(self.V_Se_m1_supercell, self.V_Se_m2_like_m1)
-            for endpoint, pes in zip(
-                (self.V_Se_m1_supercell, self.V_Se_m2_like_m1), ("PES_1", "PES_2"), strict=True
+            for endpoint, pes, returned in zip(
+                (self.V_Se_m1_supercell, self.V_Se_m2_like_m1),
+                ("PES_1", "PES_2"),
+                result,
+                strict=True,
             ):
                 for d in displacements:
                     written = Structure.from_file(os.path.join(output_dir, pes, f"delQ_{d}", "POSCAR"))
                     dQ = get_dQ(endpoint, written)
                     assert np.isclose(dQ, abs(d) * dQ_total, atol=1e-3)
+                    # returned structure for this (PES, delQ) should match what was written:
+                    assert np.isclose(get_dQ(endpoint, returned[f"delQ_{d}"]), dQ, atol=1e-5)
+
+    def test_reorient_none_default_with_mismatched_inputs_warns_and_reorients(self):
+        """
+        With mismatched inputs, the default ``reorient=None`` should re-orient
+        ``struct2`` before writing (so the written endpoint matches the re-
+        oriented ``struct2``), and raise a warning indicating re-orientation
+        was required.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = os.path.join(tmpdir, "NEB_reorient")
+            result, _, w = _run_func_and_capture_stdout_warnings(
+                write_path_structures,
+                self.V_Se_m1_supercell,
+                self.V_Se_m2_supercell,
+                output_dir=output_dir,
+                n_images=2,
+            )
+            assert any(
+                "did not have a matching orientation" in str(warning.message)
+                and "reorient=False" in str(warning.message)
+                for warning in w
+            )
+            assert len(w) == 1
+            written_end = Structure.from_file(os.path.join(output_dir, "02", "POSCAR"))
+            # after re-orientation, endpoint should match ``V_Se_m2_like_m1`` (not raw ``V_Se_m2``):
+            assert np.isclose(get_dQ(written_end, self.V_Se_m2_like_m1), 0.0, atol=1e-3)
+            # returned dict endpoint should also match the re-oriented ``V_Se_m2_like_m1``:
+            assert isinstance(result, dict)
+            assert list(result) == ["00", "01", "02"]
+            assert np.isclose(get_dQ(result["02"], self.V_Se_m2_like_m1), 0.0, atol=1e-3)
+
+    def test_reorient_false_skips_reorientation(self):
+        """
+        With ``reorient=False`` on mismatched inputs, no re-orientation is
+        performed (written endpoint matches the raw ``struct2``) and no warning
+        is raised.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = os.path.join(tmpdir, "NEB_no_reorient")
+            result, _, w = _run_func_and_capture_stdout_warnings(
+                write_path_structures,
+                self.V_Se_m1_supercell,
+                self.V_Se_m2_supercell,
+                output_dir=output_dir,
+                n_images=2,
+                reorient=False,
+            )
+            assert not w
+            written_end = Structure.from_file(os.path.join(output_dir, "02", "POSCAR"))
+            # without re-orientation, endpoint should match the raw ``V_Se_m2``:
+            assert np.isclose(get_dQ(written_end, self.V_Se_m2_supercell), 0.0, atol=1e-3)
+            # returned dict endpoint should also match the raw (un-reoriented) ``V_Se_m2``:
+            assert isinstance(result, dict)
+            assert list(result) == ["00", "01", "02"]
+            assert np.isclose(get_dQ(result["02"], self.V_Se_m2_supercell), 0.0, atol=1e-3)
+
+    def test_neb_between_symmetry_equivalent_sites_warns_and_skips_reorient(self):
+        """
+        In NEB mode with the default ``reorient=None``, when re-orientation
+        would reduce ΔQ below ``0.1`` amu^(1/2)Å (assumed to be NEB between
+        symmetry-equivalent sites), re-orientation should be `skipped` and a
+        warning raised about the small mass-weighted atomic displacement.
+        """
+        # using ``V_Se_m1`` shifted by one primitive a-axis lattice vector in the 3x3x1 supercell:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = os.path.join(tmpdir, "NEB_equiv_sites")
+            result, _, w = _run_func_and_capture_stdout_warnings(
+                write_path_structures,
+                self.V_Se_m1_supercell,
+                self.shifted_V_Se_m1,
+                output_dir=output_dir,
+                n_images=2,
+            )
+            assert any(
+                "small mass-weighted atomic displacement" in str(warning.message)
+                and "symmetry-equivalent" in str(warning.message)
+                for warning in w
+            )
+            assert len(w) == 1
+            # verify re-orientation was skipped: the endpoint should `not` match ``V_Se_m1_supercell``
+            # (which is what re-orientation would produce, mapping ``shifted_V_Se_m1`` back onto
+            # ``V_Se_m1_supercell`` exactly with ΔQ ~ 0). ``Structure.interpolate``'s ``autosort_tol``
+            # reorders sites but retains the lattice shift, giving a substantially larger ΔQ:
+            written_end = Structure.from_file(os.path.join(output_dir, "02", "POSCAR"))
+            assert get_dQ(self.V_Se_m1_supercell, written_end) > 10
+            # returned dict endpoint should match the written one (i.e. also un-reoriented):
+            assert isinstance(result, dict)
+            assert list(result) == ["00", "01", "02"]
+            assert get_dQ(self.V_Se_m1_supercell, result["02"]) > 10
 
     def test_default_output_dir(self):
         """
@@ -552,15 +844,25 @@ class TestWritePathStructures(ConfigurationsTestCase):
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 os.chdir(tmpdir)
-                write_path_structures(self.V_Se_m1_supercell, self.V_Se_m2_like_m1, n_images=2)
+                neb_result = write_path_structures(
+                    self.V_Se_m1_supercell, self.V_Se_m2_like_m1, n_images=2
+                )
                 assert os.path.isdir("NEB")
+                # NEB mode returns a single dict:
+                assert isinstance(neb_result, dict)
+                assert list(neb_result) == ["00", "01", "02"]
 
-                write_path_structures(
+                cc_result = write_path_structures(
                     self.V_Se_m1_supercell,
                     self.V_Se_m2_like_m1,
                     displacements=[0.0, 1.0],
                 )
                 assert os.path.isdir("Configuration_Coordinate")
+                # CC mode returns a tuple of two dicts:
+                assert isinstance(cc_result, tuple)
+                assert len(cc_result) == 2
+                assert list(cc_result[0]) == ["delQ_0.0", "delQ_1.0"]
+                assert list(cc_result[1]) == ["delQ_0.0", "delQ_1.0"]
         finally:
             os.chdir(original_cwd)
 

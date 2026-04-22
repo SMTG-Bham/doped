@@ -413,7 +413,7 @@ def orient_s2_like_s1(
         print(f"ΔQ(s1/s2_like_s1) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å")
 
     # TODO: Add (optional) check for atom mapping here? Currently doesn't warn if we still have mismatch
-    # in lattice definitions -- important
+    # in lattice definitions -- important; see stenciling
 
     return struct2_really_like_struct1
 
@@ -454,12 +454,104 @@ def get_dQ(struct1: Structure, struct2: Structure, ignored_species: list[str] | 
         return np.inf  # if the structures are not matching, return inf
 
 
+def _reorient_struct2_and_warn(
+    struct1: Structure,
+    struct2: Structure,
+    reorient: bool | None = None,
+    neb: bool = False,
+    verbose: bool = False,
+    **sm_kwargs,
+) -> Structure:
+    """
+    Re-orient ``struct2`` to match ``struct1`` (using ``orient_s2_like_s1``),
+    with behaviour controlled by ``reorient`` (and ``neb``).
+
+    If ``reorient`` is ``None`` (default), ``struct2`` is re-oriented to match
+    ``struct1`` and a warning is raised if re-orientation meaningfully
+    decreased the mass-weighted displacement (ΔQ in amu^(1/2)Å) -- i.e. if the
+    input ``struct2`` did not already have a matched orientation / atomic
+    indexing with ``struct1``. In this case, if additionally ``neb`` is
+    ``True`` (``False`` by default) and re-orientation reduces ΔQ to
+    <0.1 amu^(1/2)Å (i.e. essentially the same structure), re-orientation is
+    instead `skipped` and a different warning is raised, since we assume the
+    goal was a NEB calculation between different but symmetry-equivalent
+    geometries (e.g. defect migration between equivalent sites).
+
+    If ``reorient`` is ``True``, ``struct2`` is always re-oriented and no
+    warning is raised. If ``reorient`` is ``False``, ``struct2`` is returned
+    unchanged and no warning is raised.
+
+    Args:
+        struct1 (Structure): Reference |Structure|.
+        struct2 (Structure): |Structure| to re-orient to match ``struct1``.
+        reorient (bool | None):
+            Controls re-orientation behaviour; see function description above
+            for details. One of ``True`` (always re-orient, no warning),
+            ``False`` (never re-orient, no warning), or ``None`` (re-orient
+            and warn if re-orientation was actually necessary, with special
+            handling for ``neb=True`` case). Default: ``None``
+        neb (bool):
+            If ``True``, treat the function call as setting up an NEB
+            calculation (only relevant when ``reorient`` is ``None``); if
+            re-orientation would reduce ΔQ below ``0.1`` amu^(1/2)Å, this is
+            assumed to be an NEB between symmetry-equivalent sites and
+            re-orientation is skipped (with a corresponding warning).
+            Default: ``False``
+        verbose (bool):
+            Forwarded to ``orient_s2_like_s1``; prints ΔQ information.
+            Default: ``False``
+        **sm_kwargs:
+            Additional keyword arguments forwarded to ``orient_s2_like_s1``
+            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``).
+
+    Returns:
+        Structure:
+            ``struct2`` re-oriented to match ``struct1`` as closely as
+            possible (if ``reorient`` is ``True`` or ``None``, and the
+            NEB-between-symmetry-equivalent-sites case is not detected),
+            otherwise the input ``struct2`` unchanged.
+    """
+    if reorient is False:
+        return struct2
+
+    delQ_before = get_dQ(struct1, struct2, ignored_species=sm_kwargs.get("ignored_species"))
+    struct2_oriented = orient_s2_like_s1(struct1, struct2, verbose=verbose, **sm_kwargs)
+    delQ_after = get_dQ(struct1, struct2_oriented, ignored_species=sm_kwargs.get("ignored_species"))
+
+    # warn when re-orientation was actually required (i.e. ΔQ meaningfully decreased), and reorient is None
+    if delQ_after < delQ_before - 1e-2 and reorient is None:
+        if delQ_after < 0.1 and neb:
+            warnings.warn(
+                f"The input ``struct2`` did not have a matching orientation / atomic indexing with "
+                f"``struct1``, but re-orienting to give the closest match gives a small mass-weighted "
+                f"atomic displacement ΔQ of {delQ_after:.2f} amu^(1/2)Å (compared to {delQ_before:.2f} "
+                f"amu^(1/2)Å before), suggesting that this could be a NEB calculation between different "
+                f"symmetry-equivalent sites, and so re-orientation has been skipped. Set ``reorient`` to "
+                f"True/False to control this behaviour, or see the ``doped`` configuration coordinate / "
+                f"NEB path generation tutorial for details."
+            )
+            return struct2
+
+        warnings.warn(
+            f"The input ``struct2`` did not have a matching orientation / atomic indexing with "
+            f"``struct1``, so has been re-oriented using ``orient_s2_like_s1()`` to give the shortest "
+            f"linear interpolation path between them (ΔQ decreased from {delQ_before:.2f} to "
+            f"{delQ_after:.2f} amu^(1/2)Å). Set ``reorient=False`` to disable this behaviour, or see the "
+            f"``doped`` configuration coordinate / NEB path generation tutorial for details."
+        )
+
+    return struct2_oriented
+
+
 def get_path_structures(
     struct1: Structure,
     struct2: Structure,
     n_images: int | np.ndarray | list[float] = 7,
     displacements: np.ndarray | list[float] | None = None,
     displacements2: np.ndarray | list[float] | None = None,
+    reorient: bool | None = None,
+    verbose: bool = False,
+    **sm_kwargs,
 ) -> dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
     """
     Generate a series of interpolated structures along the linear path between
@@ -468,24 +560,31 @@ def get_path_structures(
 
     Structures are output as a dictionary with keys corresponding to either the
     index of the interpolated structure (0-indexed; ``00``, ``01`` etc as for
-    VASP NEB calculations) or the fractional displacement along the
+    ``VASP`` NEB calculations) or the fractional displacement along the
     interpolation path between structures, and values corresponding to the
     interpolated structure. If ``displacements`` is set (and thus two sets of
     structures are generated), a tuple of such dictionaries is returned.
 
-    Note that for NEB calculations, the the lattice vectors and order of sites
+    Note that for NEB calculations, the lattice vectors and order of sites
     (atomic indices) must be consistent in both ``struct1`` and ``struct2``.
-    This can be ensured by using the ``orient_s2_like_s1()`` function in
-    ``doped.utils.configurations``, as shown in the ``doped`` tutorials. This
-    is also desirable for CC diagrams, as the atomic indices are assumed to
-    match for many parsing and plotting functions (e.g. in ``nonrad`` and
-    ``CarrierCapture.jl``), but is not strictly necessary. If the input
-    structures are detected to be different (symmetry-inequivalent) geometries
-    (e.g. not a simple defect migration between two symmetry-equivalent sites),
-    but have mis-matching orientations/ positions (such that they do not
-    correspond to the shortest linear path between them), a warning will be
-    raised. See the ``doped`` configuration coordinate / NEB path generation
-    tutorial for a deeper explanation.
+    This is also desirable for CC diagrams, as the atomic indices are assumed
+    to match for many parsing and plotting functions (e.g. in ``nonrad`` and
+    ``CarrierCapture.jl``), but is not strictly necessary -- though is
+    typically required for appropriate structure interpolation. By default
+    (``reorient=None``), this function uses ``orient_s2_like_s1()`` to (attempt
+    to) re-orient ``struct2`` to match the lattice vectors and site ordering of
+    ``struct1`` as closely as possible, and warns if this re-orientation was
+    actually required (i.e. if the input structures did not already correspond
+    to the shortest linear interpolation path between them).
+    In the case of NEB for defect migration between symmetry-equivalent sites,
+    this is not desired, and so re-orientation will be skipped if it results in
+    a near-zero final mass-weighted displacement (ΔQ) between the structures
+    (<0.1 amu^(1/2)Å), ``reorient`` is ``None`` (default), and
+    ``displacements`` is ``None`` (i.e. assuming an NEB / PES calculation).
+    Otherwise set ``reorient`` explicitly to ``True/False`` to control this
+    behaviour. See the ``doped`` configuration coordinate / NEB path generation
+    `tutorial <https://doped.readthedocs.io/en/latest/CCD_NEB_tutorial.html>`__
+    for further discussion.
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is generated (in other words,
@@ -521,6 +620,33 @@ def get_path_structures(
             ``displacements`` is not ``None``, then the same set of
             displacements is used for both sets of interpolated structures.
             Default: ``None``
+        reorient (bool | None):
+            Controls whether to automatically re-orient ``struct2`` to match
+            ``struct1`` (using ``orient_s2_like_s1()``) before generating the
+            interpolated path structures, which ensures matched lattice
+            vectors / atomic indices and the shortest linear interpolation
+            path between the endpoints. One of:
+
+            - ``True``: always re-orient, no warnings.
+            - ``False``: never re-orient (use ``struct2`` as provided), no
+              warnings.
+            - ``None`` (default): re-orient ``struct2`` and warn if
+              re-orientation was actually necessary (i.e. if the
+              mass-weighted displacement ΔQ decreased as a result). In NEB
+              mode (``displacements=None``), if re-orientation reduces ΔQ
+              below ``0.1`` amu^(1/2)Å this is assumed to be an NEB between
+              symmetry-equivalent sites (where re-orientation is not
+              desired); thus re-orientation is skipped and a different warning
+              is raised.
+        verbose (bool):
+            If ``True`` and re-orientation is performed, ``orient_s2_like_s1()``
+            prints information about the mass-weighted displacement (ΔQ in
+            amu^(1/2)Å) between ``struct1`` and ``struct2`` (pre and post
+            re-orientation). Default: ``False``
+        **sm_kwargs:
+            Additional keyword arguments to forward to ``orient_s2_like_s1()``
+            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``),
+            when re-orientation is performed.
 
     Returns:
         dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
@@ -528,6 +654,14 @@ def get_path_structures(
             two dictionaries of structures (for CC / non-radiative
             calculations, when ``displacements`` is not ``None``).
     """
+    struct2 = _reorient_struct2_and_warn(
+        struct1,
+        struct2,
+        reorient=reorient,
+        neb=displacements is None,
+        verbose=verbose,
+        **sm_kwargs,
+    )
     if displacements is None:
         disp_1 = struct1.interpolate(
             struct2, n_images, interpolate_lattices=True, pbc=True, autosort_tol=1.2
@@ -643,7 +777,10 @@ def write_path_structures(
     n_images: int | list = 7,
     displacements: np.ndarray | list[float] | None = None,
     displacements2: np.ndarray | list[float] | None = None,
-):
+    reorient: bool | None = None,
+    verbose: bool = False,
+    **sm_kwargs,
+) -> dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
     """
     Generate a series of interpolated structures along the linear path between
     ``struct1`` and ``struct2``, typically for use in NEB calculations or
@@ -655,20 +792,26 @@ def write_path_structures(
     (e.g. ``delQ_0.0``, ``delQ_0.1``, ``delQ_-0.1`` etc), depending on the
     input ``n_images``/``displacements`` settings.
 
-    Note that for NEB calculations, the the lattice vectors and order of sites
+    Note that for NEB calculations, the lattice vectors and order of sites
     (atomic indices) must be consistent in both ``struct1`` and ``struct2``.
-    This can be ensured by using the ``orient_s2_like_s1()`` function in
-    ``doped.utils.configurations``, as shown in the ``doped`` tutorials. This
-    is also desirable for CC diagrams, as the atomic indices are assumed to
-    match for many parsing and plotting functions (e.g. in ``nonrad`` and
-    ``CarrierCapture.jl``), but is not strictly necessary. If the input
-    structures are detected to be different (symmetry-inequivalent) geometries
-    (e.g. not a simple defect migration between two symmetry-equivalent sites),
-    but have mis-matching orientations/ positions (such that they do not
-    correspond to the shortest linear path between them), a warning will be
-    raised. See the ``doped`` configuration coordinate / NEB path generation
+    This is also desirable for CC diagrams, as the atomic indices are assumed
+    to match for many parsing and plotting functions (e.g. in ``nonrad`` and
+    ``CarrierCapture.jl``), but is not strictly necessary -- though is
+    typically required for appropriate structure interpolation. By default
+    (``reorient=None``), this function uses ``orient_s2_like_s1()`` to (attempt
+    to) re-orient ``struct2`` to match the lattice vectors and site ordering of
+    ``struct1`` as closely as possible, and warns if this re-orientation was
+    actually required (i.e. if the input structures did not already correspond
+    to the shortest linear interpolation path between them).
+    In the case of NEB for defect migration between symmetry-equivalent sites,
+    this is not desired, and so re-orientation will be skipped if it results in
+    a near-zero final mass-weighted displacement (ΔQ) between the structures
+    (<0.1 amu^(1/2)Å), ``reorient`` is ``None`` (default), and
+    ``displacements`` is ``None`` (i.e. assuming an NEB / PES calculation).
+    Otherwise set ``reorient`` explicitly to ``True/False`` to control this
+    behaviour. See the ``doped`` configuration coordinate / NEB path generation
     `tutorial <https://doped.readthedocs.io/en/latest/CCD_NEB_tutorial.html>`__
-    for a deeper explanation.
+    for further discussion.
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is written (in other words,
@@ -708,8 +851,50 @@ def write_path_structures(
             ``displacements`` is not ``None``, then the same set of
             displacements is used for both sets of interpolated structures.
             Default: ``None``
+        reorient (bool | None):
+            Controls whether to automatically re-orient ``struct2`` to match
+            ``struct1`` (using ``orient_s2_like_s1()``) before generating the
+            interpolated path structures, which ensures matched lattice
+            vectors / atomic indices and the shortest linear interpolation
+            path between the endpoints. One of:
+
+            - ``True``: always re-orient, no warnings.
+            - ``False``: never re-orient (use ``struct2`` as provided), no
+              warnings.
+            - ``None`` (default): re-orient ``struct2`` and warn if
+              re-orientation was actually necessary (i.e. if the
+              mass-weighted displacement ΔQ decreased as a result). In NEB
+              mode (``displacements=None``), if re-orientation reduces ΔQ
+              below ``0.1`` amu^(1/2)Å this is assumed to be an NEB between
+              symmetry-equivalent sites (where re-orientation is not
+              desired); thus re-orientation is skipped and a different warning
+              is raised.
+        verbose (bool):
+            If ``True`` and re-orientation is performed, ``orient_s2_like_s1()``
+            prints information about the mass-weighted displacement (ΔQ in
+            amu^(1/2)Å) between ``struct1`` and ``struct2`` (pre and post
+            re-orientation). Default: ``False``
+        **sm_kwargs:
+            Additional keyword arguments to forward to ``orient_s2_like_s1()``
+            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``),
+            when re-orientation is performed.
+
+    Returns:
+        dict[str, Structure] | tuple[dict[str, Structure], dict[str, Structure]]:
+            Dictionary of structures (for NEB/PES calculations), or tuple of
+            two dictionaries of structures (for CC / non-radiative
+            calculations, when ``displacements`` is not ``None``).
     """
-    path_structs = get_path_structures(struct1, struct2, n_images, displacements, displacements2)
+    path_structs = get_path_structures(
+        struct1,
+        struct2,
+        n_images=n_images,
+        displacements=displacements,
+        displacements2=displacements2,
+        reorient=reorient,
+        verbose=verbose,
+        **sm_kwargs,
+    )
     path_struct_dicts = [path_structs] if isinstance(path_structs, dict) else list(path_structs)
     output_dir = output_dir or ("Configuration_Coordinate" if displacements is not None else "NEB")
 
@@ -720,5 +905,4 @@ def write_path_structures(
             os.makedirs(path_to_folder, exist_ok=True)
             struct.to(filename=f"{path_to_folder}/POSCAR", fmt="poscar")
 
-
-# TODO: Re-orient directly in generation functions, but with option not to?
+    return path_structs
