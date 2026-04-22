@@ -469,8 +469,6 @@ def get_dQ(
                 for a, b in zip(struct1_sites, struct2_sites, strict=True)
             )
         )
-        # reorient=True should then match output of when using get_linear_assignment_solution or
-        # get_site_mapping_indices (TODO: use in tests)
     except Exception:
         return np.inf  # if the structures are not matching, return inf
 

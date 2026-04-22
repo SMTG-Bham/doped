@@ -24,6 +24,7 @@ from doped.utils.configurations import (
     orient_s2_like_s1,
     write_path_structures,
 )
+from doped.utils.parsing import get_site_mapping_indices
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure
 
@@ -46,6 +47,7 @@ class ConfigurationsTestCase(unittest.TestCase):
         cls.V_Se_m2_supercell = cls.Se_intrinsic_thermo["vac_1_Se_-2"].defect_supercell
 
         # binary CdTe vacancies (different charge states), from ``tests/data``:
+        # remember v_Cd_0 has vacancy at [0.5, 0.5, 0.5], v_Cd_m1 has it at [0, 0, 0]
         cls.v_Cd_0 = DefectEntry.from_json(f"{data_dir}/v_Cd_defect_entry.json.gz")
         cls.v_Cd_m1 = DefectEntry.from_json(f"{data_dir}/v_Cd_m1_defect_entry.json.gz")
 
@@ -127,6 +129,29 @@ class TestGetDQ(ConfigurationsTestCase):
         )
 
         assert np.isclose(dQ_reorient_kwarg, dQ_manual, atol=1e-6)
+
+    def test_reorient_true_matches_site_mapping_formula(self):
+        """
+        ``get_dQ(..., reorient=True)`` should match the equivalent ΔQ computed
+        from ``get_site_mapping_indices`` with a mapped weighted-distance sum,
+        **if** no re-orientation is required (only re-ordering).
+        """
+        struct1 = self.V_Se_m1_supercell
+        struct2 = get_clean_structure(self.V_Se_m2_supercell)  # re-order to break ordering match
+
+        raw_dQ_no_reorient = get_dQ(struct1, struct2)
+        dQ_reorient = get_dQ(struct1, struct2, reorient=True)
+        dQ_from_mapping = np.sqrt(
+            sum(
+                (struct1[i].distance(struct2[j]) ** 2) * struct1[i].specie.atomic_mass
+                for _, i, j in get_site_mapping_indices(struct1, struct2)
+                if i is not None and j is not None
+            )
+        )
+        assert raw_dQ_no_reorient > 500  # large dQ due to ordering mismatch
+        assert dQ_from_mapping < 10  # much lower dQ with mapping
+        assert dQ_reorient < dQ_from_mapping
+        assert dQ_reorient < 9  # lower dQ again with re-orientation
 
 
 class TestOrientS2LikeS1(ConfigurationsTestCase):
