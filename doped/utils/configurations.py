@@ -358,8 +358,6 @@ def orient_s2_like_s1(
     Returns:
         Structure:
         ``struct2`` re-oriented to match ``struct1`` as closely as possible.
-
-        # TODO: Option to return RMSD, just displacement, anything else?
     """
     trans = get_transformation_from_s2_to_s1(
         struct1,
