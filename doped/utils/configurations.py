@@ -14,6 +14,7 @@ from pymatgen.core.structure import PeriodicSite, Structure
 from pymatgen.util.typing import PathLike
 
 from doped.utils.efficiency import StructureMatcher_scan_stol, get_element_min_max_bond_length_dict
+from doped.utils.parsing import check_atom_mapping_far_from_defect
 
 
 def get_transformation_from_s2_to_s1(
@@ -290,6 +291,7 @@ def orient_s2_like_s1(
     struct2: Structure,
     new_lattice: str | None = None,
     verbose: bool = False,
+    check_mapping: bool = True,
     **sm_kwargs,
 ) -> Structure:
     """
@@ -338,6 +340,16 @@ def orient_s2_like_s1(
             Print information about the mass-weighted displacement
             (ΔQ in amu^(1/2)Å) between the input and re-oriented structures.
             Default: ``False``
+        check_mapping (bool):
+            If ``True`` (default), check the atom mapping between ``struct1``
+            and the re-oriented ``struct2`` (using
+            ``check_atom_mapping_far_from_defect`` from
+            ``doped.utils.parsing``), warning if a significant mismatch
+            remains throughout the cell after re-orientation. This typically
+            indicates a mismatch in the lattice definitions (e.g. different
+            tiling of primitive cells within identical supercell lattice
+            vectors) between the two input structures, which cannot be resolved
+            by reorientation alone. Set to ``False`` to skip the check.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()`` /
             ``StructureMatcher_scan_stol`` (e.g. ``ignored_species``,
@@ -362,6 +374,7 @@ def orient_s2_like_s1(
             f"and lattices:\nstruct1: {struct1.lattice}\nstruct2: {struct2.lattice}"
         )
 
+    ignored_species = sm_kwargs.get("ignored_species")  # used throughout this function
     struct2_really_like_struct1 = apply_s2_to_s1_transformation(
         struct1,
         struct2,
@@ -370,27 +383,21 @@ def orient_s2_like_s1(
         mapping=trans[2],
         new_lattice=new_lattice,
         include_ignored_species=sm_kwargs.get("include_ignored_species", True),
-        ignored_species=sm_kwargs.get("ignored_species"),
+        ignored_species=ignored_species,
     )
 
     # we see that this rearranges the structure so the atom indices should now match correctly. This should
     # give a lower dQ as we see here (or the same if the original structures matched perfectly)
-    delQ_s1_s2 = get_dQ(struct1, struct2, ignored_species=sm_kwargs.get("ignored_species"))
-    delQ_s2_like_s1_s2 = get_dQ(
-        struct2_really_like_struct1, struct2, ignored_species=sm_kwargs.get("ignored_species")
-    )
-    delQ_s1_s2_like_s1 = get_dQ(
-        struct1, struct2_really_like_struct1, ignored_species=sm_kwargs.get("ignored_species")
-    )
+    delQ_s1_s2 = get_dQ(struct1, struct2, ignored_species=ignored_species)
+    delQ_s2_like_s1_s2 = get_dQ(struct2_really_like_struct1, struct2, ignored_species=ignored_species)
+    delQ_s1_s2_like_s1 = get_dQ(struct1, struct2_really_like_struct1, ignored_species=ignored_species)
 
     if not sm_kwargs.get("allow_subset") and delQ_s1_s2_like_s1 > delQ_s1_s2 + 0.1:
         # shouldn't happen!  (and ignore cases where we're using it in defect stenciling)
         struct2_like_struct1 = StructureMatcher_scan_stol(
             struct1, struct2, func_name="get_s2_like_s1", **sm_kwargs
         )
-        delQ_s1_s2_like_s1_pmg = get_dQ(
-            struct1, struct2_like_struct1, ignored_species=sm_kwargs.get("ignored_species")
-        )
+        delQ_s1_s2_like_s1_pmg = get_dQ(struct1, struct2_like_struct1, ignored_species=ignored_species)
         warnings.warn(
             f"StructureMatcher.get_s2_like_s1() appears to have failed. The mass-weighted displacement "
             f"(ΔQ in amu^(1/2)Å) for the input structures is:\n"
@@ -412,8 +419,37 @@ def orient_s2_like_s1(
         print(f"ΔQ(s2_like_s1/s2) = {delQ_s2_like_s1_s2:.2f} amu^(1/2)Å")
         print(f"ΔQ(s1/s2_like_s1) = {delQ_s1_s2_like_s1:.2f} amu^(1/2)Å")
 
-    # TODO: Add (optional) check for atom mapping here? Currently doesn't warn if we still have mismatch
-    # in lattice definitions -- important; see stenciling
+    if check_mapping and not sm_kwargs.get("allow_subset"):
+        # check that after re-orientation the atomic basis matches between ``struct1`` and the re-oriented
+        # ``struct2``. Mismatches (far from the guess defect position(s)) typically indicate differing
+        # lattice definitions (e.g. different primitive-cell tiling within identical supercell lattice
+        # vectors), which re-orientation alone cannot reconcile -- see ``doped.utils.stenciling`` for
+        # related usage:
+        s1_for_check = struct1.copy().remove_species(ignored_species) if ignored_species else struct1
+        s2_for_check = (
+            struct2_really_like_struct1.copy().remove_species(ignored_species)
+            if ignored_species
+            else struct2_really_like_struct1
+        )
+
+        from doped.analysis import guess_defect_position  # avoid circular import
+
+        if (
+            s1_for_check.composition == s2_for_check.composition
+            and not check_atom_mapping_far_from_defect(
+                defect_supercell=s2_for_check,
+                bulk_supercell=s1_for_check,
+                defect_coords=guess_defect_position(s2_for_check, bulk_supercell=s1_for_check),
+                warning=False,
+            )
+        ):
+            warnings.warn(
+                "After re-orientation, significant site mismatches remain between ``struct1`` and "
+                "``struct2`` throughout the cell. This often indicates a mismatch in the lattice "
+                "definitions (e.g. different tiling of primitive cells within identical supercell "
+                "lattice vectors) between the two input structures, which cannot be resolved by "
+                "re-orientation alone. This warning can be disabled by setting ``check_mapping=False``."
+            )
 
     return struct2_really_like_struct1
 

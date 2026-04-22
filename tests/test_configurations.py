@@ -293,6 +293,57 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
         with pytest.raises(RuntimeError, match="get_transformation"):
             orient_s2_like_s1(other, self.V_Se_m1_supercell)
 
+    def test_check_mapping_well_matched_no_warning(self):
+        """
+        With the default ``check_mapping=True`` and well-matched structures
+        (V_Se^-1 vs V_Se^-2, which re-orient to ΔQ ~8.6 amu^(1/2)Å with
+        matching atomic basis), no lattice-mismatch warning should be raised.
+        """
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            orient_s2_like_s1, self.V_Se_m1_supercell, self.V_Se_m2_supercell
+        )
+        assert not any("significant atomic displacements remain" in str(warning.message) for warning in w)
+
+    def test_check_mapping_detects_lattice_basis_mismatch(self):
+        """
+        When re-orientation cannot reconcile an atomic-basis mismatch between
+        the two input structures (e.g. different primitive-cell tiling giving
+        identical lattice vectors but inequivalent atomic positions), the
+        ``check_mapping`` check should raise a warning.
+
+        Here we simulate a basis mismatch by applying a large (non-rigid)
+        shear-like perturbation to the upper half of ``V_Se^-2``, which
+        cannot be resolved by any rigid transformation applied during re-
+        orientation -> leaves significant residual displacements at sites
+        far from the cell centre.
+        """
+        perturbed = self.V_Se_m2_supercell.copy()
+        for i, site in enumerate(perturbed):
+            if site.frac_coords[2] > 0.5:  # displace upper-half atoms by 1 Å along x
+                perturbed.translate_sites(i, [1.0, 0, 0], frac_coords=False, to_unit_cell=False)
+
+        # ``stol=0.6`` to loosen ``StructureMatcher`` tolerances enough to find a transformation:
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            orient_s2_like_s1, self.V_Se_m1_supercell, perturbed, stol=0.6
+        )
+        assert any(
+            "significant site mismatches remain" in str(warning.message)
+            and "lattice definitions" in str(warning.message)
+            and "check_mapping=False" in str(warning.message)
+            for warning in w
+        )
+        assert len(w) == 1
+
+        # with ``check_mapping=False`` the warning should be suppressed:
+        _, _, w = _run_func_and_capture_stdout_warnings(
+            orient_s2_like_s1,
+            self.V_Se_m1_supercell,
+            perturbed,
+            stol=0.6,
+            check_mapping=False,
+        )
+        assert not w
+
 
 class TestGetTransformationAndApply(ConfigurationsTestCase):
     """
