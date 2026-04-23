@@ -72,4 +72,4 @@
 - Update tutorial notebooks to be directly runnable in Colab
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - For v4.1; search for deprecation warnings and remove.
-- If https://github.com/materialsproject/pymatgen/issues/4643 successful (or just use `mp-api` if not)(and `pymatgen-analysis-defects` updated), finish refactor to `pymatgen-core`-only. Also needs minor refactors in `shakenbreak` and `pydefect`/`vise`.
+- Update `pymatgen-analysis-defects` to refactor to `pymatgen-core`-only. Also needs minor refactors in `shakenbreak` and `pydefect`/`vise`.

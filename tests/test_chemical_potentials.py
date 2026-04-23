@@ -882,7 +882,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         _result, stdout, w = _run_func_and_capture_stdout_warnings(
             cp.write_relaxation_files, potcar_spec=True
         )
-        assert len(w) == 1
+        assert len(w) == len(cp)  # warning for each overwritten folder
         assert any(
             "already exists. Overwriting files." in str(warning.message)
             for warning in w
@@ -898,7 +898,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         _result, stdout, w = _run_func_and_capture_stdout_warnings(
             cp.write_singlepoint_files, potcar_spec=True
         )
-        assert len(w) == 1
+        assert len(w) == len(cp)  # warning for each overwritten folder
         assert any(
             "already exists. Overwriting files." in str(warning.message)
             for warning in w
@@ -923,22 +923,20 @@ class CompetingPhasesTestCase(unittest.TestCase):
             assert "LSORBIT" not in ds.incar
 
     def test_api_keys_errors(self):
-        api_key_error = ValueError(
-            "Invalid or old API key. Please obtain an updated API key at https://materialsproject.org/dashboard."
-        )
+        expected_error_substr = "is not a valid Materials Project API key"
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
                 "ZrO2",
                 api_key="test",
             )
-        assert str(api_key_error) in str(e.value)
+        assert expected_error_substr in str(e.value)
 
         with pytest.raises(ValueError) as e:
             chemical_potentials.CompetingPhases(
                 "ZrO2",
-                api_key="c2LiJRMiBeaN5iXsH",  # legacy API key
+                api_key="c2LiJRMiBeaN5iXsH",  # legacy API key (16 chars, not 32)
             )
-        assert str(api_key_error) in str(e.value)
+        assert expected_error_substr in str(e.value)
 
         # test all works fine with key from new MP API:
         assert chemical_potentials.CompetingPhases("ZrO2", api_key="UsPX9Hwut4drZQXPTxk4CwlCstrAAjDv")

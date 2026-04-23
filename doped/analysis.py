@@ -16,13 +16,13 @@ from pathlib import Path
 import numpy as np
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
+from mp_api.client import MPRester
 from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.finder import cosine_similarity
 from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.ext.matproj import MPRester
 from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike

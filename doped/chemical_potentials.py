@@ -25,11 +25,11 @@ from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import loadfn
+from mp_api.client import MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Lattice, Structure
-from pymatgen.ext.matproj import MPRester, MPRestError
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
@@ -86,8 +86,13 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Get genAI to try make code in this module more readable. Could do with some informative
 #  comments, in complex workflows, typing etc.
+# TODO: Check and update all references to MP API -- see installation page etc. See MP API key env var
+# exporting (alternative to pmg config file) here: https://docs.materialsproject.org/downloading-data/using-the-api/getting-started
+# TODO: Include/use other compatible thermo types when possible -- R2SCAN? And test
+# TODO: Update chemical potentials tutorial notebook for new code/function names
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
+    "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
     "formula_pretty",
     "energy_above_hull",
     "nsites",
@@ -98,16 +103,40 @@ MPRester_property_data = [  # properties to pull for Materials Project entries
     "elements",
 ]
 MPRester_summary_data = [
+    "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
     "total_magnetization",
     "theoretical",
     "database_IDs",  # dict, possibly with an "icsd" key with list of ICSD entry codes
 ]
 
-default_get_entries_kwargs = {
-    "property_data": MPRester_property_data,
-    "summary_data": MPRester_summary_data,
-}
+default_get_entries_kwargs: dict[str, Any] = {"property_data": MPRester_property_data}
+
+
+def _attach_summary_data_to_entries(
+    entries: list[ComputedEntry],
+    mpr: MPRester,
+    summary_data: list[str] = MPRester_summary_data,
+) -> None:
+    """
+    Fetch ``summary_data`` fields for ``entries`` via
+    ``mpr.materials.summary.search(fields=summary_data)`` and attach them in-
+    place to ``entry.data["summary"]``.
+
+    Stores values as JSON-safe dicts (via
+    ``SummaryDoc.model_dump(mode="json")``) so entries round-trip cleanly
+    through ``MontyEncoder`` (and ``ComputedEntry.to_json()``).
+    """
+    material_ids = [mpid for mpid in (entry.data.get("material_id") for entry in entries) if mpid]
+    if material_ids:  # otherwise mp-api treats material_ids=[] as "no filter" and returns the entire DB...
+        docs_by_mpid = {
+            doc.material_id: doc.model_dump(mode="json")
+            for doc in mpr.materials.summary.search(material_ids=material_ids, fields=summary_data)
+        }
+        for entry in entries:
+            if doc := docs_by_mpid.get(entry.data.get("material_id")):
+                # drop ``material_id`` (already in the entry data):
+                entry.data["summary"] = {k: v for k, v in doc.items() if k != "material_id"}
 
 
 def make_molecule_in_a_box(element: str) -> Structure:
@@ -347,10 +376,11 @@ def get_entries_in_chemsys(
     with MPRester(api_key) as mpr:
         # get all entries in the chemical system
         MP_full_pd_entries = mpr.get_entries_in_chemsys(
-            chemsys,
+            elements=chemsys,
             **default_get_entries_kwargs,
             **kwargs,
         )
+        _attach_summary_data_to_entries(MP_full_pd_entries, mpr)
 
     temp_phase_diagram = PhaseDiagram(MP_full_pd_entries)
     for entry in MP_full_pd_entries:
@@ -418,6 +448,7 @@ def get_entries(
             **default_get_entries_kwargs,
             **kwargs,
         )
+        _attach_summary_data_to_entries(entries, mpr)
 
     # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
     entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=bulk_composition))
@@ -456,7 +487,7 @@ def _parse_MP_API_key(api_key: str | None = None) -> str:
             "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
             "-project-api"
         )
-    if len(api_key) < 15 or len(api_key) > 20:  # looks like an invalid API key; check:
+    if len(api_key) != 32:  # new-style MP API keys are 32 chars; probe to confirm validity:
         try:
             with MPRester(api_key) as mpr:
                 mpr.get_entry_by_material_id("mp-1")  # check if API key is valid
@@ -511,7 +542,7 @@ def get_MP_summary_dicts(
             doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
-            query, e.g. ``MPRester.summary_search()``.
+            query, e.g. ``MPRester.materials.summary.search()``.
 
     Returns:
         dict[str, dict]:
@@ -523,18 +554,16 @@ def get_MP_summary_dicts(
     if entries is None and chemsys is None:
         raise ValueError("Either `entries` or `chemsys` must be provided!")
 
+    summary_search_kwargs = {**kwargs}
     if entries:
-        summary_search_kwargs = {
-            "material_ids": [entry.data["material_id"] for entry in entries],
-            **kwargs,
-        }
-    else:
-        assert chemsys is not None  # typing
-        summary_search_kwargs = {"chemsys": _get_all_chemsyses("-".join(chemsys)), **kwargs}
+        summary_search_kwargs["material_ids"] = [entry.data["material_id"] for entry in entries]
+    elif chemsys is not None:  # convert to ``MPRester.summary.search`` chemsys format:
+        summary_search_kwargs["chemsys"] = _get_all_chemsyses("-".join(chemsys))
 
-    with MPRester(api_key) as mpr:
+    with MPRester(api_key) as mpr:  # ``SummaryDoc`` -> JSON-safe dict via ``model_dump(mode="json")``
         MP_doc_dicts = {
-            doc_dict["material_id"]: doc_dict for doc_dict in mpr.summary_search(**summary_search_kwargs)
+            doc.material_id: doc.model_dump(mode="json")
+            for doc in mpr.materials.summary.search(**summary_search_kwargs)
         }
 
     if not entries:
@@ -979,6 +1008,7 @@ class CompetingPhases(MSONable):
         # - Data file of known bad cases, with notes somewhere that users could submit PRs for this? But
         #   not accessed automatically, show example in tutorial of doing this pruning
         # - Also show example of doing the pruning based on database IDs
+        # See: https://docs.materialsproject.org/downloading-data/using-the-api/examples#querying-icsd-id
 
         if isinstance(composition, Structure):
             # if structure is not primitive, reduce to primitive:
@@ -2140,6 +2170,7 @@ class CompetingPhases(MSONable):
                 write_kwargs.update({"poscar": False, "kpoints": False})
 
             with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="KPOINTS are Γ")  # Γ only KPAR warning
                 if os.path.exists(fname):
                     warnings.warn(f"Output folder {fname} already exists. Overwriting files.")
                 dict_set.write_input(fname, **write_kwargs)
