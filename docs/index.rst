@@ -120,6 +120,7 @@ Studies using ``doped``, so far
 - X\. Wang, I. Mosquera-Lois and A. Walsh **Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects** `arXiv <https://doi.org/10.48550/arXiv.2603.05238>`__ 2026
 - R\. Claes, K. Li, A. G. Squires and D. O. Scanlon **Screening ASb₂O₆ (A = Mg, Ca, Sr, Ba, Cd) for High Performance Transparent Conducting Oxides** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-39bbf>`__ 2026
 - S\. Ling et al. **Investigations of Defect Physics and Quenching Effect for Optimizing n-type Carrier Concentration in CuWO** :sub:`4` **Photocatalyst** `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.5c05718>`__ 2026
+- W\. Yang et al. **Electronic origins of p-type transparent conductivity in SrCu₂O₂** `Applied Physics Letters <https://doi.org/10.1063/5.0324820>`__ 2026
 - G\. Arora et al. **Development of interatomic potential and effect of ordering on defect properties in CrMnV** `Journal of Applied Physics <https://doi.org/10.1063/5.0302848>`__ 2025
 - A\. Abudulimu et al. **Radiative Defects in Chloride-Activated CdSe Thin Films** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.5c03191>`__ 2026
 - H\. Ma, J. E. McLeod and C. Stampfl **Toward tunable carrier polarity in monolayer ZrS₂: A hybrid functional study of intrinsic and extrinsic defects** `Physical Review B <https://doi.org/10.1103/spjk-wj13>`__ 2026
