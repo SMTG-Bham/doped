@@ -973,6 +973,13 @@ class CompetingPhases(MSONable):
         # -- Could have two optional EaH tolerances, a tight one (0.02 eV/atom?) that applies to all,
         # and a looser one (0.1 eV/atom?) that applies to phases with ICSD IDs?
 
+        # Plan:
+        # - (Controllable) Warning when many polymorphs of a given phase within EaH range, pointing to our
+        #   guidance in tutorials/ on docs
+        # - Data file of known bad cases, with notes somewhere that users could submit PRs for this? But
+        #   not accessed automatically, show example in tutorial of doing this pruning
+        # - Also show example of doing the pruning based on database IDs
+
         if isinstance(composition, Structure):
             # if structure is not primitive, reduce to primitive:
             primitive_structure = get_primitive_structure(composition)
