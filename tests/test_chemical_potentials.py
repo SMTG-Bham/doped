@@ -957,6 +957,35 @@ class CompetingPhasesTestCase(unittest.TestCase):
 
             _check_structure_input(cp, cp_struct_input, struct, name, w + w2, api_key)
 
+    def test_init_get_entries_kwargs_passthrough(self):
+        """
+        Extra ``**kwargs`` to ``CompetingPhases`` should be forwarded to the
+        ``get_entries_in_chemsys`` / ``get_entries`` helpers (and onto the
+        underlying ``MPRester`` query).
+
+        Here we use ``additional_criteria={"thermo_types": ["R2SCAN"]}`` to
+        restrict the MP query to R2SCAN thermo entries, and verify that the
+        resulting entries differ from the default (GGA/GGA+U/R2SCAN) query.
+        """
+        cp_default = chemical_potentials.CompetingPhases(  # GGA/GGA+U/R2SCAN
+            "ZrO2", energy_above_hull=0.03, api_key=api_key
+        )
+        cp_r2scan = chemical_potentials.CompetingPhases(
+            "ZrO2",
+            energy_above_hull=0.03,
+            api_key=api_key,
+            additional_criteria={"thermo_types": ["R2SCAN"]},  # R2SCAN only
+        )
+        assert cp_r2scan._get_entries_kwargs == {"additional_criteria": {"thermo_types": ["R2SCAN"]}}
+        # R2SCAN energies differ from default GGA(+U), so entries should differ:
+        assert len(cp_default) == 13
+        assert len(cp_r2scan) == 14  # different number of entries within EaH tolerance
+
+        for entry in cp_default.entries.values():
+            assert entry.energy_per_atom not in [
+                r2scan_ent.energy_per_atom for r2scan_ent in cp_r2scan.entries
+            ]
+
     def test_MP_doc_dicts(self):
         cp = chemical_potentials.CompetingPhases(
             "ZrO2", MP_doc_dicts=True, energy_above_hull=0.03, api_key=api_key

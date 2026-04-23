@@ -78,7 +78,6 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 #  comments, in complex workflows, typing etc.
 # TODO: Check and update all references to MP API -- see installation page etc. See MP API key env var
 # exporting (alternative to pmg config file) here: https://docs.materialsproject.org/downloading-data/using-the-api/getting-started
-# TODO: Include/use other compatible thermo types when possible -- R2SCAN? And test
 # TODO: Update chemical potentials tutorial notebook for new code/function names
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
@@ -646,7 +645,7 @@ def prune_entries_to_border_candidates(
             Maximum energy above hull (in eV/atom) of Materials Project entries
             to be considered as competing phases. This is an uncertainty range
             for the MP-calculated formation energies, which may not be accurate
-            due to functional choice (GGA vs hybrid DFT / GGA+U / RPA etc.),
+            due to functional choice (GGA(+U)/R2SCAN vs hybrid DFT / RPA etc.),
             lack of vdW corrections etc. All phases that would border the host
             material on the phase diagram, if their relative energy was
             downshifted by ``energy_above_hull``, are included.
@@ -856,6 +855,7 @@ class CompetingPhases(MSONable):
         full_sub_approach: bool = False,
         codoping: bool = False,
         api_key: str | None = None,
+        **kwargs: Any,
     ):
         """
         Class to generate VASP input files for competing phases on the phase
@@ -902,10 +902,10 @@ class CompetingPhases(MSONable):
                 Maximum energy above hull (in eV/atom) of Materials Project
                 entries to be considered as competing phases. This is an
                 uncertainty range for the MP-calculated formation energies,
-                which may not be accurate due to functional choice (GGA vs
-                hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
-                All phases that would border the host material on the phase
-                diagram, if their relative energy was downshifted by
+                which may not be accurate due to functional choice
+                (GGA(+U)/R2SCAN vs hybrid DFT / RPA), lack of vdW corrections
+                etc. All phases that would border the host material on the
+                phase diagram, if their relative energy was downshifted by
                 ``energy_above_hull``, are included.
                 Often ``energy_above_hull`` can be lowered (e.g. to ``0``) to
                 reduce the number of calculations while retaining good accuracy
@@ -956,6 +956,10 @@ class CompetingPhases(MSONable):
                 summary doc dicts with ``MPRester.summary_search()`` for the
                 competing phase entries, and stores them in
                 ``CompetingPhases.MP_doc_dicts``. Default is ``False``.
+            **kwargs:
+                Additional keyword arguments to pass to the Materials Project
+                API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
+                used to pull competing phase entries.
         """
         # TODO: Give quick attribute summary at end of docstring above, following chempots code overhaul
         self.energy_above_hull = energy_above_hull  # store parameters for reference
@@ -964,6 +968,7 @@ class CompetingPhases(MSONable):
         self.codoping = codoping
         self.full_sub_approach = full_sub_approach
         self.api_key = _parse_MP_API_key(api_key)
+        self._get_entries_kwargs = kwargs
 
         # TODO: Should hard code S (solid + S8 (mp-994911), + S2 (molecule in a box)), P, Te and Se in
         #  here too. Common anions with a lot of unnecessary polymorphs on MP. Should at least scan over
@@ -1021,6 +1026,7 @@ class CompetingPhases(MSONable):
             api_key=self.api_key,
             energy_above_hull=self.energy_above_hull,
             bulk_composition=self.composition.reduced_formula,  # for sorting
+            **self._get_entries_kwargs,
         )
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
 
@@ -1044,6 +1050,7 @@ class CompetingPhases(MSONable):
                 self.composition.reduced_formula,
                 api_key=self.api_key,
                 bulk_composition=self.composition.reduced_formula,  # for sorting
+                **self._get_entries_kwargs,
             ):
                 self.MP_bulk_computed_entry = bulk_computed_entry = bulk_entries[
                     0
@@ -1054,9 +1061,9 @@ class CompetingPhases(MSONable):
                     f"{self.composition.reduced_formula} is not stable with respect to competing "
                     f"phases, having an energy above hull of {eah:.4f} eV/atom.\n"
                     f"Formally, this means that the host material is unstable and so has no chemical "
-                    f"potential limits; though in reality there may be errors in the MP energies (GGA, "
-                    f"no vdW, SOC...), the host may be stabilised by temperature effects etc, or just a "
-                    f"metastable phase.\n"
+                    f"potential limits; though in reality there may be errors in the MP energies "
+                    f"(GGA(+U)/R2SCAN, no vdW, SOC...), the host may be stabilised by temperature "
+                    f"effects etc, or just a metastable phase.\n"
                     f"Here we downshift the host compound entry to the convex hull energy, "
                     f"and then determine the possible competing phases with the same approach as usual."
                 )
@@ -1202,6 +1209,7 @@ class CompetingPhases(MSONable):
                 api_key=self.api_key,
                 energy_above_hull=self.energy_above_hull,
                 bulk_composition=self.composition.reduced_formula,  # for sorting
+                **self._get_entries_kwargs,
             )
             self.entries = self._generate_elemental_diatomic_phases(self.MP_full_pd_entries)
 
@@ -1220,6 +1228,7 @@ class CompetingPhases(MSONable):
                     api_key=self.api_key,
                     energy_above_hull=self.energy_above_hull,
                     bulk_composition=self.composition.reduced_formula,  # for sorting
+                    **self._get_entries_kwargs,
                 )
                 sub_el_pd_entries = self._generate_elemental_diatomic_phases(sub_el_MP_full_pd_entries)
                 self.MP_full_pd_entries.extend(
@@ -1260,12 +1269,12 @@ class CompetingPhases(MSONable):
                         )
 
                     sub_el_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *sub_el_entries])
-                    MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
+                    MP_extrinsic_chempots = get_chempots_from_phase_diagram(
                         self.MP_bulk_computed_entry, sub_el_phase_diagram
                     )
                     MP_extrinsic_bordering_phases: list[str] = []
 
-                    for limit in MP_extrinsic_gga_chempots:
+                    for limit in MP_extrinsic_chempots:
                         # note that the number of phases in equilibria at each vertex (limit) is equal
                         # to the number of elements in the chemical system (here being the host
                         # composition plus the extrinsic species)
