@@ -952,9 +952,10 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 cp = chemical_potentials.CompetingPhases(
                     struct.composition.reduced_formula, api_key=api_key
                 )
+            with warnings.catch_warnings(record=True) as w2:  # ensure duplicate warnings not ignored
                 cp_struct_input = chemical_potentials.CompetingPhases(struct, api_key=api_key)
 
-            _check_structure_input(cp, cp_struct_input, struct, name, w, api_key)
+            _check_structure_input(cp, cp_struct_input, struct, name, w + w2, api_key)
 
     def test_MP_doc_dicts(self):
         cp = chemical_potentials.CompetingPhases(
@@ -1050,11 +1051,12 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
                 cp = chemical_potentials.CompetingPhases(
                     struct.composition.reduced_formula, api_key=api_key, extrinsic={"K"}
                 )
+            with warnings.catch_warnings(record=True) as w2:  # ensure duplicate warnings not ignored
                 cp_struct_input = chemical_potentials.CompetingPhases(
                     struct, api_key=api_key, extrinsic={"K"}
                 )
 
-            _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrinsic=True)
+            _check_structure_input(cp, cp_struct_input, struct, name, w + w2, api_key, extrinsic=True)
 
             for entries_list in [cp_struct_input.extrinsic_entries, cp.extrinsic_entries]:
                 assert len(entries_list) >= 1
