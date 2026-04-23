@@ -30,6 +30,12 @@ from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
 from pymatgen.core import SETTINGS, Composition, Element, Lattice, Structure
+from pymatgen.core.entries import (
+    ComputedEntry,
+    ComputedStructureEntry,
+    ConstantEnergyAdjustment,
+    ManualEnergyAdjustment,
+)
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
@@ -59,22 +65,6 @@ from doped.vasp import (
     default_relax_set,
     singlepoint_incar_settings,
 )
-
-try:
-    from pymatgen.core.entries import (
-        ComputedEntry,
-        ComputedStructureEntry,
-        ConstantEnergyAdjustment,
-        ManualEnergyAdjustment,
-    )
-except ImportError:  # pymatgen <2026.3; can remove when doped/SnB pmg requirement is >=2026.3.23
-    from pymatgen.entries.computed_entries import (
-        ComputedEntry,
-        ComputedStructureEntry,
-        ConstantEnergyAdjustment,
-        ManualEnergyAdjustment,
-    )
-
 
 # globally ignore:
 _ignore_pmg_warnings()

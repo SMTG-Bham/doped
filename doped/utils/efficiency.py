@@ -16,17 +16,17 @@ import numpy as np
 from numpy.typing import NDArray
 from pymatgen.analysis.defects.generators import VacancyGenerator
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
-from pymatgen.analysis.structure_matcher import (
-    AbstractComparator,
-    ElementComparator,
-    FrameworkComparator,
-    StructureMatcher,
-)
 from pymatgen.core.composition import Composition, DummySpecies
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.periodic_table import Element, Species
 from pymatgen.core.sites import PeriodicSite, Site
 from pymatgen.core.structure import IStructure, Molecule, Structure
+from pymatgen.core.structure_matcher import (
+    AbstractComparator,
+    ElementComparator,
+    FrameworkComparator,
+    StructureMatcher,
+)
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmOp
 from scipy.spatial import Voronoi

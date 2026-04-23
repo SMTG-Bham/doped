@@ -19,9 +19,9 @@ import pandas as pd
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
+from pymatgen.core.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.electronic_structure.core import Spin
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array

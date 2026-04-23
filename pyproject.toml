@@ -16,14 +16,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.10"  # dictated by "pymatgen>=2025" requirement; note that latest pymatgen (2026, currently not required) only supports 3.11-3.14
+requires-python = ">=3.11"  # dictated by pymatgen-core>2026.4
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2025.10.7",  # breaking changes to LinearAssignment
+    "pymatgen-core>=2026.4.7",  # pymatgen-core refactor, with chempot/phase diagram code
     # requires spglib >= 2.5
-    "pymatgen-analysis-defects>=2023.8.22",
+    "pymatgen-analysis-defects>=2023.8.22",  # TODO: Update to (fully) pymatgen-core compatible version
     "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
     "shakenbreak>=3.4.2",  # doped StructureMatcher efficiency updates (using ``StructureMatcher_scan_stol``)
     "ase",  # required by ShakeNBreak anyway

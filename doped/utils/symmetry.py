@@ -16,13 +16,13 @@ import pandas as pd
 import spglib
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import (
+from pymatgen.core.operations import SymmOp
+from pymatgen.core.structure import Lattice
+from pymatgen.core.structure_matcher import (
     ElementComparator,
     get_linear_assignment_solution,
     pbc_shortest_vectors,
 )
-from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import Lattice
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from pymatgen.util.coord import is_coord_subset_pbc
