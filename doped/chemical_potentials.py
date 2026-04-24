@@ -79,6 +79,7 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # TODO: Check and update all references to MP API -- see installation page etc. See MP API key env var
 # exporting (alternative to pmg config file) here: https://docs.materialsproject.org/downloading-data/using-the-api/getting-started
 # TODO: Update chemical potentials tutorial notebook for new code/function names
+# TODO: Support full_sub_approach (& codoping) parsing
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
@@ -645,7 +646,7 @@ def prune_entries_to_border_candidates(
             Maximum energy above hull (in eV/atom) of Materials Project entries
             to be considered as competing phases. This is an uncertainty range
             for the MP-calculated formation energies, which may not be accurate
-            due to functional choice (GGA(+U)/R2SCAN vs hybrid DFT / RPA etc.),
+            due to functional choice (GGA vs hybrid DFT / GGA+U / RPA etc.),
             lack of vdW corrections etc. All phases that would border the host
             material on the phase diagram, if their relative energy was
             downshifted by ``energy_above_hull``, are included.
@@ -902,10 +903,10 @@ class CompetingPhases(MSONable):
                 Maximum energy above hull (in eV/atom) of Materials Project
                 entries to be considered as competing phases. This is an
                 uncertainty range for the MP-calculated formation energies,
-                which may not be accurate due to functional choice
-                (GGA(+U)/R2SCAN vs hybrid DFT / RPA), lack of vdW corrections
-                etc. All phases that would border the host material on the
-                phase diagram, if their relative energy was downshifted by
+                which may not be accurate due to functional choice (GGA vs
+                hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                All phases that would border the host material on the phase
+                diagram, if their relative energy was downshifted by
                 ``energy_above_hull``, are included.
                 Often ``energy_above_hull`` can be lowered (e.g. to ``0``) to
                 reduce the number of calculations while retaining good accuracy
@@ -1061,9 +1062,9 @@ class CompetingPhases(MSONable):
                     f"{self.composition.reduced_formula} is not stable with respect to competing "
                     f"phases, having an energy above hull of {eah:.4f} eV/atom.\n"
                     f"Formally, this means that the host material is unstable and so has no chemical "
-                    f"potential limits; though in reality there may be errors in the MP energies "
-                    f"(GGA(+U)/R2SCAN, no vdW, SOC...), the host may be stabilised by temperature "
-                    f"effects etc, or just a metastable phase.\n"
+                    f"potential limits; though in reality there may be errors in the MP energies (GGA, "
+                    f"no vdW, SOC...), the host may be stabilised by temperature effects etc, or just a "
+                    f"metastable phase.\n"
                     f"Here we downshift the host compound entry to the convex hull energy, "
                     f"and then determine the possible competing phases with the same approach as usual."
                 )
@@ -1269,12 +1270,12 @@ class CompetingPhases(MSONable):
                         )
 
                     sub_el_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *sub_el_entries])
-                    MP_extrinsic_chempots = get_chempots_from_phase_diagram(
+                    MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
                         self.MP_bulk_computed_entry, sub_el_phase_diagram
                     )
                     MP_extrinsic_bordering_phases: list[str] = []
 
-                    for limit in MP_extrinsic_chempots:
+                    for limit in MP_extrinsic_gga_chempots:
                         # note that the number of phases in equilibria at each vertex (limit) is equal
                         # to the number of elements in the chemical system (here being the host
                         # composition plus the extrinsic species)
@@ -3827,7 +3828,9 @@ class CompetingPhasesAnalyzer(MSONable):
         If ``extrinsic_species`` (i.e. dopant/impurity elements) is specified,
         then the limiting chemical potential for ``extrinsic_species`` at the
         `intrinsic` chemical potential limits is calculated and also returned
-        (corresponds to ``full_sub_approach=False`` in pycdt).
+        (corresponds to ``full_sub_approach=False``; recommended approach for
+        dilute impurity/dopant concentrations).
+
         ``extrinsic_species`` is set to ``self.extrinsic_elements`` if not
         specified.
 
@@ -3872,20 +3875,21 @@ class CompetingPhasesAnalyzer(MSONable):
         missing_extrinsic = [
             elt for elt in extrinsic_elements if elt.symbol not in self.elemental_energies
         ]
-        if not extrinsic_elements:  # intrinsic only
-            self.chempots = self.intrinsic_chempots
-        elif missing_extrinsic:
+        self.chempots = self.intrinsic_chempots
+
+        if missing_extrinsic:
             raise ValueError(
                 f"Elemental reference phase for the specified extrinsic species "
                 f"{[elt.symbol for elt in missing_extrinsic]} was not parsed, but is necessary for "
                 f"chemical potential calculations. Please ensure that this phase is present in the "
                 f"calculation directory and is being correctly parsed."
             )
-        else:
-            self._calculate_extrinsic_chempot_lims(  # updates self.chempots and chempots_df
-                extrinsic_elements=extrinsic_elements,
-                chempots_df=chempots_df,
-            )
+        if extrinsic_elements:
+            for extrinsic_element in extrinsic_elements:
+                self._calculate_extrinsic_chempot_lims(  # updates self.chempots and chempots_df
+                    extrinsic_element=extrinsic_element,
+                    chempots_df=chempots_df,
+                )  # TODO: Test that this works as expected when parsing multiple extrinsic species at once
 
         if verbose:
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
@@ -3894,31 +3898,50 @@ class CompetingPhasesAnalyzer(MSONable):
         return chempots_df
 
     def _calculate_extrinsic_chempot_lims(
-        self, extrinsic_elements: list[Element], chempots_df: pd.DataFrame
+        self, extrinsic_element: Element, chempots_df: pd.DataFrame
     ) -> None:
-        # TODO: At present, this does not work for codoping I believe?
-        # for each intrinsic chemical potential limit, find the most stable extrinsic competing phase
-        # (equivalent to most negative μ_extrinsic_elt):
-        for extrinsic_elt in extrinsic_elements:
-            for limit, chempot_series in chempots_df.iterrows():
-                chempots_df.loc[limit, extrinsic_elt.symbol] = np.inf
-                chempots_df.loc[limit, f"{extrinsic_elt.symbol}-Limiting Phase"] = "N/A"
-                for entry in self.extrinsic_entries:
-                    formation_energy = self.phase_diagram.get_form_energy(entry)
-                    intrinsic_chempot_contribution = sum(
-                        chempot_series[elt.symbol] * entry.composition[elt]
-                        for elt in self.composition.elements
-                    )
-                    mu_extrinsic = (formation_energy - intrinsic_chempot_contribution) / entry.composition[
-                        extrinsic_elt
-                    ]
-                    # lower energy entry & μ_extrinsic_elt, and finite:
-                    if (
-                        np.isfinite(mu_extrinsic)
-                        and mu_extrinsic < chempots_df.loc[limit, extrinsic_elt.symbol]
-                    ):
-                        chempots_df.loc[limit, extrinsic_elt.symbol] = _custom_round(mu_extrinsic, 4)
-                        chempots_df.loc[limit, f"{extrinsic_elt.symbol}-Limiting Phase"] = entry.name
+        """
+        This function calculates chemical potential limits for extrinsic /
+        dopant elements, using the dilute-dopant approximation: host
+        (intrinsic) element chemical potentials are pinned at the intrinsic
+        phase diagram facets (computed without any extrinsic phases), and for
+        each intrinsic facet we then find the extrinsic phase that most
+        strictly bounds ``μ_extrinsic_element``.
+
+        This is equivalent to the ``full_sub_approach=False`` (recommended for
+        dilute dopant/impurity concentrations), where only chemical potential
+        limits with 1 extrinsic phase in equilibrium are considered.
+
+        For an extrinsic phase with formula ``{host}X_n``, its stability
+        constraint is: ``n_X·μ_X + Σ_{i ∈ host} n_i·μ_i <= E_form(phase)``
+        (with ``μ_i`` relative to elemental refs). So at fixed ``μ_host``;
+        ``μ_X <= (E_form - Σ n_i·μ_i) / n_X``. The maximum allowed ``μ_X`` is
+        the minimum of this RHS inequality over all extrinsic entries; the
+        corresponding entry being the (extrinsic) limiting phase.
+
+        This function assumes ``full_sub_approach=False`` and therefore does
+        not support co-doping (``codoping=True``), where we consider extrinsic
+        competing phases containing multiple extrinsic species, which is
+        usually only relevant under high (non-dilute) co-doping concentrations.
+        """
+        for limit, chempot_series in chempots_df.iterrows():
+            chempots_df.loc[limit, extrinsic_element.symbol] = np.inf
+            chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = "N/A"
+            for entry in self.extrinsic_entries:
+                formation_energy = self.phase_diagram.get_form_energy(entry)  # E_form(phase)
+                intrinsic_chempot_contribution = sum(  # Σ_{i ∈ host} n_i·μ_i
+                    chempot_series[elt.symbol] * entry.composition[elt]
+                    for elt in self.composition.elements
+                )
+                n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
+                # μ_X <= (E_form - Σ n_i·μ_i) / n_X:
+                mu_extrinsic = (formation_energy - intrinsic_chempot_contribution) / n_extrinsic_entry
+                if (  # most-restrictive (smallest) finite μ_extrinsic_element -> limiting phase:
+                    np.isfinite(mu_extrinsic)
+                    and mu_extrinsic < chempots_df.loc[limit, extrinsic_element.symbol]
+                ):
+                    chempots_df.loc[limit, extrinsic_element.symbol] = _custom_round(mu_extrinsic, 4)
+                    chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = entry.name
 
         # move limiting phase columns to the end (for cases with multiple extrinsic elements)
         chempots_df = chempots_df[
@@ -3934,17 +3957,15 @@ class CompetingPhasesAnalyzer(MSONable):
             "limits": {},
         }
 
-        intrinsic_limits_wrt_el_refs = list(self.intrinsic_chempots["limits_wrt_el_refs"].items())
-        for (intrinsic_limit, intrinsic_chempots), chempot_row in zip(
-            intrinsic_limits_wrt_el_refs, chempot_row_dicts, strict=True
+        current_limits_wrt_el_refs = list(self.chempots["limits_wrt_el_refs"].items())
+        for (limit, chempots), chempot_row in zip(
+            current_limits_wrt_el_refs, chempot_row_dicts, strict=True
         ):
+            chempots[extrinsic_element.symbol] = chempot_row[extrinsic_element.symbol]
             limiting_phase_suffix = "-".join(
                 chempot_row[col_name] for col_name in chempot_row if "Limiting Phase" in col_name
             )
-            limit_key = f"{intrinsic_limit}-{limiting_phase_suffix}"
-            for extrinsic_elt in extrinsic_elements:
-                intrinsic_chempots[extrinsic_elt.symbol] = chempot_row[extrinsic_elt.symbol]
-            chempot_lims_w_extrinsic["limits_wrt_el_refs"][limit_key] = intrinsic_chempots
+            chempot_lims_w_extrinsic["limits_wrt_el_refs"][f"{limit}-{limiting_phase_suffix}"] = chempots
 
         # relate the limits to the elemental energies
         elemental_refs = chempot_lims_w_extrinsic["elemental_refs"]
