@@ -3900,9 +3900,16 @@ class CompetingPhasesAnalyzer(MSONable):
                 return chempots_dict
 
             _sort_chempots_dict_by(self.chempots, sort_by)
-            _sort_chempots_dict_by(self.intrinsic_chempots, sort_by)
+            if sort_by in self.intrinsic_elements:  # extrinsic species are absent from intrinsic_chempots
+                _sort_chempots_dict_by(self.intrinsic_chempots, sort_by)
 
-        # TODO: Re-sort chempots and chempots_df columns/dicts here, according to self.elements
+        # re-sort chempots_df columns and self.chempots inner dicts to match self.elements ordering:
+        chempots_df = chempots_df[[el for el in self.elements if el in chempots_df.columns]]
+        for limit_key in ["limits", "limits_wrt_el_refs"]:
+            self.chempots[limit_key] = {
+                limit: {el: chempot_dict[el] for el in self.elements if el in chempot_dict}
+                for limit, chempot_dict in self.chempots[limit_key].items()
+            }
 
         if verbose:
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")

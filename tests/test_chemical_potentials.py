@@ -1225,10 +1225,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "O": {"ZrO2-O2": 0.0, "Zr3O-ZrO2": -5.38794},
         }
         self.la_zro2_chempots_df_dict = {
-            "Zr": {"ZrO2-O2": -10.97543, "Zr3O-ZrO2": -0.19954},
-            "O": {"ZrO2-O2": 0.0, "Zr3O-ZrO2": -5.38794},
-            "La": {"ZrO2-O2": -9.463, "Zr3O-ZrO2": -1.3811},
-            "La-Limiting Phase": {"ZrO2-O2": "La2Zr2O7", "Zr3O-ZrO2": "La2Zr2O7"},
+            "Zr": {"ZrO2-O2-La2Zr2O7": -10.97543, "Zr3O-ZrO2-La2Zr2O7": -0.19954},
+            "O": {"ZrO2-O2-La2Zr2O7": 0.0, "Zr3O-ZrO2-La2Zr2O7": -5.38794},
+            "La": {"ZrO2-O2-La2Zr2O7": -9.463, "Zr3O-ZrO2-La2Zr2O7": -1.3811},
         }
 
     def tearDown(self):
@@ -1268,15 +1267,21 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
     def test_cpa_chempots(self):
         for chempots_df in [self.zro2_cpa.chempots_df, self.zro2_cpa.calculate_chempots()]:
             assert next(iter(chempots_df["O"])) == 0
+            assert list(chempots_df.columns) == self.zro2_cpa.elements == ["Zr", "O"]
 
         for chempots_df in [
             self.la_zro2_cpa.chempots_df,
             self.la_zro2_cpa.calculate_chempots(extrinsic_species="La"),
         ]:
-            assert next(iter(chempots_df["La-Limiting Phase"])) == "La2Zr2O7"
+            assert all(limit.endswith("-La2Zr2O7") for limit in chempots_df.index)
             assert np.isclose(next(iter(chempots_df["La"])), -9.46298748)
+            # columns and chempot dicts ordered host-first then extrinsic, matching ``self.elements``:
+            assert list(chempots_df.columns) == self.la_zro2_cpa.elements == ["Zr", "O", "La"]
+            for limit_key in ["limits", "limits_wrt_el_refs"]:
+                for chempot_dict in self.la_zro2_cpa.chempots[limit_key].values():
+                    assert list(chempot_dict.keys()) == self.la_zro2_cpa.elements
 
-    def test_extrinsic_chempots_match_pycdt_full_sub_approach(self):
+    def test_extrinsic_chempots_match_pycdt_full_sub_approach_false(self):
         """
         Confirm that doped's algebraic dilute-dopant μ_extrinsic calculation
         gives the same result as the geometric ``full_sub_approach=False``
@@ -1293,27 +1298,23 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         sub_pd = PhaseDiagram(intrinsic_entries + extrinsic_entries)
         mu_la_ref = sub_pd.el_refs[la].energy_per_atom
 
-        # PyCDT-style: enumerate sub-PD facets, keep those with exactly 1 extrinsic phase, then map each to
-        # its parent intrinsic facet (= the remaining host phases at that vertex):
-        pycdt_results: dict[str, dict] = {}
+        # PyCDT ``full_sub_approach=False``: enumerate sub-PD facets, keep those with exactly one
+        # La-bearing phase, and compare μ_La (relative to elemental La) to doped. Limit keys are phase
+        # names joined with "-" (e.g. ``ZrO2-O2-La2Zr2O7``); the same vertex is
+        # ``frozenset(facet_name.split("-"))``:
+        pycdt_mu_la: dict[frozenset, float] = {}
         for facet_name, mu_dict in sub_pd.get_all_chempots(cpa.composition).items():
             phases = facet_name.split("-")
-            sub_phases = [p for p in phases if la in Composition(p).elements]
-            if len(sub_phases) != 1:
-                continue  # codoping/non-dilute facets, excluded by the dilute approximation
-            host_key = frozenset(p for p in phases if p not in sub_phases)
-            pycdt_results[host_key] = {
-                "La": mu_dict[la] - mu_la_ref,  # convert absolute -> rel. elemental ref
-                "limiting_phase": sub_phases[0],
-            }
+            if sum(la in Composition(p).elements for p in phases) != 1:
+                continue  # codoping / non-dilute facets, excluded by the dilute approximation
+            pycdt_mu_la[frozenset(phases)] = mu_dict[la] - mu_la_ref
 
-        # every intrinsic facet must have an exactly-one-extrinsic-phase lift in this dataset:
-        doped_host_keys = {frozenset(limit.split("-")) for limit in cpa.chempots_df.index}
-        assert set(pycdt_results) == doped_host_keys
-        for limit, row in cpa.chempots_df.iterrows():
-            pycdt_row = pycdt_results[frozenset(limit.split("-"))]
-            assert pycdt_row["limiting_phase"] == row["La-Limiting Phase"]
-            assert np.isclose(pycdt_row["La"], row["La"], atol=1e-3)
+        doped_by_phases = {
+            frozenset(limit.split("-")): float(row["La"]) for limit, row in cpa.chempots_df.iterrows()
+        }
+        assert set(pycdt_mu_la) == set(doped_by_phases)
+        for k, mu in pycdt_mu_la.items():
+            assert np.isclose(mu, doped_by_phases[k], atol=1e-3)
 
     def test_full_sub_approach_chempots(self):
         """
@@ -1328,8 +1329,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         at both intrinsic facets).
         """
         cpa = self.la_zro2_cpa
+        dilute_df = cpa.chempots_df.copy()
         la = Element("La")
-        full_df = cpa.calculate_chempots(full_sub_approach=True, verbose=False)
+        full_df = cpa.calculate_chempots(full_sub_approach=True)
 
         # output should be a μ column for every host + extrinsic element, with no `-Limiting Phase` cols:
         assert set(full_df.columns) == {"Zr", "O", "La"}
@@ -1357,14 +1359,25 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         # for La-ZrO2, La2Zr2O7 binds μ_La at both intrinsic facets, so each dilute facet should appear
         # in the full-approach output (lifted with the limiting phase added) with matching μ:
-        for dilute_limit, dilute_row in cpa.chempots_df.iterrows():
-            dilute_phases = frozenset(dilute_limit.split("-")) | {dilute_row["La-Limiting Phase"]}
+        for dilute_limit, dilute_row in dilute_df.iterrows():
+            dilute_phases = frozenset(dilute_limit.split("-"))
             full_limit = next(lim for lim in full_df.index if frozenset(lim.split("-")) == dilute_phases)
-            full_row = full_df.loc[full_limit]
             for el in ("Zr", "O", "La"):
-                assert np.isclose(dilute_row[el], full_row[el], atol=1e-3)
+                assert np.isclose(dilute_row[el], full_df.loc[full_limit, el], atol=1e-3)
 
-        # TODO: Test parsing with full_sub_approach from the start gives the same result
+        cpa_parsed_full_sub = chemical_potentials.CompetingPhasesAnalyzer(
+            "ZrO2",
+            self.la_zro2_path,
+            full_sub_approach=True,
+        )
+        pd.testing.assert_frame_equal(
+            cpa_parsed_full_sub.chempots_df,
+            full_df,
+            check_like=True,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        _compare_chempot_dicts(cpa_parsed_full_sub.chempots, cpa.chempots)
 
     def test_full_sub_approach_no_extrinsic_falls_through(self):
         """
@@ -1405,6 +1418,13 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
         assert set(cpa.extrinsic_elements) == {"La", "Y"}
         assert {"La", "Y"} <= set(cpa.chempots_df.columns)
+        # columns and chempot dicts ordered host-first then extrinsic, matching ``self.elements``:
+        assert list(cpa.chempots_df.columns) == cpa.elements
+        assert cpa.elements == ["Zr", "O", "Y", "La"]
+        assert cpa.elements[: len(cpa.intrinsic_elements)] == cpa.intrinsic_elements
+        for limit_key in ["limits", "limits_wrt_el_refs"]:
+            for chempot_dict in cpa.chempots[limit_key].values():
+                assert list(chempot_dict.keys()) == cpa.elements
 
         # each extrinsic element's limiting phase must appear at most once in every limit key
         for limit_key in cpa.chempots["limits_wrt_el_refs"]:
@@ -1417,17 +1437,30 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         # μ_La must match the single-extrinsic La-only result (independence under dilute approx):
         for multi_limit, multi_row in cpa.chempots_df.iterrows():
+            multi_phases = set(multi_limit.split("-"))
             assert any(
-                limit in multi_limit
+                set(limit.split("-")) <= multi_phases
                 and np.isclose(row[elt], multi_row[elt], atol=1e-3)
                 and not np.isclose(multi_row["Y"], multi_row["La"], atol=1e-2)
                 for limit, row in self.la_zro2_cpa.chempots_df.iterrows()
                 for elt in ["Zr", "O", "La"]
             )
 
-        print(self.la_zro2_cpa.chempots_df)
-        print(cpa.chempots_df)  # TODO: These should have sorted outputs!
-        # TODO: Test sort_by here, for a case of multiple extrinsic elements
+        # ``sort_by`` should work for any element (host or extrinsic), with chempots_df rows and
+        # ``self.chempots["limits"]`` / ``["limits_wrt_el_refs"]`` keys all sharing the same order:
+        for sort_el in ["Zr", "O", "La", "Y"]:
+            sorted_df = cpa.calculate_chempots(sort_by=sort_el, verbose=False)
+            assert sorted_df[sort_el].tolist() == sorted(sorted_df[sort_el].tolist(), reverse=True)
+            assert (
+                sorted_df.index.tolist()
+                == list(cpa.chempots["limits"].keys())
+                == list(cpa.chempots["limits_wrt_el_refs"].keys())
+            )
+            # column ordering preserved (host first, then extrinsic) regardless of sort_by:
+            assert list(sorted_df.columns) == cpa.elements
+
+        with pytest.raises(KeyError):
+            cpa.calculate_chempots(sort_by="Cu", verbose=False)
 
     def test_calculate_chempots_missing_extrinsic_elemental_reference(self):
         """
