@@ -3860,10 +3860,10 @@ class CompetingPhasesAnalyzer(MSONable):
             )
         if extrinsic_elements:
             for extrinsic_element in extrinsic_elements:
-                self._calculate_extrinsic_chempot_lims(  # updates self.chempots and chempots_df
+                self._calculate_dilute_extrinsic_chempot_lims(  # updates self.chempots and chempots_df
                     extrinsic_element=extrinsic_element,
                     chempots_df=chempots_df,
-                )  # TODO: Test that this works as expected when parsing multiple extrinsic species at once
+                )
 
         if verbose:
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
@@ -3871,24 +3871,26 @@ class CompetingPhasesAnalyzer(MSONable):
 
         return chempots_df
 
-    def _calculate_extrinsic_chempot_lims(
+    def _calculate_dilute_extrinsic_chempot_lims(
         self, extrinsic_element: Element, chempots_df: pd.DataFrame
     ) -> None:
         """
         This function calculates chemical potential limits for extrinsic /
         dopant elements, using the dilute-dopant approximation: host
-        (intrinsic) element chemical potentials are pinned at the intrinsic
-        phase diagram facets (computed without any extrinsic phases), and for
-        each intrinsic facet we then find the extrinsic phase that most
+        (intrinsic) element chemical potentials are pinned by the intrinsic
+        phase diagram limits (computed without any extrinsic phases), and for
+        each intrinsic limit we then find the extrinsic phase that most
         strictly bounds ``μ_extrinsic_element``.
 
-        This is equivalent to the ``full_sub_approach=False`` (recommended for
+        This is the ``full_sub_approach=False`` procedure (recommended for
         dilute dopant/impurity concentrations), where only chemical potential
         limits with 1 extrinsic phase in equilibrium are considered.
 
         For an extrinsic phase with formula ``{host}X_n``, its stability
         constraint is: ``n_X·μ_X + Σ_{i ∈ host} n_i·μ_i <= E_form(phase)``
-        (with ``μ_i`` relative to elemental refs). So at fixed ``μ_host``;
+        (with ``μ_i`` relative to elemental refs). So at fixed ``μ_host``
+        (which is the case for a chemical potential limit with only 1 extrinsic
+        phase; the other N phases in equilibrium fully determine ``μ_host``):
         ``μ_X <= (E_form - Σ n_i·μ_i) / n_X``. The maximum allowed ``μ_X`` is
         the minimum of this RHS inequality over all extrinsic entries; the
         corresponding entry being the (extrinsic) limiting phase.
@@ -3901,21 +3903,39 @@ class CompetingPhasesAnalyzer(MSONable):
         for limit, chempot_series in chempots_df.iterrows():
             chempots_df.loc[limit, extrinsic_element.symbol] = np.inf
             chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = "N/A"
+            potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
             for entry in self.extrinsic_entries:
+                n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
+                if n_extrinsic_entry == 0:
+                    continue  # other extrinsic species' phase, not a constraint on μ_X here
+
                 formation_energy = self.phase_diagram.get_form_energy(entry)  # E_form(phase)
                 intrinsic_chempot_contribution = sum(  # Σ_{i ∈ host} n_i·μ_i
                     chempot_series[elt.symbol] * entry.composition[elt]
                     for elt in self.composition.elements
                 )
-                n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
-                # μ_X <= (E_form - Σ n_i·μ_i) / n_X:
-                mu_extrinsic = (formation_energy - intrinsic_chempot_contribution) / n_extrinsic_entry
-                if (  # most-restrictive (smallest) finite μ_extrinsic_element -> limiting phase:
-                    np.isfinite(mu_extrinsic)
-                    and mu_extrinsic < chempots_df.loc[limit, extrinsic_element.symbol]
-                ):
-                    chempots_df.loc[limit, extrinsic_element.symbol] = _custom_round(mu_extrinsic, 4)
-                    chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = entry.name
+                extrinsic_chempot = _custom_round(  # μ_X <= (E_form - Σ n_i·μ_i) / n_X
+                    (formation_energy - intrinsic_chempot_contribution) / n_extrinsic_entry, 4
+                )
+                if np.isfinite(extrinsic_chempot):
+                    potential_limiting_extrinsic_entries.append((entry, extrinsic_chempot))
+
+            # most-restrictive (smallest) finite μ_extrinsic_element -> limiting phase:
+            # in rare cases of numerical degeneracy, two or more extrinsic phases can tie at the host limit
+            # (giving the same extrinsic chemical potential). Thus for determinism we favour the phase with
+            # the simplest (reduced) composition and (if still tied) the lowest formation energy:
+            potential_limiting_extrinsic_entries.sort(
+                key=lambda x: (
+                    x[1],
+                    sum(x[0].composition.reduced_composition.get_el_amt_dict().values()),
+                    self.phase_diagram.get_form_energy(x[0]),
+                )
+            )
+            limiting_extrinsic_entry, limiting_extrinsic_chempot = potential_limiting_extrinsic_entries[0]
+            chempots_df.loc[limit, extrinsic_element.symbol] = _custom_round(limiting_extrinsic_chempot, 4)
+            chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = (
+                limiting_extrinsic_entry.name
+            )
 
         # move limiting phase columns to the end (for cases with multiple extrinsic elements)
         chempots_df = chempots_df[
@@ -3936,10 +3956,8 @@ class CompetingPhasesAnalyzer(MSONable):
             current_limits_wrt_el_refs, chempot_row_dicts, strict=True
         ):
             chempots[extrinsic_element.symbol] = chempot_row[extrinsic_element.symbol]
-            limiting_phase_suffix = "-".join(
-                chempot_row[col_name] for col_name in chempot_row if "Limiting Phase" in col_name
-            )
-            chempot_lims_w_extrinsic["limits_wrt_el_refs"][f"{limit}-{limiting_phase_suffix}"] = chempots
+            limiting_phase = chempot_row[f"{extrinsic_element.symbol}-Limiting Phase"]
+            chempot_lims_w_extrinsic["limits_wrt_el_refs"][f"{limit}-{limiting_phase}"] = chempots
 
         # relate the limits to the elemental energies
         elemental_refs = chempot_lims_w_extrinsic["elemental_refs"]
