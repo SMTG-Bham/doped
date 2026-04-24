@@ -1274,6 +1274,48 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             assert next(iter(chempots_df["La-Limiting Phase"])) == "La2Zr2O7"
             assert np.isclose(next(iter(chempots_df["La"])), -9.46298748)
 
+    def test_extrinsic_chempots_match_pycdt_full_sub_approach(self):
+        """
+        Confirm that doped's algebraic dilute-dopant μ_extrinsic calculation
+        gives the same result as the geometric ``full_sub_approach=False``
+        PyCDT workflow: build a phase diagram from intrinsic + extrinsic
+        entries, enumerate facets, keep only facets bordered by exactly one
+        extrinsic phase (i.e. equilibria where the host phases still pin μ_host
+        as in an intrinsic facet), and read μ_extrinsic off those facets.
+        """
+        from pymatgen.analysis.phase_diagram import PhaseDiagram
+        from pymatgen.core.periodic_table import Element
+
+        cpa = self.la_zro2_cpa
+        la = Element("La")
+
+        intrinsic_entries = [e for e in cpa.entries if la not in e.composition.elements]
+        extrinsic_entries = [e for e in cpa.entries if la in e.composition.elements]
+        sub_pd = PhaseDiagram(intrinsic_entries + extrinsic_entries)
+        mu_la_ref = sub_pd.el_refs[la].energy_per_atom
+
+        # PyCDT-style: enumerate sub-PD facets, keep those with exactly 1 extrinsic phase, then map each to
+        # its parent intrinsic facet (= the remaining host phases at that vertex):
+        pycdt_results: dict[str, dict] = {}
+        for facet_name, mu_dict in sub_pd.get_all_chempots(cpa.composition).items():
+            phases = facet_name.split("-")
+            sub_phases = [p for p in phases if la in Composition(p).elements]
+            if len(sub_phases) != 1:
+                continue  # codoping/non-dilute facets, excluded by the dilute approximation
+            host_key = frozenset(p for p in phases if p not in sub_phases)
+            pycdt_results[host_key] = {
+                "La": mu_dict[la] - mu_la_ref,  # convert absolute -> rel. elemental ref
+                "limiting_phase": sub_phases[0],
+            }
+
+        # every intrinsic facet must have an exactly-one-extrinsic-phase lift in this dataset:
+        doped_host_keys = {frozenset(limit.split("-")) for limit in cpa.chempots_df.index}
+        assert set(pycdt_results) == doped_host_keys
+        for limit, row in cpa.chempots_df.iterrows():
+            pycdt_row = pycdt_results[frozenset(limit.split("-"))]
+            assert pycdt_row["limiting_phase"] == row["La-Limiting Phase"]
+            assert np.isclose(pycdt_row["La"], row["La"], atol=1e-3)
+
     def test_calculate_chempots_missing_extrinsic_elemental_reference(self):
         """
         Extrinsic μ limits require a parsed elemental reference for that
