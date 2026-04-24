@@ -73,14 +73,14 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
-# TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
-# TODO: Get genAI to try make code in this module more readable. Could do with some informative
-#  comments, in complex workflows, typing etc.
-# TODO: Update chemical potentials tutorial notebook for new code/function names
 # TODO: Make ``full_sub_approach`` a deprecated parameter for ``CompetingPhases`` (no need for CPA as
 #  wasn't there before), and rename to (not) ``dilute_extrinsic``?
 # TODO: Should add some notes/warnings in places that ``dilute_extrinsic`` should ofc be set to False when
 # investigating high / non-dilute impurity concentrations/doping
+# TODO: Recheck all functionality from old `_chemical_potentials.py` is now present here, w/Claude
+# TODO: Get genAI to try make code in this module more readable. Could do with some informative
+#  comments, in complex workflows, typing etc.
+# TODO: Update chemical potentials tutorial notebook for new code/function names
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
@@ -3884,15 +3884,10 @@ class CompetingPhasesAnalyzer(MSONable):
                 chempots_df = _get_chempots_df_from_chempots(self.chempots)
             else:  # dilute impurity approximation
                 for extrinsic_element in extrinsic_elements:
-                    self._calculate_dilute_extrinsic_chempot_lims(
+                    chempots_df = self._calculate_dilute_extrinsic_chempot_lims(
                         extrinsic_element=extrinsic_element,
                         chempots_df=chempots_df,
-                    )  # updates self.chempots and chempots_df
-
-        # TODO: Let's just get rid of the "Limiting Phase" column, and just add it to the limit key (so
-        #  it matches full_sub_approach format etc)
-        # TODO: Re-sort chempots and chempots_df here, according to self.elements (and accounting for
-        #  'limiting phase' which should be at the end)
+                    )  # updates self.chempots, returns the updated chempots_df
 
         if sort_by is not None:  # sort chempots_df, self.chempots and self.intrinsic_chempots:
             chempots_df = chempots_df.sort_values(by=sort_by, ascending=False)
@@ -3907,6 +3902,8 @@ class CompetingPhasesAnalyzer(MSONable):
             _sort_chempots_dict_by(self.chempots, sort_by)
             _sort_chempots_dict_by(self.intrinsic_chempots, sort_by)
 
+        # TODO: Re-sort chempots and chempots_df columns/dicts here, according to self.elements
+
         if verbose:
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
             print(chempots_df)
@@ -3915,7 +3912,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def _calculate_dilute_extrinsic_chempot_lims(
         self, extrinsic_element: Element, chempots_df: pd.DataFrame
-    ) -> None:
+    ) -> pd.DataFrame:
         """
         This function calculates chemical potential limits for extrinsic /
         dopant elements, using the dilute-dopant approximation: host
@@ -3942,9 +3939,8 @@ class CompetingPhasesAnalyzer(MSONable):
         competing phases containing multiple extrinsic species, which is
         usually only relevant under high (non-dilute) co-doping concentrations.
         """
-        for limit, chempot_series in chempots_df.iterrows():
+        for limit, chempot_series in list(chempots_df.iterrows()):
             chempots_df.loc[limit, extrinsic_element.symbol] = np.inf
-            chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = "N/A"
             potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
             for entry in self.extrinsic_entries:
                 n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
@@ -3975,41 +3971,29 @@ class CompetingPhasesAnalyzer(MSONable):
             )
             limiting_extrinsic_entry, limiting_extrinsic_chempot = potential_limiting_extrinsic_entries[0]
             chempots_df.loc[limit, extrinsic_element.symbol] = _custom_round(limiting_extrinsic_chempot, 4)
-            chempots_df.loc[limit, f"{extrinsic_element.symbol}-Limiting Phase"] = (
-                limiting_extrinsic_entry.name
+            chempots_df = chempots_df.rename(  # Append the limiting phase to the limit key
+                index={limit: f"{limit}-{limiting_extrinsic_entry.name}"}
             )
 
-        # move limiting phase columns to the end (for cases with multiple extrinsic elements)
-        chempots_df = chempots_df[
-            [col for col in chempots_df.columns if "-Limiting Phase" not in col]
-            + [col for col in chempots_df.columns if "-Limiting Phase" in col]
-        ]
-
-        # reverse engineer chemical potential limits dict with extrinsic entries
-        chempot_row_dicts = chempots_df.to_dict(orient="records")
-        chempot_lims_w_extrinsic: dict[str, dict] = {
-            "elemental_refs": self.elemental_energies,
-            "limits_wrt_el_refs": {},
-            "limits": {},
+        limits_wrt_el_refs = {
+            limit: {el: chempots_df.loc[limit, el] for el in chempots_df.columns}
+            for limit in chempots_df.index
         }
-
-        current_limits_wrt_el_refs = list(self.chempots["limits_wrt_el_refs"].items())
-        for (limit, chempots), chempot_row in zip(
-            current_limits_wrt_el_refs, chempot_row_dicts, strict=True
-        ):
-            chempots[extrinsic_element.symbol] = chempot_row[extrinsic_element.symbol]
-            limiting_phase = chempot_row[f"{extrinsic_element.symbol}-Limiting Phase"]
-            chempot_lims_w_extrinsic["limits_wrt_el_refs"][f"{limit}-{limiting_phase}"] = chempots
-
-        # relate the limits to the elemental energies
-        elemental_refs = chempot_lims_w_extrinsic["elemental_refs"]
-        chempot_lims_w_extrinsic["limits"] = {
-            limit: {el: mu + elemental_refs[el] for el, mu in chempot_dict.items()}
-            for limit, chempot_dict in chempot_lims_w_extrinsic["limits_wrt_el_refs"].items()
-        }
-
-        # round all floats to 4 decimal places (0.1 meV/atom) for cleanliness (well below DFT accuracy):
-        self.chempots = _round_floats(chempot_lims_w_extrinsic, 4)
+        self.chempots = _round_floats(  # round all floats to 4 decimal places (0.1 meV/atom)
+            {
+                "limits": {
+                    limit: {  # convert limits wrt el refs to absolute chempots
+                        el: mu_wrt_el_ref + self.elemental_energies[el]
+                        for el, mu_wrt_el_ref in limits_wrt_el_refs[limit].items()
+                    }
+                    for limit in limits_wrt_el_refs
+                },
+                "elemental_refs": self.elemental_energies,
+                "limits_wrt_el_refs": limits_wrt_el_refs,
+            },
+            4,
+        )
+        return chempots_df
 
     def to_LaTeX_table(self, splits: int = 1, prune_polymorphs: bool = True) -> str:
         """
@@ -5195,8 +5179,7 @@ def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
     return get_X_rich_poor_limit(X, chempots, rich=False, **kwargs)
 
 
-# TODO: Can we just integrate this function to `CompetingPhaseAnalyzer`, so you just pass in a list of
-#  extrinsic species and it does the right thing?
+# TODO: Clean up (and maybe rename this function)
 def combine_extrinsic(first: dict, second: dict, extrinsic_species: str) -> dict:
     """
     Combines chemical potential limits for different extrinsic species.
