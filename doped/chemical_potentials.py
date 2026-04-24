@@ -77,7 +77,6 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # TODO: Get genAI to try make code in this module more readable. Could do with some informative
 #  comments, in complex workflows, typing etc.
 # TODO: Update chemical potentials tutorial notebook for new code/function names
-# TODO: Support full_sub_approach (& codoping) parsing
 # TODO: Make ``full_sub_approach`` a deprecated parameter for ``CompetingPhases`` (no need for CPA as
 #  wasn't there before), and rename to (not) ``dilute_extrinsic``?
 # TODO: Should add some notes/warnings in places that ``dilute_extrinsic`` should ofc be set to False when
@@ -2364,7 +2363,6 @@ class CompetingPhases(MSONable):
 def get_doped_chempots_from_entries(
     entries: Sequence[ComputedEntry | ComputedStructureEntry | PDEntry],
     composition: str | Composition | ComputedEntry,
-    sort_by: str | None = None,
     single_chempot_limit: bool = False,
 ) -> dict:
     r"""
@@ -2383,10 +2381,6 @@ def get_doped_chempots_from_entries(
             Composition of the host material either as a string
             (e.g. 'LiFePO4') a ``pymatgen`` |Composition| object (e.g.
             ``Composition('LiFePO4')``), or a ``ComputedEntry`` object.
-        sort_by (str):
-            If set, will sort the chemical potential limits in the output
-            ``DataFrame`` according to the chemical potential of the specified
-            element (from element-rich to element-poor conditions).
         single_chempot_limit (bool):
             If set to ``True``, only returns the first chemical potential limit
             in the calculated chemical potentials dictionary. Mainly intended
@@ -2402,31 +2396,16 @@ def get_doped_chempots_from_entries(
     else:
         composition = composition.composition
 
-    phase_diagram = PhaseDiagram(
-        entries,
-        list(map(Element, composition.elements)),  # preserve bulk comp element ordering
-    )
+    phase_diagram = PhaseDiagram(entries)
     chem_lims = phase_diagram.get_all_chempots(composition.reduced_composition)
     chem_lims_iterator = list(chem_lims.items())[:1] if single_chempot_limit else chem_lims.items()
 
-    # remove Element to make it JSONable:
-    no_element_chem_lims = {k: {str(kk): vv for kk, vv in v.items()} for k, v in chem_lims_iterator}
-
-    if sort_by is not None:
-        no_element_chem_lims = dict(
-            sorted(no_element_chem_lims.items(), key=lambda x: x[1][sort_by], reverse=True)
-        )
-
-    chempots = {
-        "limits": no_element_chem_lims,
+    chempots = {  # convert ``Element``\s to ``str`` to make dict ``JSONable``:
+        "limits": {k: {str(kk): vv for kk, vv in v.items()} for k, v in chem_lims_iterator},
         "elemental_refs": {str(el): ent.energy_per_atom for el, ent in phase_diagram.el_refs.items()},
-        "limits_wrt_el_refs": {},
     }
-
-    # relate the limits to the elemental energies
-    elemental_refs = chempots["elemental_refs"]
-    chempots["limits_wrt_el_refs"] = {
-        limit: {el: mu - elemental_refs[el] for el, mu in chempot_dict.items()}
+    chempots["limits_wrt_el_refs"] = {  # relate the limits to the elemental energies:
+        limit: {el: mu - chempots["elemental_refs"][el] for el, mu in chempot_dict.items()}
         for limit, chempot_dict in chempots["limits"].items()
     }
 
@@ -3067,6 +3046,7 @@ class CompetingPhasesAnalyzer(MSONable):
             PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry]
         ) = "CompetingPhases",
         subfolder: PathLike | None = None,
+        full_sub_approach: bool = False,
         verbose: bool = True,
         processes: int | None = None,
         check_compatibility: bool = True,
@@ -3086,6 +3066,25 @@ class CompetingPhasesAnalyzer(MSONable):
         which can be controlled with ``processes``. If parsing hangs, this may
         be due to memory issues, in which case you should reduce ``processes``
         (e.g. 4 or less).
+
+        If extrinsic (dopant/impurity) elements are present, their chemical
+        potential limits will also be calculated. By default this is done using
+        the dilute-impurity approximation, where ``μ_host`` is pinned at the
+        intrinsic chemical potential limits, and the corresponding
+        ``μ_extrinsic`` is then determined at these points -- or equivalently,
+        where only the chemical potential limits with a `single` extrinsic
+        competing phase are considered (as with ``full_sub_approach`` in
+        :class:`CompetingPhases` initialisation). This is the recommended
+        approach for `dilute` impurity/dopant concentrations, where it is
+        expected to be a valid approximation.
+
+        Setting ``full_sub_approach=True`` instead computes chemical potential
+        limits from the full phase diagram (intrinsic + extrinsic competing
+        phases), where every facet jointly determines ``μ_host`` and
+        ``μ_extrinsic``. This is required for accurate analysis in the case of
+        non-dilute impurity/dopant concentrations, but typically returns many
+        more limits. It can be important to use this approach when modelling
+        high impurity concentrations!
 
         Args:
             composition (str, |Composition|):
@@ -3113,6 +3112,12 @@ class CompetingPhasesAnalyzer(MSONable):
                 match, all found vaspruns are parsed. Set ``subfolder = "."``
                 to parse calculation files from the competing phase directory
                 with no subfolder.
+            full_sub_approach (bool):
+                If ``True``, compute chemical potential limits from the full
+                (intrinsic + extrinsic) phase diagram, jointly determining
+                ``μ_host`` and ``μ_extrinsic`` at every facet. Required for
+                accurate treatment of non-dilute impurity/dopant concetrations.
+                Default is ``False`` (dilute-impurity approximation).
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found),
@@ -3179,6 +3184,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
         self.intrinsic_elements = self.elements.copy()
         self.extrinsic_elements: list[str] = []
+        self.full_sub_approach = full_sub_approach
 
         # _from_vaspruns or _from_entries depending on input
         if not isinstance(entries, str | PathLike | list):
@@ -3471,7 +3477,7 @@ class CompetingPhasesAnalyzer(MSONable):
             self.phase_diagram.entries,
             key=lambda x: _entries_sort_func(x, bulk_composition=self.composition),
         )
-        self.chempots_df = self.calculate_chempots(verbose=False)
+        self.chempots_df = self.calculate_chempots(verbose=False, full_sub_approach=self.full_sub_approach)
 
     def _from_vaspruns(
         self,
@@ -3782,21 +3788,35 @@ class CompetingPhasesAnalyzer(MSONable):
     def calculate_chempots(
         self,
         extrinsic_species: str | Element | list[str] | list[Element] | None = None,
+        full_sub_approach: bool = False,
         sort_by: str | None = None,
         verbose: bool = True,
     ) -> pd.DataFrame:
         """
         Calculates the chemical potential limits for the host composition
-        (``self.composition``).
+        (``self.composition``) and any ``extrinsic_species`` (which defaults to
+        ``self.extrinsic_elements`` -- i.e. all extrinsic elements present in
+        ``self.entries``).
 
         If ``extrinsic_species`` (i.e. dopant/impurity elements) is specified,
-        then the limiting chemical potential for ``extrinsic_species`` at the
-        `intrinsic` chemical potential limits is calculated and also returned
-        (corresponds to ``full_sub_approach=False``; recommended approach for
-        dilute impurity/dopant concentrations).
+        then the limiting chemical potentials for ``extrinsic_species`` are
+        also calculated and returned. By default this is done using the
+        dilute-impurity approximation, where ``μ_host`` is pinned at the
+        intrinsic chemical potential limits, and the corresponding
+        ``μ_extrinsic`` is then determined at these points -- or equivalently,
+        where only the chemical potential limits with a `single` extrinsic
+        competing phase are considered (as with ``full_sub_approach`` in
+        :class:`CompetingPhases` initialisation). This is the recommended
+        approach for `dilute` impurity/dopant concentrations, where it is
+        expected to be a valid approximation.
 
-        ``extrinsic_species`` is set to ``self.extrinsic_elements`` if not
-        specified.
+        Setting ``full_sub_approach=True`` instead computes chemical potential
+        limits from the full phase diagram (intrinsic + extrinsic competing
+        phases), where every facet jointly determines ``μ_host`` and
+        ``μ_extrinsic``. This is required for accurate analysis in the case of
+        non-dilute impurity/dopant concentrations, but typically returns many
+        more limits. It can be important to use this approach when modelling
+        high impurity concentrations!
 
         Args:
             extrinsic_species (str, Element, list):
@@ -3806,13 +3826,19 @@ class CompetingPhasesAnalyzer(MSONable):
                 of elements. If ``None`` (default), uses
                 ``self.extrinsic_elements``.
             sort_by (str):
-                If set, will sort the chemical potential limits in the output
-                ``DataFrame`` according to the chemical potential of the
-                specified element (from element-rich to element-poor
-                conditions).
+                If set, will sort the chemical potential limits in
+                ``self.(intrinsic_)chempots`` and the output ``DataFrame``
+                according to the chemical potential of the specified element
+                (from element-rich to element-poor conditions).
             verbose (bool):
                 If ``True`` (default), will print the parsed chemical potential
                 limits.
+            full_sub_approach (bool):
+                If ``True``, compute chemical potential limits from the full
+                (intrinsic + extrinsic) phase diagram, jointly determining
+                ``μ_host`` and ``μ_extrinsic`` at every facet. Required for
+                accurate treatment of non-dilute impurity/dopant concetrations.
+                Default is ``False`` (dilute-impurity approximation).
 
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
@@ -3823,37 +3849,63 @@ class CompetingPhasesAnalyzer(MSONable):
             extrinsic_species = [extrinsic_species]
         extrinsic_elements: list[Element] = [Element(e) for e in extrinsic_species]
 
-        self.intrinsic_chempots = get_doped_chempots_from_entries(
-            self.intrinsic_phase_diagram.entries,
-            self.composition,
-            sort_by=sort_by,
-            single_chempot_limit=self.unstable_host,
-        )
-
-        chempots_df = pd.DataFrame.from_dict(  # chemical potentials as pandas dataframe
-            {k: list(v.values()) for k, v in self.intrinsic_chempots["limits_wrt_el_refs"].items()},
-            orient="index",
-            columns=[str(k) for k in next(iter(self.intrinsic_chempots["limits_wrt_el_refs"].values()))],
-        ).rename_axis("Limit")
-
-        missing_extrinsic = [
+        if missing_extrinsic := [
             elt for elt in extrinsic_elements if elt.symbol not in self.elemental_energies
-        ]
-        self.chempots = self.intrinsic_chempots
-
-        if missing_extrinsic:
+        ]:
             raise ValueError(
                 f"Elemental reference phase for the specified extrinsic species "
                 f"{[elt.symbol for elt in missing_extrinsic]} was not parsed, but is necessary for "
                 f"chemical potential calculations. Please ensure that this phase is present in the "
                 f"calculation directory and is being correctly parsed."
             )
+
+        self.chempots = self.intrinsic_chempots = get_doped_chempots_from_entries(
+            self.intrinsic_phase_diagram.entries,
+            self.composition,
+            single_chempot_limit=self.unstable_host,
+        )  # self.chempots overwritten below when extrinsic elements present
+
+        def _get_chempots_df_from_chempots(chempots: dict) -> pd.DataFrame:
+            return pd.DataFrame.from_dict(  # chemical potentials as pandas dataframe
+                {k: list(v.values()) for k, v in chempots["limits_wrt_el_refs"].items()},
+                orient="index",
+                columns=[str(k) for k in next(iter(chempots["limits_wrt_el_refs"].values()))],
+            ).rename_axis("Limit")
+
+        chempots_df = _get_chempots_df_from_chempots(self.intrinsic_chempots)
+
         if extrinsic_elements:
-            for extrinsic_element in extrinsic_elements:
-                self._calculate_dilute_extrinsic_chempot_lims(  # updates self.chempots and chempots_df
-                    extrinsic_element=extrinsic_element,
-                    chempots_df=chempots_df,
+            if full_sub_approach:
+                self.chempots = get_doped_chempots_from_entries(
+                    self.phase_diagram.entries,  # full phase diagram now
+                    self.composition,
+                    single_chempot_limit=self.unstable_host,
                 )
+                chempots_df = _get_chempots_df_from_chempots(self.chempots)
+            else:  # dilute impurity approximation
+                for extrinsic_element in extrinsic_elements:
+                    self._calculate_dilute_extrinsic_chempot_lims(
+                        extrinsic_element=extrinsic_element,
+                        chempots_df=chempots_df,
+                    )  # updates self.chempots and chempots_df
+
+        # TODO: Let's just get rid of the "Limiting Phase" column, and just add it to the limit key (so
+        #  it matches full_sub_approach format etc)
+        # TODO: Re-sort chempots and chempots_df here, according to self.elements (and accounting for
+        #  'limiting phase' which should be at the end)
+
+        if sort_by is not None:  # sort chempots_df, self.chempots and self.intrinsic_chempots:
+            chempots_df = chempots_df.sort_values(by=sort_by, ascending=False)
+
+            def _sort_chempots_dict_by(chempots_dict: dict, sort_by: str) -> dict:
+                for limit_key in ["limits_wrt_el_refs", "limits"]:
+                    chempots_dict[limit_key] = dict(
+                        sorted(chempots_dict[limit_key].items(), key=lambda x: x[1][sort_by], reverse=True)
+                    )
+                return chempots_dict
+
+            _sort_chempots_dict_by(self.chempots, sort_by)
+            _sort_chempots_dict_by(self.intrinsic_chempots, sort_by)
 
         if verbose:
             print("Calculated chemical potential limits (in eV wrt elemental reference phases): \n")
