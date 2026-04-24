@@ -2347,36 +2347,10 @@ class CompetingPhases(MSONable):
         Returns:
             JSON-serializable dict representation of |CompetingPhases|.
         """
-        attrs_to_store = [
-            "energy_above_hull",
-            "full_phase_diagram",
-            "extrinsic",
-            "full_sub_approach",
-            "codoping",
-            "api_key",
-            "bulk_structure",
-            "composition",
-            "chemsys",
-            "MP_full_pd_entries",
-            "MP_full_pd",
-            "MP_bulk_computed_entry",
-            "entries",
-            "MP_doc_dicts",
-            "intrinsic_species",
-            "intrinsic_entries",
-            "extrinsic_species",
-            "extrinsic_entries",
-            "MP_intrinsic_full_pd_entries",
-            "intrinsic_MP_doc_dicts",
-        ]
-        serialised = {"@module": self.__class__.__module__, "@class": self.__class__.__name__}
-        for attr in attrs_to_store:
-            if hasattr(self, attr):
-                value = getattr(self, attr)
-                if attr == "extrinsic" and isinstance(value, set):
-                    value = sorted(value)
-                serialised[attr] = value
-        return serialised
+        cp_dict = self.__dict__
+        if isinstance(cp_dict.get("extrinsic"), set):
+            cp_dict["extrinsic"] = sorted(cp_dict["extrinsic"])
+        return {"@module": type(self).__module__, "@class": type(self).__name__, **cp_dict}
 
     @classmethod
     def from_dict(cls, d: dict) -> "CompetingPhases":
