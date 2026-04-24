@@ -29,7 +29,7 @@ from mp_api.client import MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
-from pymatgen.core import SETTINGS, Composition, Element, Lattice, Structure
+from pymatgen.core import Composition, Element, Lattice, Structure
 from pymatgen.core.entries import (
     ComputedEntry,
     ComputedStructureEntry,
@@ -76,10 +76,12 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # TODO: Need to recheck all functionality from old `_chemical_potentials.py` is now present here.
 # TODO: Get genAI to try make code in this module more readable. Could do with some informative
 #  comments, in complex workflows, typing etc.
-# TODO: Check and update all references to MP API -- see installation page etc. See MP API key env var
-# exporting (alternative to pmg config file) here: https://docs.materialsproject.org/downloading-data/using-the-api/getting-started
 # TODO: Update chemical potentials tutorial notebook for new code/function names
 # TODO: Support full_sub_approach (& codoping) parsing
+# TODO: Make ``full_sub_approach`` a deprecated parameter for ``CompetingPhases`` (no need for CPA as
+#  wasn't there before), and rename to (not) ``dilute_extrinsic``?
+# TODO: Should add some notes/warnings in places that ``dilute_extrinsic`` should ofc be set to False when
+# investigating high / non-dilute impurity concentrations/doping
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
@@ -341,10 +343,11 @@ def get_entries_in_chemsys(
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
             to obtain the corresponding ``ComputedStructureEntry``s. If not
-            supplied, will attempt to read from environment variable
-            ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml`` or
-            ``~/.config/.pmgrc.yaml``) -- see the ``doped`` Installation docs:
-            doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            supplied, will attempt to read from ``~/.pmgrc.yaml`` or
+            ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
+            ``MP_API_KEY`` environment variable -- see the ``doped``
+            Installation docs:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
         energy_above_hull (float):
             If supplied, only entries with energies above hull (according to
             the MP-computed phase diagram) less than this value (in eV/atom)
@@ -416,10 +419,11 @@ def get_entries(
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
             to obtain the corresponding ``ComputedStructureEntry``s. If not
-            supplied, will attempt to read from environment variable
-            ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml`` or
-            ``~/.config/.pmgrc.yaml``) -- see the ``doped`` Installation docs:
-            doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            supplied, will attempt to read from ``~/.pmgrc.yaml`` or
+            ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
+            ``MP_API_KEY`` environment variable -- see the ``doped``
+            Installation docs:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
         bulk_composition (str/Composition):
             Optional input; formula of the bulk host material, to use for
             sorting the output entries (with all those matching the bulk
@@ -446,50 +450,33 @@ def get_entries(
     return entries
 
 
-def _parse_MP_API_key(api_key: str | None = None) -> str:
+def _check_MP_API_key(api_key: str | None = None) -> str | None:
     """
-    Parse the Materials Project (MP) API key, either from the input argument or
-    from the environment variable ``PMG_MAPI_KEY``, throwing an error if it is
-    not valid.
+    Check that the Materials Project (MP) API key is valid, throwing an
+    informative error if not.
 
     Args:
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
             (for phase diagram analysis, competing phase generation etc). If
-            not supplied, will attempt to read from environment variable
-            ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml`` or
-            ``~/.config/.pmgrc.yaml``) -- see the ``doped`` Installation docs:
-            doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
-
-    Returns:
-        api_key (str):
-            Materials Project API key, as supplied in the input argument or
-            read from the environment variable.
+            not supplied, will attempt to read from ``~/.pmgrc.yaml`` or
+            ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
+            ``MP_API_KEY`` environment variable -- see the ``doped``
+            Installation docs:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
     """
-    api_key = api_key or SETTINGS.get("PMG_MAPI_KEY")
-
-    # check api_key:
-    if api_key is None:  # no API key supplied or set in ``.pmgrc.yaml``
+    try:
+        with MPRester(api_key) as mpr:
+            mpr.get_entry_by_material_id("mp-1")  # check if API key is valid
+    except MPRestError as mp_exc:
         raise ValueError(
-            "No API key (either ``api_key`` parameter or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
-            "``~/.config/.pmgrc.yaml``) was supplied. This is required for automatic competing "
-            "phase generation in doped, as detailed on the installation instructions:\n"
-            "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-            "-project-api"
-        )
-    if len(api_key) != 32:  # new-style MP API keys are 32 chars; probe to confirm validity:
-        try:
-            with MPRester(api_key) as mpr:
-                mpr.get_entry_by_material_id("mp-1")  # check if API key is valid
-        except MPRestError as mp_exc:
-            raise ValueError(
-                f"The supplied API key (either ``api_key`` or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or "
-                f"``~/.config/.pmgrc.yaml``; {api_key}) is not a valid Materials Project API "
-                f"key, which is required by doped for competing phase generation. See the doped "
-                f"installation instructions for details:\n"
-                "https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
-                "-project-api"
-            ) from mp_exc
+            f"The supplied API key (either ``api_key={api_key}``, the ``MP_API_KEY`` environment "
+            f"variable, or 'PMG_MAPI_KEY' in ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``; in order of "
+            f"precedence) is not a valid Materials Project API key, which is required for automatic "
+            f"competing phase generation. See the doped installation instructions for details:\n"
+            f"https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials"
+            f"-project-api"
+        ) from mp_exc
 
     return api_key
 
@@ -526,10 +513,11 @@ def get_MP_summary_dicts(
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
             to obtain the corresponding summary dictionaries. If not
-            supplied, will attempt to read from environment variable
-            ``PMG_MAPI_KEY`` (in ``~/.pmgrc.yaml`` or
-            ``~/.config/.pmgrc.yaml``) -- see the ``doped`` Installation docs:
-            doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            supplied, will attempt to read from ``~/.pmgrc.yaml`` or
+            ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
+            ``MP_API_KEY`` environment variable -- see the ``doped``
+            Installation docs:
+            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             query, e.g. ``MPRester.materials.summary.search()``.
@@ -540,7 +528,7 @@ def get_MP_summary_dicts(
             The keys are the MPIDs (e.g. ``"mp-1234"``) and the values are the
             corresponding summary dictionaries.
     """
-    api_key = _parse_MP_API_key(api_key)
+    _check_MP_API_key(api_key)
     if entries is None and chemsys is None:
         raise ValueError("Either `entries` or `chemsys` must be provided!")
 
@@ -947,11 +935,12 @@ class CompetingPhases(MSONable):
                 ``False``.
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
-                database for competing phase generation. If not supplied, will
-                attempt to read from environment variable ``PMG_MAPI_KEY`` (in
-                ``~/.pmgrc.yaml`` or ``~/.config/.pmgrc.yaml``) -- see the
-                ``doped`` Installation docs page:
-                https://doped.readthedocs.io/en/latest/Installation.html
+                database for competing phase generation. If not supplied,
+                will attempt to read from ``~/.pmgrc.yaml`` or
+                ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from
+                the ``MP_API_KEY`` environment variable -- see the ``doped``
+                Installation docs:
+                https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
             MP_doc_dicts (bool):
                 If ``True``, also queries the Materials Project (MP) for
                 summary doc dicts with ``MPRester.summary_search()`` for the
@@ -968,7 +957,8 @@ class CompetingPhases(MSONable):
         self.extrinsic = extrinsic
         self.codoping = codoping
         self.full_sub_approach = full_sub_approach
-        self.api_key = _parse_MP_API_key(api_key)
+        _check_MP_API_key(api_key)
+        self.api_key = api_key
         self._get_entries_kwargs = kwargs
 
         # TODO: Should hard code S (solid + S8 (mp-994911), + S2 (molecule in a box)), P, Te and Se in

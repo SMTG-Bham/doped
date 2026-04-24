@@ -1,6 +1,6 @@
 # `doped` Development To-Do List
 ## Chemical potential
-- Need to recheck validity of approximations used for extrinsic competing phases (and code for this)(see `full_sub_approach_understanding` folder). Proper `vasp_std` setup (with `NKRED` folders like for defect calcs) and `vasp_ncl` generation.
+- Need to recheck validity of approximations used for extrinsic competing phases (and code for this)(see `full_sub_approach_understanding` folder).
 - Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe
   competing phases, and notes below.
 - See `Future_ToDo.md`.
@@ -71,5 +71,6 @@
 - Show example of extremum position for a defect/carrier concentration occurring at a non-limiting chemical potential (e.g. CdTe from SK thesis, V_S in Sb2S3 just about (https://pubs.acs.org/doi/10.1021/acsenergylett.4c02722)), as this is the main case where the `optimise` function is particularly powerful.  
 - Update all tutorial notebooks, to use latest codebase and be directly runnable in Colab
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
+- Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
 - For v4.1; search for deprecation warnings and remove.
 - Update `pymatgen-analysis-defects` to refactor to `pymatgen-core`-only. Also needs minor refactors in `shakenbreak` and `pydefect`/`vise`.

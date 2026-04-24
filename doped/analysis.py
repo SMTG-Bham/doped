@@ -3068,7 +3068,7 @@ class DefectParser:
                 If provided, will query the Materials Project database for the
                 bulk gap data, using this Materials Project ID.
             api_key (str):
-                Materials API key to access database.
+                Materials Project API key to access database.
         """
         if not self.bulk_vr:
             self.bulk_vr = _parse_vr_and_poss_procar(
