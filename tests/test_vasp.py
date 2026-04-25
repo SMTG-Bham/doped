@@ -22,6 +22,7 @@ from test_utils import (
     _compare_attributes,
     _potcars_available,
     _print_warning_info,
+    _run_heavy_tests,
     data_dir,
     if_present_rm,
 )
@@ -79,8 +80,6 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
-        self.heavy_tests = bool(_potcars_available())
         self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
         self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         self.CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
@@ -743,13 +742,13 @@ class DefectRelaxSetTest(unittest.TestCase):
             ]
         )
 
+    # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_initialisation_and_writing(self):
         """
         Test the initialisation of DefectRelaxSet for a range of
         `DefectEntry`s.
         """
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
 
         def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
             assert parent_drs.defect_entry == input_defect_entry
@@ -1261,10 +1260,8 @@ class DefectsSetTest(unittest.TestCase):
             ]
         )
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_CdTe_files(self):
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
-
         CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
         defects_set = DefectsSet(
             CdTe_se_defect_gen,
@@ -1535,7 +1532,7 @@ class DefectsSetTest(unittest.TestCase):
             "lmno_defect_gen",
             "cu_defect_gen",
         ]
-        if self.heavy_tests:  # uses too much memory on GH Actions
+        if _run_heavy_tests():  # uses too much memory on GH Actions
             defect_gens_to_test.extend(
                 [
                     "ytos_defect_gen_supercell",

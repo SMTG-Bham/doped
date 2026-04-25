@@ -29,8 +29,8 @@ from test_utils import (
     EXAMPLE_DIR,
     _compare_attributes,
     _compare_prim_interstitial_coords,
-    _potcars_available,
     _print_warning_info,
+    _run_heavy_tests,
     data_dir,
     if_present_rm,
 )
@@ -324,9 +324,6 @@ def _check_defect_entry(
 
 class DefectsGeneratorTest(unittest.TestCase):
     def setUp(self):
-        # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
-        self.heavy_tests = bool(_potcars_available())
-
         self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
         self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         sga = SpacegroupAnalyzer(self.prim_cdte)
@@ -2586,10 +2583,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         reduced_ytos_defect_gen = self._reduce_to_one_defect_each(ytos_defect_gen)
         reduced_ytos_defect_gen.to_json(f"{data_dir}/ytos_defect_gen.json")  # for testing in test_vasp.py
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")  # Skip one YTOS test on GH
     def test_ytos_no_generate_supercell(self):
-        if not self.heavy_tests:  # skip one of the YTOS tests if on GH Actions
-            pytest.skip("Skipping heavy test on GH Actions")
-
         # tests the case of an input structure which is >10 Å in each direction, has
         # more atoms (198) than the pmg supercell (99), but generate_supercell = False,
         # so the _input_ supercell is used
@@ -2712,10 +2707,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             atol=1e-3,
         )
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")  # Skip one LMNO test on GH
     def test_lmno(self):
-        if not self.heavy_tests:  # skip one of the LMNO tests if on GH Actions
-            pytest.skip("Skipping heavy test on GH Actions")
-
         # battery material with a variety of important Wyckoff sites (and the terminology mainly
         # used in this field). Tough to find suitable supercell, goes to 448-atom supercell.
         lmno_defect_gen, output = self._generate_and_test_no_warnings(self.lmno_primitive)
@@ -3171,10 +3164,8 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
                 frac_coords, np.array([0.416667, 0.416667, 0.75]), atol=1e-3
             ) or np.allclose(frac_coords, np.array([0.75, 0.416667, 0.416667]), atol=1e-3)
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_supercell_w_defect_cd_i_CdTe(self):
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
-
         # test inputting a defective supercell
         CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
 
@@ -3202,12 +3193,10 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         # don't need to test generate_supercell = False with this one. Already takes long enough as is,
         # and we've tested the handling of input >10 Å supercells in CdTe tests above
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_supercell_w_substitution_N_doped_diamond(self):
         # test inputting a large (216-atom) N_C diamond supercell as input, to check oxi_state handling
         # and skipping of interstitial generation:
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
-
         N_diamond_defect_gen, output, w = self._generate_and_test_no_warnings(
             self.N_doped_diamond_supercell, interstitial_gen_kwargs=False, return_warnings=True
         )
@@ -3226,13 +3215,11 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
             f"{data_dir}/N_diamond_defect_gen.json"
         )  # test in test_vasp.py
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_v_Ga_complex_supercell_mixed_oxi_states(self):
         # test generating (complex) defects in a defect supercell
         # notably, due to (guessed) mixed oxidation / valence states, this previously duplicated O_i
         # defects, but fixed now -- tested here
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
-
         complex_defect_gen, _output = self._generate_and_test_no_warnings(
             self.Ga2O3_R3c_v_Ga_defect_supercell
         )

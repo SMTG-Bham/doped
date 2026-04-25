@@ -121,6 +121,13 @@ def _potcars_available() -> bool:
         return False
 
 
+def _run_heavy_tests() -> bool:
+    """
+    Whether or not to run (computationally-)heavy tests.
+    """
+    return _potcars_available() and os.getenv("DOPED_SKIP_HEAVY_TESTS", "false").lower() != "true"
+
+
 def _compare_prim_interstitial_coords(result, expected):
     """
     Check that prim_interstitial_coords_mult_and_equiv_coords attribute values
