@@ -73,6 +73,16 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
+# TODO: Ok following discussions and looking at the full-sub-understanding notebook; conclusion is we
+# should always default to full_sub_approach=True (I was rightly dismayed at this being the default
+# approach)(particularly important when parsing), with codoping=False by default (need this option at
+# parsing time). Will need some clear warnings in docs/release notes (but not deprecation warning as it's
+# a superset of previous outputs). Will also introduce some complexities for e.g. parsing many extrinsic
+# species at once (we will have the full_sub_approach=False subset which align across different extrinsic
+# species, but the rest of the limits will be orthogonal (if codoping=False) -- this is likely the reason
+# PyCDT used full_sub_approach=False by default (for easier screening), but it's fine, we just need the
+# right flexibility to handle it (maybe with a notebook example of doing this and then plotting formation
+# energies of a range of extrinsic species at once).
 # TODO: Make ``full_sub_approach`` a deprecated parameter for ``CompetingPhases`` (no need for CPA as
 #  wasn't there before), and rename to (not) ``dilute_extrinsic``?
 # TODO: Should add some notes/warnings in places that ``dilute_extrinsic`` should ofc be set to False when

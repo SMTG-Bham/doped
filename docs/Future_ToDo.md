@@ -34,11 +34,10 @@
   - Should have functions to plot the Fermi-level-dependent association degrees, as in Fig 3 Krasikov JMCA 2017
   - Questions some of our typical expectations of defect behaviour! Actually defect complexes are a bit
     more common than thought.
-  - Kumagai's atom-pairing defect analysis code for identifying 'non-trivial' defects is essentially
-    this, could be used here?
   - Could do by using the site displacements, with atoms moving outside their vdW radius being flagged
-    as (possibly) defective? And see if their stoichiometric sum matches the expected point defect
-    stoichiometry. Expected to match one of these transformation motifs:
+    as (possibly) defective (this is essentially the approach implemented in ``split_vacancies`` PR)? And see if their 
+    stoichiometric sum matches the expected point defect stoichiometry. Expected to match one of these transformation 
+    motifs:
     - Substitutions:
       - `A_B` -> `A_C` + `C_B`
       - `A_B` -> `A_i` + `V_B`
@@ -60,5 +59,5 @@
 - Use the projected eigenvalues and magnetisation to detect when localised charge is associated with d/f electrons (and/or is multi-polaronic), and warn the user that different choices of NUPDOWN, maybe MAGMOM, should be tested for these defect states? (Like for dimers)
 
 ## Docs
-- Add LDOS plotting, big selling point for defects and disorder!
-- Add short example notebook showing how to generate a defect PES / NEB and then parse with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454).
+- LDOS plotting?
+- Example parsing CCD with fully-consistent charge corrections after (link recent Kumagai paper on this: https://arxiv.org/abs/2304.01454) -- would make sense in ``CarrierCapture``/``nonrad``
