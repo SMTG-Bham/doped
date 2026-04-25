@@ -1,28 +1,19 @@
 # `doped` Development To-Do List
-## Chemical potential
-- Need to recheck validity of approximations used for extrinsic competing phases (and code for this)(see `full_sub_approach_understanding` folder).
-- Efficient generation of competing phases for which there are many polymorphs? See SK notes from CdTe
-  competing phases, and notes below.
-- See `Future_ToDo.md`.
-
 ## Defect Complexes
 - Generation (see https://github.com/SMTG-Bham/doped/issues/91, SK split vacancies additions and `Future_ToDo.md`)
 - Parsing
 
 ## Post-processing / analysis / plotting
+- Vertical TL / defect energy level diagram plots (as in Xinwei papers etc)
 - Better automatic defect formation energy plot colour handling (set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
-  - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in `pymatgen-analysis-defects` chempots plotting, and our chempot heatmap plotting)
-  - Ordering of defects plotted (and thus in the legend) should be physically relevant (whether by energy, or defect type etc.)
+  - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in our chempot heatmap plotting)
   - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
   - Could also add an optional right-hand-side y-axis for defect concentration (for a chosen anneal temp) to our TLD plotting (e.g. `concentration_T = None`) as done for thesis, noting in docstring that this obvs doesn't account for degeneracy!
   - Separate `dist_tol` for interstitials vs (inequivalent) vacancies/substitutions? (See Xinwei chat) Any other options on this front?
-  - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this
-- Vertical TL / defect energy level diagram plots (as in Xinwei papers etc)
+  - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this?
 - Charge corrections for polarons; code there, just need to allow inputs of bare calculation outputs (and then can extend to allow polaron input file generation and parsing/plotting). Then update ``ShakeNBreak_Polaron_Workflow`` example with this too.
 - Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
 - 2D corrections?
-- Can we add an option to give the `pydefect` defect-structure-info output (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) – seems quite useful tbf
-
 
 ## Housekeeping
 - Tutorials general structure clean-up
@@ -33,11 +24,6 @@
   - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
   - Show on chemical potentials docs how chempots can be later set as attribute for `DefectThermodynamics` (loaded from `json`) (e.g. if user had finished and parsed defect calculations first, and then finished chemical potential calculations after).
   - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple `DefectThermodynamics` objects
-  - Regarding competing phases with many low-energy polymorphs from the Materials Project; will build
-    in a warning when many entries for the same composition, say which have database IDs, warn the user
-    and direct to relevant section on the docs -> Give some general foolproof advice for how best to deal
-    with these cases (i.e. check the ICSD and online for which is actually the groundstate structure,
-    and/or if it's known from other work for your chosen functional etc.)
   - `vasp_ncl` chemical potential calculations for metals, use `ISMEAR = -5`, possibly `NKRED` etc. (make a function to generate `vasp_ncl` calculation files with `ISMEAR = -5`, with option to set different kpoints) - if `ISMEAR = 0` - converged kpoints still prohibitively large, use vasp_converge_files again to check for quicker convergence with ISMEAR = -5.
     - Worth noting that for metals it may sometimes be preferable to use a larger cell with reduced kpoints, due to memory limitations.
   - Often can't use `NKRED` with `vasp_std`, because we don't know beforehand the kpts in the IBZ (because symmetry on for `vasp_std` chempot calcs)(same goes for `EVENONLY = True`).
@@ -59,7 +45,7 @@
     - And particularly when you've calculated your initial set of defect results! E.g. with Sb2Se3, all antisites and interstitials amphoteric, so suggests you should re-check amphotericity for all vacancies
   - Note about rare cases where `vasp_gam` pre-relaxation can fail (e.g. Wenzhen's case); extremely disperse bands with small bandgaps, where low k-point sampling can induce a phase transition in the bulk structure. In these cases, using a special k-point is advised for the pre-relaxations. You can get the corresponding k-point for your supercell (given the primitive cell special k-point) using the `get_K_from_k` function from `easyunfold`, with the `doped` `supercell_matrix`.
   - Show quick example case of the IPR code from `pymatgen-analysis-defects` (or from Adair code? or others?)
-  - Brief mention in tips/advanced docs about possibly wanting to do dielectric/kpoints-sampling weighted supercell generation (if user knows what they're doing, they can use a modified version of the supercell generation algorithm to do this), and in general if kpoints can be reduced with just a slightly larger supercell, then this is often preferable.
+  - Brief mention in tips/advanced docs about possibly wanting to do dielectric/kpoints-sampling weighted supercell generation (if user knows what they're doing, they can use a modified version of the supercell generation algorithm to do this), and in general if kpoints can be reduced with just a slightly larger supercell, then this is often preferable. Would natively optimise e.g. layered materials quite well. This can be done by just multiplying the supercell matrix before calling ``get_ideal_supercell_matrix``?
   - Note about cation-anion antisites often not being favourable in ionic systems, may be unnecessary to calculate (and you should think about the charge states, can play around with `probability_threshold` etc).
 - Should flick through other defect codes (see
   https://shakenbreak.readthedocs.io/en/latest/Code_Compatibility.html, also `AiiDA-defects`) and see if
@@ -73,4 +59,5 @@
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks.
 - Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
 - For v4.1; search for deprecation warnings and remove.
+- Example generation of `pydefect` defect-structure-info (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) in advanced analysis tutorial.
 - Update `pymatgen-analysis-defects` to refactor to `pymatgen-core`-only. Also needs minor refactors in `shakenbreak` and `pydefect`/`vise`.

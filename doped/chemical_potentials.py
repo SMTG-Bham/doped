@@ -79,7 +79,7 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 # investigating high / non-dilute impurity concentrations/doping
 # TODO: Recheck all functionality from old `_chemical_potentials.py` is now present here, w/Claude
 # TODO: Get genAI to try make code in this module more readable. Could do with some informative
-#  comments, in complex workflows, typing etc.
+#  comments, in complex workflows, typing, ensure defaults mentioned in docstrings etc.
 # TODO: Update chemical potentials tutorial notebook for new code/function names
 
 MPRester_property_data = [  # properties to pull for Materials Project entries
@@ -928,10 +928,14 @@ class CompetingPhases(MSONable):
                 extrinsic species, use ``full_sub_approach = True``.
             codoping (bool):
                 Whether to consider extrinsic competing phases containing
-                multiple extrinsic species. Usually only relevant under high
-                (non-dilute) co-doping concentrations. If set to True, then
-                ``full_sub_approach`` is also set to ``True``. Default is
-                ``False``.
+                `multiple` extrinsic species (e.g. ``KInO2`` as a potential
+                competing phase for ``BaSnO3`` with ``K`` and ``In`` extrinsic
+                species). Usually only relevant under high (non-dilute)
+                co-doping concentrations (i.e. combined ``full_sub_approach``
+                for all extrinsic species present). Ignore if ``extrinsic`` is
+                a single element. If set to ``True`` (and multiple extrinsic
+                species present), then ``full_sub_approach`` is also set to
+                ``True``. Default is ``False``.
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
                 database for competing phase generation. If not supplied,
@@ -978,6 +982,11 @@ class CompetingPhases(MSONable):
         # https://github.com/materialsproject/api/issues/675 &
         # https://github.com/materialsproject/api/issues/857 for accessing ICSD etc IDs (also
         # doc.database_IDs etc)
+        # "See SK notes from CdTe competing phases, and notes below."
+        # build in a warning when many entries for the same composition, say which have database IDs,
+        # warn the user and direct to relevant section on the docs -> Give some general foolproof advice
+        # for how best to deal with these cases (i.e. check the ICSD and online for which is actually
+        # the groundstate structure, and/or if it's known from other work for your chosen functional etc.)?
 
         # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
         # Will mention some good practice in the docs anyway. -> Have an in-built warning when many
@@ -1181,20 +1190,9 @@ class CompetingPhases(MSONable):
                 f"({self.composition}), and so cannot be considered as extrinsic species!"
             )
 
-        if self.codoping:  # if codoping is True, should have multiple extrinsic species:
-            if len(self.extrinsic_species) < 2:
-                warnings.warn(
-                    "`codoping` is set to True, but `extrinsic_species` only contains 1 element, "
-                    "so `codoping` will be set to False."
-                )
-                self.codoping = False
-
-            elif not self.full_sub_approach:
-                self.full_sub_approach = True
-
-        if self.full_sub_approach and self.codoping:
-            # can be time-consuming if several extrinsic_species supplied
-            self.MP_full_pd_entries = get_entries_in_chemsys(
+        if self.codoping:
+            self.full_sub_approach = True  # codoping implies full_sub_approach for all extrinsic species
+            self.MP_full_pd_entries = get_entries_in_chemsys(  # can be time-consuming; high(er)-D chemsys
                 chemsys=self.intrinsic_species + self.extrinsic_species,
                 api_key=self.api_key,
                 energy_above_hull=self.energy_above_hull,
@@ -1210,7 +1208,7 @@ class CompetingPhases(MSONable):
                     energy_above_hull=self.energy_above_hull,
                 )  # prune using phase diagram with all extrinsic species
 
-        else:  # full_sub_approach (for now, to get self.entries) but not co-doping
+        else:  # full_sub_approach (for now, to get ``self.entries``) but not co-doping
             candidate_extrinsic_entries = []
             for sub_el in self.extrinsic_species:
                 sub_el_MP_full_pd_entries = get_entries_in_chemsys(
@@ -1254,8 +1252,8 @@ class CompetingPhases(MSONable):
 
                     if not sub_el_entries:
                         raise ValueError(
-                            f"No Materials Project entries found for the given chemical "
-                            f"system: {[*self.intrinsic_species, sub_el]}"
+                            f"No Materials Project entries found for the given chemical system: "
+                            f"{[*self.intrinsic_species, sub_el]}"
                         )
 
                     sub_el_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *sub_el_entries])
@@ -1278,27 +1276,12 @@ class CompetingPhases(MSONable):
                         ) == 1 and not extrinsic_bordering_phases.issubset(MP_extrinsic_bordering_phases):
                             MP_extrinsic_bordering_phases.extend(extrinsic_bordering_phases)
 
-                    single_bordering_sub_el_entries = [
+                    self.entries += [
                         entry
                         for entry in candidate_extrinsic_entries
                         if entry.name in MP_extrinsic_bordering_phases
                         or (entry.is_element and sub_el in entry.name)
                     ]
-
-                    # check that extrinsic competing phases list is not empty (according to PyCDT
-                    # chemical potential handling this can happen (despite purposely neglecting these
-                    # "over-dependent" limits (facets) above), but no known cases... (apart from when
-                    # `extrinsic` actually contains an intrinsic element, which we handle above anyway)
-                    if not single_bordering_sub_el_entries:
-                        # self.entries += sub_el_entries
-                        raise RuntimeError(
-                            f"Determined chemical potentials to be over-dependent on the extrinsic "
-                            f"species {sub_el} despite `full_sub_approach=False`, which shouldn't happen. "
-                            f"Please report this to the developers on the GitHub issues page: "
-                            f"https://github.com/SMTG-Bham/doped/issues"
-                        )  # Revert to making this a warning if we find a case of this actually happening
-
-                    self.entries += single_bordering_sub_el_entries
 
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
         self.MP_full_pd_entries.sort(

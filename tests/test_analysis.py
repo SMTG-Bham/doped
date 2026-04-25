@@ -187,9 +187,9 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         self.YTOS_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "YTOS")
         self.ytos_dielectric = [  # from legacy Materials Project
-            [40.71948719643814, -9.282128210266565e-14, 1.26076160303219e-14],
-            [-9.301652644020242e-14, 40.71948719776858, 4.149879443489052e-14],
-            [5.311743673463141e-15, 2.041077680836527e-14, 25.237620491130023],
+            [40.72, 0, 0],
+            [0, 40.72, 0],
+            [0, 0, 25.24],
         ]
 
         self.Sb2Se3_DATA_DIR = os.path.join(data_dir, "Sb2Se3")

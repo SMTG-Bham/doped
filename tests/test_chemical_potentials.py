@@ -1040,7 +1040,6 @@ def _check_structure_input(cp, cp_struct_input, struct, name, w, api_key, extrin
 
 
 class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tearDown as above
-    # TODO: Need to add tests for co-doping, full_sub_approach, full_phase_diagram etc!!
     def setUp(self):
         CompetingPhasesTestCase.setUp(self)
         self.La_ZrO2_cp = chemical_potentials.CompetingPhases(
@@ -1194,6 +1193,79 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         cp_light = chemical_potentials.CompetingPhases("MgO", energy_above_hull=0, api_key=api_key)
         dict_sets_light = cp_light.get_singlepoint_sets()
         assert all("SinglePoint" in key for key in dict_sets_light)
+
+    def test_BaSnO3_K_In_full_sub_approach_codoping_full_phase_diagram(self):
+        """
+        Test ``CompetingPhases`` generation for BaSnO3 with K and In as
+        extrinsic species, covering the default (dilute) approach,
+        ``full_sub_approach=True``, ``codoping=True`` and
+        ``full_phase_diagram=True`` cases (and combinations thereof).
+
+        Co-doping competing phases (entries containing more than one
+        extrinsic species, e.g. ``KInO2``) should only be generated when
+        ``codoping=True`` (which also forces ``full_sub_approach=True``).
+        ``full_phase_diagram=True`` includes all phases on the MP phase
+        diagram (within ``energy_above_hull``) rather than only those
+        bordering the host, so increases both the intrinsic and extrinsic
+        entry counts.
+        """
+        K, In = Element("K"), Element("In")
+        host_elements = {Element("Ba"), Element("Sn"), Element("O")}
+
+        def _check_BaSnO3_K_In_cp(cp, codoping=False):
+            assert all(set(e.composition.elements).issubset(host_elements) for e in cp.intrinsic_entries)
+            assert {e.composition.reduced_formula for e in cp.intrinsic_entries}.issuperset(
+                {"BaSnO3", "Ba", "Sn", "O2"}
+            )
+
+            # extrinsic entries each contain at least one extrinsic species:
+            assert all(
+                K in e.composition.elements or In in e.composition.elements for e in cp.extrinsic_entries
+            )
+            # K and In elemental references are present:
+            assert {e.composition.reduced_formula for e in cp.extrinsic_entries}.issuperset({"K", "In"})
+
+            # entries == intrinsic + extrinsic, each entry has an EaH and a doped_name:
+            assert len(cp.entries) == len(cp.intrinsic_entries) + len(cp.extrinsic_entries)
+            assert all(isinstance(e.data["energy_above_hull"], float) for e in cp.entries)
+            assert all(isinstance(e.data["doped_name"], str) for e in cp.entries)
+
+            # only the codoping=True case should yield entries containing both K and In:
+            codoping_entries = [
+                e for e in cp.entries if K in e.composition.elements and In in e.composition.elements
+            ]
+            if codoping:
+                assert len(codoping_entries) >= 1
+                assert "KInO2" in [e.composition.reduced_formula for e in codoping_entries]
+            else:
+                assert codoping_entries == []
+
+        # parametrise over (kwargs, expected (n_entries, n_intrinsic, n_extrinsic), codoping):
+        cases = [
+            # default (dilute) approach: no full_sub_approach, no codoping, no full_phase_diagram:
+            ({}, (44, 23, 21), False),
+            # full_sub_approach=True: more extrinsic phases, but still no codoping entries:
+            ({"full_sub_approach": True}, (47, 23, 24), False),
+            # codoping=True: forces full_sub_approach=True and includes KInO2 codoping phase:
+            ({"codoping": True}, (48, 23, 25), True),
+            # full_phase_diagram=True (alone): all MP phases included for both intrinsic and extrinsic
+            # chemical systems, but dilute extrinsic approach so no codoping entries:
+            ({"full_phase_diagram": True}, (58, 37, 21), False),
+            # full_phase_diagram=True + codoping=True: largest case, with codoping entries
+            # (e.g. ``KInO2``, ``K17In41``) and full intrinsic phase diagram:
+            ({"full_phase_diagram": True, "codoping": True}, (88, 37, 51), True),
+        ]
+        for kwargs, (n_entries, n_intrinsic, n_extrinsic), codoping in cases:
+            cp = chemical_potentials.CompetingPhases(
+                "BaSnO3", energy_above_hull=0.03, extrinsic=["K", "In"], api_key=api_key, **kwargs
+            )
+            assert cp.full_sub_approach is (kwargs.get("full_sub_approach", False) or codoping)
+            assert cp.codoping is kwargs.get("codoping", False)
+            assert cp.full_phase_diagram is kwargs.get("full_phase_diagram", False)
+            assert len(cp.entries) == n_entries
+            assert len(cp.intrinsic_entries) == n_intrinsic
+            assert len(cp.extrinsic_entries) == n_extrinsic
+            _check_BaSnO3_K_In_cp(cp, codoping=codoping)
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):
@@ -2238,6 +2310,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
     def tearDown(self):
         if_present_rm("test.png")
+        if_present_rm("cpg.json")
 
     def test_init(self):
         assert isinstance(self.grid.vertices, pd.DataFrame)
@@ -2473,11 +2546,6 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         """
         grid_df = self.na2fepo4f_grid.get_grid(2e5, cartesian=True)
         return _plot_Na2FePO4F_chempot_grid(grid_df)
-
-
-class ChemicalPotentialGridMSONableTestCase(unittest.TestCase):
-    def tearDown(self):
-        if_present_rm("cpg.json")
 
     def test_to_from_dict(self):
         chempots = loadfn(os.path.join(EXAMPLE_DIR, "Cu2SiSe3/Cu2SiSe3_chempots.json"))
