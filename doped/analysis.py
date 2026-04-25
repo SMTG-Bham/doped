@@ -249,7 +249,7 @@ def defect_site_from_structures(
         check_atom_mapping_far_from_defect(
             defect_supercell,
             bulk_supercell,
-            guess_defect_position(defect_supercell),
+            guess_defect_position(defect_supercell, bulk_supercell),
             coords_are_cartesian=True,
         )
         raise RuntimeError(
@@ -859,11 +859,12 @@ def guess_defect_position(
             strict=False,
         )
     )
+    squared_cosine_dissimilarities = np.array(list(cos_diss_coords_dict.keys())) ** 2
     return np.average(  # weighted centre of mass
         np.array(list(cos_diss_coords_dict.values())),
         axis=0,
-        weights=np.array(list(cos_diss_coords_dict.keys())) ** 2,
-    )
+        weights=squared_cosine_dissimilarities if np.sum(squared_cosine_dissimilarities) > 0 else None,
+    )  # note we catch the edge case of zero dissimilarity (i.e. same structures); to avoid zero-division
 
 
 def defect_name_from_structures(
