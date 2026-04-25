@@ -237,7 +237,9 @@ def get_defect_in_supercell(
             if len(defect_entry) > 2:
                 orig_defect_frac_coords = np.array(defect_entry[2])
             else:
-                defect_site = defect_site_from_structures(orig_supercell, orig_bulk_supercell)
+                defect_site = defect_site_from_structures(
+                    orig_supercell, orig_bulk_supercell, _parameter_order_warn=False
+                )
                 assert isinstance(defect_site, PeriodicSite)
                 orig_defect_frac_coords = defect_site.frac_coords
         else:
@@ -497,9 +499,11 @@ def get_defect_in_supercell(
             )
 
     assert (
-        get_defect_type_and_composition_diff(orig_supercell, orig_bulk_supercell)[1]
+        get_defect_type_and_composition_diff(
+            orig_supercell, orig_bulk_supercell, _parameter_order_warn=False
+        )[1]
         == get_defect_type_and_composition_diff(
-            oriented_new_defect_supercell, oriented_new_bulk_supercell
+            oriented_new_defect_supercell, oriented_new_bulk_supercell, _parameter_order_warn=False
         )[1]
     ), (
         f"Output composition ({oriented_new_defect_supercell.composition}) does not match expected "

@@ -513,7 +513,9 @@ def _find_calc_outputs(
 
 
 def get_defect_type_and_composition_diff(
-    defect: Structure | Composition, bulk: Structure | Composition
+    defect: Structure | Composition,
+    bulk: Structure | Composition,
+    _parameter_order_warn: bool = True,
 ) -> tuple[str, dict]:
     """
     Get the difference in composition between a bulk structure and a defect
@@ -534,7 +536,8 @@ def get_defect_type_and_composition_diff(
             and the composition difference between the bulk and defect
             structures as a dictionary.
     """
-    _warn_parameter_order("get_defect_type_and_composition_diff")  # TODO: Remove in doped v4.1
+    if _parameter_order_warn:
+        _warn_parameter_order("get_defect_type_and_composition_diff")  # TODO: Remove in doped v4.1
     bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
     defect_comp = defect.composition if isinstance(defect, Structure) else defect
 
@@ -565,6 +568,7 @@ def get_defect_type_and_composition_diff(
 def get_defect_type_site_idxs_and_unrelaxed_structure(
     defect_supercell: Structure,
     bulk_supercell: Structure,
+    _parameter_order_warn: bool = True,
 ) -> tuple[str, int | None, int | None, Structure]:
     """
     Get the defect type, site (indices in the bulk and defect supercells) and
@@ -602,9 +606,10 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             pristine bulk structure with the `final` relaxed interstitial site
             for interstitials.
     """
-    _warn_parameter_order(  # TODO: Remove in doped v4.1
-        "get_defect_type_site_idxs_and_unrelaxed_structure"
-    )
+    if _parameter_order_warn:
+        _warn_parameter_order(  # TODO: Remove in doped v4.1
+            "get_defect_type_site_idxs_and_unrelaxed_structure"
+        )
 
     def process_substitution(defect_supercell, bulk_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
@@ -709,7 +714,9 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     }
 
     try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(defect_supercell, bulk_supercell)
+        defect_type, comp_diff = get_defect_type_and_composition_diff(
+            defect_supercell, bulk_supercell, _parameter_order_warn=False
+        )
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
@@ -1032,7 +1039,6 @@ def check_atom_mapping_far_from_defect(
         bool:
             Returns ``False`` if a mismatch is detected, else ``True``.
     """
-    _warn_parameter_order("check_atom_mapping_far_from_defect")  # TODO: Remove in doped v4.1
     far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     wigner_seitz_radius = get_wigner_seitz_radius(bulk_supercell.lattice)
     defect_frac_coords = (
@@ -1348,7 +1354,6 @@ def _compare_potcar_symbols(
     Returns True if the symbols match, otherwise returns a list of the symbols
     for the bulk and defect calculations.
     """
-    _warn_parameter_order("_compare_potcar_symbols")  # TODO: Remove in doped v4.1
     if only_matching_elements:
         defect_elements = [symbol["titel"].split()[1].split("_")[0] for symbol in defect_potcar_symbols]
         symbols_to_check = [
@@ -1407,7 +1412,6 @@ def _compare_kpoints(
     Returns ``True`` if the KPOINTS match, otherwise returns a list of the
     KPOINTS for the bulk and defect calculations.
     """
-    _warn_parameter_order("_compare_kpoints")  # TODO: Remove in doped v4.1
     # sort kpoints, in case same KPOINTS just different ordering:
     sorted_bulk_kpoints = sorted(np.array(bulk_actual_kpoints), key=tuple)
     sorted_defect_kpoints = sorted(np.array(defect_actual_kpoints), key=tuple)
@@ -1463,7 +1467,6 @@ def _compare_incar_tags(
     Returns True if no mismatching tags are found, otherwise returns a list of
     the mismatching tags.
     """
-    _warn_parameter_order("_compare_incar_tags")  # TODO: Remove in doped v4.1
     if fatal_incar_mismatch_tags is None:
         fatal_incar_mismatch_tags = {  # dict of tags that can affect energies and their defaults in VASP
             "AEXX": 0.25,  # default 0.25
@@ -1863,6 +1866,7 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
     ) = defect_and_info_from_structures(
         defect_supercell,
         bulk_supercell,
+        _parameter_order_warn=False,
         **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
     )
     if not getattr(defect_entry, "calculation_metadata", None):

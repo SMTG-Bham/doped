@@ -25,7 +25,7 @@ from pymatgen.core.structure import PeriodicSite
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
-from doped import _warn_parameter_order, suppress_logging
+from doped import suppress_logging
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
 from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
@@ -240,7 +240,6 @@ def get_band_edge_info(
         ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo`` objects for the
         bulk VBM and CBM.
     """
-    _warn_parameter_order("get_band_edge_info")  # TODO: Remove in doped v4.1
     band_edge_prop = band_edge_properties_from_vasprun(bulk_vr)
 
     if bulk_procar is not None:
@@ -253,8 +252,7 @@ def get_band_edge_info(
 
     if defect_supercell_site is None:
         defect_supercell_site = defect_site_from_structures(
-            defect_vr.final_structure,
-            bulk_vr.final_structure,
+            defect_vr.final_structure, bulk_vr.final_structure, _parameter_order_warn=False
         )
         assert isinstance(defect_supercell_site, PeriodicSite)  # typing
 

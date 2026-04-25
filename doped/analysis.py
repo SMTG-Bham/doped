@@ -192,6 +192,7 @@ def defect_site_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
     return_all_info: bool = False,
+    _parameter_order_warn: bool = True,
 ) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure]:
     """
     Auto-determines the defect site from the supplied bulk and defect
@@ -232,14 +233,17 @@ def defect_site_from_structures(
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
-    _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
+    if _parameter_order_warn:
+        _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
     try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
         (
             defect_type,
             bulk_site_index,
             defect_site_index,
             unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(defect_supercell, bulk_supercell)
+        ) = get_defect_type_site_idxs_and_unrelaxed_structure(
+            defect_supercell, bulk_supercell, _parameter_order_warn=False
+        )
 
     except RuntimeError as exc:
         check_atom_mapping_far_from_defect(
@@ -283,6 +287,7 @@ def defect_from_structures(
     bulk_supercell: Structure,
     return_all_info: bool = False,
     skip_atom_mapping_check: bool = False,
+    _parameter_order_warn: bool = True,
     **kwargs,
 ) -> Defect | tuple[Defect, PeriodicSite, PeriodicSite, int | None, int | None, Structure, Structure]:
     """
@@ -357,7 +362,8 @@ def defect_from_structures(
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
-    _warn_parameter_order("defect_from_structures")  # TODO: Remove in doped v4.1
+    if _parameter_order_warn:
+        _warn_parameter_order("defect_from_structures")  # TODO: Remove in doped v4.1
     (
         defect_site,
         defect_type,
@@ -365,7 +371,9 @@ def defect_from_structures(
         defect_site_index,
         bulk_site_index,
         unrelaxed_defect_structure,
-    ) = defect_site_from_structures(defect_supercell, bulk_supercell, return_all_info=True)
+    ) = defect_site_from_structures(
+        defect_supercell, bulk_supercell, return_all_info=True, _parameter_order_warn=False
+    )
 
     if not skip_atom_mapping_check:
         check_atom_mapping_far_from_defect(
@@ -486,6 +494,7 @@ def defect_and_info_from_structures(
     bulk_supercell: Structure,
     skip_atom_mapping_check: bool = False,
     initial_defect_structure_path: PathLike | None = None,
+    _parameter_order_warn: bool = True,
     **kwargs,
 ) -> tuple[Defect, PeriodicSite, dict]:
     """
@@ -557,7 +566,8 @@ def defect_and_info_from_structures(
                   unrelaxed vacancy/substitution site, or final `relaxed` site
                   for interstitials).
     """
-    _warn_parameter_order("defect_and_info_from_structures")  # TODO: Remove in doped v4.1
+    if _parameter_order_warn:
+        _warn_parameter_order("defect_and_info_from_structures")  # TODO: Remove in doped v4.1
     defect_structure_metadata = {}
 
     # identify defect site, structural information, and create defect object:
@@ -579,6 +589,7 @@ def defect_and_info_from_structures(
             bulk_supercell,
             skip_atom_mapping_check=skip_atom_mapping_check,
             return_all_info=True,
+            _parameter_order_warn=False,
             **kwargs,
         )
 
@@ -600,6 +611,7 @@ def defect_and_info_from_structures(
             bulk_supercell,
             skip_atom_mapping_check=skip_atom_mapping_check,
             return_all_info=True,
+            _parameter_order_warn=False,
             **kwargs,
         )
 
@@ -854,7 +866,9 @@ def guess_defect_position(
     )
 
 
-def defect_name_from_structures(defect_supercell: Structure, bulk_supercell: Structure, **kwargs) -> str:
+def defect_name_from_structures(
+    defect_supercell: Structure, bulk_supercell: Structure, _parameter_order_warn: bool = True, **kwargs
+) -> str:
     """
     Get the doped/SnB defect name using the bulk and defect structures.
 
@@ -871,7 +885,8 @@ def defect_name_from_structures(defect_supercell: Structure, bulk_supercell: Str
     Returns:
         str: Defect name.
     """
-    _warn_parameter_order("defect_name_from_structures")  # TODO: Remove in doped v4.1
+    if _parameter_order_warn:
+        _warn_parameter_order("defect_name_from_structures")  # TODO: Remove in doped v4.1
     # set oxi_state and multiplicity to avoid wasting time trying to auto-determine when unnecessary here
     default_init_kwargs = {"oxi_state": "Undetermined", "multiplicity": 1}
     default_init_kwargs.update(kwargs)
@@ -879,7 +894,7 @@ def defect_name_from_structures(defect_supercell: Structure, bulk_supercell: Str
         defect_supercell,
         bulk_supercell,
         return_all_info=False,
-        **default_init_kwargs,  # type: ignore
+        _parameter_order_warn=False**default_init_kwargs,  # type: ignore
     )
     assert isinstance(defect, Defect)  # mypy typing
 
@@ -2583,6 +2598,7 @@ class DefectParser:
         ) = defect_and_info_from_structures(
             defect_supercell,
             bulk_supercell,
+            _parameter_order_warn=False,
             **{
                 k.replace("bulk_", ""): v
                 for k, v in kwargs.items()

@@ -13,13 +13,7 @@ import numpy as np
 import pytest
 from pymatgen.core.structure import PeriodicSite
 from pymatgen.core.structure_matcher import ElementComparator
-from test_utils import (
-    EXAMPLE_DIR,
-    STYLE,
-    _potcars_available,
-    _print_warning_info,
-    custom_mpl_image_compare,
-)
+from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare
 
 from doped.analysis import DefectParser, defect_site_from_structures
 from doped.core import DefectEntry
@@ -122,7 +116,9 @@ def _make_stenciled_defect_entry(
         _defect_site_index,
         bulk_site_index,
         _unrelaxed_defect_structure,
-    ) = defect_site_from_structures(stenciled_supercell, corresponding_bulk, return_all_info=True)
+    ) = defect_site_from_structures(
+        stenciled_supercell, corresponding_bulk, return_all_info=True, _parameter_order_warn=False
+    )
     stenciled_entry.defect_supercell_site = defect_site
     stenciled_entry.sc_defect_frac_coords = defect_site.frac_coords
     # pop any previously-calculated site displacement data:
@@ -179,9 +175,11 @@ def _validate_stenciled_supercell(
     )
 
     # 2. Composition check: defect type and composition difference are correct
-    defect_type, comp_diff = get_defect_type_and_composition_diff(stenciled_supercell, target_supercell)
+    defect_type, comp_diff = get_defect_type_and_composition_diff(
+        stenciled_supercell, target_supercell, _parameter_order_warn=False
+    )
     orig_defect_type, orig_comp_diff = get_defect_type_and_composition_diff(
-        orig_supercell, defect_entry.bulk_supercell
+        orig_supercell, defect_entry.bulk_supercell, _parameter_order_warn=False
     )
     assert defect_type == orig_defect_type, f"Defect type mismatch: {defect_type} != {orig_defect_type}"
     assert comp_diff == orig_comp_diff, f"Composition diff mismatch: {comp_diff} != {orig_comp_diff}"
@@ -195,7 +193,9 @@ def _validate_stenciled_supercell(
         f"({bulk_min_bond_length:.3f} Å * {min_dist_tol_factor})"
     )  # we multiply min by 0.999 to account for small numerical differences
 
-    stenciled_defect_site = defect_site_from_structures(stenciled_supercell, corresponding_bulk)
+    stenciled_defect_site = defect_site_from_structures(
+        stenciled_supercell, corresponding_bulk, _parameter_order_warn=False
+    )
     assert isinstance(stenciled_defect_site, PeriodicSite)  # typing
     stenciled_defect_frac_coords = stenciled_defect_site.frac_coords
 
@@ -245,8 +245,6 @@ def _validate_stenciled_supercell(
 class DefectStencilingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # don't run heavy tests on GH Actions, these are run locally
-        cls.heavy_tests = bool(_potcars_available())
         cls.Se_example_dir = os.path.join(EXAMPLE_DIR, "Se")
         cls.Se_20A_bulk_supercell = Structure.from_file(f"{cls.Se_example_dir}/Se_20Å_Supercell_POSCAR")
         cls.Se_222_expanded_supercell = Structure.from_file(

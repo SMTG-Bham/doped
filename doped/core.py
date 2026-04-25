@@ -18,7 +18,7 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
-from doped import _doped_obj_properties_methods, _warn_parameter_order, get_mp_context, suppress_logging
+from doped import _doped_obj_properties_methods, get_mp_context, suppress_logging
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -823,6 +823,7 @@ class DefectEntry(thermo.DefectEntry):
         bulk_procar: PathLike | Procar | None = None,
         force_reparse: bool = False,
         clear_attributes: bool = True,
+        _parameter_order_warn: bool = True,
         **kwargs,
     ) -> "BandEdgeStates | tuple[BandEdgeStates, Figure]":
         r"""
@@ -927,7 +928,6 @@ class DefectEntry(thermo.DefectEntry):
         """
         from doped.utils.eigenvalues import get_eigenvalue_analysis
 
-        _warn_parameter_order("DefectEntry.get_eigenvalue_analysis")  # TODO: Remove in doped v4.1
         self._load_and_parse_eigenvalue_data(
             bulk_vr=bulk_vr,
             bulk_procar=bulk_procar,
@@ -1727,6 +1727,7 @@ def template_defect_entry_from_structures(
     ) = defect_and_info_from_structures(
         defect_supercell,
         bulk_supercell,
+        _parameter_order_warn=False,
         **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
     )
 
@@ -1763,7 +1764,7 @@ def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
             Default is ``False``.
     """
     try:
-        return defect_entry.get_eigenvalue_analysis(plot=False).is_shallow  # type: ignore
+        return defect_entry.get_eigenvalue_analysis(plot=False, _parameter_order_warn=False).is_shallow  # type: ignore
     except Exception:
         return default
 

@@ -84,7 +84,7 @@ class ParameterOrderWarning(FutureWarning):
     Warning about the ``(bulk, defect)`` -> ``(defect, bulk)`` parameter
     ordering change for some functions in ``doped`` v4.0.
 
-    TODO: Remove in v4.1.
+    TODO: Remove all parameter-order warning handling in v4.1.
     """
 
 
@@ -99,15 +99,6 @@ def _check_parameter_order_warning():
     if env is None:
         return True
     return env.lower() not in ("0", "false", "no")
-
-
-if _check_parameter_order_warning():
-    # Show ParameterOrderWarning for external callers (once per call site), but
-    # suppress for internal doped calls (where the new ordering is already correct):
-    warnings.filterwarnings("once", category=ParameterOrderWarning)
-    warnings.filterwarnings("ignore", category=ParameterOrderWarning, module=r"^doped")
-else:
-    warnings.filterwarnings("ignore", category=ParameterOrderWarning)
 
 
 def _warn_parameter_order(func_name: str, stacklevel: int = 3):
