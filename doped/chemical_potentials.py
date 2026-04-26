@@ -2514,7 +2514,7 @@ class ChemicalPotentialGrid(MSONable):
 
     def get_grid(
         self,
-        n_points: int | None = None,
+        n_points: int = 1000,
         fixed_elements: dict[str, float] | None = None,
         cartesian: bool = False,
         decimal_places: int = 4,
@@ -2542,12 +2542,9 @@ class ChemicalPotentialGrid(MSONable):
                 barycentric or Cartesian space depending ``cartesian``), in
                 addition to the vertices themselves (if ``include_vertices`` is
                 ``True``; default), then with any duplicate / overlapping
-                points dropped. The default is 1000 when barycentric
-                coordinates are used (``cartesian=False``), and 100 otherwise
-                (as Cartesian grid generation and sub-selection to the stable
-                polytope is much slower).
-                Note that large values (>= 1e5) with multinary systems can
-                explode, crashing system memory.
+                points dropped. Default is 1000. Note that large values
+                (>= 1e5) with multinary systems can explode, crashing system
+                memory (especially with ``cartesian=True``).
             fixed_elements (dict | None):
                 A dictionary of chemical potentials to fix (in the format:
                 ``{column_name: value}``; e.g. ``{"Li": -2}``), if a reduced /
@@ -2584,7 +2581,6 @@ class ChemicalPotentialGrid(MSONable):
                 fixed_elements, n_points, cartesian, decimal_places, drop_duplicates, include_vertices
             )
 
-        n_points = n_points or (1000 if not cartesian else 100)
         dependent_variable = self.vertices.columns[-1]
         dependent_var = self.vertices[dependent_variable].to_numpy()
         independent_vars = self.vertices.drop(columns=dependent_variable)
@@ -2640,7 +2636,7 @@ class ChemicalPotentialGrid(MSONable):
     def get_constrained_grid(
         self,
         fixed_elements: dict[str, float],
-        n_points: int | None = None,
+        n_points: int = 1000,
         cartesian: bool = False,
         decimal_places: int = 4,
         drop_duplicates: bool = True,
@@ -2670,11 +2666,9 @@ class ChemicalPotentialGrid(MSONable):
                 space depending ``cartesian``), in addition to the vertices of
                 the constrained subspace (if ``include_vertices`` is ``True``;
                 default), then with any duplicate / overlapping points dropped.
-                The default is 1000 when barycentric coordinates are used
-                (``cartesian=False``), and 100 otherwise (as Cartesian grid
-                generation and sub-selection to the stable polytope is much
-                slower). Note that large values (>= 1e5) with multinary systems
-                can explode, crashing system memory.
+                Default is 1000. Note that large values (>= 1e5) with
+                multinary systems can explode, crashing system memory
+                (especially with ``cartesian=True``).
             cartesian (bool):
                 Whether to generate the grid in Cartesian coordinates. If
                 ``False`` (default), the grid is generated in barycentric
@@ -4199,7 +4193,8 @@ class CompetingPhasesAnalyzer(MSONable):
             **kwargs:
                 Additional keyword arguments to pass to
                 ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
-                (default = 1000) and ``cartesian`` (default = ``False``).
+                (default = 1000) and ``cartesian`` (default = ``True`` for
+                heatmap plotting, to ensure smooth interpolation).
 
         Returns:
             plt.Figure: The ``matplotlib`` ``Figure`` object.
@@ -4492,9 +4487,10 @@ def plot_chempot_heatmap(
             (default), uses the default ``doped`` style (from
             ``doped/utils/doped.mplstyle``).
         **kwargs:
-            Additional keyword arguments to pass to
-            ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
-            (default = 1000) and ``cartesian`` (default = ``False``).
+                Additional keyword arguments to pass to
+                ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+                (default = 1000) and ``cartesian`` (default = ``True`` for
+                heatmap plotting, to ensure smooth interpolation).
 
     Returns:
         plt.Figure: The ``matplotlib`` ``Figure`` object.
@@ -4563,12 +4559,10 @@ def plot_chempot_heatmap(
         el for el in cpd.elements if el.symbol not in fixed_elements and el != dependent_element
     ]
 
-    # Generate grid data
-    grid_kwargs: dict[str, Any] = {
-        "n_points": 1000,
-        "cartesian": False,
-        "fixed_elements": fixed_elements,
-    }
+    # Generate grid data. Use a Cartesian (uniform) grid by default: barycentric grid sampling places
+    # points unevenly across narrow / elongated regions of the host stability polygon, which can cause
+    # streaking artifacts under triangle-based interpolation in ``tripcolor``:
+    grid_kwargs: dict[str, Any] = {"cartesian": True, "fixed_elements": fixed_elements}
     grid_kwargs.update(kwargs)
     grid_data = cpg.get_grid(**grid_kwargs)
     values_inside = grid_data[dependent_element.symbol].to_numpy()
