@@ -4103,11 +4103,15 @@ class CompetingPhasesAnalyzer(MSONable):
         axes.
 
         3-D data is required to plot a 2-D heatmap, and so this function can be
-        applied as-is for ternary systems, but for higher-dimensional systems
-        a set of chemical potential constraints must be provided (as
-        ``fixed_elements``) to project the chemical stability region to 3-D;
-        see the competing phases tutorial:
+        applied as-is for ternary systems (or binary systems with an extrinsic
+        element), but for higher-dimensional systems a set of chemical
+        potential constraints must be provided (as ``fixed_elements``) to
+        project the chemical stability region to 3-D; see the tutorial:
         https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+
+        Extrinsic chemical potentials are also supported; added as additional
+        dimensions to the chemical potential diagram and can be used as plot
+        axes (see ``dependent_element`` / ``fixed_elements``).
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
@@ -4132,10 +4136,10 @@ class CompetingPhasesAnalyzer(MSONable):
             fixed_elements (dict):
                 A dictionary of chemical potentials to fix (in the format:
                 ``{element: value}``; e.g. ``{"Li": -2}``) if the chemical
-                system is >3-D. Constraining chemical potentials is required for
-                multinary systems, in order to reduce the dimensionality to 3-D
-                for plotting a 2-D heatmap. For a system with N elements, N-3
-                fixed chemical potentials should be specified. If ``None``
+                system is >3-D. Constraining chemical potentials is required
+                for multinary systems, in order to reduce the dimensionality to
+                3-D for plotting a 2-D heatmap. For a system with N elements,
+                N-3 fixed chemical potentials should be specified. If ``None``
                 (default), the chemical potentials of the first N-3 elements in
                 the bulk composition are fixed to their mean values in the
                 stability region (i.e. the centroid of the stability region).
@@ -4391,11 +4395,16 @@ def plot_chempot_heatmap(
     axes.
 
     3-D data is required to plot a 2-D heatmap, and so this function can be
-    applied as-is for ternary systems, but for higher-dimensional systems
-    a set of chemical potential constraints must be provided (as
+    applied as-is for ternary systems (or binary systems with an extrinsic
+    element), but for higher-dimension), but for higher-dimensional systems a
+    set of chemical potential constraints must be provided (as
     ``fixed_elements``) to project the chemical stability region to 3-D;
     see the competing phases tutorial:
     https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+
+    Extrinsic chemical potentials are also supported; added as additional
+    dimensions to the chemical potential diagram and can be used as plot axes
+    (see ``dependent_element`` / ``fixed_elements``).
 
     Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
     sometimes there can be odd holes in the whitespace around the chemical
@@ -4487,15 +4496,14 @@ def plot_chempot_heatmap(
             (default), uses the default ``doped`` style (from
             ``doped/utils/doped.mplstyle``).
         **kwargs:
-                Additional keyword arguments to pass to
-                ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
-                (default = 1000) and ``cartesian`` (default = ``True`` for
-                heatmap plotting, to ensure smooth interpolation).
+            Additional keyword arguments to pass to
+            ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+            (default = 1000) and ``cartesian`` (default = ``True`` for
+            heatmap plotting, to ensure smooth interpolation).
 
     Returns:
         plt.Figure: The ``matplotlib`` ``Figure`` object.
     """
-    # TODO: Plot extrinsic too? (after full_sub_approach etc re-checked)
     # Note that we could also add option to instead plot competing phases lines coloured,
     # with a legend added giving the composition of each competing phase line (as in the SI of
     # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
@@ -4506,24 +4514,28 @@ def plot_chempot_heatmap(
     _install_custom_font()
 
     composition = Composition(composition)
-    entries = entries_from_chempot_limits(chempots)
-    intrinsic_entries = [  # only include intrinsic entries: (until extrinsic chempots supported):
-        entry for entry in entries if set(entry.composition.elements).issubset(composition.elements)
-    ]
-    cpd = ChemicalPotentialDiagram(intrinsic_entries)
+    entries = entries_from_chempot_limits(chempots)  # intrinsic and extrinsic entries
+    cpd = ChemicalPotentialDiagram(entries)
     host_domains = cpd.domains[composition.reduced_formula]
     cpg = ChemicalPotentialGrid.from_dataframe(
         pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
     )
 
     fixed_elements = fixed_elements or {}
-    input_variable_elements = [el for el in composition.elements if el.symbol not in fixed_elements]
-    if dependent_element is None:  # set to last element in bulk comp, usually the anion as desired
-        dependent_element = input_variable_elements[-1]
+    host_elements = list(composition.elements)
+    extrinsic_elements = [el for el in cpd.elements if el not in host_elements]
+    # ordered host-first, then extrinsic; used both for default ``dependent_element`` selection and
+    # (preferentially) for auto-fixing additional chempots when needed:
+    ordered_variable_elements = [
+        el for el in (*host_elements, *extrinsic_elements) if el.symbol not in fixed_elements
+    ]
+    if dependent_element is None:  # set to last element in ``ordered_variable_elements``, either an
+        # extrinsic element (if present) or the most electronegative anion in the bulk composition:
+        dependent_element = next(el for el in reversed(host_elements) if el.symbol not in fixed_elements)
     elif isinstance(dependent_element, str):
         dependent_element = Element(dependent_element)
     assert isinstance(dependent_element, Element)  # typing
-    input_variable_elements.remove(dependent_element)
+    ordered_variable_elements.remove(dependent_element)
 
     # check dimensionality:
     if len(cpd.elements) == 2:  # switch to line plot
@@ -4541,12 +4553,16 @@ def plot_chempot_heatmap(
         )
         if len(cpd.elements) - len(fixed_elements) < 3:
             raise ValueError(info_message)
-        centroid = cpg.get_grid(cartesian=True, include_vertices=False).mean(axis=0)
-        req_num_constraints = len(cpd.elements) - 3
+
+        # use centroid in the user-constrained subspace to auto-fix additional elements as necessary:
+        centroid = cpg.get_grid(
+            cartesian=True, include_vertices=False, fixed_elements=fixed_elements or None
+        ).mean(axis=0)
+        # additional constraints required to reduce to 3-D (after existing ``fixed_elements``):
+        req_num_constraints = len(cpd.elements) - len(fixed_elements) - 3
         additional_fixed_elements = {
             el.symbol: round(centroid[el.symbol], 4)
-            for i, el in enumerate(input_variable_elements)
-            if i < req_num_constraints
+            for el in ordered_variable_elements[:req_num_constraints]
         }
         print(
             f"{info_message} The following chemical potentials will additionally be constrained to "
