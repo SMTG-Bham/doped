@@ -1440,45 +1440,43 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
     def test_Na2FePO4F_extrinsic_cp_to_cpa_combinations_heavy(self):
         """
         Heavy local-only test: ``CompetingPhases`` ->
-        ``CompetingPhasesAnalyzer`` roundtrip for Na2FePO4F with one and two
-        extrinsic species, covering ``full_sub_approach``, ``codoping`` and
-        ``full_phase_diagram`` combinations (excluding the very expensive
-        ``codoping=True, full_phase_diagram=True`` combo).
+        ``CompetingPhasesAnalyzer`` roundtrip for Na2FePO4F with two extrinsic
+        species, covering ``full_sub_approach``, ``codoping`` and
+        ``full_phase_diagram`` combinations.
 
         Marked heavy because Na2FePO4F has a 5-element host chemsys, so
         intrinsic + extrinsic queries pull thousands of MP entries.
         """
         host_elements = ["Na", "Fe", "P", "O", "F"]
+        extrinsic = ["K", "In"]
 
-        for extrinsic in [["K"], ["K", "In"]]:
-            base_cases = [
-                {},
-                {"full_sub_approach": True},
-                {"full_phase_diagram": True},
-                {"full_phase_diagram": True, "full_sub_approach": True},
-                # {"full_phase_diagram": True, "codoping": True},
-            ]
-            cases = [*base_cases, {"codoping": True}] if len(extrinsic) > 1 else base_cases
+        for kwargs in [
+            {},
+            {"full_sub_approach": True},
+            {"full_phase_diagram": True},
+            {"full_phase_diagram": True, "full_sub_approach": True},
+            {"codoping": True},
+            {"full_phase_diagram": True, "codoping": True},
+        ]:
             intrinsic_chempots_ref = None
-            for kwargs in cases:
-                cp = chemical_potentials.CompetingPhases(
-                    "Na2FePO4F",
-                    energy_above_hull=0.03,
-                    extrinsic=extrinsic,
-                    api_key=api_key,
-                    **kwargs,
+            cp = chemical_potentials.CompetingPhases(
+                "Na2FePO4F",
+                energy_above_hull=0.03,
+                extrinsic=extrinsic,
+                api_key=api_key,
+                **kwargs,
+            )
+            self._check_extrinsic_cp_entries(
+                cp, host_elements, extrinsic, codoping=kwargs.get("codoping", False)
+            )
+            cpa_dilute, _cpa_full = self._check_cpa_from_cp_entries(cp, host_elements, extrinsic)
+            if intrinsic_chempots_ref is None:
+                intrinsic_chempots_ref = cpa_dilute.intrinsic_chempots
+            else:
+                _compare_chempot_dicts(
+                    _canonicalise_chempot_dict(cpa_dilute.intrinsic_chempots),
+                    _canonicalise_chempot_dict(intrinsic_chempots_ref),
                 )
-                self._check_extrinsic_cp_entries(
-                    cp, host_elements, extrinsic, codoping=kwargs.get("codoping", False)
-                )
-                cpa_dilute, _cpa_full = self._check_cpa_from_cp_entries(cp, host_elements, extrinsic)
-                if intrinsic_chempots_ref is None:
-                    intrinsic_chempots_ref = cpa_dilute.intrinsic_chempots
-                else:
-                    _compare_chempot_dicts(
-                        _canonicalise_chempot_dict(cpa_dilute.intrinsic_chempots),
-                        _canonicalise_chempot_dict(intrinsic_chempots_ref),
-                    )
 
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):
@@ -2570,16 +2568,28 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert "Chemical potential heatmap plotting requires 3-D data" in str(exc.value)
         assert "(3) minus the number of fixed chemical potentials (1)" in str(exc.value)
 
-    def test_chempot_heatmap_4D_w_fixed_elements_error_wrong_element(self):
+    def test_chempot_heatmap_5D_w_fixed_elements_error_wrong_element(self):
         with pytest.raises(ValueError) as exc:
             self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(fixed_elements={"Cd": -0.5})
         assert "Cd (eV)' is not in list" in str(exc.value)
 
-    def test_chempot_heatmap_4D_w_fixed_elements_error(self):
+    def test_chempot_heatmap_5D_w_fixed_elements_error(self):
+        # ``Sn_in_Cs2AgBiBr6_ncl_cpa`` is 5-D (Cs, Ag, Bi, Br, Sn); fixing 3 elements leaves only
+        # 2-D and so should trigger the dimensionality error:
         with pytest.raises(ValueError) as exc:
-            self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(fixed_elements={"Cs": -0.5, "Ag": -0.5})
+            self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(
+                fixed_elements={"Cs": -0.5, "Ag": -0.5, "Sn": 0.0}
+            )
         assert "Chemical potential heatmap plotting requires 3-D data" in str(exc.value)
-        assert "(4) minus the number of fixed chemical potentials (2)" in str(exc.value)
+        assert "(5) minus the number of fixed chemical potentials (3)" in str(exc.value)
+
+    def test_chempot_heatmap_5D_w_fixed_elements_outside_range(self):
+        with pytest.raises(ValueError) as exc:
+            self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(fixed_elements={"Ag": -25, "Sn": 0.0})
+        assert (
+            "The input set of fixed chemical potentials does not intersect with the convex hull (i.e. "
+            "stable chemical potential range) of the host material." in str(exc.value)
+        )
 
     def test_chempot_heatmap_2D_error(self):
         with pytest.raises(ValueError) as exc:  # this will likely change with updated code
@@ -2589,14 +2599,6 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
             "line plot of the chemical potentials as shown in the doped competing phases tutorial."
             in str(exc.value)
-        )
-
-    def test_chempot_heatmap_4D_w_fixed_elements_outside_range(self):
-        with pytest.raises(ValueError) as exc:
-            self.Sn_in_Cs2AgBiBr6_ncl_cpa.plot_chempot_heatmap(fixed_elements={"Ag": -25})
-        assert (
-            "The input set of fixed chemical potentials does not intersect with the convex hull (i.e. "
-            "stable chemical potential range) of the host material." in str(exc.value)
         )
 
     @custom_mpl_image_compare(filename="AgSbTe2_chempot_heatmap_default.png")
@@ -2665,8 +2667,10 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_default.png")
     def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_default(self):
+        # Sn is fixed at its elemental ref (= 0) so the plot reduces to the intrinsic 4-D system,
+        # for which this baseline was generated:
         return plot_chempot_heatmap_and_test_no_warnings(
-            self.Sn_in_Cs2AgBiBr6_ncl_cpa, fixed_elements={"Cs": -3.3815}
+            self.Sn_in_Cs2AgBiBr6_ncl_cpa, fixed_elements={"Cs": -3.3815, "Sn": 0.0}
         )
 
     @custom_mpl_image_compare(
@@ -2675,14 +2679,15 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     )
     def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_custom(self):
         """
-        Test customising the heatmap for a 4-D system, with custom label
-        positions.
+        Test customising the heatmap for an extrinsic system (with the
+        extrinsic chempot fixed at its elemental ref so the plot reduces to the
+        intrinsic 4-D host stability region), with custom label positions.
 
         Same example used in the plotting customisation tutorial.
         """
         return plot_chempot_heatmap_and_test_no_warnings(
             self.Sn_in_Cs2AgBiBr6_ncl_cpa,
-            fixed_elements={"Cs": -3.3815},
+            fixed_elements={"Cs": -3.3815, "Sn": 0.0},
             dependent_element="Bi",  # change dependent (colourbar) element
             xlim=(-0.4, 0.0),
             ylim=(-0.6, -0.2),
@@ -2704,25 +2709,43 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     )
     def test_Sn_in_Cs2AgBiBr6_ncl_chempot_heatmap_auto_centroid(self):
         """
-        Test customising the heatmap for a 4-D system, with custom label
-        positions.
-
-        Same example used in the plotting customisation tutorial.
+        Test the auto-centroid path with a non-default ``dependent_element``;
+        Sn fixed at its elemental ref reduces this to the intrinsic 4-D system,
+        with one host element auto-fixed to its centroid value.
         """
         return plot_chempot_heatmap_and_test_no_warnings(
-            self.Sn_in_Cs2AgBiBr6_ncl_cpa, dependent_element="Cs"
+            self.Sn_in_Cs2AgBiBr6_ncl_cpa,
+            dependent_element="Cs",
+            fixed_elements={"Sn": 0.0},
         )
 
     @custom_mpl_image_compare(filename="Sn_in_Cs2AgBiBr6_std_chempot_heatmap_custom.png")
     def test_Sn_in_Cs2AgBiBr6_std_chempot_heatmap_custom(self):
         return plot_chempot_heatmap_and_test_no_warnings(
             self.Sn_in_Cs2AgBiBr6_std_cpa,
-            fixed_elements={"Cs": -3.3815},
+            fixed_elements={"Cs": -3.3815, "Sn": 0.0},
             xlim=(-0.45, 0),
             ylim=(-2.35, -0.9),
             cbar_range=(-0.57, -0.3),
             label_positions=False,
         )
+
+    # TODO: Add heatmap test for case of 2 extrinsic elements
+    @custom_mpl_image_compare(filename="CdTe_Cs_extrinsic_chempot_heatmap.png")
+    def test_CdTe_Cs_extrinsic_chempot_heatmap(self):
+        """
+        Test heatmap plotting for a binary host with a dilute extrinsic species
+        (CdTe + Cs).
+        """
+        dilute_cp = chemical_potentials.CompetingPhases(
+            "CdTe ", energy_above_hull=0, extrinsic=["Cs"], full_sub_approach=False
+        )
+        dilute_cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", dilute_cp.entries)
+        with warnings.catch_warnings(record=True) as w:
+            fig = dilute_cpa.plot_chempot_heatmap()
+        _print_warning_info(w)
+        assert not w
+        return fig
 
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_heatmap.png")
     def test_5D_fixed_elements_heatmap(self):
