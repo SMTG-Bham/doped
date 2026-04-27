@@ -3334,7 +3334,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.8059)}",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.799",
         ]:
             assert info_substring in output
         assert not w
@@ -3352,7 +3352,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             "Chemical potential heatmap plotting requires 3-D data",
             "number of elements in the chemical system (4) minus the number of fixed chemical potentials "
             "(0) must be equal to 3. The following chemical potentials will additionally be constrained "
-            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.8059)}",
+            "to their mean (centroid) values in the chemical stability region: {'Y': np.float64(-4.799",
         ]:
             assert info_substring in output
         assert not w

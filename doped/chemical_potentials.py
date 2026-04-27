@@ -3995,7 +3995,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 f"under the dilute-impurity approximation (where co-doping constraints are "
                 f"assumed irrelevant). For non-dilute analysis where these phases may bound the "
                 f"chemical potentials, use ``full_sub_approach=True``."
-            )
+            )  # TODO: Need to check codoping addition code here; missed before
 
         limits_wrt_el_refs = {
             limit: {el: chempots_df.loc[limit, el] for el in chempots_df.columns}
@@ -4707,7 +4707,9 @@ def _plot_competing_phase_lines(
 
     for formula, pts in cpd.domains.items():
         x = np.linspace(-50, 50, 1000)
-        if formula == composition.reduced_formula:
+        if formula == composition.reduced_formula or set(Composition(formula).elements).issubset(
+            {Element(el) for el in fixed_elements}
+        ):  # skip host or fixed elemental phases
             continue
 
         # Get domain points that match host domains
