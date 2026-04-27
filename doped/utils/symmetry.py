@@ -226,7 +226,7 @@ def _frac_coords_sort_func(coords):
         for i in range(len(coords_for_sorting))
         for j in range(i + 1, len(coords_for_sorting))
     )
-    magnitude = _custom_round(np.linalg.norm(coords_for_sorting))
+    magnitude = _custom_round(np.linalg.norm(coords))
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
@@ -2263,7 +2263,7 @@ def get_conv_cell_site(defect_entry: DefectEntry) -> PeriodicSite | None:
         site for site in conv_struct_with_X_like_defect_entry_conv.sites if site.specie.symbol == "X"
     )
     # site choice doesn't matter so much here, as we later get the equivalent coordinates using the
-    # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
+    # Wyckoff dict and choose the conventional site based on that anyway (in the ``DefectsGenerator``
     # initialisation)
     conv_cell_site.to_unit_cell()
     conv_cell_site.frac_coords = _vectorized_custom_round(conv_cell_site.frac_coords)

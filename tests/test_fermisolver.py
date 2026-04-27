@@ -3142,16 +3142,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             "Searching for chemical potentials which maximise the target column: ['Electrons (cm^-3)']..."
         )
         row = result.iloc[0]
-        formal_chempots = {
-            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
-        }
-
-        # corresponds to Cu-rich limit: (minimising v_Cu)
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-rich")
-        assert all(
-            np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
-            for el_key in single_chempot_dict
-        )
+        assert row["μ_Cu (eV)"] == 0  # corresponds to Cu-rich limit: (minimising v_Cu)(though
+        # ``limit="Cu-rich"`` defaults to different (Cu-rich) limit due to tie-break
+        assert np.isclose(row["μ_Si (eV)"], -0.7212, atol=1e-3)
+        assert np.isclose(row["μ_Se (eV)"], -0.5999, atol=1e-3)
 
         _check_output_concentrations(solver, result)
 
@@ -3172,16 +3166,10 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             "Searching for chemical potentials which minimise the target column: ['Holes (cm^-3)']..."
         )
         row = result.iloc[0]
-        formal_chempots = {
-            mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
-        }
-
-        # corresponds to Cu-rich limit: (minimising v_Cu)
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-rich")
-        assert all(
-            np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
-            for el_key in single_chempot_dict
-        )
+        assert row["μ_Cu (eV)"] == 0  # corresponds to Cu-rich limit: (minimising v_Cu)(though
+        # ``limit="Cu-rich"`` defaults to different (Cu-rich) limit due to tie-break
+        assert np.isclose(row["μ_Si (eV)"], -0.7212, atol=1e-3)
+        assert np.isclose(row["μ_Se (eV)"], -0.5999, atol=1e-3)
 
         _check_output_concentrations(solver, result)
 
@@ -3287,12 +3275,17 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 }
 
                 # corresponds to Cu-rich/poor limits:
-                limit = "Cu-rich" if min_max == "max" else "Cu-poor"
-                single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
-                assert all(
-                    np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=2e-2)
-                    for el_key in single_chempot_dict
-                )
+                if min_max == "max":
+                    assert row["μ_Cu (eV)"] == 0  # corresponds to Cu-rich limit: (though
+                    # ``limit="Cu-rich"`` defaults to different (Cu-rich) limit due to tie-break
+                    assert np.isclose(row["μ_Si (eV)"], -0.7212, atol=1e-3)
+                    assert np.isclose(row["μ_Se (eV)"], -0.5999, atol=1e-3)
+                else:
+                    single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-poor")
+                    assert all(
+                        np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=2e-2)
+                        for el_key in single_chempot_dict
+                    )
                 _check_output_concentrations(w_v_Cu_solver, result)
 
     @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png", tolerance=4)

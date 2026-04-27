@@ -1402,14 +1402,14 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         BaSnO3 with four extrinsic species, covering the ``full_sub_approach``,
         ``codoping`` and ``full_phase_diagram`` combinations.
         """
-        # TODO: populate (n_entries, n_intrinsic, n_extrinsic) tuples below from a real MP run
         cases = [
-            ({}, None),
-            ({"full_sub_approach": True}, None),
-            ({"codoping": True}, None),
-            ({"full_phase_diagram": True}, None),
-            ({"full_phase_diagram": True, "full_sub_approach": True}, None),
-            ({"full_phase_diagram": True, "codoping": True}, None),
+            # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
+            ({}, (67, 23, 44)),
+            ({"full_sub_approach": True}, (74, 23, 51)),
+            ({"codoping": True}, (79, 23, 56)),
+            ({"full_phase_diagram": True}, (81, 37, 44)),
+            ({"full_phase_diagram": True, "full_sub_approach": True}, (145, 37, 108)),
+            ({"full_phase_diagram": True, "codoping": True}, (201, 37, 164)),
         ]
         self._check_cp_to_cpa_combinations("BaSnO3", ["Ba", "Sn", "O"], ["K", "In", "Na", "Mg"], cases)
 
@@ -1422,16 +1422,16 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         ``full_phase_diagram`` combinations.
 
         Marked heavy because Na2FePO4F has a 5-element host chemsys, so
-        intrinsic + extrinsic queries pull thousands of MP entries.
+        intrinsic + extrinsic queries pull hundreds of MP entries.
         """
-        # TODO: populate (n_entries, n_intrinsic, n_extrinsic) tuples below from a real MP run
         cases = [
-            ({}, None),
-            ({"full_sub_approach": True}, None),
-            ({"full_phase_diagram": True}, None),
-            ({"full_phase_diagram": True, "full_sub_approach": True}, None),
-            ({"codoping": True}, None),
-            ({"full_phase_diagram": True, "codoping": True}, None),
+            # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
+            ({}, (113, 82, 31)),
+            ({"full_sub_approach": True}, (125, 82, 43)),
+            ({"full_phase_diagram": True}, (231, 200, 31)),
+            ({"full_phase_diagram": True, "full_sub_approach": True}, (320, 200, 120)),
+            ({"codoping": True}, (133, 82, 51)),
+            ({"full_phase_diagram": True, "codoping": True}, (344, 200, 144)),
         ]
         self._check_cp_to_cpa_combinations("Na2FePO4F", ["Na", "Fe", "P", "O", "F"], ["K", "In"], cases)
 
@@ -2696,8 +2696,8 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         element (O), and the remaining two dimensions are auto-fixed at the
         centroid of the chemical stability region.
 
-        ``KInO2`` is a co-doping competing phase that should be skipped (with a
-        warning) under the dilute-impurity approximation.
+        ``KInO2`` is a co-doping competing phase that is present but is skipped
+        under the dilute-impurity approximation.
         """
         cp = chemical_potentials.CompetingPhases(
             "BaSnO3", energy_above_hull=0.03, extrinsic=["K", "In"], api_key=api_key, codoping=True
@@ -2705,8 +2705,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("BaSnO3", cp.entries)
         _print_warning_info(w)
-        assert any("KInO2" in str(warn.message) for warn in w)
-        assert len(w) == 2  # warned each time in loop over extrinsic species
+        assert not w
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"K": -2.0})
 
     @custom_mpl_image_compare(filename="CdTe_Cs_extrinsic_chempot_heatmap.png")

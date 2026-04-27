@@ -111,13 +111,13 @@ class Hashabledict(dict):
         def _freeze(obj):
             if isinstance(obj, dict):  # convert to frozenset of tuples
                 return frozenset((k, _freeze(v)) for k, v in obj.items())
-            if isinstance(obj, list):  # lists → tuples
+            if isinstance(obj, list):  # lists -> tuples
                 return tuple(_freeze(v) for v in obj)
-            if isinstance(obj, set):  # sets → frozensets
+            if isinstance(obj, set):  # sets -> frozensets
                 return frozenset(_freeze(v) for v in obj)
-            if isinstance(obj, tuple):  # tuples → tuples of frozen values
+            if isinstance(obj, tuple):  # tuples -> tuples of frozen values
                 return tuple(_freeze(v) for v in obj)
-            # else assume it's already hashable (int, str, custom …)
+            # else assume it's already hashable (int, str, custom ...)
             return obj
 
         return hash(_freeze(self))
@@ -311,7 +311,7 @@ def _structure__hash__(self):
     """
     Custom ``__hash__`` method for |Structure| instances.
     """
-    return hash((self.lattice, frozenset(self.sites)))
+    return hash((self.lattice, tuple(self.sites)))  # tuple rather than frozenset of sites; order-dependent
 
 
 @contextlib.contextmanager

@@ -3944,18 +3944,14 @@ class CompetingPhasesAnalyzer(MSONable):
             potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
             for entry in self.extrinsic_entries:
                 n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
-                if n_extrinsic_entry == 0:
-                    continue  # other extrinsic species' phase, not a constraint on μ_X here
 
-                # skip co-doping phases (phases containing >1 distinct extrinsic species), as
-                # the dilute approximation pins only μ_host and would otherwise implicitly set
-                # the other extrinsic species' chempots to zero, mis-stating the μ_X bound:
-                other_extrinsic_in_entry = [
+                # skip phases with only other extrinsic species, or co-doping phases, as they don't
+                # constrain μ_X in the ``full_sub_approach=False`` approach:
+                if any(
                     el
                     for el in entry.composition.elements
                     if el != extrinsic_element and el.symbol not in host_element_symbols
-                ]
-                if other_extrinsic_in_entry:
+                ):
                     skipped_codoping_entries.append(entry)
                     continue
 
@@ -3986,16 +3982,6 @@ class CompetingPhasesAnalyzer(MSONable):
             chempots_df = chempots_df.rename(  # Append the limiting phase to the limit key
                 index={limit: f"{limit}-{limiting_extrinsic_entry.name}"}
             )
-
-        if skipped_codoping_entries:
-            unique_names = sorted({e.name for e in skipped_codoping_entries})
-            warnings.warn(
-                f"Co-doping competing phase(s) {unique_names} (containing multiple extrinsic "
-                f"species) were detected and ignored when calculating μ_{extrinsic_element.symbol} "
-                f"under the dilute-impurity approximation (where co-doping constraints are "
-                f"assumed irrelevant). For non-dilute analysis where these phases may bound the "
-                f"chemical potentials, use ``full_sub_approach=True``."
-            )  # TODO: Need to check codoping addition code here; missed before
 
         limits_wrt_el_refs = {
             limit: {el: chempots_df.loc[limit, el] for el in chempots_df.columns}
@@ -4549,10 +4535,13 @@ def plot_chempot_heatmap(
     composition = Composition(composition)
     entries = entries_from_chempot_limits(chempots)  # intrinsic and extrinsic entries
     limits_wrt_el_refs = chempots.get("limits_wrt_el_refs", chempots.get("limits", {}))
-    limit_values_min = min(min(limit_dict.values()) for limit_dict in limits_wrt_el_refs.values())
+    element_wise_min_limit = {
+        el: min(limit_dict[el] for limit_dict in limits_wrt_el_refs.values())
+        for el in next(iter(limits_wrt_el_refs.values()))
+    }
     default_min_limit = np.floor(
         min(
-            limit_values_min,
+            *element_wise_min_limit.values(),
             min(xlim) if xlim else 0,
             min(ylim) if ylim else 0,
             min(cbar_range) if cbar_range else 0,
@@ -4655,14 +4644,20 @@ def plot_chempot_heatmap(
     # Set plot limits and labels
     xmax, ymax = points_inside.max(axis=0)
     xmin, ymin = points_inside.min(axis=0)
-    x_padding = padding or abs(xmax - xmin) * 0.1
-    y_padding = padding or abs(ymax - ymin) * 0.1
 
     if xlim is None:
-        xlim = (max(float(xmin - x_padding), default_min_limit), float(xmax + x_padding))
+        element_wise_min_limit_x = element_wise_min_limit[independent_elts[0].symbol]
+        if np.isclose(xmin, default_min_limit):  # xmin = default_min_limit -> unbounded extrinsic
+            xmin = element_wise_min_limit_x  # set xmin to 3 eV below lowest limit for this species
+        x_padding = padding or abs(xmax - xmin) * 0.1
+        xlim = (max(float(xmin - x_padding), element_wise_min_limit_x), float(xmax + x_padding))
 
     if ylim is None:
-        ylim = (max(float(ymin - y_padding), default_min_limit), float(ymax + y_padding))
+        element_wise_min_limit_y = element_wise_min_limit[independent_elts[1].symbol]
+        if np.isclose(ymin, default_min_limit):  # ymin = default_min_limit -> unbounded extrinsic
+            ymin = element_wise_min_limit_y  # set ymin to 3 eV below lowest limit for this species
+        y_padding = padding or abs(ymax - ymin) * 0.1
+        ylim = (max(float(ymin - y_padding), element_wise_min_limit_y), float(ymax + y_padding))
 
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)

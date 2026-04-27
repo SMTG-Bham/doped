@@ -174,6 +174,10 @@ def apply_s2_to_s1_transformation(
             vec = np.round(s1[ii].frac_coords - temp[jj].frac_coords)  # round to nearest integer
             temp.translate_sites(jj, vec, to_unit_cell=False)  # translate to correct unit cell
 
+    # avoid ~1e-16 float-arithmetic noise from ``make_supercell`` / ``translate_sites``:
+    for site, fc in zip(temp.sites, np.round(temp.frac_coords, 8), strict=True):
+        site.frac_coords = fc
+
     sites = [temp.sites[i] for i in mapping if i is not None]  # get sites in correct order (from mapping)
 
     if include_ignored_species:  # add back in ignored species / any sites not in ``mapping``

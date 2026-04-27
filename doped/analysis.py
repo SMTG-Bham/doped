@@ -895,7 +895,8 @@ def defect_name_from_structures(
         defect_supercell,
         bulk_supercell,
         return_all_info=False,
-        _parameter_order_warn=False**default_init_kwargs,  # type: ignore
+        _parameter_order_warn=False,
+        **default_init_kwargs,  # type: ignore
     )
     assert isinstance(defect, Defect)  # mypy typing
 
