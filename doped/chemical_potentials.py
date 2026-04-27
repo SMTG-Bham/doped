@@ -3928,11 +3928,17 @@ class CompetingPhasesAnalyzer(MSONable):
         the minimum of this RHS inequality over all extrinsic entries; the
         corresponding entry being the (extrinsic) limiting phase.
 
-        This function assumes ``full_sub_approach=False`` and therefore does
-        not support co-doping (``codoping=True``), where we consider extrinsic
-        competing phases containing multiple extrinsic species, which is
-        usually only relevant under high (non-dilute) co-doping concentrations.
+        This function assumes ``full_sub_approach=False`` and therefore skips
+        any co-doping competing phases (i.e. those containing more than one
+        distinct extrinsic species), which would otherwise mis-state the
+        ``μ_X`` bound (since here only ``μ_host`` is pinned, while the other
+        extrinsic species' chempots are not). Co-doping phase constraints are
+        usually only relevant under high (non-dilute) co-doping concentrations,
+        for which ``full_sub_approach=True`` should be used. A warning is
+        emitted if any co-doping phases are skipped.
         """
+        host_element_symbols = {elt.symbol for elt in self.composition.elements}
+        skipped_codoping_entries: list[ComputedEntry] = []
         for limit, chempot_series in list(chempots_df.iterrows()):
             chempots_df.loc[limit, extrinsic_element.symbol] = np.inf
             potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
@@ -3940,6 +3946,18 @@ class CompetingPhasesAnalyzer(MSONable):
                 n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
                 if n_extrinsic_entry == 0:
                     continue  # other extrinsic species' phase, not a constraint on μ_X here
+
+                # skip co-doping phases (phases containing >1 distinct extrinsic species), as
+                # the dilute approximation pins only μ_host and would otherwise implicitly set
+                # the other extrinsic species' chempots to zero, mis-stating the μ_X bound:
+                other_extrinsic_in_entry = [
+                    el
+                    for el in entry.composition.elements
+                    if el != extrinsic_element and el.symbol not in host_element_symbols
+                ]
+                if other_extrinsic_in_entry:
+                    skipped_codoping_entries.append(entry)
+                    continue
 
                 formation_energy = self.phase_diagram.get_form_energy(entry)  # E_form(phase)
                 intrinsic_chempot_contribution = sum(  # Σ_{i ∈ host} n_i·μ_i
@@ -3967,6 +3985,16 @@ class CompetingPhasesAnalyzer(MSONable):
             chempots_df.loc[limit, extrinsic_element.symbol] = _custom_round(limiting_extrinsic_chempot, 4)
             chempots_df = chempots_df.rename(  # Append the limiting phase to the limit key
                 index={limit: f"{limit}-{limiting_extrinsic_entry.name}"}
+            )
+
+        if skipped_codoping_entries:
+            unique_names = sorted({e.name for e in skipped_codoping_entries})
+            warnings.warn(
+                f"Co-doping competing phase(s) {unique_names} (containing multiple extrinsic "
+                f"species) were detected and ignored when calculating μ_{extrinsic_element.symbol} "
+                f"under the dilute-impurity approximation (where co-doping constraints are "
+                f"assumed irrelevant). For non-dilute analysis where these phases may bound the "
+                f"chemical potentials, use ``full_sub_approach=True``."
             )
 
         limits_wrt_el_refs = {
@@ -4404,7 +4432,12 @@ def plot_chempot_heatmap(
 
     Extrinsic chemical potentials are also supported; added as additional
     dimensions to the chemical potential diagram and can be used as plot axes
-    (see ``dependent_element`` / ``fixed_elements``).
+    (see ``dependent_element`` / ``fixed_elements``). Note that extrinsic
+    chemical potentials are unbounded at the poor (low) chemical potential
+    limit, and so by default the lower limit is set equal to 3 eV lower than
+    the lowest chemical potential bound, rounded down to the nearest integer.
+    This behavior can be controlled by setting ``xlim``, ``ylim`` and/or
+    ``cbar_range``.
 
     Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
     sometimes there can be odd holes in the whitespace around the chemical
@@ -4515,7 +4548,18 @@ def plot_chempot_heatmap(
 
     composition = Composition(composition)
     entries = entries_from_chempot_limits(chempots)  # intrinsic and extrinsic entries
-    cpd = ChemicalPotentialDiagram(entries)
+    limits_wrt_el_refs = chempots.get("limits_wrt_el_refs", chempots.get("limits", {}))
+    limit_values_min = min(min(limit_dict.values()) for limit_dict in limits_wrt_el_refs.values())
+    default_min_limit = np.floor(
+        min(
+            limit_values_min,
+            min(xlim) if xlim else 0,
+            min(ylim) if ylim else 0,
+            min(cbar_range) if cbar_range else 0,
+        )
+        - 3
+    )  # floor to account for ``ChemicalPotentialDiagram`` bug; requires integer min limit
+    cpd = ChemicalPotentialDiagram(entries, default_min_limit=default_min_limit)
     host_domains = cpd.domains[composition.reduced_formula]
     cpg = ChemicalPotentialGrid.from_dataframe(
         pd.DataFrame(host_domains, columns=[el.symbol for el in cpd.elements])
@@ -4615,10 +4659,10 @@ def plot_chempot_heatmap(
     y_padding = padding or abs(ymax - ymin) * 0.1
 
     if xlim is None:
-        xlim = (float(xmin - x_padding), float(xmax + x_padding))
+        xlim = (max(float(xmin - x_padding), default_min_limit), float(xmax + x_padding))
 
     if ylim is None:
-        ylim = (float(ymin - y_padding), float(ymax + y_padding))
+        ylim = (max(float(ymin - y_padding), default_min_limit), float(ymax + y_padding))
 
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
