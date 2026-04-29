@@ -73,20 +73,14 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
-# TODO: Ok following discussions and looking at the full-sub-understanding notebook; conclusion is we
-# should always default to full_sub_approach=True (I was rightly dismayed at this being the default
-# approach)(particularly important when parsing), with codoping=False by default (need this option at
-# parsing time). Will need some clear warnings in docs/release notes (but not deprecation warning as it's
-# a superset of previous outputs). Will also introduce some complexities for e.g. parsing many extrinsic
-# species at once (we will have the full_sub_approach=False subset which align across different extrinsic
-# species, but the rest of the limits will be orthogonal (if codoping=False) -- this is likely the reason
-# PyCDT used full_sub_approach=False by default (for easier screening), but it's fine, we just need the
-# right flexibility to handle it (maybe with a notebook example of doing this and then plotting formation
-# energies of a range of extrinsic species at once).
-# TODO: Make ``full_sub_approach`` a deprecated parameter for ``CompetingPhases`` (no need for CPA as
-#  wasn't there before), and rename to (not) ``dilute_extrinsic``?
-# TODO: Should add some notes/warnings in places that ``dilute_extrinsic`` should ofc be set to False when
-# investigating high / non-dilute impurity concentrations/doping
+# Default is ``single_extrinsic_phase_limits=False`` (full phase diagram including limits with multiple
+# extrinsic phases), with codoping=False by default (need this option at parsing time). The previous
+# default (``single_extrinsic_phase_limits=True``, equivalent to PyCDT's behaviour) gives the
+# ``single_extrinsic_phase_limits=True`` subset which align across different extrinsic species, but the
+# rest of the limits will be orthogonal (if codoping=False) -- this is likely the reason PyCDT used that
+# behaviour by default (for easier screening), but it's fine, we just need the right flexibility to handle
+# it (maybe with a notebook example of doing this and then plotting formation energies of a range of
+# extrinsic species at once). So need some tests of taking chempots and plotting with this?
 # TODO: Recheck all functionality from old `_chemical_potentials.py` is now present here, w/Claude
 # TODO: Get genAI to try make code in this module more readable. Could do with some informative
 #  comments, in complex workflows, typing, ensure defaults mentioned in docstrings etc.
@@ -849,9 +843,9 @@ class CompetingPhases(MSONable):
         energy_above_hull: float = 0.05,
         extrinsic: str | Iterable | None = None,
         full_phase_diagram: bool = False,
-        MP_doc_dicts: bool = False,
-        full_sub_approach: bool = False,
+        single_extrinsic_phase_limits: bool = False,
         codoping: bool = False,
+        MP_doc_dicts: bool = False,
         api_key: str | None = None,
         **kwargs: Any,
     ):
@@ -924,28 +918,30 @@ class CompetingPhases(MSONable):
                 the phase diagram (and thus set the chemical potential limits),
                 if their relative energy was downshifted by
                 ``energy_above_hull`` eV/atom. (Default is ``False``).
-            full_sub_approach (bool):
-                Generate competing phases by considering the full phase
-                diagram, including chemical potential limits with multiple
-                extrinsic phases. Only recommended when looking at high
-                (non-dilute) doping concentrations.
-                The default approach (``full_sub_approach = False``) for
-                extrinsic elements is to only consider chemical potential
-                limits where the host composition borders a maximum of 1
-                extrinsic phase (composition with extrinsic element(s)). This
-                is a valid approximation for the case of dilute dopant/impurity
-                concentrations. For high (non-dilute) concentrations of
-                extrinsic species, use ``full_sub_approach = True``.
+            single_extrinsic_phase_limits (bool):
+                If ``True``, and ``extrinsic`` is not ``None``, only consider
+                chemical potential limits where the host composition borders a
+                maximum of 1 extrinsic phase (composition with extrinsic
+                element(s)). This is an approximation that can reduce the
+                number of extrinsic phases to consider (to reduce computational
+                costs, e.g. when considering many possible extrinsic dopants /
+                impurities), while often (but not always) being `reasonably`
+                accurate for dilute extrinsic concentrations. Default is
+                ``False``.
             codoping (bool):
                 Whether to consider extrinsic competing phases containing
                 `multiple` extrinsic species (e.g. ``KInO2`` as a potential
                 competing phase for ``BaSnO3`` with ``K`` and ``In`` extrinsic
                 species). Usually only relevant under high (non-dilute)
-                co-doping concentrations (i.e. combined ``full_sub_approach``
-                for all extrinsic species present). Ignore if ``extrinsic`` is
-                a single element. If set to ``True`` (and multiple extrinsic
-                species present), then ``full_sub_approach`` is also set to
-                ``True``. Default is ``False``.
+                co-doping concentrations. Ignored if ``extrinsic`` is a single
+                element. If set to ``True`` (and multiple extrinsic species
+                present), then ``single_extrinsic_phase_limits`` is forced to
+                be ``False``. Default is ``False``.
+            MP_doc_dicts (bool):
+                If ``True``, also queries the Materials Project (MP) for
+                summary doc dicts with ``MPRester.summary_search()`` for the
+                competing phase entries, and stores them in
+                ``CompetingPhases.MP_doc_dicts``. Default is ``False``.
             api_key (str):
                 Materials Project (MP) API key, needed to access the MP
                 database for competing phase generation. If not supplied,
@@ -954,22 +950,24 @@ class CompetingPhases(MSONable):
                 the ``MP_API_KEY`` environment variable -- see the ``doped``
                 Installation docs:
                 https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
-            MP_doc_dicts (bool):
-                If ``True``, also queries the Materials Project (MP) for
-                summary doc dicts with ``MPRester.summary_search()`` for the
-                competing phase entries, and stores them in
-                ``CompetingPhases.MP_doc_dicts``. Default is ``False``.
             **kwargs:
                 Additional keyword arguments to pass to the Materials Project
                 API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
                 used to pull competing phase entries.
         """
         # TODO: Give quick attribute summary at end of docstring above, following chempots code overhaul
+        if "full_sub_approach" in kwargs:  # TODO: remove in v4.1
+            raise ValueError(
+                "`full_sub_approach` was renamed to `single_extrinsic_phase_limits` in doped v4.0, "
+                "with inverted polarity (``full_sub_approach=True`` corresponds to "
+                "``single_extrinsic_phase_limits=False``). The default has also changed: "
+                "``single_extrinsic_phase_limits=False`` is now the default and recommended approach."
+            )
         self.energy_above_hull = energy_above_hull  # store parameters for reference
         self.full_phase_diagram = full_phase_diagram
         self.extrinsic = extrinsic
         self.codoping = codoping
-        self.full_sub_approach = full_sub_approach
+        self.single_extrinsic_phase_limits = single_extrinsic_phase_limits
         _check_MP_API_key(api_key)
         self.api_key = api_key
         self._get_entries_kwargs = kwargs
@@ -1201,7 +1199,7 @@ class CompetingPhases(MSONable):
             )
 
         if self.codoping:
-            self.full_sub_approach = True  # codoping implies full_sub_approach for all extrinsic species
+            self.single_extrinsic_phase_limits = False  # codoping implies no single-ext-phase restriction
             self.MP_full_pd_entries = get_entries_in_chemsys(  # can be time-consuming; high(er)-D chemsys
                 chemsys=self.intrinsic_species + self.extrinsic_species,
                 api_key=self.api_key,
@@ -1218,7 +1216,7 @@ class CompetingPhases(MSONable):
                     energy_above_hull=self.energy_above_hull,
                 )  # prune using phase diagram with all extrinsic species
 
-        else:  # full_sub_approach (for now, to get ``self.entries``) but not co-doping
+        else:  # build full set of candidate entries first (for ``self.entries``); not co-doping
             candidate_extrinsic_entries = []
             for sub_el in self.extrinsic_species:
                 sub_el_MP_full_pd_entries = get_entries_in_chemsys(
@@ -1246,15 +1244,11 @@ class CompetingPhases(MSONable):
                     entry for entry in sub_el_pd_entries if sub_el in entry.composition
                 ]
 
-            if self.full_sub_approach:
+            if not self.single_extrinsic_phase_limits:
                 self.entries += candidate_extrinsic_entries
 
-            else:  # not full_sub_approach; recommended approach for extrinsic species (assumes dilute
-                # concentrations). Here we only retain extrinsic competing phases when they border the
-                # host composition on the phase diagram with no other extrinsic phases in equilibrium
-                # at this limit. This is essentially the assumption that the majority of elements in
-                # the total composition will be from the host composition rather than the extrinsic
-                # species (a good approximation for dilute concentrations)
+            else:  # single_extrinsic_phase_limits: only retain extrinsic competing phases when they border
+                # the host with no other extrinsic phases in equilibrium at the same limit
                 for sub_el in self.extrinsic_species:
                     sub_el_entries = [
                         entry for entry in candidate_extrinsic_entries if sub_el in entry.composition
@@ -1279,9 +1273,7 @@ class CompetingPhases(MSONable):
                         extrinsic_bordering_phases = {
                             phase for phase in limit.split("-") if sub_el in phase
                         }
-                        # only add to MP_extrinsic_bordering_phases when only 1 extrinsic bordering phase
-                        # (i.e. ``full_sub_approach=False`` behaviour)
-                        if len(
+                        if len(  # only add when <=1 extrinsic bordering phase
                             extrinsic_bordering_phases
                         ) == 1 and not extrinsic_bordering_phases.issubset(MP_extrinsic_bordering_phases):
                             MP_extrinsic_bordering_phases.extend(extrinsic_bordering_phases)
@@ -2347,6 +2339,16 @@ class CompetingPhases(MSONable):
             |CompetingPhases| object
         """
         competing_phases = cls.__new__(cls)  # skip __init__ and avoid MP re-querying
+        if "full_sub_approach" in d:  # TODO: remove ``full_sub_approach`` translation in v4.1
+            warnings.warn(
+                "Loading a `CompetingPhases` saved with `full_sub_approach`; this attribute was renamed "
+                "to `single_extrinsic_phase_limits` (with inverted polarity) in doped v4.0. Translating "
+                "on load — re-save to silence this warning.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            d = {**d, "single_extrinsic_phase_limits": not d["full_sub_approach"]}
+            d.pop("full_sub_approach")
         for key, value in d.items():
             if key not in {"@module", "@class", "@version"}:
                 setattr(competing_phases, key, MontyDecoder().process_decoded(value))
@@ -3033,7 +3035,7 @@ class CompetingPhasesAnalyzer(MSONable):
             PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry]
         ) = "CompetingPhases",
         subfolder: PathLike | None = None,
-        full_sub_approach: bool = False,
+        single_extrinsic_phase_limits: bool = False,
         verbose: bool = True,
         processes: int | None = None,
         check_compatibility: bool = True,
@@ -3055,23 +3057,8 @@ class CompetingPhasesAnalyzer(MSONable):
         (e.g. 4 or less).
 
         If extrinsic (dopant/impurity) elements are present, their chemical
-        potential limits will also be calculated. By default this is done using
-        the dilute-impurity approximation, where ``μ_host`` is pinned at the
-        intrinsic chemical potential limits, and the corresponding
-        ``μ_extrinsic`` is then determined at these points -- or equivalently,
-        where only the chemical potential limits with a `single` extrinsic
-        competing phase are considered (as with ``full_sub_approach`` in
-        :class:`CompetingPhases` initialisation). This is the recommended
-        approach for `dilute` impurity/dopant concentrations, where it is
-        expected to be a valid approximation.
-
-        Setting ``full_sub_approach=True`` instead computes chemical potential
-        limits from the full phase diagram (intrinsic + extrinsic competing
-        phases), where every facet jointly determines ``μ_host`` and
-        ``μ_extrinsic``. This is required for accurate analysis in the case of
-        non-dilute impurity/dopant concentrations, but typically returns many
-        more limits. It can be important to use this approach when modelling
-        high impurity concentrations!
+        potential limits will also be calculated, where every facet (limit)
+        jointly determines ``μ_host`` and ``μ_extrinsic``.
 
         Args:
             composition (str, |Composition|):
@@ -3099,12 +3086,25 @@ class CompetingPhasesAnalyzer(MSONable):
                 match, all found vaspruns are parsed. Set ``subfolder = "."``
                 to parse calculation files from the competing phase directory
                 with no subfolder.
-            full_sub_approach (bool):
-                If ``True``, compute chemical potential limits from the full
-                (intrinsic + extrinsic) phase diagram, jointly determining
-                ``μ_host`` and ``μ_extrinsic`` at every facet. Required for
-                accurate treatment of non-dilute impurity/dopant concetrations.
-                Default is ``False`` (dilute-impurity approximation).
+            single_extrinsic_phase_limits (bool):
+                If ``True``, pin ``μ_host`` at the intrinsic chemical potential
+                limits, with the corresponding ``μ_extrinsic`` then determined
+                at these points -- equivalent to only considering the chemical
+                potential limits with a `single` extrinsic competing phase
+                (as with ``single_extrinsic_phase_limits`` in
+                :class:`CompetingPhases` initialisation). This typically
+                returns fewer limits, which can simplify analysis when
+                considering multiple extrinsic species at once, but can result
+                in substantial portions of the chemical stability region being
+                overlooked, and so is rarely recommended. Setting
+                ``single_extrinsic_phase_limits=True`` in
+                :class:`CompetingPhases` initialisation (to reduce the number
+                of extrinsic phases to calculate), but keeping it as ``False``
+                in parsing here is a significantly improved (though still
+                imperfect) approximation, compared to ``True`` for parsing.
+                Default is ``False`` (recommended; parse as normal with no
+                restriction on the number of extrinsic phases in equilibrium at
+                each facet (limit)).
             verbose (bool):
                 Whether to print out information about directories that were
                 skipped (due to no ``vasprun.xml(.gz)`` files being found),
@@ -3171,7 +3171,7 @@ class CompetingPhasesAnalyzer(MSONable):
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
         self.intrinsic_elements = self.elements.copy()
         self.extrinsic_elements: list[str] = []
-        self.full_sub_approach = full_sub_approach
+        self.single_extrinsic_phase_limits = single_extrinsic_phase_limits
 
         # _from_vaspruns or _from_entries depending on input
         if not isinstance(entries, str | PathLike | list):
@@ -3464,7 +3464,9 @@ class CompetingPhasesAnalyzer(MSONable):
             self.phase_diagram.entries,
             key=lambda x: _entries_sort_func(x, bulk_composition=self.composition),
         )
-        self.chempots_df = self.calculate_chempots(verbose=False, full_sub_approach=self.full_sub_approach)
+        self.chempots_df = self.calculate_chempots(
+            verbose=False, single_extrinsic_phase_limits=self.single_extrinsic_phase_limits
+        )
 
     def _from_vaspruns(
         self,
@@ -3775,7 +3777,7 @@ class CompetingPhasesAnalyzer(MSONable):
     def calculate_chempots(
         self,
         extrinsic_species: str | Element | list[str] | list[Element] | None = None,
-        full_sub_approach: bool = False,
+        single_extrinsic_phase_limits: bool = False,
         sort_by: str | None = None,
         verbose: bool = True,
     ) -> pd.DataFrame:
@@ -3785,25 +3787,9 @@ class CompetingPhasesAnalyzer(MSONable):
         ``self.extrinsic_elements`` -- i.e. all extrinsic elements present in
         ``self.entries``).
 
-        If ``extrinsic_species`` (i.e. dopant/impurity elements) is specified,
-        then the limiting chemical potentials for ``extrinsic_species`` are
-        also calculated and returned. By default this is done using the
-        dilute-impurity approximation, where ``μ_host`` is pinned at the
-        intrinsic chemical potential limits, and the corresponding
-        ``μ_extrinsic`` is then determined at these points -- or equivalently,
-        where only the chemical potential limits with a `single` extrinsic
-        competing phase are considered (as with ``full_sub_approach`` in
-        :class:`CompetingPhases` initialisation). This is the recommended
-        approach for `dilute` impurity/dopant concentrations, where it is
-        expected to be a valid approximation.
-
-        Setting ``full_sub_approach=True`` instead computes chemical potential
-        limits from the full phase diagram (intrinsic + extrinsic competing
-        phases), where every facet jointly determines ``μ_host`` and
-        ``μ_extrinsic``. This is required for accurate analysis in the case of
-        non-dilute impurity/dopant concentrations, but typically returns many
-        more limits. It can be important to use this approach when modelling
-        high impurity concentrations!
+        If extrinsic (dopant/impurity) elements are present, their chemical
+        potential limits will also be calculated, where every facet (limit)
+        jointly determines ``μ_host`` and ``μ_extrinsic``.
 
         Args:
             extrinsic_species (str, Element, list):
@@ -3820,12 +3806,25 @@ class CompetingPhasesAnalyzer(MSONable):
             verbose (bool):
                 If ``True`` (default), will print the parsed chemical potential
                 limits.
-            full_sub_approach (bool):
-                If ``True``, compute chemical potential limits from the full
-                (intrinsic + extrinsic) phase diagram, jointly determining
-                ``μ_host`` and ``μ_extrinsic`` at every facet. Required for
-                accurate treatment of non-dilute impurity/dopant concetrations.
-                Default is ``False`` (dilute-impurity approximation).
+            single_extrinsic_phase_limits (bool):
+                If ``True``, pin ``μ_host`` at the intrinsic chemical potential
+                limits, with the corresponding ``μ_extrinsic`` then determined
+                at these points -- equivalent to only considering the chemical
+                potential limits with a `single` extrinsic competing phase
+                (as with ``single_extrinsic_phase_limits`` in
+                :class:`CompetingPhases` initialisation). This typically
+                returns fewer limits, which can simplify analysis when
+                considering multiple extrinsic species at once, but can result
+                in substantial portions of the chemical stability region being
+                overlooked, and so is rarely recommended. Setting
+                ``single_extrinsic_phase_limits=True`` in
+                :class:`CompetingPhases` initialisation (to reduce the number
+                of extrinsic phases to calculate), but keeping it as ``False``
+                in parsing here is a significantly improved (though still
+                imperfect) approximation, compared to ``True`` for parsing.
+                Default is ``False`` (recommended; parse as normal with no
+                restriction on the number of extrinsic phases in equilibrium at
+                each facet (limit)).
 
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
@@ -3862,14 +3861,14 @@ class CompetingPhasesAnalyzer(MSONable):
         chempots_df = _get_chempots_df_from_chempots(self.intrinsic_chempots)
 
         if extrinsic_elements:
-            if full_sub_approach:
+            if not single_extrinsic_phase_limits:
                 self.chempots = get_doped_chempots_from_entries(
                     self.phase_diagram.entries,  # full phase diagram now
                     self.composition,
                     single_chempot_limit=self.unstable_host,
                 )
                 chempots_df = _get_chempots_df_from_chempots(self.chempots)
-            else:  # dilute impurity approximation
+            else:  # single extrinsic phase limits
                 for extrinsic_element in extrinsic_elements:
                     chempots_df = self._calculate_dilute_extrinsic_chempot_lims(
                         extrinsic_element=extrinsic_element,
@@ -3909,15 +3908,20 @@ class CompetingPhasesAnalyzer(MSONable):
     ) -> pd.DataFrame:
         """
         This function calculates chemical potential limits for extrinsic /
-        dopant elements, using the dilute-dopant approximation: host
-        (intrinsic) element chemical potentials are pinned by the intrinsic
-        phase diagram limits (computed without any extrinsic phases), and for
-        each intrinsic limit we then find the extrinsic phase that most
-        strictly bounds ``μ_extrinsic_element``.
+        dopant elements, using the single-extrinsic-phase-limits approximation
+        (``full_sub_approach=False`` in PyCDT): host (intrinsic) element
+        chemical potentials are pinned by the intrinsic phase diagram limits
+        (computed without any extrinsic phases), and for each intrinsic limit
+        we then find the extrinsic phase that most strictly bounds
+        ``μ_extrinsic_element``.
 
-        This is the ``full_sub_approach=False`` procedure (recommended for
-        dilute dopant/impurity concentrations), where only chemical potential
-        limits with 1 extrinsic phase in equilibrium are considered.
+        This is the ``single_extrinsic_phase_limits=True`` procedure, where
+        only chemical potential limits with 1 extrinsic phase in equilibrium
+        are considered.
+
+        As discussed in the :class:`CompetingPhasesAnalyzer` docstring, this
+        approach is very rarely recommended, as it can result in substantial
+        portions of the chemical stability region being neglected.
 
         For an extrinsic phase with formula ``{host}X_n``, its stability
         constraint is: ``n_X·μ_X + Σ_{i ∈ host} n_i·μ_i <= E_form(phase)``
@@ -3928,14 +3932,11 @@ class CompetingPhasesAnalyzer(MSONable):
         the minimum of this RHS inequality over all extrinsic entries; the
         corresponding entry being the (extrinsic) limiting phase.
 
-        This function assumes ``full_sub_approach=False`` and therefore skips
-        any co-doping competing phases (i.e. those containing more than one
-        distinct extrinsic species), which would otherwise mis-state the
-        ``μ_X`` bound (since here only ``μ_host`` is pinned, while the other
-        extrinsic species' chempots are not). Co-doping phase constraints are
-        usually only relevant under high (non-dilute) co-doping concentrations,
-        for which ``full_sub_approach=True`` should be used. A warning is
-        emitted if any co-doping phases are skipped.
+        This function assumes ``single_extrinsic_phase_limits=True`` and
+        therefore skips any co-doping competing phases (i.e. those containing
+        more than one distinct extrinsic species), which would otherwise
+        mis-state the ``μ_X`` bound (since here only ``μ_host`` is pinned,
+        while the other extrinsic species' chempots are not).
         """
         host_element_symbols = {elt.symbol for elt in self.composition.elements}
         skipped_codoping_entries: list[ComputedEntry] = []
@@ -3946,7 +3947,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
 
                 # skip phases with only other extrinsic species, or co-doping phases, as they don't
-                # constrain μ_X in the ``full_sub_approach=False`` approach:
+                # constrain μ_X in the ``single_extrinsic_phase_limits=True`` approach:
                 if any(
                     el
                     for el in entry.composition.elements

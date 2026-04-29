@@ -3,6 +3,7 @@ Tests for the ``doped.chemical_potentials`` module.
 """
 
 import glob
+import inspect
 import os
 import shutil
 import tempfile
@@ -1008,6 +1009,53 @@ class CompetingPhasesTestCase(unittest.TestCase):
                 r2scan_ent.energy_per_atom for r2scan_ent in cp_r2scan.entries
             ]
 
+    def test_single_extrinsic_phase_limits_default(self):
+        """
+        Check the default for ``single_extrinsic_phase_limits`` is ``False``.
+        """
+        for fn in (
+            chemical_potentials.CompetingPhases.__init__,
+            chemical_potentials.CompetingPhasesAnalyzer.__init__,
+            chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots,
+        ):
+            assert inspect.signature(fn).parameters["single_extrinsic_phase_limits"].default is False
+
+    # TODO: remove with the ``full_sub_approach`` shim in v4.1
+    def test_full_sub_approach_kwarg_raises(self):
+        """
+        ``full_sub_approach`` was renamed to ``single_extrinsic_phase_limits``
+        (with inverted polarity) in doped v4.0; passing the old name to
+        ``CompetingPhases`` should raise ``ValueError``.
+        """
+        with pytest.raises(ValueError, match=r"full_sub_approach.*single_extrinsic_phase_limits"):
+            chemical_potentials.CompetingPhases("ZrO2", full_sub_approach=True)
+
+    # TODO: remove with the ``full_sub_approach`` shim in v4.1
+    def test_from_dict_full_sub_approach_translates(self):
+        """
+        Loading a ``CompetingPhases`` saved under the old ``full_sub_approach``
+        API translates to ``single_extrinsic_phase_limits`` (with inverted
+        polarity), with a ``DeprecationWarning``.
+        """
+        cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
+        cp_dict = cp.as_dict()
+        # simulate a save under the legacy API: ``full_sub_approach`` was the inverse polarity:
+        legacy_dict = {**cp_dict, "full_sub_approach": not cp_dict.pop("single_extrinsic_phase_limits")}
+
+        for legacy_value in (True, False):
+            legacy_dict["full_sub_approach"] = legacy_value
+            cp_loaded, _stdout, w = _run_func_and_capture_stdout_warnings(
+                chemical_potentials.CompetingPhases.from_dict, legacy_dict
+            )
+            assert any(
+                issubclass(warning.category, DeprecationWarning)
+                and "full_sub_approach" in str(warning.message)
+                for warning in w
+            )
+            assert len(w) == 1
+            assert cp_loaded.single_extrinsic_phase_limits is (not legacy_value)
+            assert "full_sub_approach" not in cp_loaded.__dict__  # avoid __getattr__ delegation
+
     def test_MP_doc_dicts(self):
         cp = chemical_potentials.CompetingPhases(
             "ZrO2", MP_doc_dicts=True, energy_above_hull=0.03, api_key=api_key
@@ -1261,22 +1309,25 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
     def _check_cpa_from_cp_entries(self, cp, host_elements, extrinsic_elements):
         """
         Build ``CompetingPhasesAnalyzer`` from ``cp.entries`` with both
-        ``full_sub_approach=False`` (dilute) and ``True``, and verify
-        parsing/chempot invariants.
+        ``single_extrinsic_phase_limits=False`` (default, recommended) and
+        ``True``, and verify parsing/chempot invariants.
 
-        Returns ``(cpa_dilute, cpa_full)``.
+        Returns ``(cpa_default, cpa_single_extrinsic_phase_limits)``.
         """
         composition = cp.composition.reduced_formula
         extrinsic_set = {Element(e) for e in extrinsic_elements}
 
-        cpa_dilute = chemical_potentials.CompetingPhasesAnalyzer(
-            composition, list(cp.entries), verbose=False
+        cpa_default = chemical_potentials.CompetingPhasesAnalyzer(
+            composition,
+            list(cp.entries),
         )
-        cpa_full = chemical_potentials.CompetingPhasesAnalyzer(
-            composition, list(cp.entries), full_sub_approach=True, verbose=False
+        cpa_single_extrinsic_phase_limits = chemical_potentials.CompetingPhasesAnalyzer(
+            composition,
+            list(cp.entries),
+            single_extrinsic_phase_limits=True,
         )
 
-        for cpa in (cpa_dilute, cpa_full):
+        for cpa in (cpa_default, cpa_single_extrinsic_phase_limits):
             assert set(cpa.intrinsic_elements) == set(host_elements)
             assert set(cpa.extrinsic_elements) == set(extrinsic_elements)
             # column ordering: host first, then extrinsic, matching ``cpa.elements``:
@@ -1288,18 +1339,22 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
             assert cpa.chempots_df.notna().all().all()
             assert len(cpa.chempots_df) >= 1
 
-        # dilute: every extrinsic species is covered by at least one phase in every limit (with codoping
-        # phases, a single multi-extrinsic phase can cover >=2 species at once):
-        for limit in cpa_dilute.chempots_df.index:
-            phases = limit.split("-")
-            for ext_el in extrinsic_set:
-                n_ext = sum(1 for p in phases if ext_el in Composition(p).elements)
-                assert n_ext >= 1, f"Dilute limit {limit!r} missing a phase containing {ext_el}"
+            for limit in cpa.chempots_df.index:
+                phases = limit.split("-")
+                for ext_el in extrinsic_set:
+                    n_ext = sum(1 for p in phases if ext_el in Composition(p).elements)
+                    if cpa.single_extrinsic_phase_limits:
+                        assert (
+                            n_ext == 1
+                        ), f"Single-extrinsic-phase limit {limit!r} should have (only) 1 phase w/{ext_el}"
+                    else:
+                        assert (
+                            n_ext >= 1
+                        ), f"Should have at least one extrinsic phase for element {ext_el} in {limit!r}"
 
-        # full-sub typically yields >= as many limits as dilute:
-        assert len(cpa_full.chempots_df) >= len(cpa_dilute.chempots_df)
+        assert len(cpa_default.chempots_df) >= len(cpa_single_extrinsic_phase_limits.chempots_df)
 
-        return cpa_dilute, cpa_full
+        return cpa_default, cpa_single_extrinsic_phase_limits
 
     def _check_cp_to_cpa_combinations(self, composition, host_elements, extrinsic, cases):
         """
@@ -1311,9 +1366,8 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         For every case: builds ``CompetingPhases`` with ``kwargs``, asserts
         that the init flags match, asserts entry counts (if given), runs
         ``_check_extrinsic_cp_entries`` and ``_check_cpa_from_cp_entries``, and
-        verifies the dilute CPA's intrinsic chempots are stable across all
-        cases (the intrinsic phase diagram is independent of any extrinsic
-        flags).
+        verifies the CPA's intrinsic chempots are stable across all cases (the
+        intrinsic phase diagram is independent of any extrinsic flags).
         """
         intrinsic_chempots_ref = None
         for kwargs, expected_counts in cases:
@@ -1325,7 +1379,9 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
                 **kwargs,
             )
             codoping = kwargs.get("codoping", False)
-            assert cp.full_sub_approach is (kwargs.get("full_sub_approach", False) or codoping)
+            assert cp.single_extrinsic_phase_limits is (
+                kwargs.get("single_extrinsic_phase_limits", False) and not codoping
+            )
             assert cp.codoping is codoping
             assert cp.full_phase_diagram is kwargs.get("full_phase_diagram", False)
             if expected_counts is not None:
@@ -1335,27 +1391,31 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
                 assert len(cp.extrinsic_entries) == n_extrinsic
             self._check_extrinsic_cp_entries(cp, host_elements, extrinsic, codoping=codoping)
 
-            cpa_dilute, _cpa_full = self._check_cpa_from_cp_entries(cp, host_elements, extrinsic)
+            cpa_default, cpa_single_extrinsic_phase_limits = self._check_cpa_from_cp_entries(
+                cp, host_elements, extrinsic
+            )
 
-            if intrinsic_chempots_ref is None:
-                intrinsic_chempots_ref = cpa_dilute.intrinsic_chempots
-            else:
-                _compare_chempot_dicts(
-                    _canonicalise_chempot_dict(cpa_dilute.intrinsic_chempots),
-                    _canonicalise_chempot_dict(intrinsic_chempots_ref),
-                )
+            for cpa in [cpa_default, cpa_single_extrinsic_phase_limits]:
+                if intrinsic_chempots_ref is None:
+                    intrinsic_chempots_ref = cpa.intrinsic_chempots
+                else:
+                    _compare_chempot_dicts(
+                        _canonicalise_chempot_dict(cpa.intrinsic_chempots),
+                        _canonicalise_chempot_dict(intrinsic_chempots_ref),
+                    )
 
-    def test_BaSnO3_K_In_full_sub_approach_codoping_full_phase_diagram(self):
+    def test_BaSnO3_K_In_single_extrinsic_phase_limits_codoping_full_phase_diagram(self):
         """
         Test ``CompetingPhases`` generation and ``CompetingPhasesAnalyzer``
         parsing roundtrip for BaSnO3 with K and In as extrinsic species,
-        covering the default (dilute) approach, ``full_sub_approach=True``,
+        covering the default approach, ``single_extrinsic_phase_limits=True``,
         ``codoping=True`` and ``full_phase_diagram=True`` cases (and
         combinations thereof).
 
         Co-doping competing phases (entries containing more than one extrinsic
         species, e.g. ``KInO2``) should only be generated when
-        ``codoping=True`` (which also forces ``full_sub_approach=True``).
+        ``codoping=True`` (which also forces
+        ``single_extrinsic_phase_limits=False``).
         ``full_phase_diagram=True`` includes all phases on the MP phase diagram
         (within ``energy_above_hull``) rather than only those potentially
         bordering the host, so increases both the intrinsic and extrinsic entry
@@ -1363,18 +1423,18 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
-            # default (dilute) approach: no full_sub_approach, no codoping, no full_phase_diagram:
-            ({}, (44, 23, 21)),
-            # full_sub_approach=True: more extrinsic phases, but still no codoping entries:
-            ({"full_sub_approach": True}, (47, 23, 24)),
-            # codoping=True: forces full_sub_approach=True and includes KInO2 codoping phase:
+            # default (full phase diagram) approach: no codoping entries:
+            ({}, (47, 23, 24)),
+            # single_extrinsic_phase_limits=True (PyCDT-style restriction): fewer extrinsic phases:
+            ({"single_extrinsic_phase_limits": True}, (44, 23, 21)),
+            # codoping=True: forces single_extrinsic_phase_limits=False and includes KInO2 codoping phase:
             ({"codoping": True}, (48, 23, 25)),
-            # full_phase_diagram=True (alone): all MP phases included for intrinsic chemical system,
-            # ``full_sub_approach=False`` means this doesn't affect extrinsic chemical system:
-            ({"full_phase_diagram": True}, (58, 37, 21)),
-            # full_phase_diagram=True + full_sub_approach=True: extended extrinsic phase set, still
+            # full_phase_diagram=True + single_extrinsic_phase_limits=True: all MP phases included
+            # for intrinsic chemical system; single-phase restriction keeps the extrinsic system small:
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (58, 37, 21)),
+            # full_phase_diagram=True (default extrinsic): extended extrinsic phase set, still
             # no codoping entries (codoping=False prunes joint K-In phases):
-            ({"full_phase_diagram": True, "full_sub_approach": True}, (82, 37, 45)),
+            ({"full_phase_diagram": True}, (82, 37, 45)),
             # full_phase_diagram=True + codoping=True: largest case, with codoping entries
             # (e.g. ``KInO2``, ``K17In41``) and full intrinsic phase diagram:
             ({"full_phase_diagram": True, "codoping": True}, (88, 37, 51)),
@@ -1385,30 +1445,31 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         """
         Test ``CompetingPhases`` -> ``CompetingPhasesAnalyzer`` roundtrip for
         BaSnO3 with a single extrinsic species (K), covering the
-        ``full_sub_approach`` and ``full_phase_diagram`` combinations
-        (``codoping`` is meaningless with one extrinsic species).
+        ``single_extrinsic_phase_limits`` and ``full_phase_diagram``
+        combinations (``codoping`` is meaningless with one extrinsic species).
         """
         cases = [
-            ({}, (38, 23, 15)),
-            ({"full_sub_approach": True}, (41, 23, 18)),
-            ({"full_phase_diagram": True}, (52, 37, 15)),
-            ({"full_phase_diagram": True, "full_sub_approach": True}, (65, 37, 28)),
+            ({}, (41, 23, 18)),
+            ({"single_extrinsic_phase_limits": True}, (38, 23, 15)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (52, 37, 15)),
+            ({"full_phase_diagram": True}, (65, 37, 28)),
         ]
         self._check_cp_to_cpa_combinations("BaSnO3", ["Ba", "Sn", "O"], ["K"], cases)
 
     def test_BaSnO3_4_extrinsic_cp_to_cpa_combinations(self):
         """
         Test ``CompetingPhases`` -> ``CompetingPhasesAnalyzer`` roundtrip for
-        BaSnO3 with four extrinsic species, covering the ``full_sub_approach``,
-        ``codoping`` and ``full_phase_diagram`` combinations.
+        BaSnO3 with four extrinsic species, covering the
+        ``single_extrinsic_phase_limits``, ``codoping`` and
+        ``full_phase_diagram`` combinations.
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
-            ({}, (67, 23, 44)),
-            ({"full_sub_approach": True}, (74, 23, 51)),
+            ({}, (74, 23, 51)),
+            ({"single_extrinsic_phase_limits": True}, (67, 23, 44)),
             ({"codoping": True}, (79, 23, 56)),
-            ({"full_phase_diagram": True}, (81, 37, 44)),
-            ({"full_phase_diagram": True, "full_sub_approach": True}, (145, 37, 108)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (81, 37, 44)),
+            ({"full_phase_diagram": True}, (145, 37, 108)),
             ({"full_phase_diagram": True, "codoping": True}, (201, 37, 164)),
         ]
         self._check_cp_to_cpa_combinations("BaSnO3", ["Ba", "Sn", "O"], ["K", "In", "Na", "Mg"], cases)
@@ -1418,7 +1479,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         """
         Heavy local-only test: ``CompetingPhases`` ->
         ``CompetingPhasesAnalyzer`` roundtrip for Na2FePO4F with two extrinsic
-        species, covering ``full_sub_approach``, ``codoping`` and
+        species, covering ``single_extrinsic_phase_limits``, ``codoping`` and
         ``full_phase_diagram`` combinations.
 
         Marked heavy because Na2FePO4F has a 5-element host chemsys, so
@@ -1426,10 +1487,10 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
         """
         cases = [
             # (kwargs, (n_entries, n_intrinsic, n_extrinsic))
-            ({}, (113, 82, 31)),
-            ({"full_sub_approach": True}, (125, 82, 43)),
-            ({"full_phase_diagram": True}, (231, 200, 31)),
-            ({"full_phase_diagram": True, "full_sub_approach": True}, (320, 200, 120)),
+            ({}, (125, 82, 43)),
+            ({"single_extrinsic_phase_limits": True}, (113, 82, 31)),
+            ({"full_phase_diagram": True, "single_extrinsic_phase_limits": True}, (231, 200, 31)),
+            ({"full_phase_diagram": True}, (320, 200, 120)),
             ({"codoping": True}, (133, 82, 51)),
             ({"full_phase_diagram": True, "codoping": True}, (344, 200, 144)),
         ]
@@ -1465,9 +1526,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "O": {"ZrO2-O2": 0.0, "Zr3O-ZrO2": -5.38794},
         }
         self.la_zro2_chempots_df_dict = {
-            "Zr": {"ZrO2-O2-La2Zr2O7": -10.97543, "Zr3O-ZrO2-La2Zr2O7": -0.19954},
-            "O": {"ZrO2-O2-La2Zr2O7": 0.0, "Zr3O-ZrO2-La2Zr2O7": -5.38794},
-            "La": {"ZrO2-O2-La2Zr2O7": -9.463, "Zr3O-ZrO2-La2Zr2O7": -1.3811},
+            "Zr": {"La2Zr2O7-ZrO2-O2": -10.97543, "La2Zr2O7-Zr3O-ZrO2": -0.19954},
+            "O": {"La2Zr2O7-ZrO2-O2": 0.0, "La2Zr2O7-Zr3O-ZrO2": -5.38794},
+            "La": {"La2Zr2O7-ZrO2-O2": -9.463, "La2Zr2O7-Zr3O-ZrO2": -1.38107},
         }
 
     def tearDown(self):
@@ -1513,22 +1574,24 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             self.la_zro2_cpa.chempots_df,
             self.la_zro2_cpa.calculate_chempots(extrinsic_species="La"),
         ]:
-            assert all(limit.endswith("-La2Zr2O7") for limit in chempots_df.index)
-            assert np.isclose(next(iter(chempots_df["La"])), -9.46298748)
+            assert all(limit.startswith("La2Zr2O7-") for limit in chempots_df.index)
+            assert np.isclose(chempots_df["La"].loc["La2Zr2O7-ZrO2-O2"], -9.46298748)
             # columns and chempot dicts ordered host-first then extrinsic, matching ``self.elements``:
             assert list(chempots_df.columns) == self.la_zro2_cpa.elements == ["Zr", "O", "La"]
             for limit_key in ["limits", "limits_wrt_el_refs"]:
                 for chempot_dict in self.la_zro2_cpa.chempots[limit_key].values():
                     assert list(chempot_dict.keys()) == self.la_zro2_cpa.elements
 
-    def test_extrinsic_chempots_match_pycdt_full_sub_approach_false(self):
+    def test_extrinsic_chempots_match_pycdt_single_extrinsic_phase_limits(self):
         """
-        Confirm that doped's algebraic dilute-dopant μ_extrinsic calculation
-        gives the same result as the geometric ``full_sub_approach=False``
-        PyCDT workflow: build a phase diagram from intrinsic + extrinsic
-        entries, enumerate facets, keep only facets bordered by exactly one
-        extrinsic phase (i.e. equilibria where the host phases still pin μ_host
-        as in an intrinsic facet), and read μ_extrinsic off those facets.
+        Confirm that doped's algebraic single-extrinsic-phase μ_extrinsic
+        calculation gives the same result as the geometric PyCDT workflow
+        (``full_sub_approach=False``, equivalent to
+        ``single_extrinsic_phase_limits=True``): build a phase diagram from
+        intrinsic + extrinsic entries, enumerate facets, keep only facets
+        bordered by exactly one extrinsic phase (i.e. equilibria where the host
+        phases still pin μ_host as in an intrinsic facet), and read
+        ``μ_extrinsic`` off those facets.
         """
         cpa = self.la_zro2_cpa
         la = Element("La")
@@ -1538,15 +1601,16 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         sub_pd = PhaseDiagram(intrinsic_entries + extrinsic_entries)
         mu_la_ref = sub_pd.el_refs[la].energy_per_atom
 
-        # PyCDT ``full_sub_approach=False``: enumerate sub-PD facets, keep those with exactly one
-        # La-bearing phase, and compare μ_La (relative to elemental La) to doped. Limit keys are phase
-        # names joined with "-" (e.g. ``ZrO2-O2-La2Zr2O7``); the same vertex is
-        # ``frozenset(facet_name.split("-"))``:
+        # PyCDT ``full_sub_approach=False`` (``single_extrinsic_phase_limits=True``): enumerate
+        # extrinsic-PD facets, keep those with exactly one La-bearing phase, and compare μ_La (relative to
+        # elemental La) to doped. Limit keys are phase names joined with "-" (e.g.
+        # ``ZrO2-O2-La2Zr2O7``); the same vertex is ``frozenset(facet_name.split("-"))``:
         pycdt_mu_la: dict[frozenset, float] = {}
         for facet_name, mu_dict in sub_pd.get_all_chempots(cpa.composition).items():
             phases = facet_name.split("-")
             if sum(la in Composition(p).elements for p in phases) != 1:
-                continue  # codoping / non-dilute facets, excluded by the dilute approximation
+                continue  # codoping/multiple extrinsic phases at limit, excluded by the
+                # single-extrinsic-phase-limits approximation
             pycdt_mu_la[frozenset(phases)] = mu_dict[la] - mu_la_ref
 
         doped_by_phases = {
@@ -1556,22 +1620,24 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         for k, mu in pycdt_mu_la.items():
             assert np.isclose(mu, doped_by_phases[k], atol=1e-3)
 
-    def test_full_sub_approach_chempots(self):
+    def test_joint_extrinsic_chempots(self):
         """
-        ``full_sub_approach=True`` builds the joint (intrinsic + extrinsic)
-        phase diagram and reads μ_host and μ_extrinsic together at every facet
-        (limit).
+        ``single_extrinsic_phase_limits=False`` (default, recommended) builds
+        the joint (intrinsic + extrinsic) phase diagram and reads ``μ_host``
+        and ``μ_extrinsic`` together at every facet (limit).
 
         Cross-check the result against a direct
         :meth:`~pymatgen.analysis.PhaseDiagram.get_all_chempots` call on the
-        same entries, and against the dilute approach (whose μ_X values must
-        agree at any shared facet — true for La-ZrO2 since La2Zr2O7 binds μ_La
-        at both intrinsic facets).
+        same entries, and against the single-extrinsic-phase-limit approach
+        (whose ``μ_X`` values must agree at any shared facet — true for La-ZrO2
+        since La2Zr2O7 binds ``μ_La`` at both intrinsic facets).
         """
         cpa = self.la_zro2_cpa
-        dilute_df = cpa.chempots_df.copy()
+        full_df = cpa.chempots_df.copy()
         la = Element("La")
-        full_df = cpa.calculate_chempots(full_sub_approach=True)
+        single_extrinsic_phase_limits_df = cpa.calculate_chempots(single_extrinsic_phase_limits=True)
+        # restore default-mode chempots on cpa (calculate_chempots mutates self.chempots):
+        cpa.calculate_chempots(verbose=False)
 
         # output should be a μ column for every host + extrinsic element, with no `-Limiting Phase` cols:
         assert set(full_df.columns) == {"Zr", "O", "La"}
@@ -1597,44 +1663,46 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             for el in ("Zr", "O", "La"):
                 assert np.isclose(direct_row[el], row[el], atol=1e-3)
 
-        # for La-ZrO2, La2Zr2O7 binds μ_La at both intrinsic facets, so each dilute facet should appear
-        # in the full-approach output (lifted with the limiting phase added) with matching μ:
-        for dilute_limit, dilute_row in dilute_df.iterrows():
-            dilute_phases = frozenset(dilute_limit.split("-"))
-            full_limit = next(lim for lim in full_df.index if frozenset(lim.split("-")) == dilute_phases)
+        # for La-ZrO2, La2Zr2O7 binds μ_La at both intrinsic facets, so each single-extrinsic-phase facet
+        # should appear in the full-approach output (lifted with the limiting phase added) with matching μ:
+        for limit, row in single_extrinsic_phase_limits_df.iterrows():
+            phases = frozenset(limit.split("-"))
+            full_limit = next(lim for lim in full_df.index if frozenset(lim.split("-")) == phases)
             for el in ("Zr", "O", "La"):
-                assert np.isclose(dilute_row[el], full_df.loc[full_limit, el], atol=1e-3)
+                assert np.isclose(row[el], full_df.loc[full_limit, el], atol=1e-3)
 
-        cpa_parsed_full_sub = chemical_potentials.CompetingPhasesAnalyzer(
+        cpa_parsed_default = chemical_potentials.CompetingPhasesAnalyzer(
             "ZrO2",
             self.la_zro2_path,
-            full_sub_approach=True,
+            single_extrinsic_phase_limits=False,  # default
         )
         pd.testing.assert_frame_equal(
-            cpa_parsed_full_sub.chempots_df,
+            cpa_parsed_default.chempots_df,
             full_df,
             check_like=True,
             rtol=1e-5,
             atol=1e-5,
         )
-        _compare_chempot_dicts(cpa_parsed_full_sub.chempots, cpa.chempots)
+        _compare_chempot_dicts(cpa_parsed_default.chempots, cpa.chempots)
 
-    def test_full_sub_approach_no_extrinsic_falls_through(self):
+    def test_no_extrinsic_falls_through(self):
         """
-        ``full_sub_approach=True`` with no extrinsic species should be a no-op
-        equivalent to the intrinsic-only calculation.
+        ``single_extrinsic_phase_limits`` with no extrinsic species should be a
+        no-op equivalent to the intrinsic-only calculation, in either mode.
         """
         intrinsic_only = self.zro2_cpa.calculate_chempots(verbose=False)
-        full = self.zro2_cpa.calculate_chempots(full_sub_approach=True, verbose=False)
+        full = self.zro2_cpa.calculate_chempots(single_extrinsic_phase_limits=False, verbose=False)
+        single = self.zro2_cpa.calculate_chempots(single_extrinsic_phase_limits=True, verbose=False)
         pd.testing.assert_frame_equal(intrinsic_only, full)
+        pd.testing.assert_frame_equal(intrinsic_only, single)
 
-    def test_dilute_chempots_with_multiple_extrinsic_species(self):
+    def test_single_extrinsic_phase_limits_with_multiple_extrinsic_species(self):
         """
         With >=2 extrinsic species and only single-extrinsic competing phases,
-        the dilute approach (``full_sub_approach=False``) should compute μ_X
-        per species independently and produce limit keys with each species'
-        limiting phase appearing exactly once, and matching the result for the
-        extrinsic species parsed separately.
+        the ``single_extrinsic_phase_limits=True`` approach should compute
+        ``μ_X`` per species independently and produce limit keys with each
+        species' limiting phase appearing exactly once, and matching the result
+        for the extrinsic species parsed separately.
         """
         La_limiting_phase = "La2Zr2O7"
         # fabricate Y analogues of the La phases to construct a 2-extrinsic dataset:
@@ -1655,6 +1723,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "ZrO2",
             list(self.la_zro2_cpa.entries) + extra_entries,
+            single_extrinsic_phase_limits=True,
         )
         assert set(cpa.extrinsic_elements) == {"La", "Y"}
         assert {"La", "Y"} <= set(cpa.chempots_df.columns)
@@ -1675,7 +1744,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             assert La_limiting_phase in limit_key
             assert Y_limiting_phase in limit_key
 
-        # μ_La must match the single-extrinsic La-only result (independence under dilute approx):
+        # μ_La must match the single-extrinsic La-only result:
         for multi_limit, multi_row in cpa.chempots_df.iterrows():
             multi_phases = set(multi_limit.split("-"))
             assert any(
@@ -2690,14 +2759,14 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap(self):
         """
-        Test heatmap plotting for a ternary host with two dilute extrinsic
-        species (BaSnO3 + K + In; 5-D system). The default
-        ``dependent_element`` falls back to the most electronegative host
-        element (O), and the remaining two dimensions are auto-fixed at the
-        centroid of the chemical stability region.
+        Test heatmap plotting for a ternary host with two extrinsic species
+        (BaSnO3 + K + In; 5-D system). The default ``dependent_element`` falls
+        back to the most electronegative host element (O), and the remaining
+        two dimensions are auto-fixed at the centroid of the chemical stability
+        region.
 
         ``KInO2`` is a co-doping competing phase that is present but is skipped
-        under the dilute-impurity approximation.
+        under the single-extrinsic-phase-limits approximation.
         """
         cp = chemical_potentials.CompetingPhases(
             "BaSnO3", energy_above_hull=0.03, extrinsic=["K", "In"], api_key=api_key, codoping=True
@@ -2711,15 +2780,17 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     @custom_mpl_image_compare(filename="CdTe_Cs_extrinsic_chempot_heatmap.png")
     def test_CdTe_Cs_extrinsic_chempot_heatmap(self):
         """
-        Test heatmap plotting for a binary host with a dilute extrinsic species
-        (CdTe + Cs).
+        Test heatmap plotting for a binary host with an extrinsic species (CdTe
+        + Cs).
         """
-        dilute_cp = chemical_potentials.CompetingPhases(
-            "CdTe ", energy_above_hull=0, extrinsic=["Cs"], full_sub_approach=False
+        cp = chemical_potentials.CompetingPhases(
+            "CdTe ",
+            energy_above_hull=0,
+            extrinsic=["Cs"],
         )
-        dilute_cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", dilute_cp.entries)
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", cp.entries)
         with warnings.catch_warnings(record=True) as w:
-            fig = dilute_cpa.plot_chempot_heatmap()
+            fig = cpa.plot_chempot_heatmap()
         _print_warning_info(w)
         assert not w
         return fig
