@@ -1572,7 +1572,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         for chempots_df in [
             self.La_ZrO2_cpa.chempots_df,
-            self.La_ZrO2_cpa.calculate_chempots(extrinsic_species="La"),
+            self.La_ZrO2_cpa.calculate_chempots(extrinsic="La"),
         ]:
             assert all(limit.startswith("La2Zr2O7-") for limit in chempots_df.index)
             assert np.isclose(chempots_df["La"].loc["La2Zr2O7-ZrO2-O2"], -9.46298748)
@@ -1777,7 +1777,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         species.
         """
         with pytest.raises(ValueError, match="Elemental reference phase for the specified extrinsic"):
-            self.ZrO2_cpa.calculate_chempots(extrinsic_species="La", verbose=False)
+            self.ZrO2_cpa.calculate_chempots(extrinsic="La", verbose=False)
 
     def test_from_entries_warns_and_prunes_phases_without_elemental_reference(self):
         """
@@ -2128,27 +2128,6 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         with pytest.raises(ValueError):
             cpa.to_LaTeX_table(splits=3)
-
-    def test_combine_extrinsic(self):
-        d = chemical_potentials.combine_extrinsic(
-            self.La_ZrO2_parsed_chempots, self.y_ZrO2_parsed_chempots, "Y"
-        )
-        assert len(d["elemental_refs"].keys()) == 4
-        limits = list(d["limits"].keys())
-        assert limits[0].rsplit("-", 1)[1] == "Y2Zr2O7"
-
-    def test_combine_extrinsic_errors(self):
-        d = {"a": 1}
-        with pytest.raises(KeyError):
-            chemical_potentials.combine_extrinsic(d, self.y_ZrO2_parsed_chempots, "Y")
-
-        with pytest.raises(KeyError):
-            chemical_potentials.combine_extrinsic(self.La_ZrO2_parsed_chempots, d, "Y")
-
-        with pytest.raises(ValueError):
-            chemical_potentials.combine_extrinsic(
-                self.La_ZrO2_parsed_chempots, self.y_ZrO2_parsed_chempots, "R"
-            )
 
     def test_get_formation_energy_df(self):
         cpa = self.ZrO2_cpa

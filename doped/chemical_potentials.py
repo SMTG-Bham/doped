@@ -1,7 +1,7 @@
 """
-Functions for setting up and parsing competing phase calculations in order to
-determine and analyse the elemental chemical potentials for defect formation
-energies.
+Functions for setting up and parsing competing phase calculations, in order to
+determine and analyse elemental chemical potential limits for a given host
+system.
 """
 
 import contextlib
@@ -73,12 +73,11 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
-# TODO: Recheck all functionality from old `_chemical_potentials.py` is now present here, w/Claude
-# TODO: Get genAI to try make code in this module more readable. Could do with some informative
-#  comments, in complex workflows, typing, ensure defaults mentioned in docstrings etc.
-# TODO: Update chemical potentials tutorial notebook for new code/function names
+# TODO: Update chemical potentials tutorial notebook for new code/function names. Show example of
+#  combining entries from a previously parsed CPA with a new one (i.e. similar functionality to previous
+#  ``combine_extrinsic`` function, but more appropriate).
 
-MPRester_property_data = [  # properties to pull for Materials Project entries
+MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
     "formula_pretty",
     "energy_above_hull",
@@ -88,22 +87,22 @@ MPRester_property_data = [  # properties to pull for Materials Project entries
     "energy_per_atom",  # note that this is the corrected energy per atom
     "nelements",
     "elements",
-]
-MPRester_summary_data = [
+)
+MPRESTER_SUMMARY_DATA = (
     "material_id",  # required so we can map docs back to entries via MPID
     "band_gap",
     "total_magnetization",
     "theoretical",
     "database_IDs",  # dict, possibly with an "icsd" key with list of ICSD entry codes
-]
+)
 
-default_get_entries_kwargs: dict[str, Any] = {"property_data": MPRester_property_data}
+default_get_entries_kwargs: dict[str, Any] = {"property_data": list(MPRESTER_PROPERTY_DATA)}
 
 
 def _attach_summary_data_to_entries(
     entries: list[ComputedEntry],
     mpr: MPRester,
-    summary_data: list[str] = MPRester_summary_data,
+    summary_data: Iterable[str] = MPRESTER_SUMMARY_DATA,
 ) -> None:
     """
     Fetch ``summary_data`` fields for ``entries`` via
@@ -118,7 +117,7 @@ def _attach_summary_data_to_entries(
     if material_ids:  # otherwise mp-api treats material_ids=[] as "no filter" and returns the entire DB...
         docs_by_mpid = {
             doc.material_id: doc.model_dump(mode="json")
-            for doc in mpr.materials.summary.search(material_ids=material_ids, fields=summary_data)
+            for doc in mpr.materials.summary.search(material_ids=material_ids, fields=list(summary_data))
         }
         for entry in entries:
             if doc := docs_by_mpid.get(entry.data.get("material_id")):
@@ -251,7 +250,7 @@ def _renormalise_entry(
 
 def get_chempots_from_phase_diagram(
     bulk_computed_entry: ComputedEntry, phase_diagram: PhaseDiagram
-) -> dict[str, dict]:
+) -> dict[str, dict[Element, float]]:
     """
     Get the chemical potential limits for the bulk computed entry in the
     supplied phase diagram.
@@ -357,7 +356,7 @@ def get_entries_in_chemsys(
             ``get_entries_in_chemsys()`` query.
 
     Returns:
-        list[ComputedStructureEntry], dict, list:
+        list[ComputedStructureEntry]:
             List of ``ComputedStructureEntry`` objects for the input chemical
             system.
     """
@@ -459,6 +458,10 @@ def _check_MP_API_key(api_key: str | None = None) -> str | None:
             ``MP_API_KEY`` environment variable -- see the ``doped``
             Installation docs:
             https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+
+    Returns:
+        str | None:
+            The Materials Project (MP) API key, if valid.
     """
     try:
         with MPRester(api_key) as mpr:
@@ -833,7 +836,7 @@ class CompetingPhases(MSONable):
         self,
         composition: str | Composition | Structure,
         energy_above_hull: float = 0.05,
-        extrinsic: str | Iterable | None = None,
+        extrinsic: str | Element | Iterable[str] | Iterable[Element] | None = None,
         full_phase_diagram: bool = False,
         single_extrinsic_phase_limits: bool = False,
         codoping: bool = False,
@@ -895,7 +898,7 @@ class CompetingPhases(MSONable):
                 reduce the number of calculations while retaining good accuracy
                 relative to the typical error of defect calculations.
                 (Default is 0.05 eV/atom).
-            extrinsic (str, Iterable):
+            extrinsic (str | Element | Iterable[str] | Iterable[Element] | None):
                 Extrinsic dopant/impurity species to consider, to generate the
                 relevant competing phases to additionally determine their
                 chemical potential limits within the host. Can be a single
@@ -947,7 +950,7 @@ class CompetingPhases(MSONable):
                 API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
                 used to pull competing phase entries.
         """
-        # TODO: Give quick attribute summary at end of docstring above, following chempots code overhaul
+        # TODO: Give quick attribute summary at end of docstring above
         if "full_sub_approach" in kwargs:  # TODO: remove in v4.1
             raise ValueError(
                 "`full_sub_approach` was renamed to `single_extrinsic_phase_limits` in doped v4.0, "
@@ -1161,7 +1164,7 @@ class CompetingPhases(MSONable):
         else:
             self.MP_doc_dicts = {}
 
-        self.intrinsic_species = [s.symbol for s in self.composition.reduced_composition.elements]
+        self.intrinsic_elements = [s.symbol for s in self.composition.reduced_composition.elements]
 
         if not self.extrinsic:
             self.intrinsic_entries: list[ComputedEntry] = self.entries
@@ -1171,19 +1174,12 @@ class CompetingPhases(MSONable):
 
         # otherwise, we have extrinsic species present:
         self.intrinsic_entries = copy.deepcopy(self.entries)
-
-        if not isinstance(self.extrinsic, str | Iterable):
-            raise TypeError(
-                f"`extrinsic` must be a string (i.e. the extrinsic species symbol, e.g. 'Mg') or an "
-                f"iterable object (list, set, tuple or dict; e.g. ['Mg', 'Na']), got type "
-                f"{type(self.extrinsic)} instead!"
-            )
-
-        self.extrinsic_species = (
+        self.extrinsic_elements = (
             [self.extrinsic] if isinstance(self.extrinsic, str) else list(self.extrinsic)
         )
+        self.extrinsic_elements = [Element(el).symbol for el in self.extrinsic_elements]
         if extrinsic_in_intrinsic := [
-            ext for ext in self.extrinsic_species if ext in self.intrinsic_species
+            ext for ext in self.extrinsic_elements if ext in self.intrinsic_elements
         ]:
             raise ValueError(
                 f"Extrinsic species {extrinsic_in_intrinsic} are already present in the host composition "
@@ -1193,7 +1189,7 @@ class CompetingPhases(MSONable):
         if self.codoping:
             self.single_extrinsic_phase_limits = False  # codoping implies no single-ext-phase restriction
             self.MP_full_pd_entries = get_entries_in_chemsys(  # can be time-consuming; high(er)-D chemsys
-                chemsys=self.intrinsic_species + self.extrinsic_species,
+                chemsys=self.intrinsic_elements + self.extrinsic_elements,
                 api_key=self.api_key,
                 energy_above_hull=self.energy_above_hull,
                 bulk_composition=self.composition.reduced_formula,  # for sorting
@@ -1210,30 +1206,30 @@ class CompetingPhases(MSONable):
 
         else:  # build full set of candidate entries first (for ``self.entries``); not co-doping
             candidate_extrinsic_entries = []
-            for sub_el in self.extrinsic_species:
-                sub_el_MP_full_pd_entries = get_entries_in_chemsys(
-                    [*self.intrinsic_species, sub_el],
+            for ext_elt in self.extrinsic_elements:
+                ext_elt_MP_full_pd_entries = get_entries_in_chemsys(
+                    [*self.intrinsic_elements, ext_elt],
                     api_key=self.api_key,
                     energy_above_hull=self.energy_above_hull,
                     bulk_composition=self.composition.reduced_formula,  # for sorting
                     **self._get_entries_kwargs,
                 )
-                sub_el_pd_entries = self._generate_elemental_diatomic_phases(sub_el_MP_full_pd_entries)
+                ext_elt_pd_entries = self._generate_elemental_diatomic_phases(ext_elt_MP_full_pd_entries)
                 self.MP_full_pd_entries.extend(
-                    [entry for entry in sub_el_MP_full_pd_entries if entry not in self.MP_full_pd_entries]
+                    [entry for entry in ext_elt_MP_full_pd_entries if entry not in self.MP_full_pd_entries]
                 )
 
                 if not self.full_phase_diagram:  # default, prune to only phases that would border the host
                     # material on the phase diagram, if their relative energy was downshifted by
                     # `energy_above_hull`; prune using phase diagrams for one extrinsic species at a time:
-                    sub_el_pd_entries = prune_entries_to_border_candidates(
-                        entries=sub_el_pd_entries,
+                    ext_elt_pd_entries = prune_entries_to_border_candidates(
+                        entries=ext_elt_pd_entries,
                         bulk_computed_entry=self.MP_bulk_computed_entry,
                         energy_above_hull=self.energy_above_hull,
                     )
 
                 candidate_extrinsic_entries += [
-                    entry for entry in sub_el_pd_entries if sub_el in entry.composition
+                    entry for entry in ext_elt_pd_entries if ext_elt in entry.composition
                 ]
 
             if not self.single_extrinsic_phase_limits:
@@ -1241,20 +1237,20 @@ class CompetingPhases(MSONable):
 
             else:  # single_extrinsic_phase_limits: only retain extrinsic competing phases when they border
                 # the host with no other extrinsic phases in equilibrium at the same limit
-                for sub_el in self.extrinsic_species:
-                    sub_el_entries = [
-                        entry for entry in candidate_extrinsic_entries if sub_el in entry.composition
+                for ext_elt in self.extrinsic_elements:
+                    ext_elt_entries = [
+                        entry for entry in candidate_extrinsic_entries if ext_elt in entry.composition
                     ]
 
-                    if not sub_el_entries:
+                    if not ext_elt_entries:
                         raise ValueError(
                             f"No Materials Project entries found for the given chemical system: "
-                            f"{[*self.intrinsic_species, sub_el]}"
+                            f"{[*self.intrinsic_elements, ext_elt]}"
                         )
 
-                    sub_el_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *sub_el_entries])
+                    ext_elt_phase_diagram = PhaseDiagram([*self.intrinsic_entries, *ext_elt_entries])
                     MP_extrinsic_gga_chempots = get_chempots_from_phase_diagram(
-                        self.MP_bulk_computed_entry, sub_el_phase_diagram
+                        self.MP_bulk_computed_entry, ext_elt_phase_diagram
                     )
                     MP_extrinsic_bordering_phases: list[str] = []
 
@@ -1263,7 +1259,7 @@ class CompetingPhases(MSONable):
                         # to the number of elements in the chemical system (here being the host
                         # composition plus the extrinsic species)
                         extrinsic_bordering_phases = {
-                            phase for phase in limit.split("-") if sub_el in phase
+                            phase for phase in limit.split("-") if ext_elt in phase
                         }
                         if len(  # only add when <=1 extrinsic bordering phase
                             extrinsic_bordering_phases
@@ -1274,7 +1270,7 @@ class CompetingPhases(MSONable):
                         entry
                         for entry in candidate_extrinsic_entries
                         if entry.name in MP_extrinsic_bordering_phases
-                        or (entry.is_element and sub_el in entry.name)
+                        or (entry.is_element and ext_elt in entry.name)
                     ]
 
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
@@ -1661,7 +1657,7 @@ class CompetingPhases(MSONable):
         """
         base_incar_settings = copy.deepcopy(default_relax_set["INCAR"])
         if "EDIFF" in (user_incar_settings or {}):  # remove default EDIFF PER ATOM setting if EDIFF set
-            _ = base_incar_settings.pop("EDIFF_PER_ATOM")
+            base_incar_settings.pop("EDIFF_PER_ATOM", None)
 
         lhfcalc = (user_incar_settings or {}).get("LHFCALC", True)
         if isinstance(lhfcalc, str):
@@ -1945,8 +1941,8 @@ class CompetingPhases(MSONable):
                 (subclasses of :class:`~pymatgen.io.vasp.sets.VaspInputSet`).
         """
         if soc is None:
-            all_species = self.intrinsic_species + getattr(self, "extrinsic_species", [])
-            max_Z = max(Element(el).Z for el in all_species)
+            all_elements = self.intrinsic_elements + getattr(self, "extrinsic_elements", [])
+            max_Z = max(Element(el).Z for el in all_elements)
             soc = max_Z >= 31
 
             if soc:  # if SOC being automatically determined, print an info message
@@ -2161,11 +2157,10 @@ class CompetingPhases(MSONable):
         See https://doped.readthedocs.io/en/latest/Tips.html#spin
         """
         magnetization = entry.data.get("summary", {}).get("total_magnetization")
-        with contextlib.suppress(TypeError):  # if magnetization is None, fine, skip
-            if magnetization > 0.1:  # account for magnetic moment
-                incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
-                if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
-                    incar_settings["NUPDOWN"] = int(magnetization)
+        if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
+            incar_settings["ISPIN"] = user_incar_settings.get("ISPIN", 2)
+            if "NUPDOWN" not in incar_settings and int(magnetization) > 0:
+                incar_settings["NUPDOWN"] = int(magnetization)
 
         # otherwise ISPIN not set, so no spin polarisation
 
@@ -2339,8 +2334,17 @@ class CompetingPhases(MSONable):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            d = {**d, "single_extrinsic_phase_limits": not d["full_sub_approach"]}
-            d.pop("full_sub_approach")
+            d = {**d, "single_extrinsic_phase_limits": not d.pop("full_sub_approach", True)}
+        if "extrinsic_species" in d:  # TODO: remove ``extrinsic_species`` translation in v4.1
+            warnings.warn(
+                "Loading a `CompetingPhases` saved with `extrinsic_species`; this attribute was renamed "
+                "to `extrinsic_elements` in doped v4.0 (for consistency with "
+                "`CompetingPhasesAnalyzer.extrinsic_elements`). Translating on load — re-save to silence "
+                "this warning.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            d = {**d, "extrinsic_elements": d.pop("extrinsic_species", [])}
         for key, value in d.items():
             if key not in {"@module", "@class", "@version"}:
                 setattr(competing_phases, key, MontyDecoder().process_decoded(value))
@@ -2924,8 +2928,10 @@ def _griddata_linear_in_hull(
             conditioning, and "Qc" keeps coplanar points.
 
     Returns:
-         np.ndarray: (m,) float array of interpolated values within the
-         convex hull, with NaN values outside the hull.
+         np.ndarray:
+            (N, k+1) float array of interpolated values within the
+            convex hull, with NaN values outside the hull, and the input
+            query points (xi) concatenated to the end.
     """
     n, k = np.shape(X)
     # Delaunay triangulation breaks our k-D polyhedron (polytope) of the convex hull into k-D
@@ -3129,7 +3135,7 @@ class CompetingPhasesAnalyzer(MSONable):
             elements (list):
                 List of all elements in the chemical system (host + extrinsic),
                 from all parsed calculations.
-            extrinsic_elements (str):
+            extrinsic_elements (list[str]):
                 List of extrinsic elements in the chemical system (not present
                 in ``composition``).
             intrinsic_elements (str):
@@ -3159,6 +3165,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 parsed, if ``entries`` was given as a path / paths to
                 directories.
         """
+        # TODO: Update attributes list here
         self.composition = Composition(composition)
         self.elements: list[str] = [c.symbol for c in self.composition.elements]
         self.intrinsic_elements = self.elements.copy()
@@ -3626,12 +3633,12 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         for entry_path in path_list:
             if "vasprun.xml" in str(entry_path) and not str(entry_path).startswith("."):
-                self.vasprun_paths.append(entry_path)
+                self.vasprun_paths.append(str(entry_path))
                 continue
 
             vasprun_path = self._find_vasprun_in_directory(entry_path)
             if vasprun_path is not None:
-                self.vasprun_paths.append(vasprun_path)
+                self.vasprun_paths.append(str(vasprun_path))
 
     def _collect_vaspruns_from_directory(
         self,
@@ -3768,36 +3775,28 @@ class CompetingPhasesAnalyzer(MSONable):
 
     def calculate_chempots(
         self,
-        extrinsic_species: str | Element | list[str] | list[Element] | None = None,
+        extrinsic: str | Element | Iterable[str] | Iterable[Element] | None = None,
         single_extrinsic_phase_limits: bool = False,
         sort_by: str | None = None,
         verbose: bool = True,
     ) -> pd.DataFrame:
         """
         Calculates the chemical potential limits for the host composition
-        (``self.composition``) and any ``extrinsic_species`` (which defaults to
-        ``self.extrinsic_elements`` -- i.e. all extrinsic elements present in
-        ``self.entries``).
+        (``self.composition``) and any ``extrinsic`` elements (which defaults
+        to ``self.extrinsic_elements`` -- i.e. all extrinsic elements present
+        in ``self.entries``).
 
         If extrinsic (dopant/impurity) elements are present, their chemical
         potential limits will also be calculated, where every facet (limit)
         jointly determines ``μ_host`` and ``μ_extrinsic``.
 
         Args:
-            extrinsic_species (str, Element, list):
-                If set, will calculate the limiting chemical potential for the
-                specified extrinsic species at the intrinsic chemical potential
-                limits. Can be a single element (str or ``Element``), or a list
-                of elements. If ``None`` (default), uses
-                ``self.extrinsic_elements``.
-            sort_by (str):
-                If set, will sort the chemical potential limits in
-                ``self.(intrinsic_)chempots`` and the output ``DataFrame``
-                according to the chemical potential of the specified element
-                (from element-rich to element-poor conditions).
-            verbose (bool):
-                If ``True`` (default), will print the parsed chemical potential
-                limits.
+            extrinsic (str | Element | Iterable[str] | Iterable[Element] | None):
+                If set, will calculate the chemical potential limits for these
+                extrinsic elements (and all intrinsic elements) only. Can be a
+                single element (``str`` or ``Element``), or a list of elements.
+                If ``None`` (default), uses ``self.extrinsic_elements`` (all
+                extrinsic elements present).
             single_extrinsic_phase_limits (bool):
                 If ``True``, pin ``μ_host`` at the intrinsic chemical potential
                 limits, with the corresponding ``μ_extrinsic`` then determined
@@ -3817,15 +3816,19 @@ class CompetingPhasesAnalyzer(MSONable):
                 Default is ``False`` (recommended; parse as normal with no
                 restriction on the number of extrinsic phases in equilibrium at
                 each facet (limit)).
+            sort_by (str):
+                If set, will sort the chemical potential limits in
+                ``self.(intrinsic_)chempots`` and the output ``DataFrame``
+                according to the chemical potential of the specified element
+                (from element-rich to element-poor conditions).
+            verbose (bool):
+                If ``True`` (default), will print the parsed chemical potential
+                limits.
 
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
-        if extrinsic_species is None:
-            extrinsic_species = self.extrinsic_elements
-        if not isinstance(extrinsic_species, list):
-            extrinsic_species = [extrinsic_species]
-        extrinsic_elements: list[Element] = [Element(e) for e in extrinsic_species]
+        extrinsic_elements = [Element(e) for e in (extrinsic or self.extrinsic_elements)]
 
         if missing_extrinsic := [
             elt for elt in extrinsic_elements if elt.symbol not in self.elemental_energies
@@ -3850,15 +3853,23 @@ class CompetingPhasesAnalyzer(MSONable):
                 columns=[str(k) for k in next(iter(chempots["limits_wrt_el_refs"].values()))],
             ).rename_axis("Limit")
 
-        chempots_df = _get_chempots_df_from_chempots(self.intrinsic_chempots)
+        chempots_df = self.intrinsic_chempots_df = _get_chempots_df_from_chempots(self.intrinsic_chempots)
+        # TODO: Test that self.intrinsic_chempots and self.intrinsic_chempots_df not mutated
 
         if extrinsic_elements:
             if not single_extrinsic_phase_limits:
                 self.chempots = get_doped_chempots_from_entries(
-                    self.phase_diagram.entries,  # full phase diagram now
+                    [
+                        entry
+                        for entry in self.phase_diagram.entries
+                        if set(entry.composition.elements).issubset(
+                            self.intrinsic_elements + extrinsic_elements
+                        )
+                    ],
                     self.composition,
                     single_chempot_limit=self.unstable_host,
-                )
+                )  # TODO: Test setting extrinsic_elements subset with
+                # ``single_extrinsic_phase_limits=False``
                 chempots_df = _get_chempots_df_from_chempots(self.chempots)
             else:  # single extrinsic phase limits
                 for extrinsic_element in extrinsic_elements:
@@ -3879,14 +3890,24 @@ class CompetingPhasesAnalyzer(MSONable):
 
             _sort_chempots_dict_by(self.chempots, sort_by)
             if sort_by in self.intrinsic_elements:  # extrinsic species are absent from intrinsic_chempots
+                self.intrinsic_chempots_df = self.intrinsic_chempots_df.sort_values(
+                    by=sort_by, ascending=False
+                )
                 _sort_chempots_dict_by(self.intrinsic_chempots, sort_by)
 
         # re-sort chempots_df columns and self.chempots inner dicts to match self.elements ordering:
         chempots_df = chempots_df[[el for el in self.elements if el in chempots_df.columns]]
+        self.intrinsic_chempots_df = self.intrinsic_chempots_df[
+            [el for el in self.intrinsic_elements if el in chempots_df.columns]
+        ]
         for limit_key in ["limits", "limits_wrt_el_refs"]:
             self.chempots[limit_key] = {
                 limit: {el: chempot_dict[el] for el in self.elements if el in chempot_dict}
                 for limit, chempot_dict in self.chempots[limit_key].items()
+            }
+            self.intrinsic_chempots[limit_key] = {
+                limit: {el: chempot_dict[el] for el in self.intrinsic_elements if el in chempot_dict}
+                for limit, chempot_dict in self.intrinsic_chempots[limit_key].items()
             }
 
         if verbose:
@@ -3931,21 +3952,19 @@ class CompetingPhasesAnalyzer(MSONable):
         while the other extrinsic species' chempots are not).
         """
         host_element_symbols = {elt.symbol for elt in self.composition.elements}
-        skipped_codoping_entries: list[ComputedEntry] = []
         for limit, chempot_series in list(chempots_df.iterrows()):
-            chempots_df.loc[limit, extrinsic_element.symbol] = np.inf
+            chempots_df.loc[limit, extrinsic_element.symbol] = np.nan
             potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
             for entry in self.extrinsic_entries:
                 n_extrinsic_entry = entry.composition[extrinsic_element]  # n_X
 
-                # skip phases with only other extrinsic species, or co-doping phases, as they don't
-                # constrain μ_X in the ``single_extrinsic_phase_limits=True`` approach:
+                # skip phases with only other extrinsic species, as they don't constrain μ_X in the
+                # ``single_extrinsic_phase_limits=True`` approach:
                 if any(
                     el
                     for el in entry.composition.elements
                     if el != extrinsic_element and el.symbol not in host_element_symbols
                 ):
-                    skipped_codoping_entries.append(entry)
                     continue
 
                 formation_energy = self.phase_diagram.get_form_energy(entry)  # E_form(phase)
@@ -4113,7 +4132,8 @@ class CompetingPhasesAnalyzer(MSONable):
         applied as-is for ternary systems (or binary systems with an extrinsic
         element), but for higher-dimensional systems a set of chemical
         potential constraints must be provided (as ``fixed_elements``) to
-        project the chemical stability region to 3-D; see the tutorial:
+        project the chemical stability region to 3-D; see the competing phases
+        tutorial:
         https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
 
         Extrinsic chemical potentials are also supported; added as additional
@@ -4207,7 +4227,7 @@ class CompetingPhasesAnalyzer(MSONable):
                 ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional keyword arguments to pass to
-                ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+                ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
                 (default = 1000) and ``cartesian`` (default = ``True`` for
                 heatmap plotting, to ensure smooth interpolation).
 
@@ -4407,10 +4427,9 @@ def plot_chempot_heatmap(
 
     3-D data is required to plot a 2-D heatmap, and so this function can be
     applied as-is for ternary systems (or binary systems with an extrinsic
-    element), but for higher-dimension), but for higher-dimensional systems a
-    set of chemical potential constraints must be provided (as
-    ``fixed_elements``) to project the chemical stability region to 3-D;
-    see the competing phases tutorial:
+    element), but for higher-dimensional systems a set of chemical potential
+    constraints must be provided (as ``fixed_elements``) to project the
+    chemical stability region to 3-D; see the competing phases tutorial:
     https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
 
     Extrinsic chemical potentials are also supported; added as additional
@@ -4517,7 +4536,7 @@ def plot_chempot_heatmap(
             ``doped/utils/doped.mplstyle``).
         **kwargs:
             Additional keyword arguments to pass to
-            ``ChemicalPotentialDiagram.get_grid()``, such as ``n_points``
+            ``ChemicalPotentialGrid.get_grid()``, such as ``n_points``
             (default = 1000) and ``cartesian`` (default = ``True`` for
             heatmap plotting, to ensure smooth interpolation).
 
@@ -4575,8 +4594,9 @@ def plot_chempot_heatmap(
     if len(cpd.elements) == 2:  # switch to line plot
         raise ValueError(
             "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
-            "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
-            "line plot of the chemical potentials as shown in the doped competing phases tutorial."
+            "can use ``cpd = ChemicalPotentialDiagram(cpa.entries / "
+            "entries_from_chempot_limits(chempots)); cpd.get_plot()`` to generate a line plot of the "
+            "chemical potentials as shown in the doped competing phases tutorial."
         )
     if len(cpd.elements) - len(fixed_elements) != 3:  # auto fix to centroid of stability region:
         info_message = (
@@ -5233,70 +5253,3 @@ def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
         stacklevel=2,
     )
     return get_X_rich_poor_limit(X, chempots, rich=False, **kwargs)
-
-
-# TODO: Clean up (and maybe rename this function)
-def combine_extrinsic(first: dict, second: dict, extrinsic_species: str) -> dict:
-    """
-    Combines chemical potential limits for different extrinsic species.
-
-    Usage explained in the chemical potentials tutorial. To be removed in
-    following versions.
-
-    Args:
-        first (dict):
-            First chemical potential dictionary, it can contain extrinsic
-            species other than the set extrinsic species.
-        second (dict):
-            Second chemical potential dictionary, it must contain the
-            extrinsic species.
-        extrinsic_species (str):
-            Extrinsic species in the second dictionary.
-
-    Returns:
-        dict:
-            Combined dictionary with limits for the extrinsic species.
-    """
-    keys = ["elemental_refs", "limits", "limits_wrt_el_refs"]
-    if any(key not in first for key in keys):
-        raise KeyError(
-            "the first dictionary doesn't contain the correct keys -- it should include "
-            "elemental_refs, limits and limits_wrt_el_refs"
-        )
-
-    if any(key not in second for key in keys):
-        raise KeyError(
-            "the second dictionary doesn't contain the correct keys -- it should include "
-            "elemental_refs, limits and limits_wrt_el_refs"
-        )
-
-    if extrinsic_species not in second["elemental_refs"]:
-        raise ValueError("extrinsic species is not present in the second dictionary")
-
-    first_chempots = copy.deepcopy(first)
-    second_chempots = copy.deepcopy(second)
-
-    def _merge_limits(first_limits: dict[str, dict], second_limits: dict[str, dict]) -> dict[str, dict]:
-        merged: dict[str, dict] = {}
-        for (first_key, first_vals), (second_key, second_vals) in zip(
-            first_limits.items(), second_limits.items(), strict=False
-        ):
-            if second_key.rsplit("-", 1)[0] not in first_key:
-                raise ValueError(
-                    "The limits aren't matching, make sure you've used the correct dictionary"
-                )
-            merged_key = f"{first_key}-{second_key.rsplit('-', 1)[1]}"
-            first_vals[extrinsic_species] = second_vals.pop(extrinsic_species)
-            merged[merged_key] = first_vals
-        return merged
-
-    merged_elemental_refs = copy.deepcopy(first_chempots["elemental_refs"])
-    merged_elemental_refs[extrinsic_species] = second_chempots["elemental_refs"][extrinsic_species]
-
-    return {
-        "elemental_refs": merged_elemental_refs,
-        "limits": _merge_limits(first_chempots["limits"], second_chempots["limits"]),
-        "limits_wrt_el_refs": _merge_limits(
-            first_chempots["limits_wrt_el_refs"], second_chempots["limits_wrt_el_refs"]
-        ),
-    }
