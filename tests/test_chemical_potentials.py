@@ -98,7 +98,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         self.cu2sise4.append("Se", [0.5, 0.5, 0.5])
         self.cu2sise4.append("Se", [0.5, 0.75, 0.5])
 
-        self.zro2_entry_list = [  # without full_phase_diagram
+        self.ZrO2_entry_list = [  # without full_phase_diagram
             "ZrO2",
             "Zr",
             "O2",
@@ -202,7 +202,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
 
         assert len(cp.entries) == 13
-        assert [entry.name for entry in cp.entries] == self.zro2_entry_list
+        assert [entry.name for entry in cp.entries] == self.ZrO2_entry_list
         self._check_ZrO2_cp_init(cp)
         assert "Zr4O" not in [e.name for e in cp.entries]  # not bordering or potentially with EaH
         assert not cp.MP_doc_dicts
@@ -214,8 +214,8 @@ class CompetingPhasesTestCase(unittest.TestCase):
         )
 
         assert len(cp.entries) == 14  # Zr4O now present
-        zro2_full_pd_entry_list = self.zro2_entry_list[:4] + ["Zr4O"] + self.zro2_entry_list[4:]
-        assert [entry.name for entry in cp.entries] == zro2_full_pd_entry_list
+        ZrO2_full_pd_entry_list = self.ZrO2_entry_list[:4] + ["Zr4O"] + self.ZrO2_entry_list[4:]
+        assert [entry.name for entry in cp.entries] == ZrO2_full_pd_entry_list
         self._check_ZrO2_cp_init(cp, num_stable_entries=5)  # Zr4O is on hull
         self._check_cp_json_roundtrip(cp)
 
@@ -1066,7 +1066,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert set(cp.MP_doc_dicts.keys()) == {
             entry.data["material_id"] for entry in cp.entries if not entry.data["molecule"]
         }
-        assert [entry.name for entry in cp.entries] == self.zro2_entry_list
+        assert [entry.name for entry in cp.entries] == self.ZrO2_entry_list
         self._check_ZrO2_cp_init(cp)
         assert "Zr4O" not in [e.name for e in cp.entries]  # not bordering or potentially with EaH
 
@@ -1136,7 +1136,7 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 
         # names of intrinsic entries: ['Zr', 'O2', 'Zr3O', 'ZrO2']
         assert len(ex_cp.intrinsic_entries) == 4
-        assert [entry.name for entry in ex_cp.intrinsic_entries] == self.zro2_entry_list[:4]
+        assert [entry.name for entry in ex_cp.intrinsic_entries] == self.ZrO2_entry_list[:4]
 
     def test_structure_input(self):
         for struct, name in [
@@ -1499,18 +1499,18 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
 
 class ChemPotAnalyzerTestCase(unittest.TestCase):
     def setUp(self):
-        self.zro2_path = os.path.join(EXAMPLE_DIR, "ZrO2_CompetingPhases")
-        self.la_zro2_path = os.path.join(EXAMPLE_DIR, "La_ZrO2_CompetingPhases")
-        self.mgo_path = os.path.join(EXAMPLE_DIR, "MgO/CompetingPhases")
+        self.ZrO2_path = os.path.join(EXAMPLE_DIR, "ZrO2_CompetingPhases")
+        self.La_ZrO2_path = os.path.join(EXAMPLE_DIR, "La_ZrO2_CompetingPhases")
+        self.MgO_path = os.path.join(EXAMPLE_DIR, "MgO/CompetingPhases")
 
-        self.zro2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
-        self.la_zro2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
+        self.ZrO2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
+        self.La_ZrO2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
 
-        self.zro2_parsed_chempots = loadfn(f"{self.zro2_path}/zro2_chempots.json")
-        self.la_zro2_parsed_chempots = loadfn(f"{self.la_zro2_path}/zro2_la_chempots.json")
-        self.y_zro2_parsed_chempots = loadfn(f"{self.la_zro2_path}/zro2_y_chempots.json")
+        self.ZrO2_parsed_chempots = loadfn(f"{self.ZrO2_path}/ZrO2_chempots.json")
+        self.La_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_la_chempots.json")
+        self.y_ZrO2_parsed_chempots = loadfn(f"{self.La_ZrO2_path}/ZrO2_y_chempots.json")
 
-        self.zro2_entry_list = [  # for testing ordering
+        self.ZrO2_entry_list = [  # for testing ordering
             "ZrO2",
             "Zr",
             "O2",
@@ -1521,11 +1521,11 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "Zr",
         ]
 
-        self.zro2_chempots_df_dict = {
+        self.ZrO2_chempots_df_dict = {
             "Zr": {"ZrO2-O2": -10.97543, "Zr3O-ZrO2": -0.19954},
             "O": {"ZrO2-O2": 0.0, "Zr3O-ZrO2": -5.38794},
         }
-        self.la_zro2_chempots_df_dict = {
+        self.La_ZrO2_chempots_df_dict = {
             "Zr": {"La2Zr2O7-ZrO2-O2": -10.97543, "La2Zr2O7-Zr3O-ZrO2": -0.19954},
             "O": {"La2Zr2O7-ZrO2-O2": 0.0, "La2Zr2O7-Zr3O-ZrO2": -5.38794},
             "La": {"La2Zr2O7-ZrO2-O2": -9.463, "La2Zr2O7-Zr3O-ZrO2": -1.38107},
@@ -1537,25 +1537,25 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         if_present_rm(os.path.join(data_dir, "ZrO2_LaTeX_Tables/test.tex"))
 
-        if os.path.exists(f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz"):
-            if not os.path.exists(f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz"):
+        if os.path.exists(f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz"):
+            if not os.path.exists(f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz"):
                 shutil.move(
-                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
-                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz",
+                    f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+                    f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz",
                 )
-            if not os.path.exists(f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz"):
+            if not os.path.exists(f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz"):
                 shutil.move(
-                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
-                    f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz",
+                    f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+                    f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz",
                 )
             shutil.move(
-                f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
-                f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+                f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
+                f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
             )
 
         shutil.copyfile(
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
-            f"{self.la_zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.La_ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
         )
 
         if_present_rm(
@@ -1566,21 +1566,21 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
 
     def test_cpa_chempots(self):
-        for chempots_df in [self.zro2_cpa.chempots_df, self.zro2_cpa.calculate_chempots()]:
+        for chempots_df in [self.ZrO2_cpa.chempots_df, self.ZrO2_cpa.calculate_chempots()]:
             assert next(iter(chempots_df["O"])) == 0
-            assert list(chempots_df.columns) == self.zro2_cpa.elements == ["Zr", "O"]
+            assert list(chempots_df.columns) == self.ZrO2_cpa.elements == ["Zr", "O"]
 
         for chempots_df in [
-            self.la_zro2_cpa.chempots_df,
-            self.la_zro2_cpa.calculate_chempots(extrinsic_species="La"),
+            self.La_ZrO2_cpa.chempots_df,
+            self.La_ZrO2_cpa.calculate_chempots(extrinsic_species="La"),
         ]:
             assert all(limit.startswith("La2Zr2O7-") for limit in chempots_df.index)
             assert np.isclose(chempots_df["La"].loc["La2Zr2O7-ZrO2-O2"], -9.46298748)
             # columns and chempot dicts ordered host-first then extrinsic, matching ``self.elements``:
-            assert list(chempots_df.columns) == self.la_zro2_cpa.elements == ["Zr", "O", "La"]
+            assert list(chempots_df.columns) == self.La_ZrO2_cpa.elements == ["Zr", "O", "La"]
             for limit_key in ["limits", "limits_wrt_el_refs"]:
-                for chempot_dict in self.la_zro2_cpa.chempots[limit_key].values():
-                    assert list(chempot_dict.keys()) == self.la_zro2_cpa.elements
+                for chempot_dict in self.La_ZrO2_cpa.chempots[limit_key].values():
+                    assert list(chempot_dict.keys()) == self.La_ZrO2_cpa.elements
 
     def test_extrinsic_chempots_match_pycdt_single_extrinsic_phase_limits(self):
         """
@@ -1593,7 +1593,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         phases still pin μ_host as in an intrinsic facet), and read
         ``μ_extrinsic`` off those facets.
         """
-        cpa = self.la_zro2_cpa
+        cpa = self.La_ZrO2_cpa
         la = Element("La")
 
         intrinsic_entries = [e for e in cpa.entries if la not in e.composition.elements]
@@ -1632,7 +1632,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         (whose ``μ_X`` values must agree at any shared facet — true for La-ZrO2
         since La2Zr2O7 binds ``μ_La`` at both intrinsic facets).
         """
-        cpa = self.la_zro2_cpa
+        cpa = self.La_ZrO2_cpa
         full_df = cpa.chempots_df.copy()
         la = Element("La")
         single_extrinsic_phase_limits_df = cpa.calculate_chempots(single_extrinsic_phase_limits=True)
@@ -1673,7 +1673,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         cpa_parsed_default = chemical_potentials.CompetingPhasesAnalyzer(
             "ZrO2",
-            self.la_zro2_path,
+            self.La_ZrO2_path,
             single_extrinsic_phase_limits=False,  # default
         )
         pd.testing.assert_frame_equal(
@@ -1690,9 +1690,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         ``single_extrinsic_phase_limits`` with no extrinsic species should be a
         no-op equivalent to the intrinsic-only calculation, in either mode.
         """
-        intrinsic_only = self.zro2_cpa.calculate_chempots(verbose=False)
-        full = self.zro2_cpa.calculate_chempots(single_extrinsic_phase_limits=False, verbose=False)
-        single = self.zro2_cpa.calculate_chempots(single_extrinsic_phase_limits=True, verbose=False)
+        intrinsic_only = self.ZrO2_cpa.calculate_chempots(verbose=False)
+        full = self.ZrO2_cpa.calculate_chempots(single_extrinsic_phase_limits=False, verbose=False)
+        single = self.ZrO2_cpa.calculate_chempots(single_extrinsic_phase_limits=True, verbose=False)
         pd.testing.assert_frame_equal(intrinsic_only, full)
         pd.testing.assert_frame_equal(intrinsic_only, single)
 
@@ -1708,7 +1708,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         # fabricate Y analogues of the La phases to construct a 2-extrinsic dataset:
         Y_limiting_phase = "Y2Zr2O7"
         extra_entries = []
-        for entry in self.la_zro2_cpa.entries:
+        for entry in self.La_ZrO2_cpa.entries:
             if "La" in entry.composition:
                 comp = Composition(
                     {"Y" if str(el) == "La" else str(el): n for el, n in entry.composition.items()}
@@ -1722,7 +1722,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "ZrO2",
-            list(self.la_zro2_cpa.entries) + extra_entries,
+            list(self.La_ZrO2_cpa.entries) + extra_entries,
             single_extrinsic_phase_limits=True,
         )
         assert set(cpa.extrinsic_elements) == {"La", "Y"}
@@ -1751,7 +1751,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 set(limit.split("-")) <= multi_phases
                 and np.isclose(row[elt], multi_row[elt], atol=1e-3)
                 and not np.isclose(multi_row["Y"], multi_row["La"], atol=1e-2)
-                for limit, row in self.la_zro2_cpa.chempots_df.iterrows()
+                for limit, row in self.La_ZrO2_cpa.chempots_df.iterrows()
                 for elt in ["Zr", "O", "La"]
             )
 
@@ -1777,7 +1777,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         species.
         """
         with pytest.raises(ValueError, match="Elemental reference phase for the specified extrinsic"):
-            self.zro2_cpa.calculate_chempots(extrinsic_species="La", verbose=False)
+            self.ZrO2_cpa.calculate_chempots(extrinsic_species="La", verbose=False)
 
     def test_from_entries_warns_and_prunes_phases_without_elemental_reference(self):
         """
@@ -1785,7 +1785,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         dropped, with a warning, so intrinsic chemical potentials still build.
         """
         entries_no_la_metal = [
-            e for e in self.la_zro2_cpa.entries if e.composition.reduced_formula != "La"
+            e for e in self.La_ZrO2_cpa.entries if e.composition.reduced_formula != "La"
         ]
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries_no_la_metal)
@@ -1798,10 +1798,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert not any("La" in e.composition for e in cpa.entries)
         assert "La" not in cpa.extrinsic_elements
         assert len(cpa.elements) == 2
-        pd.testing.assert_frame_equal(cpa.chempots_df, self.zro2_cpa.chempots_df)
+        pd.testing.assert_frame_equal(cpa.chempots_df, self.ZrO2_cpa.chempots_df)
 
     def test_from_entries_raises_when_host_element_lacks_elemental_reference(self):
-        entries_no_o2 = [e for e in self.zro2_cpa.entries if e.composition.reduced_formula != "O2"]
+        entries_no_o2 = [e for e in self.ZrO2_cpa.entries if e.composition.reduced_formula != "O2"]
         with pytest.raises(
             ValueError,
             match="No elemental reference phase was parsed for host element",
@@ -1813,7 +1813,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         Test the chemical potentials parsing when the host phase is unstable.
         """
         with warnings.catch_warnings(record=True) as w:
-            unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer("Zr2O", self.zro2_path)
+            unstable_cpa = chemical_potentials.CompetingPhasesAnalyzer("Zr2O", self.ZrO2_path)
 
         _print_warning_info(w)  # for debugging
         assert (
@@ -1829,7 +1829,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert np.isclose(next(iter(unstable_cpa.chempots_df["Zr"])), -0.1997, atol=1e-3)
         assert np.isclose(next(iter(unstable_cpa.chempots_df["O"])), -5.3878, atol=1e-3)
 
-        assert unstable_cpa.chempots["elemental_refs"] == self.zro2_parsed_chempots["elemental_refs"]
+        assert unstable_cpa.chempots["elemental_refs"] == self.ZrO2_parsed_chempots["elemental_refs"]
         assert len(unstable_cpa.chempots["limits"]) == 1
         assert len(unstable_cpa.chempots["limits_wrt_el_refs"]) == 1
         assert np.isclose(unstable_cpa.chempots["limits"]["Zr2O-ZrO2"]["Zr"], -10.0434, atol=1e-3)
@@ -1843,39 +1843,39 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
     def test_ext_cpa_chempots(self):
         # test accessing cpa.chempots without previously calling cpa.calculate_chempots()
-        _compare_chempot_dicts(self.zro2_cpa.chempots, self.zro2_parsed_chempots)
+        _compare_chempot_dicts(self.ZrO2_cpa.chempots, self.ZrO2_parsed_chempots)
 
         assert (
-            self.la_zro2_cpa.chempots["elemental_refs"] == self.la_zro2_parsed_chempots["elemental_refs"]
+            self.La_ZrO2_cpa.chempots["elemental_refs"] == self.La_ZrO2_parsed_chempots["elemental_refs"]
         )
 
     def test_sort_by(self):
         limits_order_zr_rich = ["Zr3O-ZrO2", "ZrO2-O2"]
-        chempot_df = self.zro2_cpa.calculate_chempots(sort_by="Zr")
+        chempot_df = self.ZrO2_cpa.calculate_chempots(sort_by="Zr")
         assert np.isclose(next(iter(chempot_df["Zr"])), -0.199544, atol=1e-4)
         assert np.isclose(list(chempot_df["Zr"])[1], -10.975428439999998, atol=1e-4)
         assert chempot_df.index.tolist() == limits_order_zr_rich
-        assert list(self.zro2_cpa.chempots["limits"].keys()) == limits_order_zr_rich
+        assert list(self.ZrO2_cpa.chempots["limits"].keys()) == limits_order_zr_rich
 
         limits_order_o_rich = ["ZrO2-O2", "Zr3O-ZrO2"]
-        chempot_df_o = self.zro2_cpa.calculate_chempots(sort_by="O")
+        chempot_df_o = self.ZrO2_cpa.calculate_chempots(sort_by="O")
         assert np.isclose(next(iter(chempot_df_o["O"])), 0.0, atol=1e-4)
         assert np.isclose(list(chempot_df_o["O"])[1], -5.38794, atol=1e-4)
         assert chempot_df_o.index.tolist() == limits_order_o_rich
-        assert list(self.zro2_cpa.chempots["limits"].keys()) == limits_order_o_rich
+        assert list(self.ZrO2_cpa.chempots["limits"].keys()) == limits_order_o_rich
 
         with pytest.raises(KeyError):
-            self.zro2_cpa.calculate_chempots(sort_by="M")
+            self.ZrO2_cpa.calculate_chempots(sort_by="M")
 
     def test_vaspruns(self):
-        cpa = self.zro2_cpa
+        cpa = self.ZrO2_cpa
         assert len(cpa.elements) == 2
 
         self._general_cpa_check(cpa)
-        assert cpa.chempots_df.to_dict() == self.zro2_chempots_df_dict
+        assert cpa.chempots_df.to_dict() == self.ZrO2_chempots_df_dict
 
         cpa_w_subfolder = chemical_potentials.CompetingPhasesAnalyzer(
-            "ZrO2", self.zro2_path, subfolder="vasp_std"
+            "ZrO2", self.ZrO2_path, subfolder="vasp_std"
         )
         self._general_cpa_check(cpa_w_subfolder)
         self._compare_cpas(cpa, cpa_w_subfolder)
@@ -1889,7 +1889,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert "`entries` must be either a path to a directory" in str(e.value)
         assert "got type <class 'int'>" in str(e.value)
 
-        ext_cpa = self.la_zro2_cpa
+        ext_cpa = self.La_ZrO2_cpa
         assert len(ext_cpa.elements) == 3
         assert len(ext_cpa.extrinsic_elements) == 1
         # sorted by num_species, then alphabetically, then by num_atoms_in_fu, then by
@@ -1907,17 +1907,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             "Zr2O",
             "Zr",
         ]
-        assert ext_cpa.chempots_df.to_dict() == self.la_zro2_chempots_df_dict
+        assert ext_cpa.chempots_df.to_dict() == self.La_ZrO2_chempots_df_dict
 
         # check if it works from a list
         all_paths = []
-        for entry_folder in os.listdir(self.zro2_path):
-            if os.path.isdir(os.path.join(self.zro2_path, entry_folder)) and "vasp_std" in os.listdir(
-                os.path.join(self.zro2_path, entry_folder)
+        for entry_folder in os.listdir(self.ZrO2_path):
+            if os.path.isdir(os.path.join(self.ZrO2_path, entry_folder)) and "vasp_std" in os.listdir(
+                os.path.join(self.ZrO2_path, entry_folder)
             ):
                 all_paths.extend(
-                    os.path.join(self.zro2_path, entry_folder, "vasp_std", vr_file)
-                    for vr_file in os.listdir(os.path.join(self.zro2_path, entry_folder, "vasp_std"))
+                    os.path.join(self.ZrO2_path, entry_folder, "vasp_std", vr_file)
+                    for vr_file in os.listdir(os.path.join(self.ZrO2_path, entry_folder, "vasp_std"))
                     if vr_file.startswith("vasprun.xml")
                 )
         lst_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", entries=all_paths)
@@ -1933,22 +1933,22 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         self._general_cpa_check(lst_fols_cpa)
 
     def test_vaspruns_hidden_files(self):
-        with open(f"{self.zro2_path}/._OUTCAR", "w") as f:
+        with open(f"{self.ZrO2_path}/._OUTCAR", "w") as f:
             f.write("test pop")
-        with open(f"{self.zro2_path}/._vasprun.xml", "w") as f:
+        with open(f"{self.ZrO2_path}/._vasprun.xml", "w") as f:
             f.write("test pop")
-        with open(f"{self.zro2_path}/._LOCPOT", "w") as f:
+        with open(f"{self.ZrO2_path}/._LOCPOT", "w") as f:
             f.write("test pop")
-        with open(f"{self.zro2_path}/.DS_Store", "w") as f:
+        with open(f"{self.ZrO2_path}/.DS_Store", "w") as f:
             f.write("test pop")
 
         with warnings.catch_warnings(record=True) as w:
-            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+            chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
 
         for i in ["._OUTCAR", "._vasprun.xml", "._LOCPOT", ".DS_Store"]:
-            if_present_rm(f"{self.zro2_path}/{i}")
+            if_present_rm(f"{self.ZrO2_path}/{i}")
 
     def test_vaspruns_none_parsed(self):
         with (
@@ -1963,9 +1963,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         (subfolder=None) picks vasp_std when present.
         """
         cpa_default = chemical_potentials.CompetingPhasesAnalyzer(
-            "ZrO2", self.zro2_path, subfolder="vasp_std"
+            "ZrO2", self.ZrO2_path, subfolder="vasp_std"
         )
-        cpa_auto = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path, subfolder=None)
+        cpa_auto = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path, subfolder=None)
         self._compare_cpas(cpa_default, cpa_auto)
 
     def _build_mixed_subfolder_tree(self, tmp_path):
@@ -1981,7 +1981,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         Returns the set of vasp_ncl vasprun paths (as resolved strings).
         """
-        src = self.zro2_path
+        src = self.ZrO2_path
         ncl_phases = ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]
         std_decoy = "Zr3O_EaH_0.0"
 
@@ -2035,7 +2035,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         discovered vaspruns are used as a fallback.
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
-            src = self.zro2_path
+            src = self.ZrO2_path
             for phase in ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]:
                 dest_dir = os.path.join(tmp_dir, phase, "vasp_std")
                 os.makedirs(dest_dir)
@@ -2056,7 +2056,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         ``subfolder=None`` should detect ``"."`` and parse all of them.
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
-            src = self.zro2_path
+            src = self.ZrO2_path
             for phase in ["ZrO2_EaH_0.0", "Zr_EaH_0.0", "O2_EaH_0.0"]:
                 dest_dir = os.path.join(tmp_dir, phase)
                 os.makedirs(dest_dir)
@@ -2075,17 +2075,17 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         from pathlib import Path
 
-        calc_df = _get_calc_files_df(Path(self.zro2_path))
+        calc_df = _get_calc_files_df(Path(self.ZrO2_path))
         assert not calc_df.empty
         assert set(calc_df["filename"].unique()) == {"vasprun.xml.gz"}
         assert len(calc_df["folder_in_root"].unique()) == 8
 
-        calc_df, folders, subfolder = _find_calc_outputs(self.zro2_path)
+        calc_df, folders, subfolder = _find_calc_outputs(self.ZrO2_path)
         assert not calc_df.empty
         assert len(folders) == 8
         assert subfolder == "vasp_std"
 
-        calc_df, folders, subfolder = _find_calc_outputs(self.zro2_path, subfolder="vasp_gam")
+        calc_df, folders, subfolder = _find_calc_outputs(self.ZrO2_path, subfolder="vasp_gam")
         assert not calc_df.empty
         assert subfolder == "vasp_gam"
 
@@ -2101,7 +2101,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             assert subfolder == "vasp_ncl"
 
     def test_latex_table(self):
-        cpa = self.zro2_cpa
+        cpa = self.ZrO2_cpa
 
         def _test_latex_table(cpa=cpa, ref_filename="default.tex", **kwargs):
             return_str, stdout, w = _run_func_and_capture_stdout_warnings(cpa.to_LaTeX_table, **kwargs)
@@ -2124,14 +2124,14 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         ]:
             _test_latex_table(ref_filename=ref_filename, **kwargs)
 
-        _test_latex_table(self.la_zro2_cpa, "La_default.tex")
+        _test_latex_table(self.La_ZrO2_cpa, "La_default.tex")
 
         with pytest.raises(ValueError):
             cpa.to_LaTeX_table(splits=3)
 
     def test_combine_extrinsic(self):
         d = chemical_potentials.combine_extrinsic(
-            self.la_zro2_parsed_chempots, self.y_zro2_parsed_chempots, "Y"
+            self.La_ZrO2_parsed_chempots, self.y_ZrO2_parsed_chempots, "Y"
         )
         assert len(d["elemental_refs"].keys()) == 4
         limits = list(d["limits"].keys())
@@ -2140,20 +2140,20 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
     def test_combine_extrinsic_errors(self):
         d = {"a": 1}
         with pytest.raises(KeyError):
-            chemical_potentials.combine_extrinsic(d, self.y_zro2_parsed_chempots, "Y")
+            chemical_potentials.combine_extrinsic(d, self.y_ZrO2_parsed_chempots, "Y")
 
         with pytest.raises(KeyError):
-            chemical_potentials.combine_extrinsic(self.la_zro2_parsed_chempots, d, "Y")
+            chemical_potentials.combine_extrinsic(self.La_ZrO2_parsed_chempots, d, "Y")
 
         with pytest.raises(ValueError):
             chemical_potentials.combine_extrinsic(
-                self.la_zro2_parsed_chempots, self.y_zro2_parsed_chempots, "R"
+                self.La_ZrO2_parsed_chempots, self.y_ZrO2_parsed_chempots, "R"
             )
 
     def test_get_formation_energy_df(self):
-        cpa = self.zro2_cpa
+        cpa = self.ZrO2_cpa
 
-        def _check_zro2_form_e_df(
+        def _check_ZrO2_form_e_df(
             form_e_df, skip_rounding=False, include_dft_energies=False, prune_polymorphs=False
         ):
             if prune_polymorphs:
@@ -2162,7 +2162,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )  # only ground states of each phase (including Zr2O with EaH > 0)
 
             assert form_e_df.index.to_numpy().tolist() == (
-                self.zro2_entry_list if not prune_polymorphs else self.zro2_entry_list[:4] + ["Zr2O"]
+                self.ZrO2_entry_list if not prune_polymorphs else self.ZrO2_entry_list[:4] + ["Zr2O"]
             )
             space_groups = ["P2_1/c", "P6_3/mmc", "P4/mmm", "R-3c", "Pbca", "P6_322", "P312", "Ibam"]
             assert form_e_df["Space Group"].to_numpy().tolist() == (
@@ -2180,11 +2180,11 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             {"prune_polymorphs": True},
             {"prune_polymorphs": True, "skip_rounding": True, "include_dft_energies": True},
         ]:
-            _check_zro2_form_e_df(cpa.get_formation_energy_df(**kwargs), **kwargs)
+            _check_ZrO2_form_e_df(cpa.get_formation_energy_df(**kwargs), **kwargs)
 
         la_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             composition="ZrO2",
-            entries=self.la_zro2_path,
+            entries=self.La_ZrO2_path,
         )
         la_form_e_df = la_cpa.get_formation_energy_df()
         assert len(la_form_e_df) == len(la_cpa.entries)
@@ -2194,7 +2194,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         assert la_form_e_df.iloc[6].tolist() == ["Fd-3m", 0.0, -40.877, -3.716, "3x3x3"]  # La2Zr2O7
 
     def test_repr(self):
-        cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         assert (
             "doped CompetingPhasesAnalyzer for bulk composition ZrO2 with 8 entries (in self.entries):"
             in repr(cpa)
@@ -2206,7 +2206,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         la_cpa = chemical_potentials.CompetingPhasesAnalyzer(
             composition="ZrO2",
-            entries=self.la_zro2_path,
+            entries=self.La_ZrO2_path,
         )
         assert (
             "doped CompetingPhasesAnalyzer for bulk composition ZrO2 with 11 entries (in self.entries):"
@@ -2297,13 +2297,13 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
     def test_general_cpa_reloading(self):
         with warnings.catch_warnings(record=True) as w:
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
         self._general_cpa_check(cpa)
 
         with warnings.catch_warnings(record=True) as w:
-            la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
+            la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert not w
         self._general_cpa_check(la_cpa)
@@ -2316,16 +2316,16 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         # convert to mismatching O2 calc:
         shutil.move(
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
         )
         shutil.move(
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz",
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/mismatching_incar_vr.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
         )
 
         with warnings.catch_warnings(record=True) as w:
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         expected_mismatching_info = [
             "There are mismatching INCAR tags",
@@ -2339,7 +2339,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         # test no warning with check_compatibility=False:
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer(
-                "ZrO2", self.zro2_path, check_compatibility=False
+                "ZrO2", self.ZrO2_path, check_compatibility=False
             )
         _print_warning_info(w)  # for debugging
         assert not w
@@ -2347,18 +2347,18 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         # test with extrinsic case:
         shutil.copyfile(
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",  # this is mismatching vr
-            f"{self.la_zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",  # this is mismatching vr
+            f"{self.La_ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
         )
 
         with warnings.catch_warnings(record=True) as w:
-            la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.la_zro2_path)
+            la_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.La_ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert all(any(i in str(warning.message) for warning in w) for i in expected_mismatching_info)
         self._general_cpa_check(la_cpa)
 
         with warnings.catch_warnings(record=True) as w:
-            mgo_cpa = chemical_potentials.CompetingPhasesAnalyzer("MgO", self.mgo_path)
+            MgO_cpa = chemical_potentials.CompetingPhasesAnalyzer("MgO", self.MgO_path)
         _print_warning_info(w)  # for debugging
         assert all(
             any(i in str(warning.message) for warning in w)
@@ -2369,7 +2369,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 "Where MgO was used as the reference entry calculation.",
             ]
         )
-        self._general_cpa_check(mgo_cpa)
+        self._general_cpa_check(MgO_cpa)
 
     def test_mismatching_potcar_warnings(self):
         """
@@ -2379,16 +2379,16 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         """
         # convert to mismatching O2 calc, with fake "O_h" POTCAR:
         shutil.move(
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/orig_vr.xml.gz",
         )
         shutil.move(
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz",
-            f"{self.zro2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/mismatching_potcar_vr.xml.gz",
+            f"{self.ZrO2_path}/O2_EaH_0.0/vasp_std/vasprun.xml.gz",
         )
 
         with warnings.catch_warnings(record=True) as w:
-            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.zro2_path)
+            cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.ZrO2_path)
         _print_warning_info(w)  # for debugging
         assert all(
             any(i in str(warning.message) for warning in w)
@@ -2404,7 +2404,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         # test no warning with check_compatibility=False:
         with warnings.catch_warnings(record=True) as w:
             cpa = chemical_potentials.CompetingPhasesAnalyzer(
-                "ZrO2", self.zro2_path, check_compatibility=False
+                "ZrO2", self.ZrO2_path, check_compatibility=False
             )
         _print_warning_info(w)  # for debugging
         assert not w
@@ -2415,7 +2415,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         Test case where bulk composition is not found in the supplied data.
         """
         with pytest.raises(ValueError) as exc:
-            _cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.mgo_path)
+            _cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", self.MgO_path)
 
         assert (
             "Could not find bulk phase for ZrO2 in the supplied data. Found intrinsic phase diagram "
@@ -2541,9 +2541,32 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         cls.Sn_in_Cs2AgBiBr6_std_cpa = loadfn(
             os.path.join(cls.cpa_folder, "Sn_in_Cs2AgBiBr6_std_cpa.json")
         )
-        cls.zro2_path = os.path.join(EXAMPLE_DIR, "ZrO2_CompetingPhases")
-        cls.zro2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", cls.zro2_path)
+        cls.ZrO2_path = os.path.join(EXAMPLE_DIR, "ZrO2_CompetingPhases")
+        cls.ZrO2_cpa = chemical_potentials.CompetingPhasesAnalyzer("ZrO2", cls.ZrO2_path)
         # Note we also have Cs2SnBr6 competing phase energies csv in JOSS data folder if needed for tests
+
+        # CuSe2 + Ge: the four `single_extrinsic_phase_limits` modes give visibly different chempots and
+        # heatmaps; cache the two ``CompetingPhases`` queries so the four tests below share them rather
+        # than re-querying MP each time:
+        cls.CuSe2_Ge_cp = chemical_potentials.CompetingPhases(
+            "CuSe2", energy_above_hull=0, extrinsic="Ge", api_key=api_key
+        )
+        cls.CuSe2_Ge_cp_single = chemical_potentials.CompetingPhases(
+            "CuSe2",
+            energy_above_hull=0,
+            extrinsic="Ge",
+            single_extrinsic_phase_limits=True,
+            api_key=api_key,
+        )
+
+        # BaSnO3 + K, In: cache the two ``CompetingPhases`` queries (default and ``codoping=True``)
+        # shared by the 2x2 codoping/``single_extrinsic_phase_limits`` heatmap tests below:
+        cls.BaSnO3_K_In_cp = chemical_potentials.CompetingPhases(
+            "BaSnO3", energy_above_hull=0, extrinsic=["K", "In"], api_key=api_key
+        )
+        cls.BaSnO3_K_In_codoping_cp = chemical_potentials.CompetingPhases(
+            "BaSnO3", energy_above_hull=0, extrinsic=["K", "In"], codoping=True, api_key=api_key
+        )
 
     def tearDown(self):
         if_present_rm("test.png")
@@ -2619,7 +2642,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
 
     def test_chempot_heatmap_2D_error(self):
         with pytest.raises(ValueError) as exc:  # this will likely change with updated code
-            self.zro2_cpa.plot_chempot_heatmap()
+            self.ZrO2_cpa.plot_chempot_heatmap()
         assert (
             "Chemical potential heatmap (i.e. 2D) plotting is not possible for a binary system! You "
             "can use ``cpd = ChemicalPotentialDiagram(cpa.entries); cpd.get_plot()`` to generate a "
@@ -2756,7 +2779,25 @@ class TestChemicalPotentialGrid(unittest.TestCase):
             label_positions=False,
         )
 
-    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap.png")
+    @custom_mpl_image_compare(filename="CdTe_Cs_extrinsic_chempot_heatmap.png")
+    def test_CdTe_Cs_extrinsic_chempot_heatmap(self):
+        """
+        Test heatmap plotting for a binary host with an extrinsic species (CdTe
+        + Cs).
+        """
+        cp = chemical_potentials.CompetingPhases(
+            "CdTe ",
+            energy_above_hull=0,
+            extrinsic=["Cs"],
+        )
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", cp.entries)
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap()
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_K_fixed.png")
     def test_BaSnO3_K_In_extrinsic_chempot_heatmap(self):
         """
         Test heatmap plotting for a ternary host with two extrinsic species
@@ -2777,20 +2818,155 @@ class TestChemicalPotentialGrid(unittest.TestCase):
         assert not w
         return plot_chempot_heatmap_and_test_no_warnings(cpa, fixed_elements={"K": -2.0})
 
-    @custom_mpl_image_compare(filename="CdTe_Cs_extrinsic_chempot_heatmap.png")
-    def test_CdTe_Cs_extrinsic_chempot_heatmap(self):
+    @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap.png")
+    def test_CuSe2_Ge_extrinsic_chempot_heatmap(self):
         """
-        Test heatmap plotting for a binary host with an extrinsic species (CdTe
-        + Cs).
+        CuSe2 + Ge with the default (``single_extrinsic_phase_limits=False``
+        everywhere): gives 4 chempot limits.
         """
-        cp = chemical_potentials.CompetingPhases(
-            "CdTe ",
-            energy_above_hull=0,
-            extrinsic=["Cs"],
-        )
-        cpa = chemical_potentials.CompetingPhasesAnalyzer("CdTe", cp.entries)
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("CuSe2", self.CuSe2_Ge_cp.entries)
+        assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
+        assert len(cpa.chempots_df) == 4
         with warnings.catch_warnings(record=True) as w:
             fig = cpa.plot_chempot_heatmap()
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
+    def test_CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic(self):
+        """
+        CuSe2 + Ge with default ``CompetingPhases``, then parsing with
+        ``CompetingPhasesAnalyzer(single_extrinsic_phase_limits=True)``, gives
+        2 chempot limits.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "CuSe2", self.CuSe2_Ge_cp.entries, single_extrinsic_phase_limits=True
+        )
+        assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
+        assert len(cpa.chempots_df) == 2
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap()
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
+    def test_CuSe2_Ge_extrinsic_chempot_heatmap_cp_single(self):
+        """
+        CuSe2 + Ge with ``single_extrinsic_phase_limits=True`` at both
+        ``CompetingPhases`` and ``CompetingPhasesAnalyzer`` init: 2 chempot
+        limits, matching
+        ``test_CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic`` (the
+        entry pruning at CP construction is consistent with the single-phase-
+        limit filter at CPA).
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "CuSe2", self.CuSe2_Ge_cp_single.entries, single_extrinsic_phase_limits=True
+        )
+        assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
+        assert len(cpa.chempots_df) == 2
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap()
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CuSe2_Ge_extrinsic_chempot_heatmap_cpa_single_extrinsic.png")
+    def test_CuSe2_Ge_extrinsic_chempot_heatmap_cp_single_cpa_default(self):
+        """
+        CuSe2 + Ge with ``single_extrinsic_phase_limits=True`` at
+        ``CompetingPhases`` initialisation (entries pruned to single-extrinsic-
+        phase candidates), but not at parsing with ``CompetingPhasesAnalyzer``,
+        so we still get the limit at the `intersection` of ``Cu2GeSe3`` and
+        ``Ge4Se9`` (``"Cu2GeSe3-CuSe2-Ge4Se9"``), giving 3 chempot limits.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("CuSe2", self.CuSe2_Ge_cp_single.entries)
+        assert set(cpa.chempots_df.columns) == {"Cu", "Se", "Ge"}
+        assert len(cpa.chempots_df) == 3
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap()
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
+    def test_BaSnO3_K_In_extrinsic_chempot_heatmap_default(self):
+        """
+        BaSnO3 + K, In with default ``CompetingPhases`` (no codoping) and
+        default ``CompetingPhasesAnalyzer``: 18 chempot limits.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("BaSnO3", self.BaSnO3_K_In_cp.entries)
+        assert set(cpa.chempots_df.columns) == {"Ba", "Sn", "O", "K", "In"}
+        assert len(cpa.chempots_df) == 18
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
+    def test_BaSnO3_K_In_extrinsic_chempot_heatmap_cpa_single(self):
+        """
+        BaSnO3 + K, In with default ``CompetingPhases`` (no codoping) and
+        ``single_extrinsic_phase_limits=True`` at ``CompetingPhasesAnalyzer``.
+
+        ``μ_host`` pinned at intrinsic limits, with only single-extrinsic-phase
+        facets retained — gives fewer limits than the default-mode case.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "BaSnO3", self.BaSnO3_K_In_cp.entries, single_extrinsic_phase_limits=True
+        )
+        assert set(cpa.chempots_df.columns) == {"Ba", "Sn", "O", "K", "In"}
+        # single-phase parsing prunes joint-extrinsic facets, so fewer than the 18 default-mode limits:
+        assert 1 <= len(cpa.chempots_df) < 18
+        assert len(cpa.chempots_df) == 7
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_codoping.png")
+    def test_BaSnO3_K_In_extrinsic_chempot_heatmap_codoping(self):
+        """
+        BaSnO3 + K, In with ``codoping=True`` at ``CompetingPhases`` (adds
+        joint K-In phases like ``KInO2``) and default
+        ``CompetingPhasesAnalyzer``: 25 chempot limits, including codoping-
+        specific facets.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer("BaSnO3", self.BaSnO3_K_In_codoping_cp.entries)
+        assert set(cpa.chempots_df.columns) == {"Ba", "Sn", "O", "K", "In"}
+        assert len(cpa.chempots_df) == 25
+        # codoping-specific limits (those including ``KInO2``) only appear with codoping=True:
+        assert any("KInO2" in limit for limit in cpa.chempots_df.index)
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
+        _print_warning_info(w)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="BaSnO3_K_In_extrinsic_chempot_heatmap_default.png")
+    def test_BaSnO3_K_In_extrinsic_chempot_heatmap_codoping_cpa_single(self):
+        """
+        BaSnO3 + K, In with ``codoping=True`` at ``CompetingPhases`` and
+        ``single_extrinsic_phase_limits=True`` at ``CompetingPhasesAnalyzer``.
+
+        The single-phase parser prunes the joint K-In phases that codoping
+        added, so this gives the same results as
+        ``single_extrinsic_phase_limits=True`` with no co-doping.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "BaSnO3",
+            self.BaSnO3_K_In_codoping_cp.entries,
+            single_extrinsic_phase_limits=True,
+        )
+        assert set(cpa.chempots_df.columns) == {"Ba", "Sn", "O", "K", "In"}
+        # codoping-only facets should be pruned by single-phase parsing:
+        assert not any("KInO2" in limit for limit in cpa.chempots_df.index)
+        assert len(cpa.chempots_df) == 7
+        with warnings.catch_warnings(record=True) as w:
+            fig = cpa.plot_chempot_heatmap(fixed_elements={"In": -1})
         _print_warning_info(w)
         assert not w
         return fig

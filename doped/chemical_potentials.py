@@ -73,14 +73,6 @@ pbesol_convrg_set = loadfn(os.path.join(MODULE_DIR, "VASP_sets/PBEsol_Convergenc
 
 elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "Cl": 1.99}
 
-# Default is ``single_extrinsic_phase_limits=False`` (full phase diagram including limits with multiple
-# extrinsic phases), with codoping=False by default (need this option at parsing time). The previous
-# default (``single_extrinsic_phase_limits=True``, equivalent to PyCDT's behaviour) gives the
-# ``single_extrinsic_phase_limits=True`` subset which align across different extrinsic species, but the
-# rest of the limits will be orthogonal (if codoping=False) -- this is likely the reason PyCDT used that
-# behaviour by default (for easier screening), but it's fine, we just need the right flexibility to handle
-# it (maybe with a notebook example of doing this and then plotting formation energies of a range of
-# extrinsic species at once). So need some tests of taking chempots and plotting with this?
 # TODO: Recheck all functionality from old `_chemical_potentials.py` is now present here, w/Claude
 # TODO: Get genAI to try make code in this module more readable. Could do with some informative
 #  comments, in complex workflows, typing, ensure defaults mentioned in docstrings etc.
@@ -4135,6 +4127,10 @@ class CompetingPhasesAnalyzer(MSONable):
         This is only the case for ``png`` output, so saving to e.g. ``svg``
         or ``pdf`` instead will avoid this issue.
 
+        If the heatmap interpolation looks odd (e.g. striation effects),
+        generally this can be easily solved by setting ``n_points`` (via
+        ``**kwargs``) to a higher value (default = 1000).
+
         If using the default colour map (``batlow``) in publications, please
         consider citing: https://zenodo.org/records/8409685
 
@@ -4433,6 +4429,10 @@ def plot_chempot_heatmap(
     This is only the case for ``png`` output, so saving to e.g. ``svg``
     or ``pdf`` instead will avoid this issue.
 
+    If the heatmap interpolation looks odd (e.g. striation effects), generally
+    this can be easily solved by setting ``n_points`` (via ``**kwargs``) to a
+    higher value (default = 1000).
+
     If using the default colour map (``batlow``) in publications, please
     consider citing: https://zenodo.org/records/8409685
 
@@ -4644,21 +4644,25 @@ def plot_chempot_heatmap(
 
     # Set plot limits and labels
     xmax, ymax = points_inside.max(axis=0)
-    xmin, ymin = points_inside.min(axis=0)
+    orig_xmin, orig_ymin = points_inside.min(axis=0)
 
     if xlim is None:
-        element_wise_min_limit_x = element_wise_min_limit[independent_elts[0].symbol]
-        if np.isclose(xmin, default_min_limit):  # xmin = default_min_limit -> unbounded extrinsic
-            xmin = element_wise_min_limit_x  # set xmin to 3 eV below lowest limit for this species
-        x_padding = padding or abs(xmax - xmin) * 0.1
-        xlim = (max(float(xmin - x_padding), element_wise_min_limit_x), float(xmax + x_padding))
+        x_padding = padding or 0.1 * abs(xmax - orig_xmin)
+        if np.isclose(orig_xmin, default_min_limit):  # xmin = default_min_limit -> unbounded extrinsic
+            xmin = element_wise_min_limit[independent_elts[0].symbol] - 3  # set to 3 eV below lowest limit
+            x_padding = padding or 0.1 * abs(xmax - xmin)  # set padding based on updated xmin
+        else:
+            xmin = orig_xmin - x_padding
+        xlim = (float(xmin), float(xmax + x_padding))
 
     if ylim is None:
-        element_wise_min_limit_y = element_wise_min_limit[independent_elts[1].symbol]
-        if np.isclose(ymin, default_min_limit):  # ymin = default_min_limit -> unbounded extrinsic
-            ymin = element_wise_min_limit_y  # set ymin to 3 eV below lowest limit for this species
-        y_padding = padding or abs(ymax - ymin) * 0.1
-        ylim = (max(float(ymin - y_padding), element_wise_min_limit_y), float(ymax + y_padding))
+        y_padding = padding or 0.1 * abs(ymax - orig_ymin)
+        if np.isclose(orig_ymin, default_min_limit):  # ymin = default_min_limit -> unbounded extrinsic
+            ymin = element_wise_min_limit[independent_elts[1].symbol] - 3  # set to 3 eV below lowest limit
+            y_padding = padding or 0.1 * abs(ymax - ymin)  # set padding based on updated ymin
+        else:
+            ymin = orig_ymin - y_padding
+        ylim = (float(ymin), float(ymax + y_padding))
 
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
