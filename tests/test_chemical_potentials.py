@@ -1685,6 +1685,25 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         )
         _compare_chempot_dicts(cpa_parsed_default.chempots, cpa.chempots)
 
+    def _fabricate_Y_analogue_entries(self):
+        """
+        Build Y analogues of the La-bearing phases in ``self.La_ZrO2_cpa`` to
+        get a 2-extrinsic dataset for testing multi-extrinsic behaviour.
+        """
+        extra_entries = []
+        for entry in self.La_ZrO2_cpa.entries:
+            if "La" in entry.composition:
+                comp = Composition(
+                    {"Y" if str(el) == "La" else str(el): n for el, n in entry.composition.items()}
+                )
+                # offset so Y phases differ slightly
+                energy = entry.energy + 0.5 if len(entry.composition) > 1 else entry.energy
+                ce = ComputedEntry(comp, energy)
+                ce.parameters = dict(entry.parameters or {})
+                ce.data = dict(entry.data or {})
+                extra_entries.append(ce)
+        return extra_entries
+
     def test_no_extrinsic_falls_through(self):
         """
         ``single_extrinsic_phase_limits`` with no extrinsic species should be a
@@ -1705,24 +1724,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         for the extrinsic species parsed separately.
         """
         La_limiting_phase = "La2Zr2O7"
-        # fabricate Y analogues of the La phases to construct a 2-extrinsic dataset:
         Y_limiting_phase = "Y2Zr2O7"
-        extra_entries = []
-        for entry in self.La_ZrO2_cpa.entries:
-            if "La" in entry.composition:
-                comp = Composition(
-                    {"Y" if str(el) == "La" else str(el): n for el, n in entry.composition.items()}
-                )
-                # offset so Y phases differ slightly
-                energy = entry.energy + 0.5 if len(entry.composition) > 1 else entry.energy
-                ce = ComputedEntry(comp, energy)
-                ce.parameters = dict(entry.parameters or {})
-                ce.data = dict(entry.data or {})
-                extra_entries.append(ce)
-
         cpa = chemical_potentials.CompetingPhasesAnalyzer(
             "ZrO2",
-            list(self.La_ZrO2_cpa.entries) + extra_entries,
+            list(self.La_ZrO2_cpa.entries) + self._fabricate_Y_analogue_entries(),
             single_extrinsic_phase_limits=True,
         )
         assert set(cpa.extrinsic_elements) == {"La", "Y"}
@@ -1770,6 +1775,115 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
         with pytest.raises(KeyError):
             cpa.calculate_chempots(sort_by="Cu", verbose=False)
+
+    def test_calculate_chempots_does_not_corrupt_intrinsic_chempots(self):
+        """
+        Repeated ``calculate_chempots`` calls (with extrinsic / subset /
+        ``single_extrinsic_phase_limits`` / ``sort_by`` variations) must always
+        leave ``self.intrinsic_chempots`` and ``self.intrinsic_chempots_df``
+        consistent with the host-only intrinsic result -- only the row/key
+        ordering may change with ``sort_by``.
+        """
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "ZrO2",
+            list(self.La_ZrO2_cpa.entries) + self._fabricate_Y_analogue_entries(),
+        )
+        # reference intrinsic values (host-only CPA, parsed independently):
+        ref_chempots = deepcopy(self.ZrO2_cpa.chempots)
+        ref_chempots_df = self.ZrO2_cpa.chempots_df.copy()
+
+        def _check_intrinsic_unchanged():
+            _compare_chempot_dicts(
+                _canonicalise_chempot_dict(cpa.intrinsic_chempots),
+                _canonicalise_chempot_dict(ref_chempots),
+            )
+            assert set(cpa.intrinsic_chempots_df.columns) == set(ref_chempots_df.columns)
+            assert {"-".join(sorted(k.split("-"))) for k in cpa.intrinsic_chempots_df.index} == {
+                "-".join(sorted(k.split("-"))) for k in ref_chempots_df.index
+            }
+            for limit, row in cpa.intrinsic_chempots_df.iterrows():
+                ref_row = ref_chempots_df.loc[
+                    next(
+                        ref_lim
+                        for ref_lim in ref_chempots_df.index
+                        if set(ref_lim.split("-")) == set(limit.split("-"))
+                    )
+                ]
+                for el in cpa.intrinsic_elements:
+                    assert np.isclose(row[el], ref_row[el], atol=1e-5)
+
+        for kwargs in [
+            {},
+            {"extrinsic": "La"},
+            {"extrinsic": ["La", "Y"]},
+            {"single_extrinsic_phase_limits": True},
+            {"sort_by": "Zr"},
+            {"sort_by": "O"},
+            {"sort_by": "La"},  # extrinsic sort: must still leave intrinsic_chempots intact
+            {"extrinsic": "Y", "sort_by": "Y"},
+            {"extrinsic": "La", "single_extrinsic_phase_limits": True, "sort_by": "O"},
+        ]:
+            cpa.calculate_chempots(verbose=False, **kwargs)
+            _check_intrinsic_unchanged()
+
+    def test_calculate_chempots_extrinsic_subset(self):
+        """
+        With ``single_extrinsic_phase_limits=False`` (default) and
+        ``extrinsic`` set to a subset of the parsed extrinsic species, only
+        that subset's competing phases should enter the joint phase diagram,
+        and the result should match the equivalent single-extrinsic CPA.
+        """
+        # construct a multi-extrinsic CPA (La + fabricated Y analogues), then check that requesting
+        # ``extrinsic="La"`` (and ``extrinsic=["La"]``, ``extrinsic=Element("La")``) reproduces the
+        # La-only result, while requesting ``extrinsic="Y"`` reproduces the Y-only result and excludes
+        # La phases:
+        cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "ZrO2",
+            list(self.La_ZrO2_cpa.entries) + self._fabricate_Y_analogue_entries(),
+        )
+        assert set(cpa.extrinsic_elements) == {"La", "Y"}
+
+        # La-only Y-only references for comparison: build a separate CPA from each subset of entries
+        Y_only_cpa = chemical_potentials.CompetingPhasesAnalyzer(
+            "ZrO2",
+            [e for e in cpa.entries if "La" not in e.composition],
+        )
+        assert set(Y_only_cpa.extrinsic_elements) == {"Y"}
+
+        for extrinsic_arg in ["La", ["La"], Element("La")]:
+            subset_df = cpa.calculate_chempots(extrinsic=extrinsic_arg, verbose=False)
+            # columns restricted to intrinsic + La (no Y), ordered host-first then extrinsic:
+            assert list(subset_df.columns) == ["Zr", "O", "La"]
+            # μ values must match the La-only CPA's chempots_df:
+            pd.testing.assert_frame_equal(
+                subset_df,
+                self.La_ZrO2_cpa.chempots_df,
+                check_like=True,
+                rtol=1e-5,
+                atol=1e-5,
+            )
+            # ``self.chempots`` keys/columns mirror the requested subset (no Y):
+            for limit_key in ["limits", "limits_wrt_el_refs"]:
+                for chempot_dict in cpa.chempots[limit_key].values():
+                    assert "Y" not in chempot_dict
+                    assert set(chempot_dict.keys()) == {"Zr", "O", "La"}
+            # no Y-bearing phases should appear in any limit key:
+            assert all("Y" not in limit for limit in cpa.chempots["limits_wrt_el_refs"])
+
+        # symmetric check with the Y subset:
+        Y_subset_df = cpa.calculate_chempots(extrinsic="Y", verbose=False)
+        assert list(Y_subset_df.columns) == ["Zr", "O", "Y"]
+        pd.testing.assert_frame_equal(
+            Y_subset_df,
+            Y_only_cpa.chempots_df,
+            check_like=True,
+            rtol=1e-5,
+            atol=1e-5,
+        )
+        assert all("La" not in limit for limit in cpa.chempots["limits_wrt_el_refs"])
+
+        # ``intrinsic_chempots`` must be unaffected by the subset request:
+        _compare_chempot_dicts(cpa.intrinsic_chempots, self.La_ZrO2_cpa.intrinsic_chempots)
 
     def test_calculate_chempots_missing_extrinsic_elemental_reference(self):
         """

@@ -3828,7 +3828,13 @@ class CompetingPhasesAnalyzer(MSONable):
         Returns:
             ``pandas`` ``DataFrame``, optionally saved to csv.
         """
-        extrinsic_elements = [Element(e) for e in (extrinsic or self.extrinsic_elements)]
+        if extrinsic is None:
+            extrinsic_iter: Iterable[str | Element] = self.extrinsic_elements
+        elif isinstance(extrinsic, str | Element):
+            extrinsic_iter = [extrinsic]
+        else:
+            extrinsic_iter = list(extrinsic)
+        extrinsic_elements = [Element(e) for e in extrinsic_iter]
 
         if missing_extrinsic := [
             elt for elt in extrinsic_elements if elt.symbol not in self.elemental_energies
@@ -3854,22 +3860,19 @@ class CompetingPhasesAnalyzer(MSONable):
             ).rename_axis("Limit")
 
         chempots_df = self.intrinsic_chempots_df = _get_chempots_df_from_chempots(self.intrinsic_chempots)
-        # TODO: Test that self.intrinsic_chempots and self.intrinsic_chempots_df not mutated
 
         if extrinsic_elements:
             if not single_extrinsic_phase_limits:
+                allowed_symbols = set(self.intrinsic_elements) | {elt.symbol for elt in extrinsic_elements}
                 self.chempots = get_doped_chempots_from_entries(
                     [
                         entry
                         for entry in self.phase_diagram.entries
-                        if set(entry.composition.elements).issubset(
-                            self.intrinsic_elements + extrinsic_elements
-                        )
+                        if {el.symbol for el in entry.composition.elements}.issubset(allowed_symbols)
                     ],
                     self.composition,
                     single_chempot_limit=self.unstable_host,
-                )  # TODO: Test setting extrinsic_elements subset with
-                # ``single_extrinsic_phase_limits=False``
+                )
                 chempots_df = _get_chempots_df_from_chempots(self.chempots)
             else:  # single extrinsic phase limits
                 for extrinsic_element in extrinsic_elements:
