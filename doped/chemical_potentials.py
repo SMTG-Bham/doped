@@ -75,7 +75,9 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 
 # TODO: Update chemical potentials tutorial notebook for new code/function names. Show example of
 #  combining entries from a previously parsed CPA with a new one (i.e. similar functionality to previous
-#  ``combine_extrinsic`` function, but more appropriate).
+#  ``combine_extrinsic`` function, but more appropriate), and example adjusting entry energy as noted below
+#  and maybe note the possibility of using ``single_extrinsic_phase_limits`` for generation but not parsing
+#  as a reasonable approach to boosting efficiency without major accuracy loss.
 
 MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
