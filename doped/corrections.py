@@ -204,7 +204,7 @@ def get_freysoldt_correction(
             (from ``doped/utils/doped.mplstyle``).
         **kwargs:
             Additional kwargs to pass to
-            ``pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction``
+            :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
             (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
             ``defect_frac_coords``).
 

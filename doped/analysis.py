@@ -690,7 +690,7 @@ def _get_soap_vecs_for_guess(
     channels are zero).
 
     Refactored from the implementation in
-    :func:`pymatgen.analysis.defects.finder.get_soap_vec` to be more efficient
+    :func:`~pymatgen.analysis.defects.finder.get_soap_vec` to be more efficient
     (using a leaner, but robust SOAP featurisation) and to properly include
     species identities.
     """

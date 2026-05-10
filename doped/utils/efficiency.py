@@ -810,8 +810,8 @@ def StructureMatcher_scan_stol(
 class DopedTopographyAnalyzer:
     """
     This is a modified version of
-    ``pymatgen.analysis.defects.utils.TopographyAnalyzer`` to lean down the
-    input options and make initialisation far more efficient (~2 orders of
+    :class:`~pymatgen.analysis.defects.utils.TopographyAnalyzer` to lean down
+    the input options and make initialisation far more efficient (~2 orders of
     magnitude faster).
 
     The original code was written by Danny Broberg and colleagues

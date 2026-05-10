@@ -426,7 +426,7 @@ class DefectEntry(thermo.DefectEntry):
                 (from ``doped/utils/doped.mplstyle``).
             **kwargs:
                 Additional kwargs to pass to
-                ``pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction``
+                :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
                 (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
                 ``defect_frac_coords``).
 
@@ -2219,7 +2219,7 @@ class Defect(core.Defect):
         **doped_kwargs,
     ):
         """
-        Subclass of :class:`pymatgen.analysis.defects.core.Defect` with
+        Subclass of :class:`~pymatgen.analysis.defects.core.Defect` with
         additional attributes and methods used by ``doped``.
 
         Args:
@@ -2955,8 +2955,8 @@ def doped_defect_from_pmg_defect(
 class Vacancy(Defect, core.Vacancy):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of ``pymatgen.analysis.defects.core.Vacancy`` with additional
-        attributes and methods used by ``doped``.
+        Subclass of :class:`~pymatgen.analysis.defects.core.Vacancy` with
+        additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
 
@@ -2971,7 +2971,7 @@ class Vacancy(Defect, core.Vacancy):
 class Substitution(Defect, core.Substitution):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of ``pymatgen.analysis.defects.core.Substitution`` with
+        Subclass of :class:`~pymatgen.analysis.defects.core.Substitution` with
         additional attributes and methods used by ``doped``.
         """
         super().__init__(*args, **kwargs)
@@ -2987,7 +2987,7 @@ class Substitution(Defect, core.Substitution):
 class Interstitial(Defect, core.Interstitial):
     def __init__(self, *args, **kwargs):
         """
-        Subclass of ``pymatgen.analysis.defects.core.Interstitial`` with
+        Subclass of :class:`~pymatgen.analysis.defects.core.Interstitial` with
         additional attributes and methods used by ``doped``.
 
         If ``multiplicity`` is not set in ``kwargs``, then it will be
