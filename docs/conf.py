@@ -111,7 +111,10 @@ intersphinx_mapping = {
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     # TODO: Test and add pmg defects docs linking once its website is back up (doped.core mostly)
-    "pymatgen.analysis.defects": ("https://materialsproject.github.io/pymatgen-analysis-defects/api_ref/", None),
+    "pymatgen.analysis.defects": (
+        "https://materialsproject.github.io/pymatgen-analysis-defects/api_ref/",
+        None,
+    ),
     "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
 }
 
@@ -139,6 +142,8 @@ rst_prolog = """
 .. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
 .. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
+.. |ChemicalPotentialGrid| replace:: :class:`~doped.chemical_potentials.ChemicalPotentialGrid`
+.. |CompetingPhases| replace:: :class:`~doped.chemical_potentials.CompetingPhases`
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
 .. |Defect| replace:: :class:`~doped.core.Defect`
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
@@ -152,11 +157,13 @@ rst_prolog = """
 .. |Vasprun| replace:: :class:`~pymatgen.io.vasp.outputs.Vasprun`
 .. |Procar| replace:: :class:`~pymatgen.io.vasp.outputs.Procar`
 .. |Outcar| replace:: :class:`~pymatgen.io.vasp.outputs.Outcar`
+.. |StructureMatcher| replace:: :class:`~pymatgen.core.structure_matcher.StructureMatcher`
+.. |StructureMatcher_scan_stol| replace:: :func:`~doped.utils.efficiency.StructureMatcher_scan_stol`
+.. |ComputedEntry| replace:: :class:`~pymatgen.core.entries.ComputedEntry`
+.. |ComputedStructureEntry| replace:: :class:`~pymatgen.core.entries.ComputedStructureEntry`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__
 .. |DeepWiki| replace:: `DeepWiki <https://deepwiki.com/SMTG-Bham/doped>`__
 .. |Guidelines Perspective| replace:: `Guidelines for robust and reproducible point defect simulations in crystals <https://doi.org/10.1038/s41578-025-00879-y>`__
 """
-# TODO: Add Structurematcher, ComputedEntry and ComputedStructureEntry once new pymatgen structure
-#  determined

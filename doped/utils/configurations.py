@@ -26,8 +26,8 @@ def get_transformation_from_s2_to_s1(
     Get the supercell transformation, fractional translation vector, and a
     mapping to transform ``struct2`` to be similar to ``struct1``.
 
-    Copied over from the ``pymatgen`` ``StructureMatcher`` class, to allow
-    usage with the fast ``StructureMatcher_scan_stol`` function from ``doped``,
+    Copied over from the ``pymatgen`` |StructureMatcher| class, to allow
+    usage with the fast |StructureMatcher_scan_stol| function from ``doped``,
     along with caching to reduce redundancy; e.g. when looping over multiple
     defects for stenciling etc.
 
@@ -106,7 +106,7 @@ def apply_s2_to_s1_transformation(
     as in the stenciling workflow, without needing the ordering of sites in the
     ``Structure`` objects to match).
 
-    Templated from the ``pymatgen`` ``StructureMatcher`` class, to allow direct
+    Templated from the ``pymatgen`` |StructureMatcher| class, to allow direct
     usage without repeating the expensive ``get_transformation`` call (e.g.
     when applying the same transformation to the bulk and defect supercells in
     defect stenciling).
@@ -181,7 +181,7 @@ def apply_s2_to_s1_transformation(
     sites = [temp.sites[i] for i in mapping if i is not None]  # get sites in correct order (from mapping)
 
     if include_ignored_species:  # add back in ignored species / any sites not in ``mapping``
-        # note that this differs slightly from the ``pymatgen`` ``StructureMatcher`` implementation, which
+        # note that this differs slightly from the ``pymatgen`` |StructureMatcher| implementation, which
         # assumes that any sites not in ``mapping`` are ignored species (not the case when using a subset
         # of sites to determine the transformation matrix and translation vector, as in stenciling)
         sites.extend([temp.sites[i] for i in range(len(temp)) if i not in mapping])
@@ -356,7 +356,7 @@ def orient_s2_like_s1(
             by reorientation alone. Set to ``False`` to skip the check.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()`` /
-            ``StructureMatcher_scan_stol`` (e.g. ``ignored_species``,
+            |StructureMatcher_scan_stol| (e.g. ``ignored_species``,
             ``comparator``, ``max_stol``, ``min_stol`` etc).
 
     Returns:
@@ -485,7 +485,7 @@ def get_dQ(
             Default: ``False``
         **sm_kwargs:
             Additional keyword arguments to forward to ``orient_s2_like_s1()``
-            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``),
+            (and hence |StructureMatcher| / |StructureMatcher_scan_stol|),
             if/when re-orientation is performed.
 
     Returns:
@@ -559,7 +559,7 @@ def _reorient_struct2_and_warn(
             Default: ``False``
         **sm_kwargs:
             Additional keyword arguments forwarded to ``orient_s2_like_s1``
-            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``).
+            (and hence |StructureMatcher| / |StructureMatcher_scan_stol|).
 
     Returns:
         Structure:
@@ -702,7 +702,7 @@ def get_path_structures(
             re-orientation). Default: ``False``
         **sm_kwargs:
             Additional keyword arguments to forward to ``orient_s2_like_s1()``
-            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``),
+            (and hence |StructureMatcher| / |StructureMatcher_scan_stol|),
             when re-orientation is performed.
 
     Returns:
@@ -933,7 +933,7 @@ def write_path_structures(
             re-orientation). Default: ``False``
         **sm_kwargs:
             Additional keyword arguments to forward to ``orient_s2_like_s1()``
-            (and hence ``StructureMatcher`` / ``StructureMatcher_scan_stol``),
+            (and hence |StructureMatcher| / |StructureMatcher_scan_stol|),
             when re-orientation is performed.
 
     Returns:

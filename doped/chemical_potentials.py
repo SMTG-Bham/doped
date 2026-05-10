@@ -162,8 +162,8 @@ def make_molecule_in_a_box(element: str) -> Structure:
 
 def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntry:
     """
-    Generate a new ``ComputedStructureEntry`` for a molecule in a box, for the
-    input elemental ``ComputedEntry``.
+    Generate a new |ComputedStructureEntry| for a molecule in a box, for the
+    input elemental |ComputedEntry|.
 
     The formula of the input ``computed_entry`` must be one of the supported
     diatomic molecules (O2, N2, H2, F2, Cl2). The magnetization of the output
@@ -173,12 +173,12 @@ def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntr
     ``NUPDOWN`` in ``VASP``) appropriately, with ``_set_spin_polarisation()``.
 
     Args:
-        computed_entry (ComputedEntry):
-            ``ComputedEntry`` object for the elemental entry.
+        computed_entry (|ComputedEntry|):
+            |ComputedEntry| object for the elemental entry.
 
     Returns:
-        ComputedStructureEntry:
-            ``ComputedStructureEntry`` for the molecule in a box.
+        |ComputedStructureEntry|:
+            |ComputedStructureEntry| for the molecule in a box.
     """
     assert len(computed_entry.composition.elements) == 1  # Elemental!
     formula = computed_entry.data.get("formula_pretty", "N/A")
@@ -217,13 +217,12 @@ def _renormalise_entry(
     description: str | None = None,
 ) -> ComputedEntry | ComputedStructureEntry:
     """
-    Regenerate the input entry (``ComputedEntry``/``ComputedStructureEntry``)
-    with an energy per atom `decreased` by ``renormalisation_energy_per_atom``,
-    by appending an ``EnergyAdjustment`` object to
-    ``entry.energy_adjustments``.
+    Regenerate the input entry (|ComputedEntry|/|ComputedStructureEntry|) with
+    an energy per atom `decreased` by ``renormalisation_energy_per_atom``, by
+    appending an ``EnergyAdjustment`` object to ``entry.energy_adjustments``.
 
     Args:
-        entry (ComputedEntry/ComputedStructureEntry):
+        entry (|ComputedEntry|/|ComputedStructureEntry|):
             Input entry to renormalise.
         renormalisation_energy_per_atom (float):
             Energy to subtract from the entry's energy per atom.
@@ -235,7 +234,7 @@ def _renormalise_entry(
             entry. Default is ``None``.
 
     Returns:
-        ComputedEntry/ComputedStructureEntry: Renormalised entry.
+        |ComputedEntry|/|ComputedStructureEntry|: Renormalised entry.
     """
     renormalisation_energy = -renormalisation_energy_per_atom * sum(entry.composition.values())
     if name is not None or description is not None:
@@ -258,8 +257,8 @@ def get_chempots_from_phase_diagram(
     supplied phase diagram.
 
     Args:
-        bulk_computed_entry (ComputedEntry):
-            ``ComputedEntry``/``ComputedStructureEntry`` object for the host
+        bulk_computed_entry (|ComputedEntry|):
+            |ComputedEntry|/|ComputedStructureEntry| object for the host
             composition.
         phase_diagram (PhaseDiagram):
             ``PhaseDiagram`` object for the system of interest.
@@ -314,7 +313,7 @@ def get_entries_in_chemsys(
     **kwargs: Any,
 ) -> list[ComputedStructureEntry]:
     r"""
-    Convenience function to get a list of ``ComputedStructureEntry``\s for an
+    Convenience function to get a list of |ComputedStructureEntry|\s for an
     input chemical system, using ``MPRester.get_entries_in_chemsys()``.
 
     Automatically uses the appropriate format and syntax required for the (new)
@@ -338,7 +337,7 @@ def get_entries_in_chemsys(
             ["A", "B", "C"]. E.g. "Li-Fe-O" or ["Li", "Fe", "O"].
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding ``ComputedStructureEntry``s. If not
+            to obtain the corresponding |ComputedStructureEntry|\s. If not
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
@@ -358,8 +357,8 @@ def get_entries_in_chemsys(
             ``get_entries_in_chemsys()`` query.
 
     Returns:
-        list[ComputedStructureEntry]:
-            List of ``ComputedStructureEntry`` objects for the input chemical
+        list[|ComputedStructureEntry|]:
+            List of |ComputedStructureEntry| objects for the input chemical
             system.
     """
     with MPRester(api_key) as mpr:
@@ -399,7 +398,7 @@ def get_entries(
     **kwargs: Any,
 ) -> list[ComputedStructureEntry]:
     r"""
-    Convenience function to get a list of ``ComputedStructureEntry``\s for an
+    Convenience function to get a list of |ComputedStructureEntry|\s for an
     input single composition/formula, chemical system, MPID or full criteria,
     using ``MPRester.get_entries()``.
 
@@ -414,7 +413,7 @@ def get_entries(
             (e.g., mp-1234) or full Mongo-style dict criteria.
         api_key (str):
             Materials Project (MP) API key, needed to access the MP database
-            to obtain the corresponding ``ComputedStructureEntry``s. If not
+            to obtain the corresponding |ComputedStructureEntry|\s. If not
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
@@ -429,8 +428,9 @@ def get_entries(
             ``get_entries()`` query.
 
     Returns:
-        list[ComputedStructureEntry]:
-            List of ``ComputedStructureEntry`` objects for the input chemical system.
+        list[|ComputedStructureEntry|]:
+            List of |ComputedStructureEntry| objects for the input chemical
+            system.
     """
     with MPRester(api_key) as mpr:
         entries = mpr.get_entries(
@@ -492,15 +492,15 @@ def get_MP_summary_dicts(
     computed entries in the input ``entries`` list or ``chemsys`` chemical
     system.
 
-    If ``entries`` is provided (which should be a list of ``ComputedEntry``s
+    If ``entries`` is provided (which should be a list of |ComputedEntry|\s
     from the Materials Project), then only summary dictionaries in this
     chemical system which match one of these entries (based on the MPIDs given
     in ``ComputedEntry.entry_id``/``ComputedEntry.data["material_id"]`` and
     ``summary_dict["material_id"]``) are returned.
 
     Args:
-        entries (list[ComputedEntry]):
-            Optional input; list of ``ComputedEntry`` objects for the input
+        entries (list[|ComputedEntry|]):
+            Optional input; list of |ComputedEntry| objects for the input
             chemical system. If provided, only summary dictionaries which match
             one of these entries (based on the MPIDs given in
             ``ComputedEntry.entry_id``/``ComputedEntry.data["material_id"]``
@@ -564,7 +564,7 @@ def _entries_sort_func(
     bulk_composition: str | Composition | dict | list | None = None,
 ) -> tuple[float, bool, int, list[tuple[int, int]], str]:
     r"""
-    Function to sort ``ComputedEntry``\s by energy above hull, then if
+    Function to sort |ComputedEntry|\s by energy above hull, then if
     composition matches ``bulk_composition`` (if provided), then by the number
     of elements in the formula, then by the position of elements in the
     periodic table (main group elements, then transition metals, sorted by
@@ -573,8 +573,8 @@ def _entries_sort_func(
     Usage: ``entries_list.sort(key=_entries_sort_func)``
 
     Args:
-        entry (ComputedEntry):
-            ComputedEntry object to sort.
+        entry (|ComputedEntry|):
+            |ComputedEntry| object to sort.
         use_e_per_atom (bool):
             If ``True``, sort by energy per atom rather than energy above hull.
             Default is ``False``.
@@ -606,8 +606,8 @@ def prune_entries_to_border_candidates(
     phase_diagram: PhaseDiagram | None = None,
     energy_above_hull: float = 0.05,
 ) -> list[ComputedEntry]:
-    """
-    Given an input list of ``ComputedEntry``/``ComputedStructureEntry``s
+    r"""
+    Given an input list of |ComputedEntry|/|ComputedStructureEntry|\s
     (``entries``) and a single entry for the host material
     (``bulk_computed_entry``), returns the subset of entries which `could`
     border the host on the phase diagram (and therefore be a competing phase
@@ -620,11 +620,11 @@ def prune_entries_to_border_candidates(
     ``bulk_computed_entry``.
 
     Args:
-        entries (list[ComputedEntry]):
-            List of ``ComputedEntry`` objects to prune down to potential host
+        entries (list[|ComputedEntry|]):
+            List of |ComputedEntry| objects to prune down to potential host
             border candidates on the phase diagram.
-        bulk_computed_entry (ComputedEntry):
-            ``ComputedEntry`` object for the host material.
+        bulk_computed_entry (|ComputedEntry|):
+            |ComputedEntry| object for the host material.
         phase_diagram (PhaseDiagram):
             Optional input; ``PhaseDiagram`` object for the system of interest.
             If provided, this is used as the reference phase diagram from which
@@ -641,8 +641,8 @@ def prune_entries_to_border_candidates(
             (Default is 0.05 eV/atom).
 
     Returns:
-        list[ComputedEntry]:
-            List of all ``ComputedEntry`` objects in ``entries`` which could
+        list[|ComputedEntry|]:
+            List of all |ComputedEntry| objects in ``entries`` which could
             border the host material on the phase diagram (and thus set the
             chemical potential limits), if their relative energy was
             downshifted by ``energy_above_hull`` eV/atom.
@@ -713,8 +713,8 @@ def get_and_set_competing_phase_name(
     ``doped`` name, unless ``regenerate=True``.
 
     Args:
-        entry (ComputedStructureEntry, ComputedEntry):
-            ``pymatgen`` ``ComputedStructureEntry`` object for the competing
+        entry (|ComputedStructureEntry|, |ComputedEntry|):
+            ``pymatgen`` |ComputedStructureEntry| object for the competing
             phase.
         regenerate (bool):
             Whether to regenerate the ``doped`` name for the competing phase,
@@ -748,7 +748,7 @@ def _nominal_structure_for_input_writing(composition: Composition) -> Structure:
     """
     Build a sparse cubic cell with the correct stoichiometry so VASP input sets
     can be written when an entry has no crystal structure (e.g. MP-missing host
-    composition represented only by a hull-energy ``ComputedEntry``).
+    composition represented only by a hull-energy |ComputedEntry|).
     """
     reduced_comp, _factor = composition.get_reduced_composition_and_factor()
     species: list[Element | str] = []
@@ -787,8 +787,8 @@ def _get_competing_phase_folder_name(
     ``doped`` name, unless ``regenerate=True``.
 
     Args:
-        entry (ComputedStructureEntry, ComputedEntry):
-            ``pymatgen`` ``ComputedStructureEntry`` object for the competing
+        entry (|ComputedStructureEntry|, |ComputedEntry|):
+            ``pymatgen`` |ComputedStructureEntry| object for the competing
             phase.
         regenerate (bool):
             Whether to regenerate the ``doped`` name for the competing phase,
@@ -809,7 +809,7 @@ def _name_entries_and_handle_duplicates(
     entries: list[ComputedStructureEntry | ComputedEntry],
 ) -> None:
     """
-    Set ``entry.data["doped_name"]`` for each ``ComputedEntry`` in ``entries``,
+    Set ``entry.data["doped_name"]`` for each |ComputedEntry| in ``entries``,
     using ``get_and_set_competing_phase_name``, increasing ``ndigits``
     (rounding for energy above hull in name) dynamically from 3 -> 4 -> 5 on
     any entries with duplicate names, to ensure unique naming.
@@ -1334,7 +1334,7 @@ class CompetingPhases(MSONable):
         ``"metals"`` or ``"molecules"``.
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
-        by a hull-energy ``ComputedEntry``), emits a ``UserWarning`` and
+        by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and
         supplies a nominal large-cell ``Structure`` so that ``INCAR`` and
         ``POTCAR`` files can still be written.
         """
@@ -2183,13 +2183,13 @@ class CompetingPhases(MSONable):
 
     def _generate_elemental_diatomic_phases(self, entries: list[ComputedEntry]) -> list[ComputedEntry]:
         r"""
-        Given an input list of ``ComputedEntry`` objects, adds a
-        ``ComputedStructureEntry`` for each diatomic elemental phase (O2, N2,
-        H2, F2, Cl2) to ``entries`` using ``make_molecular_entry``, and
-        generates an output list of ``ComputedEntry`` /
-        ``ComputedStructureEntry``\s containing all entries in ``entries``,
-        with `all` elemental phases of O, N, H, F, Cl replaced by the single
-        corresponding molecule-in-a-box entry.
+        Given an input list of |ComputedEntry| objects, adds a
+        |ComputedStructureEntry| for each diatomic elemental phase (O2, N2, H2,
+        F2, Cl2) to ``entries`` using ``make_molecular_entry``, and generates
+        an output list of |ComputedEntry| / |ComputedStructureEntry|\s
+        containing all entries in ``entries``, with `all` elemental phases of
+        O, N, H, F, Cl replaced by the single corresponding molecule-in-a-box
+        entry.
 
         Also sets the ``ComputedEntry.data["molecule"]`` flag for each entry in
         ``entries`` (``True`` for diatomic gases, ``False`` for all others).
@@ -2200,13 +2200,13 @@ class CompetingPhases(MSONable):
         by row).
 
         Args:
-            entries (list[ComputedEntry]):
-                List of ``ComputedEntry``/``ComputedStructureEntry`` objects
+            entries (list[|ComputedEntry|]):
+                List of |ComputedEntry|/|ComputedStructureEntry| objects
                 for the input chemical system.
 
         Returns:
-            list[ComputedEntry]:
-                List of ``ComputedEntry``/``ComputedStructureEntry`` objects
+            list[|ComputedEntry|]:
+                List of |ComputedEntry|/|ComputedStructureEntry| objects
                 for the input chemical system, with diatomic elemental phases
                 replaced by the single molecule-in-a-box entry.
         """
@@ -2300,7 +2300,7 @@ class CompetingPhases(MSONable):
 
     def __repr__(self) -> str:
         """
-        Returns a string representation of the ``CompetingPhases`` object.
+        Returns a string representation of the |CompetingPhases| object.
         """
         formula = self.composition.get_reduced_formula_and_factor(iupac_ordering=True)[0]
         properties, methods = _doped_obj_properties_methods(self)
@@ -2365,21 +2365,21 @@ def get_doped_chempots_from_entries(
     single_chempot_limit: bool = False,
 ) -> dict:
     r"""
-    Given a list of ``ComputedEntry``\s / ``ComputedStructureEntry``\s /
+    Given a list of |ComputedEntry|\s / |ComputedStructureEntry|\s /
     ``PDEntry``\s and the bulk ``composition``, returns the chemical potential
     limits dictionary in the ``doped`` format (i.e. ``{"limits": [{'limit':
     [chempot_dict]}], ...}``) for the host material.
 
     Args:
-        entries (list[ComputedEntry]):
-            List of ``ComputedEntry``\s / ``ComputedStructureEntry``\s /
+        entries (list[|ComputedEntry|]):
+            List of |ComputedEntry|\s / |ComputedStructureEntry|\s /
             ``PDEntry``\s for the chemical system, from which to determine
             the chemical potential limits for the host material
             (``composition``).
-        composition (str, Composition, ComputedEntry):
+        composition (str, Composition, |ComputedEntry|):
             Composition of the host material either as a string
             (e.g. 'LiFePO4') a ``pymatgen`` |Composition| object (e.g.
-            ``Composition('LiFePO4')``), or a ``ComputedEntry`` object.
+            ``Composition('LiFePO4')``), or a |ComputedEntry| object.
         single_chempot_limit (bool):
             If set to ``True``, only returns the first chemical potential limit
             in the calculated chemical potentials dictionary. Mainly intended
@@ -2425,7 +2425,7 @@ class ChemicalPotentialGrid(MSONable):
 
     def __init__(self, chempots: dict[str, Any], format_chempot_labels: bool = True):
         r"""
-        Initializes the ``ChemicalPotentialGrid`` with chemical potential data.
+        Initializes the |ChemicalPotentialGrid| with chemical potential data.
 
         This constructor takes a dictionary of chemical potentials and sets up
         the initial vertices of the grid.
@@ -2467,7 +2467,7 @@ class ChemicalPotentialGrid(MSONable):
     @classmethod
     def from_dataframe(cls, vertices: pd.DataFrame) -> "ChemicalPotentialGrid":
         """
-        Create a ``ChemicalPotentialGrid`` object from a dataframe of the
+        Create a |ChemicalPotentialGrid| object from a dataframe of the
         chemical potential limits (i.e. vertices).
 
         Args:
@@ -2478,7 +2478,7 @@ class ChemicalPotentialGrid(MSONable):
 
         Returns:
             ChemicalPotentialGrid:
-                A ``ChemicalPotentialGrid`` object.
+                A |ChemicalPotentialGrid| object.
         """
         self = cls.__new__(cls)  # skip init function
         self.vertices = vertices
@@ -2989,7 +2989,7 @@ def entries_from_chempot_limits(
     chempots_dict: dict[str, dict],
 ) -> list[ComputedEntry]:
     """
-    Generate a list of ``ComputedEntry`` objects from a ``doped`` dictionary of
+    Generate a list of |ComputedEntry| objects from a ``doped`` dictionary of
     chemical potential limits.
 
     These entries will correspond to the ground-state phase for each
@@ -3008,8 +3008,8 @@ def entries_from_chempot_limits(
                     {"Li": mu_Li_ref, "P": mu_P_ref, ...}
 
     Returns:
-        list[ComputedEntry]:
-            List of ``ComputedEntry`` objects, with energies per formula unit.
+        list[|ComputedEntry|]:
+            List of |ComputedEntry| objects, with energies per formula unit.
     """
     phase_energies: dict[str, list[float]] = defaultdict(list)
 
@@ -3053,7 +3053,7 @@ class CompetingPhasesAnalyzer(MSONable):
         This class can be initialised from VASP outputs (``vasprun.xml``\s) by
         specifying the path to the directory containing the outputs (e.g.
         ``"CompetingPhases"``) or a list of directories, or from a list of of
-        ``ComputedEntry``\s / ``ComputedStructureEntry``\s (e.g. for use with
+        |ComputedEntry|\s / |ComputedStructureEntry|\s (e.g. for use with
         high-throughput computing architectures such as ``atomate2`` or
         ``AiiDA``).
 
@@ -3071,13 +3071,13 @@ class CompetingPhasesAnalyzer(MSONable):
                 Composition of the host material (e.g. ``'LiFePO4'``, or
                 ``Composition('LiFePO4')``, or
                 ``Composition({"Li":1, "Fe":1, "P":1, "O":4})``).
-            entries (PathLike, list[PathLike], list[ComputedEntry], list[ComputedStructureEntry]):
+            entries (PathLike, list[PathLike], list[|ComputedEntry|], list[|ComputedStructureEntry|]):
                 Either a path to the base folder containing the VASP outputs
                 (e.g. ``"CompetingPhases"``; default), which is searched
                 recursively for ``vasprun.xml(.gz)`` files, or a list of
                 paths to ``vasprun.xml(.gz)`` files / directories.
-                Alternatively, can be a list of ``ComputedEntry``\s /
-                ``ComputedStructureEntry``\s.
+                Alternatively, can be a list of |ComputedEntry|\s /
+                |ComputedStructureEntry|\s.
             subfolder (PathLike):
                 Restrict parsing to ``vasprun.xml(.gz)`` files inside
                 directories with this name (e.g. ``"vasp_std"``; default) --
@@ -3148,14 +3148,14 @@ class CompetingPhasesAnalyzer(MSONable):
                 in ``composition``).
             intrinsic_elements (str):
                 List of intrinsic elements (i.e. those in ``composition``).
-            bulk_entry (ComputedStructureEntry):
+            bulk_entry (|ComputedStructureEntry|):
                 The lowest energy computed entry for the host material.
             unstable_host (bool):
                 Whether the host material is unstable with respect to competing
                 phases (i.e. has an energy above hull > 0).
-            entries (list[ComputedEntry | ComputedStructureEntry]):
-                List of all parsed ``ComputedEntry``\s /
-                ``ComputedStructureEntry``\s.
+            entries (list[|ComputedEntry|, |ComputedStructureEntry|]):
+                List of all parsed |ComputedEntry|\s /
+                |ComputedStructureEntry|\s.
             phase_diagram (PhaseDiagram):
                 A ``pymatgen`` phase diagram generated from the parsed entries.
                 Note that this phase diagram is likely not a full phase diagram
@@ -3207,11 +3207,11 @@ class CompetingPhasesAnalyzer(MSONable):
     ) -> None:
         r"""
         Initialises the |CompetingPhasesAnalyzer| object from a list of
-        ``pymatgen`` ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+        ``pymatgen`` |ComputedEntry|\s / |ComputedStructureEntry|\s.
 
         Args:
-            entries (list[ComputedEntry | ComputedStructureEntry]):
-                List of ``ComputedEntry``\s / ``ComputedStructureEntry``\s,
+            entries (list[|ComputedEntry|, |ComputedStructureEntry|]):
+                List of |ComputedEntry|\s / |ComputedStructureEntry|\s,
                 from which to compute the phase diagram and chemical
                 potential limits.
             check_compatibility (bool):
@@ -3485,7 +3485,7 @@ class CompetingPhasesAnalyzer(MSONable):
     ) -> None:
         r"""
         Parses competing phase energies from ``vasprun.xml(.gz)`` outputs,
-        generating ``ComputedStructureEntry``\s and then continuing
+        generating |ComputedStructureEntry|\s and then continuing
         initialisation with the ``CompetingPhasesAnalyzer._from_entries``
         method.
 
@@ -4386,11 +4386,11 @@ class CompetingPhasesAnalyzer(MSONable):
     @property
     def chempot_grid(self) -> ChemicalPotentialGrid:
         """
-        ``ChemicalPotentialGrid`` object for the chemical potential limits of
-        the host composition.
+        |ChemicalPotentialGrid| object for the chemical potential limits of the
+        host composition.
 
         This object can be used for plotting and numerical analyses of chemical
-        stability regions. See the ``ChemicalPotentialGrid`` class for more
+        stability regions. See the |ChemicalPotentialGrid| class for more
         details.
         """
         return ChemicalPotentialGrid(self.chempots)
@@ -4475,9 +4475,9 @@ def plot_chempot_heatmap(
             Chemical potential limits dictionary in the ``doped`` format (i.e.
             ``{"limits": [{'limit': [chempot_dict]}], ...}``) for the host
             material (``composition``).
-        composition (str or Composition or ComputedEntry):
+        composition (str or Composition or |ComputedEntry|):
             Host material composition as a string, |Composition| object or
-            ``ComputedEntry``, for which to plot the chemical stability region
+            |ComputedEntry|, for which to plot the chemical stability region
             (and for which ``chempots`` corresponds to).
         dependent_element (str or Element):
             The element for which the chemical potential is plotted as a
@@ -4921,8 +4921,8 @@ def _parse_entry_from_vasprun_and_catch_exception(
     vasprun_path: PathLike,
 ) -> tuple[str | Vasprun, PathLike, bool, bool]:
     """
-    Parse a VASP ``vasprun.xml`` file into a ``ComputedStructureEntry``,
-    catching any exceptions and returning the error message and the path to the
+    Parse a VASP ``vasprun.xml`` file into a |ComputedStructureEntry|, catching
+    any exceptions and returning the error message and the path to the
     ``vasprun.xml`` file if an exception is raised.
     """
     try:

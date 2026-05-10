@@ -111,12 +111,12 @@ class DefectEntry(thermo.DefectEntry):
             charge_state:
                 Charge state of the defect.
             sc_entry:
-                ``pymatgen`` ``ComputedStructureEntry`` for the `defect`
+                ``pymatgen`` |ComputedStructureEntry| for the `defect`
                 supercell.
             sc_defect_frac_coords:
                 The fractional coordinates of the defect in the supercell.
             bulk_entry:
-                ``pymatgen`` ``ComputedEntry`` for the bulk supercell
+                ``pymatgen`` |ComputedEntry| for the bulk supercell
                 reference. Required for calculating defect formation energy.
             corrections:
                 A dictionary of energy corrections which are summed and added

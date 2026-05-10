@@ -2768,7 +2768,7 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     |Structure|.
 
     ``stol`` is a site tolerance parameter used in ``pymatgen``
-    ``StructureMatcher`` functions, defined as the fraction of the average free
+    |StructureMatcher| functions, defined as the fraction of the average free
     length per atom := ( V / Nsites ) ** (1/3).
 
     Args:

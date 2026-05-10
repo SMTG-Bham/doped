@@ -3460,7 +3460,7 @@ def test_Sb2S3_doping_interior_grid_scan():
 def test_Cu2SiSe3_dopability_interior_grid_scan():
     """
     As for ``test_Sb2S3_doping_interior_grid_scan``, but for the ternary system
-    Cu2SiSe3, which covers the barycentric ``ChemicalPotentialGrid`` path in
+    Cu2SiSe3, which covers the barycentric |ChemicalPotentialGrid| path in
     ``_get_doping_scan_points`` (whereas Sb2S3 is binary and hits the 1D
     linear-interpolation branch).
 

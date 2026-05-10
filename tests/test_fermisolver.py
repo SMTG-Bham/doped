@@ -1,7 +1,7 @@
 """
 Tests for the ``FermiSolver`` class in ``doped.thermodynamics``.
 
-The ``scan_chemical_potential_grid`` tests here indirectly test the ``ChemicalPotentialGrid`` class in
+The ``scan_chemical_potential_grid`` tests here indirectly test the |ChemicalPotentialGrid| class in
 ``doped.chemical_potentials``.
 """
 

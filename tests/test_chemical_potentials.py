@@ -3085,7 +3085,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid.png")
     def test_Na2FePO4F_chempot_grid(self):
         """
-        Test ``ChemicalPotentialGrid`` generation and plotting for a complex
+        Test |ChemicalPotentialGrid| generation and plotting for a complex
         quinary system (Na2FePO4F).
         """
         grid_df = self.na2fepo4f_grid.get_grid(1e8, drop_duplicates=False)
@@ -3094,7 +3094,7 @@ class TestChemicalPotentialGrid(unittest.TestCase):
     @custom_mpl_image_compare(filename="Na2FePO4F_chempot_grid_cartesian.png")
     def test_Na2FePO4F_chempot_grid_cartesian(self):
         """
-        Test ``ChemicalPotentialGrid`` generation and plotting for a complex
+        Test |ChemicalPotentialGrid| generation and plotting for a complex
         quinary system (Na2FePO4F).
         """
         grid_df = self.na2fepo4f_grid.get_grid(2e5, cartesian=True)

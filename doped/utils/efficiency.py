@@ -606,7 +606,7 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     in a given |Structure|.
 
     ``stol`` is a site tolerance parameter used in ``pymatgen``
-    ``StructureMatcher`` functions, defined as the fraction of the average free
+    |StructureMatcher| functions, defined as the fraction of the average free
     length per atom := ( V / Nsites ) ** (1/3).
 
     Args:
@@ -622,7 +622,7 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
 def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) -> float:
     """
     Get the minimum possible ``stol`` value which will give a match between
-    ``struct1`` and ``struct2`` using ``StructureMatcher``, based on the ranges
+    ``struct1`` and ``struct2`` using |StructureMatcher|, based on the ranges
     of per-element minimum interatomic distances in the two structures.
 
     Args:
@@ -673,16 +673,16 @@ def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Stru
     two structures, normalized by the mean free length per atom:
     ``(Vol/Nsites)^(1/3)``.
 
-    These values are not directly returned by ``StructureMatcher`` methods.
+    These values are not directly returned by |StructureMatcher| methods.
     This function replicates ``StructureMatcher.get_rms_dist()``, but changes
     the return value from ``match[0], max(match[1])`` to ``match[0], match[1]``
     to allow further analysis of displacements. Mainly intended for use by
     |ShakeNBreak|.
 
     Args:
-        sm (StructureMatcher): ``pymatgen`` ``StructureMatcher`` object.
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        sm (|StructureMatcher|): ``pymatgen`` |StructureMatcher| object.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
 
     Returns:
         tuple:
@@ -710,11 +710,11 @@ def StructureMatcher_scan_stol(
 ):
     r"""
     Utility function to scan through a range of ``stol`` values for
-    ``StructureMatcher`` until a match is found between ``struct1`` and
+    |StructureMatcher| until a match is found between ``struct1`` and
     ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result).
 
     The ``StructureMatcher.match()`` function (used in most
-    ``StructureMatcher`` methods) speed is heavily dependent on ``stol``, with
+    |StructureMatcher| methods) speed is heavily dependent on ``stol``, with
     smaller values being faster, so we can speed up evaluation by starting with
     small values and increasing until a match is found (especially with the
     ``doped`` efficiency tools which implement caching (and other improvements)
@@ -734,7 +734,7 @@ def StructureMatcher_scan_stol(
         struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
         struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
         func_name (str):
-            The name of the ``StructureMatcher`` method to return the result
+            The name of the |StructureMatcher| method to return the result
             of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
             as:
 
@@ -750,7 +750,7 @@ def StructureMatcher_scan_stol(
             structure-matching in most cases.
         max_stol (float):
             Maximum ``stol`` value to try. Default: 0.3 (matching
-            ``StructureMatcher`` default).
+            |StructureMatcher| default).
         stol_factor (float):
             Fractional increment to increase ``stol`` by each time (when a
             match is not found). Default value of 0.5 increases ``stol`` by 50%

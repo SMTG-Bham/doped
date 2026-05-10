@@ -384,10 +384,10 @@ def get_defect_in_supercell(
         # ``target_supercell``, to try to ensure consistency in the generated supercells.
 
         # Note: this function is typically the main bottleneck in this workflow. We have already
-        # optimised the underlying ``StructureMatcher`` workflow in many ways (caching,
+        # optimised the underlying |StructureMatcher| workflow in many ways (caching,
         # fast structure/site/composition comparisons, skipping comparison of defect neighbourhood to
         # reduce requisite ``stol`` etc; being many orders of magnitude faster than the base
-        # ``pymatgen`` ``StructureMatcher``), however the ``_cart_dists()`` function call (used by
+        # ``pymatgen`` |StructureMatcher|), however the ``_cart_dists()`` function call (used by
         # ``orient_s2_like_s1``, ``get_transformation_from_s2_to_s1``) is still quite expensive,
         # especially with large structures with significant noise in the atomic positions...
         trans = get_transformation_from_s2_to_s1(target_supercell, new_bulk_supercell, max_stol=5)
@@ -1321,7 +1321,7 @@ def _convert_defect_neighbours_to_X(
         if i in site_indices_to_convert:
             converted_defect_supercell.replace(i, "X")
         # we set properties for all sites, because ``Structure.from_sites()`` in ``pymatgen``'s
-        # ``StructureMatcher`` adds properties to all sites, which can then mess with site comparisons...
+        # |StructureMatcher| adds properties to all sites, which can then mess with site comparisons...
         converted_defect_supercell[i].properties["orig_species"] = orig_site.specie.symbol
 
     return converted_defect_supercell

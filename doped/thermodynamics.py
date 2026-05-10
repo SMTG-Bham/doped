@@ -7101,7 +7101,7 @@ class FermiSolver(MSONable):
         Scan over a grid of chemical potentials and solve for the defect
         concentrations and Fermi level at each point.
 
-        This method generates a ``ChemicalPotentialGrid`` object from a
+        This method generates a |ChemicalPotentialGrid| object from a
         ``doped``-formatted chemical potential dictionary, and then calls
         ``_solve`` for each point in the grid.
 
