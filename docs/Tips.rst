@@ -272,6 +272,16 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     `stenciling tutorial <https://doped.readthedocs.io/en/latest/stenciling_tutorial.html>`__ for examples 
     and discussion.
 
+.. tip::
+
+    Given that the magnitude of finite-size effects can vary dramatically by direction in 
+    layered/2D/highly-anisotropic materials (as discussed here), often the optimal supercell for these 
+    cases can differ from that returned by the default supercell generation algorithm (which optimises the
+    minimum image distance for the minimum number of atoms), with e.g. a dielectric-weighted supercell 
+    generation approach often being more appropriate. See the 
+    `dielectric-weighted supercell generation section <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#dielectric-weighted-supercell-generation>`__ 
+    of the advanced analysis tutorial for an example and discussion.
+
 
 2D Materials and Surface Defects
 --------------------------------

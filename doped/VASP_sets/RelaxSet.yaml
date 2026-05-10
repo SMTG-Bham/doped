@@ -20,4 +20,4 @@ INCAR:
   SIGMA: 0.05
 
 KPOINTS:
-  reciprocal_density: 100  # corresponds to KSPACING = 0.215
+  reciprocal_density: 100  # kpoints/Å⁻³; corresponds to KSPACING = 0.215

@@ -580,7 +580,7 @@ class DefectDictSet(DopedDictSet):
                 Dictionary of user ``KPOINTS`` settings (in ``pymatgen``
                 ``VaspInputSet`` format) e.g., ``{"reciprocal_density": 123}``,
                 or a ``Kpoints`` object. Default is Gamma-centred,
-                ``reciprocal_density = 100`` [Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is "PBE" and if this
                 fails, tries "PBE_52", then "PBE_54".
@@ -804,7 +804,7 @@ class DefectRelaxSet(MSONable):
                 or a ``Kpoints`` object, to use for the ``vasp_std``,
                 ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
                 for ``vasp_gam``). Default is Gamma-centred,
-                ``reciprocal_density = 100`` [Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is "PBE" and if this
                 fails, tries "PBE_52", then "PBE_54".
@@ -992,7 +992,7 @@ class DefectRelaxSet(MSONable):
         if vasp_std is None and (warn or info):
             current_kpoint_settings = (
                 self.user_kpoints_settings
-                or "default `reciprocal_density = 100` [Å⁻³] (see doped/VASP_sets/RelaxSet.yaml)"
+                or "default `reciprocal_density = 100` [kpoints/Å⁻³] (see doped/VASP_sets/RelaxSet.yaml)"
             )
             info_message = (
                 f"With the current kpoint settings ({current_kpoint_settings}), the k-point "
@@ -1245,8 +1245,8 @@ class DefectRelaxSet(MSONable):
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
-        input kpoint settings correspond to a Γ-only kpoint mesh (in which
-        case ``(bulk_)vasp_gam`` should be used).
+        input kpoint settings correspond to a Γ-only kpoint mesh (in which case
+        ``(bulk_)vasp_gam`` should be used).
 
         The bulk supercell only needs to be calculated once with the same
         settings as the final defect calculations, which is ``vasp_std`` if we
@@ -1299,9 +1299,9 @@ class DefectRelaxSet(MSONable):
     def bulk_vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
-        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint
-        mesh) and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the
-        HF exchange part of the hybrid DFT calculation. By default, sets
+        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
+        and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF
+        exchange part of the hybrid DFT calculation. By default, sets
         ``NKRED(X,Y,Z)`` to 2 or 3 in the directions for which the k-point grid
         is divisible by this factor. Returns None and a warning if the input
         kpoint settings correspond to a Γ-only kpoint mesh (in which case
@@ -2269,7 +2269,7 @@ class DefectsSet(MSONable):
                 or a ``Kpoints`` object, to use for the ``vasp_std``,
                 ``vasp_nkred_std`` and ``vasp_ncl`` ``DefectDictSet``\s (Γ-only
                 for ``vasp_gam``). Default is Gamma-centred,
-                ``reciprocal_density = 100`` [Å⁻³].
+                ``reciprocal_density = 100`` [kpoints/Å⁻³].
             user_potcar_functional (str):
                 ``POTCAR`` functional to use. Default is "PBE" and if this
                 fails, tries "PBE_52", then "PBE_54".
