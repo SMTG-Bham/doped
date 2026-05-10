@@ -160,7 +160,7 @@ class DopedDictSet(VaspInputSet):
     ):
         r"""
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 ``pymatgen`` |Structure| object for the input structure file.
             user_incar_settings (dict):
                 Dictionary of user INCAR settings (AEXX, NCORE etc.) to
@@ -562,7 +562,7 @@ class DefectDictSet(DopedDictSet):
     ):
         r"""
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 ``pymatgen`` |Structure| object of the defect supercell.
             charge_state (int):
                 Charge of the defect (to set ``NELECT`` -- total number of
@@ -777,7 +777,7 @@ class DefectRelaxSet(MSONable):
         upon defect & competing phases parsing in ``doped``.
 
         Args:
-            defect_entry (DefectEntry, Structure):
+            defect_entry (|DefectEntry|, |Structure|):
                 ``doped``/``pymatgen`` |DefectEntry| or |Structure| (defect
                 supercell) for which to generate ``DefectDictSet``\s for.
             charge_state (int):
@@ -839,13 +839,13 @@ class DefectRelaxSet(MSONable):
                 set, then by default is only generated for defect supercells
                 with a max atomic number (Z) >= 31 (i.e. further down the
                 periodic table than Zn).
-            defect_supercell (Structure):
+            defect_supercell (|Structure|):
                 Supercell structure for defect calculations, taken from
                 ``defect_entry.defect_supercell`` (if defined), otherwise from
                 ``defect_entry.sc_entry.structure`` if inputting a
                 |DefectEntry| object, or the input structure if inputting a
                 |Structure| object.
-            bulk_supercell (Structure):
+            bulk_supercell (|Structure|):
                 Supercell structure of the bulk (pristine, defect-free)
                 material, taken from ``defect_entry.bulk_supercell`` (if
                 defined), otherwise from ``defect_entry.bulk_entry.structure``
@@ -1245,8 +1245,8 @@ class DefectRelaxSet(MSONable):
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
-        input kpoint settings correspond to a Γ-only kpoint mesh (in which case
-        ``(bulk_)vasp_gam`` should be used).
+        input kpoint settings correspond to a Γ-only kpoint mesh (in which
+        case ``(bulk_)vasp_gam`` should be used).
 
         The bulk supercell only needs to be calculated once with the same
         settings as the final defect calculations, which is ``vasp_std`` if we
@@ -1299,9 +1299,9 @@ class DefectRelaxSet(MSONable):
     def bulk_vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
-        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
-        and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF
-        exchange part of the hybrid DFT calculation. By default, sets
+        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint
+        mesh) and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the
+        HF exchange part of the hybrid DFT calculation. By default, sets
         ``NKRED(X,Y,Z)`` to 2 or 3 in the directions for which the k-point grid
         is divisible by this factor. Returns None and a warning if the input
         kpoint settings correspond to a Γ-only kpoint mesh (in which case
@@ -2311,7 +2311,7 @@ class DefectsSet(MSONable):
                 generated if the max atomic number (Z) over all defect
                 supercells is >= 31 (i.e. further down the periodic table than
                 Zn).
-            bulk_supercell (Structure):
+            bulk_supercell (|Structure|):
                 Supercell structure of the bulk (pristine) material.
             json_obj (dict | |DefectsGenerator|):
                 Either the |DefectsGenerator| object if input

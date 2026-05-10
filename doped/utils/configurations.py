@@ -32,9 +32,9 @@ def get_transformation_from_s2_to_s1(
     defects for stenciling etc.
 
     Args:
-        struct1 (Structure):
+        struct1 (|Structure|):
             Reference structure
-        struct2 (Structure):
+        struct2 (|Structure|):
             |Structure| to transform to be as similar as possible to ``struct1``.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``
@@ -112,9 +112,9 @@ def apply_s2_to_s1_transformation(
     defect stenciling).
 
     Args:
-        struct1 (Structure):
+        struct1 (|Structure|):
             Reference structure.
-        struct2 (Structure):
+        struct2 (|Structure|):
             |Structure| to transform to be as similar as possible to ``struct1``.
         supercell_matrix (np.ndarray):
             Supercell matrix for the transformation.
@@ -324,8 +324,8 @@ def orient_s2_like_s1(
     e.g. 10.1103/PhysRevB.90.075202).
 
     Args:
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
         new_lattice (str | None):
             If ``"struct1"``, then the lattice of ``struct1`` is used for the
             re-oriented structure, if ``"struct2"``, then the lattice of
@@ -472,8 +472,8 @@ def get_dQ(
     ``True``).
 
     Args:
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
         ignored_species (list[str] | None):
             List of species to ignore when computing ΔQ (and re-orienting, if
             relevant). Default: ``None``
@@ -539,8 +539,8 @@ def _reorient_struct2_and_warn(
     unchanged and no warning is raised.
 
     Args:
-        struct1 (Structure): Reference |Structure|.
-        struct2 (Structure): |Structure| to re-orient to match ``struct1``.
+        struct1 (|Structure|): Reference |Structure|.
+        struct2 (|Structure|): |Structure| to re-orient to match ``struct1``.
         reorient (bool | None):
             Controls re-orientation behaviour; see function description above
             for details. One of ``True`` (always re-orient, no warning),
@@ -653,8 +653,8 @@ def get_path_structures(
     states).
 
     Args:
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
         n_images (int):
             Number of images to interpolate between ``struct1`` and
             ``struct2``, or a list of fractional interpolation values
@@ -880,8 +880,8 @@ def write_path_structures(
     states).
 
     Args:
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
         output_dir (PathLike):
             Directory to write the interpolated structures to. Defaults to
             "Configuration_Coordinate" if ``displacements`` is set, otherwise

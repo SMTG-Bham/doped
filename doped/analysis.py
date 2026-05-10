@@ -203,16 +203,16 @@ def defect_site_from_structures(
     structural re-orientations.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             Defect structure to use for identifying the defect site.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             Bulk supercell structure.
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
             see return signature. (Default: ``False``)
 
     Returns:
-        defect_site (PeriodicSite):
+        defect_site (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object for the `relaxed` defect site
             in the defect supercell.
 
@@ -221,7 +221,7 @@ def defect_site_from_structures(
         defect_type (str):
             The type of defect as a string (``interstitial``, ``vacancy`` or
             ``substitution``).
-        defect_site_in_bulk (PeriodicSite):
+        defect_site_in_bulk (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object of the defect site in the bulk
             supercell (i.e. unrelaxed vacancy/substitution site, or final
             `relaxed` interstitial site for interstitials).
@@ -229,7 +229,7 @@ def defect_site_from_structures(
             Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
             Index of defect site in bulk supercell (None for interstitials)
-        unrelaxed_defect_structure (Structure):
+        unrelaxed_defect_structure (|Structure|):
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
@@ -311,9 +311,9 @@ def defect_from_structures(
       their unrelaxed positions).
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             Defect structure to use for identifying the defect site and type.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             Bulk supercell structure.
         return_all_info (bool):
             If ``True``, returns additional info related to the site-matching;
@@ -339,15 +339,15 @@ def defect_from_structures(
             not required.
 
     Returns:
-        defect (Defect):
+        defect (|Defect|):
             ``doped`` |Defect| object, defined in the primitive structure.
 
         If ``return_all_info`` is True, then also returns:
 
-        defect_site (PeriodicSite):
+        defect_site (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object of the `relaxed` defect site
             in the defect supercell.
-        defect_site_in_bulk (PeriodicSite):
+        defect_site_in_bulk (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object of the defect site in the bulk
             supercell (i.e. unrelaxed vacancy/substitution site, or final
             `relaxed` interstitial site for interstitials).
@@ -355,10 +355,10 @@ def defect_from_structures(
             Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
             Index of defect site in bulk supercell (None for interstitials)
-        guessed_initial_defect_structure (Structure):
+        guessed_initial_defect_structure (|Structure|):
             ``pymatgen`` |Structure| object of the guessed initial defect
             structure.
-        unrelaxed_defect_structure (Structure):
+        unrelaxed_defect_structure (|Structure|):
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
     """
@@ -510,9 +510,9 @@ def defect_and_info_from_structures(
     structural re-orientations.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             Defect structure to use for identifying the defect site and type.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             Bulk supercell structure.
         skip_atom_mapping_check (bool):
             If ``True``, skips the atom mapping check which ensures that the
@@ -540,9 +540,9 @@ def defect_and_info_from_structures(
 
     Returns:
         tuple[Defect, PeriodicSite, dict]:
-            defect (Defect):
+            defect (|Defect|):
                 ``doped`` |Defect| object, defined in the primitive structure.
-            defect_site (PeriodicSite):
+            defect_site (|PeriodicSite|):
                 ``pymatgen`` |PeriodicSite| object of the `relaxed` defect
                 site in the defect supercell.
             defect_structure_metadata (dict):
@@ -753,9 +753,9 @@ def guess_defect_position(
     (``n_max=6``, ``l_max=4``).
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             Defect supercell structure.
-        bulk_supercell (Structure | None):
+        bulk_supercell (|Structure| | None):
             Optional bulk (pristine) reference supercell. When provided, site
             cosine dissimilarities are computed relative to the nearest
             matching bulk-supercell site (rather than the per-species mean in
@@ -874,9 +874,9 @@ def defect_name_from_structures(
     Get the doped/SnB defect name using the bulk and defect structures.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             Defect structure.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             Bulk (pristine) structure.
         **kwargs:
             Keyword arguments to pass to ``defect_from_structures`` (such as
@@ -1002,7 +1002,7 @@ class DefectsParser:
                 ``error_tolerance`` or 10% of the band gap, by default, or can
                 be set by a ``shallow_charge_stability_tolerance = X`` keyword
                 argument).
-            bulk_band_gap_vr (PathLike or Vasprun):
+            bulk_band_gap_vr (PathLike or |Vasprun|):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
                 |Vasprun| object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
@@ -1409,7 +1409,7 @@ class DefectsParser:
                 defect entry (i.e. that all reference bulk energies are the
                 same).
                 (Default: True)
-            bulk_dos (FermiDos or Vasprun or PathLike):
+            bulk_dos (FermiDos or |Vasprun| or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating Fermi level positions and
                 defect/carrier concentrations. Alternatively, can be a
@@ -1790,7 +1790,7 @@ def _get_defect_folder(entry: DefectEntry, subfolder: str = ".") -> str:
     Get the defect folder name from which a |DefectEntry| object was parsed.
 
     Args:
-        entry (DefectEntry):
+        entry (|DefectEntry|):
             The defect entry to get the folder name from.
         subfolder (str):
             The subfolder of the defect calculation directory.
@@ -1827,7 +1827,7 @@ def _name_parsed_defect_entries(
     duplicates and renaming appropriately.
 
     Args:
-        parsed_defect_entries (list[DefectEntry]):
+        parsed_defect_entries (list[|DefectEntry|]):
             List of parsed defect entries to format.
         subfolder (str):
             Defect calculation subfolder name.
@@ -2007,7 +2007,7 @@ def _handle_charge_correction_errors(
     tolerance.
 
     Args:
-        defect_dict (dict[str, DefectEntry]):
+        defect_dict (dict[str, |DefectEntry|]):
             The dictionary of defect entries to check and warn if necessary.
         error_tolerance (float):
             The error tolerance threshold for charge corrections (in eV),
@@ -2122,7 +2122,7 @@ def _check_and_warn_dimer_bonds_spin_states(
     this defect.
 
     Args:
-        defect_dict (dict[str, DefectEntry]):
+        defect_dict (dict[str, |DefectEntry|]):
             The dictionary of defect entries to check and warn if necessary.
         rtol (float):
             The relative tolerance to use for dimer bond detection.
@@ -2230,7 +2230,7 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
     ``degeneracy_factors`` property dicts of the |DefectEntry|.
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             The |DefectEntry| object to parse the symmetry and degeneracy
             metadata for. Parsed results are stored in the
             ``calculation_metadata`` and ``degeneracy_factors`` property dicts
@@ -2371,12 +2371,12 @@ class DefectParser:
         ``defect_entry_from_paths()`` are preferred.
 
         Args:
-            defect_entry (DefectEntry):
+            defect_entry (|DefectEntry|):
                 doped |DefectEntry|
-            defect_vr (Vasprun):
+            defect_vr (|Vasprun|):
                 ``pymatgen`` |Vasprun| object for the defect supercell
                 calculation.
-            bulk_vr (Vasprun):
+            bulk_vr (|Vasprun|):
                 ``pymatgen`` |Vasprun| object for the reference bulk
                 supercell calculation.
             error_tolerance (float):
@@ -2461,11 +2461,11 @@ class DefectParser:
             bulk_path (PathLike):
                 Path to bulk supercell folder (containing at least
                 ``vasprun.xml(.gz)``). Not required if ``bulk_vr`` is provided.
-            bulk_vr (Vasprun):
+            bulk_vr (|Vasprun|):
                 ``pymatgen`` |Vasprun| object for the reference bulk
                 supercell calculation, if already loaded (can be supplied to
                 expedite parsing). Default is ``None``.
-            bulk_procar (Procar):
+            bulk_procar (|Procar|):
                 ``pymatgen`` |Procar| object, for the reference bulk
                 supercell calculation if already loaded (can be supplied to
                 expedite parsing). Default is ``None``.
@@ -2493,7 +2493,7 @@ class DefectParser:
                 on the variance of the potential in the sampling region, is
                 greater than this value (in eV), then a warning is raised.
                 Default is 0.05 eV.
-            bulk_band_gap_vr (PathLike or Vasprun):
+            bulk_band_gap_vr (PathLike or |Vasprun|):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
                 |Vasprun| object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points
@@ -3058,7 +3058,7 @@ class DefectParser:
         severely-underestimated GGA DFT bandgap!
 
         Args:
-            bulk_band_gap_vr (PathLike or Vasprun):
+            bulk_band_gap_vr (PathLike or |Vasprun|):
                 Path to a ``vasprun.xml(.gz)`` file, or a ``pymatgen``
                 |Vasprun| object, from which to determine the bulk band gap
                 and band edge positions. If the VBM/CBM occur at `k`-points

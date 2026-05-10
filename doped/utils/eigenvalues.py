@@ -62,7 +62,7 @@ def band_edge_properties_from_vasprun(
     object.
 
     Args:
-        vasprun (Vasprun): |Vasprun| object.
+        vasprun (|Vasprun|): |Vasprun| object.
         integer_criterion (float):
             Threshold criterion for determining if a band is unoccupied
             (< ``integer_criterion``), partially occupied (between
@@ -94,8 +94,8 @@ def make_perfect_band_edge_state_from_vasp(
     ``pydefect``).
 
     Args:
-        vasprun (Vasprun): |Vasprun| object.
-        procar (Procar): |Procar| object.
+        vasprun (|Vasprun|): |Vasprun| object.
+        procar (|Procar|): |Procar| object.
         integer_criterion (float):
             Threshold criterion for determining if a band is unoccupied
             (< ``integer_criterion``), partially occupied (between
@@ -127,7 +127,7 @@ def make_band_edge_orbital_infos(
     |Vasprun| object.
 
     Args:
-        defect_vr (Vasprun): Defect |Vasprun| object.
+        defect_vr (|Vasprun|): Defect |Vasprun| object.
         vbm (float): VBM eigenvalue in eV.
         cbm (float): CBM eigenvalue in eV.
         eigval_shift (float):
@@ -135,7 +135,7 @@ def make_band_edge_orbital_infos(
         neighbor_indices (list[int]):
             Indices of neighboring atoms to the defect site, for localisation
             analysis. Default is ``None``.
-        defect_procar (Procar):
+        defect_procar (|Procar|):
             ``pymatgen`` |Procar| object, for the defect supercell, if
             projected eigenvalue/orbitals data is not provided in
             ``defect_vr``.
@@ -200,31 +200,31 @@ def get_band_edge_info(
     https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
 
     Args:
-        defect_vr (Vasprun):
+        defect_vr (|Vasprun|):
             |Vasprun| object of the defect supercell calculation. If
             ``defect_procar`` is not provided, then this must have the
             ``projected_eigenvalues`` attribute (i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
             ``parse_projected_eigen = True`` (default)).
-        bulk_vr (Vasprun):
+        bulk_vr (|Vasprun|):
             |Vasprun| object of the bulk supercell calculation. If
             ``bulk_procar`` is not provided, then this must have the
             ``projected_eigenvalues`` attribute (i.e. from a calculation with
             ``LORBIT > 10`` in the ``INCAR`` and parsed with
             ``parse_projected_eigen = True`` (default)).
-        defect_procar (PathLike, Procar):
+        defect_procar (PathLike, |Procar|):
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the defect supercell calculation. Not required if the
             supplied ``defect_vr`` was parsed with
             ``parse_projected_eigen = True`` (default). Default is ``None``.
-        bulk_procar (PathLike, Procar):
+        bulk_procar (PathLike, |Procar|):
             Either a path to the ``VASP`` ``PROCAR(.gz)`` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a ``pymatgen`` |Procar|
             object, for the reference bulk supercell calculation. Not required
             if the supplied ``bulk_vr`` was parsed with
             ``parse_projected_eigen = True`` (default). Default is ``None``.
-        defect_supercell_site (PeriodicSite):
+        defect_supercell_site (|PeriodicSite|):
             |PeriodicSite| object of the defect site in the defect supercell,
             from which the defect neighbours are determined for localisation
             analysis. If ``None`` (default), then the defect site is determined
@@ -333,7 +333,7 @@ def get_eigenvalue_analysis(
     paper: https://doi.org/10.1103/PhysRevMaterials.5.123803
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             ``doped`` |DefectEntry| object. Default is ``None``.
         plot (bool):
             Whether to plot the single-particle eigenvalues. (Default: True)
@@ -346,7 +346,7 @@ def get_eigenvalue_analysis(
             Path to a ``mplstyle`` file to use for the plot. If ``None``
             (default), uses the ``doped`` displacement plot style
             (``doped/utils/displacement.mplstyle``).
-        bulk_vr (PathLike, Vasprun):
+        bulk_vr (PathLike, |Vasprun|):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -357,7 +357,7 @@ def get_eigenvalue_analysis(
             ``defect_entry.calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
-        bulk_procar (PathLike, Procar):
+        bulk_procar (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if
@@ -367,7 +367,7 @@ def get_eigenvalue_analysis(
             |Procar| object, for the reference bulk supercell calculation. If
             ``None`` (default), tries to load from a ``PROCAR(.gz)`` file at
             ``defect_entry.calculation_metadata["bulk_path"]``.
-        defect_vr (PathLike, Vasprun):
+        defect_vr (PathLike, |Vasprun|):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -378,7 +378,7 @@ def get_eigenvalue_analysis(
             ``defect_entry.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``
             or, failing that, from a ``vasprun.xml(.gz)`` file at
             ``defect_entry.calculation_metadata["defect_path"]``.
-        defect_procar (PathLike, Procar):
+        defect_procar (PathLike, |Procar|):
             Not required if ``defect_entry`` provided and eigenvalue data
             already parsed (default behaviour when parsing with ``doped``, data
             in ``defect_entry.calculation_metadata["eigenvalue_data"]``), or if

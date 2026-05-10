@@ -150,7 +150,7 @@ def _get_num_places_for_dist_precision(
     differences in fraction coordinates become significant).
 
     Args:
-        structure (Structure | Lattice):
+        structure (|Structure| | |Lattice|):
             The input structure or lattice.
         dist_precision (float):
             The desired distance precision in Å (default: 0.001).
@@ -243,7 +243,7 @@ def get_sga(struct: Structure, symprec: float = 0.01) -> SpacegroupAnalyzer:
     ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
     Args:
-        struct (Structure):
+        struct (|Structure|):
             The input structure.
         symprec (float):
             The symmetry precision to use (default: 0.01).
@@ -268,7 +268,7 @@ def get_sga_and_symprec(struct: Structure, symprec: float = 0.01) -> tuple[Space
     ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
     Args:
-        struct (Structure):
+        struct (|Structure|):
             The input structure.
         symprec (float):
             The symmetry precision to use (default: 0.01).
@@ -350,13 +350,13 @@ def apply_symm_op_to_site(
     Args:
         symm_op (SymmOp):
             ``pymatgen`` ``SymmOp`` object.
-        site (PeriodicSite):
+        site (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object.
         fractional (bool):
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
             ``site.coords``). Default: False
-        rotate_lattice (Lattice | bool):
+        rotate_lattice (|Lattice| | bool):
             Either a ``pymatgen`` |Lattice| object (to use as the new lattice
             basis of the transformed site, which can be provided to reduce
             computation time when looping) or ``True/False``. If ``True``
@@ -503,7 +503,7 @@ def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
     Args:
         fcoords (ArrayLike):
             Fractional coordinates to get distances between.
-        lattice (Lattice):
+        lattice (|Lattice|):
             Lattice for the fractional coordinates.
 
     Returns:
@@ -556,7 +556,7 @@ def cluster_coords(
     Args:
         fcoords (ArrayLike):
             Fractional coordinates to cluster.
-        structure (Structure | Lattice):
+        structure (|Structure| | |Lattice|):
             |Structure| or |Lattice| to which the fractional coordinates
             correspond.
         dist_tol (float):
@@ -643,7 +643,7 @@ def doped_cluster_frac_coords(
     Args:
         fcoords (ArrayLike):
             Fractional coordinates of points to cluster.
-        structure (Structure):
+        structure (|Structure|):
             The host structure.
         tol (float):
             Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
@@ -740,7 +740,7 @@ def get_all_equiv_sites(
     Args:
         frac_coords (ArrayLike):
             Fractional coordinates to get equivalent sites of.
-        structure (Structure):
+        structure (|Structure|):
             |Structure| to use for the lattice, to which the fractional
             coordinates correspond, and for determining symmetry operations
             if not provided.
@@ -963,10 +963,10 @@ def cluster_sites_by_dist_tol(
     Cluster sites based on their distances (using ``cluster_coords``).
 
     Args:
-        sites (Iterable[PeriodicSite | np.ndarray[float]]):
+        sites (Iterable[|PeriodicSite| | np.ndarray[float]]):
             Sites to cluster, as an iterable of |PeriodicSite| objects or
             fractional coordinates.
-        structure (Structure | Lattice):
+        structure (|Structure| | |Lattice|):
             |Structure| or |Lattice| to which the sites correspond.
         dist_tol (float):
             Distance tolerance for clustering, in Å (default: 0.01).
@@ -1022,17 +1022,17 @@ def get_min_dist_between_equiv_sites(
     site/|Defect|/|DefectEntry| objects in a structure.
 
     Args:
-        site_1 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
+        site_1 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
             First site to get equivalent sites of, to determine minimum
             distance to equivalent sites of ``site_2``. Can be a
             |PeriodicSite| object, a sequence of fractional coordinates, or a
             |Defect|/|DefectEntry| object.
-        site_2 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
+        site_2 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
             Second site to get equivalent sites of, to determine minimum
             distance to equivalent sites of ``site_1``. Can be a
             |PeriodicSite| object, a sequence of fractional coordinates, or a
             |Defect|/|DefectEntry| object.
-        structure (Structure):
+        structure (|Structure|):
             |Structure| to use for determining symmetry-equivalent sites of
             ``site_1`` and ``site_2``. Required if ``site_1`` and ``site_2``
             are not |Defect| or |DefectEntry| objects. Default: None.
@@ -1268,9 +1268,9 @@ def get_equiv_frac_coords_in_primitive(
         frac_coords (ArrayLike):
             Fractional coordinates in the supercell, for which to get
             equivalent coordinates in the primitive cell.
-        primitive (Structure):
+        primitive (|Structure|):
             Primitive cell structure.
-        supercell (Structure):
+        supercell (|Structure|):
             Supercell structure.
         symprec (float):
             Symmetry precision to use for determining symmetry operations.
@@ -1454,9 +1454,9 @@ def are_equivalent_lattices(
     cell sizes.
 
     Args:
-        lattice_1 (Lattice | Structure):
+        lattice_1 (|Lattice| | |Structure|):
             The first lattice to check for equivalence.
-        lattice_2 (Lattice | Structure):
+        lattice_2 (|Lattice| | |Structure|):
             The second lattice to check for equivalence.
         ltol (float):
             Fractional tolerance for matching lattice vector lengths.
@@ -1485,9 +1485,9 @@ def _rotate_and_get_supercell_matrix(
     Returns ``(None, None)`` if no mapping is found.
 
     Args:
-        prim_struct (Structure):
+        prim_struct (|Structure|):
             The primitive structure.
-        target_struct (Structure):
+        target_struct (|Structure|):
             The target structure to match.
         ltol (float):
             Length tolerance for matching the lattice vectors (default: 1e-5).
@@ -1739,7 +1739,7 @@ def get_wyckoff(
     Args:
         frac_coords (ArrayLike):
             Fractional coordinates of the site to get the Wyckoff label of.
-        struct (Structure):
+        struct (|Structure|):
             |Structure| for which ``frac_coords`` corresponds to.
         equiv_sites (bool):
             If ``True``, returns a tuple of (Wyckoff label, list of equivalent
@@ -1888,7 +1888,7 @@ def get_clean_structure(
     diagonals and c >= b >= a).
 
     Args:
-        structure (Structure): |Structure| object.
+        structure (|Structure|): |Structure| object.
         return_T (bool):
             Whether to return the transformation matrix from the original
             structure lattice to the new structure lattice (T * Orig = New).
@@ -2017,7 +2017,7 @@ def get_primitive_structure(
     ``ignored_species``.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             |Structure| to get the corresponding primitive structure of.
         ignored_species (list | None):
             List of species to ignore when determining the ideal primitive
@@ -2141,7 +2141,7 @@ def get_BCS_conventional_structure(
     structure definition to the BCS definition.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             |Structure| for which to get the corresponding BCS conventional
             crystal structure.
         pbar (ProgressBar):
@@ -2620,7 +2620,7 @@ def point_symmetry_from_defect(
     |Defect| objects (rather than parsed defects).
 
     Args:
-        defect (Defect): |Defect| object.
+        defect (|Defect|): |Defect| object.
         symprec (float):
             Symmetry precision to use for determining symmetry operations and
             thus point symmetries. Default is 0.01. If
@@ -2722,7 +2722,7 @@ def point_symmetry_from_defect_entry(
     https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
-        defect_entry (DefectEntry): |DefectEntry| object.
+        defect_entry (|DefectEntry|): |DefectEntry| object.
         symprec (float):
             Symmetry precision to use for determining symmetry operations and
             thus point symmetries with ``spglib``. Default is 0.01 for
@@ -3166,9 +3166,9 @@ def point_symmetry_from_structure(
     interstitial site when placed in the (unrelaxed) bulk structure.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             |Structure| object for which to determine the point symmetry.
-        bulk_structure (Structure):
+        bulk_structure (|Structure|):
             |Structure| object of the bulk structure, if known. Default is
             ``None``. If provided and ``relaxed = True``, will be used to check
             if the supercell is breaking the crystal periodicity (and thus
@@ -3276,12 +3276,12 @@ def point_symmetry_from_site(
     Get the point symmetry of a site in a structure.
 
     Args:
-        site (PeriodicSite | np.ndarray | list):
+        site (|PeriodicSite| | np.ndarray | list):
             Site for which to determine the point symmetry. Can be a
             |PeriodicSite| object, or a list or numpy array of the
             coordinates of the site (fractional coordinates by default, or
             Cartesian if ``coords_are_cartesian = True``).
-        structure (Structure):
+        structure (|Structure|):
             |Structure| object for which to determine the point symmetry of
             the site.
         coords_are_cartesian (bool):
@@ -3515,7 +3515,7 @@ def get_orientational_degeneracy(
     https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             |DefectEntry| object. (Default = None)
         relaxed_point_group (str):
             Point group symmetry (e.g. "Td", "C3v" etc.) of the `relaxed`

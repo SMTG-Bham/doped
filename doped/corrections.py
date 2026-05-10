@@ -386,7 +386,7 @@ def get_kumagai_correction(
     but this can be overridden with the ``defect_coords`` keyword argument.
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             |DefectEntry| object for which to compute the Kumagai finite-size
             charge correction.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
@@ -409,12 +409,12 @@ def get_kumagai_correction(
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
             If ``None`` (default), no sites are excluded.
-        defect_outcar (PathLike or Outcar):
+        defect_outcar (PathLike or |Outcar|):
             Path to the output ``VASP`` ``OUTCAR`` file from the defect
             supercell calculation, or the corresponding ``pymatgen`` |Outcar|
             object. If ``None``, will try to use the ``defect_site_potentials``
             from the ``defect_entry`` ``calculation_metadata`` if available.
-        bulk_outcar (PathLike or Outcar):
+        bulk_outcar (PathLike or |Outcar|):
             Path to the output ``VASP`` ``OUTCAR`` file from the bulk supercell
             calculation, or the corresponding ``pymatgen`` |Outcar| object.
             If ``None``, will try to use the ``bulk_site_potentials``

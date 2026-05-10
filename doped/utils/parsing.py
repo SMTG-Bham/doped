@@ -525,9 +525,9 @@ def get_defect_type_and_composition_diff(
     extrinsic species and code efficiency/robustness improvements.
 
     Args:
-        defect (Structure | Composition):
+        defect (|Structure| | |Composition|):
             The defect structure or composition.
-        bulk (Structure | Composition):
+        bulk (|Structure| | |Composition|):
             The bulk structure or composition.
 
     Returns:
@@ -586,9 +586,9 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     improvements.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             The defect supercell structure.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             The bulk supercell structure.
 
     Returns:
@@ -600,7 +600,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             defect site in the defect structure.
         defect_site_idx (int):
             Index of the defect site in the defect structure.
-        unrelaxed_defect_structure (Structure):
+        unrelaxed_defect_structure (|Structure|):
             Pristine defect supercell structure for vacancies/substitutions
             (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
             pristine bulk structure with the `final` relaxed interstitial site
@@ -764,12 +764,12 @@ def get_matching_site(
     states, site property dicts etc.
 
     Args:
-        site (PeriodicSite | np.ndarray[float]):
+        site (|PeriodicSite| | np.ndarray[float]):
             The site for which to find the closest matching site in
             ``structure``, either as a |PeriodicSite| or fractional
             coordinates array. If fractional coordinates, then ``anonymous``
             is set to ``True``.
-        structure (Structure):
+        structure (|Structure|):
             The structure in which to search for matching sites to ``site``.
         anonymous (bool):
             Whether to use anonymous matching, allowing different
@@ -864,7 +864,7 @@ def find_nearest_coords(
         target_frac_coords (list | np.ndarray):
             The target coordinates to find the nearest coordinates to in
             ``candidate_frac_coords``.
-        lattice (Lattice):
+        lattice (|Lattice|):
             The lattice object to use with the fractional coordinates.
         return_idx (bool):
             Whether to also return the index of the nearest coordinates in
@@ -899,7 +899,7 @@ def find_missing_idx(
             First set of fractional coordinates.
         frac_coords2 (list | np.ndarray):
             Second set of fractional coordinates.
-        lattice (Lattice):
+        lattice (|Lattice|):
             The lattice object to use with the fractional coordinates.
     """
     subset, superset = (  # supa-set
@@ -934,7 +934,7 @@ def _create_unrelaxed_defect_structure(
     initial site is ambiguous).
 
     Args:
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             The bulk supercell structure.
         frac_coords (list | np.ndarray):
             The fractional coordinates of the defect site. Unnecessary if
@@ -981,7 +981,7 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     (https://github.com/SMTG-Bham/doped/issues/147).
 
     Args:
-        lattice (Structure | Lattice):
+        lattice (|Structure| | |Lattice|):
             The lattice of the structure (either a ``pymatgen`` |Structure|
             or |Lattice| object).
 
@@ -1018,9 +1018,9 @@ def check_atom_mapping_far_from_defect(
     the largest sphere which can fit in the cell.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             The defect structure.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             The bulk structure.
         defect_coords (np.ndarray[float]):
             The coordinates of the defect site.
@@ -1144,9 +1144,9 @@ def get_site_mapping_indices(
     thrown anyway during parsing).
 
     Args:
-        struct1 (Structure):
+        struct1 (|Structure|):
             The input structure.
-        struct2 (Structure):
+        struct2 (|Structure|):
             The template structure.
         species (str):
             If provided, only sites of this species will be considered when
@@ -1309,9 +1309,9 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     reintroduced at any point, this point should be noted!
 
     Args:
-        s1_structure (Structure):
+        s1_structure (|Structure|):
             The input structure.
-        s2_structure (Structure):
+        s2_structure (|Structure|):
             The template structure.
         threshold (float):
             If the distance between a pair of matched sites is larger than
@@ -1590,7 +1590,7 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
     total magnetization for tricky cases.
 
     Args:
-        vasprun (Vasprun):
+        vasprun (|Vasprun|):
             The |Vasprun| object from which to extract the total
             magnetization.
 
@@ -1653,7 +1653,7 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     Determine the number of electrons (``NELECT``) from a |Vasprun| object.
 
     Args:
-        vasprun (Vasprun):
+        vasprun (|Vasprun|):
             The |Vasprun| object from which to extract ``NELECT``.
 
     Returns:
@@ -1683,7 +1683,7 @@ def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = F
     corresponding to a neutral charge state for the structure.
 
     Args:
-        vasprun (Vasprun):
+        vasprun (|Vasprun|):
             The |Vasprun| object from which to extract ``NELECT``.
         skip_potcar_init (bool):
             Whether to skip the initialisation of the ``POTCAR`` statistics
@@ -1840,7 +1840,7 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
     |DefectEntry|, updating the relevant attributes and calculation metadata.
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             The |DefectEntry| object for which to update the defect site
             information.
         overwrite (bool):
@@ -1895,7 +1895,7 @@ def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0
     charge state.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to get the total number of electrons.
         charge_state (int):
             The charge state of the system. Default is 0.
@@ -1935,7 +1935,7 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
     numbers for odd-electron systems).
 
     Args:
-        vasprun (Vasprun):
+        vasprun (|Vasprun|):
             ``pymatgen`` |Vasprun| for which to determine spin degeneracy.
         charge_state (int):
             The charge state of the system, which can be used to determine the
@@ -2001,7 +2001,7 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
     https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
 
     Args:
-        vasprun (Vasprun):
+        vasprun (|Vasprun|):
             ``pymatgen`` |Vasprun| object for which to determine the total
             charge.
 
@@ -2089,7 +2089,7 @@ def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[
     length.
 
     Args:
-        structure (Structure): The structure to get the dimer bond lengths for.
+        structure (|Structure|): The structure to get the dimer bond lengths for.
         rtol (float):
             The relative tolerance to use for classifying bonds as dimer bonds,
             where distances < ``rtol * get_dimer_bond_length(elt, elt)`` are

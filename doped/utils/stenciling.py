@@ -147,7 +147,7 @@ def get_defect_in_supercell(
     supercells should be negligible).
 
     Args:
-        defect_entry (DefectEntry | tuple[Structure, Structure] | tuple[Structure, Structure, np.ndarray]):
+        defect_entry (|DefectEntry| | tuple[|Structure|, |Structure|] | tuple[|Structure|, |Structure|, np.ndarray]):
             A |DefectEntry| object for which to re-generate the relaxed
             structure (taken from ``DefectEntry.defect_supercell``) in the
             ``target_supercell`` lattice. Alternatively, a tuple of
@@ -157,7 +157,7 @@ def get_defect_in_supercell(
             fractional coordinates can optionally be provided as a third
             element with the tuple input option (as a ``numpy`` array or list),
             to skip auto-determination in this case.
-        target_supercell (Structure):
+        target_supercell (|Structure|):
             The supercell structure to re-generate the relaxed defect structure
             in.
         check_bulk (bool):
@@ -524,10 +524,10 @@ def _scan_symm_ops_to_place_site_closest_to_frac_coords(
     coordinates.
 
     Args:
-        symm_ops (Structure | Sequence[SymmOp]):
+        symm_ops (|Structure| | Sequence[SymmOp]):
             Either a list of symmetry operations or a structure from which to
             extract symmetry operations.
-        site (PeriodicSite):
+        site (|PeriodicSite|):
             The site to place closest to the target fractional coordinates.
         target_frac_coords (np.ndarray[float] | list[float] | None):
             The target fractional coordinates to place the site closest to.
@@ -589,13 +589,13 @@ def stencil_target_cell_from_big_cell(
     supplied and/or for defective ``big_supercell`` cells.
 
     Args:
-        big_supercell (Structure):
+        big_supercell (|Structure|):
             The supercell structure which fully encompasses
             ``target_supercell``, from which to stencil out the sites.
-        target_supercell (Structure):
+        target_supercell (|Structure|):
             The supercell structure giving the cell dimensions to stencil out
             from ``big_supercell``.
-        target_composition (Composition | None):
+        target_composition (|Composition| | None):
             Expected composition of the output stenciled cell (used to
             determine candidate sites to stencil out). Auto-determined by
             comparing ``big_supercell`` and ``target_supercell`` if ``None``
@@ -888,10 +888,10 @@ def _get_candidate_supercell_sites(
     ``[0.5, 0.5, 0.5]``)!
 
     Args:
-        big_supercell (Structure):
+        big_supercell (|Structure|):
             The super-supercell with a single defect supercell and rest of the
             sites populated by the bulk supercell.
-        target_supercell (Structure):
+        target_supercell (|Structure|):
             The supercell structure to re-generate the relaxed defect structure
             in.
         edge_tol (float):
@@ -981,11 +981,11 @@ def _remove_overlapping_sites(
     ``def_new_supercell_sites_to_check``.
 
     Args:
-        candidate_new_supercell_sites (list[PeriodicSite]):
+        candidate_new_supercell_sites (list[|PeriodicSite|]):
             List of candidate sites in the target supercell to check if
             overlapping with each other or
             ``def_new_supercell_sites_to_check``.
-        def_new_supercell_sites_to_check (list[PeriodicSite]):
+        def_new_supercell_sites_to_check (list[|PeriodicSite|]):
             List of sites that are in the new (target) supercell but are near
             the bordering regions, so are used to check for overlapping.
         bulk_min_bond_length (float):
@@ -1107,11 +1107,11 @@ def _get_matching_sites_from_s1_then_s2(
     supercell).
 
     Args:
-        template_struct (Structure):
+        template_struct (|Structure|):
             The template structure to match.
-        struct1_pool (Structure):
+        struct1_pool (|Structure|):
             The first pool of sites to match to the template structure.
-        struct2_pool (Structure):
+        struct2_pool (|Structure|):
             The second pool of sites to match to the template structure.
 
     Returns:
@@ -1192,10 +1192,10 @@ def _get_superset_matrix_and_supercells(
     larger than or equal to the largest lattice vector in ``target_supercell``.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The original structure for which to get the superset matrix that
             fully encompasses the target supercell.
-        target_supercell (Structure):
+        target_supercell (|Structure|):
             The target supercell.
 
     Returns:
@@ -1223,7 +1223,7 @@ def _get_all_encompassing_cube_length(lattice: Lattice) -> float:
     sphere.
 
     Args:
-        lattice (Lattice):
+        lattice (|Lattice|):
             The lattice to get the all-encompassing cube length for.
 
     Returns:
@@ -1245,7 +1245,7 @@ def is_within_frac_bounds(
     the lattice object.
 
     Args:
-        lattice (Lattice):
+        lattice (|Lattice|):
             |Lattice| object defining the unit cell.
         cart_coords (np.ndarray[float] | list[float]):
             The Cartesian coordinates to check.
@@ -1285,7 +1285,7 @@ def _convert_defect_neighbours_to_X(
     No longer used in default stenciling approach.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             The defect supercell to edit.
         defect_position (np.ndarray[float]):
             The coordinates of the defect site, either fractional or Cartesian
@@ -1338,7 +1338,7 @@ def _convert_X_back_to_orig_species(converted_defect_supercell: Structure) -> St
     approach.
 
     Args:
-        converted_defect_supercell (Structure):
+        converted_defect_supercell (|Structure|):
             The defect supercell to convert back.
 
     Returns:

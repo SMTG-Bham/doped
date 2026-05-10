@@ -102,8 +102,8 @@ def get_defect_entry_from_defect(
     taken as the defect site), or ``sc_defect_frac_coords`` must be set.
 
     Args:
-        defect (Defect): ``doped``/``pymatgen`` |Defect| object.
-        defect_supercell (Structure): Defect supercell structure.
+        defect (|Defect|): ``doped``/``pymatgen`` |Defect| object.
+        defect_supercell (|Structure|): Defect supercell structure.
         charge_state (int): Charge state of the defect.
         dummy_species (DummySpecies):
             Dummy species present in the ``defect_supercell`` structure,
@@ -226,9 +226,9 @@ def get_neighbour_distances_and_symbols(
     ``dist_tol_prefactor`` and ``n`` to estimate a reasonable starting range.
 
     Args:
-        site (PeriodicSite):
+        site (|PeriodicSite|):
             Site to get neighbour info.
-        structure (Structure):
+        structure (|Structure|):
             |Structure| containing the site and neighbours.
         n (int):
             Return the element symbol and distance tuples for the ``n``\th
@@ -337,7 +337,7 @@ def closest_site_info(
     be at least 0.02 Å further away than the (n-1)th site.
 
     Args:
-        defect_entry_or_defect (DefectEntry | Defect):
+        defect_entry_or_defect (|DefectEntry| | |Defect|):
             |DefectEntry| or |Defect| object, to get neighbour info.
         n (int):
             Return the element symbol and distance for the ``n``\th closest
@@ -400,7 +400,7 @@ def get_defect_name_from_defect(
     Get the doped/SnB defect name from a |Defect| object.
 
     Args:
-        defect (Defect): |Defect| object.
+        defect (|Defect|): |Defect| object.
         element_list (list):
             Sorted list of elements in the host structure, so that
             ``closest_site_info()`` returns deterministic results (in case two
@@ -454,7 +454,7 @@ def get_defect_name_from_entry(
     periodicity-breaking prevents this.
 
     Args:
-        defect_entry (DefectEntry): |DefectEntry| object.
+        defect_entry (|DefectEntry|): |DefectEntry| object.
         element_list (list):
             Sorted list of elements in the host structure, so that
             ``closest_site_info()`` returns deterministic results (in case two
@@ -899,7 +899,7 @@ def get_vacancy_charge_states(vacancy: Vacancy, padding: int = 1) -> list[int]:
     estimated charge states for your system!
 
     Args:
-        vacancy (Defect): A ``doped`` ``Vacancy`` object.
+        vacancy (|Defect|): A ``doped`` ``Vacancy`` object.
         padding (int):
             Padding for vacancy charge states, such that the vacancy charge
             states are set to ``range(vacancy oxi state, padding)`` if vacancy
@@ -929,7 +929,7 @@ def _get_possible_oxi_states(defect: Defect) -> dict:
     Get the possible oxidation states and probabilities for a defect.
 
     Args:
-        defect (Defect): A ``doped`` |Defect| object.
+        defect (|Defect|): A ``doped`` |Defect| object.
 
     Returns:
         dict:
@@ -985,7 +985,7 @@ def guess_defect_charge_states(
     the estimated charge states for your system!
 
     Args:
-        defect (Defect): ``doped`` |Defect| object.
+        defect (|Defect|): ``doped`` |Defect| object.
         probability_threshold (float):
             Probability threshold for including defect charge states (for
             substitutions and interstitials). Default is 0.0075.
@@ -1179,7 +1179,7 @@ def get_ideal_supercell_matrix(
     distance and atom number criteria.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             Primitive unit cell structure to generate supercell for.
         min_image_distance (float):
             Minimum image distance in Å of the supercell (i.e. minimum distance
@@ -1387,7 +1387,7 @@ class DefectsGenerator(MSONable):
         convention.
 
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 Structure of the host material, either as a ``pymatgen``
                 |Structure|, ``ASE`` |Atoms| or path to a structure file
                 (e.g. ``CONTCAR``). If this is not the primitive unit cell, it
@@ -1484,15 +1484,15 @@ class DefectsGenerator(MSONable):
             defects (dict):
                 Dictionary of ``{defect_type: [Defect, ...]}`` for all defect
                 objects generated.
-            primitive_structure (Structure):
+            primitive_structure (|Structure|):
                 Primitive cell structure of the host used to generate defects.
             supercell_matrix (Matrix):
                 Matrix to generate defect/bulk supercells from the primitive
                 cell structure.
-            bulk_supercell (Structure):
+            bulk_supercell (|Structure|):
                 Supercell structure of the host (equal to
                 ``self.primitive_structure * self.supercell_matrix``).
-            conventional_structure (Structure):
+            conventional_structure (|Structure|):
                 Conventional cell structure of the host according to the Bilbao
                 Crystallographic Server (BCS) definition, used to determine
                 defect site Wyckoff labels and multiplicities.
@@ -2773,7 +2773,7 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
 
     Args:
         stol (float): Site tolerance parameter.
-        structure (Structure): |Structure| to get equivalent distance for.
+        structure (|Structure|): |Structure| to get equivalent distance for.
 
     Returns:
         float: Equivalent Cartesian distance for the given ``stol`` value.
@@ -2848,7 +2848,7 @@ def get_interstitial_sites(
     with |DefectsGenerator|, reducing it to 0.5 Å for Hydrogen.)
 
     Args:
-        host_structure (Structure): Host structure.
+        host_structure (|Structure|): Host structure.
         min_dist (float):
             Minimum distance from host atoms for interstitial sites.
             Defaults to 0.9 Å.

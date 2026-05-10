@@ -551,13 +551,13 @@ class DefectEntry(thermo.DefectEntry):
                 List of site indices (in the defect supercell) to exclude from
                 the site potential sampling in the correction calculation/plot.
                 If None (default), no sites are excluded.
-            defect_outcar (PathLike or Outcar):
+            defect_outcar (PathLike or |Outcar|):
                 Path to the output ``VASP`` ``OUTCAR`` file from the defect
                 supercell calculation, or the corresponding ``pymatgen``
                 |Outcar| object. If ``None``, will use
                 ``defect_supercell_site_potentials`` from the ``defect_entry``
                 ``calculation_metadata`` if available.
-            bulk_outcar (PathLike or Outcar):
+            bulk_outcar (PathLike or |Outcar|):
                 Path to the output ``VASP`` ``OUTCAR`` file from the bulk
                 supercell calculation, or the corresponding ``pymatgen``
                 |Outcar| object. If None, will try to use
@@ -658,7 +658,7 @@ class DefectEntry(thermo.DefectEntry):
         ``clear_attributes`` is ``True`` (default).
 
         Args:
-            defect_vr (PathLike, Vasprun):
+            defect_vr (PathLike, |Vasprun|):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` |Vasprun| object, for the defect supercell
                 calculation. If ``None`` (default), tries to load the
@@ -666,7 +666,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (PathLike, Procar):
+            defect_procar (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
                 ``defect_vr`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
@@ -675,7 +675,7 @@ class DefectEntry(thermo.DefectEntry):
                 object, for the defect supercell calculation. If ``None``
                 (default), tries to load from a ``PROCAR(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            bulk_vr (PathLike, Vasprun):
+            bulk_vr (PathLike, |Vasprun|):
                 Either a path to the ``VASP`` ``vasprun.xml(.gz)`` output file
                 or a ``pymatgen`` |Vasprun| object, for the reference bulk
                 supercell calculation. If ``None`` (default), tries to load
@@ -683,7 +683,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (PathLike, Procar):
+            bulk_procar (PathLike, |Procar|):
                 Not required if projected eigenvalue data available from
                 ``bulk_vr`` (i.e. ``vasprun.xml(.gz)`` file from
                 ``LORBIT > 10`` calculation).
@@ -862,7 +862,7 @@ class DefectEntry(thermo.DefectEntry):
             filename (PathLike):
                 Filename to save the eigenvalue plot to (if ``plot = True``).
                 If ``None`` (default), plots are not saved.
-            defect_vr (PathLike, Vasprun):
+            defect_vr (PathLike, |Vasprun|):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -873,13 +873,13 @@ class DefectEntry(thermo.DefectEntry):
                 ``self.calculation_metadata["run_metadata"]["defect_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["defect_path"]``.
-            defect_procar (PathLike, Procar):
+            defect_procar (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
                 and/or if ``defect_vr`` was parsed with
                 ``parse_projected_eigen = True``.
-            bulk_vr (PathLike, Vasprun):
+            bulk_vr (PathLike, |Vasprun|):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``).
@@ -890,7 +890,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``calculation_metadata["run_metadata"]["bulk_vasprun_dict"]``,
                 or, failing that, from a ``vasprun.xml(.gz)`` file at
                 ``self.calculation_metadata["bulk_path"]``.
-            bulk_procar (PathLike, Procar):
+            bulk_procar (PathLike, |Procar|):
                 Not required if eigenvalue data has already been parsed for
                 |DefectEntry| (default behaviour when parsing, with data in
                 ``defect_entry.calculation_metadata["eigenvalue_data"]``),
@@ -1624,7 +1624,7 @@ class DefectEntry(thermo.DefectEntry):
         ``False``.
 
         Args:
-            defect_entry (DefectEntry): |DefectEntry| object.
+            defect_entry (|DefectEntry|): |DefectEntry| object.
             relative_to_defect (bool):
                 Whether to plot the signed displacements along the line from
                 the (relaxed) defect site to that atom. Negative values
@@ -1700,9 +1700,9 @@ def template_defect_entry_from_structures(
     ``doped`` parsing/analysis functions, but can be useful in other workflows.
 
     Args:
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             The defect supercell structure.
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             The bulk supercell structure.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
@@ -1756,7 +1756,7 @@ def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
     host) state, based on ``pydefect`` eigenvalue analysis.
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             ``doped`` |DefectEntry| object.
         default (bool):
             Default value to return if the eigenvalue analysis fails
@@ -1775,7 +1775,7 @@ def _parse_procar(procar: PathLike | Procar | None = None):
     correct format, for eigenvalue analysis.
 
     Args:
-        procar (PathLike, Procar):
+        procar (PathLike, |Procar|):
             Either a path to the ``VASP`` ``PROCAR``` output file (with
             ``LORBIT > 10`` in the ``INCAR``) or a``pymatgen`` |Procar|.
 
@@ -1846,7 +1846,7 @@ def _guess_and_set_struct_oxi_states(structure: Structure) -> Structure | bool:
     pretty wild).
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to guess the oxidation states.
 
     Returns:
@@ -1882,7 +1882,7 @@ def _guess_and_set_struct_oxi_states_icsd_prob(
     the ``pymatgen``-tabulated ICSD oxidation state probabilities.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to guess the oxidation states.
         try_without_max_sites (bool):
             Whether to try to guess the oxidation states
@@ -1933,7 +1933,7 @@ def guess_and_set_struct_oxi_states(structure: Structure, try_without_max_sites:
     ICSD oxidation state probabilities to guess.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to guess the oxidation states.
         try_without_max_sites (bool):
             Whether to try to guess the oxidation states
@@ -1969,7 +1969,7 @@ def guess_and_set_oxi_states_with_timeout(
     timeouts) to guess.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to guess the oxidation states.
         timeout_1 (float):
             Timeout in seconds for the second attempt to guess the oxidation
@@ -2127,7 +2127,7 @@ def _guess_and_set_oxi_states_with_timeout_icsd_prob(
     tricky cases), and if that times out, tries without ``max_sites=-1``.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to guess the oxidation states.
         timeout_1 (float):
             Timeout in seconds for the first attempt to guess the oxidation
@@ -2223,19 +2223,19 @@ class Defect(core.Defect):
         additional attributes and methods used by ``doped``.
 
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 The structure in which to create the defect. Typically
                 the primitive structure of the host crystal for defect
                 generation, and/or the calculation supercell for defect
                 parsing.
-            site (PeriodicSite):
+            site (|PeriodicSite|):
                 The defect site in the structure.
             multiplicity (int):
                 The multiplicity of the defect in the structure.
             oxi_state (float, int or str):
                 The oxidation state of the defect. If not specified,
                 this will be determined automatically.
-            equivalent_sites (list[PeriodicSite]):
+            equivalent_sites (list[|PeriodicSite|]):
                 A list of equivalent sites for the defect in the structure.
             symprec (float):
                 Symmetry tolerance for identifying equivalent sites.
@@ -2712,7 +2712,7 @@ class Defect(core.Defect):
         the site multiplicity in ``self.structure``.
 
         Args:
-            primitive_structure (Structure | None):
+            primitive_structure (|Structure| | None):
                 |Structure| to use for the primitive unit cell. Can be provided
                 to avoid recalculation of the primitive cell.
             symprec (float):
@@ -2890,7 +2890,7 @@ def remove_site_oxi_state(site: PeriodicSite):
     but applied to an individual site.
 
     Args:
-        site (PeriodicSite):
+        site (|PeriodicSite|):
             The site to remove oxidation states from.
     """
     new_sp: dict[Element, float] = collections.defaultdict(float)

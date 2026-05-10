@@ -511,7 +511,7 @@ def get_element_indices(
     elements in the structure).
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             |Structure| to get the indices from.
         elements (list[Element | Species | str] | None):
             List of elements to get the indices of. If ``None`` (default), all
@@ -546,7 +546,7 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
     element in the structure.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             |Structure| to calculate bond lengths for.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
@@ -611,7 +611,7 @@ def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
 
     Args:
         dist (float): Cartesian distance in Å.
-        structure (Structure): |Structure| to calculate ``stol`` for.
+        structure (|Structure|): |Structure| to calculate ``stol`` for.
 
     Returns:
         float: Equivalent ``stol`` value for the given distance.
@@ -626,8 +626,8 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
     of per-element minimum interatomic distances in the two structures.
 
     Args:
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``ignored_species`` or ``comparator`` has
@@ -731,8 +731,8 @@ def StructureMatcher_scan_stol(
     large structures).
 
     Args:
-        struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
-        struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
+        struct1 (|Structure|): ``struct1`` for ``StructureMatcher.match()``.
+        struct2 (|Structure|): ``struct2`` for ``StructureMatcher.match()``.
         func_name (str):
             The name of the |StructureMatcher| method to return the result
             of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
@@ -829,7 +829,7 @@ class DopedTopographyAnalyzer:
     ) -> None:
         """
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 |Structure| to analyse.
             image_tol (float):
                 A tolerance distance for the analysis, used to determine if
@@ -933,7 +933,7 @@ def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     mapping back to the original structure (typically a supercell).
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             ``pymatgen`` |Structure| object.
 
     Returns:
@@ -1031,7 +1031,7 @@ class DopedVacancyGenerator(VacancyGenerator):
         Generate vacancy defects.
 
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 The structure to generate vacancy defects in.
             rm_species (set[str | Species] | list[str | Species] | None):
                 List/set of species to be removed (i.e. to consider for vacancy

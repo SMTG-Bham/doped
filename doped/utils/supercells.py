@@ -24,7 +24,7 @@ def get_min_image_distance(structure: Structure) -> float:
     https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
 
     Args:
-        structure (Structure): |Structure| object.
+        structure (|Structure|): |Structure| object.
 
     Returns:
         float: Minimum image distance.
@@ -39,7 +39,7 @@ def min_dist(structure: Structure, ignored_species: list[str] | None = None) -> 
     Uses ``numpy`` vectorisation for fast computation.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure to check.
         ignored_species (list[str]):
             A list of species symbols to ignore when calculating the minimum
@@ -649,7 +649,7 @@ def _min_sum_off_diagonals(prim_struct: Structure, supercell_matrix: np.ndarray)
     transformation matrix of either the primitive or conventional cells).
 
     Args:
-        prim_struct (Structure): Primitive structure.
+        prim_struct (|Structure|): Primitive structure.
         supercell_matrix (np.ndarray): Supercell matrix to check.
 
     Returns:
@@ -921,7 +921,7 @@ def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) 
     value will be set to an empty dict.
 
     Args:
-        struct (Structure):
+        struct (|Structure|):
             |Structure| to generate supercells for.
         uc_range (tuple):
             Range of numbers of unit cells to search over.

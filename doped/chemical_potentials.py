@@ -348,7 +348,7 @@ def get_entries_in_chemsys(
             the MP-computed phase diagram) less than this value (in eV/atom)
             will be returned. Set to 0 to only return phases on the MP convex
             hull. Default is ``None`` (i.e. all entries are returned).
-        bulk_composition (str/Composition):
+        bulk_composition (str/|Composition|):
             Optional input; formula of the bulk host material, to use for
             sorting the output entries (with all those matching the bulk
             composition first). Default is ``None``.
@@ -419,7 +419,7 @@ def get_entries(
             ``MP_API_KEY`` environment variable -- see the ``doped``
             Installation docs:
             https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
-        bulk_composition (str/Composition):
+        bulk_composition (str/|Composition|):
             Optional input; formula of the bulk host material, to use for
             sorting the output entries (with all those matching the bulk
             composition first). Default is ``None``.
@@ -578,7 +578,7 @@ def _entries_sort_func(
         use_e_per_atom (bool):
             If ``True``, sort by energy per atom rather than energy above hull.
             Default is ``False``.
-        bulk_composition (str/Composition/dict/list):
+        bulk_composition (str/|Composition|/dict/list):
             Bulk composition; to sort entries matching this composition first.
             Default is ``None`` (don't sort according to this).
 
@@ -2376,7 +2376,7 @@ def get_doped_chempots_from_entries(
             ``PDEntry``\s for the chemical system, from which to determine
             the chemical potential limits for the host material
             (``composition``).
-        composition (str, Composition, |ComputedEntry|):
+        composition (str, |Composition|, |ComputedEntry|):
             Composition of the host material either as a string
             (e.g. 'LiFePO4') a ``pymatgen`` |Composition| object (e.g.
             ``Composition('LiFePO4')``), or a |ComputedEntry| object.
@@ -4475,7 +4475,7 @@ def plot_chempot_heatmap(
             Chemical potential limits dictionary in the ``doped`` format (i.e.
             ``{"limits": [{'limit': [chempot_dict]}], ...}``) for the host
             material (``composition``).
-        composition (str or Composition or |ComputedEntry|):
+        composition (str or |Composition| or |ComputedEntry|):
             Host material composition as a string, |Composition| object or
             |ComputedEntry|, for which to plot the chemical stability region
             (and for which ``chempots`` corresponds to).
@@ -5133,7 +5133,7 @@ def get_X_rich_poor_limit(
             Energy tolerance in eV. Limits whose μ_X satisfies
             ``|μ_X - μ_X^*| < tol``, with μ_X^* being the extremal value, are
             treated as tied. Default is 0.01 eV.
-        bulk_composition (str | Composition | None):
+        bulk_composition (str | |Composition| | None):
             Host composition for intrinsic-vs-extrinsic ordering in ties. If
             ``None`` (default), auto-determines the bulk composition from the
             ``chempots`` dict (i.e. the composition which is present for each

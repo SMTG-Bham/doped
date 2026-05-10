@@ -50,7 +50,7 @@ def calc_site_displacements(
     |DefectEntry| object under the ``"site_displacements"`` key.
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             |DefectEntry| object.
         relative_to_defect (bool):
             Whether to calculate the signed displacements along the line from
@@ -217,7 +217,7 @@ def plot_site_displacements(
     ``False``.
 
     Args:
-        defect_entry (DefectEntry): |DefectEntry| object.
+        defect_entry (|DefectEntry|): |DefectEntry| object.
         relative_to_defect (bool):
             Whether to plot the signed displacements along the line from the
             (relaxed) defect site to that atom. Negative values indicate the
@@ -603,7 +603,7 @@ def calc_displacements_ellipsoid(
     matrix and dataframe of anisotropy information.
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             |DefectEntry| object.
         quantile (float):
             The quantile threshold for selecting significant displacements
@@ -759,7 +759,7 @@ def plot_displacements_ellipsoid(
     (default).
 
     Args:
-        defect_entry (DefectEntry):
+        defect_entry (|DefectEntry|):
             |DefectEntry| object.
         plot_ellipsoid (bool):
             If ``True``, plot the fitted ellipsoid in the crystal lattice.

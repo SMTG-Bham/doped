@@ -243,7 +243,7 @@ def raw_energy_from_chempots(composition: str | dict | Composition, chempots: di
     potentials dictionary format).
 
     Args:
-        composition (str | dict | Composition):
+        composition (str | dict | |Composition|):
             Composition to get the raw energy of.
         chempots (dict):
             Chemical potentials dictionary.
@@ -304,7 +304,7 @@ def group_defects_by_type_and_distance(
     distances and resulting clustering behaviour.
 
     Args:
-        defect_entries (list[DefectEntry]):
+        defect_entries (list[|DefectEntry|]):
             A list of |DefectEntry| objects to group together based on type
             and distance between symmetry-equivalent sites.
         dist_tol (float):
@@ -381,7 +381,7 @@ def group_defects_by_distance(
     distances and resulting clustering behaviour.
 
     Args:
-        entry_list ([DefectEntry, ...]):
+        entry_list ([|DefectEntry|, ...]):
             A list of |DefectEntry| objects to group together.
         dist_tol (float):
             Distance threshold (in Å) for clustering equivalent defect sites.
@@ -570,7 +570,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
     ``{"v_Cd_C3v": [v_Cd_C3v_+1, v_Cd_C3v_+2], "v_Cd_Td": [v_Cd_Td_+1]}``.
 
     Args:
-        entry_list ([DefectEntry]):
+        entry_list ([|DefectEntry|]):
             A list of |DefectEntry| objects to group together by defect name
             (without charge).
 
@@ -612,7 +612,7 @@ def name_defect_cluster(entry_list: list[DefectEntry]) -> str:
     cluster.
 
     Args:
-        entry_list (list[DefectEntry]):
+        entry_list (list[|DefectEntry|]):
             List of |DefectEntry| objects constituting the defect cluster.
 
     Returns:
@@ -722,7 +722,7 @@ class DefectThermodynamics(MSONable):
         defects in plots.
 
         Args:
-            defect_entries (dict[str, DefectEntry] or list[DefectEntry]):
+            defect_entries (dict[str, |DefectEntry|] or list[|DefectEntry|]):
                 A dict or list of |DefectEntry| objects. If a
                 ``DefectEntry.name`` attribute is not defined or does not end
                 with the charge state (as ``..._{charge state}``), then the
@@ -799,7 +799,7 @@ class DefectThermodynamics(MSONable):
                 Whether to check the compatibility of the bulk entry for each
                 defect entry (i.e. that all reference bulk energies are the
                 same). Default is ``True``.
-            bulk_dos (FermiDos or Vasprun or PathLike):
+            bulk_dos (FermiDos or |Vasprun| or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating Fermi level positions and
                 defect/carrier concentrations. Alternatively, can be a
@@ -827,7 +827,7 @@ class DefectThermodynamics(MSONable):
                 ``False`` (don't skip check).
 
         Key Attributes:
-            defect_entries (dict[str, DefectEntry]):
+            defect_entries (dict[str, |DefectEntry|]):
                 Dict of |DefectEntry| objects included in the
                 |DefectThermodynamics| set, with their names as keys.
             chempots (dict):
@@ -862,13 +862,13 @@ class DefectThermodynamics(MSONable):
                 Whether to skip the warning about the DOS VBM differing from
                 the defect entries VBM by >0.05 eV. Should only be used when
                 the reason for this difference is known/acceptable.
-            clustered_defect_entries (dict[int, set[DefectEntry]]):
+            clustered_defect_entries (dict[int, set[|DefectEntry|]]):
                 Dictionary of defect entries clustered according to the
                 ``dist_tol`` distance tolerance (between symmetry-equivalent
                 sites). This is used to identify defects which occupy similar
                 sites, which is then used in defect concentration calculations
                 for determining site competition.
-            clustered_defect_entries_by_type (dict[str, dict[int, set[DefectEntry]]]):
+            clustered_defect_entries_by_type (dict[str, dict[int, set[|DefectEntry|]]]):
                 Dictionary of defect entries clustered according to the
                 ``dist_tol`` distance tolerance (between symmetry-equivalent
                 sites), grouped by defect type (i.e. simple defect name, e.g.
@@ -1548,7 +1548,7 @@ class DefectThermodynamics(MSONable):
         Add additional defect entries to the |DefectThermodynamics| object.
 
         Args:
-            defect_entries ({str: DefectEntry} or [DefectEntry]):
+            defect_entries ({str: |DefectEntry|} or [|DefectEntry|]):
                 A dict or list of |DefectEntry| objects, to add to the
                 ``DefectThermodynamics.defect_entries`` dict. If a
                 ``DefectEntry.name`` attribute is not defined or does not end
@@ -2064,7 +2064,7 @@ class DefectThermodynamics(MSONable):
         the defect name, of the |DefectEntry| object itself.
 
         Args:
-            defect_entry (str or DefectEntry):
+            defect_entry (str or |DefectEntry|):
                 Either a string of the defect entry name (in
                 ``DefectThermodynamics.defect_entries``), or a |DefectEntry|
                 object. If the defect name is given without the charge state,
@@ -3666,7 +3666,7 @@ class DefectThermodynamics(MSONable):
         https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
 
         Args:
-            bulk_dos (FermiDos or Vasprun or PathLike):
+            bulk_dos (FermiDos or |Vasprun| or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating carrier concentrations.
                 Alternatively, can be a ``pymatgen`` |Vasprun| object or path
@@ -3913,7 +3913,7 @@ class DefectThermodynamics(MSONable):
         defect/carrier concentration), which may be useful -- see tutorial.
 
         Args:
-            bulk_dos (FermiDos or Vasprun or PathLike):
+            bulk_dos (FermiDos or |Vasprun| or PathLike):
                 ``pymatgen`` ``FermiDos`` for the bulk electronic density of
                 states (DOS), for calculating carrier concentrations.
                 Alternatively, can be a ``pymatgen`` |Vasprun| object or path
@@ -4304,7 +4304,7 @@ class DefectThermodynamics(MSONable):
         where TL is any transition level involving ``defect_entry``.
 
         Args:
-            defect_entry (str or DefectEntry):
+            defect_entry (str or |DefectEntry|):
                 Either a string of the defect entry name (in
                 ``DefectThermodynamics.defect_entries``), or a
                 |DefectEntry| object.
@@ -4809,7 +4809,7 @@ def get_fermi_dos(dos_vr: PathLike | Vasprun):
     object (parsed with ``parse_dos = True``).
 
     Args:
-        dos_vr (PathLike | Vasprun):
+        dos_vr (PathLike | |Vasprun|):
             Path to a ``vasprun.xml(.gz)`` file, or a |Vasprun| object.
 
     Returns:
@@ -5070,7 +5070,7 @@ class FermiSolver(MSONable):
             defect_thermodynamics (|DefectThermodynamics|):
                 A |DefectThermodynamics| object, providing access to defect
                 formation energies and other related thermodynamic properties.
-            bulk_dos (FermiDos or Vasprun or PathLike):
+            bulk_dos (FermiDos or |Vasprun| or PathLike):
                 Either a path to the ``vasprun.xml(.gz)`` output of a bulk DOS
                 calculation in VASP, a ``pymatgen`` |Vasprun| object or a
                 ``pymatgen`` ``FermiDos`` for the bulk electronic DOS, for
