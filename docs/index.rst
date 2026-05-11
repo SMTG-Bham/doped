@@ -63,9 +63,8 @@ displacements from DFT supercell calculations. See the
 Installation
 ============
 ``doped`` can be installed via PyPI (``pip install doped``) or ``conda`` if preferred
-(``conda install -c conda-forge doped; pip install pydefect``), and further instructions for setting up
-``POTCAR`` files with ``pymatgen`` (needed for input file generation), if not already done, are provided
-on the :ref:`Installation` page.
+(``conda install -c conda-forge doped``), and further instructions for setting up ``POTCAR`` files with ``pymatgen``
+(needed for input file generation), if not already done, are provided on the :ref:`Installation` page.
 
 Citation
 ========

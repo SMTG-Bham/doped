@@ -19,20 +19,6 @@ Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 .. code-block:: bash
 
    conda install -c conda-forge doped
-   pip install pydefect  # pydefect not available on conda, so needs to be installed with pip or otherwise, if using the eFNV correction
-
-If you are installing ``doped`` via ``conda`` and you plan on using the eFNV (Kumagai-Oba) finite-size
-correction, you will need to install the ``pydefect`` package with ``pip`` as shown or otherwise, as it is
-not available on ``conda``.
-
-.. NOTE::
-   Due to a recent change in the python build procedure for ``phonopy`` (an indirect dependency of
-   ``doped``), in version ``2.26``, ``pip install doped`` can fail on some older systems (with
-   older versions of ``gcc``). This can be resolved by either (1) installing ``doped`` from ``conda``
-   (as above), (2) installing ``phonopy`` from ``conda`` (see
-   `here <https://phonopy.github.io/phonopy/install.html>`__) and then ``doped`` with ``pip``,
-   (3) installing ``phonopy<=2.25``  (``pip install phonopy<=2.25``) and then ``doped`` with ``pip``,
-   or (4) upgrading your system's ``gcc`` to a more recent version if possible.
 
 It may be desirable to install ``doped`` in a virtual environment (e.g. if you encounter package dependency
 conflict warnings during installation etc). You can do this with ``conda`` with:

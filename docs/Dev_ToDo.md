@@ -54,6 +54,5 @@
 - Update all tutorial notebooks, to use latest codebase and be directly runnable in Colab
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks. TODO in ``doped.chemical_potentials``.
 - Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
-- For v4.1; search for deprecation warnings and remove.
+- For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove. 
 - Example generation of `pydefect` defect-structure-info (shown here https://kumagai-group.github.io/pydefect/tutorial.html#check-defect-structures) in advanced analysis tutorial.
-- Update `pymatgen-analysis-defects` to refactor to `pymatgen-core`-only. Also needs minor refactors in `shakenbreak` and `pydefect`/`vise`.

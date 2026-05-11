@@ -25,7 +25,7 @@ dependencies = [
     # requires spglib >= 2.5
     "pymatgen-analysis-defects>=2023.8.22",  # TODO: Update to (fully) pymatgen-core compatible version
     "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
-    "shakenbreak>=3.4.2",  # doped StructureMatcher efficiency updates (using ``StructureMatcher_scan_stol``)
+    "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.9.9",  # eigenvalue parsing updates
