@@ -8,6 +8,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from matplotlib.pyplot import Figure
 from monty.serialization import dumpfn, loadfn
 from pymatgen.analysis.defects import core, thermo, utils
 from pymatgen.core.bond_valence import BVAnalyzer
@@ -30,18 +31,15 @@ from doped.utils.efficiency import (
 if TYPE_CHECKING:
     import matplotlib as mpl
     import plotly.graph_objects as go
-    from matplotlib.pyplot import Figure
 
 
 with suppress_logging(), warnings.catch_warnings():
-    try:  # just for type-checking here, but not run in ``TYPE_CHECKING`` block
-        # as ``pydefect`` calls ``vise.defaults`` which suppresses all user
-        # warnings with ``warnings.simplefilter("ignore", UserWarning)``, so
-        # here we use the ``warnings.catch_warnings()`` context manager to
-        # avoid warnings filter mutation
-        from pydefect.analyzer.band_edge_states import BandEdgeStates
-    except ImportError:
-        BandEdgeStates = None  # type: ignore[assignment,misc]
+    # just for type-checking here, but not run in ``TYPE_CHECKING`` block
+    # as ``pydefect`` calls ``vise.defaults`` which suppresses all user
+    # warnings with ``warnings.simplefilter("ignore", UserWarning)``, so
+    # here we use the ``warnings.catch_warnings()`` context manager to
+    # avoid warnings filter mutation
+    from pydefect.analyzer.band_edge_states import BandEdgeStates
 
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
@@ -825,7 +823,7 @@ class DefectEntry(thermo.DefectEntry):
         clear_attributes: bool = True,
         _parameter_order_warn: bool = True,
         **kwargs,
-    ) -> "BandEdgeStates | tuple[BandEdgeStates, Figure]":
+    ) -> BandEdgeStates | tuple[BandEdgeStates, Figure]:
         r"""
         Returns information about the band edge and in-gap electronic states
         and their orbital character / localisation degree for the defect entry,

@@ -443,19 +443,12 @@ def get_kumagai_correction(
     from doped import suppress_logging
 
     with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
-        try:
-            from pydefect.analyzer.calc_results import CalcResults
-            from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
-            from pydefect.corrections.ewald import Ewald
-            from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
-            from pydefect.defaults import defaults
-            from pydefect.util.error_classes import SupercellError
-
-        except ImportError as exc:
-            raise ImportError(
-                "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
-                "You can do this by running `pip install pydefect`."
-            ) from exc
+        from pydefect.analyzer.calc_results import CalcResults
+        from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+        from pydefect.corrections.ewald import Ewald
+        from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+        from pydefect.defaults import defaults
+        from pydefect.util.error_classes import SupercellError
 
     def doped_make_efnv_correction(
         charge: float,

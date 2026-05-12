@@ -3,12 +3,6 @@ Helper functions for setting up PHS analysis.
 
 Contains modified versions of functions from ``pydefect`` and ``vise``
 (https://github.com/kumagai-group/pydefect / vise).
-
-Note that this module attempts to import modules from ``pydefect`` & ``vise``,
-which are highly-recommended but not strictly required dependencies of
-``doped`` (currently not available on ``conda-forge``), and so any imports of
-code from this module will attempt their import, raising an ``ImportError`` if
-not available.
 """
 
 import contextlib
@@ -32,26 +26,19 @@ from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_
 from doped.utils.plotting import _get_backend
 
 with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
-    try:
-        import pydefect.analyzer.make_band_edge_states
-        import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
-        from pydefect.analyzer.band_edge_states import (
-            BandEdgeOrbitalInfos,
-            BandEdgeStates,
-            EdgeInfo,
-            OrbitalInfo,
-            PerfectBandEdgeState,
-        )
-        from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
-        from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
-        from pydefect.defaults import defaults
-        from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
-
-    except ImportError as exc:
-        raise ImportError(
-            "To perform eigenvalue & orbital analysis, you need to install pydefect. "
-            "You can do this by running `pip install pydefect`."
-        ) from exc
+    import pydefect.analyzer.make_band_edge_states
+    import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
+    from pydefect.analyzer.band_edge_states import (
+        BandEdgeOrbitalInfos,
+        BandEdgeStates,
+        EdgeInfo,
+        OrbitalInfo,
+        PerfectBandEdgeState,
+    )
+    from pydefect.analyzer.eigenvalue_plotter import EigenvalueMplPlotter
+    from pydefect.cli.vasp.make_perfect_band_edge_state import get_edge_info
+    from pydefect.defaults import defaults
+    from vise.analyzer.vasp.band_edge_properties import BandEdgeProperties, eigenvalues_from_vasprun
 
 
 def band_edge_properties_from_vasprun(

@@ -42,17 +42,11 @@ with suppress_logging(), warnings.catch_warnings():
     # warnings context manager shouldn't be necessary in this case, as vise.util.logger doesn't import
     # ``vise.defaults`` (where the problematic ``warnings.simplefile("ignore", UserWarning)`` call is, but
     # we still use it here just in case another vise import is added to ``vise.util.logger``
-    try:
-        import vise.util.logger
+    import vise.util.logger
 
-        vise.util.logger.get_logger = (
-            logging.getLogger
-        )  # to avoid repeated vise INFO messages with Parallel code
-    except ImportError:
-        warnings.warn(
-            "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, "
-            "and can be installed with `pip install pydefect`."
-        )
+    vise.util.logger.get_logger = (
+        logging.getLogger
+    )  # to avoid repeated vise INFO messages with Parallel code
 
 
 def _ignore_pmg_warnings():
