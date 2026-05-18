@@ -146,12 +146,14 @@ def make_molecule_in_a_box(element: str) -> Structure:
     """
     element = sub(r"\d+$", "", element)  # remove digits in case provided as X2 etc
     if element not in elemental_diatomic_bond_lengths:
-        raise ValueError(
-            f"Element {element} is not currently supported for molecule-in-a-box structure generation."
-        )
+        from shakenbreak.distortions import get_dimer_bond_length
+
+        bond_length = get_dimer_bond_length(element, element)
+
+    else:
+        bond_length = elemental_diatomic_bond_lengths[element]
 
     lattice = np.array([[30.01, 0, 0], [0, 30.00, 0], [0, 0, 29.99]])
-    bond_length = elemental_diatomic_bond_lengths[element]
     return Structure(
         lattice=lattice,
         species=[element, element],
@@ -162,23 +164,25 @@ def make_molecule_in_a_box(element: str) -> Structure:
 
 def make_molecular_entry(computed_entry: ComputedEntry) -> ComputedStructureEntry:
     """
-    Generate a new |ComputedStructureEntry| for a molecule in a box, for the
-    input elemental |ComputedEntry|.
+    Generate a |ComputedStructureEntry| for a diatomic 'molecule-in-a-box' (X2)
+    structure (e.g. O2, H2, Cl2, etc.), with composition and energy-per-atom
+    set to match the input elemental |ComputedEntry|.
 
-    The formula of the input ``computed_entry`` must be one of the supported
-    diatomic molecules (O2, N2, H2, F2, Cl2). The magnetization of the output
-    molecular entry (as in ``entry.data["summary"]["total_magnetization"]``) is
-    set to 0 for all X2 except O2, which has a triplet ground state (S = 1) --
-    this is then used to set spin polarisation input settings (``ISPIN`` and
-    ``NUPDOWN`` in ``VASP``) appropriately, with ``_set_spin_polarisation()``.
+    The magnetization of the output molecular entry (as in
+    ``entry.data["summary"]["total_magnetization"]``) is set to 0 for all X2
+    except O2, which has a triplet ground state (S = 1) -- this is then used to
+    set spin polarisation input settings (``ISPIN`` and ``NUPDOWN`` in
+    ``VASP``) appropriately, with ``_set_spin_polarisation()``.
 
     Args:
         computed_entry (|ComputedEntry|):
-            |ComputedEntry| object for the elemental entry.
+            |ComputedEntry| object for a single-element entry, for which to
+            generate a corresponding diatomic 'molecule-in-a-box' entry (with
+            matching composition and energy-per-atom).
 
     Returns:
         |ComputedStructureEntry|:
-            |ComputedStructureEntry| for the molecule in a box.
+            |ComputedStructureEntry| for the diatomic (X2) 'molecule-in-a-box'.
     """
     assert len(computed_entry.composition.elements) == 1  # Elemental!
     formula = computed_entry.data.get("formula_pretty", "N/A")
