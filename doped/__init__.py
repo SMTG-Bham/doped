@@ -69,6 +69,9 @@ def _ignore_pmg_warnings():
     # ignore warning about structure charge that appears when getting Vasprun.as_dict():
     warnings.filterwarnings("ignore", message="Structure charge")
 
+    # ignore UFloat warning about std_dev==0 (from MP energy corrections)
+    warnings.filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
+
 
 _ignore_pmg_warnings()
 
