@@ -740,7 +740,7 @@ def get_and_set_competing_phase_name(
         if entry.data.get("molecule"):
             space_group = "mmm"  # just point group
         elif hasattr(entry, "structure"):
-            space_group = entry.structure.get_space_group_info()[0]
+            space_group = entry.structure.get_space_group_info(symprec=0.1)[0]
         else:
             space_group = "NA"
         entry.data["doped_name"] = f"{entry.name}_{space_group}_EaH_{rounded_eah}"
