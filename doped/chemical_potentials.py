@@ -12,6 +12,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from copy import deepcopy
+from functools import cache
 from pathlib import Path
 from re import sub
 from typing import Any, overload
@@ -25,7 +26,7 @@ from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import loadfn
-from mp_api.client import MPRester, MPRestError
+from mp_api.client.mprester import MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -78,6 +79,9 @@ elemental_diatomic_bond_lengths = {"H": 0.74, "O": 1.21, "N": 1.10, "F": 1.42, "
 #  ``combine_extrinsic`` function, but more appropriate), and example adjusting entry energy as noted below
 #  and maybe note the possibility of using ``single_extrinsic_phase_limits`` for generation but not parsing
 #  as a reasonable approach to boosting efficiency without major accuracy loss.
+# Check tutorial links working!
+# Show example of generating `NKRED` folders for competing phases, and mention in docstrings.
+# TODO: Use Codex to review the new module (and ask Claude to review all as well)
 
 MPRESTER_PROPERTY_DATA = (  # properties to pull for Materials Project entries
     "material_id",  # populated in ``entry.data``; needed to map entries to summary docs
@@ -379,7 +383,8 @@ def get_entries_in_chemsys(
         # reparse energy above hull, to avoid mislabelling issues noted in Materials Project database
         # (mostly only the legacy database, so should be resolved with the new MP API database now);
         # e.g. search "F", or ZnSe2 on Zn-Se convex hull from MP PD, but EaH = 0.147 eV/atom?
-        # or Immm phases for Br, I..., Na2FePO4F...
+        # or Immm phases for Br, I..., Na2FePO4F... # TODO: Check if needed, if not can cut this function?
+        # only other thing is sorting, can be done after
         entry.data["energy_above_hull"] = temp_phase_diagram.get_e_above_hull(entry)
 
     if energy_above_hull is not None:
@@ -701,6 +706,76 @@ def prune_entries_to_border_candidates(
     return bordering_entries
 
 
+@cache
+def _known_MP_ground_states() -> dict[Composition, frozenset[str]]:
+    """
+    Load the ``known_MP_ground_states.yaml`` data file as a mapping of reduced
+    |Composition| to the set of Materials Project IDs to retain when
+    ``expected_polymorphs=True`` in |CompetingPhases|.
+    """
+    raw: dict[str, list[str]] = loadfn(
+        str(Path(__file__).parent / "utils" / "known_MP_ground_states.yaml")
+    )
+    return {Composition(formula).reduced_composition: frozenset(mpids) for formula, mpids in raw.items()}
+
+
+def prune_to_expected_polymorphs(entries: list[ComputedEntry]) -> list[ComputedEntry]:
+    r"""
+    For each composition listed in ``doped/utils/known_MP_ground_states.yaml``,
+    retain only the lowest energy-above-hull entry plus any entries whose
+    Materials Project ID is included in the listed set; entries for
+    compositions not listed in the data file are returned unchanged.
+
+    Args:
+        entries (list[|ComputedEntry|]):
+            Input list of |ComputedEntry| objects to prune.
+
+    Returns:
+        list[|ComputedEntry|]:
+            Pruned list of entries.
+    """
+    known = _known_MP_ground_states()
+    grouped: dict[Composition, list[ComputedEntry]] = defaultdict(list)
+    for entry in entries:
+        grouped[entry.composition.reduced_composition].append(entry)
+
+    pruned: list[ComputedEntry] = []
+    for reduced_comp, comp_entries in grouped.items():
+        if reduced_comp not in known:
+            pruned.extend(comp_entries)
+            continue
+
+        allowed_mpids = known[reduced_comp]  # Materials Project IDs to retain
+        lowest = min(comp_entries, key=lambda e: e.data.get("energy_above_hull", float("inf")))
+        pruned.extend(e for e in comp_entries if e is lowest or e.data.get("material_id") in allowed_mpids)
+
+    return pruned
+
+
+def _warn_if_many_polymorphs_per_composition(entries: list[ComputedEntry], threshold: int = 5) -> None:
+    """
+    Warn if any composition in ``entries`` has more than ``threshold``
+    polymorphs, suggesting that the user prune them using knowledge of the
+    expected ground-state / room-temperature phase(s).
+    """
+    comp_counts: dict[str, int] = defaultdict(int)
+    for entry in entries:
+        comp_counts[entry.composition.reduced_formula] += 1
+    many_polymorphs = {comp: n for comp, n in comp_counts.items() if n > threshold}
+    if not many_polymorphs:
+        return
+
+    details = ", ".join(f"{comp} ({n})" for comp, n in many_polymorphs.items())
+    warnings.warn(
+        f"The following competing phase composition(s) have more than {threshold} entries to consider: "
+        f"{details}. While often unavoidable (e.g. for chemical systems with many low-energy "
+        f"polymorphs/allotropes), in some cases knowledge of the expected ground-state phase(s) can be "
+        f"used to prune these entries and minimise costs. See the discussion and examples at "
+        f"https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html"
+        f"#chemical-systems-with-many-polymorphs"
+    )
+
+
 def get_and_set_competing_phase_name(
     entry: ComputedStructureEntry | ComputedEntry,
     regenerate: bool = False,
@@ -846,6 +921,7 @@ class CompetingPhases(MSONable):
         full_phase_diagram: bool = False,
         single_extrinsic_phase_limits: bool = False,
         codoping: bool = False,
+        expected_polymorphs: bool = False,
         MP_doc_dicts: bool = False,
         api_key: str | None = None,
         **kwargs: Any,
@@ -938,6 +1014,18 @@ class CompetingPhases(MSONable):
                 element. If set to ``True`` (and multiple extrinsic species
                 present), then ``single_extrinsic_phase_limits`` is forced to
                 be ``False``. Default is ``False``.
+            expected_polymorphs (bool):
+                If ``True``, prune competing phase entries to expected ground-
+                state / room-temperature polymorphs for compositions listed in
+                ``doped/utils/known_MP_ground_states.yaml`` (common elements
+                and oxides with many low-energy polymorphs on the MP database,
+                and known ground-state phases). For each listed composition,
+                only the lowest MP energy-above-hull entry plus any entries
+                whose Materials Project ID is in the listed set are retained.
+                See ``docs/known_MP_ground_states.md`` for the rationale and
+                citations behind each composition's curated set, and
+                https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#chemical-systems-with-many-polymorphs
+                for discussion and examples. Default is ``False``.
             MP_doc_dicts (bool):
                 If ``True``, also queries the Materials Project (MP) for
                 summary doc dicts with ``MPRester.summary_search()`` for the
@@ -1008,7 +1096,6 @@ class CompetingPhases(MSONable):
             _get_entries_kwargs:
                 Stored input parameters (see ``Args`` above).
         """
-        # TODO: Give quick attribute summary at end of docstring above
         if "full_sub_approach" in kwargs:  # TODO: remove in v4.1
             raise ValueError(
                 "`full_sub_approach` was renamed to `single_extrinsic_phase_limits` in doped v4.0, "
@@ -1021,47 +1108,10 @@ class CompetingPhases(MSONable):
         self.extrinsic = extrinsic
         self.codoping = codoping
         self.single_extrinsic_phase_limits = single_extrinsic_phase_limits
+        self.expected_polymorphs = expected_polymorphs
         _check_MP_API_key(api_key)
         self.api_key = api_key
         self._get_entries_kwargs = kwargs
-
-        # TODO: Should hard code S (solid + S8 (mp-994911), + S2 (molecule in a box)), P, Te and Se in
-        #  here too. Common anions with a lot of unnecessary polymorphs on MP. Should at least scan over
-        #  elemental phases and hard code any particularly bad cases. E.g. P_EaH=0 is red phosphorus
-        #  (HSE06 groundstate), P_EaH=0.037 is black phosphorus (thermo stable at RT), so only need to
-        #  generate these. Same for all alkali and alkaline earth metals (ask the battery boys), TiO2,
-        #  SnO2, WO3 (particularly bad cases).
-        # Can have a data file with a list of known, common cases?
-        # With Materials Project querying, can check if the structure has a database ID (i.e. is
-        # experimentally observed) with icsd_id(s) / theoretical (same thing). Could have 'lean' option
-        # which only outputs phases which are either on the MP-predicted hull or have an ICSD ID?
-        # Would want to test this to see if it is sufficient in most cases, then can recommend its use
-        # with a caution... From a quick test, this does cut down a good chunk of unnecessary phases,
-        # but still not all as often there are several ICSD phases for e.g. metals with a load of known
-        # polymorphs (at different temperatures/pressures).
-        # for new MP API; see https://github.com/materialsproject/api/issues/625 &
-        # https://github.com/materialsproject/api/issues/675 &
-        # https://github.com/materialsproject/api/issues/857 for accessing ICSD etc IDs (also
-        # doc.database_IDs etc)
-        # "See SK notes from CdTe competing phases, and notes below."
-        # build in a warning when many entries for the same composition, say which have database IDs,
-        # warn the user and direct to relevant section on the docs -> Give some general foolproof advice
-        # for how best to deal with these cases (i.e. check the ICSD and online for which is actually
-        # the groundstate structure, and/or if it's known from other work for your chosen functional etc.)?
-
-        # Strategies for dealing with these cases where MP has many low energy polymorphs in general?
-        # Will mention some good practice in the docs anyway. -> Have an in-built warning when many
-        # entries for the same composition, warn the user (that if the groundstate phase at low/room
-        # temp is well-known, then likely best to prune to that) and direct to relevant section on the
-        # docs discussing this
-
-        # Plan:
-        # - (Controllable) Warning when many polymorphs of a given phase within EaH range, pointing to our
-        #   guidance in tutorials/ on docs
-        # - Data file of known bad cases, with notes somewhere that users could submit PRs for this? But
-        #   not accessed automatically, show example in tutorial of doing this pruning
-        # - Also show example of doing the pruning based on database IDs
-        # See: https://docs.materialsproject.org/downloading-data/using-the-api/examples#querying-icsd-id
 
         if isinstance(composition, Structure):
             primitive_structure = get_primitive_structure(composition)
@@ -1209,9 +1259,15 @@ class CompetingPhases(MSONable):
         else:  # self.full_phase_diagram = True
             self.entries = formatted_entries
 
+        if self.expected_polymorphs:
+            self.entries = prune_to_expected_polymorphs(self.entries)
+
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
         self.entries.sort(key=lambda x: _entries_sort_func(x, bulk_composition=self.composition))
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
+
+        if not self.extrinsic:  # extrinsic path emits its own warning after extrinsic entries added
+            _warn_if_many_polymorphs_per_composition(self.entries)
 
         if MP_doc_dicts:
             self.MP_doc_dicts = get_MP_summary_dicts(entries=self.entries, api_key=self.api_key)
@@ -1325,6 +1381,10 @@ class CompetingPhases(MSONable):
                         or (entry.is_element and ext_elt in entry.name)
                     ]
 
+        if self.expected_polymorphs:  # also prune extrinsic entries added above
+            self.entries = prune_to_expected_polymorphs(self.entries)
+            self.intrinsic_entries = prune_to_expected_polymorphs(self.intrinsic_entries)
+
         # sort by host composition?, energy above hull, num_species, then by periodic table positioning:
         self.MP_full_pd_entries.sort(
             key=lambda x: _entries_sort_func(x, bulk_composition=self.composition.reduced_composition)
@@ -1338,6 +1398,8 @@ class CompetingPhases(MSONable):
         assert len(self.intrinsic_entries) + len(self.extrinsic_entries) == len(
             self.entries
         ), "Error in extrinsic entries generation, please report this to the doped developers!"
+
+        _warn_if_many_polymorphs_per_composition(self.entries)
 
         if MP_doc_dicts:
             self.intrinsic_MP_doc_dicts = deepcopy(self.MP_doc_dicts)
