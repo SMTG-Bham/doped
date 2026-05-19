@@ -4,12 +4,12 @@ calculations.
 """
 
 import contextlib
-import copy
 import logging
 import operator
 import re
 import warnings
 from collections import defaultdict
+from copy import deepcopy
 from functools import partial, reduce
 from itertools import chain
 from typing import TYPE_CHECKING, cast
@@ -2086,7 +2086,7 @@ class DefectsGenerator(MSONable):
                 neutral_defect_entry.charge_state_guessing_log = cast("list[dict] | None", None)
 
             for charge in charge_states:
-                defect_entry = copy.deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
+                defect_entry = deepcopy(neutral_defect_entry) if charge != 0 else neutral_defect_entry
                 defect_entry.charge_state = charge
                 defect_entry.name = f"{defect_name_wout_charge}_{'+' if charge > 0 else ''}{charge}"
                 self.defect_entries[defect_entry.name] = defect_entry
@@ -2225,7 +2225,7 @@ class DefectsGenerator(MSONable):
                 if _check_if_name_subset(name, defect_entry_name_wout_charge)
             )
             for charge in charge_states:
-                defect_entry = copy.deepcopy(previous_defect_entry)
+                defect_entry = deepcopy(previous_defect_entry)
                 defect_entry.charge_state = charge
                 defect_entry.name = (
                     f"{defect_entry.name.rsplit('_', 1)[0]}_{'+' if charge > 0 else ''}{charge}"

@@ -34,7 +34,8 @@ def get_min_image_distance(structure: Structure) -> float:
 
 def min_dist(structure: Structure, ignored_species: list[str] | None = None) -> float:
     """
-    Return the minimum interatomic distance in a structure.
+    Return the minimum interatomic distance in a structure (ignoring any zero
+    distances).
 
     Uses ``numpy`` vectorisation for fast computation.
 

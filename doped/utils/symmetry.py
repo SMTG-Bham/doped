@@ -3653,6 +3653,9 @@ def is_periodic_image(
     sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
     sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
 
+    if len(sites_1_frac_coords) != len(sites_2_frac_coords):
+        raise ValueError("``is_periodic_image`` requires the same number of sites in both lists!")
+
     if not same_image:
         return len(sites_1_frac_coords) == len(sites_2_frac_coords) and is_coord_subset_pbc(
             sites_1_frac_coords, sites_2_frac_coords

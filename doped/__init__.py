@@ -44,9 +44,7 @@ with suppress_logging(), warnings.catch_warnings():
     # we still use it here just in case another vise import is added to ``vise.util.logger``
     import vise.util.logger
 
-    vise.util.logger.get_logger = (
-        logging.getLogger
-    )  # to avoid repeated vise INFO messages with Parallel code
+    vise.util.logger.get_logger = logging.getLogger  # avoid repeated vise INFO messages with Parallel code
 
 
 def _ignore_pmg_warnings():
@@ -142,6 +140,14 @@ def get_mp_context():
         return multiprocessing.get_context("spawn")
 
 
+def get_mp_processes(processes: int | None = None):
+    """
+    Get the number of processes to use with ``Pool``.
+    """
+    mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
+    return processes or max(1, mp.cpu_count() - 1)
+
+
 @contextlib.contextmanager
 def pool_manager(processes: int | None = None):
     r"""
@@ -165,7 +171,7 @@ def pool_manager(processes: int | None = None):
     pool = None
     try:
         mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
-        pool = mp.Pool(processes or max(1, mp.cpu_count() - 1))
+        pool = mp.Pool(get_mp_processes(processes))
         yield pool
     except RuntimeError as orig_exc:
         if "freeze_support()" in str(orig_exc):

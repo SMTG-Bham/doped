@@ -1558,6 +1558,9 @@ class DefectEntry(thermo.DefectEntry):
         reducing compute times when looping over formation energy /
         concentration functions.
         """
+        if self.sc_entry is None:
+            return None
+
         if hasattr(self, "_sc_entry_energy") and self._sc_entry_hash == hash(self.sc_entry):
             return self._sc_entry_energy
 
