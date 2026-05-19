@@ -49,7 +49,6 @@ from doped.thermodynamics import (
     DefectThermodynamics,
     _add_effective_dopant_concentration,
     _format_per_site_concentration,
-    get_e_h_concs,
     get_fermi_dos,
     get_interpolated_chempots,
     scissor_dos,
@@ -3600,9 +3599,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             if isinstance(fl_or_fl_e_h, tuple):
                 assert kwargs.get("return_concs", False)
                 fl = fl_or_fl_e_h[0]
-                assert tuple(fl_or_fl_e_h[1:]) == get_e_h_concs(  # hard-code tested below
-                    defect_thermo.bulk_dos, fl + defect_thermo.vbm, kwargs.get("temperature", 300)
-                )
+                assert tuple(fl_or_fl_e_h[1:]) == defect_thermo.bulk_dos.get_e_h_concs(
+                    fl + defect_thermo.vbm, kwargs.get("temperature", 300)
+                )  # hard-code tested below
             else:
                 assert not kwargs.get("return_concs", False)
                 fl = fl_or_fl_e_h
@@ -3614,7 +3613,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             elif kwargs.get("effective_dopant_concentration") == -1e18:
                 assert np.isclose(fl, 0.0592, atol=1e-3)
 
-        # test carrier concentrations (indirectly tests ``get_e_h_concs`` and ``get_doping``):
+        # test carrier concentrations:
         fl_e_h, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level,
             limit="Te-rich",
@@ -3630,7 +3629,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         # smaller due to the use of scissored DOS in that example (and not here)
 
         e_h, output, w = _run_func_and_capture_stdout_warnings(
-            get_e_h_concs, defect_thermo.bulk_dos, 0.318674 + defect_thermo.vbm, 300
+            defect_thermo.bulk_dos.get_e_h_concs, 0.318674 + defect_thermo.vbm, 300
         )
         assert not output
         assert not w
@@ -3849,8 +3848,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 assert isinstance(expected_conc_df, pd.DataFrame)
                 assert "Raw Concentrations" not in expected_conc_df.columns
 
-            assert (e_conc, h_conc) == get_e_h_concs(
-                defect_thermo.bulk_dos,
+            assert (e_conc, h_conc) == defect_thermo.bulk_dos.get_e_h_concs(
                 fermi_level + defect_thermo.vbm,
                 kwargs.get("quenched_temperature", 300),
             )

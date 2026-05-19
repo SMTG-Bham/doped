@@ -30,7 +30,6 @@ from doped.thermodynamics import (
     DefectThermodynamics,
     FermiSolver,
     _get_py_sc_fermi_dos_from_fermi_dos,
-    get_e_h_concs,
     get_fermi_dos,
     get_interpolated_chempots,
 )
@@ -62,7 +61,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
                 Spin.up: np.array([1.0, 2.0, 0.0, 0.0, 3.0, 4.0]),
                 Spin.down: np.array([0.5, 1.0, 0.0, 0.0, 1.5, 2.0]),
             },
-            efermi=0.75,
+            efermi=0.75,  # purposely at an awkward position to test edge case handling
         )
         fermi_dos = FermiDos(dos, structure=self.CdTe_fermi_dos.structure)
         e_cbm, e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)
@@ -82,7 +81,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
             np.linspace(-0.25, gap + 0.25, 10), np.linspace(300, 1000.0, 10)
         ):
             pyscfermi_h_e = pyscfermi_dos.carrier_concentrations(e_fermi, temperature)  # rel to VBM
-            doped_e_h = get_e_h_concs(fermi_dos, e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
+            doped_e_h = fermi_dos.get_e_h_concs(e_fermi + e_vbm, temperature)  # raw Fermi eigenvalue
             assert np.allclose(
                 (pyscfermi_h_e[1] * pyscfermi_scale, pyscfermi_h_e[0] * pyscfermi_scale),
                 doped_e_h,
@@ -91,10 +90,8 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
             ), f"e_fermi={e_fermi}, temperature={temperature}"
             # tests: absolute(a - b) <= (atol + rtol * absolute(b)), so rtol of 15% but with a base atol
             # of 1e4 to allow larger relative mismatches for very small densities (more sensitive to
-            # differences in integration schemes) -- main difference seems to be hard chopping of
-            # integrals in py-sc-fermi at the expected VBM/CBM indices (but ``doped`` is agnostic to
-            # these to improve robustness), makes more difference at low temperatures so only T >= 300K
-            # tested here
+            # differences in integration schemes), makes more difference at low temperatures so only
+            # T >= 300K # tested here
 
     @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
     def test_get_py_sc_fermi_dos_with_custom_parameters(self):
@@ -138,8 +135,8 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
             np.linspace(-0.5, gap + 0.5, 10), np.linspace(300, 2000.0, 10)
         ):
             pyscfermi_h_e = pyscfermi_dos.carrier_concentrations(e_fermi, temperature)  # rel to VBM
-            doped_e_h = get_e_h_concs(
-                self.CdTe_fermi_dos, e_fermi + e_vbm, temperature
+            doped_e_h = self.CdTe_fermi_dos.get_e_h_concs(
+                e_fermi + e_vbm, temperature
             )  # raw Fermi eigenvalue
             assert np.allclose(
                 (pyscfermi_h_e[1] * pyscfermi_scale, pyscfermi_h_e[0] * pyscfermi_scale),
@@ -369,7 +366,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         """
         solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo)
         assert solver.backend == "doped"
-        assert solver.defect_thermodynamics == self.CdTe_thermo
+        # ``solver.defect_thermodynamics`` is a shallow copy of the input, so it's a distinct
+        # object but shares the underlying ``defect_entries`` dict by reference:
+        assert solver.defect_thermodynamics is not self.CdTe_thermo
+        assert solver.defect_thermodynamics.defect_entries is self.CdTe_thermo.defect_entries
         assert solver.volume is not None
 
     @patch("doped.thermodynamics.importlib.util.find_spec")
@@ -385,7 +385,10 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # Initialize FermiSolver
         solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="doped")
         assert solver.backend == "doped"
-        assert solver.defect_thermodynamics == self.CdTe_thermo
+        # ``solver.defect_thermodynamics`` is a shallow copy of the input, so it's a distinct
+        # object but shares the underlying ``defect_entries`` dict by reference:
+        assert solver.defect_thermodynamics is not self.CdTe_thermo
+        assert solver.defect_thermodynamics.defect_entries is self.CdTe_thermo.defect_entries
         assert solver.volume is not None
 
     @patch("doped.thermodynamics.importlib.util.find_spec")
@@ -400,9 +403,69 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         # Initialize FermiSolver
         solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="py-sc-fermi")
         assert solver.backend == "py-sc-fermi"
-        assert solver.defect_thermodynamics == self.CdTe_thermo
+        # ``solver.defect_thermodynamics`` is a shallow copy of the input, so it's a distinct
+        # object but shares the underlying ``defect_entries`` dict by reference:
+        assert solver.defect_thermodynamics is not self.CdTe_thermo
+        assert solver.defect_thermodynamics.defect_entries is self.CdTe_thermo.defect_entries
         assert solver.volume is not None
         mock_activate_backend.assert_called_once()
+
+    def test_init_does_not_mutate_user_thermo_bulk_dos(self):
+        """
+        Test that passing ``bulk_dos`` to ``FermiSolver`` does not silently
+        overwrite the DOS on the user's ``DefectThermodynamics`` object.
+
+        Catches the mutation bug described in
+        https://github.com/SMTG-Bham/doped/pull/151, where
+        ``FermiSolver.__init__`` wrote directly to
+        ``defect_thermodynamics._bulk_dos``, causing order-dependent results
+        from ``DefectThermodynamics`` methods called after ``FermiSolver``
+        construction.
+        """
+        original_dos = self.CdTe_thermo.bulk_dos
+        assert original_dos is self.CdTe_fermi_dos
+        different_dos = deepcopy(self.CdTe_fermi_dos)  # distinct object
+        assert different_dos is not original_dos
+
+        FermiSolver(
+            defect_thermodynamics=self.CdTe_thermo,
+            bulk_dos=different_dos,
+            backend="doped",
+            skip_dos_check=True,
+        )
+        # user's ``DefectThermodynamics`` must still hold the original DOS object
+        # (the buggy code overwrites ``thermo._bulk_dos`` with ``different_dos``):
+        assert self.CdTe_thermo.bulk_dos is original_dos
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    def test_py_sc_fermi_dos_bandgap_uses_dos_cbm(self):
+        """
+        Test that the ``py-sc-fermi`` ``DOS`` is constructed with bandgap.
+
+        ``dos_cbm - thermo.vbm`` (the CBM position in the shifted energy
+        frame ``edos = dos.energies - thermo.vbm``), not
+        ``thermo.band_gap``, when the DOS VBM and the supercell VBM differ.
+
+        Catches the bandgap-mismatch bug described in
+        https://github.com/SMTG-Bham/doped/pull/151, where the conduction
+        band edge was mislocated by ``thermo.vbm - dos_vbm`` whenever those
+        two quantities differed.
+        """
+        original_vbm = self.CdTe_thermo.vbm
+        dos_vbm = self.CdTe_fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[1]
+        dos_cbm = dos_vbm + self.CdTe_fermi_dos.get_gap(tol=1e-4, abs_tol=True)
+        shift = 0.3  # eV; force a sizeable VBM mismatch
+        self.CdTe_thermo.vbm = dos_vbm + shift
+        try:
+            solver = FermiSolver(defect_thermodynamics=self.CdTe_thermo, backend="py-sc-fermi")
+            expected_bandgap = dos_cbm - self.CdTe_thermo.vbm  # CBM in the shifted frame
+            assert np.isclose(solver.py_sc_fermi_dos.bandgap, expected_bandgap, atol=1e-4)
+            # and explicitly NOT ``thermo.band_gap`` (the buggy value, off by ~``shift``):
+            assert not np.isclose(
+                solver.py_sc_fermi_dos.bandgap, self.CdTe_thermo.band_gap, atol=shift / 2
+            )
+        finally:
+            self.CdTe_thermo.vbm = original_vbm
 
     def test_missing_bulk_dos(self):
         """

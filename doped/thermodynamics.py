@@ -11,7 +11,7 @@ import statistics
 import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
-from copy import deepcopy
+from copy import copy, deepcopy
 from functools import partial, reduce
 from itertools import chain, product
 from operator import methodcaller
@@ -25,7 +25,7 @@ from matplotlib.figure import Figure
 from monty.json import MSONable
 from monty.serialization import dumpfn, loadfn
 from pymatgen.core.composition import Composition, Element
-from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin, f0
+from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
 from pymatgen.io.vasp import Vasprun
 from pymatgen.util.typing import PathLike
 from scipy.optimize import brentq
@@ -189,7 +189,7 @@ def _parse_chempots(
             chempots = {
                 "limits": {"User Chemical Potentials": el_refs},
                 "elemental_refs": el_refs,
-                "limits_wrt_el_refs": {"User Chemical Potentials": {el: 0 for el in el_refs}},
+                "limits_wrt_el_refs": {"User Chemical Potentials": dict.fromkeys(el_refs, 0)},
             }
 
         return chempots, el_refs
@@ -217,7 +217,7 @@ def _parse_chempots(
     if el_refs is None:
         chempots = {
             "limits": {"User Chemical Potentials": chempots},
-            "elemental_refs": {el: 0 for el in chempots},
+            "elemental_refs": dict.fromkeys(chempots, 0),
             "limits_wrt_el_refs": {"User Chemical Potentials": chempots},
         }
 
@@ -577,7 +577,7 @@ def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[Defect
     Returns:
         dict: Dictionary of ``{defect name without charge: [DefectEntry]}``.
     """
-    from doped.analysis import check_and_set_defect_entry_name
+    from doped.analysis import check_and_set_defect_entry_name  # avoid circular import
 
     grouped_entries: dict[str, set[DefectEntry]] = {}  # dict for groups of entries with the same prefix
 
@@ -1940,7 +1940,7 @@ class DefectThermodynamics(MSONable):
                 relative_chempots = limits_wrt_el_refs[limit]
                 if el_refs is None:
                     el_refs = (
-                        {el: 0 for el in relative_chempots}
+                        dict.fromkeys(relative_chempots, 0)
                         if chempots.get("elemental_refs") is None
                         else chempots["elemental_refs"]
                     )
@@ -2828,7 +2828,7 @@ class DefectThermodynamics(MSONable):
             ``matplotlib`` ``Figure`` object, or list of ``Figure`` objects if
             multiple limits chosen.
         """
-        from shakenbreak.plotting import _install_custom_font
+        from shakenbreak.plotting import _install_custom_font  # avoid circular import
 
         _install_custom_font()
         if all_entries not in [False, True, "faded"]:  # check input options
@@ -3294,7 +3294,7 @@ class DefectThermodynamics(MSONable):
                 entry.sc_entry.composition if entry.sc_entry else entry.bulk_entry.composition
                 for entry in self.defect_entries.values()
             ]
-            empty_el_dict = {el: 0 for el in {el.symbol for comp in all_comps for el in comp}}
+            empty_el_dict = dict.fromkeys({el.symbol for comp in all_comps for el in comp}, 0)
             chempots = {
                 "limits": {"No User Chemical Potentials": empty_el_dict},
                 "limits_wrt_el_refs": {"No User Chemical Potentials": empty_el_dict},
@@ -3814,9 +3814,7 @@ class DefectThermodynamics(MSONable):
             conc_df = _add_effective_dopant_concentration(conc_df, effective_dopant_concentration)
             # Defect/Charge not set as index w/lean=True & per_charge=False, for speed
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            qd_tot += get_doping(
-                fermi_dos=self.bulk_dos, fermi_level=fermi_level + self.vbm, temperature=temperature
-            )
+            qd_tot += self.bulk_dos.get_doping(fermi_level=fermi_level + self.vbm, temperature=temperature)
             return qd_tot
 
         assert isinstance(self.band_gap, float)  # typing
@@ -3824,7 +3822,7 @@ class DefectThermodynamics(MSONable):
         eq_fermi_level: float = brentq(_get_total_q, -4.0, self.band_gap + 4.0)
 
         if return_concs:
-            e_conc, h_conc = get_e_h_concs(self.bulk_dos, eq_fermi_level + self.vbm, temperature)
+            e_conc, h_conc = self.bulk_dos.get_e_h_concs(eq_fermi_level + self.vbm, temperature)
             return eq_fermi_level, e_conc, h_conc
 
         return eq_fermi_level
@@ -4167,8 +4165,7 @@ class DefectThermodynamics(MSONable):
             )
             # Defect/Charge not set as index w/lean=True (default), for speed
             qd_tot = (conc_df["Charge"] * conc_df["Concentration (cm^-3)"]).sum()
-            return qd_tot + get_doping(  # use orig fermi dos for quenched temperature
-                fermi_dos=orig_fermi_dos,
+            return qd_tot + orig_fermi_dos.get_doping(  # use orig fermi dos for quenched temperature
                 fermi_level=fermi_level + self.vbm,
                 temperature=quenched_temperature,
             )
@@ -4176,14 +4173,14 @@ class DefectThermodynamics(MSONable):
         assert isinstance(self.band_gap, float)  # typing
         assert isinstance(self.vbm, float)  # typing
         eq_fermi_level: float = brentq(_get_constrained_total_q, -10.0, self.band_gap + 10.0)
-        e_conc, h_conc = get_e_h_concs(orig_fermi_dos, eq_fermi_level + self.vbm, quenched_temperature)
+        e_conc, h_conc = orig_fermi_dos.get_e_h_concs(eq_fermi_level + self.vbm, quenched_temperature)
         conc_df = get_constrained_concentrations(eq_fermi_level)  # not lean for output
 
         if not return_annealing_values:
             return (eq_fermi_level, e_conc, h_conc, conc_df)
 
-        annealing_e_conc, annealing_h_conc = get_e_h_concs(
-            annealing_dos, annealing_fermi_level + self.vbm, annealing_temperature
+        annealing_e_conc, annealing_h_conc = annealing_dos.get_e_h_concs(
+            annealing_fermi_level + self.vbm, annealing_temperature
         )
         annealing_defect_concentrations = get_constrained_concentrations(
             annealing_fermi_level, temperature=annealing_temperature
@@ -4821,118 +4818,6 @@ def get_fermi_dos(dos_vr: PathLike | Vasprun):
     return FermiDos(dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(dos_vr))
 
 
-def get_e_h_concs(
-    fermi_dos: FermiDos, fermi_level: float, temperature: float = 300
-) -> tuple[float, float]:
-    """
-    Get the corresponding electron and hole concentrations (in cm^-3) for a
-    given Fermi level (in eV) and temperature (in K), for a ``FermiDos``
-    object.
-
-    Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
-    level should be the corresponding eigenvalue within the calculation (or in
-    other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
-
-    Args:
-        fermi_dos (FermiDos):
-            ``pymatgen`` ``FermiDos`` for the bulk electronic density of states
-            (DOS), for calculating carrier concentrations.
-
-            Usually this is a static calculation with the `primitive` cell of
-            the bulk material, with relatively dense `k`-point sampling
-            (especially for materials with disperse band edges) to ensure an
-            accurately-converged DOS and thus Fermi level. Using large
-            ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing) are
-            recommended for best convergence (wrt `k`-point sampling) in VASP.
-            Consistent functional settings should be used for the bulk DOS and
-            defect supercell calculations. See:
-            https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
-        fermi_level (float):
-            Value corresponding to the electron chemical potential, **not**
-            referenced to the VBM! (i.e. same eigenvalue reference as the raw
-            calculation)
-        temperature (float):
-            Temperature in Kelvin at which to calculate the equilibrium
-            concentrations. Default is 300 K.
-
-    Returns:
-        tuple[float, float]: The electron and hole concentrations in cm^-3.
-    """
-    with np.errstate(over="ignore"):  # ignore overflow warnings from f0, can remove in
-        # future versions following SK's fix in https://github.com/materialsproject/pymatgen/pull/3879
-        # code for obtaining the electron and hole concentrations here is taken from
-        # FermiDos.get_doping(), and updated by SK to be independent of estimated VBM/CBM positions (using
-        # correct DOS integral) and better handle exponential overflows (by editing `f0` in `pymatgen`)
-        idx_mid_gap = int(fermi_dos.idx_vbm + (fermi_dos.idx_cbm - fermi_dos.idx_vbm) / 2)
-        e_conc: float = np.sum(
-            fermi_dos.tdos[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :]
-            * f0(
-                fermi_dos.energies[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :],
-                fermi_level,  # type: ignore
-                temperature,
-            )
-            * fermi_dos.de[max(idx_mid_gap, fermi_dos.idx_vbm + 1) :],
-            axis=0,
-        ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-        h_conc: float = np.sum(
-            fermi_dos.tdos[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1]
-            * f0(
-                -fermi_dos.energies[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1],
-                -fermi_level,  # type: ignore
-                temperature,
-            )
-            * fermi_dos.de[: min(idx_mid_gap, fermi_dos.idx_cbm - 1) + 1],
-            axis=0,
-        ) / (fermi_dos.volume * fermi_dos.A_to_cm**3)
-
-    return e_conc, h_conc
-
-
-def get_doping(fermi_dos: FermiDos, fermi_level: float, temperature: float = 300) -> float:
-    """
-    Get the doping concentration (majority - minority carrier concentration) in
-    cm^-3 for a given Fermi level (in eV) and temperature (in K), for a
-    ``FermiDos`` object.
-
-    Note that the Fermi level here is NOT referenced to the VBM! So the Fermi
-    level should be the corresponding eigenvalue within the calculation (or in
-    other words, the Fermi level relative to the VBM plus the VBM eigenvalue).
-
-    Refactored from ``FermiDos.get_doping()`` to be more accurate/robust
-    (independent of estimated VBM/CBM positions, avoiding overflow warnings).
-
-    Args:
-        fermi_dos (FermiDos):
-            ``pymatgen`` ``FermiDos`` for the bulk electronic density of states
-            (DOS), for calculating carrier concentrations.
-
-            Usually this is a static calculation with the `primitive` cell of
-            the bulk material, with relatively dense `k`-point sampling
-            (especially for materials with disperse band edges) to ensure an
-            accurately-converged DOS and thus Fermi level. Using large
-            ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing) are
-            recommended for best convergence (wrt `k`-point sampling) in VASP.
-            Consistent functional settings should be used for the bulk DOS and
-            defect supercell calculations. See:
-            https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
-        fermi_level (float):
-            Value corresponding to the electron chemical potential, **not**
-            referenced to the VBM! (i.e. same eigenvalue reference as the raw
-            calculation)
-        temperature (float):
-            Temperature in Kelvin at which to calculate the equilibrium
-            concentrations. Default is 300 K.
-
-    Returns:
-        float: The doping concentration in cm^-3
-    """
-    # can replace this function with the ``FermiDos.get_doping()`` method in future versions following SK's
-    # fix in https://github.com/materialsproject/pymatgen/pull/3879, whenever pymatgen>2024.6.10 becomes
-    # a ``doped`` requirement (same for overflow catches in ``get_e_h_concs`` etc.)
-    e_conc, h_conc = get_e_h_concs(fermi_dos, fermi_level, temperature)
-    return h_conc - e_conc
-
-
 def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbose: bool = True):
     """
     Given an input ``Dos``/``FermiDos`` object, rigidly shifts the valence and
@@ -5087,9 +4972,6 @@ class FermiSolver(MSONable):
                 in VASP. Consistent functional settings should be used for the
                 bulk DOS and defect supercell calculations. See:
                 https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
-
-                Note that the ``DefectThermodynamics.bulk_dos`` will be set to
-                match this input, if provided.
             chempots (dict | None):
                 Dictionary of chemical potentials to use for calculating the
                 defect formation energies (and thus concentrations and Fermi
@@ -5174,7 +5056,10 @@ class FermiSolver(MSONable):
                 A ``py-sc-fermi`` ``DOS`` object, generated from the input
                 ``FermiDos`` object, for use with the ``py-sc-fermi`` backend.
         """
-        self.defect_thermodynamics = defect_thermodynamics
+        # shallow copy so attribute writes here (e.g. ``_bulk_dos``, ``_chempots``) don't mutate
+        # the user's original ``DefectThermodynamics`` object; shared attributes
+        # (``defect_entries``, ``chempots``, etc.) are still the same refs in both:
+        self.defect_thermodynamics = copy(defect_thermodynamics)
         self.skip_dos_check = skip_dos_check
         if bulk_dos is not None:
             self.defect_thermodynamics._bulk_dos = self.defect_thermodynamics._parse_fermi_dos(
@@ -5207,7 +5092,8 @@ class FermiSolver(MSONable):
             self._activate_py_sc_fermi_backend()
 
         # Parse chemical potentials, either using input values (after formatting them in the doped format)
-        # or using the class attributes if set:
+        # or using the class attributes if set; written onto our shallow copy, leaving the user's
+        # original ``DefectThermodynamics`` chempots/el_refs untouched:
         self.defect_thermodynamics._chempots, self.defect_thermodynamics._el_refs = _parse_chempots(
             chempots or self.defect_thermodynamics.chempots, el_refs or self.defect_thermodynamics.el_refs
         )
@@ -5223,7 +5109,7 @@ class FermiSolver(MSONable):
         try:
             from py_sc_fermi.defect_charge_state import DefectChargeState
             from py_sc_fermi.defect_species import DefectSpecies
-            from py_sc_fermi.defect_system import DefectSystem  # warning suppression with this import
+            from py_sc_fermi.defect_system import DefectSystem
             from py_sc_fermi.dos import DOS
         except ImportError as exc:  # py-sc-fermi activation attempted but not installed
             finishing_message = (
@@ -5235,7 +5121,7 @@ class FermiSolver(MSONable):
                 else "The py-sc-fermi backend was attempted to be activated" + finishing_message
             )
             raise ImportError(message) from exc
-        finally:  # avoid py-sc-fermi warning suppression; fixed in >2.0.4 (can remove if req ever higher)
+        finally:  # avoid py-sc-fermi warning suppression; fixed in >=2.1.0
             warnings.showwarning = orig_showwarning
 
         self._DefectSystem = DefectSystem
@@ -5244,10 +5130,16 @@ class FermiSolver(MSONable):
         self._DOS = DOS
 
         if isinstance(self.defect_thermodynamics.bulk_dos, FermiDos):
+            # the energy array passed to ``py-sc-fermi`` ``DOS`` is ``fdos.energies - thermo.vbm``,
+            # so in that shifted frame the CBM sits at ``dos_cbm - thermo.vbm``, not at
+            # ``thermo.band_gap`` (those differ whenever the DOS and bulk supercell calculations
+            # yield slightly different VBM eigenvalues, which is common in practice):
+            fdos = self.defect_thermodynamics.bulk_dos
+            dos_cbm = fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[0]
             self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
-                self.defect_thermodynamics.bulk_dos,
+                fdos,
                 vbm=self.defect_thermodynamics.vbm,
-                bandgap=self.defect_thermodynamics.band_gap,
+                bandgap=dos_cbm - self.defect_thermodynamics.vbm,
             )
 
         ms = (  # multiplicity scaling
@@ -5350,7 +5242,7 @@ class FermiSolver(MSONable):
             return_concs=True,
             effective_dopant_concentration=effective_dopant_concentration,
             site_competition=site_competition,
-        )  # use already-set bulk dos
+        )
         return fermi_level, electrons, holes
 
     def _get_and_check_thermo_chempots(
@@ -5907,7 +5799,7 @@ class FermiSolver(MSONable):
                 per_site=per_site,
                 return_annealing_values=True,
                 **kwargs,
-            )  # use already-set bulk dos
+            )
 
             # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
             new_columns = {
@@ -8193,8 +8085,13 @@ class FermiSolver(MSONable):
         orig_py_sc_fermi_dos = self.py_sc_fermi_dos
         if delta_gap != 0.0:
             delta_gap = delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature)
-            assert self.defect_thermodynamics.vbm is not None
-            assert self.defect_thermodynamics.band_gap is not None
+            assert self.defect_thermodynamics.vbm is not None  # typing
+            assert self.defect_thermodynamics.band_gap is not None  # typing
+            # locate the CBM from the DOS itself so the bandgap matches the shifted-energy frame
+            # (``fdos.energies - thermo.vbm``); using ``thermo.band_gap`` would mislocate the CBM
+            # whenever the DOS VBM and the supercell VBM differ -- see py-sc-fermi DOS parsing in FS init
+            _fdos = self.defect_thermodynamics.bulk_dos
+            _dos_cbm = _fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[0]
             self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
                 scissor_dos(
                     delta_gap,
@@ -8203,7 +8100,7 @@ class FermiSolver(MSONable):
                     tol=kwargs.get("tol", 1e-8),
                 ),
                 vbm=self.defect_thermodynamics.vbm - delta_gap / 2,
-                bandgap=self.defect_thermodynamics.band_gap + delta_gap,
+                bandgap=_dos_cbm - self.defect_thermodynamics.vbm + delta_gap,
             )
 
         assert isinstance(delta_gap, float)  # typing
@@ -8337,9 +8234,9 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
             ``DOS``.
         vbm (float):
             The valence band maximum (VBM) eigenvalue in eV. If not provided,
-            the VBM will be taken from the FermiDos object. When this function
-            is used internally in ``doped``, the ``DefectThermodynamics.vbm``
-            attribute is used.
+            the VBM will be taken from the ``FermiDos`` object. When this
+            function is used internally in ``doped``, the
+            ``DefectThermodynamics.vbm`` attribute is used.
         nelect (int):
             The total number of electrons in the system. If not provided, the
             number of electrons will be taken from the ``FermiDos`` object
