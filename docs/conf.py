@@ -140,6 +140,8 @@ rst_prolog = """
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
 .. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
+.. |Molecule| replace:: :class:`~pymatgen.core.structure.Molecule`
+.. |BruteForceOrderMatcher| replace:: :class:`~pymatgen.analysis.molecule_matcher.BruteForceOrderMatcher`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
 .. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
 .. |Vasprun| replace:: :class:`~pymatgen.io.vasp.outputs.Vasprun`

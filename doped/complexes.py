@@ -582,7 +582,7 @@ def get_equivalent_complex_defect_sites_in_primitive(
         matching_candidate_equiv_molecules: list[Molecule] = [
             candidate_equiv_mol  # complex defect molecules which are symmetry-equivalent to the template
             for candidate_equiv_mol in candidate_equiv_molecules
-            if are_equivalent_molecules(complex_mol, candidate_equiv_mol, tol=dist_tol * 2)
+            if are_equivalent_molecules(complex_mol, candidate_equiv_mol, tol=dist_tol)
         ]
         unique_candidate_equiv_molecules: list[Molecule] = []
         # note that we don't use a list comprehension here, so we can compare each matching candidate
@@ -731,21 +731,36 @@ def get_complex_defect_multiplicity(
     )
 
 
-def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.02) -> bool:
+# TODO: Add class links for others in this module, and update docstrings to use these.
+
+
+def are_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.01) -> bool:
     """
     Determine if two ``Molecule`` objects are equivalent, using the Kabsch
     algorithm (which minimizes the root-mean-square-deviation (RMSD) of two
     molecules which are topologically (atom types, geometry) similar) as
-    implemented in the ``BruteForceOrderMatcher`` class, which allows
-    permutation invariance in the molecule definitions.
+    implemented in the |BruteForceOrderMatcher| class, which allows permutation
+    invariance in the molecule definitions.
 
     Uses caching to speed up the comparison.
+
+    Args:
+        molecule_1 (|Molecule|):
+            The first ``pymatgen`` |Molecule| object to compare.
+        molecule_2 (|Molecule|):
+            The second ``pymatgen`` |Molecule| object to compare.
+        tol (float):
+            The tolerance for the Kabsch algorithm. Default is 0.01 Å.
+
+    Returns:
+        bool:
+            ``True`` if the two |Molecule| objects are equivalent, ``False`` otherwise.
     """
     return _cached_equivalent_molecules(molecule_1, molecule_2, tol)
 
 
 @lru_cache(maxsize=int(1e4))
-def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.1) -> bool:
+def _cached_equivalent_molecules(molecule_1: Molecule, molecule_2: Molecule, tol: float = 0.01) -> bool:
     # Note that in most cases with the ``get_equivalent_complex_defect_sites_in_primitive`` implementation,
     # brute-force permutation matching should not be required, due to our controlled ordering and
     # comparisons of equivalent sites, but current implementation is super-fast (particularly for small
