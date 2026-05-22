@@ -47,7 +47,7 @@ Repository = "https://github.com/SMTG-Bham/doped"
 tests = [
     "pytest>=8.3",
     "pytest-mpl>=0.16.1",
-    "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
+    "py-sc-fermi>=2.2.0",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested, this version ensures full consistency
     "pytest-split>=0.10.0",  # for test splitting
 ]
 docs = [
@@ -61,7 +61,7 @@ docs = [
 ]
 analysis = [
     "easyunfold",
-    "py-sc-fermi",
+    "py-sc-fermi>=2.2.0",
     "sumo",
     "nonrad",
     #"CarrierCapture.jl"
