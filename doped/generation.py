@@ -10,7 +10,7 @@ import re
 import warnings
 from collections import defaultdict
 from copy import deepcopy
-from functools import partial, reduce
+from functools import lru_cache, partial, reduce
 from itertools import chain
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
@@ -2781,6 +2781,7 @@ def get_stol_equiv_dist(stol: float, structure: Structure) -> float:
     return stol * (structure.volume / len(structure)) ** (1 / 3)
 
 
+@lru_cache(maxsize=int(1e4))
 def get_interstitial_sites(
     host_structure: Structure,
     min_dist: float = 0.9,
@@ -2891,12 +2892,10 @@ def get_interstitial_sites(
     # but, this is slightly more likely to be stuck in local minima, compared to the (nearby)
     # lower symmetry interstitial sites... avoided by using ShakeNBreak, other structure-searching
     # approaches, or rattling the output structures (default in ``doped.vasp``)
-    top = DopedTopographyAnalyzer(host_structure)
-    if not top.vnodes:
+    sites_list = [v.frac_coords for v in DopedTopographyAnalyzer(host_structure).vnodes]
+    if not sites_list:  # empty list
         warnings.warn("No interstitial sites found in host structure!")
-        return []
-
-    sites_list = [v.frac_coords for v in top.vnodes]
+        return sites_list
 
     bulk_min_bond_length = supercells.min_dist(host_structure)
     if vacuum_radius is None:

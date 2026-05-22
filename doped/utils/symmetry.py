@@ -7,7 +7,6 @@ import math
 import os
 import warnings
 from collections.abc import Iterable, Sequence
-from copy import deepcopy
 from functools import lru_cache
 from itertools import permutations, product
 
@@ -304,7 +303,7 @@ def _cache_ready_get_sga(
     |Structure| hash function from ``doped.utils.efficiency``).
     """
     if not use_magnetic_symmetry:  # don't use magnetic symmetry by default
-        struct = deepcopy(struct)
+        struct = struct.copy()
         for site in struct:
             site.properties = {}
 
