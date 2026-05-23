@@ -17,6 +17,7 @@ from functools import wraps
 from importlib.util import find_spec
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import cmcrameri.cm as cmc
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -1259,6 +1260,81 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         assert np.isclose(
             concentrations_800K["Fermi Level (eV wrt VBM)"].iloc[0], 0.936, atol=1e-3
         )  # much more n-type now, with v_Cd as free defect
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    @custom_mpl_image_compare(filename="Se_extrinsic_scan_temperature_fixed_F_i.png")
+    def test_scan_temperature_fixed_defects(self):
+        """
+        Test ``scan_temperature`` with the ``fixed_defects`` constraint
+        (currently only supported by the ``py-sc-fermi`` backend), using
+        extrinsically-doped Se as a test case, with the F interstitial
+        (``inter_1_F``, i.e. F_i) concentration fixed to 1e16 cm^-3.
+
+        Generates a side-by-side plot of the ``scan_temperature`` results
+        without (left) and with (right) this fixed-concentration constraint.
+        """
+        Se_ext_thermo = loadfn(os.path.join(data_dir, "Se_Ext_No_Pnict_Thermo.json.gz"))
+        solver = FermiSolver(
+            Se_ext_thermo,
+            skip_dos_check=True,
+            backend="py-sc-fermi",
+        )
+        limit = next(iter(Se_ext_thermo.chempots["limits"]))
+        scan_kwargs = {
+            "annealing_temperature_range": range(300, 1001, 100),
+            "limit": limit,
+            "per_charge": False,
+        }
+
+        unconstrained = solver.scan_temperature(**scan_kwargs)
+        constrained = solver.scan_temperature(**scan_kwargs, fixed_defects={"inter_1_F": 1e16})
+
+        # F_i (inter_1_F) is pinned to 1e16 at all temperatures when fixed, but varies otherwise:
+        assert np.allclose(constrained.loc["inter_1_F", "Concentration (cm^-3)"], 1e16)
+        assert not np.allclose(unconstrained.loc["inter_1_F", "Concentration (cm^-3)"], 1e16)
+
+        plt.style.use(STYLE)
+        f, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
+        for ax, title, df in zip(
+            axes,
+            ["Unconstrained", "F$_i$ fixed = 10$^{16}$ cm$^{-3}$"],
+            [unconstrained, constrained],
+            strict=True,
+        ):
+            for i, defect in enumerate(df.index.unique()):
+                rows = df[df.index == defect].sort_values("Annealing Temperature (K)")
+                ax.plot(
+                    rows["Annealing Temperature (K)"],
+                    rows["Concentration (cm^-3)"],
+                    label=format_defect_name(defect, wout_charge=True),
+                    color=cmc.batlowS(i),
+                    marker="o",
+                )
+            carriers = df.drop_duplicates("Annealing Temperature (K)").sort_values(
+                "Annealing Temperature (K)"
+            )
+            ax.plot(
+                carriers["Annealing Temperature (K)"],
+                carriers["Holes (cm^-3)"],
+                ":C0",
+                linewidth=2,
+                label="h$^+$",
+            )
+            ax.plot(
+                carriers["Annealing Temperature (K)"],
+                carriers["Electrons (cm^-3)"],
+                ":C1",
+                linewidth=2,
+                label="e$^-$",
+            )
+            ax.set_yscale("log")
+            ax.set_ylim(1e12, 1e23)
+            ax.set_xlabel("Annealing Temperature (K)")
+            ax.set_title(title)
+        axes[0].set_ylabel("Concentration (cm$^{-3}$)")
+        axes[1].legend(fontsize=6, ncol=2, loc="upper right")
+
+        return f
 
     @parameterize_backend()
     def test_scan_func_error_catch(self, backend):
@@ -3217,7 +3293,7 @@ def _plot_Cu_i_data(Cu_i_data):
 
 
 # TODO: Test free_defects with substring matching (and fixed_defects later when supported)
-# TODO: Use plots in FermiSolver tutorial as quick test cases here
+# TODO: **Use plots in FermiSolver tutorial as quick test cases here**
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     """
     Tests for ``FermiSolver`` with loaded data, for a ternary system (Cu2SiSe3
