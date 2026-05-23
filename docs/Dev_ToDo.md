@@ -47,10 +47,11 @@
   there's any useful functionality we want to add!
 
 ## SK To-Do for next update:
+- Update SnB requirement (and thus doped) to pmg-core>2026.5.23 after ROPT fix; https://github.com/materialsproject/pymatgen-core/pull/69
 - Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing)
 - It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe.
 - Show example of extremum position for a defect/carrier concentration occurring at a non-limiting chemical potential (e.g. CdTe from SK thesis, V_S in Sb2S3 just about (https://pubs.acs.org/doi/10.1021/acsenergylett.4c02722)), as this is the main case where the `optimise` function is particularly powerful.  
 - Tutorials general structure clean-up?
-- Update all tutorial notebooks, to use latest codebase and be directly runnable in Colab
+- Update all tutorial notebooks to use latest codebase
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks. TODO in ``doped.chemical_potentials``.
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
