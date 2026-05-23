@@ -1939,6 +1939,72 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 )
                 _check_output_concentrations(solver, result)
 
+    @custom_mpl_image_compare(filename="Sb2S3_V_S_optimise_vs_μ_S.png")
+    def test_optimise_defect_non_limiting_extremum_plot(self):
+        """
+        Test ``optimise`` with the non-limiting extremum case of V_S in Sb2S3
+        (see ``test_optimise_defect``).
+
+        Mirrors the example in the ``fermisolver_tutorial`` notebook: the
+        ``optimise``-identified chemical potential which minimises the V_S
+        concentration is plotted on top of a full scan of the V_S
+        concentration between the Sb-rich and S-rich limits, confirming it
+        sits at the (intermediate) minimum of the curve. See Figure 1 in
+        10.1021/acsenergylett.4c02722, also the subject of
+        10.1002/smll.202102429 (for Sb2Se3).
+        """
+        solver = FermiSolver(self.Sb2S3_thermo)
+        # find the chemical potentials that minimise the V_S_3 concentration:
+        min_V_S_df = solver.optimise(
+            target="V_S_3",
+            min_or_max="min",
+            annealing_temperature=603,
+            quenched_temperature=300,
+            per_charge=False,
+        )
+        opt_row = min_V_S_df.loc["V_S_3"]
+        opt_mu_S = opt_row["μ_S (eV)"]
+        opt_conc = opt_row["Concentration (cm^-3)"]
+        assert np.isclose(opt_row["μ_Sb (eV)"], -0.430, atol=2e-3)
+        assert np.isclose(opt_mu_S, -0.129, atol=2e-3)
+
+        # scan the full chempot range between the Sb-rich and S-rich limits:
+        scan_df = solver.interpolate_chempots(
+            limits=["Sb2S3-Sb", "Sb2S3-S"],
+            n_points=30,
+            annealing_temperature=603,
+            quenched_temperature=300,
+            per_charge=False,
+        )
+        V_S_3_scan = scan_df.loc["V_S_3"]
+        # confirm the optimise minimum is at/below the scanned concentrations:
+        assert opt_conc <= V_S_3_scan["Concentration (cm^-3)"].min() * (1 + 1e-3)
+
+        plt.style.use(STYLE)
+        f, ax = plt.subplots()
+        ax.plot(
+            V_S_3_scan["μ_S (eV)"],
+            V_S_3_scan["Concentration (cm^-3)"],
+            marker="o",
+            color="C3",
+            label=format_defect_name("V_S_3", wout_charge=True),
+        )
+        # mark the chemical potential identified by ``optimise``:
+        ax.scatter(
+            opt_mu_S,
+            opt_conc,
+            marker="*",
+            s=300,
+            color="k",
+            zorder=5,
+            label="Minimum [V$_S$]",
+        )
+        ax.set_xlabel("Chemical potential of S, $\\mu_S$ (eV)")
+        ax.set_ylabel("$V_S$ concentration (cm$^{-3}$)")
+        ax.legend(frameon=False)
+
+        return f
+
     @parameterize_backend()
     def test_optimise_multiple_defects(self, backend):
         """
