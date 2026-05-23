@@ -1536,6 +1536,99 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         assert list(tl_df.index.to_numpy()[5]) == ["Int_Te_3_Unperturbed", "None"]
         assert list(tl_df.iloc[5]) == [np.inf, False, 0]
 
+    def test_transition_levels_unstable_entries(self):
+        """
+        Test the ``unstable_entries`` keyword argument for
+        ``get_transition_levels`` and ``print_transition_levels``.
+        """
+        for func in (
+            self.CdTe_defect_thermo.get_transition_levels,
+            self.CdTe_defect_thermo.print_transition_levels,
+        ):
+            with pytest.raises(ValueError) as exc:
+                func(unstable_entries="banana")
+            assert "`unstable_entries` option must be either True, False or 'not shallow'" in str(
+                exc.value
+            )
+
+        # CdTe has no shallow states, so default ("not shallow") is a no-op == unstable_entries=True:
+        default_tl_df = self.CdTe_defect_thermo.get_transition_levels()
+        assert default_tl_df.equals(self.CdTe_defect_thermo.get_transition_levels(unstable_entries=True))
+        for all in [False, True]:
+            assert (
+                self.CdTe_defect_thermo.get_transition_levels(all=all)
+                .reset_index()
+                .equals(
+                    self.CdTe_defect_thermo.get_transition_levels(
+                        all=all, unstable_entries=True
+                    ).reset_index()
+                )
+            )
+
+        # CdTe with unstable_entries=False prunes v_Cd_-1 & Int_Te_3_Unperturbed_1 (only stable outside
+        # the gap), splitting the Int_Te_3 cluster so its ε(+2/+1) TL is no longer present:
+        false_tl_df = self.CdTe_defect_thermo.get_transition_levels(unstable_entries=False)
+        assert ("Int_Te_3", "ε(+2/+1)") in default_tl_df.index
+        assert ("Int_Te_3", "ε(+2/+1)") not in false_tl_df.index
+        assert {"Int_Te_3_a", "Int_Te_3_b"}.issubset(false_tl_df.index.get_level_values("Defect"))
+        assert ("v_Cd", "ε(0/-2)") in false_tl_df.index  # ground-state TL unaffected by removing v_Cd_-1
+
+        # Se thermo has shallow & unstable states; pruning is monotonic (True ⊇ "not shallow" ⊇ False):
+        func = self.Se_ext_no_pnict_thermo.get_transition_levels
+        for all, (n_true, n_notshallow, n_false) in [(False, (39, 31, 27)), (True, (98, 83, 22))]:
+            assert len(func(all=all, unstable_entries=True)) == n_true
+            assert len(func(all=all)) == n_notshallow  # default is "not shallow"
+            assert len(func(all=all, unstable_entries=False)) == n_false
+
+        # shallow sub_1_Te_on_Se_1/+2 states pruned by default, no single-electron TLs when ``False`` (
+        # only 0/-2 TL remains):
+        def _sub_Te_TLs(unstable_entries):
+            TL_df = self.Se_ext_no_pnict_thermo.get_transition_levels(
+                all=True, unstable_entries=unstable_entries
+            )
+            return TL_df[TL_df.index.get_level_values("Defect").str.contains("sub_1_Te_on_Se")]
+
+        assert len(_sub_Te_TLs(True)) == 4  # ε(+2/+1), ε(+1/0), ε(0/-1*), ε(-1*/-2)
+        assert list(_sub_Te_TLs("not shallow").index.get_level_values("Charges")) == [
+            "ε(0/-1*)",
+            "ε(-1*/-2)",
+        ]
+        assert _sub_Te_TLs(False).empty
+
+        # kwargs are passed through to prune_to_stable_entries (stricter tolerance prunes more):
+        assert len(
+            self.Se_ext_no_pnict_thermo.get_transition_levels(
+                all=True, unstable_entries=False, charge_stability_tolerance=0.1
+            )
+        ) < len(self.Se_ext_no_pnict_thermo.get_transition_levels(all=True, unstable_entries=False))
+
+        # print_transition_levels delegates correctly: a shallow TL shown with unstable_entries=True is
+        # omitted by default ("not shallow"), and no spurious warnings are emitted:
+        _, true_output, true_w = _run_func_and_capture_stdout_warnings(
+            self.Se_ext_no_pnict_thermo.print_transition_levels, unstable_entries=True
+        )
+        _, default_output, default_w = _run_func_and_capture_stdout_warnings(
+            self.Se_ext_no_pnict_thermo.print_transition_levels
+        )
+        assert not true_w
+        assert not default_w
+        assert "Transition level ε(+1/0)" in true_output  # sub_1_Te_on_Se +1/0 shallow state
+        assert len(default_output) < len(true_output)  # default prunes shallow states
+
+        # print_transition_levels and get_transition_levels apply pruning consistently (i.e. pruning is
+        # not applied twice when print delegates with all=True), for each unstable_entries option:
+        for unstable_entries in [True, "not shallow", False]:
+            tl_df = self.Se_ext_no_pnict_thermo.get_transition_levels(
+                all=True, unstable_entries=unstable_entries
+            )
+            n_real_tls = int((tl_df.index.get_level_values("Charges") != "None").sum())
+            _, output, _ = _run_func_and_capture_stdout_warnings(
+                self.Se_ext_no_pnict_thermo.print_transition_levels,
+                all=True,
+                unstable_entries=unstable_entries,
+            )
+            assert output.count("Transition level ") == n_real_tls
+
     def test_get_symmetries_degeneracies(self):
         """
         Test symmetry and degeneracy functions.

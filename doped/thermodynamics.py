@@ -2596,6 +2596,11 @@ class DefectThermodynamics(MSONable):
         Returns:
             New |DefectThermodynamics| object with pruned defect entries.
         """
+        if unstable_entries not in [False, True, "not shallow"]:  # check unstable_entries input options
+            raise ValueError(
+                f"`unstable_entries` option must be either True, False or 'not shallow' -- not "
+                f"{unstable_entries}. See docs/docstrings for more info."
+            )
         if unstable_entries is True:  # all
             return self
 
@@ -2864,14 +2869,7 @@ class DefectThermodynamics(MSONable):
                 "of formation energies, but the transition level positions will be unaffected."
             )
 
-        if unstable_entries not in [False, True, "not shallow"]:  # check unstable_entries input options
-            raise ValueError(
-                f"`unstable_entries` option must be either True, False, 'not shallow', "
-                f"not {unstable_entries}. See DefectThermodynamics.plot docstring for more info."
-            )
-
-        # unstable_entries pruning:
-        thermo_to_plot = self.prune_to_stable_entries(
+        thermo_to_plot = self.prune_to_stable_entries(  # unstable_entries pruning
             unstable_entries=unstable_entries, **kwargs
         )  # Note that this will need to be updated if we add other kwarg options to this function
 
@@ -2914,6 +2912,8 @@ class DefectThermodynamics(MSONable):
         self,
         all: bool = False,
         format_charges: bool = True,
+        unstable_entries: bool | str = "not shallow",
+        **kwargs,
     ) -> pd.DataFrame | None:
         """
         Return a ``DataFrame`` of the charge transition levels for the defects
@@ -2952,15 +2952,38 @@ class DefectThermodynamics(MSONable):
             (0, 1 or 2). Only included if ``all = True``.
 
         Args:
-              all (bool):
-                    Whether to print all single-electron transition levels
-                    (i.e. including metastable defect states), or just the
-                    thermodynamic ground-state transition levels (default).
-              format_charges (bool):
-                    Whether to format the transition level charge states as
-                    strings (e.g. ``"ε(+1/+2)"``) or keep in list format (e.g.
-                    ``[1,2]``). Default is ``True``.
+            all (bool):
+                Whether to print all single-electron transition levels (i.e.
+                including metastable defect states), or just the thermodynamic
+                ground-state transition levels (default).
+            format_charges (bool):
+                Whether to format the transition level charge states as strings
+                (e.g. ``"ε(+1/+2)"``) or keep in list format (e.g. ``[1,2]``).
+                Default is ``True``.
+            unstable_entries (bool, str):
+                Controls the inclusion of unstable/shallow defect states, as in
+                ``DefectThermodynamics.plot()``; allowed values are ``True``,
+                ``False`` or ``"not shallow"``. If ``"not shallow"`` (default),
+                defect entries which are predicted to be shallow (perturbed
+                host) states according to eigenvalue analysis and only stable
+                for Fermi levels within a small window to a band edge
+                (``shallow_stability_tol``) are omitted. If ``False``, `all`
+                defects which are not stable for any Fermi level in the band
+                gap are `also` omitted. If ``True``, defect entries are not
+                pruned based on stability / shallow classification. See
+                ``prune_to_stable_entries`` for more info.
+            **kwargs:
+                Additional keyword arguments to control the stability window
+                tolerances when pruning unstable/shallow entries (e.g.
+                ``shallow_charge_stability_tolerance`` or
+                ``charge_stability_tolerance``); see
+                ``prune_to_stable_entries`` for more info.
         """
+        if unstable_entries is not True:  # prune unstable/shallow entries, then delegate
+            return self.prune_to_stable_entries(
+                unstable_entries=unstable_entries, **kwargs
+            ).get_transition_levels(all=all, format_charges=format_charges, unstable_entries=True)
+
         # create a dataframe from the transition level map, with defect name, transition level charges and
         # TL position in eV from the VBM:
         transition_level_map_list = []
@@ -3047,7 +3070,9 @@ class DefectThermodynamics(MSONable):
             tl_df = tl_df.drop(columns="N(Metastable)")
         return tl_df.set_index(["Defect", "Charges"])
 
-    def print_transition_levels(self, all: bool = False):
+    def print_transition_levels(
+        self, all: bool = False, unstable_entries: bool | str = "not shallow", **kwargs
+    ):
         """
         Iteratively prints the charge transition levels for the defects in the
         |DefectThermodynamics| object (stored in the ``transition_level_map``
@@ -3065,11 +3090,35 @@ class DefectThermodynamics(MSONable):
         ``all = True``.
 
         Args:
-              all (bool):
-                    Whether to print all single-electron transition levels
-                    (i.e. including metastable defect states), or just the
-                    thermodynamic ground-state transition levels (default).
+            all (bool):
+                Whether to print all single-electron transition levels (i.e.
+                including metastable defect states), or just the thermodynamic
+                ground-state transition levels (default).
+            unstable_entries (bool, str):
+                Controls the inclusion of unstable/shallow defect states, as in
+                ``DefectThermodynamics.plot()``; allowed values are ``True``,
+                ``False`` or ``"not shallow"``. If ``"not shallow"`` (default),
+                defect entries which are predicted to be shallow (perturbed
+                host) states according to eigenvalue analysis and only stable
+                for Fermi levels within a small window to a band edge
+                (``shallow_stability_tol``) are omitted. If ``False``, `all`
+                defects which are not stable for any Fermi level in the band
+                gap are `also` omitted. If ``True``, defect entries are not
+                pruned based on stability / shallow classification. See
+                ``prune_to_stable_entries`` for more info.
+            **kwargs:
+                Additional keyword arguments to control the stability window
+                tolerances when pruning unstable/shallow entries (e.g.
+                ``shallow_charge_stability_tolerance`` or
+                ``charge_stability_tolerance``); see
+                ``prune_to_stable_entries`` for more info.
         """
+        if unstable_entries is not True:  # prune unstable/shallow entries, then delegate
+            self.prune_to_stable_entries(
+                unstable_entries=unstable_entries, **kwargs
+            ).print_transition_levels(all=all, unstable_entries=True)
+            return
+
         if not all:
             for defect_name, tl_info in self.transition_level_map.items():
                 bold_print(f"Defect: {defect_name}")
@@ -3082,7 +3131,8 @@ class DefectThermodynamics(MSONable):
                 print("")  # add space
 
         else:
-            all_TLs_df = self.get_transition_levels(all=True)
+            # any pruning already applied above, so don't re-prune (unstable_entries=True):
+            all_TLs_df = self.get_transition_levels(all=True, unstable_entries=True)
             if all_TLs_df is None:
                 return
             for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
