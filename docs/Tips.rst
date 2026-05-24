@@ -535,6 +535,10 @@ The bulk DOS (``bulk_dos``) calculation should be a static calculation with the 
 - The same host crystal structure used to generate the bulk/defect supercells, and same pseudopotentials
   (``POTCAR``\s in ``VASP``) used for the supercell calculations.
 
+See the
+`MgO GGA workflow tutorial <https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dos>`__
+for an example of setting up a bulk DOS calculation.
+
 
 If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
 and bulk/defect supercell calculations (stored as the 
