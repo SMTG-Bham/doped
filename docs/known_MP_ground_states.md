@@ -119,7 +119,10 @@ Citation: https://doi.org/10.1038/s41467-022-32669-3r
 
 ## Halogens (Br, I)
 #### Bromine (Br)
-TODO: Check on Backup; CSI/CTI phase diagram
+- `mp-23154` is the true orthorhombic `Cmce`/`Cmca` ground-state structure of bromine under ambient 
+  and low temperature conditions, which both MP (GGA) database and hybrid (HSE06) DFT energies 
+  correctly predict in static athermal calculations.
+
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
 #### Iodine (I)
@@ -146,8 +149,6 @@ Citation: https://doi.org/10.48550/arXiv.2602.22024
   GGA DFT calculations).
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
-TODO: Check on Backup; CSI/CTI phase diagram
-
 #### Titanium (Ti)
 - `mp-46` is the true hexagonal close-packed (HCP) `P6₃/mmc` ground-state structure of titanium (for 
   temperatures T ~< 1550 K), though with EaH ~ 0.015 eV/atom in the MP database.
@@ -163,7 +164,7 @@ Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 - `mp-2657` is the true rutile (tetragonal) `P4₂/mnm` ground-state structure of titanium dioxide, though
   with EaH ~ 0.04 eV/atom in the MP database.
 - `mp-390` is the anatase (tetragonal) `I4₁/amd` polymorph, being the lowest energy titanium dioxide phase 
-  on the MP database (EaH = 0 eV/atom).
+  on the MP database (EaH = 0 eV/atom), and typically predicted as the lowest energy polymorph with hybrid DFT.
 - `mp-1840` is the brookite (orthorhombic) `Pbca` polymorph, being the 2nd-lowest energy titanium dioxide 
   phase on the MP database (EaH ~ 0.003 eV/atom).
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
@@ -171,17 +172,13 @@ Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 There are many (other) low energy polymorphs of titanium dioxide on the MP database, but typically only 
 these phases are relevant for competing phase calculations and chemical potentials.
 
-TODO: Check on Backup; CSI/CTI phase diagram -- we did TiO2?
-
 #### Tin Dioxide (SnO₂)
 - `mp-856` is the true rutile (tetragonal) `P4₂/mnm` ground-state structure of tin dioxide, correctly 
-  predicted as the lowest energy tin dioxide phase in the MP database (EaH = 0 eV/atom).
+  predicted as the lowest energy tin dioxide phase in the MP database (EaH = 0 eV/atom), and with static hybrid DFT calculations.
 Citation: https://doi.org/10.1021/acs.jpcc.3c05204
 
 There are many (other) low energy polymorphs of tin dioxide on the MP database, but typically only this 
 phase is relevant for competing phase calculations and chemical potentials.
-
-TODO: Check on Backup; CSI/CTI phase diagram -- we did SnO2?
 
 #### Tungsten Tri-Oxide (WO₃)
 WO₃ is a particularly difficult case, having many many low-energy polymorphs listed on the MP database, 
