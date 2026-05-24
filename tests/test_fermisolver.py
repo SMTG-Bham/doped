@@ -65,7 +65,7 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
             efermi=0.75,  # purposely at an awkward position to test edge case handling
         )
         fermi_dos = FermiDos(dos, structure=self.CdTe_fermi_dos.structure)
-        e_cbm, e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)
+        _e_cbm, e_vbm = fermi_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)
         gap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
 
         # Test with default values
@@ -1603,6 +1603,99 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             concentrations_per_defect_0["Concentration (cm^-3)"],
             rtol=conc_rtol,
         )  # also checks the index and ordering
+
+    @unittest.skipIf(not py_sc_fermi_available, "py_sc_fermi is not available")
+    @custom_mpl_image_compare(filename="CdTe_scan_dopant_concentration_free_and_fixed_charge_states.png")
+    def test_scan_dopant_concentration_free_defects_fix_charge_states(self):
+        """
+        Test ``scan_dopant_concentration`` with the ``free_defects`` and
+        ``fix_charge_states`` constraints (currently only supported by the
+        ``py-sc-fermi`` backend), under pseudo-equilibrium for CdTe.
+
+        ``free_defects`` releases a defect from the frozen-defect approximation
+        (allowing it to re-equilibrate on quenching), while
+        ``fix_charge_states`` freezes the individual charge state populations
+        (not just the total concentration of each defect) at the annealing
+        temperature. Generates a 3-panel plot comparing the unconstrained scan
+        against each constraint.
+        """
+        solver = FermiSolver(self.CdTe_thermo, backend="py-sc-fermi")  # CdTe_thermo has bulk_dos set
+        dopant_concentrations = np.geomspace(1e15, 1e18, 25)
+        scan_kwargs = {
+            "effective_dopant_concentration_range": dopant_concentrations,
+            "limit": "Te-rich",
+            "annealing_temperature": 900,
+            "quenched_temperature": 300,
+        }
+
+        # rigorous (Fermi level / chempot consistency) check of the unconstrained pseudo-eq solve:
+        check_concentrations_df(solver, solver.scan_dopant_concentration(**scan_kwargs))  # per_charge=True
+
+        unconstrained = solver.scan_dopant_concentration(**scan_kwargs, per_charge=False)
+        free = solver.scan_dopant_concentration(**scan_kwargs, per_charge=False, free_defects=["v_Cd"])
+        fixed_q = solver.scan_dopant_concentration(**scan_kwargs, per_charge=False, fix_charge_states=True)
+
+        # ``free_defects=["v_Cd"]`` lets v_Cd re-equilibrate down to its lower quenched-temperature
+        # equilibrium value, so its total concentration is below the frozen-defect value at every dopant
+        # concentration:
+        for conc in dopant_concentrations:
+            v_Cd_frozen = unconstrained.loc["v_Cd"][unconstrained.loc["v_Cd"]["Dopant (cm^-3)"] == conc]
+            v_Cd_free = free.loc["v_Cd"][free.loc["v_Cd"]["Dopant (cm^-3)"] == conc]
+            assert (
+                v_Cd_free["Concentration (cm^-3)"].iloc[0] < v_Cd_frozen["Concentration (cm^-3)"].iloc[0]
+            )
+
+        # ``fix_charge_states=True`` freezes charge state populations, giving a different self-consistent
+        # quenched Fermi level (vs only freezing total concentrations) at every dopant concentration:
+        base_fl = unconstrained.drop_duplicates("Dopant (cm^-3)").set_index("Dopant (cm^-3)")[
+            "Fermi Level (eV wrt VBM)"
+        ]
+        fixed_fl = fixed_q.drop_duplicates("Dopant (cm^-3)").set_index("Dopant (cm^-3)")[
+            "Fermi Level (eV wrt VBM)"
+        ]
+        assert (np.abs(base_fl - fixed_fl) > 1e-2).all()
+
+        plt.style.use(STYLE)
+        f, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=True)
+        for ax, title, df in zip(
+            axes,
+            ["Unconstrained", "free_defects = [v$_{Cd}$]", "fix_charge_states = True"],
+            [unconstrained, free, fixed_q],
+            strict=True,
+        ):
+            for i, defect in enumerate(df.index.unique()):
+                rows = df[df.index == defect].sort_values("Dopant (cm^-3)")
+                ax.plot(
+                    rows["Dopant (cm^-3)"],
+                    rows["Concentration (cm^-3)"],
+                    label=format_defect_name(defect, wout_charge=True, include_site_info_in_name=True),
+                    color=cmc.batlowS(i),
+                    marker="o",
+                )
+            carriers = df.drop_duplicates("Dopant (cm^-3)").sort_values("Dopant (cm^-3)")
+            ax.plot(
+                carriers["Dopant (cm^-3)"],
+                carriers["Holes (cm^-3)"],
+                ":C0",
+                linewidth=2,
+                label="h$^+$",
+            )
+            ax.plot(
+                carriers["Dopant (cm^-3)"],
+                carriers["Electrons (cm^-3)"],
+                ":C1",
+                linewidth=2,
+                label="e$^-$",
+            )
+            ax.set_xscale("log")
+            ax.set_yscale("log")
+            ax.set_ylim(1e10, 1e19)
+            ax.set_xlabel("Effective Dopant Concentration (cm$^{-3}$)")
+            ax.set_title(title)
+        axes[0].set_ylabel("Concentration (cm$^{-3}$)")
+        axes[2].legend(fontsize=6, ncol=2, loc="upper left")
+
+        return f
 
     @parameterize_backend()
     def test_interpolate_chempots_with_limits(self, backend):
@@ -3293,7 +3386,6 @@ def _plot_Cu_i_data(Cu_i_data):
 
 
 # TODO: Test free_defects with substring matching (and fixed_defects later when supported)
-# TODO: **Use plots in FermiSolver tutorial as quick test cases here**
 class TestFermiSolverWithLoadedData3D(unittest.TestCase):
     """
     Tests for ``FermiSolver`` with loaded data, for a ternary system (Cu2SiSe3
