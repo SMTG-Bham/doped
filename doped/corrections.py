@@ -169,9 +169,9 @@ def get_freysoldt_correction(
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
             ``defect_entry`` ``calculation_metadata`` if available.
-            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-            for information on calculating and converging the dielectric
-            constant.
+            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+            tutorial section for information on calculating and converging the
+            dielectric constant.
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
@@ -397,9 +397,9 @@ def get_kumagai_correction(
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
             ``defect_entry`` ``calculation_metadata`` if available.
-            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-            for information on calculating and converging the dielectric
-            constant.
+            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+            tutorial section for information on calculating and converging the
+            dielectric constant.
         defect_region_radius (float):
             Radius of the defect region (in Å). Sites outside the defect
             region are used for sampling the electrostatic potential far

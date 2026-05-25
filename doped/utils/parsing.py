@@ -1997,8 +1997,7 @@ def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
 
     Note that if the system is charged, then this function relies on access to
     ``POTCAR`` data, which can be setup with ``pymatgen`` as detailed on the
-    installation page here:
-    https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+    :ref:`installation page <setup_potcars_mp_api>`.
 
     Args:
         vasprun (|Vasprun|):

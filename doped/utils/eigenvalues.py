@@ -183,8 +183,7 @@ def get_band_edge_info(
     specifically ``pydefect`` ``BandEdgeOrbitalInfos``, and ``EdgeInfo``
     objects for the bulk VBM and CBM.
 
-    See:
-    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
+    See the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
 
     Args:
         defect_vr (|Vasprun|):
@@ -291,8 +290,8 @@ def get_eigenvalue_analysis(
     eigenvalues and their occupation (if ``plot=True``).
 
     Can be used to determine if a defect is adopting a perturbed host state
-    (PHS / shallow state), see:
-    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
+    (PHS / shallow state), see the
+    :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
 
     Note that the classification of electronic states as band edges or
     localised orbitals is based on the similarity of orbital projections and

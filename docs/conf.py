@@ -160,6 +160,7 @@ rst_prolog = """
 .. |StructureMatcher_scan_stol| replace:: :func:`~doped.utils.efficiency.StructureMatcher_scan_stol`
 .. |ComputedEntry| replace:: :class:`~pymatgen.core.entries.ComputedEntry`
 .. |ComputedStructureEntry| replace:: :class:`~pymatgen.core.entries.ComputedStructureEntry`
+.. |PhaseDiagram| replace:: :class:`~pymatgen.analysis.phase_diagram.PhaseDiagram`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__

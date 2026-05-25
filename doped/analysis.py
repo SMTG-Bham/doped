@@ -968,9 +968,9 @@ class DefectsParser:
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
-                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-                for information on calculating and converging the dielectric
-                constant.
+                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+                tutorial section for information on calculating and converging
+                the dielectric constant.
             subfolder (PathLike):
                 Name of subfolder(s) within each defect calculation folder (in
                 the ``output_path`` directory) containing the VASP calculation
@@ -1432,8 +1432,8 @@ class DefectsParser:
                 ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
-                bulk DOS and defect supercell calculations. See
-                https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
+                bulk DOS and defect supercell calculations. See the
+                :ref:`Tips:Density of States (DOS) Calculations` tips.
                 (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
@@ -2480,9 +2480,9 @@ class DefectParser:
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If not provided, charge corrections cannot be
                 computed and so ``skip_corrections`` will be set to ``True``.
-                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-                for information on calculating and converging the dielectric
-                constant.
+                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+                tutorial section for information on calculating and converging
+                the dielectric constant.
             charge_state (int):
                 Charge state of defect. If not provided, will be automatically
                 determined from defect calculation outputs, or if that fails,
@@ -3265,8 +3265,8 @@ def shallow_dopant_binding_energy(
     Estimate the binding energy of a shallow dopant /defect in a semiconductor,
     using effective mass theory.
 
-    Discussion here:
-    https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects
+    Discussion in the :ref:`Tips:Perturbed Host States (Shallow Defects)` tips
+    section.
 
     For delocalised, shallow states (a.k.a. perturbed host states), the
     hydrogenic effective mass model typically gives quite a good estimate of

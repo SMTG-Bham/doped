@@ -205,8 +205,7 @@ for computational defect modelling, given the many steps and complexities involv
 be directly output to lightweight ``json(.gz)`` files be shared in open-access repositories upon 
 publication, along with relevant raw computational data. It is also helpful to use the ``doped`` summary 
 functions to tabulate key quantities in Supplementary Information files. See the 
-`Open Science <https://doped.readthedocs.io/en/latest/Tips.html#open-science-and-reproducibility>`__
-section of the docs Tips page for details.
+:ref:`Open Science <Tips:Open Science and Reproducibility>` section of the docs Tips page for details.
 
 
 Acknowledgements

@@ -349,8 +349,7 @@ def get_entries_in_chemsys(
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            Installation docs:
-            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            :ref:`Installation docs <setup_potcars_mp_api>`.
         energy_above_hull (float):
             If supplied, only entries with energies above hull (according to
             the MP-computed phase diagram) less than this value (in eV/atom)
@@ -426,8 +425,7 @@ def get_entries(
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            Installation docs:
-            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            :ref:`Installation docs <setup_potcars_mp_api>`.
         bulk_composition (str/|Composition|):
             Optional input; formula of the bulk host material, to use for
             sorting the output entries (with all those matching the bulk
@@ -467,8 +465,7 @@ def _check_MP_API_key(api_key: str | None = None) -> str | None:
             not supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            Installation docs:
-            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            :ref:`Installation docs <setup_potcars_mp_api>`.
 
     Returns:
         str | None:
@@ -525,8 +522,7 @@ def get_MP_summary_dicts(
             supplied, will attempt to read from ``~/.pmgrc.yaml`` or
             ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from the
             ``MP_API_KEY`` environment variable -- see the ``doped``
-            Installation docs:
-            https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+            :ref:`Installation docs <setup_potcars_mp_api>`.
         **kwargs:
             Additional keyword arguments to pass to the Materials Project API
             query, e.g. ``MPRester.materials.summary.search()``.
@@ -1023,9 +1019,10 @@ class CompetingPhases(MSONable):
                 only the lowest MP energy-above-hull entry plus any entries
                 whose Materials Project ID is in the listed set are retained.
                 See ``docs/known_MP_ground_states.md`` for the rationale and
-                citations behind each composition's curated set, and
-                https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#chemical-systems-with-many-polymorphs
-                for discussion and examples. Default is ``False``.
+                citations behind each composition's curated set. See the
+                :ref:`chemical_potentials_tutorial:Chemical Systems with Many Polymorphs`
+                section of the competing phases tutorial for discussion and
+                examples. Default is ``False``.
             MP_doc_dicts (bool):
                 If ``True``, also queries the Materials Project (MP) for
                 summary doc dicts with ``MPRester.summary_search()`` for the
@@ -1037,8 +1034,7 @@ class CompetingPhases(MSONable):
                 will attempt to read from ``~/.pmgrc.yaml`` or
                 ``~/.config/.pmgrc.yaml`` (under ``PMG_MAPI_KEY``) or from
                 the ``MP_API_KEY`` environment variable -- see the ``doped``
-                Installation docs:
-                https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+                :ref:`Installation docs <setup_potcars_mp_api>`.
             **kwargs:
                 Additional keyword arguments to pass to the Materials Project
                 API ``get_entries_in_chemsys()`` / ``get_entries()`` queries
@@ -1091,10 +1087,12 @@ class CompetingPhases(MSONable):
                 Materials Project summary dictionaries for
                 ``self.intrinsic_entries`` only (set when ``MP_doc_dicts=True``
                 and extrinsic species are present).
-            energy_above_hull, full_phase_diagram, extrinsic, codoping,
-            single_extrinsic_phase_limits, expected_polymorphs, api_key,
-            _get_entries_kwargs:
-                Stored input parameters (see ``Args`` above).
+            X (Any):
+                Stored constructor (initialisation) arguments, for reference.
+                e.g. ``CompetingPhases.energy_above_hull``. See ``Args``.
+            _get_entries_kwargs (dict):
+                ``**kwargs`` passed to MP ``get_entries*`` queries; see
+                ``Args``.
         """
         if "full_sub_approach" in kwargs:  # TODO: remove in v4.1
             raise ValueError(
@@ -1723,6 +1721,9 @@ class CompetingPhases(MSONable):
         defect calculations for a final single-point energy calculation), to
         avoid spurious Pulay stress effects.
 
+        See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+        for tips on boosting the efficiency of competing phases calculations.
+
         Args:
             kpoints_metals (float):
                 Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
@@ -1865,6 +1866,9 @@ class CompetingPhases(MSONable):
         defect calculations for a final single-point energy calculation), to
         avoid spurious Pulay stress effects.
 
+        See the :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+        for tips on boosting the efficiency of competing phases calculations.
+
         Args:
             kpoints_metals (float):
                 Kpoint density per inverse volume (kpoints/Å⁻³) for metallic
@@ -1995,6 +1999,21 @@ class CompetingPhases(MSONable):
         settings should be consistent with those used for the defect supercell
         calculations.
 
+        For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
+        default here) is well-suited to the geometry relaxations, tetrahedron
+        smearing (``ISMEAR = -5``) typically gives more accurate total energies
+        for these final single-point calculations with modest k-point
+        densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
+        Often this requires a lower `k`-point density than Methfessel-Paxton
+        smearing, and so it can be worth re-running k-point convergence testing
+        (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
+        check for cheaper converged `k`-point densities for these final
+        single-point calculations -- particularly useful if e.g. performing
+        hybrid DFT SOC calculations. See the
+        :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+        for further tips on boosting the efficiency of competing phases
+        calculations.
+
         Note that this function uses a single kpoint density setting each for
         metals (``kpoints_metals``), non-metals (``kpoints_nonmetals``) and
         molecules (Gamma-only), while one will often want to specify custom
@@ -2077,6 +2096,8 @@ class CompetingPhases(MSONable):
 
         # build merged INCAR settings: singlepoint tags + SOC on top of user settings
         sp_incar_settings = copy.deepcopy(singlepoint_incar_settings)
+        # TODO: Set ISMEAR to -5 for singlepoint calculations if sufficient KPOINT density? And for defect
+        # calcs? Tools for handling this in ``pymatgen``?
         if soc:
             sp_incar_settings["LSORBIT"] = True
         sp_incar_settings.update(user_incar_settings or {})  # user settings take precedence over defaults
@@ -2148,6 +2169,21 @@ class CompetingPhases(MSONable):
         Automatically sets the ``ISMEAR`` ``INCAR`` tag to 2 (if metallic) or 0
         if not. Note that any changes to the default ``INCAR``/``POTCAR``
         settings should be consistent with those used for the defect supercell
+        calculations.
+
+        For metals, while Methfessel-Paxton smearing (``ISMEAR = 2``; the
+        default here) is well-suited to the geometry relaxations, tetrahedron
+        smearing (``ISMEAR = -5``) typically gives more accurate total energies
+        for these final single-point calculations with modest k-point
+        densities, and can be set via ``user_incar_settings={"ISMEAR": -5}``.
+        Often this requires a lower `k`-point density than Methfessel-Paxton
+        smearing, and so it can be worth re-running k-point convergence testing
+        (with :meth:`get_kpoint_convergence_sets`) using ``ISMEAR = -5`` to
+        check for cheaper converged `k`-point densities for these final
+        single-point calculations -- particularly useful if e.g. performing
+        hybrid DFT SOC calculations. See the
+        :ref:`Tips:Competing Phases & Chemical Potentials` tips section
+        for further tips on boosting the efficiency of competing phases
         calculations.
 
         Note that this function uses a single kpoint density setting each for
@@ -2276,7 +2312,7 @@ class CompetingPhases(MSONable):
         Otherwise ``ISPIN`` is not set, so spin polarisation is not allowed (as
         typically desired for non-magnetic phases, for efficiency).
 
-        See https://doped.readthedocs.io/en/latest/Tips.html#spin
+        See the :ref:`Tips:Magnetization` tips section.
         """
         magnetization = entry.data.get("summary", {}).get("total_magnetization")
         if magnetization is not None and magnetization > 0.1:  # account for magnetic moment
@@ -4273,8 +4309,8 @@ class CompetingPhasesAnalyzer(MSONable):
         element), but for higher-dimensional systems a set of chemical
         potential constraints must be provided (as ``fixed_elements``) to
         project the chemical stability region to 3-D; see the competing phases
-        tutorial:
-        https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+        tutorial section on
+        :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
 
         Extrinsic chemical potentials are also supported; added as additional
         dimensions to the chemical potential diagram and can be used as plot
@@ -4569,8 +4605,8 @@ def plot_chempot_heatmap(
     applied as-is for ternary systems (or binary systems with an extrinsic
     element), but for higher-dimensional systems a set of chemical potential
     constraints must be provided (as ``fixed_elements``) to project the
-    chemical stability region to 3-D; see the competing phases tutorial:
-    https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+    chemical stability region to 3-D; see the competing phases tutorial section
+    on :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
 
     Extrinsic chemical potentials are also supported; added as additional
     dimensions to the chemical potential diagram and can be used as plot axes

@@ -1,4 +1,4 @@
-# vaspup2.0 - Seán Kavanagh (sean.kavanagh.19@ucl.ac.uk), 2023
+# vaspup2.0 Config file (https://github.com/kavanase/vaspup2.0)
 # This is the default config for automating convergence.
 # Works for ground-state energy convergence and DFPT convergence.
 

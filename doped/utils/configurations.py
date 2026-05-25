@@ -640,8 +640,7 @@ def get_path_structures(
     ``displacements`` is ``None`` (i.e. assuming an NEB / PES calculation).
     Otherwise set ``reorient`` explicitly to ``True/False`` to control this
     behaviour. See the ``doped`` configuration coordinate / NEB path generation
-    `tutorial <https://doped.readthedocs.io/en/latest/CCD_NEB_tutorial.html>`__
-    for further discussion.
+    :doc:`tutorial <CCD_NEB_tutorial>` for further discussion.
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is generated (in other words,
@@ -867,8 +866,7 @@ def write_path_structures(
     ``displacements`` is ``None`` (i.e. assuming an NEB / PES calculation).
     Otherwise set ``reorient`` explicitly to ``True/False`` to control this
     behaviour. See the ``doped`` configuration coordinate / NEB path generation
-    `tutorial <https://doped.readthedocs.io/en/latest/CCD_NEB_tutorial.html>`__
-    for further discussion.
+    :doc:`tutorial <CCD_NEB_tutorial>` for further discussion.
 
     If only ``n_images`` is set (and ``displacements`` is ``None``)(default),
     then only one set of interpolated structures is written (in other words,

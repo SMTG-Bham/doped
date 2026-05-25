@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Known MP Ground States
 This document lists some known ground states / room-temperature phases for common elements and compounds 
 in the Materials Project (MP) database, which can be used to reduce the number of calculations required 

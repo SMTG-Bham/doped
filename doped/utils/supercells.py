@@ -21,7 +21,7 @@ def get_min_image_distance(structure: Structure) -> float:
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     Args:
         structure (|Structure|): |Structure| object.
@@ -99,7 +99,7 @@ def _get_min_image_distance_from_matrix(
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     Args:
         matrix (np.ndarray): Lattice matrix.
@@ -147,7 +147,7 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     As the cell angles deviate more from cubic (90°), the required
     ``max_ijk`` to get the correct converged result increases. For near-cubic
@@ -254,7 +254,7 @@ def cell_metric(
 
     This is an expanded version of the cell metric function in ASE
     (``get_deviation_from_optimal_cell_shape``), described in
-    https://wiki.fysik.dtu.dk/ase/tutorials/defects/defects.html
+    https://ase-lib.org/examples_generated/tutorials/defects.html
     which previously did not account for rotational invariance (now fixed;
     https://gitlab.com/ase/ase/-/merge_requests/3404,
     https://gitlab.com/ase/ase/-/merge_requests/3616).
@@ -700,7 +700,7 @@ def find_ideal_supercell(
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     Note that this function is used by default to generate defect supercells
     with the ``doped`` |DefectsGenerator| class, unless specific supercell

@@ -135,8 +135,7 @@ class DefectEntry(thermo.DefectEntry):
                 |get_orientational_degeneracy| and
                 ``point_symmetry_from_defect_entry`` functions), but can also
                 be edited in ``DefectEntry.degeneracy_factors``.
-                For discussion, see:
-                https://doped.readthedocs.io/en/latest/Tips.html#spin
+                For discussion, see the :ref:`Tips:Magnetization` tips section.
 
         Generation Attributes:
             name:
@@ -369,9 +368,9 @@ class DefectEntry(thermo.DefectEntry):
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
                 from the |DefectEntry| ``calculation_metadata`` if available.
-                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-                for information on calculating and converging the dielectric
-                constant.
+                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+                tutorial section for information on calculating and converging
+                the dielectric constant.
             defect_locpot:
                 Path to the output VASP ``LOCPOT`` file from the defect
                 supercell calculation, or the corresponding ``pymatgen``
@@ -526,9 +525,9 @@ class DefectEntry(thermo.DefectEntry):
                 VASP dielectric calculation, if an oddly-defined primitive cell
                 is used). If ``None``, then the dielectric constant is taken
                 from the |DefectEntry| ``calculation_metadata`` if available.
-                See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-                for information on calculating and converging the dielectric
-                constant.
+                See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+                tutorial section for information on calculating and converging
+                the dielectric constant.
             defect_region_radius (float):
                 Radius of the defect region (in Å). Sites outside the defect
                 region are used for sampling the electrostatic potential far
@@ -821,8 +820,8 @@ class DefectEntry(thermo.DefectEntry):
         their occupation (if ``plot=True``).
 
         Can be used to determine if a defect is adopting a perturbed host state
-        (PHS / shallow state), see
-        https://doped.readthedocs.io/en/latest/Tips.html#perturbed-host-states-shallow-defects.
+        (PHS / shallow state), see the
+        :ref:`Tips:Perturbed Host States (Shallow Defects)` tips section.
 
         If eigenvalue data has not already been parsed for |DefectEntry|
         (default in ``doped`` is to parse this data with |DefectsParser|/

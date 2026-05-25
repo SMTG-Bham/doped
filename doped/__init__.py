@@ -73,7 +73,9 @@ def vise_handling(level=logging.CRITICAL):
         yield
 
 
-with vise_handling():
+# Patch ``vise.util.logger.get_logger`` _before_ any ``vise``/``pydefect`` module is imported (not using
+# ``vise_handling()`` as that imports ``vise.defaults`` before this override would take effect):
+with suppress_logging(), warnings.catch_warnings():
     import vise.util.logger
 
     vise.util.logger.get_logger = logging.getLogger  # avoid repeated vise INFO messages with Parallel code
@@ -187,8 +189,8 @@ def pool_manager(processes: int | None = None):
     message when ``RuntimeError``\s are raised ``multiprocessing`` within
     ``doped`` is used in a python script.
 
-    See
-    https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts
+    See the
+    :ref:`Errors with Python Scripts <errors_with_python_scripts>` section.
 
     Args:
         processes (int | None):

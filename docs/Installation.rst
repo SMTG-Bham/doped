@@ -30,6 +30,8 @@ conflict warnings during installation etc). You can do this with ``conda`` with:
    pip install doped
 
 
+.. _setup_potcars_mp_api:
+
 Setup ``POTCAR``\s and Materials Project API
 --------------------------------------------
 

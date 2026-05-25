@@ -642,8 +642,8 @@ class DefectDictSet(DopedDictSet):
         Returns the ``Incar`` object generated from ``DopedDictSet``, with
         ``NUPDOWN`` set accordingly.
 
-        See https://doped.readthedocs.io/en/latest/Tips.html#spin
-        for discussion about appropriate ``NUPDOWN``/``MAGMOM`` settings.
+        See the :ref:`Tips:Magnetization` tips section for discussion about
+        appropriate ``NUPDOWN``/``MAGMOM`` settings.
         """
         incar_obj = super(self.__class__, self).incar
 
@@ -653,7 +653,7 @@ class DefectDictSet(DopedDictSet):
             if nelect % 2 != 0:  # odd number of electrons
                 incar_obj["NUPDOWN"] = 1
             else:
-                nup_0_str = "0  # see https://doped.readthedocs.io/en/latest/Tips.html#spin"
+                nup_0_str = "0  # see https://doped.readthedocs.io/en/latest/Tips.html#magnetization"
                 incar_obj["NUPDOWN"] = nup_0_str  # just set to 0 upon file writing by pymatgen anyway
 
         except Exception as e:  # POTCARs unavailable, so NELECT and NUPDOWN can't be set
@@ -672,9 +672,10 @@ class DefectDictSet(DopedDictSet):
                 f"https://doped.readthedocs.io/en/latest/Installation.html for instructions on setting "
                 f"this up). As this is a neutral supercell, the INCAR file will be written without this "
                 f"flag, but it is often important to explicitly set this spin state in VASP to avoid "
-                f"unphysical solutions (see https://doped.readthedocs.io/en/latest/Tips.html#spin), and "
-                f"POTCARs are also needed to set the charge state (i.e. NELECT) of charged defect "
-                f"supercells. Got error:\n{e!r}"
+                f"unphysical solutions (see "
+                f"https://doped.readthedocs.io/en/latest/Tips.html#magnetization), and POTCARs are also "
+                f"needed to set the charge state (i.e. NELECT) of charged defect supercells. Got "
+                f"error:\n{e!r}"
             )
 
         return incar_obj

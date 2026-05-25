@@ -320,9 +320,7 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     In other cases, if the error in the finite-size corrections are too large, we may need to compute the 
     given defect in a larger supercell. The stenciling functions in ``doped``, which allow the 
     re-generation of (relaxed) defect structures in arbitrary supercells, can be very useful in these 
-    cases. See the 
-    `stenciling tutorial <https://doped.readthedocs.io/en/latest/stenciling_tutorial.html>`__ for examples 
-    and discussion.
+    cases. See the :doc:`stenciling tutorial <stenciling_tutorial>` for examples and discussion.
 
 .. tip::
 
@@ -331,7 +329,7 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     cases can differ from that returned by the default supercell generation algorithm (which optimises the
     minimum image distance for the minimum number of atoms), with e.g. a dielectric-weighted supercell 
     generation approach often being more appropriate. See the 
-    `dielectric-weighted supercell generation section <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#dielectric-weighted-supercell-generation>`__ 
+    :ref:`dielectric-weighted supercell generation section <advanced_analysis_tutorial:Dielectric-Weighted Supercell Generation>`
     of the advanced analysis tutorial for an example and discussion.
 
 
@@ -415,7 +413,7 @@ default). Note that for VASP to output the necessary data for this analysis, you
 include ``LORBIT > 10`` (to obtain the projected orbitals).
 
 In the examples below (both of which are shown in the
-`advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#eigenvalue-electronic-structure-analysis>`__),
+:ref:`advanced analysis tutorial <advanced_analysis_tutorial:Eigenvalue / Electronic Structure Analysis>`),
 we plot the single particle levels for the
 `cadmium vacancy in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__ (`V`\ :sub:`Cd`) in each of
 its charge states (0, -1 and -2); calculated with spin-orbit coupling (SOC) and a 2x2x2 `k`-point mesh:
@@ -468,7 +466,7 @@ As discussed below, this is performed automatically in ``doped``.
     (i.e. binding energy of an electron in a hydrogen atom; ~13.6 eV).
     This formula is used in the :func:`~doped.analysis.shallow_dopant_binding_energy()` convenience
     function, with example usage shown
-    `here in the advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#estimate-dopant-acceptor-binding-energy>`__.
+    :ref:`here in the advanced analysis tutorial <advanced_analysis_tutorial:Estimate Dopant (Acceptor) Binding Energy>`.
     As shown in the tutorial example, this formula can also be used to estimate the Wannier-Mott exciton
     binding energy, when the reduced mass of the electron-hole pair is used for the effective mass.
 
@@ -569,7 +567,7 @@ the band gap are omitted from plotting for clarity & accuracy.
 Density of States (DOS) Calculations
 ------------------------------------
 As discussed in the
-`thermodynamics & doping tutorial <https://doped.readthedocs.io/en/latest/thermodynamics_tutorial.html#doping-calculations>`__,
+:ref:`thermodynamics & doping tutorial <thermodynamics_tutorial:Doping Calculations>`,
 the electronic density of states (DOS) of the bulk material (provided as ``bulk_dos``) is required to
 determine carrier concentrations and thus (quasi-)equilibrium Fermi levels and defect concentrations under
 various conditions, along with the defect formation energies and other inputs.
@@ -588,7 +586,7 @@ The bulk DOS (``bulk_dos``) calculation should be a static calculation with the 
   (``POTCAR``\s in ``VASP``) used for the supercell calculations.
 
 See the
-`MgO GGA workflow tutorial <https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dos>`__
+:ref:`MgO GGA workflow tutorial <GGA_workflow_tutorial:8. Density of States (DOS)>`
 for an example of setting up a bulk DOS calculation.
 
 

@@ -817,8 +817,8 @@ class DefectThermodynamics(MSONable):
                 ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
-                bulk DOS and defect supercell calculations. See
-                https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
+                bulk DOS and defect supercell calculations. See the
+                :ref:`Tips:Density of States (DOS) Calculations` tips section.
                 (Default: None)
             skip_dos_check (bool):
                 Whether to skip the warning about the DOS VBM differing from
@@ -1714,8 +1714,8 @@ class DefectThermodynamics(MSONable):
         ``ISMEAR = -5`` (tetrahedron smearing) are recommended for best
         convergence (wrt `k`-point sampling) in VASP. Consistent functional
         settings should be used for the bulk DOS and defect supercell
-        calculations. See
-        https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
+        calculations. See the
+        :ref:`Tips:Density of States (DOS) Calculations` section.
         """
         self._bulk_dos = self._parse_fermi_dos(input_bulk_dos, skip_dos_check=self.skip_dos_check)
 
@@ -2537,8 +2537,8 @@ class DefectThermodynamics(MSONable):
 
         This function can be used to prune out defect entries which are
         detected to be shallow (perturbed host, 'fake') states according to
-        eigenvalue analysis (see
-        https://doped.readthedocs.io/en/latest/Tips.html#eigenvalue-electronic-structure-analysis
+        eigenvalue analysis (see the
+        :ref:`Tips:Eigenvalue / Electronic Structure Analysis` section
         for more info), and/or entries which are only stable for certain
         Fermi levels outside or within a small window of the band edges.
 
@@ -2684,8 +2684,7 @@ class DefectThermodynamics(MSONable):
         interstitials at a given site) are grouped together in distinct defect
         types according to ``self.dist_tol``, which is also used in transition
         level analysis and defect concentrations. This can be adjusted as shown
-        in the plotting customisation tutorial:
-        https://doped.readthedocs.io/en/latest/plotting_customisation_tutorial.html
+        in the :doc:`plotting customisation tutorial <plotting_customisation_tutorial>`.
         See the ``dist_tol`` attribute, ``group_defects_by_distance()`` and
         ``group_defects_by_type_and_distance()`` functions for more information
         on clustering strategies.
@@ -3396,8 +3395,8 @@ class DefectThermodynamics(MSONable):
         or maximising a target property (e.g. defect/carrier concentration),
         and also allowing greater control over constraints and approximations
         in defect concentration calculations (i.e. fixed/variable defect(s) and
-        charge states), which may be useful. See the ``FermiSolver`` tutorial:
-        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+        charge states), which may be useful. See the
+        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
 
         Args:
             temperature (float):
@@ -3712,8 +3711,8 @@ class DefectThermodynamics(MSONable):
         maximising a target property (e.g. defect/carrier concentration), and
         also allowing greater control over constraints and approximations in
         defect concentration calculations (i.e. fixed/variable defect(s) and
-        charge states), which may be useful. See the ``FermiSolver`` tutorial:
-        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+        charge states), which may be useful. See the
+        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
 
         Args:
             bulk_dos (FermiDos or |Vasprun| or PathLike):
@@ -3733,8 +3732,8 @@ class DefectThermodynamics(MSONable):
                 ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
-                bulk DOS and defect supercell calculations. See
-                https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
+                bulk DOS and defect supercell calculations. See the
+                :ref:`Tips:Density of States (DOS) Calculations` section.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has
                 previously been provided and parsed, and thus is set as the
@@ -3930,8 +3929,8 @@ class DefectThermodynamics(MSONable):
         allowed to re-equilibrate (e.g. highly mobile Li vacancies /
         interstitials). The ``FermiSolver`` class can be used in these cases
         for more fine-grained control over constraints and approximations in
-        defect concentration calculations, as demonstrated in the tutorial:
-        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html
+        defect concentration calculations, as demonstrated in the
+        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
 
         Note that different defect entries (different charge states, and/or
         ground and metastable states (different spin or geometries); e.g.
@@ -3978,8 +3977,8 @@ class DefectThermodynamics(MSONable):
                 ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
-                bulk DOS and defect supercell calculations. See
-                https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
+                bulk DOS and defect supercell calculations. See the
+                :ref:`Tips:Density of States (DOS) Calculations` section.
 
                 ``bulk_dos`` can also be left as ``None`` (default), if it has
                 previously been provided and parsed, and thus is set as the
@@ -4424,8 +4423,8 @@ class DefectThermodynamics(MSONable):
         applied as-is for ternary systems, but for higher-dimensional systems
         a set of chemical potential constraints must be provided (as
         ``fixed_elements``) to project the chemical stability region to 3-D;
-        see the competing phases tutorial:
-        https://doped.readthedocs.io/en/latest/chemical_potentials_tutorial.html#analysing-and-visualising-the-chemical-potential-limits
+        see the competing phases tutorial section
+        :ref:`chemical_potentials_tutorial:Analysing and visualising the chemical potential limits`.
 
         Note that due to an issue with ``matplotlib`` ``Stroke`` path effects,
         sometimes there can be odd holes in the whitespace around the chemical
@@ -5020,8 +5019,8 @@ class FermiSolver(MSONable):
                 ``NEDOS`` (>3000) and ``ISMEAR = -5`` (tetrahedron smearing)
                 are recommended for best convergence (wrt `k`-point sampling)
                 in VASP. Consistent functional settings should be used for the
-                bulk DOS and defect supercell calculations. See:
-                https://doped.readthedocs.io/en/latest/Tips.html#density-of-states-dos-calculations
+                bulk DOS and defect supercell calculations. See the
+                :ref:`Tips:Density of States (DOS) Calculations` section.
             chempots (dict | None):
                 Dictionary of chemical potentials to use for calculating the
                 defect formation energies (and thus concentrations and Fermi
@@ -5619,8 +5618,8 @@ class FermiSolver(MSONable):
         considered fixed and some are allowed to re-equilibrate (e.g.
         highly mobile Li vacancies/interstitials). Modelling these specific
         cases can be achieved using the ``free_defects`` and/or
-        ``fix_charge_states`` options, as demonstrated in:
-        https://doped.readthedocs.io/en/latest/fermisolver_tutorial.html.
+        ``fix_charge_states`` options, as demonstrated in the
+        :doc:`FermiSolver tutorial <fermisolver_tutorial>`.
 
         This function works by calculating the self-consistent Fermi level and
         total concentration of each defect at the annealing temperature, then
