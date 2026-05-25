@@ -19,13 +19,13 @@ from pymatgen.core.structure import PeriodicSite
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 
-from doped import suppress_logging
+from doped import vise_handling
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
 from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
 from doped.utils.plotting import _get_backend
 
-with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
+with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
     import pydefect.analyzer.make_band_edge_states
     import pydefect.cli.vasp.make_band_edge_orbital_infos as make_bes
     from pydefect.analyzer.band_edge_states import (
@@ -249,7 +249,7 @@ def get_band_edge_info(
         if defect_supercell_site.distance(site) <= min_distance * neighbor_cutoff_factor
     ]
 
-    with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
+    with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
         if bulk_procar is not None:
             vbm_info, cbm_info = pbes.vbm_info, pbes.cbm_info
         else:
@@ -512,7 +512,7 @@ def get_eigenvalue_analysis(
     style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
     plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
 
-    with suppress_logging():  # quieten unnecessary eigenvalue shift INFO message
+    with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
         emp = EigenvalueMplPlotter(
             title="Eigenvalues",
             band_edge_orb_infos=band_orb,

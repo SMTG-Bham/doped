@@ -53,6 +53,7 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
+from doped import vise_handling
 from doped.analysis import _convert_dielectric_to_tensor
 from doped.utils.parsing import (
     _get_bulk_supercell,
@@ -440,9 +441,7 @@ def get_kumagai_correction(
         metadata), and the ``matplotlib`` ``Figure`` object if ``plot`` is
         ``True``.
     """
-    from doped import suppress_logging
-
-    with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
+    with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
         from pydefect.analyzer.calc_results import CalcResults
         from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
         from pydefect.corrections.ewald import Ewald

@@ -8,20 +8,20 @@ defect supercell calculations, and automatically parse and analyse the results.
 """
 
 import contextlib
+import importlib
 import inspect
 import logging
 import multiprocessing
 import os
 import warnings
-from importlib.metadata import PackageNotFoundError, version
 
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
 # set __version__ for older users who use this convention:
 try:
-    __version__ = version("doped")  # from package metadata (pyproject.toml)
-except PackageNotFoundError:
+    __version__ = importlib.metadata.version("doped")  # from package metadata (pyproject.toml)
+except importlib.metadata.PackageNotFoundError:
     __version__ = "No version found"  # fallback for local development or if package isn't installed
 
 
@@ -38,10 +38,42 @@ def suppress_logging(level=logging.CRITICAL):
         logging.disable(previous_level)  # restore the original logging level
 
 
-with suppress_logging(), warnings.catch_warnings():
-    # warnings context manager shouldn't be necessary in this case, as vise.util.logger doesn't import
-    # ``vise.defaults`` (where the problematic ``warnings.simplefile("ignore", UserWarning)`` call is, but
-    # we still use it here just in case another vise import is added to ``vise.util.logger``
+@contextlib.contextmanager
+def patch_vise_for_windows():
+    """
+    Context manager to patch
+    ``vise.defaults.UserSettings._make_yaml_file_list``, so that it returns an
+    empty list.
+
+    Fixes an issue where this function gives an infinite recursive search on
+    Windows, causing hanging.
+    """
+    try:
+        vd = importlib.import_module("vise.defaults")
+        orig = vd.UserSettings._make_yaml_file_list
+        vd.UserSettings._make_yaml_file_list = lambda *args, **kwargs: []
+        yield
+    finally:  # restore original
+        vd.UserSettings._make_yaml_file_list = orig
+
+
+@contextlib.contextmanager
+def vise_handling(level=logging.CRITICAL):
+    """
+    Suppress logging, patch fatal Windows issue and prevent warning suppression
+    with ``vise``/``pydefect``, by combining the :func:`suppress_logging`,
+    :func:`patch_vise_for_windows` and ``warnings.catch_warnings()`` context
+    managers.
+    """
+    # warnings context manager shouldn't be necessary in some cases (e.g. w/``vise.util.logger`` below,
+    # which doesn't import ``vise.defaults`` -- where the problematic
+    # ``warnings.simplefilter("ignore", UserWarning)`` call is), but we still use it in all
+    # ``vise``/``pydefect`` imports here just in case ``vise`` import paths are updated etc.
+    with suppress_logging(level), patch_vise_for_windows(), warnings.catch_warnings():
+        yield
+
+
+with vise_handling():
     import vise.util.logger
 
     vise.util.logger.get_logger = logging.getLogger  # avoid repeated vise INFO messages with Parallel code

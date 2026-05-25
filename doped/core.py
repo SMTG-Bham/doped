@@ -18,7 +18,7 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
-from doped import _doped_obj_properties_methods, get_mp_context, suppress_logging
+from doped import _doped_obj_properties_methods, get_mp_context, vise_handling
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -288,7 +288,7 @@ class DefectEntry(thermo.DefectEntry):
         Returns:
             |DefectEntry| object
         """
-        with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression:
+        with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
             return super().from_dict(d)
 
     def _check_correction_error_and_return_output(
