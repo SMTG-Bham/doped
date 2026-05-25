@@ -23,9 +23,6 @@
   quick examples? Add as optional dependencies.
 
 - Show usage of `get_conv_cell_site` in notebooks/docs (in an advanced analysis tutorial with other possibly useful functions being showcased?)
-- Add our general rule-of-thumbs/expectations regarding charge corrections:
-  - Potential alignment terms should rarely ever be massive
-  - In general, the correction terms should follow somewhat consistent trends (for a given charge state, across defects), so if you see a large outlier in the corrections, it's implying something odd is happening there. This is can be fairly easily scanned with `get_formation_energies`.
 - The Wyckoff analysis code is very useful. See
   https://github.com/spglib/spglib/issues/135. Should describe and exemplify this in the docs (i.e. the
   `get_wyckoff_label_and_equiv_coord_list()` from just a `pymatgen` site and spacegroup).

@@ -360,6 +360,13 @@ class DefectEntry(thermo.DefectEntry):
         vacancies, but this can be overridden with the ``defect_frac_coords``
         keyword argument.
 
+        As a general rule of thumb, the charge correction terms should follow
+        relatively consistent trends in terms of magnitudes. A large outlier
+        (easily scanned with
+        :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
+        often indicates something unusual/unexpected. See the FNV/eFNV and
+        other finite-size charge correction papers for further details.
+
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
                 Total dielectric constance (ionic + static contributions), in
@@ -514,8 +521,16 @@ class DefectEntry(thermo.DefectEntry):
         Materials 5, 123803 (2021) -- 10.1103/PhysRevMaterials.5.123803
 
         The defect coordinates are taken as the relaxed defect site by default
-        (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
-        but this can be overridden with the ``defect_coords`` keyword argument.
+        (``DefectEntry.defect_supercell_site``) -- which is the bulk site for
+        vacancies, but this can be overridden with the ``defect_coords``
+        keyword argument.
+
+        As a general rule of thumb, the charge correction terms should follow
+        relatively consistent trends in terms of magnitudes. A large outlier
+        (easily scanned with
+        :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
+        often indicates something unusual/unexpected. See the FNV/eFNV and
+        other finite-size charge correction papers for further details.
 
         Args:
             dielectric (float or int or 3x1 matrix or 3x3 matrix):
