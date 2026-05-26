@@ -26,7 +26,7 @@ from matplotlib.ticker import AutoMinorLocator
 from matplotlib.tri import Triangulation
 from monty.json import MontyDecoder, MSONable
 from monty.serialization import loadfn
-from mp_api.client.mprester import MPRester, MPRestError
+from mp_api.client.mprester import DEFAULT_THERMOTYPE_CRITERIA, MPRester, MPRestError
 from numpy.typing import NDArray
 from pymatgen.analysis.chempot_diagram import ChemicalPotentialDiagram
 from pymatgen.analysis.phase_diagram import PDEntry, PhaseDiagram
@@ -1132,6 +1132,13 @@ class CompetingPhases(MSONable):
             bulk_composition=self.composition.reduced_formula,  # for sorting
             **self._get_entries_kwargs,
         )
+        additional_criteria = self._get_entries_kwargs.setdefault("additional_criteria", {})
+        if not additional_criteria.get("thermo_types"):
+            # matching mp-api default thermo type criteria, to ensure ``get_entries()`` thermo_type matches
+            # ``get_entries_in_chemsys()`` default handling (placed after ``get_entries_in_chemsys`` to
+            # show mp-api warning about updated default thermo type criteria)
+            additional_criteria["thermo_types"] = DEFAULT_THERMOTYPE_CRITERIA["thermo_types"]
+
         self.MP_full_pd = PhaseDiagram(self.MP_full_pd_entries)
 
         # convert any gaseous elemental entries to molecules in a box
@@ -5309,12 +5316,9 @@ def get_X_rich_poor_limit(
             The key in ``chempots["limits"]`` for the chosen limit.
     """
     # parse X:
-    if "rich" in X.lower():
+    if "rich" in X.lower() or "poor" in X.lower():
+        rich = "rich" in X.lower()
         X = X.split("-")[0]
-        rich = True
-    elif "poor" in X.lower():
-        X = X.split("-")[0]
-        rich = False
     else:
         try:
             _ref = Element(X)
@@ -5338,27 +5342,10 @@ def get_X_rich_poor_limit(
         af, bf = float(a), float(b)
         return np.inf if np.isnan(af) or np.isnan(bf) else abs(af - bf)
 
-    target = (
-        max(chempot for _limit, chempot in X_chempots)
-        if rich
-        else min(chempot for _limit, chempot in X_chempots)
-    )
+    target = (max if rich else min)(chempot for _limit, chempot in X_chempots)
     tied = [limit for limit, chempot in X_chempots if abs(chempot - target) < tol]
     if len(tied) == 1:
         return next(iter(tied))  # only one limit with the same extremal μ_X, return it
-
-    if warn_if_multiple:
-        tied_list = ", ".join(sorted(tied))
-        min_max_str = "maximum" if rich else "minimum"
-        rich_poor_str = "rich" if rich else "poor"
-        warnings.warn(
-            f"Multiple chemical potential limits are degenerate within tol={tol:.3f} eV for the "
-            f"{min_max_str} ({rich_poor_str}) μ_{X}: [{tied_list}]. Choosing the most {rich_poor_str} "
-            f"limit for the most electronegatively-similar element(s) to {X}, of all tied limits (see "
-            f"``get_X_rich_poor_limit`` docstring for details). If using the thermodynamics functions, "
-            f"one can input the specific limit (e.g. 'Cd-CdTe' instead of 'Cd-rich') to avoid this "
-            f"warning."
-        )
 
     symbols = set().union(*(limits[limit] for limit in tied))
     if bulk_composition is None and len(chempots["limits"]) > 1:  # auto-determine bulk composition
@@ -5380,23 +5367,36 @@ def get_X_rich_poor_limit(
     else:
         el_order = sorted((element for element in symbols if element != X), key=_sort_key)
 
+    orig_tied = tied.copy()
     for element in el_order:
-        extremal = (
-            max(limits[lim][element] for lim in tied)
-            if rich
-            else min(limits[lim][element] for lim in tied)
-        )
+        extremal = (max if rich else min)(limits[lim][element] for lim in tied)
         tied = [lim for lim in tied if abs(limits[lim][element] - extremal) < tol]  # overwrites ``tied``
         if len(tied) == 1:
-            return next(iter(tied))
+            break
 
-    # edge case handling; should very rarely get to this point (unless dealing with tiny chempot ranges)
-    def mus_tuple(limit: str) -> tuple[float, ...]:
-        return tuple(limits[limit][element] for element in el_order)
+    if len(tied) > 1:
+        # edge case handling; should very rarely get to this point (unless dealing w/tiny chempot ranges)
+        def mus_tuple(limit: str) -> tuple[float, ...]:
+            return tuple(limits[limit][element] for element in el_order)
 
-    if rich:
-        return max(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
-    return min(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
+        return_limit = (max if rich else min)(sorted(tied), key=lambda lim: (mus_tuple(lim), lim))
+    else:
+        return_limit = next(iter(tied))
+
+    if warn_if_multiple:
+        tied_list = ", ".join(sorted(orig_tied))
+        min_max_str = "maximum" if rich else "minimum"
+        rich_poor_str = "rich" if rich else "poor"
+        warnings.warn(
+            f"Multiple chemical potential limits are degenerate within tol={tol:.3f} eV for the "
+            f"{min_max_str} ({rich_poor_str}) μ_{X}: [{tied_list}]. Choosing the most {rich_poor_str} "
+            f"limit for the most electronegatively-similar element(s) to {X} of all tied limits; giving "
+            f"{return_limit} (see ``get_X_rich_poor_limit`` docstring for details). If using the "
+            f"thermodynamics functions, one can input the specific limit (e.g. 'Cd-CdTe' instead of "
+            f"'Cd-rich') to avoid this warning."
+        )
+
+    return return_limit
 
 
 def get_X_rich_limit(X: str, chempots: dict, **kwargs) -> str:
