@@ -3884,6 +3884,8 @@ class DefectThermodynamics(MSONable):
         chempots: dict | None = None,
         limit: str | None = None,
         el_refs: dict | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -4049,18 +4051,32 @@ class DefectThermodynamics(MSONable):
                 the same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``fermi_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``fermi_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of the ``FermiDos`` object
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``fermi_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
@@ -4108,9 +4124,10 @@ class DefectThermodynamics(MSONable):
                 output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0) or ``_parse_fermi_dos``
-                (``skip_dos_check``; to skip the warning about the DOS VBM
-                differing from ``self.vbm`` by >0.05 eV; default is ``False``).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0) or
+                ``_parse_fermi_dos`` (``skip_dos_check``; to skip the warning
+                about the DOS VBM differing from ``self.vbm`` by >0.05 eV;
+                default is ``False``).
 
         Returns:
             Predicted quenched Fermi level (in eV from the VBM (``self.vbm``)),
@@ -4149,10 +4166,12 @@ class DefectThermodynamics(MSONable):
 
         annealing_dos = (
             self.bulk_dos
-            if delta_gap == 0
+            if all(i == 0 for i in [delta_VBM, delta_CBM, delta_gap])
             else scissor_dos(
-                delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature),
-                self.bulk_dos,
+                dos=self.bulk_dos,
+                delta_gap=delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature),
+                delta_VBM=delta_VBM if not callable(delta_VBM) else delta_VBM(annealing_temperature),
+                delta_CBM=delta_CBM if not callable(delta_CBM) else delta_CBM(annealing_temperature),
                 verbose=kwargs.get("verbose", False),
                 tol=kwargs.get("tol", 1e-8),
             )
@@ -4867,22 +4886,41 @@ def get_fermi_dos(dos_vr: PathLike | Vasprun):
     return FermiDos(dos_vr.complete_dos, nelecs=get_nelect_from_vasprun(dos_vr))
 
 
-def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbose: bool = True):
+def scissor_dos(
+    dos: Dos | FermiDos = None,
+    delta_VBM: float = 0.0,
+    delta_CBM: float = 0.0,
+    delta_gap: float = 0.0,
+    tol: float = 1e-8,
+    verbose: bool = True,
+):
     """
     Given an input ``Dos``/``FermiDos`` object, rigidly shifts the valence and
-    conduction bands of the DOS object to give a band gap that is now
-    increased/decreased by ``delta_gap`` eV, where this rigid scissor shift is
-    applied symmetrically around the original gap (i.e. the VBM is downshifted
-    by ``delta_gap/2`` and the CBM is upshifted by ``delta_gap/2``).
+    conduction bands of the DOS object by ``delta_VBM`` and ``delta_CBM``
+    respectively (positive = upshift, negative = downshift).
 
     Note this assumes a non-spin-polarised (i.e. non-magnetic) density of
     states!
 
+    .. deprecated:: 4.0
+        The ``delta_gap`` parameter is deprecated and will be removed in
+        v4.1; use ``delta_VBM``/``delta_CBM`` instead.
+
     Args:
-        delta_gap (float):
-            The amount by which to increase/decrease the band gap (in eV).
         dos (Dos/FermiDos):
             The input DOS object to scissor.
+        delta_VBM (float):
+            Rigid shift to apply to the valence band / VBM in eV;
+            positive = upshift. Default: 0.
+        delta_CBM (float):
+            Rigid shift to apply to the conduction band / CBM in eV;
+            positive = upshift. Default: 0.
+        delta_gap (float):
+            (Deprecated, to be removed in v4.1.) The amount by which to
+            increase/decrease the band gap (in eV), applied symmetrically
+            around the original gap. Equivalent to
+            ``delta_VBM=-delta_gap/2`` and ``delta_CBM=+delta_gap/2``.
+            ``delta_VBM`` and ``delta_CBM`` take priority over ``delta_gap``.
         tol (float):
             The tolerance to use for determining the VBM and CBM (used in
             ``Dos.get_gap(tol=tol)``). Default: 1e-8.
@@ -4892,28 +4930,43 @@ def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbos
     Returns:
         FermiDos: The scissored DOS object.
     """
+    if delta_gap:
+        warnings.warn(  # TODO: remove ``delta_gap`` (and this branch) in v4.1.
+            "The ``delta_gap`` parameter is deprecated and will be removed in v4.1. Use "
+            "``delta_VBM`` and ``delta_CBM`` instead (positive = upshift); the symmetric equivalent is "
+            "``delta_VBM=-delta_gap/2``, ``delta_CBM=+delta_gap/2``. ``delta_VBM`` and ``delta_CBM`` take "
+            "priority over ``delta_gap`` here.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    delta_VBM = delta_VBM or -delta_gap / 2
+    delta_CBM = delta_CBM or +delta_gap / 2
+    delta_gap = delta_CBM - delta_VBM  # change in band gap (keep this ``delta_gap`` definition/usage)
+
     dos = deepcopy(dos)  # don't overwrite object
-    # shift just CBM upwards first, then shift all rigidly down by Eg/2 (simpler code with this approach)
-    cbm_index = np.where(
-        (dos.densities[Spin.up] > tol) & (dos.energies - dos.efermi > dos.get_gap(tol=tol) / 2)
-    )[0][0]
+    dos_gap = dos.get_gap(tol=tol)
+    dos_densities = dos.densities[Spin.up]
+    # internally, shift just the CBM region by delta_gap, then rigidly shift all energies by delta_VBM
+    # so the final VBM is at orig_VBM + delta_VBM and final CBM is at orig_CBM + delta_CBM
+    cbm_index = np.where((dos_densities > tol) & (dos.energies - dos.efermi > dos_gap / 2))[0][0]
     cbm_energy = dos.energies[cbm_index]
     # get closest index with energy near cbm_energy + delta_gap:
     new_cbm_index = np.argmin(np.abs(dos.energies - (cbm_energy + delta_gap)))
     new_cbm_energy = dos.energies[new_cbm_index]
-    vbm_index = np.where(
-        (dos.densities[Spin.up] > tol) & (dos.energies - dos.efermi < dos.get_gap(tol=tol) / 2)
-    )[0][-1]
-    vbm_energy = dos.energies[vbm_index]
+    vbm_energy = dos.energies[
+        np.where((dos_densities > tol) & (dos.energies - dos.efermi < dos_gap / 2))[0][-1]
+    ]
 
-    if not np.isclose(cbm_energy - vbm_energy, dos.get_gap(tol=tol), atol=1e-1) and np.isclose(
-        new_cbm_energy - cbm_energy, delta_gap, atol=1e-2
+    if not (
+        np.isclose(cbm_energy - vbm_energy, dos_gap, atol=1e-1)
+        and np.isclose(new_cbm_energy - cbm_energy, delta_gap, atol=1e-2)
     ):
         warnings.warn(
             "The new band gap does not appear to be equal to the original band gap plus the scissor "
             "shift, suggesting an error in `scissor_dos`, beware!\n"
-            f"Got original gap (from manual indexing): {cbm_energy - vbm_energy}, {dos.get_gap(tol=tol)} "
-            f"from dos.get_gap(tol=tol) and new gap: {dos.get_gap(tol=tol) + delta_gap}"
+            f"Got original gap (from manual indexing): {cbm_energy - vbm_energy}, {dos_gap} "
+            f"from dos.get_gap(tol=tol) and new gap: {dos_gap + delta_gap}"
         )
 
     # Determine the number of values in energies/densities to remove/add to avoid duplication
@@ -4927,14 +4980,11 @@ def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbos
         )
         scissored_dos_dict["densities"][Spin.up] = np.concatenate(
             (
-                dos.densities[Spin.up][: cbm_index + values_to_remove_or_add],
-                dos.densities[Spin.up][cbm_index:],
+                dos_densities[: cbm_index + values_to_remove_or_add],
+                dos_densities[cbm_index:],
             )
         )
-        # Assuming non-spin-polarised bulk here:
-        scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
-    elif values_to_remove_or_add > 0:
-        # add more zero DOS values:
+    elif values_to_remove_or_add > 0:  # add more zero DOS values:
         scissored_dos_dict["energies"] = np.concatenate(
             (
                 dos.energies[:cbm_index],
@@ -4944,21 +4994,22 @@ def scissor_dos(delta_gap: float, dos: Dos | FermiDos, tol: float = 1e-8, verbos
         )
         scissored_dos_dict["densities"][Spin.up] = np.concatenate(
             (
-                dos.densities[Spin.up][:cbm_index],
+                dos_densities[:cbm_index],
                 np.zeros(values_to_remove_or_add),
-                dos.densities[Spin.up][cbm_index:],
+                dos_densities[cbm_index:],
             )
         )
-        scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
 
-    # now shift all energies rigidly, so we've shifted symmetrically around the original gap (eigenvalues)
+    # Assuming non-spin-polarised bulk here:
+    scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
+
+    # now apply the rigid shift of all energies by delta_VBM:
     # ensure 'energies' is array (should be if function used correctly, not if band gap change is zero...):
-    scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"])
-    scissored_dos_dict["energies"] -= np.float64(delta_gap / 2)
-    scissored_dos_dict["efermi"] -= np.float64(delta_gap / 2)
+    scissored_dos_dict["energies"] = np.array(scissored_dos_dict["energies"]) + delta_VBM
+    scissored_dos_dict["efermi"] += delta_VBM
 
     if verbose:
-        print(f"Orig gap: {dos.get_gap(tol=tol):.4f}, new gap:{dos.get_gap(tol=tol) + delta_gap:.4f}")
+        print(f"Orig gap: {dos_gap:.4f}, new gap:{dos_gap + delta_gap:.4f}")
     scissored_dos_dict["structure"] = dos.structure.as_dict()
     if isinstance(dos, FermiDos):
         return FermiDos.from_dict(scissored_dos_dict)
@@ -5574,6 +5625,8 @@ class FermiSolver(MSONable):
         annealing_temperature: float = 1000,
         quenched_temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -5688,18 +5741,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``fermi_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``fermi_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
@@ -5767,7 +5834,7 @@ class FermiSolver(MSONable):
                 output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -5843,6 +5910,8 @@ class FermiSolver(MSONable):
                 effective_dopant_concentration=effective_dopant_concentration,
                 skip_formatting=True,  # keep concentration values as floats
                 site_competition=site_competition,
+                delta_VBM=delta_VBM,
+                delta_CBM=delta_CBM,
                 delta_gap=delta_gap,
                 per_charge=per_charge,
                 per_site=per_site,
@@ -5882,6 +5951,8 @@ class FermiSolver(MSONable):
                 el_refs=el_refs,
                 quenched_temperature=quenched_temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                delta_VBM=delta_VBM,
+                delta_CBM=delta_CBM,
                 delta_gap=delta_gap,
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
@@ -5988,6 +6059,8 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -6022,6 +6095,8 @@ class FermiSolver(MSONable):
                 {
                     "annealing_temperature": annealing_temperature,
                     "quenched_temperature": quenched_temperature,
+                    "delta_VBM": delta_VBM,
+                    "delta_CBM": delta_CBM,
                     "delta_gap": delta_gap,
                     "return_annealing_values": return_annealing_values,
                     "free_defects": free_defects,  # type: ignore
@@ -6051,6 +6126,8 @@ class FermiSolver(MSONable):
         limit: str | None = None,
         el_refs: dict[str, float] | None = None,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -6165,18 +6242,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
@@ -6240,7 +6331,7 @@ class FermiSolver(MSONable):
                 output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -6271,6 +6362,8 @@ class FermiSolver(MSONable):
                     quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    delta_VBM=delta_VBM,
+                    delta_CBM=delta_CBM,
                     delta_gap=delta_gap,
                     per_charge=per_charge,
                     per_site=per_site,
@@ -6294,6 +6387,8 @@ class FermiSolver(MSONable):
         chempots: dict[str, float] | None = None,
         limit: str | None = None,
         el_refs: dict[str, float] | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -6407,18 +6502,32 @@ class FermiSolver(MSONable):
                 same input options) to set the default elemental reference
                 energies for all calculations.
                 (Default: None)
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``, ``v_Cd_-2``
@@ -6482,7 +6591,7 @@ class FermiSolver(MSONable):
                 output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -6505,6 +6614,8 @@ class FermiSolver(MSONable):
                     quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    delta_VBM=delta_VBM,
+                    delta_CBM=delta_CBM,
                     delta_gap=delta_gap,
                     per_charge=per_charge,
                     per_site=per_site,
@@ -6529,6 +6640,8 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -6644,18 +6757,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
@@ -6718,7 +6845,7 @@ class FermiSolver(MSONable):
                 output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -6764,6 +6891,8 @@ class FermiSolver(MSONable):
             quenched_temperature=quenched_temperature,
             temperature=temperature,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_VBM=delta_VBM,
+            delta_CBM=delta_CBM,
             delta_gap=delta_gap,
             per_charge=per_charge,
             per_site=per_site,
@@ -6784,6 +6913,8 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -6899,18 +7030,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
@@ -6971,7 +7116,7 @@ class FermiSolver(MSONable):
                 output ``DataFrame``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -7004,6 +7149,8 @@ class FermiSolver(MSONable):
                     quenched_temperature=quenched_temperature,
                     temperature=temperature,
                     effective_dopant_concentration=effective_dopant_concentration,
+                    delta_VBM=delta_VBM,
+                    delta_CBM=delta_CBM,
                     delta_gap=delta_gap,
                     per_charge=per_charge,
                     per_site=per_site,
@@ -7026,6 +7173,8 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -7113,18 +7262,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
@@ -7197,7 +7360,7 @@ class FermiSolver(MSONable):
                 Cartesian coordinates.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -7221,6 +7384,8 @@ class FermiSolver(MSONable):
             quenched_temperature=quenched_temperature,
             temperature=temperature,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_VBM=delta_VBM,
+            delta_CBM=delta_CBM,
             delta_gap=delta_gap,
             per_charge=per_charge,
             return_annealing_values=return_annealing_values,
@@ -7274,6 +7439,8 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 30,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -7379,18 +7546,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             per_charge (bool):
                 Whether to break down the defect concentrations into individual
                 defect charge states (e.g. ``v_Cd_0``, ``v_Cd_-1``,
@@ -7464,7 +7645,7 @@ class FermiSolver(MSONable):
                 for 1D chemical potential spaces.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             pd.DataFrame:
@@ -7501,6 +7682,8 @@ class FermiSolver(MSONable):
             tolerance=tolerance,
             n_points=n_points,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_VBM=delta_VBM,
+            delta_CBM=delta_CBM,
             delta_gap=delta_gap,
             per_charge=per_charge,
             per_site=per_site,
@@ -7523,6 +7706,8 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 30,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -7561,6 +7746,8 @@ class FermiSolver(MSONable):
                 quenched_temperature=quenched_temperature,
                 temperature=temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                delta_VBM=delta_VBM,
+                delta_CBM=delta_CBM,
                 delta_gap=delta_gap,
                 per_charge=per_charge,
                 per_site=per_site,
@@ -7612,6 +7799,8 @@ class FermiSolver(MSONable):
         quenched_temperature: float = 300,
         temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -7660,6 +7849,8 @@ class FermiSolver(MSONable):
             quenched_temperature=quenched_temperature,
             temperature=temperature,
             effective_dopant_concentration=effective_dopant_concentration,
+            delta_VBM=delta_VBM,
+            delta_CBM=delta_CBM,
             delta_gap=delta_gap,
             per_charge=per_charge,
             per_site=per_site,
@@ -7695,6 +7886,8 @@ class FermiSolver(MSONable):
         tolerance: float = 0.01,
         n_points: int = 30,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         per_charge: bool = True,
         per_site: bool = False,
@@ -7739,6 +7932,8 @@ class FermiSolver(MSONable):
                 quenched_temperature=quenched_temperature,
                 temperature=temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
+                delta_VBM=delta_VBM,
+                delta_CBM=delta_CBM,
                 delta_gap=delta_gap,
                 per_charge=per_charge,
                 per_site=per_site,
@@ -7821,7 +8016,6 @@ class FermiSolver(MSONable):
         single_chempot_dict: dict[str, float],
         el_refs: dict[str, float] | None = None,
         temperature: float = 300,
-        delta_gap: float = 0.0,
         effective_dopant_concentration: float | None = None,
         fixed_defects: dict[str, float] | None = None,
     ) -> "DefectSystem":
@@ -7857,11 +8051,6 @@ class FermiSolver(MSONable):
             temperature (float):
                 The temperature in Kelvin at which to perform the calculations.
                 Defaults to 300 K.
-            delta_gap (float):
-                Change in band gap (in eV) of the host material. If set,
-                applies re-normalises the VBM eigenvalue used in generating
-                the ``py-sc-fermi`` ``DefectSpecies`` appropriately.
-                Default is 0 (no gap shifting).
             effective_dopant_concentration (float | None):
                 The fixed concentration (in cm^-3) of an arbitrary dopant or
                 impurity in the material. This value is included in the charge
@@ -7922,7 +8111,9 @@ class FermiSolver(MSONable):
             }
             for entry in entry_list:
                 formation_energy = self.defect_thermodynamics.get_formation_energy(
-                    entry, chempots=dft_chempots, fermi_level=-delta_gap / 2
+                    entry,
+                    chempots=dft_chempots,
+                    fermi_level=self.py_sc_fermi_dos.vbm - self.defect_thermodynamics.vbm,
                 )
                 degeneracy_factor = (
                     np.prod(list(entry.degeneracy_factors.values())) if entry.degeneracy_factors else 1
@@ -8024,6 +8215,8 @@ class FermiSolver(MSONable):
         el_refs: dict[str, float] | None = None,
         quenched_temperature: float = 300,
         effective_dopant_concentration: float | None = None,
+        delta_VBM: float | Callable = 0.0,
+        delta_CBM: float | Callable = 0.0,
         delta_gap: float | Callable = 0.0,
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
@@ -8081,18 +8274,32 @@ class FermiSolver(MSONable):
                 ``q``, the input should be ``q * 'Dopant Concentration'``.
                 Defaults to ``None``, corresponding to no additional extrinsic
                 dopant.
+            delta_VBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the VBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the valence band)
+                while defect levels remain fixed. Can be a value or a function
+                of annealing temperature, e.g. ``lambda T: -2e-4*T``. Default
+                is ``0.0`` (no VBM shift).
+            delta_CBM (float | Callable):
+                Rigid shift (in eV; positive = upshift) to apply to the CBM
+                position `at the annealing temperature`, e.g. to model
+                temperature-dependent band edges. If set, applies a scissor
+                correction to ``bulk_dos`` (rigidly shifting the conduction
+                band) while defect levels remain fixed. Can be a value or a
+                function of annealing temperature, e.g. ``lambda T: -2e-4*T``.
+                Default is ``0.0`` (no CBM shift).
             delta_gap (float | Callable):
-                Change in band gap (in eV) of the host material at the
-                annealing temperature (e.g. due to thermal renormalisation),
-                relative to the original band gap of ``FermiSolver.bulk_dos``
-                (assumed to correspond to the quenched temperature). If set,
-                applies a scissor correction to ``bulk_dos`` which
-                re-normalises the band gap symmetrically about the VBM and CBM
-                (i.e. assuming equal up/downshifts of the band-edges around
-                their original eigenvalues) while the defect levels remain
-                fixed. Can be a value (in eV), or a function with annealing
-                temperature as input; e.g. ``lambda T: -1e-6*500**2``.
-                Default is 0 (no gap shifting).
+                (Deprecated, to be removed in v4.1; use ``delta_VBM``/
+                ``delta_CBM`` instead.) Change in band gap (in eV) of the
+                host material at the annealing temperature, assuming symmetric
+                renormalisation about the VBM and CBM (i.e. assuming equal
+                up/downshifts of the band-edges around their original
+                eigenvalues -> ``delta_VBM = -delta_gap/2``,
+                ``delta_CBM = +delta_gap/2``. Default is ``0.0`` (no shift).
+                ``delta_VBM`` and ``delta_CBM`` take priority over
+                ``delta_gap``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature regardless of chemical potentials / temperature /
@@ -8120,7 +8327,7 @@ class FermiSolver(MSONable):
                 Defaults to ``False``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
-                ``delta_gap`` is not 0).
+                ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
 
         Returns:
             DefectSystem:
@@ -8132,34 +8339,40 @@ class FermiSolver(MSONable):
         free_defects = free_defects or []
 
         orig_py_sc_fermi_dos = self.py_sc_fermi_dos
-        if delta_gap != 0.0:
-            delta_gap = delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature)
+        if not all(i == 0 for i in [delta_VBM, delta_CBM, delta_gap]):
             assert self.defect_thermodynamics.vbm is not None  # typing
             assert self.defect_thermodynamics.band_gap is not None  # typing
             # locate the CBM from the DOS itself so the bandgap matches the shifted-energy frame
             # (``fdos.energies - thermo.vbm``); using ``thermo.band_gap`` would mislocate the CBM
             # whenever the DOS VBM and the supercell VBM differ -- see py-sc-fermi DOS parsing in FS init
-            _fdos = self.defect_thermodynamics.bulk_dos
-            _dos_cbm = _fdos.get_cbm_vbm(tol=1e-4, abs_tol=True)[0]
+            dos_cbm = self.defect_thermodynamics.bulk_dos.get_cbm_vbm(tol=1e-4, abs_tol=True)[0]
+            delta_gap = delta_gap if not callable(delta_gap) else delta_gap(annealing_temperature)
+            delta_VBM = (
+                delta_VBM if not callable(delta_VBM) else delta_VBM(annealing_temperature)
+            ) or -delta_gap / 2
+            delta_CBM = (
+                delta_CBM if not callable(delta_CBM) else delta_CBM(annealing_temperature)
+            ) or delta_gap / 2
+
             self.py_sc_fermi_dos = _get_py_sc_fermi_dos_from_fermi_dos(
                 scissor_dos(
-                    delta_gap,
-                    self.defect_thermodynamics.bulk_dos,
+                    dos=self.defect_thermodynamics.bulk_dos,
+                    delta_VBM=delta_VBM,
+                    delta_CBM=delta_CBM,
+                    delta_gap=delta_gap,
                     verbose=kwargs.get("verbose", False),
                     tol=kwargs.get("tol", 1e-8),
                 ),
-                vbm=self.defect_thermodynamics.vbm - delta_gap / 2,
-                bandgap=_dos_cbm - self.defect_thermodynamics.vbm + delta_gap,
+                vbm=self.defect_thermodynamics.vbm + delta_VBM,
+                bandgap=dos_cbm - (self.defect_thermodynamics.vbm + delta_VBM) + delta_CBM,
             )
 
-        assert isinstance(delta_gap, float)  # typing
         defect_system = self._generate_defect_system(
             single_chempot_dict=single_chempot_dict,  # chempots handled in _generate_defect_system()
             el_refs=el_refs,
             temperature=annealing_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
-            delta_gap=delta_gap,
-        )  # generated with delta_gap DOS
+        )  # generated with band-edge-shifted DOS
         initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
 
         # Exclude the free_defects, carrier concentrations and Fermi level from fixing
@@ -8180,14 +8393,15 @@ class FermiSolver(MSONable):
             if not any(k.startswith(i) for i in all_free_defects)
         }
 
-        if delta_gap != 0.0:  # regenerate defect system with VBM back to quenched temperature value
+        if not all(i == 0 for i in [delta_VBM, delta_CBM, delta_gap]):
+            # regenerate defect system with band edges back to quenched temperature values
             self.py_sc_fermi_dos = orig_py_sc_fermi_dos  # back to original DOS
             defect_system = self._generate_defect_system(
                 single_chempot_dict=single_chempot_dict,  # chempots handled in _generate_defect_system()
                 el_refs=el_refs,
                 temperature=annealing_temperature,
                 effective_dopant_concentration=effective_dopant_concentration,
-            )  # no delta gap
+            )  # no band-edge shifting
 
         # Apply the fixed annealing concentrations
         for defect_species in defect_system.defect_species:
@@ -8325,7 +8539,9 @@ def _get_py_sc_fermi_dos_from_fermi_dos(
     if bandgap is None:
         bandgap = fermi_dos.get_gap(tol=1e-4, abs_tol=True)
 
-    return DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
+    py_sc_fermi_dos = DOS(dos=dos, edos=edos, nelect=nelect, bandgap=bandgap, spin_polarised=spin_pol)
+    py_sc_fermi_dos.vbm = vbm  # store absolute VBM eigenvalue for downstream use (e.g. when scissoring)
+    return py_sc_fermi_dos
 
 
 def _get_min_max_target_values(
