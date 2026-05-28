@@ -105,6 +105,7 @@ Studies using ``doped``, so far
 ===============================
 
 - A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
+- M\. A. Fadla, M. Grüning and L. Stella **Universal Stability of Ga Split Vacancies across α-, β-, and κ-Ga₂O₃ Polymorphs: A Machine-Learning Accelerated Study** `arXiv <https://doi.org/10.48550/arXiv.2605.28743>`__ 2026
 - N\. Kawashima and S. Botti **Intrinsic Point Defects and Frenkel Pair Formation in Photovoltaic Absorber Zn₃P₂: Regulating p-type Conductivity through Growth and Annealing Conditions** `arXiv <https://doi.org/10.48550/arXiv.2605.23479>`__ 2026
 - M\. Birare, A. Dębski, W. Gąsior and W. Gierlotka **Defect Thermodynamics and the Intrinsic Stability Window of Mg₃Sb₂** `Metals <https://doi.org/10.3390/met16050558>`__ 2026
 - D\. Halbing et al. **Oxygen Vacancy Evolution at Li** :sub:`x` **V** :sub:`2` **O** :sub:`5` **/LiPON Solid State Electrochemical Interfaces Using Depth Resolved Cathodoluminescence Spectroscopy** `ACS Applied Materials & Interfaces <https://doi.org/10.1021/acsami.5c25104>`__ 2026
