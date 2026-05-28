@@ -4092,7 +4092,10 @@ class DefectThermodynamics(MSONable):
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
                 concentrations and defect concentrations at the annealing
-                temperature. (default: ``False``)
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             effective_dopant_concentration (float):
                 Fixed concentration (in cm^-3) of an arbitrary dopant/impurity
                 in the material to include in the charge neutrality condition,
@@ -5221,7 +5224,7 @@ class FermiSolver(MSONable):
                 else "The py-sc-fermi backend was attempted to be activated" + finishing_message
             )
             raise ImportError(message) from exc
-        finally:  # avoid py-sc-fermi warning suppression; fixed in >=2.1.0
+        finally:  # avoid py-sc-fermi warning suppression; fixed in >=2.1.0, can be removed in future
             warnings.showwarning = orig_showwarning
 
         self._DefectSystem = DefectSystem
@@ -5253,21 +5256,6 @@ class FermiSolver(MSONable):
                 f"different unit cell volumes, or that the DOS calculation was not performed in the "
                 f"primitive unit cell. The former can cause quantitative errors of a similar relative "
                 f"magnitude in the predicted defect/carrier concentrations!"
-            )
-
-    def _check_required_backend_and_error(self, required_backend: str):
-        """
-        Check if the attributes needed for the ``required_backend`` backend are
-        set, and throw an error message if not.
-
-        Args:
-            required_backend (str):
-                Backend choice ("doped" or "py-sc-fermi") required.
-        """
-        if required_backend.lower() == "py-sc-fermi" and self._DOS is None:
-            raise RuntimeError(
-                f"This function is currently only supported for the {required_backend} backend, "
-                f"but you are using the {self.backend} backend!"
             )
 
     def _get_fermi_level_and_carriers(
@@ -5334,7 +5322,6 @@ class FermiSolver(MSONable):
                 - The electron concentration (float) in cm^-3.
                 - The hole concentration (float) in cm^-3.
         """
-        self._check_required_backend_and_error("doped")
         fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
             chempots=single_chempot_dict,
             el_refs=el_refs,
@@ -5388,6 +5375,93 @@ class FermiSolver(MSONable):
             )
 
         return chempots["limits_wrt_el_refs"][limit or "User Chemical Potentials"], el_refs
+
+    def _py_sc_fermi_concs_to_df(
+        self,
+        conc_dict: dict,
+        defect_system: "DefectSystem",
+    ) -> pd.DataFrame:
+        """
+        Convert a ``py-sc-fermi`` ``defect_system.concentration_dict()`` output
+        into a ``concentrations`` ``DataFrame`` in the standard ``doped``
+        format.
+
+        The ``per_charge`` setting is auto-detected from the structure of
+        ``conc_dict``: ``defect_system.concentration_dict(decomposed=True)``
+        gives dict values (``{charge: concentration}``) per defect ->
+        per-charge output (one row per (defect, charge), with a
+        ``Total Concentration (cm^-3)`` column), while
+        ``decomposed=False`` gives scalar values per defect -> per-defect
+        output (one row per defect with the total concentration in
+        ``Concentration (cm^-3)``).
+        """
+        special_keys = {"Fermi Energy", "n0", "p0", "Dopant"}
+        # auto-detect per_charge from the structure of conc_dict (decomposed=True -> dict values):
+        per_charge = any(isinstance(v, dict) for k, v in conc_dict.items() if k not in special_keys)
+        data = []
+        for defect_name_wout_charge, conc_or_charge_conc_dict in conc_dict.items():
+            if defect_name_wout_charge in special_keys:
+                continue
+            per_defect_data = {
+                "Defect": defect_name_wout_charge,
+                "Charge": None,
+                "Concentration (cm^-3)": conc_or_charge_conc_dict,
+                "Formation Energy (eV)": None,
+                "Charge State Population": None,
+                "Total Concentration (cm^-3)": conc_or_charge_conc_dict,
+            }
+            if per_charge:
+                total = sum(conc_or_charge_conc_dict.values())  # ``{charge: concentration}``
+                for charge, conc in conc_or_charge_conc_dict.items():
+                    row = per_defect_data.copy()
+                    row["Charge"] = charge
+                    row["Concentration (cm^-3)"] = conc
+                    row["Formation Energy (eV)"] = round(
+                        defect_system.defect_species_by_name(defect_name_wout_charge)
+                        .charge_states[charge]
+                        .get_formation_energy(conc_dict["Fermi Energy"]),
+                        3,
+                    )
+                    row["Charge State Population"] = f"{conc / total:.2%}"
+                    row["Total Concentration (cm^-3)"] = total
+                    data.append(row)
+            else:
+                for col in (
+                    "Charge",
+                    "Formation Energy (eV)",
+                    "Charge State Population",
+                    "Total Concentration (cm^-3)",
+                ):
+                    per_defect_data.pop(col)
+                data.append(per_defect_data)
+
+        conc_df = pd.DataFrame(data)
+        return conc_df.set_index(["Defect", "Charge"] if per_charge else "Defect", drop=True)
+
+    @staticmethod
+    def _append_chempots_and_dopant(
+        concentrations: pd.DataFrame,
+        single_chempot_dict: dict[str, float],
+        effective_dopant_concentration: float | None,
+        append_chempots: bool,
+    ) -> pd.DataFrame:
+        """
+        Append ``μ_X (eV)`` columns (one per element, if ``append_chempots``)
+        and a ``Dopant (cm^-3)`` column (if an effective dopant was specified,
+        also removing any ``Dopant`` rows if present) to a concentrations
+        ``DataFrame`` in place, and return it.
+        """
+        if append_chempots:
+            for key, value in single_chempot_dict.items():
+                concentrations[f"μ_{key} (eV)"] = value
+        if effective_dopant_concentration is not None:
+            # drop Dopant row, included as column instead
+            with warnings.catch_warnings():  # dropping on a non-lexsorted multi-index, fine as small df
+                warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+                concentrations = concentrations.drop("Dopant", errors="ignore")
+            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
+
+        return concentrations
 
     def _equilibrium_solve(
         self,
@@ -5524,98 +5598,83 @@ class FermiSolver(MSONable):
         if self.backend == "py-sc-fermi" and per_site:
             raise ValueError("The `per_site` option is not supported for the py-sc-fermi backend.")
 
+        # kwargs shared by both backend leaf calls (``_get_fermi_level_and_carriers`` and
+        # ``get_equilibrium_concentrations`` w/``doped``, ``_generate_defect_system`` w/``py-sc-fermi``):
+        common_kwargs: dict[str, Any] = {
+            "single_chempot_dict": single_chempot_dict,
+            "el_refs": el_refs,
+            "temperature": temperature,
+            "effective_dopant_concentration": effective_dopant_concentration,
+        }
+
         if self.backend == "doped" and not py_sc_fermi_required:
             fermi_level, electrons, holes = self._get_fermi_level_and_carriers(
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                temperature=temperature,
-                effective_dopant_concentration=effective_dopant_concentration,
-                site_competition=bool(site_competition),
+                **common_kwargs, site_competition=bool(site_competition)
             )
+            common_kwargs["chempots"] = common_kwargs.pop("single_chempot_dict")
+            common_kwargs.pop("effective_dopant_concentration")
             concentrations = self.defect_thermodynamics.get_equilibrium_concentrations(
-                chempots=single_chempot_dict,
-                el_refs=el_refs,
                 fermi_level=fermi_level,
-                temperature=temperature,
                 per_charge=per_charge,
                 per_site=per_site,
                 skip_formatting=True,  # keep concentration values as floats
                 site_competition=site_competition,
+                **common_kwargs,
             )
-            # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
-            new_columns = {
-                "Temperature (K)": temperature,
-                "Fermi Level (eV wrt VBM)": fermi_level,
-                "Electrons (cm^-3)": electrons,
-                "Holes (cm^-3)": holes,
-            }
-
-            for column, value in new_columns.items():
-                concentrations[column] = value
-            excluded_columns = ["Defect", "Charge", "Charge State Population"]
-            for column in concentrations.columns.difference(excluded_columns):
-                concentrations[column] = concentrations[column].astype(float)
 
         else:  # py-sc-fermi backend:
-            defect_system = self._generate_defect_system(
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                temperature=temperature,
-                effective_dopant_concentration=effective_dopant_concentration,
-                fixed_defects=fixed_defects,
-            )
+            defect_system = self._generate_defect_system(**common_kwargs, fixed_defects=fixed_defects)
+            conc_dict = defect_system.concentration_dict(decomposed=per_charge)
+            fermi_level, electrons, holes = conc_dict["Fermi Energy"], conc_dict["n0"], conc_dict["p0"]
+            concentrations = self._py_sc_fermi_concs_to_df(conc_dict, defect_system)
+            if per_charge:
+                concentrations.pop("Total Concentration (cm^-3)")
 
-            with np.errstate(all="ignore"):
-                conc_dict = defect_system.concentration_dict(decomposed=per_charge)
+        # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots:
+        concentrations["Temperature (K)"] = temperature
+        concentrations["Fermi Level (eV wrt VBM)"] = fermi_level
+        concentrations["Electrons (cm^-3)"] = electrons
+        concentrations["Holes (cm^-3)"] = holes
 
-            data = []
-            for k, v in conc_dict.items():
-                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
-                    per_defect_data = {
-                        "Defect": k,
-                        "Charge": None,
-                        "Concentration (cm^-3)": v,
-                        "Formation Energy (eV)": None,
-                        "Charge State Population": None,
-                        "Temperature (K)": defect_system.temperature,
-                        "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
-                        "Electrons (cm^-3)": conc_dict["n0"],
-                        "Holes (cm^-3)": conc_dict["p0"],
-                    }
+        excluded_columns = ["Defect", "Charge", "Charge State Population"]
+        for column in concentrations.columns.difference(excluded_columns):
+            concentrations[column] = concentrations[column].astype(float)  # format as floats
 
-                    if per_charge:
-                        total_concentration = sum(v.values())
-                        for charge, charge_state_concentration in v.items():
-                            per_charge_state_data = per_defect_data.copy()
-                            per_charge_state_data["Charge"] = charge
-                            per_charge_state_data["Formation Energy (eV)"] = round(
-                                defect_system.defect_species_by_name(k)
-                                .charge_states[charge]
-                                .get_formation_energy(conc_dict["Fermi Energy"]),
-                                3,
-                            )
-                            per_charge_state_data["Charge State Population"] = (
-                                f"{charge_state_concentration / total_concentration:.2%}"
-                            )
-                            per_charge_state_data["Concentration (cm^-3)"] = charge_state_concentration
-                            data.append(per_charge_state_data)
+        return self._append_chempots_and_dopant(
+            concentrations, single_chempot_dict, effective_dopant_concentration, append_chempots
+        )
 
-                    else:
-                        for col in ["Charge", "Formation Energy (eV)", "Charge State Population"]:
-                            del per_defect_data[col]  # remove placeholder columns
-                        data.append(per_defect_data)
+    @staticmethod
+    def _add_annealing_columns(
+        concentrations: pd.DataFrame,
+        annealing_fermi_level: float,
+        annealing_e_conc: float,
+        annealing_h_conc: float,
+        annealing_conc_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Inject the ``return_annealing_values`` columns (Fermi level / electron.
 
-            concentrations = pd.DataFrame(data)
-            concentrations = concentrations.set_index(
-                "Defect" if not per_charge else ["Defect", "Charge"], drop=True
-            )
+        / hole concentrations and per-defect/charge ``Concentration @
+        T_Anneal``, plus ``Total Concentration @ T_Anneal`` when the index is
+        per-charge) into ``concentrations`` in-place, sourcing the per-row
+        concentrations from ``annealing_conc_df`` (which must be indexed
+        compatibly with ``concentrations``).
 
-        if append_chempots:
-            for key, value in single_chempot_dict.items():
-                concentrations[f"μ_{key} (eV)"] = value
-        if effective_dopant_concentration is not None:
-            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
-
+        ``per_charge`` setting is auto-detected from ``concentrations.index``
+        (a ``MultiIndex`` with a ``Charge`` level means per-charge).
+        """
+        per_charge = (
+            isinstance(concentrations.index, pd.MultiIndex) and "Charge" in concentrations.index.names
+        )
+        concentrations["Fermi Level @ T_Anneal"] = annealing_fermi_level
+        concentrations["Electrons @ T_Anneal"] = annealing_e_conc
+        concentrations["Holes @ T_Anneal"] = annealing_h_conc
+        concentrations["Concentration @ T_Anneal (cm^-3)"] = annealing_conc_df["Concentration (cm^-3)"]
+        if per_charge:
+            concentrations["Total Concentration @ T_Anneal (cm^-3)"] = annealing_conc_df[
+                "Total Concentration (cm^-3)"
+            ]
         return concentrations
 
     def _pseudo_equilibrium_solve(
@@ -5778,8 +5837,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix at the quenched
                 temperature, in the format: ``{defect_name: concentration}``,
@@ -5887,12 +5949,22 @@ class FermiSolver(MSONable):
             )
         if self.backend == "py-sc-fermi" and per_site:
             raise ValueError("The `per_site` option is not supported for the py-sc-fermi backend.")
-        if self.backend == "py-sc-fermi" and return_annealing_values:
-            raise ValueError(
-                "The `return_annealing_values` option is not supported for the py-sc-fermi backend."
-            )
+
+        common_kwargs: dict[str, Any] = {  # kwargs shared by both backend leaf calls
+            "single_chempot_dict": single_chempot_dict,
+            "el_refs": el_refs,
+            "annealing_temperature": annealing_temperature,
+            "quenched_temperature": quenched_temperature,
+            "effective_dopant_concentration": effective_dopant_concentration,
+            "delta_VBM": delta_VBM,
+            "delta_CBM": delta_CBM,
+            "delta_gap": delta_gap,
+            "return_annealing_values": True,
+            **kwargs,
+        }
 
         if self.backend == "doped" and not py_sc_fermi_required:
+            common_kwargs["chempots"] = common_kwargs.pop("single_chempot_dict")
             (
                 fermi_level,
                 electrons,
@@ -5901,128 +5973,69 @@ class FermiSolver(MSONable):
                 annealing_fermi_level,
                 annealing_e_conc,
                 annealing_h_conc,
-                _annealing_conc_df,
+                annealing_conc_df,
             ) = self.defect_thermodynamics.get_fermi_level_and_concentrations(  # type: ignore
-                chempots=single_chempot_dict,
-                el_refs=el_refs,
-                annealing_temperature=annealing_temperature,
-                quenched_temperature=quenched_temperature,
-                effective_dopant_concentration=effective_dopant_concentration,
                 skip_formatting=True,  # keep concentration values as floats
                 site_competition=site_competition,
-                delta_VBM=delta_VBM,
-                delta_CBM=delta_CBM,
-                delta_gap=delta_gap,
                 per_charge=per_charge,
                 per_site=per_site,
-                return_annealing_values=True,
-                **kwargs,
+                **common_kwargs,
             )
 
-            # order in both cases is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
-            new_columns = {
-                "Annealing Temperature (K)": annealing_temperature,
-                "Quenched Temperature (K)": quenched_temperature,
-                "Fermi Level (eV wrt VBM)": fermi_level,
-                "Electrons (cm^-3)": electrons,
-                "Holes (cm^-3)": holes,
-            }
-            if return_annealing_values:
-                new_columns.update(
-                    {
-                        "Fermi Level @ T_Anneal": annealing_fermi_level,
-                        "Electrons @ T_Anneal": annealing_e_conc,
-                        "Holes @ T_Anneal": annealing_h_conc,
-                    }
-                )
-
-            for column, value in new_columns.items():
-                concentrations[column] = value
-
-            # drop Dopant row, included as column instead
-            with warnings.catch_warnings():  # dropping on a non-lexsorted multi-index, fine as small df
-                warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
-                concentrations = concentrations.drop("Dopant", errors="ignore")
-
         else:  # py-sc-fermi
-            defect_system = self._generate_annealed_defect_system(
-                annealing_temperature=annealing_temperature,
-                single_chempot_dict=single_chempot_dict,
-                el_refs=el_refs,
-                quenched_temperature=quenched_temperature,
-                effective_dopant_concentration=effective_dopant_concentration,
-                delta_VBM=delta_VBM,
-                delta_CBM=delta_CBM,
-                delta_gap=delta_gap,
+            (
+                defect_system,
+                annealing_fermi_level,
+                annealing_e_conc,
+                annealing_h_conc,
+                annealing_total_concs,
+                annealing_per_charge_concs,
+            ) = self._generate_annealed_defect_system(
                 fixed_defects=fixed_defects,
                 free_defects=free_defects,
                 fix_charge_states=fix_charge_states,
-                **kwargs,
+                **common_kwargs,
             )
+            conc_dict = defect_system.concentration_dict(decomposed=per_charge)
+            fermi_level, electrons, holes = conc_dict["Fermi Energy"], conc_dict["n0"], conc_dict["p0"]
+            concentrations = self._py_sc_fermi_concs_to_df(conc_dict, defect_system)
 
-            with np.errstate(all="ignore"):
-                conc_dict = defect_system.concentration_dict(
-                    decomposed=per_charge,
+            if return_annealing_values:  # build ``annealing_conc_df`` matching ``doped`` structure
+                index = concentrations.index
+                annealing_columns = ["Concentration (cm^-3)", "Total Concentration (cm^-3)"]
+                if per_charge:
+                    annealing_data = [
+                        (annealing_per_charge_concs[d][c], annealing_total_concs[d]) for d, c in index
+                    ]
+                else:
+                    annealing_data = [annealing_total_concs[d] for d in index]
+                    annealing_columns.remove("Total Concentration (cm^-3)")
+
+                annealing_conc_df = pd.DataFrame(
+                    annealing_data,
+                    columns=annealing_columns,
+                    index=index,
                 )
 
-            # order is Defect, Concentration, Temperature, Fermi Level, e, h, Chempots
-            data = []
-            for k, v in conc_dict.items():
-                if k not in ["Fermi Energy", "n0", "p0", "Dopant"]:
-                    per_defect_data = {
-                        "Defect": k,
-                        "Charge": None,
-                        "Concentration (cm^-3)": v,
-                        "Formation Energy (eV)": None,
-                        "Charge State Population": None,
-                        "Total Concentration (cm^-3)": v,
-                        "Annealing Temperature (K)": annealing_temperature,
-                        "Quenched Temperature (K)": quenched_temperature,
-                        "Fermi Level (eV wrt VBM)": conc_dict["Fermi Energy"],
-                        "Electrons (cm^-3)": conc_dict["n0"],
-                        "Holes (cm^-3)": conc_dict["p0"],
-                    }
+        # order in both cases is Defect, Concentration, Temperature(s), Fermi Level, e, h, Chempots:
+        concentrations["Annealing Temperature (K)"] = annealing_temperature
+        concentrations["Quenched Temperature (K)"] = quenched_temperature
+        concentrations["Fermi Level (eV wrt VBM)"] = fermi_level
+        concentrations["Electrons (cm^-3)"] = electrons
+        concentrations["Holes (cm^-3)"] = holes
 
-                    if per_charge:
-                        total_concentration = sum(v.values())
-                        for charge, charge_state_concentration in v.items():
-                            per_charge_state_data = per_defect_data.copy()
-                            per_charge_state_data["Charge"] = charge
-                            per_charge_state_data["Concentration (cm^-3)"] = charge_state_concentration
-                            per_charge_state_data["Formation Energy (eV)"] = round(
-                                defect_system.defect_species_by_name(k)
-                                .charge_states[charge]
-                                .get_formation_energy(conc_dict["Fermi Energy"]),
-                                3,
-                            )
-                            per_charge_state_data["Charge State Population"] = (
-                                f"{charge_state_concentration / total_concentration:.2%}"
-                            )
-                            per_charge_state_data["Total Concentration (cm^-3)"] = total_concentration
-                            data.append(per_charge_state_data)
-
-                    else:
-                        for col in [
-                            "Charge",
-                            "Formation Energy (eV)",
-                            "Charge State Population",
-                            "Total Concentration (cm^-3)",
-                        ]:
-                            del per_defect_data[col]  # remove placeholder columns
-                        data.append(per_defect_data)
-
-            concentrations = pd.DataFrame(data)
-            concentrations = concentrations.set_index(
-                "Defect" if not per_charge else ["Defect", "Charge"], drop=True
+        if return_annealing_values:
+            concentrations = self._add_annealing_columns(
+                concentrations,
+                annealing_fermi_level,
+                annealing_e_conc,
+                annealing_h_conc,
+                annealing_conc_df,
             )
 
-        if append_chempots:
-            for key, value in single_chempot_dict.items():
-                concentrations[f"μ_{key} (eV)"] = value
-        if effective_dopant_concentration is not None:
-            concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
-
-        return concentrations
+        return self._append_chempots_and_dopant(
+            concentrations, single_chempot_dict, effective_dopant_concentration, append_chempots
+        )
 
     def _check_temperature_settings(
         self,
@@ -6279,8 +6292,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6539,8 +6555,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -6794,8 +6813,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -7067,8 +7089,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -7299,8 +7324,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -7583,8 +7611,11 @@ class FermiSolver(MSONable):
                 ``py-sc-fermi`` backend. Default is ``False``.
             return_annealing_values (bool):
                 If True, also returns the Fermi level, electron and hole
-                concentrations at the annealing temperatures. Only supported
-                with the ``doped`` backend. (default: ``False``)
+                concentrations and defect concentrations at the annealing
+                temperature. The Fermi level is given with respect to
+                ``DefectThermodynamics.vbm`` (i.e. the quenched VBM, same
+                reference as the returned (quenched) Fermi level). Default is
+                ``False``.
             fixed_defects (dict[str, float] | None):
                 A dictionary of defect concentrations to fix regardless of
                 chemical potentials / temperature / Fermi level, in the format:
@@ -7999,12 +8030,11 @@ class FermiSolver(MSONable):
                 If ``effective_dopant_concentration`` is zero or if there is an
                 issue with generating the dopant.
         """
-        self._check_required_backend_and_error("py-sc-fermi")
         assert self._DefectChargeState
         assert self._DefectSpecies
         dopant = self._DefectChargeState(
             charge=np.sign(effective_dopant_concentration),
-            fixed_concentration=abs(effective_dopant_concentration) / 1e24 * self.volume,
+            fixed_concentration=abs(effective_dopant_concentration) * self.volume / 1e24,  # cm^-3 -> /cell
             degeneracy=1,
         )
         return self._DefectSpecies(
@@ -8079,7 +8109,6 @@ class FermiSolver(MSONable):
                 degeneracies, as well as the density of states (DOS), volume,
                 and temperature of the system.
         """
-        self._check_required_backend_and_error("py-sc-fermi")
         assert self._DefectSpecies
         assert self._DefectSystem
         single_chempot_dict, el_refs = self.defect_thermodynamics._get_chempots(
@@ -8152,7 +8181,7 @@ class FermiSolver(MSONable):
         self,
         defect_system: "DefectSystem",
         fixed_defects: dict[str, float] | None = None,
-        fixed_concs: dict[str, float] | None = None,
+        total_conc_dict: dict[str, float] | None = None,
     ) -> None:
         """
         Utility method to fix the concentrations of defects specified by
@@ -8176,37 +8205,38 @@ class FermiSolver(MSONable):
                 for the specified charge state. Concentrations should be given
                 in cm^-3. This can be used to simulate the effect of a fixed
                 impurity concentration. Defaults to ``None``.
-            fixed_concs (dict):
+            total_conc_dict (dict):
                 Dictionary of total concentrations of defects which, if
                 provided, will be compared to input concentration constraints
                 (``fixed_defects``) and a warning will be thrown if
-                ``fixed_concs[defect_name_without_charge]`` is larger than
-                ``fixed_defects[defect_name_with_charge]``.
+                ``fixed_defects[defect_name_with_charge]`` is larger than
+                ``total_conc_dict[defect_name_without_charge]``.
                 Default is ``None``.
         """
         if fixed_defects is None:
             return
 
-        for k, v in fixed_defects.items():
-            if k.split("_")[-1].strip("+-").isdigit():
-                defect_name_wout_charge, q_str = k.rsplit("_", 1)
-                q = int(q_str)
+        conc_factor = self.volume / 1e24  # cell density per cm^3; self.volume = defect_system.volume
+        for name, fixed_conc in fixed_defects.items():
+            if name.split("_")[-1].strip("+-").isdigit():
+                defect_name_wout_charge, q_str = name.rsplit("_", 1)
                 defect_system.defect_species_by_name(defect_name_wout_charge).charge_states[
-                    q
-                ].fix_concentration(v / 1e24 * self.volume)
+                    int(q_str)
+                ].fix_concentration(fixed_conc * conc_factor)
 
-                if fixed_concs and v > fixed_concs[defect_name_wout_charge] * 1.001:  # small noise tol
+                if total_conc_dict and fixed_conc > total_conc_dict[defect_name_wout_charge] * 1.001:
+                    # fixed concentration for a defect species is higher than total conc (w/ noise tol):
                     warnings.warn(
-                        f"Fixed concentration of {k} ({v}) is higher than the total concentration of "
-                        f"({fixed_concs[defect_name_wout_charge]}) at the annealing temperature. "
-                        f"Adjusting the total concentration of {defect_name_wout_charge} to {v}. Check "
-                        f"that this is the behaviour you expect."
+                        f"Fixed concentration of {name} ({fixed_conc}) is higher than the total "
+                        f"concentration of ({total_conc_dict[defect_name_wout_charge]}) at the annealing "
+                        f"temperature. Adjusting the total concentration of {defect_name_wout_charge} to "
+                        f"{fixed_conc}. Check that this is the behaviour you expect."
                     )
                     defect_system.defect_species_by_name(defect_name_wout_charge).fix_concentration(
-                        v / 1e24 * self.volume
+                        fixed_conc * conc_factor
                     )
             else:
-                defect_system.defect_species_by_name(k).fix_concentration(v / 1e24 * self.volume)
+                defect_system.defect_species_by_name(name).fix_concentration(fixed_conc * conc_factor)
 
     def _generate_annealed_defect_system(
         self,
@@ -8221,8 +8251,9 @@ class FermiSolver(MSONable):
         fixed_defects: dict[str, float] | None = None,
         free_defects: list[str] | None = None,
         fix_charge_states: bool = False,
+        return_annealing_values: bool = False,
         **kwargs,
-    ) -> "DefectSystem":
+    ) -> "DefectSystem | tuple[DefectSystem, float, float, float, dict, dict]":
         r"""
         Generate a ``py-sc-fermi`` ``DefectSystem`` object that has defect
         concentrations fixed to the values determined at a high temperature
@@ -8325,6 +8356,10 @@ class FermiSolver(MSONable):
                 total defect concentrations fixed (``False``).
                 Not expected to be physically sensible in most cases.
                 Defaults to ``False``.
+            return_annealing_values (bool):
+                If ``True``, also return the Fermi level, electron/hole
+                concentrations and per-defect (and per-charge) concentrations
+                at the annealing temperature. Default is ``False``.
             **kwargs:
                 Additional keyword arguments to pass to ``scissor_dos`` (if
                 ``delta_VBM``, ``delta_CBM`` or ``delta_gap`` are not 0).
@@ -8334,8 +8369,19 @@ class FermiSolver(MSONable):
                 A low-temperature defect system (``quenched_temperature``)
                 with defect concentrations fixed to high-temperature
                 (``annealing_temperature``) values.
+
+            If ``return_annealing_values=True``, instead returns the tuple::
+
+                (defect_system, annealing_fermi_level, annealing_e_conc,
+                annealing_h_conc, total_conc_dict,
+                annealing_per_charge_conc_dict)
+
+            where the annealing values are taken from the high-temperature
+            ``DefectSystem`` solution. ``total_conc_dict`` is a
+            ``{defect_name: total_concentration}`` dict and
+            ``annealing_per_charge_conc_dict`` is a
+            ``{defect_name: {charge: concentration}}`` dict.
         """
-        self._check_required_backend_and_error("py-sc-fermi")
         free_defects = free_defects or []
 
         orig_py_sc_fermi_dos = self.py_sc_fermi_dos
@@ -8366,6 +8412,8 @@ class FermiSolver(MSONable):
                 vbm=self.defect_thermodynamics.vbm + delta_VBM,
                 bandgap=dos_cbm - (self.defect_thermodynamics.vbm + delta_VBM) + delta_CBM,
             )
+        else:
+            delta_VBM = 0  # for tracking annealing VBM position
 
         defect_system = self._generate_defect_system(
             single_chempot_dict=single_chempot_dict,  # chempots handled in _generate_defect_system()
@@ -8373,25 +8421,31 @@ class FermiSolver(MSONable):
             temperature=annealing_temperature,
             effective_dopant_concentration=effective_dopant_concentration,
         )  # generated with band-edge-shifted DOS
-        initial_conc_dict = defect_system.concentration_dict()  # concentrations at initial temperature
+        # TODO: Allow fixed_defects to be input as a negative value, to fix the concentration under all
+        # conditions (i.e. annealing (here) and quenched, rather than just quenched)
+        # self._fix_defect_concentrations(defect_system, fixed_defects, fixed_concs)  # for fixed_defects
+        # TODO: Handle case (here and in doped backend, when supported) where ``v_C`` is input to fix
+        # ``v_C`` and not ``v_Cd`` (require '$' in input?)
+        decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)  # per-charge anneal vals
+
+        # capture annealing Fermi level + electron/hole/per-defect concentrations before
+        # ``initial_conc_dict`` is mutated below or overwritten by the quenched solve:
+        annealing_e_conc = decomposed_conc_dict["n0"]
+        annealing_h_conc = decomposed_conc_dict["p0"]
+        # VBM is renormalised to 0 in py-sc-fermi, so we add the VBM shift to ensure it is relative to the
+        # original (quenched) VBM:
+        annealing_fermi_level = decomposed_conc_dict["Fermi Energy"] + delta_VBM
+
+        special_keys = ("Fermi Energy", "n0", "p0", "Dopant")
+        annealing_per_charge_conc_dict = {
+            k: dict(v) for k, v in decomposed_conc_dict.items() if k not in special_keys
+        }
+        total_conc_dict: dict[str, float] = {
+            k: sum(v.values()) for k, v in annealing_per_charge_conc_dict.items()
+        }
 
         # Exclude the free_defects, carrier concentrations and Fermi level from fixing
-        all_free_defects = ["Dopant", "Fermi Energy", "n0", "p0", *free_defects]
-
-        # Get the fixed concentrations of non-exceptional (not-free) defects
-        decomposed_conc_dict = defect_system.concentration_dict(decomposed=True)
-        additional_data = {}
-        for k, v in decomposed_conc_dict.items():
-            if not any(k.startswith(i) for i in all_free_defects):
-                for k1, v1 in v.items():
-                    additional_data[k + "_" + str(k1)] = v1
-        initial_conc_dict.update(additional_data)
-
-        fixed_concs = {
-            k: v
-            for k, v in initial_conc_dict.items()
-            if not any(k.startswith(i) for i in all_free_defects)
-        }
+        all_free_defects = [*special_keys, *free_defects]
 
         if not all(i == 0 for i in [delta_VBM, delta_CBM, delta_gap]):
             # regenerate defect system with band edges back to quenched temperature values
@@ -8404,20 +8458,33 @@ class FermiSolver(MSONable):
             )  # no band-edge shifting
 
         # Apply the fixed annealing concentrations
+        conc_factor = self.volume / 1e24  # cell density per cm^3; self.volume = defect_system.volume
         for defect_species in defect_system.defect_species:
-            if fix_charge_states:
-                for k, v in defect_species.charge_states.items():
-                    key = f"{defect_species.name}_{int(k)}"
-                    if key in list(fixed_concs.keys()):
-                        v.fix_concentration(fixed_concs[key] / 1e24 * defect_system.volume)
+            if fix_charge_states:  # fix by charge state
+                for q, defect_charge_state in defect_species.charge_states.items():
+                    species_keys = [f"{defect_species.name}_{int(q)}", f"{defect_species.name}_{int(q):+}"]
+                    if not any(name.startswith(i) for name in species_keys for i in all_free_defects):
+                        defect_charge_state.fix_concentration(
+                            annealing_per_charge_conc_dict[defect_species.name][q] * conc_factor
+                        )
 
-            elif defect_species.name in fixed_concs and defect_species.name:
-                defect_species.fix_concentration(
-                    fixed_concs[defect_species.name] / 1e24 * defect_system.volume
-                )
+            elif not any(defect_species.name.startswith(i) for i in all_free_defects):  # fix total conc
+                defect_species.fix_concentration(total_conc_dict[defect_species.name] * conc_factor)
 
-        self._fix_defect_concentrations(defect_system, fixed_defects, fixed_concs)  # for fixed_defects
+        # Fix concentrations if ``fixed_defects`` supplied:
+        # ``total_conc_dict`` supplied to warn if ``|fixed_defect_species| > |fixed_total_conc|``
+        self._fix_defect_concentrations(defect_system, fixed_defects, total_conc_dict)
+
         defect_system.temperature = quenched_temperature
+        if return_annealing_values:
+            return (
+                defect_system,
+                annealing_fermi_level,
+                annealing_e_conc,
+                annealing_h_conc,
+                total_conc_dict,
+                annealing_per_charge_conc_dict,
+            )
         return defect_system
 
 
@@ -8456,28 +8523,6 @@ def get_interpolated_chempots(
         }
         for i in range(n_points)
     ]
-
-
-def _get_label_and_charge(name: str) -> tuple[str, int]:
-    """
-    Extracts the label and charge from a defect name string.
-
-    Args:
-        name (str): Name of the defect.
-
-    Returns:
-        tuple: A tuple containing the label and charge.
-    """
-    last_underscore = name.rfind("_")
-    label = name[:last_underscore] if last_underscore != -1 else name
-    charge_str = name[last_underscore + 1 :] if last_underscore != -1 else None
-
-    charge = 0  # Initialize charge with a default value
-    if charge_str is not None:
-        with contextlib.suppress(ValueError):
-            charge = int(charge_str)
-
-    return label, charge
 
 
 def _get_py_sc_fermi_dos_from_fermi_dos(
