@@ -1906,6 +1906,3 @@ class DefectsSetTest(unittest.TestCase):
 
 
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
-
-if __name__ == "__main__":
-    unittest.main()

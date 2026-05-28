@@ -4498,14 +4498,14 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         assert not np.isclose(asym_fermi, sym_fermi, atol=1e-3)
 
         # callable delta_VBM/delta_CBM:
-        cf_fermi, cf_e, cf_h, _ = defect_thermo.get_fermi_level_and_concentrations(
+        cf_fermi, _cf_e, _cf_h, _ = defect_thermo.get_fermi_level_and_concentrations(
             self.fermi_dos,
             limit="Te-rich",
             annealing_temperature=1000,
             delta_VBM=lambda T: 1e-4 * T,
             delta_CBM=lambda T: -1e-4 * T,
         )
-        const_fermi, const_e, const_h, _ = defect_thermo.get_fermi_level_and_concentrations(
+        const_fermi, _const_e, _const_h, _ = defect_thermo.get_fermi_level_and_concentrations(
             self.fermi_dos,
             limit="Te-rich",
             annealing_temperature=1000,
@@ -4514,17 +4514,21 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         )
         assert np.isclose(cf_fermi, const_fermi, atol=1e-4)
 
+    @custom_mpl_image_compare(filename="ZGO_3panel_renormalisation_comparison.png")
     def test_ZGO_temperature_dependent_band_edges(self):
         """
-        End-to-end test with the ZGO (ZnGa2O4) example case. Uses electron-
-        phonon-derived linear fits for VBM(T) and CBM(T) shifts.
+        End-to-end test with the ZGO (ZnGa2O4) example case.
+
+        Uses electron-phonon-derived linear fits for VBM(T) and CBM(T) shifts.
+        This test produces the 3-panel defect/carrier concentration figure
+        shown in the thermodynamics tutorial (and Fig. S6 of Claes et al.).
 
         Original paper: https://pubs.acs.org/doi/10.1021/acsami.5c19146
 
         Thanks to Romain Claes for sharing the example data!
         """
         zgo_dir = os.path.join(EXAMPLE_DIR, "ZGO")
-        zgo_thermo = loadfn(os.path.join(zgo_dir, "ZGO_thermo.json.gz"))
+        zgo_thermo: DefectThermodynamics = loadfn(os.path.join(zgo_dir, "ZGO_thermo.json.gz"))
         zgo_thermo.bulk_dos = os.path.join(zgo_dir, "ZGO_bulk_DOS_vasprun.xml.gz")
 
         # Linear fits from Claes et al. e-ph data for ZnGa2O4 (in eV)
@@ -4534,35 +4538,43 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         def CBM_shift(T):
             return -0.0756 - 2.04e-4 * T
 
+        def delta_gap(T):  # equivalent symmetric gap change, for comparison
+            return CBM_shift(T) - VBM_shift(T)
+
         # Reproduce the key result of Claes et al. (Fig. 1 TOC and Fig. S6): at typical processing
         # temperatures, the asymmetric band-edge renormalisation gives a quenched electron concentration
-        # within the experimental range, while no renormalisation underestimates and symmetric
-        # renormalisation overestimates it:
-        T_anneal = 1500  # K -- typical ZGO processing temperature
-        n_exp_low, n_exp_high = 5e18, 5e19  # cm^-3; experimental range (Claes et al.)
+        # lower than symmetric renormalisation (because VBM shifts more than CBM, so CBM downshift (and
+        # thus annealing and quenched electron concentrations) is over-estimated in symmetric case) but
+        # higher than no renormalisation (as expected)
+        anneal_temperatures = np.arange(300, 2101, 50)
+        results = {"none": {}, "asymmetric": {}, "symmetric": {}}
+        common = {
+            "limit": "Ga-rich",
+            "quenched_temperature": 300,
+            "return_annealing_values": True,
+            "skip_formatting": True,
+        }
+        with warnings.catch_warnings():  # ignore periodicity-breaking warning
+            warnings.filterwarnings("ignore", category=UserWarning, message="The defect supercell has ")
+            for T in anneal_temperatures:
+                results["none"][T] = zgo_thermo.get_fermi_level_and_concentrations(
+                    annealing_temperature=T, **common
+                )
+                results["asymmetric"][T] = zgo_thermo.get_fermi_level_and_concentrations(
+                    annealing_temperature=T, delta_VBM=VBM_shift(T), delta_CBM=CBM_shift(T), **common
+                )
+                results["symmetric"][T] = zgo_thermo.get_fermi_level_and_concentrations(
+                    annealing_temperature=T,
+                    delta_VBM=-delta_gap(T) / 2,
+                    delta_CBM=+delta_gap(T) / 2,
+                    **common,
+                )
 
-        f_no, e_no, _h_no, df_no, *_anneal_no = zgo_thermo.get_fermi_level_and_concentrations(
-            limit="Ga-rich",
-            annealing_temperature=T_anneal,
-            quenched_temperature=300,
-            return_annealing_values=True,
-            skip_formatting=True,
-        )
-        f_asym, e_asym, _h_asym, _ = zgo_thermo.get_fermi_level_and_concentrations(
-            limit="Ga-rich",
-            annealing_temperature=T_anneal,
-            quenched_temperature=300,
-            delta_VBM=VBM_shift,
-            delta_CBM=CBM_shift,
-        )
-        delta_gap_eq = CBM_shift(T_anneal) - VBM_shift(T_anneal)
-        f_sym, e_sym, _h_sym, _ = zgo_thermo.get_fermi_level_and_concentrations(
-            limit="Ga-rich",
-            annealing_temperature=T_anneal,
-            quenched_temperature=300,
-            delta_VBM=-delta_gap_eq / 2,
-            delta_CBM=+delta_gap_eq / 2,
-        )
+        # Numerical assertions at T_anneal = 1500 K:
+        T_anneal = 1500  # K -- typical ZGO processing temperature
+        f_no, e_no, _h_no, df_no = results["none"][T_anneal][:4]
+        f_asym, e_asym, _, _ = results["asymmetric"][T_anneal][:4]
+        f_sym, e_sym, _, _ = results["symmetric"][T_anneal][:4]
 
         # The total gap change is identical for asymmetric & symmetric, but VBM placement differs ->
         # Fermi level (wrt VBM) and quenched n differ:
@@ -4574,17 +4586,24 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         # relative to defects than the symmetric case):
         assert e_no < e_asym < e_sym, f"Expected n ordering no<asym<sym, got {e_no=}, {e_asym=}, {e_sym=}"
 
-        # Asymmetric and no renormalisation land within the experimental range, symmetric over-estimates:
+        # Asymmetric and no renormalisation land within the experimental range, symmetric over-estimates
+        # (for T = 1500K synthesis temperature)
+        n_exp_low, n_exp_high = 5e18, 5e19  # cm^-3; experimental range (Claes et al.)
         assert (
             n_exp_low < e_asym < n_exp_high
         ), f"Asymmetric n={e_asym:.2e} not within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
         assert n_exp_low < e_no < n_exp_high, (
-            f"No renormalisation n={e_asym:.2e} not within experimental band [{n_exp_low:.2e},"
+            f"No renormalisation n={e_no:.2e} not within experimental band [{n_exp_low:.2e},"
             f" {n_exp_high:.2e}]"
         )
-        assert (
-            not n_exp_low < e_sym < n_exp_high
-        ), f"Symmetric n={e_asym:.2e} within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+        assert not (
+            n_exp_low < e_sym < n_exp_high
+        ), f"Symmetric n={e_sym:.2e} within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+
+        # 3-panel figure (mirrors the thermodynamics tutorial / Claes et al. Fig. S6):
+        for d in ("Ga_Zn", "Zn_Ga", "v_Zn", "v_O", "v_Ga"):
+            assert d in df_no.index.get_level_values("Defect"), f"Expected defect {d} in conc df"
+        return _plot_ZGO_3panel(results, n_exp_low, n_exp_high)
 
     def test_calculated_fermi_level_k10(self):
         """

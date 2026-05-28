@@ -41,10 +41,12 @@
 
 ## SK To-Do for next update:
 - Update SnB requirement (and thus doped) to pmg-core>2026.5.23 after ROPT fix; https://github.com/materialsproject/pymatgen-core/pull/69
-- delta_CBM/VBM options, link https://doi.org/10.26434/chemrxiv-2025-h3gsc (Romain paper) for this, mini-example
-- It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe. Keep old code for reference at the bottom maybe? With `delta_gap`/VBM/CBM as a function example 
+- It will also be good to use the `scan_X` functions now in the main thermodynamics tutorial as this should now be the most convenient and recommended way of doing this, unless extra control is needed e.g. to do the bandgap scissoring shown for CdTe. Keep old code for reference at the bottom maybe? With delta_VBM/CBM as a function example 
+  - Ideally, would implement the general ``scan()`` function and then showcase it in the tutorials?
 - Tutorials general structure clean-up?
 - Update all tutorial notebooks to use latest codebase
 - Add example to chemical potentials / thermodynamics analysis tutorials of varying chemical potentials as a function of temperature/pressure (i.e. gas phases), using the `Spinney` functions detailed here (https://spinney.readthedocs.io/en/latest/tutorial/chemipots.html#including-temperature-and-pressure-effects-through-the-gas-phase-chemical-potentials) or possibly `DefAP` functions otherwise. Xinwei Sb2S3 stuff possibly a decent example for this, see our notebooks. TODO in ``doped.chemical_potentials``.
-- Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing)
+- Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing, many test changes etc)
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
+
+delta_VBM/CBM in notebooks. say it can be important to not assume symmetric shifts, esp with differences in eff masses (though note Ganose & Ling found the symmetric shift was fine??), and link to these papers
