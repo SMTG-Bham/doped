@@ -8,12 +8,11 @@ The ``scan_chemical_potential_grid`` tests here indirectly test the |ChemicalPot
 import builtins
 import itertools
 import os
+import tempfile
 import unittest
 import warnings
 from copy import deepcopy
 from functools import wraps
-
-# Check if py_sc_fermi is available
 from importlib.util import find_spec
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -22,9 +21,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.testing.compare import compare_images
 from monty.serialization import loadfn
 from pymatgen.electronic_structure.dos import Dos, FermiDos, Spin
-from test_thermodynamics import anneal_temperatures, belas_linear_fit, reduced_anneal_temperatures
+from test_thermodynamics import (
+    _plot_ZGO_3panel,
+    anneal_temperatures,
+    belas_linear_fit,
+    reduced_anneal_temperatures,
+)
 from test_utils import EXAMPLE_DIR, STYLE, _print_warning_info, custom_mpl_image_compare, data_dir
 
 from doped.thermodynamics import (
@@ -153,19 +158,69 @@ class TestGetPyScFermiDosFromFermiDos(unittest.TestCase):
             # tested here
 
 
-def parameterize_backend():
+def assert_figures_equivalent(doped_fig, pyscfermi_fig, tol=2, test_name=""):
+    r"""
+    Assert two matplotlib ``Figure``\ s are visually equivalent by saving to
+    PNG and pixel-comparing with ``matplotlib.testing.compare.compare_images``.
+
+    On failure, dumps the two figures to
+    ``./debug_{test_name}_{backend}_fig.png`` for inspection (``test_name``
+    is the calling test's ``__name__`` when invoked via
+    ``parameterize_backend``).
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f1 = os.path.join(tmpdir, "a.png")
+        f2 = os.path.join(tmpdir, "b.png")
+        doped_fig.savefig(f1, bbox_inches="tight")
+        pyscfermi_fig.savefig(f2, bbox_inches="tight")
+        diff = compare_images(f1, f2, tol=tol)
+    if diff is not None:  # save files to local dir for debugging:
+        doped_fig.savefig(f"debug_{test_name}_doped_fig.png", bbox_inches="tight")
+        pyscfermi_fig.savefig(f"debug_{test_name}_pyscfermi_fig.png", bbox_inches="tight")
+        raise AssertionError(f"Figures are not equivalent for {test_name} (tol={tol}): {diff}")
+
+
+def parameterize_backend(tol=2):
     """
     A test decorator to allow easy running of ``FermiSolver`` tests with both
     the ``doped`` and ``py-sc-fermi`` backends.
+
+    Returns the first iteration (``doped`` backend) result so this decorator
+    can be combined with ``custom_mpl_image_compare`` (which inspects the
+    return value) -- e.g.::
+
+        @custom_mpl_image_compare(filename="my_plot.png")
+        @parameterize_backend()
+        def test_foo(self, backend):
+            ...
+            return fig
+
+    For tests that return figures (``mpl_image_compare`` case), both backends
+    are exercised with figures validated against each other (with
+    ``assert_figures_equivalent``, using ``tol``), and the ``doped`` figure
+    is then compared against the baseline by ``pytest-mpl``.
     """
 
     def decorator(test_func):
         @wraps(test_func)
         def wrapper(self, *args, **kwargs):
+            figure_results: dict[str, plt.Figure] = {}
             for backend in ["doped", "py-sc-fermi"]:
                 with self.subTest(backend=backend):
                     print(f"Testing with {backend} backend")
-                    test_func(self, backend, *args, **kwargs)
+                    result = test_func(self, backend, *args, **kwargs)
+                    if hasattr(result, "savefig"):  # matplotlib Figure
+                        figure_results[backend] = result
+
+            if len(figure_results) == 2:  # cross-validate the two backends' figures:
+                assert_figures_equivalent(
+                    figure_results["doped"],
+                    figure_results["py-sc-fermi"],
+                    tol=tol,
+                    test_name=test_func.__name__,
+                )
+                plt.close(figure_results["py-sc-fermi"])
+            return next(iter(figure_results.values()), None)
 
         return wrapper
 
@@ -246,7 +301,6 @@ def check_concentrations_df(solver, concentrations, free_defects=None):
             assert np.isclose(total_concentration, df_total_concentration, rtol=rtol)
 
 
-# TODO: Add actual tests for fixed_defects, free_defects and fix_charge_states
 class TestFermiSolverWithLoadedData(unittest.TestCase):
     """
     Tests for ``FermiSolver`` initialization with loaded data.
@@ -586,45 +640,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                         # Assertions
                         assert len(w) > 0
                         assert "non-integer" in str(w[-1].message)
-
-    def test_check_required_backend_and_error_doped_correct(self):
-        """
-        Test that no error is raised with ``_check_required_backend_and_error``
-        for ``doped`` backend.
-        """
-        try:
-            self.solver_doped._check_required_backend_and_error("doped")
-        except RuntimeError as e:
-            self.fail(f"RuntimeError raised unexpectedly: {e}")
-
-    def test_check_required_backend_and_error_py_sc_fermi_missing_DOS(self):
-        """
-        Test that ``RuntimeError`` is raised when ``_DOS`` is missing for ``py-
-        sc-fermi`` backend.
-        """
-        # first test that no error is raised when _DOS is present
-        self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
-
-        # Remove _DOS to simulate missing DOS
-        self.solver_py_sc_fermi._DOS = None
-
-        with pytest.raises(RuntimeError) as context:
-            self.solver_py_sc_fermi._check_required_backend_and_error("py-sc-fermi")
-        assert "This function is currently only supported for the py-sc-fermi backend" in str(
-            context.value
-        )
-
-    def test_check_required_backend_and_error_py_sc_fermi_doped_backend(self):
-        """
-        Test that ``RuntimeError`` is raised when
-        ``_check_required_backend_and_error`` is called when ``py-sc-fermi``
-        backend functionality is required, but the backend is set to ``doped``.
-        """
-        with pytest.raises(RuntimeError) as context:
-            self.solver_doped._check_required_backend_and_error("py-sc-fermi")
-        assert "This function is currently only supported for the py-sc-fermi backend" in str(
-            context.value
-        )
 
     def test_get_fermi_level_and_carriers(self):
         """
@@ -1018,64 +1033,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             concentrations_per_defect["Concentration (cm^-3)"],
             rtol=conc_rtol,
         )  # also checks the index and ordering
-
-    def test_pseudo_equilibrium_solve_mocked_py_sc_fermi_backend(self):
-        """
-        Test ``_pseudo_equilibrium_solve`` method for a mocked ``py-sc-fermi``
-        backend (so test works even when ``py-sc-fermi`` is not installed),
-        with ``fixed_defects``.
-        """
-        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
-
-        # Mock _generate_annealed_defect_system
-        self.solver_py_sc_fermi._generate_annealed_defect_system = MagicMock()
-        # Mock defect_system object
-        defect_system = MagicMock()
-        defect_system.concentration_dict.return_value = {
-            "Fermi Energy": 0.6,
-            "n0": 1e17,
-            "p0": 1e16,
-            "defect1": 1e15,
-            "defect2": 1e14,
-            "Dopant": 1e16,
-        }
-        defect_system.temperature = 300
-
-        self.solver_py_sc_fermi._generate_annealed_defect_system.return_value = defect_system
-
-        # Call the method with fixed_defects
-        concentrations = self.solver_py_sc_fermi._pseudo_equilibrium_solve(
-            annealing_temperature=800,
-            single_chempot_dict=single_chempot_dict,
-            el_refs=el_refs,
-            quenched_temperature=300,
-            effective_dopant_concentration=1e16,
-            fixed_defects={"defect1": 1e15},
-            fix_charge_states=True,
-            append_chempots=True,
-            per_charge=False,
-        )
-
-        for i in [
-            "Fermi Level (eV wrt VBM)",
-            "Electrons (cm^-3)",
-            "Holes (cm^-3)",
-            "Annealing Temperature (K)",
-            "Quenched Temperature (K)",
-        ]:
-            assert i in concentrations.columns, f"Missing column: {i}"
-
-        # Check defects are included
-        assert "defect1" in concentrations.index
-        assert "defect2" in concentrations.index
-
-        assert np.isclose(concentrations["Quenched Temperature (K)"].iloc[0], 300)
-        assert np.isclose(concentrations["Annealing Temperature (K)"].iloc[0], 800)
-
-        # Check appended chemical potentials
-        for element in single_chempot_dict:
-            assert f"μ_{element} (eV)" in concentrations.columns
-            assert concentrations[f"μ_{element} (eV)"].iloc[0] == single_chempot_dict[element]
 
     @parameterize_backend()
     def test_scan_temperature_equilibrium(self, backend):
@@ -2109,7 +2066,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 _check_output_concentrations(solver, result)
 
     @custom_mpl_image_compare(filename="Sb2S3_V_S_optimise_vs_μ_S.png")
-    def test_optimise_defect_non_limiting_extremum_plot(self):
+    @parameterize_backend()
+    def test_optimise_defect_non_limiting_extremum_plot(self, backend):
         """
         Test ``optimise`` with the non-limiting extremum case of V_S in Sb2S3
         (see ``test_optimise_defect``).
@@ -2122,7 +2080,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         10.1021/acsenergylett.4c02722, also the subject of
         10.1002/smll.202102429 (for Sb2Se3).
         """
-        solver = FermiSolver(self.Sb2S3_thermo)
+        solver = FermiSolver(self.Sb2S3_thermo, backend=backend)
         # find the chemical potentials that minimise the V_S_3 concentration:
         min_V_S_df = solver.optimise(
             target="V_S_3",
@@ -2684,12 +2642,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "quenched_temperature": 300,
             "effective_dopant_concentration": 1e16,
             "append_chempots": True,
+            "delta_VBM": 0.3,  # to test that annealing Fermi level is always relative to the quenched VBM
         }
-        if backend == "py-sc-fermi":
-            with pytest.raises(ValueError):
-                solver._pseudo_equilibrium_solve(**pseudo_eq_solve_kwargs, return_annealing_values=True)
-            return
-
         result_no_annealing = solver._pseudo_equilibrium_solve(
             **pseudo_eq_solve_kwargs, return_annealing_values=False
         )  # default
@@ -2709,11 +2663,13 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert col in result_no_annealing.columns
             assert col in result_with_annealing.columns
 
-        # return_annealing_values=True should add annealing columns (for doped backend)
+        # ``return_annealing_values=True`` adds annealing columns:
         annealing_cols = [
             "Fermi Level @ T_Anneal",
             "Electrons @ T_Anneal",
             "Holes @ T_Anneal",
+            "Concentration @ T_Anneal (cm^-3)",
+            "Total Concentration @ T_Anneal (cm^-3)",  # default per_charge=True
         ]
         for col in annealing_cols:
             assert col not in result_no_annealing.columns
@@ -2730,11 +2686,21 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             > result_with_annealing["Holes (cm^-3)"].iloc[0]
         )
 
+        # per-defect annealing concentrations should be present and finite for each row:
+        assert result_with_annealing["Concentration @ T_Anneal (cm^-3)"].notna().all()
+        # total concentrations agree across charge states for the same defect:
+        grouped = result_with_annealing.groupby(level="Defect")["Total Concentration @ T_Anneal (cm^-3)"]
+        assert (grouped.min() == grouped.max()).all()
+
         # Verify annealing values are reasonable (annealing Fermi level should differ from quenched)
         quenched_fermi = result_with_annealing["Fermi Level (eV wrt VBM)"].iloc[0]
         annealing_fermi = result_with_annealing["Fermi Level @ T_Anneal"].iloc[0]
-        # At higher temperature, Fermi level typically shifts towards mid-gap
-        assert annealing_fermi != quenched_fermi
+        # Fermi level typically shifts towards mid-gap at higher temperature; p-type conditions here:
+        assert annealing_fermi > quenched_fermi
+
+        # hard test some values:
+        assert np.isclose(annealing_fermi, 0.8345, atol=1e-3)
+        assert np.isclose(quenched_fermi, 0.3595, atol=1e-3)
 
     @parameterize_backend()
     def test_scan_temperature_per_charge_per_site(self, backend):
@@ -2799,11 +2765,6 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "effective_dopant_concentration": 1e16,
         }
 
-        if backend == "py-sc-fermi":
-            with pytest.raises(ValueError):
-                solver.scan_temperature(**scan_temperature_kwargs, return_annealing_values=True)
-            return
-
         result_no_annealing = solver.scan_temperature(
             **scan_temperature_kwargs, return_annealing_values=False  # default
         )
@@ -2822,16 +2783,17 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             ].iloc[0]
             assert np.isclose(ref_fermi, test_fermi, rtol=1e-3)
 
-        # return_annealing_values=True should add annealing columns (for doped backend)
-        if solver.backend == "doped":
-            annealing_cols = [
-                "Fermi Level @ T_Anneal",
-                "Electrons @ T_Anneal",
-                "Holes @ T_Anneal",
-            ]
-            for col in annealing_cols:
-                assert col not in result_no_annealing.columns
-                assert col in result_with_annealing.columns
+        # ``return_annealing_values=True`` adds annealing columns (both backends):
+        annealing_cols = [
+            "Fermi Level @ T_Anneal",
+            "Electrons @ T_Anneal",
+            "Holes @ T_Anneal",
+            "Concentration @ T_Anneal (cm^-3)",
+            "Total Concentration @ T_Anneal (cm^-3)",  # default per_charge=True
+        ]
+        for col in annealing_cols:
+            assert col not in result_no_annealing.columns
+            assert col in result_with_annealing.columns
 
         # check that electron and hole concentrations at annealing temp are higher than at quenched temp:
         assert (
@@ -2842,6 +2804,14 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             result_with_annealing["Holes @ T_Anneal"].iloc[0]
             > result_with_annealing["Holes (cm^-3)"].iloc[0]
         )
+
+        # per-defect annealing concentrations should be present and finite for each row:
+        assert result_with_annealing["Concentration @ T_Anneal (cm^-3)"].notna().all()
+        # ``Total Concentration @ T_Anneal`` agrees across charge states for the same defect+temperature:
+        grouped = result_with_annealing.groupby(
+            ["Annealing Temperature (K)", result_with_annealing.index.get_level_values("Defect")]
+        )["Total Concentration @ T_Anneal (cm^-3)"]
+        assert (grouped.min() == grouped.max()).all()
 
     @parameterize_backend()
     def test_scan_dopant_concentration_per_charge_per_site(self, backend):
@@ -3226,13 +3196,26 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             "annealing_temperature_range": anneal_temperatures,
             "delta_gap": lambda T: belas_linear_fit(T) - 1.5,
             "per_charge": False,
+            "return_annealing_values": True,
         }
 
-        doped_output_df = self.solver_doped.scan_temperature(**kwargs, return_annealing_values=True)
+        doped_output_df = self.solver_doped.scan_temperature(**kwargs)
         py_sc_fermi_output_df = self.solver_py_sc_fermi.scan_temperature(**kwargs)
-        # cut annealing values columns
-        annealing_fermi_levels = doped_output_df.pop("Fermi Level @ T_Anneal")
-        doped_output_df = doped_output_df.drop(columns=["Holes @ T_Anneal", "Electrons @ T_Anneal"])
+        # both backends should produce equivalent annealing-value columns:
+        annealing_cols = [
+            "Fermi Level @ T_Anneal",
+            "Electrons @ T_Anneal",
+            "Holes @ T_Anneal",
+            "Concentration @ T_Anneal (cm^-3)",
+        ]
+        for col in annealing_cols:
+            assert col in doped_output_df.columns
+            assert col in py_sc_fermi_output_df.columns
+        pd.testing.assert_series_equal(
+            doped_output_df["Fermi Level @ T_Anneal"],
+            py_sc_fermi_output_df["Fermi Level @ T_Anneal"],
+            atol=1e-2,
+        )
         pd.testing.assert_frame_equal(
             doped_output_df,
             py_sc_fermi_output_df,
@@ -3262,7 +3245,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         f, ax = plt.subplots()
         ax.plot(
             doped_output_df["Annealing Temperature (K)"].unique(),
-            annealing_fermi_levels.unique(),
+            doped_output_df["Fermi Level @ T_Anneal"].unique(),
             marker="o",
             label="$E_F$ during annealing (@ $T_{anneal}$)",
             color="k",
@@ -3549,8 +3532,6 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             assert np.isclose(formal_chempots["Si"], -0.457, atol=1e-3)
 
             _check_output_concentrations(solver, result)
-            if backend != "doped":
-                return  # skip second half of test for py-sc-fermi backend, it's quite slow
 
             # test that when v_Cu is included, the extremum _is_ at a limiting chempot:
             w_v_Cu_solver = self.solver_doped
@@ -3578,21 +3559,19 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                     assert np.isclose(row["μ_Si (eV)"], -0.7212, atol=1e-3)
                     assert np.isclose(row["μ_Se (eV)"], -0.5999, atol=1e-3)
                 else:
-                    single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cu-poor")
+                    single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit="Cu-poor")
                     assert all(
                         np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=2e-2)
                         for el_key in single_chempot_dict
                     )
                 _check_output_concentrations(w_v_Cu_solver, result)
 
-    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png", tolerance=4)
-    def test_plot_scan_chemical_potential_grid(self, backend="doped"):
+    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid.png")
+    @parameterize_backend()
+    def test_plot_scan_chemical_potential_grid(self, backend):
         """
         Test ``scan_chemical_potential_grid`` method, by plotting the output
         with the ``fake_no_v_Cu_Cu2SiSe3_thermo`` system.
-
-        Note this code takes >7 mins with with the ``py-sc-fermi``
-        backend, but only 45 seconds with ``doped`` backend.
         """
         solver = FermiSolver(
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
@@ -3603,10 +3582,9 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
         )
         return _plot_Cu_i_data(data.loc["Int_Cu"])
 
-    @custom_mpl_image_compare(
-        filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid_cartesian.png", tolerance=4
-    )
-    def test_plot_scan_chemical_potential_grid_cartesian(self, backend="doped"):
+    @custom_mpl_image_compare(filename="fake_no_v_Cu_Cu2SiSe3_Cu_i_chempot_grid_cartesian.png")
+    @parameterize_backend()
+    def test_plot_scan_chemical_potential_grid_cartesian(self, backend):
         solver = FermiSolver(
             self.fake_no_v_Cu_Cu2SiSe3_thermo, bulk_dos=self.Cu2SiSe3_fermi_dos, backend=backend
         )
@@ -3721,6 +3699,103 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
                 "potential grid scan"
             ) in str(exc.value)
 
+    @custom_mpl_image_compare(filename="ZGO_3panel_renormalisation_comparison.png")
+    @parameterize_backend(tol=15)  # no site_competition in py-sc-fermi
+    def test_ZGO_scan_temperature_asymmetric_band_edges(self, backend):
+        """
+        ``FermiSolver.scan_temperature`` end-to-end test on the ZGO (ZnGa2O4)
+        example, with callable ``delta_VBM``/``delta_CBM``.
 
-if __name__ == "__main__":
-    unittest.main()
+        Exercised against both backends, and producing the same 3-panel
+        defect/carrier concentration figure as
+        ``test_ZGO_temperature_dependent_band_edges`` in
+        ``test_thermodynamics`` (except with slight differences between
+        backends in ``Zn_Ga/Ga_Zn/v_Zn/v_Ga`` concentrations due to lack of
+        site competition in ``py-sc-fermi``)
+
+        Original paper: https://pubs.acs.org/doi/10.1021/acsami.5c19146
+        """
+        zgo_dir = os.path.join(EXAMPLE_DIR, "ZGO")
+        zgo_thermo = loadfn(os.path.join(zgo_dir, "ZGO_thermo.json.gz"))
+        zgo_thermo.bulk_dos = os.path.join(zgo_dir, "ZGO_bulk_DOS_vasprun.xml.gz")
+        zgo_solver = FermiSolver(zgo_thermo, backend=backend)
+
+        # Linear fits from Claes et al. e-ph data for ZnGa2O4 (in eV)
+        def VBM_shift(T):
+            return 0.1662 + 3.01e-4 * T
+
+        def CBM_shift(T):
+            return -0.0756 - 2.04e-4 * T
+
+        def delta_gap(T):
+            return CBM_shift(T) - VBM_shift(T)
+
+        zgo_anneal_temperatures = np.arange(300, 2101, 50)
+        common_kwargs = {
+            "annealing_temperature_range": zgo_anneal_temperatures,
+            "chempots": zgo_thermo.chempots,
+            "limit": "Ga-rich",
+            "per_charge": False,
+            "return_annealing_values": True,
+        }
+        with warnings.catch_warnings():  # ignore periodicity-breaking warning
+            warnings.filterwarnings("ignore", category=UserWarning, message="The defect supercell has ")
+            df_none = zgo_solver.scan_temperature(**common_kwargs)
+            df_asym = zgo_solver.scan_temperature(
+                **common_kwargs,
+                delta_VBM=VBM_shift,
+                delta_CBM=CBM_shift,
+            )
+            df_sym = zgo_solver.scan_temperature(
+                **common_kwargs,
+                delta_VBM=lambda T: -delta_gap(T) / 2,
+                delta_CBM=lambda T: +delta_gap(T) / 2,
+            )
+
+        # Sanity checks at T_anneal = 1500 K (mirrors thermo test):
+        T_anneal = 1500
+        n_exp_low, n_exp_high = 5e18, 5e19  # cm^-3 (Claes et al.)
+
+        def n_at(df, T):
+            sub = df[df["Annealing Temperature (K)"] == T]
+            return sub["Electrons (cm^-3)"].iloc[0]
+
+        e_no, e_asym, e_sym = (n_at(df, T_anneal) for df in (df_none, df_asym, df_sym))
+        assert e_no < e_asym < e_sym, f"Expected n ordering no<asym<sym, got {e_no=}, {e_asym=}, {e_sym=}"
+        assert n_exp_low < e_asym < n_exp_high
+        assert n_exp_low < e_no < n_exp_high
+        assert not (n_exp_low < e_sym < n_exp_high)
+
+        # Build the 3-panel figure from the scan_temperature DataFrames, using a dict structure matching
+        # ``_plot_ZGO_3panel``'s expectations:
+        def _build_results_dict(df):
+            out = {}
+            for T, sub in df.groupby("Annealing Temperature (K)"):
+                row = sub.iloc[0]
+                # mimic ``get_fermi_level_and_concentrations(return_annealing_values=True)`` tuple, only
+                # the indices used by ``_plot_ZGO_3panel`` need to be valid:
+                #  [1] -> electrons (quenched), [5] -> electrons @ T_anneal, [7] -> annealing conc df
+                # for [7] we need a df with index "Defect" and a "Total Concentration (cm^-3)" column:
+                anneal_df = (
+                    sub.reset_index()
+                    .rename(columns={"Concentration (cm^-3)": "Total Concentration (cm^-3)"})
+                    .set_index("Defect")
+                )
+                out[int(T)] = (
+                    None,
+                    row["Electrons (cm^-3)"],
+                    None,
+                    None,
+                    None,
+                    row["Electrons @ T_Anneal"],
+                    None,
+                    anneal_df,
+                )
+            return out
+
+        results = {
+            "none": _build_results_dict(df_none),
+            "asymmetric": _build_results_dict(df_asym),
+            "symmetric": _build_results_dict(df_sym),
+        }
+        return _plot_ZGO_3panel(results, n_exp_low, n_exp_high)

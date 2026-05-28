@@ -3595,6 +3595,83 @@ anneal_temperatures = np.arange(200, 1401, 50)
 reduced_anneal_temperatures = np.arange(200, 1401, 100)  # for quicker testing
 
 
+def _plot_ZGO_3panel(results, n_exp_low, n_exp_high):
+    """
+    Build the 3-panel defect / carrier concentration figure for the ZnGa2O4
+    (ZGO) asymmetric band-edge renormalisation example (Claes et al. Fig. S6;
+    https://pubs.acs.org/doi/10.1021/acsami.5c19146).
+
+    ``results`` input should be a dict with keys ``"none"``, ``"asymmetric"``,
+    ``"symmetric"``, each mapping annealing temperature -> tuple returned by
+    ``get_fermi_level_and_concentrations`` (with ``per_charge=True``,
+    ``return_annealing_values=True``, ``skip_formatting=True``), while
+    ``n_exp_low`` and ``n_exp_high`` are used to plot the lower and upper
+    bounds of the experimental carrier concentration range as shaded bands.
+    """
+    plt.style.use(STYLE)
+    anneal_temperatures = np.array(sorted(results["none"].keys()))
+
+    def total_conc(res_dict, defect_name):
+        out = []
+        for T in anneal_temperatures:
+            anneal_df = res_dict[T][7]
+            if defect_name in anneal_df.index.get_level_values("Defect"):
+                # per_charge=True -> Series (use iloc[0]); per_charge=False -> scalar
+                val = anneal_df.loc[defect_name]["Total Concentration (cm^-3)"]
+                out.append(val.iloc[0] if hasattr(val, "iloc") else val)
+            else:
+                out.append(np.nan)
+        return np.array(out)
+
+    defect_styles = {
+        "Ga_Zn": ("tab:purple", r"Ga$_{\mathrm{Zn}}$"),
+        "Zn_Ga": ("tab:red", r"Zn$_{\mathrm{Ga}}$"),
+        "v_Zn": ("tab:blue", r"v$_{\mathrm{Zn}}$"),
+        "v_O": ("tab:green", r"v$_{\mathrm{O}}$"),
+        "v_Ga": ("tab:orange", r"v$_{\mathrm{Ga}}$"),
+    }
+    panels = [
+        ("none", "No renormalization"),
+        ("asymmetric", "Asymmetric renormalization"),
+        ("symmetric", "Symmetric renormalization"),
+    ]
+
+    f, axes = plt.subplots(1, 3, figsize=(7, 2.25), sharey=True, constrained_layout=True)
+    for ax, (key, title) in zip(axes, panels, strict=True):
+        ax.axhspan(n_exp_low, n_exp_high, color="teal", alpha=0.25, label="Expt. $[n]$")
+        n_quench = np.array([results[key][T][1] for T in anneal_temperatures])
+        n_anneal = np.array([results[key][T][5] for T in anneal_temperatures])
+        ax.semilogy(anneal_temperatures, n_quench, ls="--", lw=2, color="teal", label="n")
+        ax.semilogy(
+            anneal_temperatures,
+            n_anneal,
+            ls="--",
+            lw=1.2,
+            color="teal",
+            alpha=0.5,
+            label=r"n (T$_{\mathrm{anneal}}$)",
+        )
+        for d_name, (color, label) in defect_styles.items():
+            ax.semilogy(
+                anneal_temperatures,
+                total_conc(results[key], d_name),
+                marker="o",
+                markersize=4,
+                ls="--",
+                lw=0.8,
+                color=color,
+                label=label,
+            )
+        ax.set_title(title, fontsize=8)
+        ax.set_xlabel("Processing Temperature (K)", fontsize=8)
+        ax.set_xlim(300, 2100)
+    axes[0].set_ylabel("Concentration (cm$^{-3}$)", fontsize=8)
+    axes[0].set_ylim(1e12, 1e22)
+    handles, labels = axes[1].get_legend_handles_labels()
+    axes[-1].legend(handles, labels, bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8, frameon=False)
+    return f
+
+
 class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
