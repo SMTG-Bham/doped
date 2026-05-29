@@ -12,7 +12,7 @@ import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from copy import copy, deepcopy
-from functools import partial, reduce
+from functools import lru_cache, partial, reduce
 from itertools import chain, product
 from operator import methodcaller
 from typing import TYPE_CHECKING, Any, TypeAlias
@@ -405,6 +405,27 @@ def group_defects_by_distance(
 
     Returns:
         dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
+    """
+    clustered = _group_defects_by_distance(  # cached on a hashable (tuple) ``entry_list``
+        tuple(entry_list), dist_tol=dist_tol, symprec=symprec, method=method
+    )  # return a fresh copy so callers can safely mutate the returned dict without corrupting the cache:
+    return {cluster_idx: set(entries) for cluster_idx, entries in clustered.items()}
+
+
+@lru_cache(maxsize=1000)
+def _group_defects_by_distance(
+    entry_list: tuple[DefectEntry, ...],
+    dist_tol: float = 1.5,
+    symprec: float = 0.1,
+    method: str = "average",
+) -> dict[int, set[DefectEntry]]:
+    """
+    Cached implementation of :func:`group_defects_by_distance`.
+
+    Takes a (hashable) ``tuple`` of |DefectEntry| objects so that results can
+    be cached w/``functools.lru_cache``. See :func:`group_defects_by_distance`
+    for details. The returned dict should not be mutated directly (it is the
+    cached object); use the public wrapper, which returns a copy.
     """
     reference_entry = entry_list[0]
     bulk_structure = reference_entry.defect.structure
@@ -960,7 +981,7 @@ class DefectThermodynamics(MSONable):
         else:
             self.bulk_formula = None
 
-    def _sort_parse_and_check_entries(self):
+    def _sort_parse_and_check_entries(self) -> None:
         """
         Sort the defect entries, parse the transition levels, and check the
         compatibility of the bulk entries (if ``self.check_compatibility`` is
@@ -1465,7 +1486,7 @@ class DefectThermodynamics(MSONable):
                     f"{defect_entry.name}: \n{concatenated_warnings}"
                 )
 
-    def _get_bulk_comp_and_energy_per_atom_mode_values(self):
+    def _get_bulk_comp_and_energy_per_atom_mode_values(self) -> tuple[Composition, float]:
         """
         Helper function to get the mode values of the bulk composition and
         energy per atom for the defect entries in this |DefectThermodynamics|
@@ -2603,15 +2624,15 @@ class DefectThermodynamics(MSONable):
         Returns:
             New |DefectThermodynamics| object with pruned defect entries.
         """
-        if unstable_entries not in [False, True, "not shallow"]:  # check unstable_entries input options
+        if unstable_entries is True:  # all
+            return self
+
+        if unstable_entries not in [False, "not shallow"]:  # check unstable_entries input options
             raise ValueError(
                 f"`unstable_entries` option must be either True, False or 'not shallow' -- not "
                 f"{unstable_entries}. See docs/docstrings for more info."
             )
-        if unstable_entries is True:  # all
-            return self
 
-        # prune to chosen defects
         # determine tolerances:
         shallow_tol = (
             shallow_charge_stability_tolerance
@@ -2643,10 +2664,8 @@ class DefectThermodynamics(MSONable):
         defect_thermo_dict.update(kwargs)
         return DefectThermodynamics.from_dict(defect_thermo_dict)
 
-    # TODO: Add option to plot formation energies at the centroid of the chemical stability region? And
-    #  make this the default if no chempots are specified? Or better default to plot both the most (
-    #  most-electronegative-)anion-rich and the (most-electropositive-)cation-rich chempot limits?
-    # TODO: Likewise, add example showing how to plot a metastable state (above the ground state)
+    # TODO: Default to plot both the most (most-electronegative-)anion-rich and the
+    # (most-electropositive-)cation-rich chempot limits? (Rather than all limits)
     # TODO: Should have similar colours for similar defect types, an option to just show amalgamated
     #  lowest energy charge states for each _defect type_) -- equivalent to setting the dist_tol to
     #  infinity (but should be easier to just do here by taking the short defect name). NaP is an example
@@ -3112,10 +3131,7 @@ class DefectThermodynamics(MSONable):
                 ``charge_stability_tolerance``); see
                 ``prune_to_stable_entries`` for more info.
         """
-        if unstable_entries is not True:  # prune unstable/shallow entries, then delegate
-            return self.prune_to_stable_entries(
-                unstable_entries=unstable_entries, **kwargs
-            ).get_transition_levels(all=all, format_charges=format_charges, unstable_entries=True)
+        tl_thermo = self.prune_to_stable_entries(unstable_entries=unstable_entries, **kwargs)
 
         # create a dataframe from the transition level map, with defect name, transition level charges and
         # TL position in eV from the VBM:
@@ -3130,7 +3146,7 @@ class DefectThermodynamics(MSONable):
                 f"{'+' if j > 0 else ''}{j}{'*' if j_meta else ''})"
             )
 
-        for defect_name, transition_level_dict in self.transition_level_map.items():
+        for defect_name, transition_level_dict in tl_thermo.transition_level_map.items():
             if not transition_level_dict:
                 transition_level_map_list.append(  # add defects with no TL to dataframe as "None"
                     {
@@ -3151,7 +3167,7 @@ class DefectThermodynamics(MSONable):
                         "Defect": defect_name,
                         "Charges": _TL_naming_func(transition_level_charges),
                         "eV from VBM": round(TL, 3),
-                        "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                        "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
                         "-q_i": -transition_level_charges[0],  # for sorting
                         "-q_j": -transition_level_charges[1],  # for sorting
                     }
@@ -3160,17 +3176,19 @@ class DefectThermodynamics(MSONable):
 
         # now get metastable TLs
         if all:
-            for defect_name_wout_charge, grouped_defect_entries in self.all_entries.items():
+            for defect_name_wout_charge, grouped_defect_entries in tl_thermo.all_entries.items():
                 sorted_defect_entries = sorted(
                     grouped_defect_entries, key=lambda x: x.charge_state
                 )  # sort by charge
                 for i, j in product(sorted_defect_entries, repeat=2):
                     if i.charge_state - j.charge_state == 1:
                         # take mean VBM, ofc should be the same, but allow for small differences
-                        mean_VBM = np.mean([x.calculation_metadata.get("vbm", self.vbm) for x in [i, j]])
+                        mean_VBM = np.mean(
+                            [x.calculation_metadata.get("vbm", tl_thermo.vbm) for x in [i, j]]
+                        )
                         TL = j.get_ediff() - i.get_ediff() - mean_VBM
-                        i_meta = not any(i == y for y in self.all_stable_entries)
-                        j_meta = not any(j == y for y in self.all_stable_entries)
+                        i_meta = not any(i == y for y in tl_thermo.all_stable_entries)
+                        j_meta = not any(j == y for y in tl_thermo.all_stable_entries)
                         transition_level_map_list.append(
                             {
                                 "Defect": defect_name_wout_charge,
@@ -3178,7 +3196,9 @@ class DefectThermodynamics(MSONable):
                                     [i.charge_state, j.charge_state], i_meta=i_meta, j_meta=j_meta
                                 ),
                                 "eV from VBM": round(TL, 3),
-                                "In Band Gap?": (TL > 0) and (self.band_gap > TL),
+                                "In Band Gap?": (TL > 0)
+                                and tl_thermo.band_gap
+                                and (tl_thermo.band_gap > TL),
                                 "N(Metastable)": [i_meta, j_meta].count(True),
                                 "-q_i": -i.charge_state,  # for sorting
                                 "-q_j": -j.charge_state,  # for sorting
@@ -3194,7 +3214,7 @@ class DefectThermodynamics(MSONable):
             tl_df["N(Metastable)"] = 0
 
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
-        tl_df["Defect Appearance Order"] = tl_df["Defect"].map(self._map_sort_func)
+        tl_df["Defect Appearance Order"] = tl_df["Defect"].map(tl_thermo._map_sort_func)
         tl_df = tl_df.sort_values(
             by=["Defect Appearance Order", "Defect", "-q_i", "-q_j", "N(Metastable)", "eV from VBM"]
         )
@@ -3246,14 +3266,10 @@ class DefectThermodynamics(MSONable):
                 ``charge_stability_tolerance``); see
                 ``prune_to_stable_entries`` for more info.
         """
-        if unstable_entries is not True:  # prune unstable/shallow entries, then delegate
-            self.prune_to_stable_entries(
-                unstable_entries=unstable_entries, **kwargs
-            ).print_transition_levels(all=all, unstable_entries=True)
-            return
+        tl_thermo = self.prune_to_stable_entries(unstable_entries=unstable_entries, **kwargs)
 
         if not all:
-            for defect_name, tl_info in self.transition_level_map.items():
+            for defect_name, tl_info in tl_thermo.transition_level_map.items():
                 bold_print(f"Defect: {defect_name}")
                 for tl_efermi, chargeset in tl_info.items():
                     print(
@@ -3265,7 +3281,7 @@ class DefectThermodynamics(MSONable):
 
         else:
             # any pruning already applied above, so don't re-prune (unstable_entries=True):
-            all_TLs_df = self.get_transition_levels(all=True, unstable_entries=True)
+            all_TLs_df = tl_thermo.get_transition_levels(all=True, unstable_entries=True)
             if all_TLs_df is None:
                 return
             for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
