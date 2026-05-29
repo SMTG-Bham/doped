@@ -51,7 +51,7 @@ from doped.utils.parsing import (
     get_nelect_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot
+from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot, transition_level_diagram
 from doped.utils.symmetry import cluster_coords, get_all_equiv_sites, get_primitive_structure, get_sga
 
 if TYPE_CHECKING:
@@ -696,6 +696,13 @@ class DefectThermodynamics(MSONable):
     states upon quenching.
     """
 
+    # attributes set in ``_parse_transition_levels`` (called from ``__init__``); annotated here so their
+    # types can be determined when accessed externally:
+    transition_level_map: dict[str, dict[float, list[int]]]
+    all_entries: dict[str, list[DefectEntry]]
+    stable_entries: dict[str, list[DefectEntry]]
+    defect_charge_map: dict[str, list[int]]
+
     def __init__(
         self,
         defect_entries: dict[str, DefectEntry] | list[DefectEntry],
@@ -1176,10 +1183,10 @@ class DefectThermodynamics(MSONable):
         max_y_lim = max(midgap_formation_energies) + 30
         limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]  # type: ignore
 
-        stable_entries: dict = {}
-        defect_charge_map: dict = {}
-        transition_level_map: dict = {}
-        all_entries: dict = {}  # similar format to stable_entries, but with all (incl unstable) entries
+        stable_entries: dict[str, list[DefectEntry]] = {}
+        defect_charge_map: dict[str, list[int]] = {}
+        transition_level_map: dict[str, dict[float, list[int]]] = {}
+        all_entries: dict[str, list[DefectEntry]] = {}  # same format as stable_entries, but incl unstable
 
         try:
             self.clustered_defect_entries: dict[int, set[DefectEntry]] | dict[str, set[DefectEntry]] = (
@@ -2906,6 +2913,133 @@ class DefectThermodynamics(MSONable):
                 figs.append(fig)
 
             return figs[0] if len(figs) == 1 else figs
+
+    def plot_transition_levels(
+        self,
+        all: bool | str = "faded",
+        defect_subset: list[str] | str | None = None,
+        unstable_entries: bool | str = "not shallow",
+        include_site_info: bool = False,
+        ylim: tuple | None = None,
+        show_charge_labels: bool = True,
+        show_band_labels: bool | None = None,
+        label_fontsize: float | None = None,
+        column_width: float = 0.4,
+        figsize: tuple | None = None,
+        style_file: PathLike | None = None,
+        filename: PathLike | None = None,
+        **kwargs,
+    ) -> Figure:
+        r"""
+        Produce a vertical transition level diagram (a.k.a. defect charge
+        transition level diagram), with one column per defect and short
+        horizontal lines marking each charge transition level within the host
+        band gap (labelled with the corresponding charge state transition).
+
+        Note that the band edge positions are taken from ``self.vbm`` and
+        ``self.band_gap``, which are parsed from the `bulk supercell
+        calculation` by default, unless ``bulk_band_gap_vr`` is set during
+        defect parsing. The VBM lies at 0 eV (blue shaded region), and the CBM
+        lies at ``self.band_gap`` (orange shaded region).
+
+        Metastable charge states are denoted with a ``*`` in the charge
+        transition labels.
+
+        Args:
+            all (bool, str):
+                Controls inclusion of single-electron transition levels
+                involving metastable defect charge states. Allowed values:
+
+                - ``"faded"`` (default): show all single-electron TLs, with
+                  metastable-containing TLs drawn as faded grey lines
+                  `without` labels (keeps the plot uncluttered).
+                - ``"faded_labels"``: same as ``"faded"`` but `with` labels
+                  drawn for the faded metastable TLs too.
+                - ``True``: show all single-electron TLs at full strength,
+                  all labelled.
+                - ``False``: show only the thermodynamic ground-state
+                  transition levels (i.e. those visible on the defect
+                  formation energy diagram).
+            defect_subset (list[str], str):
+                If provided, only defects whose name contains at least one of
+                the given substrings are plotted (e.g. ``["v_", "Te_Cd"]``
+                would keep all vacancies plus ``Te_Cd``). A bare string is
+                treated as a single-element list. (Default: ``None`` -- all
+                defects)
+            unstable_entries (bool, str):
+                Controls the inclusion of unstable/shallow defect states, as in
+                ``DefectThermodynamics.plot()``; allowed values are ``True``,
+                ``False`` or ``"not shallow"``. If ``"not shallow"`` (default),
+                defect entries which are predicted to be shallow (perturbed
+                host) states according to eigenvalue analysis and only stable
+                for Fermi levels within a small window to a band edge
+                (``shallow_stability_tol``) are omitted. If ``False``, `all`
+                defects which are not stable for any Fermi level in the band
+                gap are `also` omitted. If ``True``, defect entries are not
+                pruned based on stability / shallow classification. See
+                ``prune_to_stable_entries`` for more info.
+            include_site_info (bool):
+                Whether to include site info in defect names in the column
+                headers (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``).
+                Defaults to ``False``.
+            ylim (tuple):
+                Energy axis limits in eV (relative to ``self.vbm``). Defaults
+                to ``(-0.05 * band_gap, 1.05 * band_gap)``.
+            show_charge_labels (bool):
+                Whether to label each transition level with its charge states
+                (e.g. ``"(+1/0)"``). Defaults to ``True``.
+            show_band_labels (bool):
+                Whether to draw the "VBM" and "CBM" labels in the blue/orange
+                band-edge shaded zones. If ``None`` (default), they are shown
+                only if they would not overlap any transition level label
+                (right side preferred, falling back to the left); if both
+                sides would clash they are hidden. ``True`` forces them on
+                the right; ``False`` hides them.
+            label_fontsize (float):
+                Font size for the charge transition labels. Defaults to ~70%
+                of the current ``matplotlib`` ``font.size`` rcParam.
+            column_width (float):
+                Width (in axes units) of the horizontal line segments inside
+                each defect column. Defaults to ``0.4``.
+            figsize (tuple):
+                ``(width, height)`` of the figure in inches. Defaults to a
+                width that scales with the number of defects.
+            style_file (PathLike):
+                Path to a ``mplstyle`` file to use for the plot. If ``None``
+                (default), uses the default doped style (from
+                ``doped/utils/doped.mplstyle``).
+            filename (PathLike):
+                If set, save the figure to this path. (Default: None)
+            **kwargs:
+                Additional keyword arguments controlling the stability window
+                tolerances when pruning unstable/shallow entries (e.g.
+                ``shallow_charge_stability_tolerance`` or
+                ``charge_stability_tolerance``); see
+                ``prune_to_stable_entries`` for more info.
+
+        Returns:
+            ``matplotlib`` ``Figure`` object.
+        """
+        from shakenbreak.plotting import _install_custom_font  # avoid circular import
+
+        _install_custom_font()
+
+        style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
+        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
+        with plt.style.context(style_file):
+            return transition_level_diagram(
+                self.prune_to_stable_entries(unstable_entries=unstable_entries, **kwargs),
+                all_TLs=all,
+                defect_subset=defect_subset,
+                include_site_info=include_site_info,
+                ylim=ylim,
+                show_charge_labels=show_charge_labels,
+                show_band_labels=show_band_labels,
+                label_fontsize=label_fontsize,
+                column_width=column_width,
+                figsize=figsize,
+                filename=filename,
+            )
 
     def get_transition_levels(
         self,

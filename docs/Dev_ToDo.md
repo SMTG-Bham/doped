@@ -4,7 +4,6 @@
 - Parsing
 
 ## Post-processing / analysis / plotting
-- Vertical TL / defect energy level diagram plots (as in Xinwei papers etc)
 - Better automatic defect formation energy plot colour handling (set similar colours for similar defects (types and inequivalent sites)) – and more customisable?
   - `aide` labelling of defect species in formation energy plots? See `labellines` package for this (as used in our chempot heatmap plotting)
   - Option for degeneracy-weighted ('reduced') formation energy diagrams, similar to reduced energies in SOD. See Slack discussion and CdTe pyscfermi notebooks. Would be easy to implement if auto degeneracy handling implemented.
@@ -50,3 +49,4 @@
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
 
 delta_VBM/CBM in notebooks. say it can be important to not assume symmetric shifts, esp with differences in eff masses (though note Ganose & Ling found the symmetric shift was fine??), and link to these papers
+Similarly, tests and examples in notebooks for TL plotting (CdTe, Se)
