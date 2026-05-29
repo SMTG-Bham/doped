@@ -1537,49 +1537,41 @@ def _optimise_side_placements(
         (p[5], p[6], p[0], p[1]) for p in placed_inline if p[5] is not None and p[6] is not None
     ]
 
-    def position_cost(pos: tuple, others: list[tuple]) -> int:
-        """
-        Cost of placing this label, given the labels already placed in this
-        assignment.
-        """
+    # Precompute the box and connector geometry for every candidate, so the search below works
+    # purely with cached coordinates and integer cost tables, rather than recomputing label /
+    # connector geometry per combination (the previous bottleneck, dominated by millions of
+    # ``_segment_intersects_rect`` calls). The cost decomposes into a per-candidate "unary" term
+    # (overlaps with inline labels / TL lines, independent of the other side picks) and a pairwise
+    # term between two side picks; both are tabulated once up front here.
+    counts = [len(c) for c in side_candidates_per_tl]
+    cand_boxes = [[lbl_box(c) for c in cands] for cands in side_candidates_per_tl]
+    cand_conns = [[conn_endpoints(c) for c in cands] for cands in side_candidates_per_tl]
+
+    def _unary_cost(i: int, a: int) -> int:
         cost = 0
-        box = lbl_box(pos)
-        # overlap with inline labels:
-        for ibox in inline_boxes:
+        box = cand_boxes[i][a]
+        for ibox in inline_boxes:  # overlap with inline labels
             if boxes_overlap(box, ibox):
                 cost += 10
-        # overlap with other side labels in this assignment:
-        for other in others:
-            if boxes_overlap(box, lbl_box(other)):
-                cost += 10
-        # overlap with TL lines in the column:
-        if box[1] > line_left and box[0] < line_right:
+        if box[1] > line_left and box[0] < line_right:  # overlap with TL lines in the column
             for ly in line_y_positions:
                 if box[2] - line_eps <= ly <= box[3] + line_eps:
                     cost += 5
                     break
-        # connector through other labels / TL lines:
-        endpoints = conn_endpoints(pos)
+        endpoints = cand_conns[i][a]
         if endpoints is not None:
             cx0, cy0, cx1, cy1 = endpoints
-            # against inline label boxes:
-            for ibox in inline_boxes:
+            for ibox in inline_boxes:  # connector through inline label boxes
                 if _segment_intersects_rect(cx0, cy0, cx1, cy1, *ibox):
                     cost += 4
-            # against other side labels' boxes:
-            for other in others:
-                if _segment_intersects_rect(cx0, cy0, cx1, cy1, *lbl_box(other)):
-                    cost += 4
-            # against TL lines (excluding source):
-            for ly in line_y_positions:
+            for ly in line_y_positions:  # connector through TL lines (excluding source)
                 if abs(ly - cy0) < line_eps:
                     continue
                 if _segment_intersects_rect(
                     cx0, cy0, cx1, cy1, line_left, line_right, ly - line_eps, ly + line_eps
                 ):
                     cost += 3
-            # against inline labels' connectors:
-            for cox0, coy0, cox1, coy1 in inline_connectors:
+            for cox0, coy0, cox1, coy1 in inline_connectors:  # connector through inline connectors
                 if _segment_intersects_rect(
                     cx0,
                     cy0,
@@ -1593,14 +1585,31 @@ def _optimise_side_placements(
                     cost += 2
         return cost
 
-    def total_cost(assignment: list[tuple]) -> int:
-        cost = 0
-        for k, pos in enumerate(assignment):
-            cost += position_cost(pos, assignment[:k])
+    unary = [[_unary_cost(i, a) for a in range(counts[i])] for i in range(n)]
+
+    def _pair_cost(i: int, a: int, j: int, b: int) -> int:
+        """
+        Pairwise cost between side pick ``a`` of TL ``i`` and pick ``b`` of TL
+        ``j`` (with ``i < j``): box-box overlap plus the higher-index pick's
+        connector crossing the lower-index pick's box (matching the original
+        ``total_cost`` accumulation order, where ``position_cost`` only checks
+        the later label's connector against earlier labels' boxes).
+        """
+        box_i = cand_boxes[i][a]
+        cost = 10 if boxes_overlap(box_i, cand_boxes[j][b]) else 0
+        conn_j = cand_conns[j][b]
+        if conn_j is not None and _segment_intersects_rect(*conn_j, *box_i):
+            cost += 4
         return cost
 
+    # tabulate pairwise costs for all i < j as ``pairwise[(i, j)][a][b]``:
+    pair_items = [
+        ((i, j), [[_pair_cost(i, a, j, b) for b in range(counts[j])] for a in range(counts[i])])
+        for i in range(n)
+        for j in range(i + 1, n)
+    ]
+
     # search space size:
-    counts = [len(c) for c in side_candidates_per_tl]
     space = 1
     for c in counts:
         space *= c
@@ -1608,50 +1617,63 @@ def _optimise_side_placements(
             break
 
     if space <= max_brute_force_combos:
-        # brute force: enumerate all combinations
+        # brute force: enumerate all index combinations, summing the precomputed cost tables.
         best_cost = float("inf")
-        best_assignment: list[tuple] = []
+        best_indices: tuple[int, ...] = tuple([0] * n)
         for indices in product(*(range(c) for c in counts)):
-            assignment = [side_candidates_per_tl[k][indices[k]] for k in range(n)]
-            cost = total_cost(assignment)
+            cost = sum(unary[i][indices[i]] for i in range(n))
+            for (i, j), mat in pair_items:
+                cost += mat[indices[i]][indices[j]]
             if cost < best_cost:
                 best_cost = cost
-                best_assignment = assignment
+                best_indices = indices
                 if cost == 0:
                     break
-        return best_assignment
+        return [side_candidates_per_tl[k][best_indices[k]] for k in range(n)]
 
-    # greedy first-pick: for each TL in turn, pick its lowest-cost candidate given prior picks.
-    assignment_list: list[tuple] = []
-    for k in range(n):
+    # greedy + hill-climb fallback for large spaces, using the precomputed geometry. The cost of
+    # giving TL ``i`` pick ``a`` given the other chosen picks mirrors the original
+    # ``position_cost``: its unary cost plus, for every other chosen TL ``j``, their box-box
+    # overlap and this label's connector crossing the other's box.
+    def _conditional_cost(i: int, a: int, picks: list[int]) -> int:
+        cost = unary[i][a]
+        box_i = cand_boxes[i][a]
+        conn_i = cand_conns[i][a]
+        for j, b in enumerate(picks):
+            if b < 0 or j == i:
+                continue
+            if boxes_overlap(box_i, cand_boxes[j][b]):
+                cost += 10
+            if conn_i is not None and _segment_intersects_rect(*conn_i, *cand_boxes[j][b]):
+                cost += 4
+        return cost
+
+    picks: list[int] = [-1] * n  # -1 == not yet chosen
+    for i in range(n):  # greedy first-pick: lowest-cost candidate given prior picks
         best_idx, best_cost = 0, float("inf")
-        for idx, cand in enumerate(side_candidates_per_tl[k]):
-            c = position_cost(cand, assignment_list)
+        for a in range(counts[i]):
+            c = _conditional_cost(i, a, picks)
             if c < best_cost:
-                best_cost, best_idx = c, idx
-        assignment_list.append(side_candidates_per_tl[k][best_idx])
+                best_cost, best_idx = c, a
+        picks[i] = best_idx
 
-    # hill-climbing refinement: try swapping each TL's choice to a lower-cost alternative,
-    # using the current full assignment as context. Repeat until no improvement.
-    for _ in range(5):
+    for _ in range(5):  # hill-climbing refinement: swap to a lower-cost alternative until stable
         improved = False
-        for k in range(n):
-            others = [p for j, p in enumerate(assignment_list) if j != k]
-            current_cost = position_cost(assignment_list[k], others)
-            best_alt_idx, best_alt_cost = None, current_cost
-            for idx, cand in enumerate(side_candidates_per_tl[k]):
-                if cand == assignment_list[k]:
+        for i in range(n):
+            best_alt, best_alt_cost = None, _conditional_cost(i, picks[i], picks)
+            for a in range(counts[i]):
+                if a == picks[i]:
                     continue
-                c = position_cost(cand, others)
+                c = _conditional_cost(i, a, picks)
                 if c < best_alt_cost:
-                    best_alt_cost, best_alt_idx = c, idx
-            if best_alt_idx is not None:
-                assignment_list[k] = side_candidates_per_tl[k][best_alt_idx]
+                    best_alt_cost, best_alt = c, a
+            if best_alt is not None:
+                picks[i] = best_alt
                 improved = True
         if not improved:
             break
 
-    return assignment_list
+    return [side_candidates_per_tl[k][picks[k]] for k in range(n)]
 
 
 def _place_labels_for_column(
