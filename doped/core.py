@@ -5,6 +5,7 @@ Core functions and classes for defects in doped.
 import collections
 import contextlib
 import warnings
+from functools import cached_property
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -797,6 +798,7 @@ class DefectEntry(thermo.DefectEntry):
             "vbm_info": vbm_info,
             "cbm_info": cbm_info,
         }
+        self.__dict__.pop("is_shallow", None)  # invalidate cached ``is_shallow`` (now (re)computable)
 
         if clear_attributes:
             # first check if spin degeneracy has been parsed (needs projected magnetization for SOC/NCL
@@ -1516,21 +1518,26 @@ class DefectEntry(thermo.DefectEntry):
     def __eq__(self, other) -> bool:
         """
         Determine whether two |DefectEntry| objects are equal, by comparing
-        ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy`` and
-        ``self.corrections`` (i.e. name and energy match).
+        ``self.name``, ``self.sc_entry_energy``, ``self.bulk_entry_energy``,
+        ``self.corrections`` and ``self.defect`` (i.e. name, energy,
+        corrections and defect match, to determine equality).
+
+        Much faster than the raw ``pymatgen-analysis-defects`` data-class
+        version, using cheap early breaking and only reaching expensive defect
+        (structure) comparison when absolutely necessary.
         """
-        return (
+        return self is other or (
             self.name == other.name
             and self.sc_entry_energy == other.sc_entry_energy
             and self.bulk_entry_energy == other.bulk_entry_energy
             and self.corrections == other.corrections
+            and self.defect == other.defect
         )
 
     def __hash__(self):
         """
         Hash the |DefectEntry| object by its name, supercell energy, bulk
-        energy and corrections (i.e. defined by name and energy, as in the
-        ``__eq__`` method).
+        energy, corrections and underlying |Defect|.
         """
         return hash(
             (
@@ -1538,6 +1545,7 @@ class DefectEntry(thermo.DefectEntry):
                 self.sc_entry_energy,
                 self.bulk_entry_energy,
                 tuple(sorted(self.corrections.items())),
+                hash(self.defect),
             )
         )
 
@@ -1583,7 +1591,7 @@ class DefectEntry(thermo.DefectEntry):
 
         return self._sc_entry_energy
 
-    @property
+    @cached_property  # efficiency, particularly w/``prune_to_stable_entries``
     def is_shallow(self) -> bool:
         """
         Whether the |DefectEntry| is determined to be a shallow (perturbed
@@ -2815,12 +2823,16 @@ class Defect(core.Defect):
         if self.defect_type != other.defect_type:
             return False
 
-        return StructureMatcher_scan_stol(
-            self.defect_structure,
-            other.defect_structure,
-            func_name="fit",
-            max_stol=0.2,
-            comparator=ElementComparator(),
+        return (
+            self is other
+            or hash(self) == hash(other)  # hash match sufficient for equality (-> same site and structure)
+            or StructureMatcher_scan_stol(
+                self.defect_structure,
+                other.defect_structure,
+                func_name="fit",
+                max_stol=0.2,
+                comparator=ElementComparator(),
+            )
         )
 
     @property
@@ -2882,9 +2894,19 @@ class Defect(core.Defect):
 
     def __hash__(self):
         """
-        Hash the |Defect| object, based on the defect name and site.
+        Hash the |Defect| object, based on the defect name, site and host
+        structure.
+
+        Uses the ``doped`` |Structure| hash (from ``doped.utils.efficiency``)
+        for efficient hashing of the host structure.
         """
-        return hash((self.name, *tuple(np.round(self.site.frac_coords, 3))))
+        return hash(
+            (
+                self.name,
+                *tuple(np.round(self.site.frac_coords, 3)),
+                hash(self.structure),
+            )
+        )
 
 
 def remove_site_oxi_state(site: PeriodicSite):
