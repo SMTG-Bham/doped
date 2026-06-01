@@ -3061,6 +3061,40 @@ class DefectThermodynamics(MSONable):
                 filename=filename,
             )
 
+    def _get_single_electron_tls(self) -> dict[str, list[tuple[float, tuple[int, int], bool, bool]]]:
+        """
+        Compute all single-electron charge transition levels for each defect.
+
+        Returns a ``{defect_name: [(TL_eV, (q_i, q_j), i_meta, j_meta), ...]}``
+        dict where each entry corresponds to a transition between consecutive
+        charge states (i.e. single-electron charge transfer TL) ``q_i`` and
+        ``q_j = q_i - 1`` (so ``q_i`` is always the more positive charge
+        state), ``TL_eV`` is the (full-precision) transition level position in
+        eV relative to the VBM (``self.vbm``), and ``i_meta``/``j_meta``
+        indicate whether the upper/lower charge state is metastable (i.e. not
+        in ``self.all_stable_entries``).
+
+        Shared by :func:`get_transition_levels` and transition level plotting
+        routines (:func:`~doped.utils.plotting._get_transition_level_data`) to
+        avoid duplicating the single-electron TL computation.
+        """
+        stable_entries = self.all_stable_entries
+        single_electron_tls: dict[str, list[tuple[float, tuple[int, int], bool, bool]]] = {}
+        for defect_name, grouped_defect_entries in self.all_entries.items():
+            sorted_entries = sorted(grouped_defect_entries, key=lambda x: x.charge_state)
+            tls: list[tuple[float, tuple[int, int], bool, bool]] = []
+            for i, j in product(sorted_entries, repeat=2):
+                if i.charge_state - j.charge_state == 1:
+                    mean_VBM = float(  # take mean VBM, should be the same, but allow for small differences
+                        np.mean([x.calculation_metadata.get("vbm", self.vbm) for x in [i, j]])
+                    )
+                    TL = j.get_ediff() - i.get_ediff() - mean_VBM
+                    i_meta = not any(i == y for y in stable_entries)
+                    j_meta = not any(j == y for y in stable_entries)
+                    tls.append((float(TL), (i.charge_state, j.charge_state), i_meta, j_meta))
+            single_electron_tls[defect_name] = tls
+        return single_electron_tls
+
     def get_transition_levels(
         self,
         all: bool = False,
@@ -3177,34 +3211,19 @@ class DefectThermodynamics(MSONable):
 
         # now get metastable TLs
         if all:
-            for defect_name_wout_charge, grouped_defect_entries in tl_thermo.all_entries.items():
-                sorted_defect_entries = sorted(
-                    grouped_defect_entries, key=lambda x: x.charge_state
-                )  # sort by charge
-                for i, j in product(sorted_defect_entries, repeat=2):
-                    if i.charge_state - j.charge_state == 1:
-                        # take mean VBM, ofc should be the same, but allow for small differences
-                        mean_VBM = np.mean(
-                            [x.calculation_metadata.get("vbm", tl_thermo.vbm) for x in [i, j]]
-                        )
-                        TL = j.get_ediff() - i.get_ediff() - mean_VBM
-                        i_meta = not any(i == y for y in tl_thermo.all_stable_entries)
-                        j_meta = not any(j == y for y in tl_thermo.all_stable_entries)
-                        transition_level_map_list.append(
-                            {
-                                "Defect": defect_name_wout_charge,
-                                "Charges": _TL_naming_func(
-                                    [i.charge_state, j.charge_state], i_meta=i_meta, j_meta=j_meta
-                                ),
-                                "eV from VBM": round(TL, 3),
-                                "In Band Gap?": (TL > 0)
-                                and tl_thermo.band_gap
-                                and (tl_thermo.band_gap > TL),
-                                "N(Metastable)": [i_meta, j_meta].count(True),
-                                "-q_i": -i.charge_state,  # for sorting
-                                "-q_j": -j.charge_state,  # for sorting
-                            }
-                        )
+            for defect_name_wout_charge, tls in tl_thermo._get_single_electron_tls().items():
+                for TL, (q_i, q_j), i_meta, j_meta in tls:
+                    transition_level_map_list.append(
+                        {
+                            "Defect": defect_name_wout_charge,
+                            "Charges": _TL_naming_func([q_i, q_j], i_meta=i_meta, j_meta=j_meta),
+                            "eV from VBM": round(TL, 3),
+                            "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
+                            "N(Metastable)": [i_meta, j_meta].count(True),
+                            "-q_i": -q_i,  # for sorting
+                            "-q_j": -q_j,  # for sorting
+                        }
+                    )
 
         if not transition_level_map_list:
             warnings.warn("No transition levels found for chosen parameters!")

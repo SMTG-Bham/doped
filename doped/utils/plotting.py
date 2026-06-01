@@ -1508,7 +1508,6 @@ def plot_chemical_potential_table(
     return tab
 
 
-# TODO: Reduce redundancy; use get_TLs functions from thermodynamics, same for TL naming etc?
 # TODO: General code condensing, simplification, readability, review with Codex
 # TODO: General code cleanup for this module if possible; typing etc. Review with Claude and Codex
 
@@ -1518,14 +1517,14 @@ def _get_transition_level_data(
     all_TLs: bool | str = False,
 ):
     """
-    Collect transition level data for ``transition_level_diagram``.
+    Collect transition level data for :func:`transition_level_diagram`.
 
-    Returns a dict
-    ``{defect_name: [(TL_eV, charges, i_meta, j_meta, faded), ...]}`` sorted
-    by TL energy, where ``charges = (q_upper, q_lower)`` (more positive then
-    more negative charge state), ``i_meta``/``j_meta`` indicate whether the
-    corresponding charge state is metastable, and ``faded`` is ``True`` if
-    the TL should be drawn faded (only used when ``all_TLs == "faded"``).
+    Returns a ``{defect_name: [(TL_eV, charges, i_meta, j_meta, faded), ...]}``
+    dict, sorted by TL energy, where ``charges = (q_upper, q_lower)`` (more
+    positive, then more negative charge state), ``i_meta``/``j_meta`` indicate
+    whether the corresponding charge state is metastable, and ``faded`` is
+    ``True`` if the TL should be drawn faded (only used when
+    ``all_TLs == "faded"``).
 
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
@@ -1555,33 +1554,18 @@ def _get_transition_level_data(
         return gs_per_defect
 
     # all single-electron TLs (consecutive charge pairs with diff=1):
-    stable_entries_list = defect_thermodynamics.all_stable_entries
-    se_per_defect: dict[str, list[tuple]] = {}
-    for defect_name, grouped_defect_entries in defect_thermodynamics.all_entries.items():
-        se_per_defect[defect_name] = []
-        sorted_entries = sorted(grouped_defect_entries, key=lambda x: x.charge_state)
-        for i, j in product(sorted_entries, repeat=2):
-            if i.charge_state - j.charge_state == 1:
-                mean_VBM = float(
-                    np.mean([x.calculation_metadata.get("vbm", defect_thermodynamics.vbm) for x in [i, j]])
-                )
-                TL = j.get_ediff() - i.get_ediff() - mean_VBM
-                i_meta = not any(i == y for y in stable_entries_list)
-                j_meta = not any(j == y for y in stable_entries_list)
-                se_per_defect[defect_name].append(
-                    (float(TL), (i.charge_state, j.charge_state), i_meta, j_meta)
-                )
+    single_electron_TLs: dict[str, list[tuple]] = defect_thermodynamics._get_single_electron_tls()
 
     if all_TLs is True:
         out = {}
         # iterate in the order defined by transition_level_map (which respects defect
         # appearance order); add any defects only in all_entries afterwards.
         ordered_names = list(defect_thermodynamics.transition_level_map.keys())
-        for name in se_per_defect:
+        for name in single_electron_TLs:
             if name not in ordered_names:
                 ordered_names.append(name)
         for name in ordered_names:
-            tls = [(*tl, False) for tl in se_per_defect.get(name, [])]
+            tls = [(*tl, False) for tl in single_electron_TLs.get(name, [])]
             tls.sort(key=lambda x: x[0])
             out[name] = tls
         return out
@@ -1589,12 +1573,12 @@ def _get_transition_level_data(
     # all_TLs in {"faded", "faded_labels"}: GS TLs solid + metastable single-electron faded
     out = {}
     ordered_names = list(defect_thermodynamics.transition_level_map.keys())
-    for name in se_per_defect:
+    for name in single_electron_TLs:
         if name not in ordered_names:
             ordered_names.append(name)
     for name in ordered_names:
         merged = list(gs_per_defect.get(name, []))  # GS, not faded
-        for tl_eV, charges, i_meta, j_meta in se_per_defect.get(name, []):
+        for tl_eV, charges, i_meta, j_meta in single_electron_TLs.get(name, []):
             if i_meta or j_meta:
                 merged.append((tl_eV, charges, i_meta, j_meta, True))
         merged.sort(key=lambda x: x[0])

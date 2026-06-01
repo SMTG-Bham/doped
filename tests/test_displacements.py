@@ -286,13 +286,15 @@ class DefectDisplacementsTestCase(unittest.TestCase):
     @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements.png", style=STYLE)
     def test_plot_site_displacements_ytos_relative_to_defect(self):
         return self.F_i_m1_defect_entry.plot_site_displacements(
-            use_plotly=False, relative_to_defect=True  # default
+            use_plotly=False,
+            relative_to_defect=True,  # default
         )
 
     @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements_total_disp.png", style=STYLE)
     def test_plot_site_displacements_ytos_relative_to_defect_total_disp(self):
         return self.F_i_m1_defect_entry.plot_site_displacements(
-            use_plotly=False, relative_to_defect=False  # total displacements
+            use_plotly=False,
+            relative_to_defect=False,  # total displacements
         )
 
     @custom_mpl_image_compare(filename="YTOS_Int_F_-1_site_displacements_along_111.png", style=STYLE)

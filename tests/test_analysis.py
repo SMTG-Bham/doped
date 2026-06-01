@@ -155,8 +155,7 @@ def check_DefectsParser(dp, skip_corrections=False, **thermo_kwargs):
         i in dp.__repr__()
         for i in [
             "doped DefectsParser for bulk composition",
-            f"with {len(dp.defect_dict)} parsed defect entries in self.defect_dict. "
-            "Available attributes",
+            f"with {len(dp.defect_dict)} parsed defect entries in self.defect_dict. Available attributes",
             "bulk_path",
             "error_tolerance",
             "Available methods",
@@ -685,8 +684,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             "which corresponds to using the effective isotropic average of the supplied "
             "anisotropic dielectric. This could lead to significant errors for very anisotropic "
             "systems and/or relatively small supercells!",
-            f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect "
-            f"subfolders)",
+            f"(using bulk path {self.CdTe_EXAMPLE_DIR}/CdTe_bulk/vasp_ncl and vasp_ncl defect subfolders)",
         ]:
             assert any(i in str(warn.message) for warn in w)
 

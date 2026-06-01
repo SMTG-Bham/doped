@@ -656,9 +656,8 @@ def get_kumagai_correction(
             )
             for label in labels
         ]
-        dummy_h = Element("H")  # dummy element to check if valid symbol
         labels = [
-            label + r" ($V_{defect} - V_{bulk}$)" if dummy_h.is_valid_symbol(label) else label
+            label + r" ($V_{defect} - V_{bulk}$)" if Element.is_valid_symbol(label) else label
             for label in labels
         ]
 

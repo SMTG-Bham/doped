@@ -2220,8 +2220,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         ) in str(w[0].message)
 
         assert (
-            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the "
-            "VBM)."
+            "Fermi level was not set, so using mid-gap Fermi level (E_g/2 = 0.75 eV relative to the VBM)."
         ) in output
 
     def _check_chempots_dict(self, chempots_dict):

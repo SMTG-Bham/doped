@@ -487,8 +487,7 @@ O_i_C3           [0,-1,-2]          [0.497,0.497,0.497]  8c
 
         self.non_diagonal_ZnS = Structure.from_file(f"{data_dir}/non_diagonal_ZnS_supercell_POSCAR")
         self.zns_defect_gen_string = (
-            "DefectsGenerator for input composition ZnS, space group F-43m with 44 defect entries "
-            "created."
+            "DefectsGenerator for input composition ZnS, space group F-43m with 44 defect entries created."
         )
         self.zns_defect_gen_info = (
             """Vacancies    Guessed Charges    Conv. Cell Coords    Wyckoff
@@ -3430,7 +3429,8 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         structures.
         """
         agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(
-            self.sqs_agsbte2, supercell_gen_kwargs={"min_atoms": 40}  # 48 atoms in input cell
+            self.sqs_agsbte2,
+            supercell_gen_kwargs={"min_atoms": 40},  # 48 atoms in input cell
         )
         agsbte2_defect_gen_b, output = self._generate_and_test_no_warnings(
             self.sqs_agsbte2, generate_supercell=False

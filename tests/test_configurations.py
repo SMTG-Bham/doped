@@ -276,8 +276,7 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
         )
         assert len(w) == 2
         assert (
-            "The lattices of the two input structures have been detected to be ("
-            "symmetry-)inequivalent. "
+            "The lattices of the two input structures have been detected to be (symmetry-)inequivalent. "
         ) in str(w[0].message)
         assert ("Note that the lattice definitions may differ between the output structure") in str(
             w[-1].message

@@ -2610,10 +2610,9 @@ class ChemicalPotentialGrid(MSONable):
         """
         chempots_dict = chempots.get("limits_wrt_el_refs", chempots)  # unformatted chempots dict
         if format_chempot_labels:
-            test_elt = Element("H")
             chempots_dict = {
                 limit: {
-                    f"μ_{k} (eV)" if test_elt.is_valid_symbol(k) else k: v
+                    f"μ_{k} (eV)" if Element.is_valid_symbol(k) else k: v
                     for (k, v) in unformatted_chempots_subdict.items()
                 }
                 for limit, unformatted_chempots_subdict in chempots_dict.items()

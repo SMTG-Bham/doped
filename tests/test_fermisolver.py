@@ -2766,7 +2766,8 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         }
 
         result_no_annealing = solver.scan_temperature(
-            **scan_temperature_kwargs, return_annealing_values=False  # default
+            **scan_temperature_kwargs,
+            return_annealing_values=False,  # default
         )
 
         result_with_annealing = solver.scan_temperature(
@@ -2851,10 +2852,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                     "Fermi Level (eV wrt VBM)"
                 ].iloc[0]
                 test_fermi = result[result["Dopant (cm^-3)"] == dopant]["Fermi Level (eV wrt VBM)"].iloc[0]
-                assert np.isclose(ref_fermi, test_fermi, rtol=1e-3), (
-                    f"Fermi level mismatch at dopant={dopant} for "
-                    f"per_charge={key[0]}, per_site={key[1]}"
-                )
+                assert np.isclose(
+                    ref_fermi, test_fermi, rtol=1e-3
+                ), f"Fermi level mismatch at dopant={dopant} for per_charge={key[0]}, per_site={key[1]}"
 
         # per_charge=False should have fewer unique defect indices
         per_charge_true_defects = results[(True, False)].index.unique().tolist()
