@@ -42,6 +42,7 @@ recognised_pre_interstitial_strings = sorted(
 recognised_post_interstitial_strings = sorted(
     ["_i", "_int", "_Int", "int", "Int", "inter", "Inter", "_inter", "_Inter"], key=len, reverse=True
 )
+lower_cap, upper_cap = -100, 100  # default min/max x/y range for defect formation energy plots
 
 
 @contextlib.contextmanager
@@ -477,15 +478,20 @@ def _shade_band_edges(
         "zorder": 0,
     }
     if orientation == "horizontal":  # gradient along x, fixed (large) vertical extent
-        ax.imshow([(0, 1), (0, 1)], cmap=plt.cm.Blues, extent=(min(xlim), 0, -50, 100), **shared_kwargs)
-        ax.imshow(
-            [(1, 0), (1, 0)], cmap=plt.cm.Oranges, extent=(band_gap, max(xlim), -50, 100), **shared_kwargs
-        )
+        ylim = (lower_cap, upper_cap)
+        if min(xlim) < 0:  # only draw if finite extent of band-edge region in plot
+            ax.imshow([(0, 1), (0, 1)], cmap=plt.cm.Blues, extent=(min(xlim), 0, *ylim), **shared_kwargs)
+        if max(xlim) > band_gap:  # only draw if finite extent of band-edge region in plot
+            ax.imshow(
+                [(1, 0), (1, 0)], cmap=plt.cm.Oranges, extent=(band_gap, max(xlim), *ylim), **shared_kwargs
+            )
     else:  # vertical: gradient along y, spanning the full x-range
-        ax.imshow([(1, 1), (0, 0)], cmap=plt.cm.Blues, extent=(*xlim, min(ylim), 0.0), **shared_kwargs)
-        ax.imshow(
-            [(0, 0), (1, 1)], cmap=plt.cm.Oranges, extent=(*xlim, band_gap, max(ylim)), **shared_kwargs
-        )
+        if min(ylim) < 0:  # only draw if finite extent of band-edge region in plot
+            ax.imshow([(1, 1), (0, 0)], cmap=plt.cm.Blues, extent=(*xlim, min(ylim), 0.0), **shared_kwargs)
+        if max(ylim) > band_gap:  # only draw if finite extent of band-edge region in plot
+            ax.imshow(
+                [(0, 0), (1, 1)], cmap=plt.cm.Oranges, extent=(*xlim, band_gap, max(ylim)), **shared_kwargs
+            )
 
 
 def _set_TLD_axis_labels_limits_ticks(
@@ -1173,7 +1179,6 @@ def _get_formation_energy_lines(
     all_lines_xy: dict = {}  # as above, but for all entries (every charge state)
     y_range_vals: list[float] = []  # y-values at the x-limits, used to set the y-axis range
     all_entries_y_range_vals: list[float] = []  # y-values at the x-limits, used to set the y-axis range
-    lower_cap, upper_cap = -100, 100  # arbitrary values to extend lines to
     ymin = 0
 
     for defect_name_wout_charge, defect_entry_list in defect_thermodynamics.all_entries.items():
@@ -2304,7 +2309,7 @@ def transition_level_diagram(
             the right; ``False`` hides them.
         label_fontsize (float):
             Font size for the transition level charge labels. Defaults to
-            ~70% of the current ``font.size`` rcParam.
+            ~90% of the current ``font.size`` rcParam.
         column_width (float):
             Width (in axes units) of the horizontal line segments inside each
             defect column, on a scale where the column spacing is 1. Defaults
@@ -2344,7 +2349,7 @@ def transition_level_diagram(
     half_w = column_width / 2.0
     styled_font_size = plt.rcParams["font.size"]
     if label_fontsize is None:
-        label_fontsize = styled_font_size * 0.7
+        label_fontsize = styled_font_size * 0.9
 
     # estimate label horizontal extent (in data units = column spacing) so we can extend xlim
     # to leave room for labels at the sides of the outer columns. ~7 characters at fontsize:
@@ -2378,7 +2383,7 @@ def transition_level_diagram(
     # minimum vertical spacing (in eV) between successive labels so they don't overlap;
     # scales with the height (in points) of the label text:
     label_offset_eV = max(
-        (label_fontsize / 72.0) * (ylim[1] - ylim[0]) / max(figsize[1], 1.0) * 1.4,
+        (label_fontsize / 72.0) * (ylim[1] - ylim[0]) / max(figsize[1], 1.0) * 1.2,
         0.04,
     )
     # rough horizontal extent of a typical label in axes (data) units, for collision checks;

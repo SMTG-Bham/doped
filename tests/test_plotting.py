@@ -16,9 +16,16 @@ import pytest
 from matplotlib.colors import ListedColormap
 from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin
-from test_utils import EXAMPLE_DIR, _print_warning_info, custom_mpl_image_compare, data_dir
+from test_utils import (
+    EXAMPLE_DIR,
+    _print_warning_info,
+    _run_func_and_capture_stdout_warnings,
+    custom_mpl_image_compare,
+    data_dir,
+)
 
 from doped.analysis import DefectParser
+from doped.core import Interstitial
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 
@@ -32,6 +39,17 @@ class DefectPlottingTestCase(unittest.TestCase):
         self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
         self.YTOS_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "YTOS")
         self.YTOS_thermo = loadfn(os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json"))
+        self.Se_extrinsic_thermo = DefectThermodynamics.from_json(
+            os.path.join(EXAMPLE_DIR, "Se", "Se_Amalgamated_Extrinsic_Thermo.json.gz")
+        )
+        self.Se_extrinsic_interstitials_thermo = DefectThermodynamics(
+            defect_entries=[
+                entry
+                for entry in self.Se_extrinsic_thermo.defect_entries.values()
+                if isinstance(entry.defect, Interstitial)
+            ],
+            chempots=self.Se_extrinsic_thermo.chempots,
+        )
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_plot_CdTe(self):
@@ -73,6 +91,230 @@ class DefectPlottingTestCase(unittest.TestCase):
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot
 
+    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_faded.png")
+    def test_plot_transition_levels_CdTe_faded(self):
+        # default: faded TLs drawn without labels (cleaner)
+        fig, _output, w = _run_func_and_capture_stdout_warnings(self.CdTe_thermo.plot_transition_levels)
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_faded_labels.png")
+    def test_plot_transition_levels_CdTe_faded_labels(self):
+        # all="faded_labels": include labels for the faded metastable TLs as well
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels, all="faded_labels"
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_groundstate.png")
+    def test_plot_transition_levels_CdTe_groundstate(self):
+        # only ground-state TLs
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels, all=False
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_all.png")
+    def test_plot_transition_levels_CdTe_all(self):
+        # all single-electron (metastable) TLs at full strength
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels, all=True
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_subset.png")
+    def test_plot_transition_levels_CdTe_defect_subset(self):
+        # only show defects whose name contains "v_" (i.e. the v_Cd column)
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels, defect_subset=["v_"]
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="YTOS_example_transition_levels_plot.png")
+    def test_plot_transition_levels_YTOS(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(self.YTOS_thermo.plot_transition_levels)
+        assert not w
+        return fig
+
+    # Se extrinsic interstitials TL plots; many extrinsic interstitials, shallow/unstable states and
+    # metastable charge states:
+    @custom_mpl_image_compare(filename="Se_extrinsic_interstitials_transition_levels_plot_faded.png")
+    def test_plot_transition_levels_Se_extrinsic_interstitials_faded(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_interstitials_thermo.plot_transition_levels
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_extrinsic_interstitials_transition_levels_plot_groundstate.png")
+    def test_plot_transition_levels_Se_extrinsic_interstitials_groundstate(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_interstitials_thermo.plot_transition_levels, all=False
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(
+        filename="Se_extrinsic_interstitials_transition_levels_plot_faded_labels.png"
+    )
+    def test_plot_transition_levels_Se_extrinsic_interstitials_faded_labels(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_interstitials_thermo.plot_transition_levels, all="faded_labels"
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(
+        filename="Se_extrinsic_interstitials_transition_levels_plot_all_no_charge_labels.png"
+    )
+    def test_plot_transition_levels_Se_extrinsic_interstitials_all_no_charge_labels(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_interstitials_thermo.plot_transition_levels,
+            all=True,
+            show_charge_labels=False,
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(
+        filename="Se_extrinsic_interstitials_transition_levels_plot_all_no_band_labels.png"
+    )
+    def test_plot_transition_levels_Se_extrinsic_interstitials_all_no_band_labels(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_interstitials_thermo.plot_transition_levels,
+            all=True,
+            show_band_labels=False,
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_extrinsic_interstitials_transition_levels_plot_all.png")
+    def test_plot_transition_levels_Se_extrinsic_interstitials_all(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_interstitials_thermo.plot_transition_levels, all=True
+        )
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_example_defects_plot_subset.png")
+    def test_plot_CdTe_defect_subset(self):
+        # subset filter on the standard formation-energy plot
+        return self.CdTe_thermo.plot(self.CdTe_chempots, limit="CdTe-Te", defect_subset=["v_", "Te_Cd"])
+
+    def test_plot_transition_levels_returns_figure(self):
+        from matplotlib.figure import Figure
+
+        fig, _output, w = _run_func_and_capture_stdout_warnings(self.CdTe_thermo.plot_transition_levels)
+        assert not w
+        assert isinstance(fig, Figure)
+        # one axes:
+        assert len(fig.axes) == 1
+        ax = fig.axes[0]
+        # x-axis ticks hidden, y-label set:
+        assert ax.get_xticks().size == 0
+        assert ax.get_ylabel() == "Fermi Level (eV)"
+
+    def test_plot_transition_levels_no_charge_labels(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels, show_charge_labels=False
+        )
+        assert not w
+        ax = fig.axes[0]
+        # no parenthesised charge labels like "(+1/0)" should remain
+        text_strings = [t.get_text() for t in ax.texts]
+        assert not any("/" in s and s.startswith("(") for s in text_strings)
+
+    def test_plot_transition_levels_custom_ylim(self):
+        # ``ylim`` touching the band edges (VBM at 0, CBM at band_gap) should not emit any warnings
+        # (e.g. the singular-transform warning from a zero-height band-edge shaded region):
+        band_gap = self.CdTe_thermo.band_gap
+        for ylim in [(0.0, 1.0), (0.0, band_gap), (-0.5, band_gap), (0.0, band_gap + 0.5)]:
+            fig, _output, w = _run_func_and_capture_stdout_warnings(
+                self.CdTe_thermo.plot_transition_levels, show_charge_labels=False, ylim=ylim
+            )
+            assert not w, f"Unexpected warning(s) for ylim={ylim}: {[str(i.message) for i in w]}"
+            ax = fig.axes[0]
+            assert ax.get_ylim() == ylim
+
+    def test_plot_transition_levels_invalid_all(self):
+        with pytest.raises(ValueError, match="`all_TLs` must be False, True, 'faded' or 'faded_labels'"):
+            self.CdTe_thermo.plot_transition_levels(all="invalid")
+
+    def test_plot_transition_levels_faded_labels_count(self):
+        # default "faded": only solid (ground-state) TLs get labels
+        fig_default, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels
+        )
+        assert not w
+        # all="faded_labels": all TLs (including metastable) get labels
+        fig_with_faded, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_thermo.plot_transition_levels, all="faded_labels"
+        )
+        assert not w
+
+        def n_charge_labels(fig):
+            return sum(
+                1 for t in fig.axes[0].texts if "/" in t.get_text() and t.get_text().startswith("(")
+            )
+
+        assert n_charge_labels(fig_with_faded) > n_charge_labels(fig_default)
+
+    def test_plot_transition_levels_empty_subset(self):
+        with pytest.raises(ValueError, match="No defects with transition levels"):
+            self.CdTe_thermo.plot_transition_levels(defect_subset=["non_existent_defect"])
+
+    def test_plot_transition_levels_defect_subset_string(self):
+        # bare string should be treated as single-element list
+        fig_list = self.CdTe_thermo.plot_transition_levels(defect_subset=["v_"])
+        fig_str = self.CdTe_thermo.plot_transition_levels(defect_subset="v_")
+        # both should produce the same single-column plot:
+        assert fig_list.axes[0].get_xlim() == fig_str.axes[0].get_xlim()
+
+    def test_plot_defect_subset_filters_lines(self):
+        # standard formation energy plot with subset filter -- check legend is reduced
+        fig_full = self.CdTe_thermo.plot(self.CdTe_chempots, limit="CdTe-Te")
+        fig_subset = self.CdTe_thermo.plot(self.CdTe_chempots, limit="CdTe-Te", defect_subset=["v_"])
+        # legend should be smaller after filtering:
+        full_legend_n = len(fig_full.axes[0].get_legend().get_texts())
+        subset_legend_n = len(fig_subset.axes[0].get_legend().get_texts())
+        assert subset_legend_n < full_legend_n
+        assert subset_legend_n >= 1  # at least v_Cd
+
+    def test_transition_level_diagram_data_helpers(self):
+        from doped.utils.plotting import _format_TL_charge_label, _get_transition_level_data
+
+        assert _format_TL_charge_label((1, 0)) == "(+1/0)"
+        assert _format_TL_charge_label((1, 0), i_meta=True) == "(+1*/0)"
+        assert _format_TL_charge_label((-1, -2), j_meta=True) == "(-1/-2*)"
+        assert _format_TL_charge_label((2, -3)) == "(+2/-3)"
+
+        ground = _get_transition_level_data(self.CdTe_thermo, all_TLs=False)
+        all_data = _get_transition_level_data(self.CdTe_thermo, all_TLs=True)
+        faded = _get_transition_level_data(self.CdTe_thermo, all_TLs="faded")
+        # each entry is a 5-tuple (TL_eV, charges, i_meta, j_meta, faded):
+        for tls in faded.values():
+            for tl in tls:
+                assert len(tl) == 5
+        # ground-state TLs are never faded:
+        for tls in ground.values():
+            assert all(not tl[4] for tl in tls)
+        # all_TLs=True: also never faded
+        for tls in all_data.values():
+            assert all(not tl[4] for tl in tls)
+        # "faded" mode should include all ground-state TLs as not-faded:
+        for name, gs_tls in ground.items():
+            non_faded_in_faded = [tl for tl in faded.get(name, []) if not tl[4]]
+            assert len(non_faded_in_faded) >= len(gs_tls)
+        # each entry is sorted by TL energy:
+        for tls in all_data.values():
+            assert tls == sorted(tls, key=lambda x: x[0])
+        for tls in faded.values():
+            assert tls == sorted(tls, key=lambda x: x[0])
+
     def test_format_defect_name(self):
         """
         Test ``format_defect_name()`` function.
@@ -80,122 +322,122 @@ class DefectPlottingTestCase(unittest.TestCase):
         # test standard behaviour
         formatted_name = plotting.format_defect_name(
             defect_species="vac_1_Cd_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test with site number included
         formatted_name = plotting.format_defect_name(
             defect_species="vac_1_Cd_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test interstitial case with site number excluded
         formatted_name = plotting.format_defect_name(
             defect_species="Int_Cd_1_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "Cd$_i^{0}$"
         # test interstitial case with site number included
         formatted_name = plotting.format_defect_name(
             defect_species="Int_Cd_1_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "Cd$_{i_{1}}^{0}$"
 
         # test lowercase interstitial with site number excluded
         formatted_name = plotting.format_defect_name(
             defect_species="int_Cd_1_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "Cd$_i^{0}$"
         # test lowercase interstitial with site number included
         formatted_name = plotting.format_defect_name(
             defect_species="int_Cd_1_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "Cd$_{i_{1}}^{0}$"
 
         # test uppercase vacancy (pymatgen default name) with site number excluded
         formatted_name = plotting.format_defect_name(
             defect_species="Vac_1_Cd_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd}^{0}$"
         # test uppercase vacancy (pymatgen default name) with site number included
         formatted_name = plotting.format_defect_name(
             defect_species="Vac_1_Cd_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{Cd_{1}}^{0}$"
 
         # test substitution with site number excluded
         formatted_name = plotting.format_defect_name(
             defect_species="as_1_Ni_on_Li_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "Ni$_{Li}^{0}$"
 
         # test substitution with site number included
         formatted_name = plotting.format_defect_name(
             defect_species="as_1_Ni_on_Li_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "Ni$_{Li_{1}}^{0}$"
 
         # test substitution with site number excluded, current doped format, two-letter subbed element
         formatted_name = plotting.format_defect_name(
             defect_species="as_1_P_on_Na_-1",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "P$_{Na}^{-1}$"
 
         # test substitution with site number included, current doped format, two-letter subbed element
         formatted_name = plotting.format_defect_name(
             defect_species="as_1_P_on_Na_-1 ",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "P$_{Na_{1}}^{-1}$"
 
         # test substitution with site number excluded, current doped format
         formatted_name = plotting.format_defect_name(
             defect_species="as_2_Na_on_P_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "Na$_{P}^{0}$"
 
         # test substitution with site number included, current doped format
         formatted_name = plotting.format_defect_name(
             defect_species="as_2_Na_on_P_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "Na$_{P_{2}}^{0}$"
 
         # test interstitial with site number excluded, current doped format
         formatted_name = plotting.format_defect_name(
             defect_species="inter_12_P_0",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "P$_i^{0}$"
 
         # test interstitial with site number included, current doped format
         formatted_name = plotting.format_defect_name(
             defect_species="inter_12_P_0",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "P$_{i_{12}}^{0}$"
 
         # test vacancy with site number excluded, current doped format
         formatted_name = plotting.format_defect_name(
             defect_species="vac_4_P_-2",
-            include_site_info_in_name=False,
+            include_site_info=False,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{P}^{-2}$"
 
         # test vacancy with site number included, current doped format
         formatted_name = plotting.format_defect_name(
             defect_species="vac_4_P_-2",
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         assert formatted_name == "$\\it{V}\\!$ $_{P_{4}}^{-2}$"
 
@@ -205,19 +447,17 @@ class DefectPlottingTestCase(unittest.TestCase):
             "Problem reading defect name vac_1_Cd_a, should end with charge state after underscore"
         )
         with pytest.raises(ValueError) as e:
-            plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info_in_name=True)
+            plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info=True)
         assert str(wrong_charge_error) in str(e.value)
 
         pytest.raises(
             TypeError,
             plotting.format_defect_name,
             defect_species=2,
-            include_site_info_in_name=True,
+            include_site_info=True,
         )
         # check invalid defect type returns None
-        assert (
-            plotting.format_defect_name(defect_species="kk_Cd_1_0", include_site_info_in_name=True) is None
-        )
+        assert plotting.format_defect_name(defect_species="kk_Cd_1_0", include_site_info=True) is None
 
         defect_species_name_dict = {
             "vac_Cd_mult32_0": "$\\it{V}\\!$ $_{Cd}^{0}$",
@@ -289,7 +529,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         for defect_species, expected_name in defect_species_name_dict.items():
             formatted_name = plotting.format_defect_name(
                 defect_species=defect_species,
-                include_site_info_in_name=False,
+                include_site_info=False,
             )
             assert formatted_name == expected_name
 
@@ -371,7 +611,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         ) in defect_species_w_site_info_name_dict.items():
             formatted_name = plotting.format_defect_name(
                 defect_species=defect_species,
-                include_site_info_in_name=True,
+                include_site_info=True,
             )
             assert formatted_name == expected_name
 
