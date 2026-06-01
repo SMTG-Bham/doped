@@ -1151,15 +1151,6 @@ def _get_formation_energy_lines(
     state, and the ``y_range_vals`` lists give the y-values at the x-limits
     (for axis scaling).
     """
-    if isinstance(defect_subset, str):
-        defect_subset = [defect_subset]
-
-    def _name_in_subset(name):
-        """
-        Whether ``name`` matches the requested ``defect_subset`` (always true
-        if ``defect_subset`` is not set).
-        """
-        return not defect_subset or any(s in name for s in defect_subset)
 
     def _form_en(defect_entry, fermi_level):
         """
@@ -1181,9 +1172,8 @@ def _get_formation_energy_lines(
     all_entries_y_range_vals: list[float] = []  # y-values at the x-limits, used to set the y-axis range
     ymin = 0
 
-    for defect_name_wout_charge, defect_entry_list in defect_thermodynamics.all_entries.items():
-        if not _name_in_subset(defect_name_wout_charge):
-            continue
+    all_entries = _filter_by_defect_subset(defect_thermodynamics.all_entries, defect_subset)
+    for defect_entry_list in all_entries.values():
         for defect_entry in defect_entry_list:
             # all_lines name includes charge state; rename in case of duplicate entry names:
             defect_name_w_charge, [all_lines_xy] = _rename_key_and_dicts(defect_entry.name, [all_lines_xy])
@@ -1193,9 +1183,10 @@ def _get_formation_energy_lines(
             ]
             all_entries_y_range_vals.extend(_form_en(defect_entry, x_window) for x_window in xlim)
 
-    for def_name, def_tl in defect_thermodynamics.transition_level_map.items():
-        if not _name_in_subset(def_name):
-            continue
+    transition_level_map = _filter_by_defect_subset(
+        defect_thermodynamics.transition_level_map, defect_subset
+    )
+    for def_name, def_tl in transition_level_map.items():
         xy[def_name] = [[], []]
         stable_entries = defect_thermodynamics.stable_entries[def_name]
 
@@ -1320,7 +1311,6 @@ def formation_energy_plot(
             given substrings are plotted (e.g. ``["v_", "Te_Cd"]`` would keep
             all vacancies plus ``Te_Cd``). A bare string is treated as a
             single-element list. (Default: ``None`` -- all defects)
-            # TODO: Test
         colormap (str, matplotlib.colors.Colormap):
             Colormap to use for the formation energy lines, either as a string
             (which can be a colormap name from
@@ -1515,6 +1505,7 @@ def plot_chemical_potential_table(
 
 # TODO: General code condensing, simplification, readability, review with Codex
 # TODO: General code cleanup for this module if possible; typing etc. Review with Claude and Codex
+# TODO: TL plotting examples in tutorials with CdTe and Se
 
 
 def _get_transition_level_data(
