@@ -9,7 +9,7 @@ import re
 import warnings
 from collections.abc import Callable, Iterable
 from itertools import product
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import cmcrameri.cm as cmc
 import matplotlib as mpl
@@ -577,35 +577,7 @@ def format_defect_name(
             f"(e.g. Te_i_Td_Te2.83_+1)"
         ) from e
 
-    # TODO: Move subfunctions out of format_defect_name, and give short docstrings
-
-    # Format defect name for title/axis labels:
     defect_name = None
-    dummy_h = Element("H")
-
-    # LaTeX name builders (``site`` = optional site-info subscript):
-    def _vac_name(element: str, site: str | None = None) -> str:
-        inner = f"{element}_{{{site}}}" if site else element
-        return rf"$\it{{V}}\!$ $_{{{inner}}}^{{{charge_string}}}$"
-
-    def _int_name(element: str, site: str | None = None) -> str:
-        sub = f"_{{i_{{{site}}}}}" if site else "_i"  # note: bare "_i" (no braces) when no site info
-        return f"{element}${sub}^{{{charge_string}}}$"
-
-    def _sub_name(sub_element: str, orig_element: str, site: str | None = None) -> str:
-        inner = f"{orig_element}_{{{site}}}" if site else orig_element
-        return f"{sub_element}$_{{{inner}}}^{{{charge_string}}}$"
-
-    def _valid_symbols(strings) -> list[str]:
-        """
-        Unique valid element symbols (order-preserving) from ``strings``.
-        """
-        seen: list[str] = []
-        for s in strings:
-            if dummy_h.is_valid_symbol(s) and s not in seen:
-                seen.append(s)
-        return seen
-
     pre_charge_name = defect_species.rsplit("_", 1)[0]  # defect name without charge state
     trimmed_pre_charge_name = pre_charge_name  # later trimmed of any pre/post vacancy/interstitial strings
 
@@ -625,198 +597,6 @@ def format_defect_name(
                 f"_{'_'.join(defect_species.split('_')[2:-1])}", ""
             )
 
-    def _check_matching_defect_format(
-        element: str,
-        name: str,
-        pre_def_type_list: list[str],
-        post_def_type_list: list[str],
-    ) -> int:
-        """
-        Check if the given ``name`` matches expected defect naming formats,
-        including the placement of the ``element`` and pre/post defect type
-        information, without consideration of any site information (parsed
-        separately).
-
-        Args:
-            element (str):
-                The defect element being checked (e.g., "Ag", "Cd", "H").
-            name (str):
-                The string to check for a matching format.
-            pre_def_type_list (list[str]):
-                List of possible defect type strings (e.g., ["v_", "V_"]),
-                occurring `before` the ``element`` position in ``name``.
-            post_def_type_list (list[str]):
-                List of possible defect type strings (e.g., ["_i", "_int"]),
-                occurring `after` the ``element`` position in ``name``.
-
-        Returns:
-            int:
-                Returns the length of the ``name`` string minus the match start
-                character position (so matching the start of ``name`` returns
-                ``len(name)``, a match after 3 characters returns
-                ``len(name) - 3`` etc., in order to score potential matches and
-                favour matching near the start of the string). As such, a
-                return value of ``0`` indicates no match found.
-        """
-        patterns = [f"{pre_def_type}{element}" for pre_def_type in pre_def_type_list] + [
-            f"{element}{post_def_type}" for post_def_type in post_def_type_list
-        ]
-        if any(name.startswith(pattern) for pattern in patterns):
-            return len(name)
-        for i in range(len(name) - 1):
-            if any(name[i : i + len(pattern)] == pattern for pattern in patterns):
-                return len(name) - i
-        return 0  # 0 -> False, no match found
-
-    def _check_matching_defect_format_with_old_site_info(
-        element: str,
-        name: str,
-        pre_def_type_list: list[str],
-        post_def_type_list: list[str],
-    ) -> tuple[bool, str | None]:
-        """
-        Checks if the given ``name`` matches expected defect naming formats,
-        including the placement of the ``element`` and site information, for
-        older defect naming formats.
-
-        Args:
-            element (str):
-                The defect element being checked (e.g., "Ag", "Cd", "H").
-            name (str):
-                The string to check for matching format.
-            pre_def_type_list (list[str]):
-                List of possible defect type strings (e.g., ["v_", "V_"]),
-                occurring `before` the ``element`` position in ``name``.
-            post_def_type_list (list[str]):
-                List of possible defect type strings (e.g., ["_i", "_int"]),
-                occurring `after` the ``element`` position in ``name``.
-
-        Returns:
-            tuple[bool, str | None]:
-                A tuple where the first element is a boolean indicating if
-                the format matches, and the second element is the site
-                information (if applicable) or ``None``.
-        """
-        for site_info in _iter_old_site_info_matches(name):
-            pre_matches = (
-                fstring in name
-                for pre_def_type in pre_def_type_list
-                for fstring in [
-                    f"{pre_def_type}{site_info}{element}",
-                    f"{pre_def_type}{element}{site_info}",
-                    f"{pre_def_type}{site_info}_{element}",
-                    f"{pre_def_type}{element}_{site_info}",
-                ]
-            )
-            post_matches = (
-                fstring in name
-                for post_def_type in post_def_type_list
-                for fstring in [
-                    f"{element}{site_info}{post_def_type}",
-                    f"{site_info}{element}{post_def_type}",
-                    f"{element}{site_info}_{post_def_type}",
-                    f"{site_info}_{element}{post_def_type}",
-                ]
-            )
-            if any(pre_matches) or any(post_matches):
-                return True, site_info.replace("mult", "m")
-
-        return False, None
-
-    def _try_vacancy_interstitial_match(element, name, include_site_info):
-        defect_name_without_site_info = defect_name_with_site_info = None
-
-        match_found, site_info = _check_matching_defect_format_with_old_site_info(
-            element, name, recognised_pre_vacancy_strings, recognised_post_vacancy_strings
-        )
-        if match_found:
-            defect_name_with_site_info = _vac_name(element, site_info)
-            defect_name_without_site_info = _vac_name(element)
-
-        else:
-            match_found, site_info = _check_matching_defect_format_with_old_site_info(
-                element, name, recognised_pre_interstitial_strings, recognised_post_interstitial_strings
-            )
-            if match_found:
-                defect_name_with_site_info = _int_name(element, site_info)
-                defect_name_without_site_info = _int_name(element)
-
-        if include_site_info and defect_name_with_site_info is not None:
-            return defect_name_with_site_info
-
-        vacancy_match_score = _check_matching_defect_format(
-            element, name, recognised_pre_vacancy_strings, recognised_post_vacancy_strings
-        )
-        interstitial_match_score = _check_matching_defect_format(
-            element, name, recognised_pre_interstitial_strings, recognised_post_interstitial_strings
-        )
-
-        if vacancy_match_score == 0 and interstitial_match_score == 0:  # no match
-            if defect_name_without_site_info is not None:  # if match with old site-info format
-                return defect_name_without_site_info
-
-            return None
-
-        name_func = _vac_name if vacancy_match_score > interstitial_match_score else _int_name
-        if include_site_info and doped_site_info is not None:
-            return name_func(element, doped_site_info)
-
-        return name_func(element)
-
-    def _try_substitution_match(substituting_element, orig_site_element, name, include_site_info):
-        defect_name = None
-        if (
-            f"{substituting_element}_{orig_site_element}" in name
-            or f"{substituting_element}_on_{orig_site_element}" in name
-        ):
-            defect_name = _sub_name(
-                substituting_element, orig_site_element, doped_site_info if include_site_info else None
-            )
-
-        if defect_name and include_site_info:  # if we have a match, check if we can add the site number
-            for site_info in _iter_old_site_info_matches(name):
-                if any(
-                    fstring in name
-                    for fstring in [
-                        f"{site_info}_{substituting_element}_{orig_site_element}",
-                        f"{substituting_element}_{orig_site_element}_{site_info}",
-                        f"{site_info}_{substituting_element}_on_{orig_site_element}",
-                        f"{substituting_element}_on_{orig_site_element}_{site_info}",
-                    ]
-                ):
-                    defect_name = _sub_name(substituting_element, orig_site_element, site_info)
-                    break
-
-        return defect_name.replace("mult", "m") if defect_name is not None else None
-
-    def _defect_name_from_matching_elements(
-        element_matches: list[str],
-        name: str = pre_charge_name,
-        include_site_info: bool = include_site_info,
-    ) -> str | None:
-        if len(element_matches) == 1:  # vacancy or interstitial?
-            defect_name = _try_vacancy_interstitial_match(element_matches[0], name, include_site_info)
-        elif len(element_matches) == 2:
-            # try substitution/antisite match, if not try vacancy/interstitial with first element
-            defect_name = _try_substitution_match(
-                element_matches[0], element_matches[1], name, include_site_info
-            )
-            if defect_name is None:
-                defect_name = _try_vacancy_interstitial_match(element_matches[0], name, include_site_info)
-        else:
-            # try use first match and see if we match vacancy or interstitial format; if not, try first and
-            # second matches and see if we match substitution format; otherwise fail
-            defect_name = _try_vacancy_interstitial_match(element_matches[0], name, include_site_info)
-            if defect_name is None:
-                defect_name = _try_substitution_match(
-                    element_matches[0],
-                    element_matches[1],
-                    name,
-                    include_site_info,
-                )
-
-        return defect_name
-
     for substring in (  # trim any matching pre or post vacancy/interstitial strings from defect name
         recognised_pre_vacancy_strings
         + recognised_post_vacancy_strings
@@ -835,8 +615,16 @@ def format_defect_name(
         trimmed_pre_charge_name[i : i + 2] for i in range(len(trimmed_pre_charge_name) - 1)
     )
 
+    matching_kwargs: dict[str, Any] = {
+        "charge_string": charge_string,
+        "doped_site_info": doped_site_info,
+        "name": pre_charge_name,
+        "include_site_info": include_site_info,
+    }
     if possible_two_character_elements:
-        defect_name = _defect_name_from_matching_elements(possible_two_character_elements)
+        defect_name = _defect_name_from_matching_elements(
+            possible_two_character_elements, **matching_kwargs
+        )
 
         if defect_name is None and len(possible_two_character_elements) == 1:
             # possibly one single-character element and one two-character element
@@ -848,43 +636,299 @@ def format_defect_name(
                 # in this case, we don't know the order of the 1-character vs 2-character elements in the
                 # name, so we try both orderings:
                 defect_name = _defect_name_from_matching_elements(
-                    possible_two_character_elements + possible_one_character_elements,
+                    possible_two_character_elements + possible_one_character_elements, **matching_kwargs
                 )
                 if defect_name is None:
                     defect_name = _defect_name_from_matching_elements(
                         possible_one_character_elements + possible_two_character_elements,
+                        **matching_kwargs,
                     )
 
     if defect_name is None and (
         possible_one_character_elements := _valid_symbols(trimmed_pre_charge_name)
     ):
-        defect_name = _defect_name_from_matching_elements(possible_one_character_elements)
+        defect_name = _defect_name_from_matching_elements(
+            possible_one_character_elements, **matching_kwargs
+        )
 
     if defect_name is None:  # try matching to PyCDT/old-doped style:
-        try:
-            defect_type = defect_species.split("_")[0]  # vac, as or int
-            if (
-                defect_type.capitalize() == "Int"
-            ):  # for interstitials, name formatting is different (eg Int_Cd_1 vs vac_1_Cd)
-                site_element = defect_species.split("_")[1]  # element then site for interstitials
-                site: str | None = defect_species.split("_")[2]
-                defect_name = _int_name(site_element, site if include_site_info else None)
-            else:
-                site = defect_species.split("_")[1]  # number indicating defect site (from doped)
-                site_element = defect_species.split("_")[2]  # element at defect site
-
-            site = site if include_site_info else None  # whether to include the site number
-            if defect_type.lower() == "vac":
-                defect_name = _vac_name(site_element, site)
-            elif defect_type.lower() in ["as", "sub"]:
-                subs_element = defect_species.split("_")[4]
-                defect_name = _sub_name(site_element, subs_element, site)
-            elif defect_type.capitalize() != "Int":
-                raise ValueError(f"Defect type {defect_type} not recognized. Please check spelling.")
-        except Exception:
-            return None
+        defect_name = _pycdt_style_defect_name(defect_species, charge_string, include_site_info)
 
     return f"{defect_name.rsplit('^', 1)[0]}$" if (defect_name and wout_charge) else defect_name
+
+
+def _pycdt_style_defect_name(
+    defect_species: str,
+    charge_string: str,
+    include_site_info: bool,
+) -> str | None:
+    """
+    Format a defect name from the old PyCDT/``doped`` style.
+
+    Handles e.g. ``"vac_1_Cd"``, ``"Int_Cd_1"`` and ``"sub_2_Te_on_Cd"``,
+    returning ``None`` if the name is not recognised.
+    """
+    try:
+        defect_type = defect_species.split("_")[0]  # vac, as or int
+        if (
+            defect_type.capitalize() == "Int"
+        ):  # for interstitials, name formatting is different (eg Int_Cd_1 vs vac_1_Cd)
+            site_element = defect_species.split("_")[1]  # element then site for interstitials
+            site: str | None = defect_species.split("_")[2]
+            defect_name = _int_name(site_element, charge_string, site if include_site_info else None)
+        else:
+            site = defect_species.split("_")[1]  # number indicating defect site (from doped)
+            site_element = defect_species.split("_")[2]  # element at defect site
+
+        site = site if include_site_info else None  # whether to include the site number
+        if defect_type.lower() == "vac":
+            defect_name = _vac_name(site_element, charge_string, site)
+        elif defect_type.lower() in ["as", "sub"]:
+            subs_element = defect_species.split("_")[4]
+            defect_name = _sub_name(site_element, subs_element, charge_string, site)
+        elif defect_type.capitalize() != "Int":
+            raise ValueError(f"Defect type {defect_type} not recognized. Please check spelling.")
+    except Exception:
+        return None
+
+    return defect_name
+
+
+# LaTeX defect-name builders, used by ``format_defect_name`` (``site`` = optional site-info subscript):
+def _vac_name(element: str, charge_string: str, site: str | None = None) -> str:
+    """
+    Build a LaTeX vacancy label for ``element``.
+    """
+    inner = f"{element}_{{{site}}}" if site else element
+    return rf"$\it{{V}}\!$ $_{{{inner}}}^{{{charge_string}}}$"
+
+
+def _int_name(element: str, charge_string: str, site: str | None = None) -> str:
+    """
+    Build a LaTeX interstitial label for ``element``.
+    """
+    sub = f"_{{i_{{{site}}}}}" if site else "_i"  # note: bare "_i" (no braces) when no site info
+    return f"{element}${sub}^{{{charge_string}}}$"
+
+
+def _sub_name(sub_element: str, orig_element: str, charge_string: str, site: str | None = None) -> str:
+    """
+    Build a LaTeX substitution/antisite label (``sub_element`` on
+    ``orig_element``).
+    """
+    inner = f"{orig_element}_{{{site}}}" if site else orig_element
+    return f"{sub_element}$_{{{inner}}}^{{{charge_string}}}$"
+
+
+def _valid_symbols(strings) -> list[str]:
+    """
+    Unique valid element symbols (order-preserving) from ``strings``.
+    """
+    seen: list[str] = []
+    for s in strings:
+        if Element.is_valid_symbol(s) and s not in seen:
+            seen.append(s)
+    return seen
+
+
+def _check_matching_defect_format(
+    element: str,
+    name: str,
+    pre_def_type_list: list[str],
+    post_def_type_list: list[str],
+) -> int:
+    """
+    Score how well ``name`` matches a defect naming format for ``element``.
+
+    Ignores site info (parsed separately), checking only ``element`` placement
+    relative to the pre/post defect-type strings. Returns ``len(name)`` minus
+    the match start index (so earlier matches score higher), or ``0`` if no
+    match is found.
+    """
+    patterns = [f"{pre_def_type}{element}" for pre_def_type in pre_def_type_list] + [
+        f"{element}{post_def_type}" for post_def_type in post_def_type_list
+    ]
+    if any(name.startswith(pattern) for pattern in patterns):
+        return len(name)
+    for i in range(len(name) - 1):
+        if any(name[i : i + len(pattern)] == pattern for pattern in patterns):
+            return len(name) - i
+    return 0  # 0 -> False, no match found
+
+
+def _check_matching_defect_format_with_old_site_info(
+    element: str,
+    name: str,
+    pre_def_type_list: list[str],
+    post_def_type_list: list[str],
+) -> tuple[bool, str | None]:
+    """
+    Match ``name`` to an old-format vacancy or interstitial defect label for
+    ``element``, with site info.
+
+    Returns ``(matched, site_info)``, where ``site_info`` is the parsed
+    (old-format) site string, or ``None`` if unmatched.
+    """
+    for site_info in _iter_old_site_info_matches(name):
+        pre_matches = (
+            fstring in name
+            for pre_def_type in pre_def_type_list
+            for fstring in [
+                f"{pre_def_type}{site_info}{element}",
+                f"{pre_def_type}{element}{site_info}",
+                f"{pre_def_type}{site_info}_{element}",
+                f"{pre_def_type}{element}_{site_info}",
+            ]
+        )
+        post_matches = (
+            fstring in name
+            for post_def_type in post_def_type_list
+            for fstring in [
+                f"{element}{site_info}{post_def_type}",
+                f"{site_info}{element}{post_def_type}",
+                f"{element}{site_info}_{post_def_type}",
+                f"{site_info}_{element}{post_def_type}",
+            ]
+        )
+        if any(pre_matches) or any(post_matches):
+            return True, site_info.replace("mult", "m")
+
+    return False, None
+
+
+def _try_vacancy_interstitial_match(
+    element: str,
+    name: str,
+    include_site_info: bool,
+    charge_string: str,
+    doped_site_info: str | None,
+) -> str | None:
+    """
+    Match ``name`` to a vacancy or interstitial defect label for ``element``,
+    returning the formatted label, or ``None`` if no match found.
+    """
+    defect_name_without_site_info = defect_name_with_site_info = None
+
+    match_found, site_info = _check_matching_defect_format_with_old_site_info(
+        element, name, recognised_pre_vacancy_strings, recognised_post_vacancy_strings
+    )
+    if match_found:
+        defect_name_with_site_info = _vac_name(element, charge_string, site_info)
+        defect_name_without_site_info = _vac_name(element, charge_string)
+
+    else:
+        match_found, site_info = _check_matching_defect_format_with_old_site_info(
+            element, name, recognised_pre_interstitial_strings, recognised_post_interstitial_strings
+        )
+        if match_found:
+            defect_name_with_site_info = _int_name(element, charge_string, site_info)
+            defect_name_without_site_info = _int_name(element, charge_string)
+
+    if include_site_info and defect_name_with_site_info is not None:
+        return defect_name_with_site_info
+
+    vacancy_match_score = _check_matching_defect_format(
+        element, name, recognised_pre_vacancy_strings, recognised_post_vacancy_strings
+    )
+    interstitial_match_score = _check_matching_defect_format(
+        element, name, recognised_pre_interstitial_strings, recognised_post_interstitial_strings
+    )
+
+    if vacancy_match_score == 0 and interstitial_match_score == 0:  # no match
+        if defect_name_without_site_info is not None:  # if match with old site-info format
+            return defect_name_without_site_info
+
+        return None
+
+    name_func = _vac_name if vacancy_match_score > interstitial_match_score else _int_name
+    if include_site_info and doped_site_info is not None:
+        return name_func(element, charge_string, doped_site_info)
+
+    return name_func(element, charge_string)
+
+
+def _try_substitution_match(
+    substituting_element: str,
+    orig_site_element: str,
+    name: str,
+    include_site_info: bool,
+    charge_string: str,
+    doped_site_info: str | None,
+) -> str | None:
+    """
+    Match ``name`` to a substitution/antisite defect label, returning the
+    formatted name, else ``None`` if no match found.
+    """
+    defect_name = None
+    if (
+        f"{substituting_element}_{orig_site_element}" in name
+        or f"{substituting_element}_on_{orig_site_element}" in name
+    ):
+        defect_name = _sub_name(
+            substituting_element,
+            orig_site_element,
+            charge_string,
+            doped_site_info if include_site_info else None,
+        )
+
+    if defect_name and include_site_info:  # if we have a match, check if we can add the site number
+        for site_info in _iter_old_site_info_matches(name):
+            if any(
+                fstring in name
+                for fstring in [
+                    f"{site_info}_{substituting_element}_{orig_site_element}",
+                    f"{substituting_element}_{orig_site_element}_{site_info}",
+                    f"{site_info}_{substituting_element}_on_{orig_site_element}",
+                    f"{substituting_element}_on_{orig_site_element}_{site_info}",
+                ]
+            ):
+                defect_name = _sub_name(substituting_element, orig_site_element, charge_string, site_info)
+                break
+
+    return defect_name.replace("mult", "m") if defect_name is not None else None
+
+
+def _defect_name_from_matching_elements(
+    element_matches: list[str],
+    charge_string: str,
+    doped_site_info: str | None,
+    name: str,
+    include_site_info: bool,
+) -> str | None:
+    """
+    Determine the (formatted) defect label from candidate ``element_matches``
+    in the (unformatted) ``name``.
+    """
+    if len(element_matches) == 1:  # vacancy or interstitial?
+        defect_name = _try_vacancy_interstitial_match(
+            element_matches[0], name, include_site_info, charge_string, doped_site_info
+        )
+    elif len(element_matches) == 2:
+        # try substitution/antisite match, if not try vacancy/interstitial with first element
+        defect_name = _try_substitution_match(
+            element_matches[0], element_matches[1], name, include_site_info, charge_string, doped_site_info
+        )
+        if defect_name is None:
+            defect_name = _try_vacancy_interstitial_match(
+                element_matches[0], name, include_site_info, charge_string, doped_site_info
+            )
+    else:
+        # try use first match and see if we match vacancy or interstitial format; if not, try first and
+        # second matches and see if we match substitution format; otherwise fail
+        defect_name = _try_vacancy_interstitial_match(
+            element_matches[0], name, include_site_info, charge_string, doped_site_info
+        )
+        if defect_name is None:
+            defect_name = _try_substitution_match(
+                element_matches[0],
+                element_matches[1],
+                name,
+                include_site_info,
+                charge_string,
+                doped_site_info,
+            )
+
+    return defect_name
 
 
 def _iter_old_site_info_matches(name: str):
