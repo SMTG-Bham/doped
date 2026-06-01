@@ -172,7 +172,7 @@ def check_and_set_defect_entry_name(
 
     with contextlib.suppress(Exception):  # check if defect name is recognised
         formatted_defect_name = format_defect_name(
-            defect_name_w_charge_state, include_site_info_in_name=True
+            defect_name_w_charge_state, include_site_info=True
         )  # tries without site_info if with site_info fails
 
     # (re-)determine doped defect name and store in metadata, regardless of whether folder name is

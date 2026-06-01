@@ -2608,7 +2608,7 @@ def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     # by using ``format_defect_name``, we can simultaneously handle (amalgamated) old and new ``doped``
     # defect names:
     formatted_defect_name = format_defect_name(
-        defect_name, include_site_info_in_name=False, wout_charge=not defect_name.split("_")[-1].isdigit()
+        defect_name, include_site_info=False, wout_charge=not defect_name.split("_")[-1].isdigit()
     )
     if formatted_defect_name:
         if not formatted_defect_name.startswith("$"):  # substitution or interstitial

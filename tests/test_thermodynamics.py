@@ -4814,7 +4814,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             ax.plot(
                 matching_rows["μ_Te"],
                 matching_rows["Concentration (cm^-3)"],
-                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info=True),
             )
 
         ax.plot(output_df["μ_Te"], output_df["Electron Concentration (cm^-3)"], label="Electrons", ls="--")

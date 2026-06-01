@@ -57,7 +57,7 @@ from doped.utils.parsing import (
     get_magnetization_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import get_colormap
+from doped.utils.plotting import doped_plot_style, get_colormap
 from doped.utils.symmetry import _custom_round, _round_floats, get_primitive_structure
 from doped.vasp import (
     MODULE_DIR,
@@ -4731,10 +4731,6 @@ def plot_chempot_heatmap(
     # 10.1021/acs.jpcc.3c05204; Cs2SnTiI6 notebooks), but this isn't as nice/clear, and the same effect
     # can be achieved by the user by saving to PDF without labels, and manually colouring and adding
     # a legend in a vector graphics editor (e.g. Inkscape, Affinity Designer, Adobe Illustrator, etc.).
-    from shakenbreak.plotting import _install_custom_font
-
-    _install_custom_font()
-
     composition = Composition(composition)
     entries = entries_from_chempot_limits(chempots)  # intrinsic and extrinsic entries
     limits_wrt_el_refs = chempots.get("limits_wrt_el_refs", chempots.get("limits", {}))
@@ -4825,69 +4821,68 @@ def plot_chempot_heatmap(
     tri = Triangulation(points_inside[:, 0], points_inside[:, 1])
 
     # Create plot
-    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-    fig, ax = plt.subplots()
-    vmin = cbar_range[0] if cbar_range else None
-    vmax = cbar_range[1] if cbar_range else None
-    if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
-        vmax = 0
+    with doped_plot_style(style_file):
+        fig, ax = plt.subplots()
+        vmin = cbar_range[0] if cbar_range else None
+        vmax = cbar_range[1] if cbar_range else None
+        if vmax is None and np.isclose(values_inside.max(), 0, atol=3e-2):  # extend to 0 if close
+            vmax = 0
 
-    cmap = get_colormap(colormap, default="batlow")
-    dep_mu = ax.tripcolor(
-        tri,
-        values_inside,
-        rasterized=True,
-        cmap=cmap,
-        shading="gouraud",  # smooth
-        vmin=vmin,
-        vmax=vmax,
-    )
-    cbar = fig.colorbar(dep_mu)
-
-    # Set plot limits and labels
-    xmax, ymax = points_inside.max(axis=0)
-    orig_xmin, orig_ymin = points_inside.min(axis=0)
-
-    if xlim is None:
-        x_padding = padding or 0.1 * abs(xmax - orig_xmin)
-        if np.isclose(orig_xmin, default_min_limit):  # xmin = default_min_limit -> unbounded extrinsic
-            xmin = element_wise_min_limit[independent_elts[0].symbol] - 3  # set to 3 eV below lowest limit
-            x_padding = padding or 0.1 * abs(xmax - xmin)  # set padding based on updated xmin
-        else:
-            xmin = orig_xmin - x_padding
-        xlim = (float(xmin), float(xmax + x_padding))
-
-    if ylim is None:
-        y_padding = padding or 0.1 * abs(ymax - orig_ymin)
-        if np.isclose(orig_ymin, default_min_limit):  # ymin = default_min_limit -> unbounded extrinsic
-            ymin = element_wise_min_limit[independent_elts[1].symbol] - 3  # set to 3 eV below lowest limit
-            y_padding = padding or 0.1 * abs(ymax - ymin)  # set padding based on updated ymin
-        else:
-            ymin = orig_ymin - y_padding
-        ylim = (float(ymin), float(ymax + y_padding))
-
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
-    cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
-    ax.set_xlabel(rf"$\Delta\mu$ ({independent_elts[0].symbol}) (eV)")
-    ax.set_ylabel(rf"$\Delta\mu$ ({independent_elts[1].symbol}) (eV)")
-    ax.xaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-
-    if title:  # add title
-        if not isinstance(title, str):
-            title = latexify(f"{composition.reduced_formula}")
-        ax.set_title(title)
-
-    if bordering_phases:
-        _plot_competing_phase_lines(  # plot competing phase lines and labels
-            composition, ax, cpd, fixed_elements, independent_elts, label_positions
+        cmap = get_colormap(colormap, default="batlow")
+        dep_mu = ax.tripcolor(
+            tri,
+            values_inside,
+            rasterized=True,
+            cmap=cmap,
+            shading="gouraud",  # smooth
+            vmin=vmin,
+            vmax=vmax,
         )
-        _nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
+        cbar = fig.colorbar(dep_mu)
 
-    if filename:
-        fig.savefig(filename, bbox_inches="tight", dpi=600)
+        # Set plot limits and labels
+        xmax, ymax = points_inside.max(axis=0)
+        orig_xmin, orig_ymin = points_inside.min(axis=0)
+
+        if xlim is None:
+            x_padding = padding or 0.1 * abs(xmax - orig_xmin)
+            if np.isclose(orig_xmin, default_min_limit):  # default_min_limit -> unbounded extrinsic
+                xmin = element_wise_min_limit[independent_elts[0].symbol] - 3  # 3 eV below lowest limit
+                x_padding = padding or 0.1 * abs(xmax - xmin)  # padding based on updated xmin
+            else:
+                xmin = orig_xmin - x_padding
+            xlim = (float(xmin), float(xmax + x_padding))
+
+        if ylim is None:
+            y_padding = padding or 0.1 * abs(ymax - orig_ymin)
+            if np.isclose(orig_ymin, default_min_limit):  # default_min_limit -> unbounded extrinsic
+                ymin = element_wise_min_limit[independent_elts[1].symbol] - 3  # 3 eV below lowest limit
+                y_padding = padding or 0.1 * abs(ymax - ymin)  # padding based on updated ymin
+            else:
+                ymin = orig_ymin - y_padding
+            ylim = (float(ymin), float(ymax + y_padding))
+
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        cbar.set_label(rf"$\Delta\mu$ ({dependent_element.symbol}) (eV)")
+        ax.set_xlabel(rf"$\Delta\mu$ ({independent_elts[0].symbol}) (eV)")
+        ax.set_ylabel(rf"$\Delta\mu$ ({independent_elts[1].symbol}) (eV)")
+        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+
+        if title:  # add title
+            if not isinstance(title, str):
+                title = latexify(f"{composition.reduced_formula}")
+            ax.set_title(title)
+
+        if bordering_phases:
+            _plot_competing_phase_lines(  # plot competing phase lines and labels
+                composition, ax, cpd, fixed_elements, independent_elts, label_positions
+            )
+            _nudge_labels_inside_axes(ax, padding)  # adjust label positions to stay within plot bounds
+
+        if filename:
+            fig.savefig(filename, bbox_inches="tight", dpi=600)
 
     return fig
 

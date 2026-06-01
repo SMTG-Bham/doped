@@ -2,7 +2,6 @@
 Code to analyse site displacements around defects.
 """
 
-import os
 import warnings
 from copy import deepcopy
 
@@ -23,6 +22,7 @@ from doped.utils.parsing import (
     get_matching_site,
     get_site_mapping_indices,
 )
+from doped.utils.plotting import doped_plot_style
 from doped.utils.symmetry import _round_floats
 
 try:
@@ -480,9 +480,7 @@ def plot_site_displacements(
     else:
         element_list = _get_element_list(defect_entry)
 
-        style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
-        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-        with plt.style.context(style_file):
+        with doped_plot_style(style_file, style="displacement"):
             # Color by species
             unique_species = list(set(disp_df["Species"]))
             unique_species.sort(key=lambda x: element_list.index(x))
@@ -886,9 +884,7 @@ def plot_displacements_ellipsoid(
         )
 
         # Create a 3D plot
-        style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
-        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-        with plt.style.context(style_file):
+        with doped_plot_style(style_file, style="displacement"):
             fig = plt.figure(figsize=(10, 8))
             ax = fig.add_subplot(111, projection="3d")
 
@@ -977,9 +973,7 @@ def plot_displacements_ellipsoid(
         return fig
 
     def _mpl_plot_anisotropy(disp_df, anisotropy_df, style_file):
-        style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
-        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-        with plt.style.context(style_file):
+        with doped_plot_style(style_file, style="displacement"):
             fig, axs = plt.subplots(1, 2, figsize=(14, 6))
 
             # Part 1: Displacement Distribution Box Plot

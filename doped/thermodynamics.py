@@ -6,7 +6,6 @@ potentials, charge transition levels, defect/carrier concentrations etc.
 
 import contextlib
 import importlib.util
-import os
 import statistics
 import warnings
 from collections import defaultdict
@@ -51,7 +50,12 @@ from doped.utils.parsing import (
     get_nelect_from_vasprun,
     get_vasprun,
 )
-from doped.utils.plotting import _rename_key_and_dicts, formation_energy_plot, transition_level_diagram
+from doped.utils.plotting import (
+    _rename_key_and_dicts,
+    doped_plot_style,
+    formation_energy_plot,
+    transition_level_diagram,
+)
 from doped.utils.symmetry import cluster_coords, get_all_equiv_sites, get_primitive_structure, get_sga
 
 if TYPE_CHECKING:
@@ -2683,6 +2687,7 @@ class DefectThermodynamics(MSONable):
         el_refs: dict | None = None,
         all_entries: bool | str = False,
         unstable_entries: bool | str = "not shallow",
+        defect_subset: list[str] | str | None = None,
         chempot_table: bool | None = None,
         style_file: PathLike | None = None,
         xlim: tuple | None = None,
@@ -2794,6 +2799,12 @@ class DefectThermodynamics(MSONable):
                 If ``True``, defect entries are not pruned based on stability /
                 shallow classification.
                 See ``prune_to_stable_entries`` for more info.
+            defect_subset (list[str], str):
+                If provided, only defects whose name contains at least one of
+                the given substrings are plotted (e.g. ``["v_", "Te_Cd"]``
+                would keep all vacancies plus ``Te_Cd``). A bare string is
+                treated as a single-element list. (Default: ``None`` -- all
+                defects)
             chempot_table (bool | None):
                 Whether to include a table of the chemical potentials above the
                 formation energy plot. If ``None`` (default), shown if multiple
@@ -2858,9 +2869,6 @@ class DefectThermodynamics(MSONable):
             ``matplotlib`` ``Figure`` object, or list of ``Figure`` objects if
             multiple limits chosen.
         """
-        from shakenbreak.plotting import _install_custom_font  # avoid circular import
-
-        _install_custom_font()
         if all_entries not in [False, True, "faded"]:  # check input options
             raise ValueError(
                 f"`all_entries` option must be either False, True, or 'faded', not {all_entries}"
@@ -2898,9 +2906,7 @@ class DefectThermodynamics(MSONable):
             unstable_entries=unstable_entries, **kwargs
         )  # Note that this will need to be updated if we add other kwarg options to this function
 
-        style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-        with plt.style.context(style_file):
+        with doped_plot_style(style_file):
             figs = []
             for limit in limits:
                 dft_chempots = chempots["limits"][limit]
@@ -2919,6 +2925,7 @@ class DefectThermodynamics(MSONable):
                         el_refs=el_refs,
                         chempot_table=chempot_table if chempot_table is not None else len(limits) > 1,
                         all_entries=all_entries,
+                        defect_subset=defect_subset,
                         xlim=xlim,
                         ylim=ylim,
                         fermi_level=fermi_level,
@@ -3039,13 +3046,7 @@ class DefectThermodynamics(MSONable):
         Returns:
             ``matplotlib`` ``Figure`` object.
         """
-        from shakenbreak.plotting import _install_custom_font  # avoid circular import
-
-        _install_custom_font()
-
-        style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-        plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-        with plt.style.context(style_file):
+        with doped_plot_style(style_file):
             return transition_level_diagram(
                 self.prune_to_stable_entries(unstable_entries=unstable_entries, **kwargs),
                 all_TLs=all,

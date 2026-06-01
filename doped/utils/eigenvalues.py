@@ -5,8 +5,6 @@ Contains modified versions of functions from ``pydefect`` and ``vise``
 (https://github.com/kumagai-group/pydefect / vise).
 """
 
-import contextlib
-import os
 import warnings
 from collections import defaultdict
 from itertools import zip_longest
@@ -23,7 +21,7 @@ from doped import vise_handling
 from doped.analysis import defect_site_from_structures
 from doped.core import DefectEntry, _parse_procar, template_defect_entry_from_structures
 from doped.utils.parsing import get_magnetization_from_vasprun, get_nelect_from_vasprun
-from doped.utils.plotting import _get_backend
+from doped.utils.plotting import doped_plot_style
 
 with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
     import pydefect.analyzer.make_band_edge_states
@@ -504,21 +502,16 @@ def get_eigenvalue_analysis(
     vbm = vbm_info.orbital_info.energy + band_orb.eigval_shift
     cbm = cbm_info.orbital_info.energy + band_orb.eigval_shift
 
-    with contextlib.suppress(Exception):
-        from shakenbreak.plotting import _install_custom_font
-
-        _install_custom_font()  # in case not installed already
-    style_file = style_file or f"{os.path.dirname(__file__)}/displacement.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-
     with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
-        emp = EigenvalueMplPlotter(
-            title="Eigenvalues",
-            band_edge_orb_infos=band_orb,
-            supercell_vbm=vbm,
-            supercell_cbm=cbm,
-            y_range=[vbm - 3, cbm + 3],
-        )
+        # style the figure created during plotter construction:
+        with doped_plot_style(style_file, style="displacement"):
+            emp = EigenvalueMplPlotter(
+                title="Eigenvalues",
+                band_edge_orb_infos=band_orb,
+                supercell_vbm=vbm,
+                supercell_cbm=cbm,
+                y_range=[vbm - 3, cbm + 3],
+            )
 
         def _add_eigenvalues(
             self,
@@ -574,7 +567,7 @@ def get_eigenvalue_analysis(
 
         emp._add_eigenvalues = MethodType(_add_eigenvalues, emp)  # faster monkey-patch for eigenvalues
 
-    with plt.style.context(style_file):
+    with doped_plot_style(style_file, style="displacement"):
         plt.rcParams["axes.titlesize"] = 12
         plt.rc("axes", unicode_minus=False)
 
@@ -654,6 +647,6 @@ def get_eigenvalue_analysis(
         fig.text(x_center, 0, "$k$-point coords", ha="center", size=12)
 
     if filename:
-        emp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+        emp.plt.savefig(filename, bbox_inches="tight", transparent=True)
 
     return bes, fig

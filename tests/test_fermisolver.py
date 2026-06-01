@@ -1625,7 +1625,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                 ax.plot(
                     rows["Dopant (cm^-3)"],
                     rows["Concentration (cm^-3)"],
-                    label=format_defect_name(defect, wout_charge=True, include_site_info_in_name=True),
+                    label=format_defect_name(defect, wout_charge=True, include_site_info=True),
                     color=cmc.batlowS(i),
                     marker="o",
                 )
@@ -3010,7 +3010,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             ax.plot(
                 matching_rows["μ_Te (eV)"],
                 matching_rows["Concentration (cm^-3)"],
-                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info=True),
                 color=f"C{i}",
             )
             # plot py-sc-fermi alongside
@@ -3131,7 +3131,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             ax.plot(
                 matching_rows["μ_Te (eV)"],
                 matching_rows["Concentration (cm^-3)"],
-                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info=True),
                 color=f"C{i}",
             )
             # plot py-sc-fermi alongside
@@ -3141,7 +3141,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             ax.plot(
                 matching_rows["μ_Te (eV)"],
                 matching_rows["Concentration (cm^-3)"],
-                label=format_defect_name(defect_index, wout_charge=True, include_site_info_in_name=True),
+                label=format_defect_name(defect_index, wout_charge=True, include_site_info=True),
                 color=f"C{i}",
                 marker="o",
             )

@@ -40,7 +40,6 @@ they should be used here.
 """
 
 import contextlib
-import os
 import warnings
 
 import matplotlib.pyplot as plt
@@ -65,7 +64,7 @@ from doped.utils.parsing import (
     get_site_mapping_indices,
     get_wigner_seitz_radius,
 )
-from doped.utils.plotting import _get_backend, format_defect_name
+from doped.utils.plotting import doped_plot_style, format_defect_name
 
 
 def _monty_decode_nested_dicts(d):
@@ -255,27 +254,23 @@ def get_freysoldt_correction(
     if not plot and filename is None:
         return fnv_correction
 
-    with contextlib.suppress(Exception):
-        from shakenbreak.plotting import _install_custom_font
-
-        _install_custom_font()  # in case not installed already
-
     axis_label_dict = {0: r"$a$-axis", 1: r"$b$-axis", 2: r"$c$-axis"}
     if axis is None:
-        fig, axs = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
-        for direction in range(3):
-            plot_FNV(
-                fnv_correction.metadata["plot_data"][direction],
-                ax=axs[direction],
-                title=axis_label_dict[direction],
-                style_file=style_file,
-            )
+        with doped_plot_style(style_file):
+            fig, axs = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
+            for direction in range(3):
+                plot_FNV(
+                    fnv_correction.metadata["plot_data"][direction],
+                    ax=axs[direction],
+                    title=axis_label_dict[direction],
+                    style_file=style_file,
+                )
     else:
         plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
         fig = plt.gcf()
 
     if filename:
-        plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+        plt.savefig(filename, bbox_inches="tight", transparent=True)
 
     return fnv_correction, fig
 
@@ -315,9 +310,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
     check = plot_data["pot_plot_data"]["check"]
     C = plot_data["pot_plot_data"]["shift"]
 
-    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-    with plt.style.context(style_file):
+    with doped_plot_style(style_file):
         if ax is None:
             plt.close("all")  # close any previous figures
             fig, ax = plt.subplots()
@@ -632,18 +625,11 @@ def get_kumagai_correction(
     if not plot and filename is None:
         return kumagai_correction_result
 
-    with contextlib.suppress(Exception):
-        from shakenbreak.plotting import _install_custom_font
-
-        _install_custom_font()  # in case not installed already
-
     spp = SitePotentialMplPlotter.from_efnv_corr(
         title=f"{format_defect_name(defect_entry.name, False)} -- eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
-    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-    with plt.style.context(style_file):
+    with doped_plot_style(style_file):
         plt.close("all")  # close any previous figures
         spp.construct_plot()
         fig = spp.plt.gcf()
@@ -686,6 +672,6 @@ def get_kumagai_correction(
         ax.set_xlabel(f"Distance from defect ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:
-        spp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+        spp.plt.savefig(filename, bbox_inches="tight", transparent=True)
 
     return kumagai_correction_result, fig
