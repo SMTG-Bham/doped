@@ -7,7 +7,7 @@ import functools
 import os
 import re
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from itertools import product
 from typing import TYPE_CHECKING
 
@@ -562,6 +562,9 @@ def format_defect_name(
         str | None:
             Formatted defect name, or ``None`` if it could not be parsed.
     """
+    if not isinstance(defect_species, str):  # check inputs
+        raise TypeError(f"`defect_species` {defect_species} should be a string")
+
     if wout_charge:
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
 
@@ -940,29 +943,19 @@ def _get_legend_txt(
 
     # duplicates in entry names and site info doesn't (fully) solve it, so append "a,b,c.." for different
     # defect species with the same name:
-    def _add_name_to_list_and_rename_if_needed(defect_name, name_list):
-        if any(defect_name in i for i in name_list):
-            i = 3
-
-            if defect_name in name_list:  # first repeat, direct match, rename previous entry
-                # find index of previous defect_name, and rename
-                prev_idx = name_list.index(defect_name)
-                name_list[prev_idx] = f"{defect_name}$_{{-{chr(96 + 1)}}}$"  # a
-                defect_name = f"{defect_name}$_{{-{chr(96 + 2)}}}$"  # b
-
-            else:
-                defect_name = f"{defect_name}$_{{-{chr(96 + i)}}}$"  # c
-
-            while defect_name in name_list:
-                i += 1
-                defect_name = f"{defect_name.rsplit('$_', 1)[0]}$_{{-{chr(96 + i)}}}$"  # d, e, f etc
-
-        name_list.append(defect_name)
-        return name_list
-
     final_legend_txt: list[str] = []
-    for name in legend_txt:
-        final_legend_txt = _add_name_to_list_and_rename_if_needed(name, final_legend_txt)
+    for defect_name in legend_txt:
+        final_legend_txt.append(
+            _uniquified_name(
+                defect_name,
+                variant_exists=lambda base: any(base in i for i in final_legend_txt),
+                exact_exists=lambda n: n in final_legend_txt,
+                suffix=lambda base, i: f"{base}$_{{-{chr(96 + i)}}}$",
+                rename_prev=lambda old, new: final_legend_txt.__setitem__(
+                    final_legend_txt.index(old), new
+                ),
+            )
+        )
 
     return final_legend_txt
 
@@ -984,6 +977,55 @@ def get_legend_font_size() -> float:
     return font_size  # otherwise numeric, return as is
 
 
+def _uniquified_name(
+    base: str,
+    variant_exists: Callable[[str], bool],
+    exact_exists: Callable[[str], bool],
+    suffix: Callable[[str, int], str],
+    rename_prev: Callable[[str, str], None],
+) -> str:
+    """
+    Generate a unique name by appending an "a, b, c..." suffix when ``base``
+    (or a previously-suffixed variant) already exists.
+
+    If ``base`` is the first duplicate (a direct match), the pre-existing entry
+    is renamed to the "a" variant (via ``rename_prev``) and ``base`` becomes
+    the "b" variant; otherwise the next free suffix is used.
+
+    Args:
+        base (str): The (unsuffixed) name to uniquify.
+        variant_exists (Callable):
+            Function to test whether ``base`` `or any suffixed variant` already
+            exists.
+        exact_exists (Callable):
+            Function to test if a given (`exact`) name already exists.
+        suffix (Callable):
+            Function to build the suffixed name from ``(base, i)``
+            (e.g. i=1 -> "{base}_a" etc).
+        rename_prev (Callable):
+            Function to rename a pre-existing entry from old to new name.
+
+    Returns:
+        str: The (possibly suffixed) unique name.
+    """
+    if not variant_exists(base):
+        return base
+
+    # defects with same name, rename to prevent overwriting; append "a,b,c.." for different species:
+    i = 3
+    if exact_exists(base):  # first repeat, direct match, rename previous entry to "a"
+        rename_prev(base, suffix(base, 1))  # a
+        name = suffix(base, 2)  # b
+    else:
+        name = suffix(base, i)  # c
+
+    while exact_exists(name):
+        i += 1
+        name = suffix(base, i)  # d, e, f etc
+
+    return name
+
+
 def _rename_key_and_dicts(
     key: str,
     output_dicts: list,
@@ -993,30 +1035,21 @@ def _rename_key_and_dicts(
     ``output_dicts`` dictionaries (to ``key``_a, ``key``_b, ``key``_c etc),
     renames the corresponding keys in the dictionaries, and returns the renamed
     key and updated dictionaries.
-
-    TODO: Docstring
     """
     output_dict = output_dicts[0]
-    if key in output_dict or any(
-        f"{key}_{chr(96 + i)}" in output_dict for i in range(1, 27)
-    ):  # defects with same name, rename to prevent overwriting:
-        # append "a,b,c.." for different defect species with the same name
-        i = 3
 
-        if key in output_dict:  # first repeat, direct match, rename previous entry
-            for single_output_dict in output_dicts:
-                val = single_output_dict.pop(key)
-                single_output_dict[f"{key}_{chr(96 + 1)}"] = val  # a
+    def _rename_prev(old, new):
+        for single_output_dict in output_dicts:
+            single_output_dict[new] = single_output_dict.pop(old)
 
-            key = f"{key}_{chr(96 + 2)}"  # b
-
-        else:
-            key = f"{key}_{chr(96 + i)}"  # c
-
-        while key in output_dict:
-            i += 1
-            key = f"{key.rsplit('_', 1)[0]}_{chr(96 + i)}"  # d, e, f etc
-
+    key = _uniquified_name(
+        key,
+        variant_exists=lambda base: base in output_dict
+        or any(f"{base}_{chr(96 + i)}" in output_dict for i in range(1, 27)),
+        exact_exists=lambda n: n in output_dict,
+        suffix=lambda base, i: f"{base}_{chr(96 + i)}",
+        rename_prev=_rename_prev,
+    )
     return key, output_dicts
 
 
