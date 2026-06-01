@@ -131,6 +131,10 @@ def _style_figure_draws(fig: "mpl.figure.Figure", style_file: PathLike) -> "mpl.
     rc = _doped_style_rc(str(style_file))
 
     def _wrap(obj, method_name):
+        """
+        Replace ``obj.method_name`` with a version that applies the doped rc
+        context.
+        """
         orig = getattr(obj, method_name)
 
         @functools.wraps(orig)
@@ -514,12 +518,28 @@ def _set_TLD_axis_labels_limits_ticks(
 def _set_title_and_save_figure(
     ax: plt.Axes,
     title: str | None = None,
-    chempot_table: bool = True,
+    chempot_table: bool = False,
     filename: PathLike | None = None,
     styled_font_size: float = 9.0,
 ) -> None:
     """
-    TODO.
+    Set the plot title (if given) and save the figure to file (if requested).
+
+    Args:
+        ax (plt.Axes):
+            The axes whose title to set and whose figure to save.
+        title (str | None):
+            Plot title, LaTeX-formatted via ``latexify``. If ``None`` or empty,
+            no title is set. Defaults to ``None``.
+        chempot_table (bool):
+            Whether a chemical potential table is displayed above the plot, in
+            which case the title is enlarged and padded to sit above it.
+            Defaults to ``False``.
+        filename (PathLike | None):
+            If provided, the path to save the figure to (at 600 dpi, with tight
+            bounding box and transparent background). Defaults to ``None``.
+        styled_font_size (float):
+            Base font size (pt) for the title. Defaults to ``9.0``.
     """
     if title:
         if chempot_table:
@@ -949,8 +969,18 @@ def _iter_old_site_info_matches(name: str):
 def _get_legend_txt(
     for_legend: list[str], all_entries: bool = False, include_site_info: bool = False
 ) -> list[str]:
-    # get latex-like legend titles; don't include site info by default, unless duplicates
+    """
+    Get LaTeX-like legend labels for the given defect entry names.
+
+    Site info is omitted by default, but added (and "a, b, c..." suffixes
+    appended as a last resort) where needed to disambiguate duplicate names.
+    """
+
     def _get_defect_name(defect_entry_name, site_info):
+        """
+        Format a single defect name for the legend, falling back to the raw
+        name if formatting fails.
+        """
         try:
             return format_defect_name(
                 defect_species=defect_entry_name,
@@ -1083,6 +1113,9 @@ def _rename_key_and_dicts(
     output_dict = output_dicts[0]
 
     def _rename_prev(old, new):
+        """
+        Rename the ``old`` key to ``new`` in every dict in ``output_dicts``.
+        """
         for single_output_dict in output_dicts:
             single_output_dict[new] = single_output_dict.pop(old)
 
@@ -1103,18 +1136,37 @@ def _get_formation_energy_lines(
     xlim: tuple[float, float],
     defect_subset: list[str] | str | None = None,
 ):
+    """
+    Compute formation energy vs Fermi level line data for plotting.
+
+    ``((xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin)`` is
+    returned, where ``xy`` holds the stable (ground-state) formation energy
+    lines per defect, ``all_lines_xy`` holds the lines for `every` charge
+    state, and the ``y_range_vals`` lists give the y-values at the x-limits
+    (for axis scaling).
+    """
     if isinstance(defect_subset, str):
         defect_subset = [defect_subset]
 
     def _name_in_subset(name):
+        """
+        Whether ``name`` matches the requested ``defect_subset`` (always true
+        if ``defect_subset`` is not set).
+        """
         return not defect_subset or any(s in name for s in defect_subset)
 
-    def _form_en(defect_entry, fermi_level):  # formation energy at a given Fermi level
+    def _form_en(defect_entry, fermi_level):
+        """
+        Formation energy of ``defect_entry`` at the given Fermi level.
+        """
         return defect_thermodynamics.get_formation_energy(
             defect_entry, chempots=dft_chempots, fermi_level=fermi_level
         )
 
-    def _entry_with_charge(entries, charge):  # first entry in ``entries`` with this charge state
+    def _entry_with_charge(entries, charge):
+        """
+        First entry in ``entries`` with the given charge state.
+        """
         return next(e for e in entries if e.charge_state == charge)
 
     xy: dict = {}  # {defect_name: [[x_vals], [y_vals]]} for stable (ground-state) lines
@@ -1172,14 +1224,16 @@ def _get_formation_energy_lines(
 
         # if xy corresponds to a line below 0 for all x in (0, band_gap), warn!
         assert defect_thermodynamics.band_gap is not None  # typing
-        yvals = _get_in_gap_yvals(xy[def_name][0], xy[def_name][1], (0, defect_thermodynamics.band_gap))
-        if all(y < 0 for y in yvals):  # Check if all y-values are below zero
+
+        in_gap_fermi_levels = np.linspace(0, defect_thermodynamics.band_gap, 1000)
+        in_gap_formation_energies = np.interp(in_gap_fermi_levels, xp=xy[def_name][0], fp=xy[def_name][1])
+        if all(y < 0 for y in in_gap_formation_energies):  # Check if all y-values are below zero
             warnings.warn(
-                f"All formation energies for {def_name} are below zero across the "
-                f"entire band gap range. This is typically unphysical (see docs), and likely due to "
-                f"mis-specification of chemical potentials (see docstrings and/or tutorials)."
+                f"All formation energies for {def_name} are below zero across the entire band gap range. "
+                f"This is typically unphysical (see docs), and likely due to mis-specification of "
+                f"chemical potentials (see docstrings and/or tutorials)."
             )
-            ymin = min(ymin, *yvals)
+            ymin = min(ymin, *in_gap_formation_energies)
 
     if not y_range_vals:
         raise ValueError("No formation energy data available to plot.")
@@ -1190,6 +1244,12 @@ def _get_formation_energy_lines(
 def _get_ylim_from_y_range_vals(
     y_range_vals: list[float], ymin: float = 0, auto_labels: bool = False
 ) -> tuple[float, float]:
+    """
+    Determine y-axis limits from the formation-energy ``y_range_vals``.
+
+    Adds headroom above the data, and extra space for transition-level labels
+    when ``auto_labels`` is ``True``.
+    """
     window = max(y_range_vals) - min(*y_range_vals, ymin)
     spacer = 0.1 * window
     ylim = (ymin, max(y_range_vals) + spacer)
@@ -1198,13 +1258,6 @@ def _get_ylim_from_y_range_vals(
         ylim = (ymin, max(y_range_vals) * 1.17) if spacer / ylim[1] < 0.145 else ylim
 
     return ylim
-
-
-def _get_in_gap_yvals(
-    x_coords: list[float], y_coords: list[float], x_range: tuple[float, float]
-) -> np.ndarray:
-    relevant_x = np.linspace(x_range[0], x_range[1], 100)  # x values in range
-    return np.interp(relevant_x, x_coords, y_coords)  # y values in range
 
 
 def formation_energy_plot(
@@ -1666,6 +1719,9 @@ def _optimise_side_placements(
         return []
 
     def lbl_box(pos: tuple, w: float = label_w) -> tuple[float, float, float, float]:
+        """
+        Bounding box ``(x_min, x_max, y_min, y_max)`` for a label at ``pos``.
+        """
         x_pos, y_pos, ha, va, _conn = pos
         x_min, x_max = _label_x_extent(x_pos, ha, w)
         y_min, y_max = _label_y_extent(y_pos, va, label_h)
@@ -1677,9 +1733,15 @@ def _optimise_side_placements(
     y_buf = 0.3 * label_h
 
     def boxes_overlap(b1, b2) -> bool:
+        """
+        Whether two label boxes overlap (with a small y-buffer).
+        """
         return b1[1] > b2[0] and b1[0] < b2[1] and b1[3] + y_buf > b2[2] and b1[2] - y_buf < b2[3]
 
     def conn_endpoints(pos: tuple) -> tuple[float, float, float, float] | None:
+        """
+        Connector line endpoints for a label at ``pos``, or ``None`` if none.
+        """
         x_pos, y_pos, _ha, _va, conn_y = pos
         if conn_y is None:
             return None
@@ -1703,6 +1765,13 @@ def _optimise_side_placements(
     cand_conns = [[conn_endpoints(c) for c in cands] for cands in side_candidates_per_tl]
 
     def _unary_cost(i: int, a: int) -> int:
+        """
+        Overlap cost of pick ``a`` of TL ``i`` independent of other side picks.
+
+        Sums penalties for the label box overlapping inline labels / TL lines,
+        and its connector crossing inline labels, TL lines, or inline
+        connectors.
+        """
         cost = 0
         box = cand_boxes[i][a]
         for ibox in inline_boxes:  # overlap with inline labels
@@ -1791,6 +1860,14 @@ def _optimise_side_placements(
     # ``position_cost``: its unary cost plus, for every other chosen TL ``j``, their box-box
     # overlap and this label's connector crossing the other's box.
     def _conditional_cost(i: int, a: int, picks: list[int]) -> int:
+        """
+        Cost of pick ``a`` of TL ``i`` given the current ``picks`` of other
+        TLs.
+
+        Adds the unary cost to the pairwise penalties against already-chosen
+        picks (box-box overlap and this label's connector crossing their
+        boxes).
+        """
         cost = unary[i][a]
         box_i = cand_boxes[i][a]
         conn_i = cand_conns[i][a]
@@ -1920,6 +1997,10 @@ def _place_labels_for_column(
     label_w = 2 * label_hw
 
     def collides_with_band(y: float, va: str, x_pos: float = x_center, ha: str = "center") -> bool:
+        """
+        Whether a label at ``y`` straddles a band edge or exceeds the plot
+        bounds.
+        """
         y_min, y_max = _label_y_extent(y, va, label_h)
         # reject labels that straddle a band edge (CBM at band_gap, VBM at 0 eV); labels
         # entirely above CBM (in the orange zone) or entirely below VBM are OK -- they're
@@ -1936,6 +2017,10 @@ def _place_labels_for_column(
     def collides_with_tl_line(
         y: float, va: str, x_pos: float, ha: str, source_y: float | None = None
     ) -> bool:
+        """
+        Whether a label at ``y`` lies too close to a TL line (excluding
+        ``source_y``).
+        """
         y_min, y_max = _label_y_extent(y, va, label_h)
         lbl_left, lbl_right = _label_x_extent(x_pos, ha, label_w)
         # only check column lines (extending from line_left to line_right):
@@ -1953,6 +2038,9 @@ def _place_labels_for_column(
         return False
 
     def collides_with_placed(y: float, va: str, x_pos: float, ha: str) -> bool:
+        """
+        Whether a label at the given position overlaps an already-placed label.
+        """
         y_min, y_max = _label_y_extent(y, va, label_h)
         lbl_left, lbl_right = _label_x_extent(x_pos, ha, label_w)
         # require a small vertical buffer (~30% of a label height) between two labels even
@@ -2065,6 +2153,12 @@ def _place_labels_for_column(
         ]
 
     def _candidate_ok(x_pos, y_pos, ha, va, conn_y, strict: bool, source_y: float | None = None) -> bool:
+        """
+        Whether a candidate label position is acceptable.
+
+        Band/figure-edge overlaps are always rejected; when ``strict``, also
+        rejects TL-line, placed-label and connector collisions.
+        """
         if collides_with_band(y_pos, va, x_pos, ha):  # NEVER allow band/figure-edge overlap
             return False
         if strict and (
@@ -2370,6 +2464,10 @@ def transition_level_diagram(
         column_positions: list[list | None] = [None] * n_defects
 
         def _place_column(cnt: int):
+            """
+            Place TL labels for column ``cnt``, treating other columns as
+            obstacles.
+            """
             cross_column = [p for k in range(n_defects) if k != cnt for p in column_placed[k]]
             neighbor_cols = [c for i, c in enumerate(columns_data) if i != cnt]
             assert ylim is not None  # typing
@@ -2476,6 +2574,10 @@ def transition_level_diagram(
         band_label_h = max((styled_font_size / 72.0) * (ylim[1] - ylim[0]) / max(figsize[1], 1.0), 0.05)
 
         def _band_label_overlaps(x: float, ha: str, y: float) -> bool:
+            """
+            Whether a VBM/CBM band label at the given position overlaps any
+            placed label.
+            """
             lx_min, lx_max = _label_x_extent(x, ha, band_label_w)
             ly_min, ly_max = _label_y_extent(y, "center", band_label_h)
             return any(
