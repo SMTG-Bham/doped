@@ -4,11 +4,11 @@ Code for plotting defect formation energies and transition levels.
 
 import contextlib
 import functools
+import math
 import os
 import re
 import warnings
 from collections.abc import Callable, Iterable
-from itertools import product
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import cmcrameri.cm as cmc
@@ -205,8 +205,8 @@ def get_colormap(colormap: str | Colormap | None = None, default: str = "batlow"
             cmap = colormaps.get(colormap, None)
         if cmap is None:
             if "_alpha_" in default:
-                alpha = float(default.split("_alpha_")[-1])
-                default = default.split("_alpha_")[0]
+                alpha = float(default.rsplit("_alpha_", maxsplit=1)[-1])
+                default = default.split("_alpha_", maxsplit=1)[0]
 
             warnings.warn(
                 f"Colormap '{colormap}' not found in `cmcrameri` "
@@ -324,13 +324,13 @@ def _plot_formation_energy_lines(
         **kwargs:
             Additional keyword arguments to pass to ``ax.plot``.
     """
-    for cnt, (x_vals, y_vals) in enumerate(xy.values()):
+    for i, (x_vals, y_vals) in enumerate(xy.values()):
         ax.plot(
             x_vals,
             y_vals,
-            color=colors[cnt],
-            linestyle=linestyles[cnt],
-            markeredgecolor=colors[cnt],
+            color=colors[i],
+            linestyle=linestyles[i],
+            markeredgecolor=colors[i],
             lw=styled_linewidth * 1.2,
             markersize=styled_markersize * (4 / 6),
             **kwargs,
@@ -384,7 +384,7 @@ def _plot_transition_level_markers(
             quite ugly. Defaults to ``False``.
     """
     tl_map: dict[str, dict[float, list[int]]] = defect_thermodynamics.transition_level_map
-    for cnt, def_name in enumerate(defect_names):
+    for i, def_name in enumerate(defect_names):
         x_trans, y_trans, tl_labels, tl_label_type = [], [], [], []
         for x_val, chargeset in tl_map[def_name].items():
             x_trans.append(x_val)
@@ -405,7 +405,7 @@ def _plot_transition_level_markers(
         if not x_trans:
             continue
 
-        color = "k" if all_entries is True else colors[cnt]
+        color = "k" if all_entries is True else colors[i]
         ax.plot(
             x_trans,
             y_trans,
@@ -615,7 +615,8 @@ def format_defect_name(
         # from 2nd underscore to last underscore (before charge state) is site info:
         point_group_symbol = defect_species.split("_")[2]
         if point_group_symbol in sch_symbols and all(  # recognised point group symbol?
-            i not in pre_charge_name for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as_"]  # no As_
+            i not in pre_charge_name
+            for i in ["int", "Int", "vac", "Vac", "sub", "Sub", "as_"]  # no As_
         ):
             # format point group symbol to (e.g. C1 -> C_1) (already in math mode here)
             doped_site_info = f"{point_group_symbol[0]}_{{{point_group_symbol[1:]}}}"
@@ -697,7 +698,7 @@ def _pycdt_style_defect_name(
     returning ``None`` if the name is not recognised.
     """
     try:
-        defect_type = defect_species.split("_")[0]  # vac, as or int
+        defect_type = defect_species.split("_", maxsplit=1)[0]  # vac, as or int
         if (
             defect_type.capitalize() == "Int"
         ):  # for interstitials, name formatting is different (eg Int_Cd_1 vs vac_1_Cd)
@@ -974,6 +975,25 @@ def _iter_old_site_info_matches(name: str):
                 yield match.groups()[1]  # the site-info group (2nd)
 
 
+def _try_format_defect_name(defect_entry_name: str, site_info: bool, wout_charge: bool = True) -> str:
+    """
+    `Try` to format a defect entry name in LaTeX style (for plotting), falling
+    back to the raw name if formatting fails.
+    """
+    try:
+        formatted_name = format_defect_name(
+            defect_species=defect_entry_name,
+            include_site_info=site_info,
+            wout_charge=wout_charge,  # defect names without charge
+        )
+        if formatted_name is None:  # fallback to exception handling below
+            raise RuntimeError(f"Defect entry {defect_entry_name} could not be formatted.")
+        return formatted_name
+
+    except Exception:  # if formatting fails, just use the defect_species name
+        return defect_entry_name
+
+
 def _get_legend_txt(
     for_legend: list[str], all_entries: bool = False, include_site_info: bool = False
 ) -> list[str]:
@@ -983,25 +1003,7 @@ def _get_legend_txt(
     Site info is omitted by default, but added (and "a, b, c..." suffixes
     appended as a last resort) where needed to disambiguate duplicate names.
     """
-
-    def _get_defect_name(defect_entry_name, site_info):
-        """
-        Format a single defect name for the legend, falling back to the raw
-        name if formatting fails.
-        """
-        try:
-            return format_defect_name(
-                defect_species=defect_entry_name,
-                include_site_info=site_info,
-                wout_charge=not all_entries,  # defect names without charge
-            )
-
-        except Exception:  # if formatting fails, just use the defect_species name
-            return defect_entry_name
-
-    legend_txt = [
-        _get_defect_name(defect_entry_name, include_site_info) for defect_entry_name in for_legend
-    ]
+    legend_txt = [_try_format_defect_name(name, include_site_info, not all_entries) for name in for_legend]
 
     if len(legend_txt) == len(set(legend_txt)):  # no duplicates, good to go
         return legend_txt
@@ -1009,7 +1011,7 @@ def _get_legend_txt(
     # duplicates in defect names; rename to avoid overwriting:
     if not include_site_info:  # first see if using site info with duplicates removes duplicate names
         site_info_entry_names = [
-            _get_defect_name(defect_entry_name, True) for defect_entry_name in for_legend
+            _try_format_defect_name(name, True, not all_entries) for name in for_legend
         ]
         legend_txt = [
             (
@@ -1129,8 +1131,9 @@ def _rename_key_and_dicts(
 
     key = _uniquified_name(
         key,
-        variant_exists=lambda base: base in output_dict
-        or any(f"{base}_{chr(96 + i)}" in output_dict for i in range(1, 27)),
+        variant_exists=lambda base: (
+            base in output_dict or any(f"{base}_{chr(96 + i)}" in output_dict for i in range(1, 27))
+        ),
         exact_exists=lambda n: n in output_dict,
         suffix=lambda base, i: f"{base}_{chr(96 + i)}",
         rename_prev=_rename_prev,
@@ -1511,81 +1514,74 @@ def plot_chemical_potential_table(
 
 class TransitionLevel(NamedTuple):
     """
-    A single charge transition level for the vertical TL diagram.
+    A charge transition level (TL), between charge states ``q_pos`` and
+    ``q_neg`` (``q_neg = q_pos - 1`` for single-electron TLs).
 
-    ``charges = (q_upper, q_lower)`` (more positive, then more negative charge
-    state); ``i_meta``/``j_meta`` flag whether the upper/lower charge state is
-    metastable; ``faded`` is ``True`` if the TL should be drawn faded.
+    ``charges = (q_pos, q_neg)`` (more positive, then more negative charge
+    state); ``pos_meta``/``neg_meta`` flag whether the more-positive/negative
+    charge state is metastable. ``TL_eV`` is the TL position in eV from the
+    VBM. ``faded`` is ``True`` if the TL should be drawn faded in the vertical
+    TL diagram (a rendering flag, left at its ``False`` default outside of
+    plotting).
+
+    Shared by |get_TLs| (used for single-electron TLs) and the TL plotting
+    routines.
     """
 
     TL_eV: float
     charges: tuple[int, int]
-    i_meta: bool
-    j_meta: bool
-    faded: bool
+    pos_meta: bool
+    neg_meta: bool
+    faded: bool = False
 
 
 class LabelPosition(NamedTuple):
     """
-    A candidate position for a TL charge label.
+    A plot position for a charge transition level (TL) label.
 
-    ``(x, y)`` is the label anchor with alignments ``ha``/``va``; ``conn_y`` is
-    the source TL-line y for an off-column label that needs a connector, or
-    ``None`` for an inline label with no connector.
+    ``(x, y)`` is the label anchor position with alignments ``ha``/``va``;
+    ``conn_y`` is the source TL line ``y`` for an off-column label that needs a
+    connector, or ``None`` for an inline label with no connector.
+
+    The trailing fields with defaults are only set once a position is
+    `committed` (placed), for use in collision checks against other placed
+    labels: ``label_w`` is the label width (``0`` while still a candidate), and
+    ``conn_x`` is the connector line's source ``x`` (``None`` for a label drawn
+    without a connector).
     """
 
     x: float
     y: float
     ha: str
     va: str
-    conn_y: float | None
-
-
-class PlacedLabel(NamedTuple):
-    """
-    A label already committed to the diagram, used for collision checks.
-
-    ``(x, y)`` is the anchor with alignments ``ha``/``va`` and width
-    ``label_w``; ``(conn_x, conn_y)`` are the connector's source endpoint, or
-    ``None`` for a label drawn without a connector.
-    """
-
-    x: float
-    y: float
-    ha: str
-    va: str
-    label_w: float
-    conn_x: float | None
-    conn_y: float | None
+    conn_y: float | None = None
+    label_w: float = 0.0
+    conn_x: float | None = None
 
 
 def _get_transition_level_data(
     defect_thermodynamics: "DefectThermodynamics",
-    all_TLs: bool | str = False,
+    all: bool | str = False,
 ):
     """
     Collect transition level data for :func:`transition_level_diagram`.
 
-    Returns a ``{defect_name: [(TL_eV, charges, i_meta, j_meta, faded), ...]}``
-    dict, sorted by TL energy, where ``charges = (q_upper, q_lower)`` (more
-    positive, then more negative charge state), ``i_meta``/``j_meta`` indicate
-    whether the corresponding charge state is metastable, and ``faded`` is
-    ``True`` if the TL should be drawn faded (only used when
-    ``all_TLs == "faded"``).
+    Returns ``{defect_name: [TransitionLevel]}``, with ``TransitionLevel``
+    being a named tuple: ``(TL_eV, charges, pos_meta, neg_meta, faded)`` (see
+    definition above), sorted by TL energy (Fermi level). ``faded`` is ``True``
+    if the TL should be drawn faded, only used when ``all == "faded"``.
 
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
             Source of TL data.
-        all_TLs (bool, str):
+        all (bool, str):
 
             - ``False``: only thermodynamic ground-state TLs (from
               ``transition_level_map``). ``faded`` is always ``False``.
             - ``True``: all single-electron TLs. ``faded`` is always ``False``.
             - ``"faded"`` / ``"faded_labels"``: ground-state TLs (solid) plus
               single-electron TLs that involve at least one metastable charge
-              state (these latter are marked ``faded=True``). The two values
-              return the same data; the renderer chooses whether to draw
-              labels for the faded TLs.
+              state (these latter are marked ``faded=True``).
     """
     # ground-state TLs (i.e. those visible on the formation energy diagram):
     gs_per_defect: dict[str, list[TransitionLevel]] = {}
@@ -1595,58 +1591,57 @@ def _get_transition_level_data(
             for TL, chargeset in tl_dict.items()
         ]
 
-    if all_TLs is False:
+    if all is False:
         for tls in gs_per_defect.values():
             tls.sort(key=lambda x: x.TL_eV)
         return gs_per_defect
 
-    # all single-electron TLs (consecutive charge pairs with diff=1):
-    single_electron_TLs: dict[str, list[tuple]] = defect_thermodynamics._get_single_electron_tls()
+    single_electron_TLs: dict[str, list[TransitionLevel]] = (
+        defect_thermodynamics._get_single_electron_tls()  # already ``TransitionLevel`` tuples
+    )  # all single-electron TLs (consecutive charge pairs with ``q_neg = q_pos - 1``)
 
-    # defect order = transition_level_map order (which respects defect appearance order), with
-    # any defects only present in single_electron_TLs appended afterwards:
+    # defect order = transition_level_map order (which respects defect appearance order), with any
+    # defects that are only present in single_electron_TLs appended afterwards:
     ordered_names = list(defect_thermodynamics.transition_level_map.keys())
     for name in single_electron_TLs:
         if name not in ordered_names:
             ordered_names.append(name)
 
-    if all_TLs is True:
-        out = {}
-        for name in ordered_names:
-            tls = [
-                TransitionLevel(tl_eV, charges, i_meta, j_meta, faded=False)
-                for tl_eV, charges, i_meta, j_meta in single_electron_TLs.get(name, [])
-            ]
-            tls.sort(key=lambda x: x.TL_eV)
-            out[name] = tls
-        return out
+    if all is True:
+        return {
+            name: sorted(single_electron_TLs.get(name, []), key=lambda x: x.TL_eV)
+            for name in ordered_names
+        }
 
-    # all_TLs in {"faded", "faded_labels"}: GS TLs solid + metastable single-electron faded
+    # all not ``True`` or ``False``; in {"faded", "faded_labels"}: ground-state TLs solid, metastable
+    # single-electron faded
     out = {}
     for name in ordered_names:
         merged = list(gs_per_defect.get(name, []))  # GS, not faded
-        for tl_eV, charges, i_meta, j_meta in single_electron_TLs.get(name, []):
-            if i_meta or j_meta:
-                merged.append(TransitionLevel(tl_eV, charges, i_meta, j_meta, faded=True))
+        merged += [
+            tl._replace(faded=True)
+            for tl in single_electron_TLs.get(name, [])
+            if tl.pos_meta or tl.neg_meta
+        ]
         merged.sort(key=lambda x: x.TL_eV)
         out[name] = merged
     return out
 
 
-def _format_TL_charge_label(charges, i_meta=False, j_meta=False, prefix=""):
+def _format_TL_charge_label(charges, pos_meta=False, neg_meta=False, prefix=""):
     """
     Format a charge transition label like ``"(+1/0)"`` or ``"(+1*/0)"``.
 
-    ``charges = (q_upper, q_lower)`` where ``q_upper`` is the more positive
-    charge state. ``i_meta``/``j_meta`` denote whether the upper/lower charge
-    state is metastable, in which case a ``*`` is appended to that charge.
-    ``prefix`` is prepended to the label (e.g. ``"ε"`` for transition-level
-    naming).
+    ``charges = (q_pos, q_neg)`` where ``q_pos`` is the more positive charge
+    state. ``pos_meta``/``neg_meta`` denote whether the more-positive/negative
+    charge state is metastable, in which case a ``*`` is appended to that
+    charge. ``prefix`` is prepended to the label (e.g. ``"ε"`` for
+    transition-level naming).
     """
-    q_i, q_j = charges
+    q_pos, q_neg = charges
     return (
-        f"{prefix}({'+' if q_i > 0 else ''}{q_i}{'*' if i_meta else ''}"
-        f"/{'+' if q_j > 0 else ''}{q_j}{'*' if j_meta else ''})"
+        f"{prefix}({'+' if q_pos > 0 else ''}{q_pos}{'*' if pos_meta else ''}"
+        f"/{'+' if q_neg > 0 else ''}{q_neg}{'*' if neg_meta else ''})"
     )
 
 
@@ -1665,30 +1660,35 @@ def _filter_by_defect_subset(defect_dict: dict, defect_subset: list[str] | str |
     return {k: v for k, v in defect_dict.items() if any(s in k for s in defect_subset)}
 
 
-def _label_y_extent(y: float, va: str, label_height: float) -> tuple[float, float]:
-    """
-    Vertical extent (``y_min``, ``y_max``) of a label centred or anchored at
-    ``y`` with vertical alignment ``va`` and height ``label_height``.
-    """
-    if va == "bottom":
-        return y, y + label_height
-    if va == "top":
-        return y - label_height, y
-    # "center"
-    return y - 0.5 * label_height, y + 0.5 * label_height
+# rough character width as a fraction of font size (in points):
+_CHAR_WIDTH_FRAC = 0.55
 
 
-def _label_x_extent(x: float, ha: str, label_width: float) -> tuple[float, float]:
+def _estimate_label_width(fontsize: float, n_chars: float, data_width: float, fig_width: float) -> float:
     """
-    Horizontal extent (``x_min``, ``x_max``) of a label anchored at ``x`` with
-    horizontal alignment ``ha`` and width ``label_width``.
+    Estimate the horizontal extent of a text label, in data units (which is
+    just ``1`` per defect for vertical TL diagram plots).
+
+    The label width in inches is approximated as ``n_chars`` characters, each
+    ~``_CHAR_WIDTH_FRAC * fontsize`` points wide (divided by 72 to convert
+    points to inches), then scaled by the data-to-figure width ratio
+    (``data_width / fig_width``) to convert inches to data units.
     """
-    if ha == "left":
-        return x, x + label_width  # text extends to the right of the anchor
-    if ha == "right":
-        return x - label_width, x  # text extends to the left of the anchor
-    # "center"
-    return x - 0.5 * label_width, x + 0.5 * label_width
+    width_inches = n_chars * _CHAR_WIDTH_FRAC * fontsize / 72.0
+    return width_inches * data_width / max(fig_width, 1.0)
+
+
+def _label_axis_extent(x: float, alignment: str = "left", label_size: float = 8.1) -> tuple[float, float]:
+    """
+    Horizontal or vertical extent (``x_min``, ``x_max``)/(``y_min``, ``y_max``)
+    of a label centred or anchored at ``x``, with alignment ``alignment`` and
+    size (width/height) ``label_size``.
+    """
+    if alignment in ["bottom", "left"]:
+        return x, x + label_size  # text extends to the right of the anchor
+    if alignment in ["top", "right"]:
+        return x - label_size, x  # text extends to the left of the anchor
+    return x - 0.5 * label_size, x + 0.5 * label_size  # "center"
 
 
 def _label_box(
@@ -1698,25 +1698,29 @@ def _label_box(
     Bounding box ``(x_min, x_max, y_min, y_max)`` of a label anchored at
     ``(x_pos, y_pos)`` with the given alignments and dimensions.
     """
-    x_min, x_max = _label_x_extent(x_pos, ha, label_width)
-    y_min, y_max = _label_y_extent(y_pos, va, label_height)
+    x_min, x_max = _label_axis_extent(x_pos, ha, label_width)
+    y_min, y_max = _label_axis_extent(y_pos, va, label_height)
     return x_min, x_max, y_min, y_max
 
 
-def _boxes_overlap(b1: tuple, b2: tuple, y_buf: float = 0.0) -> bool:
+def _boxes_overlap(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float = 0.0) -> bool:
     """
-    Whether two label boxes ``(x_min, x_max, y_min, y_max)`` overlap, treating
-    them as overlapping if they are within ``y_buf`` of each other vertically.
+    Whether two label boxes ``(x_min, x_max, y_min, y_max)`` overlap.
+
+    Label boxes are additionally treated as overlapping if they are within
+    ``x_buf``/``y_buf`` of each other horizontally/vertically.
     """
-    return b1[1] > b2[0] and b1[0] < b2[1] and b1[3] + y_buf > b2[2] and b1[2] - y_buf < b2[3]
+    return (
+        b1[1] + x_buf > b2[0] and b1[0] - x_buf < b2[1] and b1[3] + y_buf > b2[2] and b1[2] - y_buf < b2[3]
+    )  # TODO: Need to adjust x_buf or other settings?
 
 
-def _connector_x0(x_pos: float, x_center: float, line_left: float, line_right: float) -> float:
+def _connector_x0(x_pos: float, x_center: float, TL_line_left: float, TL_line_right: float) -> float:
     """
     X-coordinate at which an off-column label's connector meets its column; the
     near column edge (or the centre for a centred label).
     """
-    return x_center if x_pos == x_center else (line_right if x_pos > x_center else line_left)
+    return x_center if x_pos == x_center else (TL_line_right if x_pos > x_center else TL_line_left)
 
 
 def _segment_intersects_rect(
@@ -1734,7 +1738,7 @@ def _segment_intersects_rect(
     the axis-aligned rectangle ``[rx_min, rx_max] x [ry_min, ry_max]``?
     """
     dx, dy = x1 - x0, y1 - y0
-    t_min, t_max = 0.0, 1.0
+    t0, t1 = 0.0, 1.0
     for p, q in ((-dx, x0 - rx_min), (dx, rx_max - x0), (-dy, y0 - ry_min), (dy, ry_max - y0)):
         if abs(p) < 1e-12:
             if q < 0:
@@ -1742,20 +1746,17 @@ def _segment_intersects_rect(
             continue
         t = q / p
         if p < 0:
-            if t > t_min:
-                t_min = t
-        elif t < t_max:
-            t_max = t
-        if t_min > t_max:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 > t1:
             return False
     return True
 
 
 # --- Tuning constants for vertical transition-level (TL) diagram label placement ---
-# These govern how `transition_level_diagram` spaces/offsets TL charge labels relative to the
-# TL lines and to each other. Each ``*_FRAC`` value is a fraction of a label's height
-# (``label_h``, in eV); ``_SIDE_LABEL_X_GAP`` is an absolute gap in x-units (column-spacing
-# scale). Adjust these to tune the label placement behaviour:
+# These govern how `transition_level_diagram()` spaces/offsets TL charge labels relative to the TL lines
+# and to each other. Each ``*_FRAC`` value is a fraction of a label's height (``label_h``, in eV).
 _SIDE_LABEL_X_GAP = 0.06  # horizontal gap (x-units) from a column edge to an off-column label
 _DIAG_LABEL_DY_FRAC = 1.6  # vertical offset of a diagonal side label from its TL line
 _DIRECT_LABEL_DY_FRAC = 0.4  # anchor offset of a direct above/below label from its TL line
@@ -1766,58 +1767,57 @@ _TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouri
 
 def _optimise_side_placements(
     side_candidates_per_tl: list[list[LabelPosition]],
-    placed_inline: list[PlacedLabel],
-    line_y_positions: list[float],
-    line_left: float,
-    line_right: float,
+    placed_inline: list[LabelPosition],
+    TL_y_positions: list[float],
+    TL_line_left: float,
+    TL_line_right: float,
     x_center: float,
     label_h: float,
     label_w: float,
-    max_brute_force_combos: int = 200_000,
+    max_brute_force_ops: int = 1_000_000_000,
 ) -> list[LabelPosition]:
     r"""
-    Pick one position per side-bound TL so as to minimise total overlap cost.
+    Pick one label position per side-bound-label TL so as to minimise total
+    overlap cost.
 
-    For each TL we have several candidate ``(x, y, ha, va, conn_y)`` positions.
-    The cost of an assignment is the sum of pairwise overlap penalties between
-    label boxes, label-vs-TL-line overlaps, and connector intersections (with
-    other labels and with TL lines). The combination minimising the total cost
-    is returned.
+    For each TL we have several candidate ``(x, y, ha, va, conn_y)`` label
+    positions (``side_candidates_per_tl``). The cost of an assignment is the
+    sum of pairwise overlap penalties between label boxes, label-vs-TL-line
+    overlaps, and connector intersections (with other labels and with TL
+    lines). The combination minimising the total cost is returned.
 
-    Brute-force enumeration is used when the search space (product of options
-    per TL) is small. For larger spaces we fall back to a greedy first-pick
-    plus a few hill-climbing refinement passes.
+    Brute-force enumeration (vectorised with ``numpy``) is used when the
+    estimated work is small enough, and otherwise we fall back to a greedy
+    first-pick plus a few hill-climbing refinement passes. The work estimate is
+    ``space * (n + n*(n-1)/2)`` integer cost-table reads (the per-combination
+    ``n`` unary + ``n*(n-1)/2`` pairwise sums, ``space`` being the product of
+    candidate counts); the numpy build sustains ~1.5 G reads/s on a modern
+    laptop, so the default ``max_brute_force_ops`` keeps worst-case brute force
+    to ~1 s (~10 side-bound TLs, depending on their candidate counts).
     """
     n = len(side_candidates_per_tl)
     if n == 0:
         return []
 
-    def lbl_box(pos: tuple, w: float = label_w) -> tuple[float, float, float, float]:
+    def lbl_box(pos: LabelPosition, w: float = label_w) -> tuple[float, float, float, float]:
         """
         Bounding box ``(x_min, x_max, y_min, y_max)`` for a label at ``pos``.
         """
-        x_pos, y_pos, ha, va, _conn = pos
-        return _label_box(x_pos, y_pos, ha, va, w, label_h)
+        return _label_box(pos.x, pos.y, pos.ha, pos.va, w, label_h)
 
     # add a small y-buffer (~30% of a label height) so two side labels packed almost
     # touch-to-touch on the same side are treated as overlapping (the same buffer applied
     # to inline label-vs-label checks):
     y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_h
 
-    def boxes_overlap(b1, b2) -> bool:
-        """
-        Whether two label boxes overlap (with a small y-buffer).
-        """
-        return _boxes_overlap(b1, b2, y_buf)
-
-    def conn_endpoints(pos: tuple) -> tuple[float, float, float, float] | None:
+    def conn_endpoints(pos: LabelPosition) -> tuple[float, float, float, float] | None:
         """
         Connector line endpoints for a label at ``pos``, or ``None`` if none.
         """
-        x_pos, y_pos, _ha, _va, conn_y = pos
+        x_pos, y_pos, conn_y = pos.x, pos.y, pos.conn_y
         if conn_y is None:
             return None
-        return _connector_x0(x_pos, x_center, line_left, line_right), conn_y, x_pos, y_pos
+        return _connector_x0(x_pos, x_center, TL_line_left, TL_line_right), conn_y, x_pos, y_pos
 
     line_eps = _TL_LINE_EPS_FRAC * label_h
     inline_boxes = [  # placed_inline label bounds
@@ -1850,10 +1850,10 @@ def _optimise_side_placements(
         cost = 0
         box = cand_boxes[i][a]
         for ibox in inline_boxes:  # overlap with inline labels
-            if boxes_overlap(box, ibox):
+            if _boxes_overlap(box, ibox, x_buf=0, y_buf=y_buf):
                 cost += 10
-        if box[1] > line_left and box[0] < line_right:  # overlap with TL lines in the column
-            for ly in line_y_positions:
+        if box[1] > TL_line_left and box[0] < TL_line_right:  # overlap with TL lines in the column
+            for ly in TL_y_positions:
                 if box[2] - line_eps <= ly <= box[3] + line_eps:
                     cost += 5
                     break
@@ -1866,11 +1866,11 @@ def _optimise_side_placements(
             for ibox in inline_boxes:  # connector through inline label boxes
                 if _segment_intersects_rect(cx0, cy0, cx1, cy1, *ibox):
                     cost += 4
-            for ly in line_y_positions:  # connector through TL lines (excluding source)
+            for ly in TL_y_positions:  # connector through TL lines (excluding source)
                 if abs(ly - cy0) < line_eps:
                     continue
                 if _segment_intersects_rect(
-                    cx0, cy0, cx1, cy1, line_left, line_right, ly - line_eps, ly + line_eps
+                    cx0, cy0, cx1, cy1, TL_line_left, TL_line_right, ly - line_eps, ly + line_eps
                 ):
                     cost += 3
             for cox0, coy0, cox1, coy1 in inline_connectors:  # connector through inline connectors
@@ -1898,7 +1898,7 @@ def _optimise_side_placements(
         """
         box_i = cand_boxes[i][a]
         box_j = cand_boxes[j][b]
-        cost = 10 if boxes_overlap(box_i, box_j) else 0
+        cost = 10 if _boxes_overlap(box_i, box_j, x_buf=0, y_buf=y_buf) else 0
         conn_i = cand_conns[i][a]
         conn_j = cand_conns[j][b]
         if conn_j is not None and _segment_intersects_rect(*conn_j, *box_i):
@@ -1914,27 +1914,32 @@ def _optimise_side_placements(
         for j in range(i + 1, n)
     ]
 
-    # search space size:
-    space = 1
-    for c in counts:
-        space *= c
-        if space > max_brute_force_combos:
-            break
+    # Estimate brute-force work as ``space * (n unary + n*(n-1)/2 pairwise)`` cost-table reads; runtime
+    # tracks this near-linearly (the numpy build below sustains ~1.5 G reads/s on a modern laptop, so the
+    # default budget keeps worst-case brute force ~<=1 s -- up to ~10 side-bound TLs depending on their
+    # candidate counts). ``math.prod`` (exact Python int) avoids overflow for pathologically large spaces.
+    per_combo_reads = n + n * (n - 1) // 2
+    space = math.prod(counts)
 
-    if space <= max_brute_force_combos:
-        # brute force: enumerate all index combinations, summing the precomputed cost tables.
-        best_cost = float("inf")
-        best_indices: tuple[int, ...] = tuple([0] * n)
-        for indices in product(*(range(c) for c in counts)):
-            cost = sum(unary[i][indices[i]] for i in range(n))
-            for (i, j), mat in pair_items:
-                cost += mat[indices[i]][indices[j]]
-            if cost < best_cost:
-                best_cost = cost
-                best_indices = indices
-                if cost == 0:
-                    break
-        return [side_candidates_per_tl[k][best_indices[k]] for k in range(n)]
+    if space * per_combo_reads <= max_brute_force_ops:
+        # Brute force via numpy broadcasting: build the full cost grid (one axis per TL, candidate index
+        # along that axis) by adding each unary vector along its own axis and each pairwise table along
+        # its two axes, then take the global argmin. This evaluates the whole ``space``-combination cost
+        # sum in C (~50x faster than the equivalent Python loop), trading the Python loop's early exit on
+        # a zero-cost arrangement for vectorised speed. ``argmin`` returns the first minimum in C order,
+        # which matches the lexicographic tie-break of the previous ``itertools.product`` enumeration.
+        grid = np.zeros(counts, dtype=np.int32)
+        for i, u in enumerate(unary):
+            shape = [1] * n
+            shape[i] = counts[i]
+            grid += np.asarray(u, dtype=np.int32).reshape(shape)
+        for (i, j), mat in pair_items:
+            shape = [1] * n
+            shape[i] = counts[i]
+            shape[j] = counts[j]
+            grid += np.asarray(mat, dtype=np.int32).reshape(shape)
+        best_indices = np.unravel_index(int(np.argmin(grid)), grid.shape)
+        return [side_candidates_per_tl[k][int(best_indices[k])] for k in range(n)]
 
     # greedy + hill-climb fallback for large spaces, using the precomputed geometry. The cost of
     # giving TL ``i`` pick ``a`` given the other chosen picks mirrors the original
@@ -1957,7 +1962,7 @@ def _optimise_side_placements(
             if b < 0 or j == i:
                 continue
             box_j = cand_boxes[j][b]
-            if boxes_overlap(box_i, box_j):
+            if _boxes_overlap(box_i, box_j, x_buf=0, y_buf=y_buf):
                 cost += 10
             if conn_i is not None and _segment_intersects_rect(*conn_i, *box_j):
                 cost += 4
@@ -2002,16 +2007,15 @@ def _place_labels_for_column(
     ylim: tuple[float, float],
     xlim: tuple[float, float],
     label_offset_eV: float,
-    label_width_eV: float,
+    label_width: float,
     skip_faded: bool = True,
     header_y_min: float | None = None,
     label_y_min: float | None = None,
     neighbor_columns: list[tuple[float, float, list[float]]] | None = None,
-    cross_column_placed: list[PlacedLabel] | None = None,
-):
+    cross_column_placed: list[LabelPosition] | None = None,
+):  # TODO: Add output type
     r"""
-    Decide where to place the label for each TL in a single defect column,
-    independently of any clustering.
+    Decide where to place the label for each TL in a single defect column.
 
     For each TL (in input order), the label is tried first directly above the
     TL line, then directly below, then directly to the left (with a small
@@ -2022,7 +2026,7 @@ def _place_labels_for_column(
     of an already-placed label, or one of the band edges (VBM at 0 eV, CBM
     at ``band_gap``) is used.
 
-    Args:
+    Args:  # TODO: Add types here
         tls: list of :class:`TransitionLevel` entries.
         x_center: x-coordinate of the centre of the defect column.
         half_w: half-width of the TL lines in the column (in x-units).
@@ -2032,7 +2036,7 @@ def _place_labels_for_column(
         xlim: ``(x_min, x_max)`` axis limits in x-units.
         label_offset_eV: vertical offset/height of a label in y-units (eV),
             used for stacking and collision checks.
-        label_width_eV: width of a label in x-units, used for collision checks.
+        label_width: width of a label in x-units, used for collision checks.
         skip_faded: if ``True``, faded TLs (5th element ``True``) do not get
             labels (their lines are still part of collision checks). Their
             entry in the returned list is ``None``.
@@ -2041,7 +2045,7 @@ def _place_labels_for_column(
             ``ylim[1]``.
         label_y_min: if provided, labels are not allowed to extend below this
             y.
-        neighbor_columns: list of ``(x_center, half_w, line_y_positions)``
+        neighbor_columns: list of ``(x_center, half_w, TL_y_positions)``
             tuples for neighbouring columns, used to avoid placing labels over
             their TL lines.
         cross_column_placed: list of already-placed label boxes from other
@@ -2050,98 +2054,85 @@ def _place_labels_for_column(
     Returns a list of ``(x, y, label, ha, va, connector_from_y)`` tuples (one
     per TL, in input order) or ``None`` for TLs whose label was skipped.
     ``connector_from_y`` is ``None`` for inline labels with no connector, or
-    the line y otherwise (so the caller can draw a connector from the TL
-    line to the label).
+    the line ``y`` otherwise (so the caller can draw a connector from the TL
+    line to the label).  TODO: Returns two lists though?
     """
-    line_y_positions = [tl.TL_eV for tl in tls]
-    line_left = x_center - half_w
-    line_right = x_center + half_w
-    side_x_right = line_right + _SIDE_LABEL_X_GAP
-    side_x_left = line_left - _SIDE_LABEL_X_GAP
-    # vertical "height" of a label in y-units (≈ the text height we computed for stacking):
-    label_h = label_offset_eV
-    # horizontal half-width of a label in x-units (estimated; used only for collision checks):
-    label_hw = 0.5 * label_width_eV
-    # labels may extend up to `header_y_min` (slightly past ylim[1], into the buffer below
-    # the column header) and down to `label_y_min` (slightly past ylim[0]); this lets TLs
-    # that sit in/near the CBM (orange) or VBM (blue) zones have their labels placed
-    # directly above/below their line:
+    TL_y_positions = [tl.TL_eV for tl in tls]
+    TL_line_left = x_center - half_w
+    TL_line_right = x_center + half_w
+    side_x_right = TL_line_right + _SIDE_LABEL_X_GAP
+    side_x_left = TL_line_left - _SIDE_LABEL_X_GAP
+    label_h = label_offset_eV  # vertical "height" of a label in y-units (~ text height used for stacking)
+    label_w = label_width
+
+    # labels may extend up to `header_y_min` (slightly past ylim[1], into the buffer below the column
+    # header) and down to `label_y_min` (slightly past ylim[0]); this lets TLs that sit in/near the CBM
+    # (orange) or VBM (blue) zones have their labels placed directly above/below their line:
     y_max_allowed = header_y_min if header_y_min is not None else ylim[1]
     y_min_allowed = label_y_min if label_y_min is not None else ylim[0]
 
-    # `placed` accumulates label boxes for collision checks. We seed it with any labels
-    # already placed in earlier columns (cross_column_placed) so this column's labels avoid
-    # cross-column overlaps in addition to in-column ones. New labels placed by this call are
-    # appended onto this list. The caller can use the returned `column_placed` list to learn
-    # which labels were added (to thread into the next column's call).
-    placed: list[PlacedLabel] = list(cross_column_placed or [])
-    n_seeded = len(placed)  # boundary between cross-column placements and this column's
+    # `placed` accumulates label boxes for collision checks. We seed it with any labels already placed
+    # in earlier columns (``cross_column_placed``) so this column's labels avoid cross-column overlaps in
+    # addition to in-column ones. New labels placed by this call are appended onto this list. The caller
+    # can use the returned ``column_placed`` list to determine which labels were added (to thread into the
+    # next column's call).
+    placed: list[LabelPosition] = list(cross_column_placed or [])
+    initial_n_placed = len(placed)
     results: list[tuple[float, float, str, str, str, float | None] | None] = []
-    label_w = 2 * label_hw
 
     def collides_with_band(y: float, va: str, x_pos: float = x_center, ha: str = "center") -> bool:
         """
-        Whether a label at ``y`` straddles a band edge or exceeds the plot
-        bounds.
+        Whether a label at ``y`` straddles a band edge or exceeds plot bounds.
         """
-        y_min, y_max = _label_y_extent(y, va, label_h)
-        # reject labels that straddle a band edge (CBM at band_gap, VBM at 0 eV); labels
-        # entirely above CBM (in the orange zone) or entirely below VBM are OK -- they're
-        # needed for TLs that happen to lie above CBM or below VBM.
-        if y_min < band_gap < y_max or y_min < 0.0 < y_max:
+        y_min, y_max = _label_axis_extent(y, va, label_h)
+        if y_min < band_gap < y_max or y_min < 0.0 < y_max:  # straddles band edge
             return True
-        # always reject labels past the plot top/bottom (or into the header strip):
-        if y_max > y_max_allowed or y_min < y_min_allowed:
+        if y_max > y_max_allowed or y_min < y_min_allowed:  # exceeds plot y-axis bounds:
             return True
-        # also reject labels that would extend past the figure x-limits (y-axis or right edge):
-        lbl_left, lbl_right = _label_x_extent(x_pos, ha, label_w)
-        return lbl_left < xlim[0] or lbl_right > xlim[1]
+        lbl_left, lbl_right = _label_axis_extent(x_pos, ha, label_w)
+        return lbl_left < xlim[0] or lbl_right > xlim[1]  # exceeds plot x-axis bounds?
 
     def collides_with_tl_line(
         y: float, va: str, x_pos: float, ha: str, source_y: float | None = None
     ) -> bool:
         """
-        Whether a label at ``y`` lies too close to a TL line (excluding
-        ``source_y``).
+        Whether a label at ``y`` collides with a TL (excluding ``source_y``).
         """
-        y_min, y_max = _label_y_extent(y, va, label_h)
-        lbl_left, lbl_right = _label_x_extent(x_pos, ha, label_w)
-        # only check column lines (extending from line_left to line_right):
-        if not (lbl_right > line_left and lbl_left < line_right):
+        y_min, y_max = _label_axis_extent(y, va, label_h)
+        lbl_left, lbl_right = _label_axis_extent(x_pos, ha, label_w)
+        if not (lbl_right > TL_line_left and lbl_left < TL_line_right):  # only check TL lines in column
             return False
-        # require ~half a label-height of clearance from the next TL line so a label placed
-        # direct-above/below is visually unambiguous (it doesn't read like it could belong
-        # to a closely-spaced neighbouring TL). `source_y` is the TL we're labelling, so it
-        # is excluded from this check (it sits _DIRECT_LABEL_DY_FRAC*label_h from the anchor):
+
+        # require ~half a label-height of clearance from the (next) TL line so a label placed
+        # direct-above/below is visually unambiguous (couldn't be mis-read as belonging to nearby TL
+        # above/below). `source_y` is the TL we're labelling, so it is excluded from this check (it sits
+        # _DIRECT_LABEL_DY_FRAC*label_h from the anchor):
         clearance = _TL_LINE_CLEARANCE_FRAC * label_h
-        for ly in line_y_positions:
+        for ly in TL_y_positions:
             if source_y is not None and abs(ly - source_y) < _TL_LINE_EPS_FRAC * label_h:
-                continue
-            if y_min - clearance <= ly <= y_max + clearance:
+                continue  # source TL, ignore
+            if y_min - clearance <= ly <= y_max + clearance:  # collision with other TL
                 return True
         return False
 
     def collides_with_placed(y: float, va: str, x_pos: float, ha: str) -> bool:
         """
-        Whether a label at the given position overlaps an already-placed label.
+        Whether a label at ``y`` overlaps an already-placed label.
         """
-        # require a small vertical buffer (~30% of a label height) between two labels even
-        # when their bounding boxes wouldn't strictly intersect, so closely-stacked labels
-        # (e.g. label-below-TL-A + label-above-TL-B with A just above B) don't read as one:
-        y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_h
+        y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_h  # small vertical buffer (~30% label_h) between labels
         box = _label_box(x_pos, y, ha, va, label_w, label_h)
-        for px, py, pha, pva, p_label_w, _pcx, _pcy in placed:
-            if _boxes_overlap(box, _label_box(px, py, pha, pva, p_label_w, label_h), y_buf):
+        for p in placed:
+            if _boxes_overlap(box, _label_box(p.x, p.y, p.ha, p.va, p.label_w, label_h), 0, y_buf):
                 return True
         return False
 
     def connector_through_placed(conn_x0: float, conn_y0: float, conn_x1: float, conn_y1: float) -> bool:
         """
-        Does the proposed connector pass through any already-placed label box?
+        Does the connector pass through any already-placed label box?
         """
-        for px, py, pha, pva, p_label_w, _pcx, _pcy in placed:
+        for p in placed:
             if _segment_intersects_rect(
-                conn_x0, conn_y0, conn_x1, conn_y1, *_label_box(px, py, pha, pva, p_label_w, label_h)
+                conn_x0, conn_y0, conn_x1, conn_y1, *_label_box(p.x, p.y, p.ha, p.va, p.label_w, label_h)
             ):
                 return True
         return False
@@ -2152,20 +2143,19 @@ def _place_labels_for_column(
         connector?
         """
         box = _label_box(x_pos, y_pos, ha, va, label_w, label_h)
-        for px, py, _pha, _pva, _p_label_w, pcx, pcy in placed:
-            if pcx is None or pcy is None:
+        for p in placed:
+            if p.conn_x is None or p.conn_y is None:
                 continue
-            if _segment_intersects_rect(pcx, pcy, px, py, *box):
+            if _segment_intersects_rect(p.conn_x, p.conn_y, p.x, p.y, *box):
                 return True
         return False
 
     def connector_crosses_tl_line(conn_x0: float, conn_y0: float, conn_x1: float, conn_y1: float) -> bool:
         """
-        Does the connector cross any TL line in this column other than its own
-        source?
+        Does the connector cross any TL line in this column other than source?
         """
         line_eps = _TL_LINE_EPS_FRAC * label_h  # treat TL lines as thin rectangles of this height
-        for ly in line_y_positions:
+        for ly in TL_y_positions:
             if abs(ly - conn_y0) < line_eps:  # the source TL we're connecting from
                 continue
             if _segment_intersects_rect(
@@ -2173,8 +2163,8 @@ def _place_labels_for_column(
                 conn_y0,
                 conn_x1,
                 conn_y1,
-                line_left,
-                line_right,
+                TL_line_left,
+                TL_line_right,
                 ly - line_eps,
                 ly + line_eps,
             ):
@@ -2183,43 +2173,39 @@ def _place_labels_for_column(
 
     def _side_candidates(tl_eV: float) -> list[LabelPosition]:
         """
-        Return the off-column candidate positions for one TL: direct left/right (no
-        connector) plus the four diagonal positions (with connector). Ordered with the
-        spacier side first.
+        Return the off-column candidate positions for one TL: direct left/right
+        (no connector) plus four diagonal positions (with connector). Ordered
+        with the spacier side first.
         """
-        y_tol = label_h
+        # determine spacier side (side with greatest distance to other TLs/labels):
         right_obstacle_x = xlim[1]
         left_obstacle_x = xlim[0]
         if neighbor_columns:
-            for nx, nhw, ny_list in neighbor_columns:
-                if not any(abs(ny - tl_eV) <= y_tol for ny in ny_list):
-                    continue
-                if nx - nhw > line_right:
-                    right_obstacle_x = min(right_obstacle_x, nx - nhw)
-                elif nx + nhw < line_left:
-                    left_obstacle_x = max(left_obstacle_x, nx + nhw)
+            for neighbour_x, neighbour_half_w, _ny_list in neighbor_columns:
+                # if not any(abs(ny - tl_eV) <= label_h for ny in ny_list):
+                #     continue  # TODO: Think this was undesirable?
+                if neighbour_x - neighbour_half_w > TL_line_right:  # not the same column
+                    right_obstacle_x = min(right_obstacle_x, neighbour_x - neighbour_half_w)
+                elif neighbour_x + neighbour_half_w < TL_line_left:  # not the same column
+                    left_obstacle_x = max(left_obstacle_x, neighbour_x + neighbour_half_w)
+
         right_clearance = right_obstacle_x - (side_x_right + label_w)
         left_clearance = (side_x_left - label_w) - left_obstacle_x
         right_first = right_clearance >= left_clearance
+
         direct_right = LabelPosition(side_x_right, tl_eV, "left", "center", None)
         direct_left = LabelPosition(side_x_left, tl_eV, "right", "center", None)
-        direct_side_first = direct_right if right_first else direct_left
-        direct_side_second = direct_left if right_first else direct_right
-        # direct sides first (no connector), then diagonals (off-column with diagonal
-        # connector). The spacier side is tried first when both are valid. Diagonals are
-        # offset by _DIAG_LABEL_DY_FRAC*label_h so a diagonal label is clearly distinct from a
-        # direct-side one on the same side for a closely-spaced neighbouring TL:
-        diag_dy = _DIAG_LABEL_DY_FRAC * label_h
+        diag_dy = _DIAG_LABEL_DY_FRAC * label_h  # diagonal y-offset (+/- on either side)
         return [
-            direct_side_first,
-            direct_side_second,
+            direct_right if right_first else direct_left,
+            direct_left if right_first else direct_right,
             LabelPosition(side_x_right, tl_eV + diag_dy, "left", "center", tl_eV),
             LabelPosition(side_x_left, tl_eV + diag_dy, "right", "center", tl_eV),
             LabelPosition(side_x_right, tl_eV - diag_dy, "left", "center", tl_eV),
             LabelPosition(side_x_left, tl_eV - diag_dy, "right", "center", tl_eV),
         ]
 
-    def _candidate_ok(x_pos, y_pos, ha, va, conn_y, source_y: float | None = None) -> bool:
+    def _candidate_ok(pos: LabelPosition, source_y: float | None = None) -> bool:
         """
         Whether a candidate label position is acceptable.
 
@@ -2227,57 +2213,58 @@ def _place_labels_for_column(
         connector collisions.
         """
         if (
-            collides_with_band(y_pos, va, x_pos, ha)  # NEVER allow band/figure-edge overlap
-            or collides_with_tl_line(y_pos, va, x_pos, ha, source_y=source_y)
-            or collides_with_placed(y_pos, va, x_pos, ha)
-            or label_through_placed_connector(x_pos, y_pos, va, ha)
+            collides_with_band(pos.y, pos.va, pos.x, pos.ha)
+            or collides_with_tl_line(pos.y, pos.va, pos.x, pos.ha, source_y=source_y)
+            or collides_with_placed(pos.y, pos.va, pos.x, pos.ha)
+            or label_through_placed_connector(pos.x, pos.y, pos.va, pos.ha)
         ):
             return False
-        if conn_y is not None:
-            conn_x0 = _connector_x0(x_pos, x_center, line_left, line_right)
-            if connector_through_placed(conn_x0, conn_y, x_pos, y_pos):
+        if pos.conn_y is not None:
+            conn_x0 = _connector_x0(pos.x, x_center, TL_line_left, TL_line_right)
+            if connector_through_placed(conn_x0, pos.conn_y, pos.x, pos.y):
                 return False
-            if connector_crosses_tl_line(conn_x0, conn_y, x_pos, y_pos):
+            if connector_crosses_tl_line(conn_x0, pos.conn_y, pos.x, pos.y):
                 return False
         return True
 
-    # ----- Phase 1: try direct above / below for each TL (greedy, cheap). -----
+    # TODO: Do we just capitulate if these all fail? Should have an order of how bad each collision is?
+
+    # ----- Phase 1: Try direct above / below for each TL (greedy, cheap) -----
     # Anything that doesn't fit cleanly inline becomes a "side-bound" TL handled in Phase 2.
     side_bound: list[tuple[int, TransitionLevel]] = []  # (result_index, TL)
     pending_placements: list[tuple[int, str, LabelPosition]] = []  # (result_index, label, position)
     for tl in tls:
-        tl_eV, charges, i_meta, j_meta, faded = tl
+        tl_eV, charges, pos_meta, neg_meta, faded = tl
         i = len(results)
         results.append(None)  # placeholder, filled in phase 3
         if skip_faded and faded:
             continue
-        label = _format_TL_charge_label(charges, i_meta=i_meta, j_meta=j_meta)
+        label = _format_TL_charge_label(charges, pos_meta=pos_meta, neg_meta=neg_meta)
 
         chosen = None
         for cand in (
             LabelPosition(x_center, tl_eV + _DIRECT_LABEL_DY_FRAC * label_h, "center", "bottom", None),
             LabelPosition(x_center, tl_eV - _DIRECT_LABEL_DY_FRAC * label_h, "center", "top", None),
         ):  # direct above, then direct below
-            if _candidate_ok(*cand, source_y=tl_eV):
+            if _candidate_ok(cand, source_y=tl_eV):
                 chosen = cand
                 break
         if chosen is not None:
             pending_placements.append((i, label, chosen))
-            # commit immediately so later phase-1 TLs see this label as placed:
-            placed.append(PlacedLabel(chosen.x, chosen.y, chosen.ha, chosen.va, label_w, None, None))
+            # commit to ``placed`` immediately so later phase-1 TLs see this label (for same-column
+            # direct-above/below (neighbouring TL) collisions):
+            placed.append(chosen._replace(label_w=label_w))
             continue
         side_bound.append((i, tl))
 
-    # ----- Phase 2: optimise the side-bound TLs as a group. -----
-    # For each side-bound TL we generate its (up to 6) off-column candidates and pick the
-    # combination of positions that minimises a total overlap cost. Brute-force search for
-    # tractable sizes; greedy fallback for larger groups.
+    # ----- Phase 2: Optimise the side-bound TLs as a group -----
+    # For each side-bound TL we generate its 6 off-column candidates and pick the combination of positions
+    # that minimises a total overlap cost:
     if side_bound:
-        # build each side-bound TL's candidate positions, dropping any that would straddle a
-        # band edge or fall outside the figure (NEVER allowed). A TL left with no valid
-        # candidate is skipped entirely (its label stays `None`) rather than being forced into
-        # a band-/figure-edge-violating position, so we never draw a label off-plot or across
-        # the VBM/CBM:
+        # build each side-bound TL's candidate positions, dropping any that would straddle a band edge
+        # or fall outside the figure. A TL left with no valid candidate is skipped entirely (its label
+        # stays `None`) rather than being forced into a band-/figure-edge-violating position, but a warning
+        # is thrown to notify the user
         placeable: list[tuple[int, TransitionLevel]] = []
         side_candidates_per_tl: list[list[LabelPosition]] = []
         for i, tl in side_bound:
@@ -2285,46 +2272,50 @@ def _place_labels_for_column(
             if opts:
                 placeable.append((i, tl))
                 side_candidates_per_tl.append(opts)
+            else:
+                label = _format_TL_charge_label(tl.charges, pos_meta=tl.pos_meta, neg_meta=tl.neg_meta)
+                warnings.warn(
+                    f"Could not automatically find a suitable label position for {label}! It will be "
+                    f"omitted, and an appropriate labelling can be added manually."
+                )
 
-        chosen_positions = (
-            _optimise_side_placements(
-                side_candidates_per_tl=side_candidates_per_tl,
-                placed_inline=list(placed),
-                line_y_positions=line_y_positions,
-                line_left=line_left,
-                line_right=line_right,
-                x_center=x_center,
-                label_h=label_h,
-                label_w=label_w,
-            )
-            if side_candidates_per_tl
-            else []
+        chosen_positions = _optimise_side_placements(
+            side_candidates_per_tl=side_candidates_per_tl,
+            placed_inline=list(placed),
+            TL_y_positions=TL_y_positions,
+            TL_line_left=TL_line_left,
+            TL_line_right=TL_line_right,
+            x_center=x_center,
+            label_h=label_h,
+            label_w=label_w,
         )
 
         for (i, tl), pos in zip(placeable, chosen_positions, strict=True):
-            label = _format_TL_charge_label(tl.charges, i_meta=tl.i_meta, j_meta=tl.j_meta)
+            label = _format_TL_charge_label(tl.charges, pos_meta=tl.pos_meta, neg_meta=tl.neg_meta)
             pending_placements.append((i, label, pos))
-            conn_from_x: float | None
-            conn_from_y: float | None
-            if pos.conn_y is not None:
-                conn_from_x = _connector_x0(pos.x, x_center, line_left, line_right)
-                conn_from_y = pos.conn_y
-            else:
-                conn_from_x = conn_from_y = None
-            placed.append(PlacedLabel(pos.x, pos.y, pos.ha, pos.va, label_w, conn_from_x, conn_from_y))
+            # commit the chosen label position, recording its width and (for off-column labels;
+            # ``pos.conn_y`` not ``None``) the connector's source x, for later collision checks:
+            conn_x = (
+                _connector_x0(pos.x, x_center, TL_line_left, TL_line_right)
+                if pos.conn_y is not None
+                else None
+            )
+            placed.append(pos._replace(label_w=label_w, conn_x=conn_x))
 
-    # ----- Phase 3: assemble results in original TL order. -----
+    # ----- Phase 3: Assemble results in original TL order -----
     for i, label, pos in pending_placements:
         results[i] = (pos.x, pos.y, label, pos.ha, pos.va, pos.conn_y)
 
-    # placed_in_this_column = the new entries appended beyond the cross-column seed
-    placed_in_this_column = placed[n_seeded:]
+    placed_in_this_column = placed[initial_n_placed:]  # new entries appended beyond the cross-column seed
     return results, placed_in_this_column
+
+
+# TODO: Results structure doesn't make sense? Is it needed? Why not just used ``placed``?
 
 
 def transition_level_diagram(
     defect_thermodynamics: "DefectThermodynamics",
-    all_TLs: bool | str = "faded",
+    all: bool | str = "faded",
     defect_subset: list[str] | str | None = None,
     include_site_info: bool = False,
     ylim: tuple[float, float] | None = None,
@@ -2342,28 +2333,29 @@ def transition_level_diagram(
 
     The valence band maximum (``self.vbm``) is at 0 eV (blue shaded region) and
     the conduction band minimum (``self.vbm + self.band_gap``) is shown in the
-    orange shaded region at the top. Within each defect column, each transition
-    level is drawn as a short horizontal line, labelled with the charge state
-    transition (e.g. ``(+1/0)``). Metastable charge states are denoted with a
-    ``*`` in the label.
+    orange shaded region at the top of the plot. Within each defect column,
+    each transition level is drawn as a short horizontal line, labelled with
+    the charge state transition (e.g. ``(+1/0)``)(if ``show_charge_labels`` is
+    ``True``; default). Metastable charge states are denoted with a ``*`` in
+    the label, as in the |DefectThermodynamics| methods.
 
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
             |DefectThermodynamics| object containing the defects to plot.
-        all_TLs (bool, str):
+        all (bool, str):
             Controls inclusion of single-electron transition levels involving
             metastable defect charge states (denoted with ``*`` in the
-            labels). Allowed values:
+            labels). Mostly equivalent to ``all`` in |get_TLs|. Allowed values:
 
             - ``"faded"`` (default): show all single-electron TLs, with
               metastable-containing TLs drawn as faded lines `without`
               labels (keeps the plot uncluttered).
             - ``"faded_labels"``: same as ``"faded"`` but `with` labels
               drawn for the faded metastable TLs too.
-            - ``True``: show all single-electron TLs at full strength.
+            - ``True``: show all single-electron TLs at full opacity.
             - ``False``: show only the thermodynamic ground-state transition
-              levels (i.e. those visible on the defect formation energy
-              diagram).
+              levels (i.e. those visible on the standard defect formation
+              energy diagram).
         defect_subset (list[str], str):
             If provided, only defects whose name contains at least one of the
             given substrings are plotted (e.g. ``["v_", "Te_Cd"]`` would keep
@@ -2381,18 +2373,19 @@ def transition_level_diagram(
             (e.g. ``"(+1/0)"``). Defaults to ``True``.
         show_band_labels (bool):
             Whether to draw the "VBM" and "CBM" labels in the blue/orange
-            band-edge shaded zones. If ``None`` (default), they are shown
-            only if they would not overlap any transition level label
-            (with the right side tried first, then the left); if both
-            sides would clash they are hidden. ``True`` forces them on
-            the right; ``False`` hides them.
+            band-edge shaded zones. If ``None`` (default), they are shown only
+            if they would not overlap any transition level label (with the
+            right side of the plot tried first, then the left); if both sides
+            would clash they are hidden. ``True`` forces them on the right;
+            ``False`` hides them.
         label_fontsize (float):
-            Font size for the transition level charge labels. Defaults to
-            ~90% of the current ``font.size`` rcParam.
+            Font size for the charge transition level labels. Defaults to ~90%
+            of the current ``font.size`` rcParam. Can be a useful parameter to
+            tune for busy plots.
         column_width (float):
             Width (in axes units) of the horizontal line segments inside each
             defect column, on a scale where the column spacing is 1. Defaults
-            to ``0.4``.
+            to ``0.4``. Can be a useful parameter to tune for busy plots.
         figsize (tuple):
             ``(width, height)`` of the figure in inches. Defaults to a width
             that scales with the number of defects.
@@ -2403,23 +2396,19 @@ def transition_level_diagram(
         ``matplotlib`` ``Figure`` object.
     """
     if defect_thermodynamics.band_gap is None:
-        raise ValueError(
-            "`band_gap` is not set for `DefectThermodynamics`, cannot plot transition levels."
-        )
+        raise ValueError("`DefectThermodynamics.band_gap` is not set, cannot plot transition levels.")
 
-    if all_TLs not in (False, True, "faded", "faded_labels"):
-        raise ValueError(f"`all_TLs` must be False, True, 'faded' or 'faded_labels', not {all_TLs!r}")
+    if all not in (False, True, "faded", "faded_labels"):
+        raise ValueError(f"`all` must be False, True, 'faded' or 'faded_labels', not {all!r}")
 
-    faded_labels = all_TLs == "faded_labels"
-    tl_data = _get_transition_level_data(defect_thermodynamics, all_TLs=all_TLs)
+    # get TL data:
+    tl_data = _get_transition_level_data(defect_thermodynamics, all=all)
     tl_data = _filter_by_defect_subset(tl_data, defect_subset)
     if not tl_data:
-        raise ValueError(
-            "No defects with transition levels to plot"
-            + (f" (after `defect_subset={defect_subset!r}` filter)" if defect_subset else "")
-            + "."
-        )
+        defect_subset_info = f" (after `defect_subset={defect_subset!r}` filter)" if defect_subset else ""
+        raise ValueError(f"No defects with transition levels to plot{defect_subset_info}.")
 
+    # setup axis limits and figure/label sizing:
     if ylim is None:
         margin = max(0.05 * defect_thermodynamics.band_gap, 0.05)
         ylim = (-margin, defect_thermodynamics.band_gap + margin)
@@ -2427,129 +2416,105 @@ def transition_level_diagram(
     n_defects = len(tl_data)
     half_w = column_width / 2.0
     styled_font_size = plt.rcParams["font.size"]
-    if label_fontsize is None:
-        label_fontsize = styled_font_size * 0.9
+    label_fontsize = label_fontsize or (styled_font_size * 0.9)
 
-    # estimate label horizontal extent (in data units = column spacing) so we can extend xlim
-    # to leave room for labels at the sides of the outer columns. ~7 characters at fontsize:
-    approx_xrange = float(n_defects)
+    # estimate label horizontal extent (in data units = column spacing) so we can extend xlim to leave
+    # room for labels at the sides of the outer columns. The data width is approximated by ``n_defects``
+    # (columns are spaced 1 data-unit apart) as ``xlim`` is not yet known, assuming ~7-character labels:
     if figsize is None:
         styled_figsize = plt.rcParams["figure.figsize"]
         figsize_w = max(styled_figsize[0], 0.8 * n_defects + 1.0)
         figsize_h = styled_figsize[1] * 1.15
     else:
         figsize_w, figsize_h = figsize
-    label_width_eV_est = max(
-        7 * (label_fontsize * 0.55 / 72.0) * approx_xrange / max(figsize_w, 1.0),
-        0.15,
-    )
-    side_pad = half_w + label_width_eV_est + 0.1
-    # the y-axis ticks point inward (xtick.direction=in) so the left-most labels need a bit
-    # of extra clearance to avoid sitting on top of the tick marks:
-    left_extra_pad = 0.15
+    label_width_est = _estimate_label_width(label_fontsize, 7, float(n_defects), figsize_w)
+    side_pad = half_w + label_width_est + 0.1
+
+    # y-axis ticks point inward (when ytick.direction is "in"/"inout"; default in ``doped`` style) so the
+    # left-most labels need some extra clearance to avoid overlapping with tick marks
+    left_extra_pad = 0.15 if plt.rcParams["ytick.direction"] in ("in", "inout") else 0.0
     if figsize is None:
         # widen the figure to accommodate the side padding without squishing column spacing:
         figsize = (figsize_w + 0.8 * (2 * side_pad + left_extra_pad), figsize_h)
 
     fig, ax = plt.subplots(figsize=figsize)
-
-    # shade band edge regions across the full x-range; extend xlim past the outer columns so
-    # there is room to place direct-side / diagonal labels off the left- and right-most columns:
     xlim = (-side_pad - left_extra_pad, n_defects - 1 + side_pad)
+
     _shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="vertical")
 
-    # plot lines and labels for each defect:
-    # minimum vertical spacing (in eV) between successive labels so they don't overlap;
-    # scales with the height (in points) of the label text:
-    label_offset_eV = max(
+    # determine label widths and overlap offsets:
+    label_offset_eV = max(  # minimum vertical spacing (in eV) between successive labels to avoid overlap
         (label_fontsize / 72.0) * (ylim[1] - ylim[0]) / max(figsize[1], 1.0) * 1.2,
         0.04,
-    )
-    # rough horizontal extent of a typical label in axes (data) units, for collision checks;
-    # ~7 characters wide at the given font size:
-    label_width_eV = max(
-        7 * (label_fontsize * 0.55 / 72.0) * (xlim[1] - xlim[0]) / max(figsize[0], 1.0),
-        0.15,
-    )
-    line_lw = plt.rcParams["lines.linewidth"] * 1.1
+    )  # scales with the height (in points) of the label text
+    # rough horizontal extent of labels in data units, for collision checks (~7 characters wide):
+    label_width = _estimate_label_width(label_fontsize, 7, xlim[1] - xlim[0], figsize[0])
     faded_alpha = 0.4
 
-    # column headers sit a small distance above ylim[1]; labels for TLs near/inside the CBM
-    # (orange) or VBM (blue) band-edge zones are allowed to extend a little past ylim[1] /
-    # below ylim[0] (symmetrically), so their labels can be placed directly above/below the
-    # TL line even when the TL itself sits inside a band-edge zone:
+    # column headers sit a small distance above ylim[1]; labels for TLs near/inside the CB/VB band-edge
+    # zones are allowed to extend a little past ylim[1] / below ylim[0] (symmetrically), so their labels
+    # can be placed directly above/below the TL line even when the TL itself sits inside a band-edge zone:
     header_pad_frac = 0.08
     header_y = ylim[1] + header_pad_frac * (ylim[1] - ylim[0])
     label_buf = 0.35 * (header_y - ylim[1])
     label_y_max = ylim[1] + label_buf
     label_y_min = ylim[0] - label_buf
 
-    # pre-build per-column (x_center, half_w, [TL y-positions in range]) so that for each column
-    # we can pass the OTHER columns as neighbour data to inform side-clearance picking:
+    # pre-build per-column (x_center, half_w, [TL y-positions in range]) so that for each column we can
+    # pass the `other` columns as neighbour data to inform side-clearance picking:
     columns_data: list[tuple[float, float, list[float]]] = []
-    for cnt, (_dn, tls_for_col) in enumerate(tl_data.items()):
+    for i, (_name, tls_for_col) in enumerate(tl_data.items()):
         in_range_y = [tl.TL_eV for tl in tls_for_col if ylim[0] <= tl.TL_eV <= ylim[1]]
-        columns_data.append((float(cnt), half_w, in_range_y))
+        columns_data.append((float(i), half_w, in_range_y))
 
-    # Build per-column TL lists and headers, draw the TL lines, then do label placement
-    # globally with iterative cross-column refinement (so a label on the right side of column
-    # A can be moved if it overlaps a label on the left side of column A+1, and vice versa).
-    defect_items = list(tl_data.items())
+    # Build per-column TL lists and headers, draw the TL lines, then do label placement globally with
+    # iterative cross-column refinement (so a label on the right side of column A can be moved if it
+    # overlaps a label on the left side of column A+1, and vice versa).
     column_in_range_tls: list[list[TransitionLevel]] = []
     formatted_names: list[str] = []
-    for cnt, (defect_name, tls) in enumerate(defect_items):
-        x_center = float(cnt)
-        try:
-            header = (
-                format_defect_name(
-                    defect_species=defect_name,
-                    include_site_info=include_site_info,
-                    wout_charge=True,
-                )
-                or defect_name
-            )
-        except Exception:
-            header = defect_name
+    for i, (defect_name, tls) in enumerate(list(tl_data.items())):
+        header = _try_format_defect_name(defect_name, include_site_info)
         formatted_names.append(header)
 
         in_range_tls = [tl for tl in tls if ylim[0] <= tl.TL_eV <= ylim[1]]
         column_in_range_tls.append(in_range_tls)
 
-        # draw TL lines (faded grey for metastable-containing TLs when all_TLs="faded"):
-        for tl_eV, _charges, _i_meta, _j_meta, faded in in_range_tls:
+        # draw TL lines (faded grey for metastable-containing TLs when all="faded"):
+        x_center = float(i)
+        for tl_eV, _charges, _pos_meta, _neg_meta, faded in in_range_tls:
             ax.plot(
                 [x_center - half_w, x_center + half_w],
                 [tl_eV, tl_eV],
                 color="0.45" if faded else "k",
                 alpha=faded_alpha if faded else 1.0,
-                lw=line_lw,
+                lw=plt.rcParams["lines.linewidth"] * 1.1,
                 solid_capstyle="butt",
                 zorder=3,
             )
 
-    if show_charge_labels:
-        column_placed: list[list[PlacedLabel]] = [[] for _ in range(n_defects)]
+    if show_charge_labels:  # label placement
+        column_placed: list[list[LabelPosition]] = [[] for _ in range(n_defects)]
         column_positions: list[list | None] = [None] * n_defects
 
-        def _place_column(cnt: int):
+        def _place_column(i: int):
             """
-            Place TL labels for column ``cnt``, treating other columns as
+            Place TL labels for column ``i``, treating other columns as
             obstacles.
             """
-            cross_column = [p for k in range(n_defects) if k != cnt for p in column_placed[k]]
-            neighbor_cols = [c for i, c in enumerate(columns_data) if i != cnt]
+            cross_column = [p for k in range(n_defects) if k != i for p in column_placed[k]]
+            neighbor_cols = [c for i, c in enumerate(columns_data) if i != i]
             assert ylim is not None  # typing
             assert defect_thermodynamics.band_gap is not None  # typing
             return _place_labels_for_column(
-                tls=column_in_range_tls[cnt],
-                x_center=float(cnt),
+                tls=column_in_range_tls[i],
+                x_center=float(i),
                 half_w=half_w,
                 band_gap=defect_thermodynamics.band_gap,
                 ylim=ylim,
                 xlim=xlim,
                 label_offset_eV=label_offset_eV,
-                label_width_eV=label_width_eV,
-                skip_faded=not faded_labels,
+                label_width=label_width,
+                skip_faded=(all != "faded_labels"),
                 header_y_min=label_y_max,
                 label_y_min=label_y_min,
                 neighbor_columns=neighbor_cols,
@@ -2557,20 +2522,20 @@ def transition_level_diagram(
             )
 
         # initial pass: each column sees only earlier columns' placements as obstacles
-        for cnt in range(n_defects):
-            positions, placed_in_column = _place_column(cnt)
-            column_positions[cnt] = positions
-            column_placed[cnt] = placed_in_column
+        for i in range(n_defects):
+            positions, placed_in_column = _place_column(i)
+            column_positions[i] = positions
+            column_placed[i] = placed_in_column
 
-        # global refinement: re-pick each column's labels with FULL cross-column context
-        # (so a column can now see later-column placements too). Iterate until stable.
-        for _ in range(3):
+        # global refinement: re-pick each column's labels with `full` cross-column context (columns can
+        # now see later-column placements too). Iterate until stable (or 7 iterations pass):
+        for _ in range(7):
             changed = False
-            for cnt in range(n_defects):
-                positions, placed_in_column = _place_column(cnt)
-                if placed_in_column != column_placed[cnt]:
-                    column_positions[cnt] = positions
-                    column_placed[cnt] = placed_in_column
+            for i in range(n_defects):
+                positions, placed_in_column = _place_column(i)
+                if placed_in_column != column_placed[i]:
+                    column_positions[i] = positions
+                    column_placed[i] = placed_in_column
                     changed = True
             if not changed:
                 break
@@ -2578,17 +2543,16 @@ def transition_level_diagram(
         column_positions = [None] * n_defects
 
     # draw labels (and their connectors) for each column:
-    for cnt in range(n_defects):
-        positions = column_positions[cnt]
-        if not show_charge_labels or positions is None:
+    for i in range(n_defects):
+        defect_column_positions = column_positions[i]
+        if not show_charge_labels or defect_column_positions is None:
             continue
-        x_center = float(cnt)
-        in_range_tls = column_in_range_tls[cnt]
-        for position, tl_tuple in zip(positions, in_range_tls, strict=True):
+        x_center = float(i)
+        assert defect_column_positions is not None  # typing
+        for position, tl_tuple in zip(defect_column_positions, column_in_range_tls[i], strict=True):
             if position is None:  # faded TL with skip_faded=True -- no label drawn
                 continue
-            x_pos, y_pos, label, ha, va, conn_y = position
-            faded = tl_tuple.faded
+            x_pos, y_pos, label, ha, va, conn_y = position  # LabelPosition named tuple
             ax.text(
                 x_pos,
                 y_pos,
@@ -2596,67 +2560,57 @@ def transition_level_diagram(
                 ha=ha,
                 va=va,
                 fontsize=label_fontsize,
-                color="0.55" if faded else "0.2",
-                alpha=faded_alpha if faded else 1.0,
+                color="0.55" if tl_tuple.faded else "0.2",
+                alpha=faded_alpha if tl_tuple.faded else 1.0,
                 zorder=4,
                 clip_on=False,
             )
-            if conn_y is not None:
-                # draw a thin connector that stops a little short of both the TL line and the
-                # label, so it doesn't visually touch either (10% gap at the line, 10% at the label):
+            if (
+                conn_y is not None
+            ):  # draw a thin connector from TL to label (stopping 20% short, each side)
                 conn_x0 = _connector_x0(x_pos, x_center, x_center - half_w, x_center + half_w)
-                conn_x_start = conn_x0 + 0.2 * (x_pos - conn_x0)
-                conn_y_start = conn_y + 0.2 * (y_pos - conn_y)
-                conn_x_end = conn_x0 + 0.8 * (x_pos - conn_x0)
-                conn_y_end = conn_y + 0.8 * (y_pos - conn_y)
                 ax.plot(
-                    [conn_x_start, conn_x_end],
-                    [conn_y_start, conn_y_end],
-                    color="0.55" if faded else "0.4",
-                    alpha=faded_alpha if faded else 1.0,
-                    lw=line_lw * 0.5,
+                    [conn_x0 + 0.2 * (x_pos - conn_x0), conn_x0 + 0.8 * (x_pos - conn_x0)],
+                    [conn_y + 0.2 * (y_pos - conn_y), conn_y + 0.8 * (y_pos - conn_y)],
+                    color="0.55" if tl_tuple.faded else "0.4",
+                    alpha=faded_alpha if tl_tuple.faded else 1.0,
+                    lw=plt.rcParams["lines.linewidth"] * 1.1 * 0.5,
                     zorder=2.5,
                 )
 
     # add VBM / CBM labels in the shaded band-edge zones, avoiding overlap with TL labels.
-    # If `show_band_labels` is None we try the right side first (preferred), then the left
-    # if the right would overlap any placed TL label; if both sides clash we omit the labels.
+    # If `show_band_labels` is None we try the right side first (preferred), then the left if the right
+    # would overlap any placed TL label; if both sides clash we omit the labels.
     if show_band_labels is not False:
         force_right = show_band_labels is True
-        all_placed_label_boxes: list[tuple[float, float, float, float]] = []
-        if show_charge_labels:
-            for col_placed in column_placed:
-                for p in col_placed:
-                    all_placed_label_boxes.append(
-                        _label_box(p.x, p.y, p.ha, p.va, p.label_w, label_offset_eV)
-                    )
+        all_placed_label_boxes: list[tuple[float, float, float, float]] = (
+            [
+                _label_box(p.x, p.y, p.ha, p.va, p.label_w, label_offset_eV)
+                for col_placed in column_placed
+                for p in col_placed
+            ]
+            if show_charge_labels
+            else []
+        )
 
         # estimated band-label box size (~3 chars wide, full font height) in data units:
-        band_label_w = max(
-            3 * (styled_font_size * 0.55 / 72.0) * (xlim[1] - xlim[0]) / max(figsize[0], 1.0), 0.15
-        )
+        band_label_w = _estimate_label_width(styled_font_size, 3, xlim[1] - xlim[0], figsize[0])
         band_label_h = max((styled_font_size / 72.0) * (ylim[1] - ylim[0]) / max(figsize[1], 1.0), 0.05)
 
         def _band_label_overlaps(x: float, ha: str, y: float) -> bool:
             """
-            Whether a VBM/CBM band label at the given position overlaps any
-            placed label.
+            Whether a VBM/CBM band label at ``x`` overlaps any placed label.
             """
-            lx_min, lx_max = _label_x_extent(x, ha, band_label_w)
-            ly_min, ly_max = _label_y_extent(y, "center", band_label_h)
-            return any(
-                lx_max > b[0] and lx_min < b[1] and ly_max > b[2] and ly_min < b[3]
-                for b in all_placed_label_boxes
-            )
+            band_box = _label_box(x, y, ha, "center", band_label_w, band_label_h)
+            return any(_boxes_overlap(band_box, b) for b in all_placed_label_boxes)
 
         vbm_y = ylim[0] + 0.5 * (0 - ylim[0])
         cbm_y = defect_thermodynamics.band_gap + 0.5 * (ylim[1] - defect_thermodynamics.band_gap)
+        right_x = xlim[1] - 0.05
+        left_x = xlim[0] + 0.05
         for text, y in (("VBM", vbm_y), ("CBM", cbm_y)):
             # decide side: right preferred; fall back to left; omit if both overlap (unless forced)
-            right_x = xlim[1] - 0.05
-            left_x = xlim[0] + 0.05
-            right_ok = not _band_label_overlaps(right_x, "right", y)
-            if right_ok or force_right:
+            if not _band_label_overlaps(right_x, "right", y) or force_right:
                 x, ha = right_x, "right"
             elif not _band_label_overlaps(left_x, "left", y):
                 x, ha = left_x, "left"
@@ -2665,10 +2619,10 @@ def transition_level_diagram(
             ax.text(x, y, text, ha=ha, va="center", fontsize=styled_font_size, color="0.25", zorder=2)
 
     # column headers (defect names) at the top:
-    for cnt, name in enumerate(formatted_names):
+    for i, name in enumerate(formatted_names):
         ax.annotate(
             name,
-            xy=(cnt, header_y),
+            xy=(i, header_y),
             ha="center",
             va="center",
             fontsize=styled_font_size * 1.15,

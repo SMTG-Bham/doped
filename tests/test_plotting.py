@@ -241,7 +241,7 @@ class DefectPlottingTestCase(unittest.TestCase):
             assert ax.get_ylim() == ylim
 
     def test_plot_transition_levels_invalid_all(self):
-        with pytest.raises(ValueError, match="`all_TLs` must be False, True, 'faded' or 'faded_labels'"):
+        with pytest.raises(ValueError, match="`all` must be False, True, 'faded' or 'faded_labels'"):
             self.CdTe_thermo.plot_transition_levels(all="invalid")
 
     def test_plot_transition_levels_faded_labels_count(self):
@@ -292,9 +292,9 @@ class DefectPlottingTestCase(unittest.TestCase):
         assert _format_TL_charge_label((-1, -2), neg_meta=True) == "(-1/-2*)"
         assert _format_TL_charge_label((2, -3)) == "(+2/-3)"
 
-        ground = _get_transition_level_data(self.CdTe_thermo, all_TLs=False)
-        all_data = _get_transition_level_data(self.CdTe_thermo, all_TLs=True)
-        faded = _get_transition_level_data(self.CdTe_thermo, all_TLs="faded")
+        ground = _get_transition_level_data(self.CdTe_thermo, all=False)
+        all_data = _get_transition_level_data(self.CdTe_thermo, all=True)
+        faded = _get_transition_level_data(self.CdTe_thermo, all="faded")
         # each entry is a 5-tuple (TL_eV, charges, pos_meta, neg_meta, faded):
         for tls in faded.values():
             for tl in tls:
@@ -302,7 +302,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         # ground-state TLs are never faded:
         for tls in ground.values():
             assert all(not tl[4] for tl in tls)
-        # all_TLs=True: also never faded
+        # all=True: also never faded
         for tls in all_data.values():
             assert all(not tl[4] for tl in tls)
         # "faded" mode should include all ground-state TLs as not-faded:
@@ -450,12 +450,8 @@ class DefectPlottingTestCase(unittest.TestCase):
             plotting.format_defect_name(defect_species="vac_1_Cd_a", include_site_info=True)
         assert str(wrong_charge_error) in str(e.value)
 
-        pytest.raises(
-            TypeError,
-            plotting.format_defect_name,
-            defect_species=2,
-            include_site_info=True,
-        )
+        with pytest.raises(TypeError) as e:
+            plotting.format_defect_name(defect_species=2, include_site_info=True)
         # check invalid defect type returns None
         assert plotting.format_defect_name(defect_species="kk_Cd_1_0", include_site_info=True) is None
 

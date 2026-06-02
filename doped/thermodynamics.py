@@ -51,6 +51,7 @@ from doped.utils.parsing import (
     get_vasprun,
 )
 from doped.utils.plotting import (
+    TransitionLevel,
     _format_TL_charge_label,
     _rename_key_and_dicts,
     doped_plot_style,
@@ -2958,14 +2959,14 @@ class DefectThermodynamics(MSONable):
         **kwargs,
     ) -> Figure:
         r"""
-        Produce a vertical transition level diagram (a.k.a. defect charge
-        transition level diagram), with one column per defect and short
-        horizontal lines marking each charge transition level within the host
-        band gap (labelled with the corresponding charge state transition).
+        Produce a vertical defect energy level / charge-transition level
+        diagram, with one column per defect and short horizontal lines marking
+        each charge transition level within the host band gap, labelled with
+        the corresponding charge state transition.
 
         Note that the band edge positions are taken from ``self.vbm`` and
-        ``self.band_gap``, which are parsed from the `bulk supercell
-        calculation` by default, unless ``bulk_band_gap_vr`` is set during
+        ``self.band_gap``, which are parsed from the `bulk supercell`
+        calculation by default, unless ``bulk_band_gap_vr`` is set during
         defect parsing. The VBM lies at 0 eV (blue shaded region), and the CBM
         lies at ``self.band_gap`` (orange shaded region).
 
@@ -2975,17 +2976,19 @@ class DefectThermodynamics(MSONable):
         Args:
             all (bool, str):
                 Controls inclusion of single-electron transition levels
-                involving metastable defect charge states. Allowed values:
+                involving metastable defect charge states (denoted with ``*``
+                in the labels). Mostly equivalent to ``all`` in |get_TLs|.
+                Allowed values:
 
                 - ``"faded"`` (default): show all single-electron TLs, with
-                  metastable-containing TLs drawn as faded grey lines
-                  `without` labels (keeps the plot uncluttered).
+                  metastable-containing TLs drawn as faded grey lines `without`
+                  labels (keeps the plot uncluttered).
                 - ``"faded_labels"``: same as ``"faded"`` but `with` labels
                   drawn for the faded metastable TLs too.
-                - ``True``: show all single-electron TLs at full strength,
-                  all labelled.
+                - ``True``: show all single-electron TLs at full opacity, all
+                  labelled.
                 - ``False``: show only the thermodynamic ground-state
-                  transition levels (i.e. those visible on the defect
+                  transition levels (i.e. those visible on the standard defect
                   formation energy diagram).
             defect_subset (list[str], str):
                 If provided, only defects whose name contains at least one of
@@ -2995,16 +2998,16 @@ class DefectThermodynamics(MSONable):
                 defects)
             unstable_entries (bool, str):
                 Controls the inclusion of unstable/shallow defect states, as in
-                ``DefectThermodynamics.plot()``; allowed values are ``True``,
-                ``False`` or ``"not shallow"``. If ``"not shallow"`` (default),
-                defect entries which are predicted to be shallow (perturbed
-                host) states according to eigenvalue analysis and only stable
-                for Fermi levels within a small window to a band edge
-                (``shallow_stability_tol``) are omitted. If ``False``, `all`
-                defects which are not stable for any Fermi level in the band
-                gap are `also` omitted. If ``True``, defect entries are not
-                pruned based on stability / shallow classification. See
-                ``prune_to_stable_entries`` for more info.
+                :meth:`~doped.thermodynamics.DefectThermodynamics.plot()`;
+                allowed values are ``True``, ``False`` or ``"not shallow"``. If
+                ``"not shallow"`` (default), defect entries which are predicted
+                to be shallow (perturbed host) states according to eigenvalue
+                analysis and only stable for Fermi levels within a small window
+                to a band edge (``shallow_stability_tol``) are omitted. If
+                ``False``, `all` defects which are not stable for any Fermi
+                level in the band gap are `also` omitted. If ``True``, defect
+                entries are not pruned based on stability / shallow
+                classification. See ``prune_to_stable_entries`` for more info.
             include_site_info (bool):
                 Whether to include site info in defect names in the column
                 headers (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``).
@@ -3019,18 +3022,21 @@ class DefectThermodynamics(MSONable):
                 Whether to draw the "VBM" and "CBM" labels in the blue/orange
                 band-edge shaded zones. If ``None`` (default), they are shown
                 only if they would not overlap any transition level label
-                (right side preferred, falling back to the left); if both
-                sides would clash they are hidden. ``True`` forces them on
+                (right side of plot preferred, falling back to the left); if
+                both sides would clash they are hidden. ``True`` forces them on
                 the right; ``False`` hides them.
             label_fontsize (float):
-                Font size for the charge transition labels. Defaults to ~70%
-                of the current ``matplotlib`` ``font.size`` rcParam.
+                Font size for the charge transition labels. Defaults to ~90%
+                of the current ``matplotlib`` ``font.size`` rcParam. Can be a
+                useful parameter to tune for busy plots.
             column_width (float):
                 Width (in axes units) of the horizontal line segments inside
-                each defect column. Defaults to ``0.4``.
+                each defect column, where the column spacing is equal to ``1``.
+                Defaults to ``0.4``. Can be a useful parameter to tune for busy
+                plots.
             figsize (tuple):
-                ``(width, height)`` of the figure in inches. Defaults to a
-                width that scales with the number of defects.
+                ``(width, height)`` of the figure in inches. Defaults to a size
+                that scales with the number of defects.
             style_file (PathLike):
                 Path to a ``mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style (from
@@ -3050,7 +3056,7 @@ class DefectThermodynamics(MSONable):
         with doped_plot_style(style_file):
             return transition_level_diagram(
                 self.prune_to_stable_entries(unstable_entries=unstable_entries, **kwargs),
-                all_TLs=all,
+                all=all,
                 defect_subset=defect_subset,
                 include_site_info=include_site_info,
                 ylim=ylim,
@@ -3062,37 +3068,40 @@ class DefectThermodynamics(MSONable):
                 filename=filename,
             )
 
-    def _get_single_electron_tls(self) -> dict[str, list[tuple[float, tuple[int, int], bool, bool]]]:
+    def _get_single_electron_tls(self) -> dict[str, list[TransitionLevel]]:
         """
         Compute all single-electron charge transition levels for each defect.
 
-        Returns a ``{defect_name: [(TL_eV, (q_i, q_j), i_meta, j_meta), ...]}``
-        dict where each entry corresponds to a transition between consecutive
-        charge states (i.e. single-electron charge transfer TL) ``q_i`` and
-        ``q_j = q_i - 1`` (so ``q_i`` is always the more positive charge
+        Returns a ``{defect_name: [TransitionLevel, ...]}`` dict where each
+        entry corresponds to a transition between consecutive charge states
+        (i.e. single-electron charge transfer TL) ``q_pos`` and
+        ``q_neg = q_pos - 1`` (so ``q_pos`` is always the more positive charge
         state), ``TL_eV`` is the (full-precision) transition level position in
-        eV relative to the VBM (``self.vbm``), and ``i_meta``/``j_meta``
+        eV relative to the VBM (``self.vbm``), and ``pos_meta``/``neg_meta``
         indicate whether the upper/lower charge state is metastable (i.e. not
-        in ``self.all_stable_entries``).
+        in ``self.all_stable_entries``). The ``faded`` rendering flag is left
+        at its ``False`` default.
 
-        Shared by :func:`get_transition_levels` and transition level plotting
-        routines (:func:`~doped.utils.plotting._get_transition_level_data`) to
-        avoid duplicating the single-electron TL computation.
+        Shared by |get_TLs| and transition level plotting routines
+        (:func:`~doped.utils.plotting._get_transition_level_data`).
         """
         stable_entries = self.all_stable_entries
-        single_electron_tls: dict[str, list[tuple[float, tuple[int, int], bool, bool]]] = {}
+        single_electron_tls: dict[str, list[TransitionLevel]] = {}
         for defect_name, grouped_defect_entries in self.all_entries.items():
             sorted_entries = sorted(grouped_defect_entries, key=lambda x: x.charge_state)
-            tls: list[tuple[float, tuple[int, int], bool, bool]] = []
-            for i, j in product(sorted_entries, repeat=2):
-                if i.charge_state - j.charge_state == 1:
-                    mean_VBM = float(  # take mean VBM, should be the same, but allow for small differences
-                        np.mean([x.calculation_metadata.get("vbm", self.vbm) for x in [i, j]])
-                    )
-                    TL = j.get_ediff() - i.get_ediff() - mean_VBM
-                    i_meta = not any(i == y for y in stable_entries)
-                    j_meta = not any(j == y for y in stable_entries)
-                    tls.append((float(TL), (i.charge_state, j.charge_state), i_meta, j_meta))
+            tls: list[TransitionLevel] = []
+            for pos, neg in product(sorted_entries, repeat=2):
+                if pos.charge_state - neg.charge_state != 1:
+                    continue
+                mean_VBM = float(  # take mean VBM, should be the same, but allow for small differences
+                    np.mean([x.calculation_metadata.get("vbm", self.vbm) for x in [pos, neg]])
+                )
+                TL = neg.get_ediff() - pos.get_ediff() - mean_VBM
+                pos_meta = not any(pos == y for y in stable_entries)
+                neg_meta = not any(neg == y for y in stable_entries)
+                tls.append(
+                    TransitionLevel(float(TL), (pos.charge_state, neg.charge_state), pos_meta, neg_meta)
+                )
             single_electron_tls[defect_name] = tls
         return single_electron_tls
 
@@ -3173,11 +3182,6 @@ class DefectThermodynamics(MSONable):
         # TL position in eV from the VBM:
         transition_level_map_list = []
 
-        def _TL_naming_func(TL_charges, i_meta=False, j_meta=False):
-            if not format_charges:
-                return TL_charges
-            return _format_TL_charge_label(TL_charges, i_meta=i_meta, j_meta=j_meta, prefix="ε")
-
         for defect_name, transition_level_dict in tl_thermo.transition_level_map.items():
             if not transition_level_dict:
                 transition_level_map_list.append(  # add defects with no TL to dataframe as "None"
@@ -3186,8 +3190,8 @@ class DefectThermodynamics(MSONable):
                         "Charges": "None",
                         "eV from VBM": np.inf,
                         "In Band Gap?": False,
-                        "-q_i": np.inf,  # for sorting
-                        "-q_j": np.inf,  # for sorting
+                        "-q_pos": np.inf,  # for sorting
+                        "-q_neg": np.inf,  # for sorting
                     }
                 )
                 if all:
@@ -3197,11 +3201,13 @@ class DefectThermodynamics(MSONable):
                 transition_level_map_list.extend(
                     {
                         "Defect": defect_name,
-                        "Charges": _TL_naming_func(transition_level_charges),
+                        "Charges": _format_TL_charge_label(transition_level_charges, prefix="ε")
+                        if format_charges
+                        else transition_level_charges,
                         "eV from VBM": round(TL, 3),
                         "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
-                        "-q_i": -transition_level_charges[0],  # for sorting
-                        "-q_j": -transition_level_charges[1],  # for sorting
+                        "-q_pos": -transition_level_charges[0],  # for sorting
+                        "-q_neg": -transition_level_charges[1],  # for sorting
                     }
                     for TL, transition_level_charges in transition_level_dict.items()
                 )
@@ -3209,16 +3215,20 @@ class DefectThermodynamics(MSONable):
         # now get metastable TLs
         if all:
             for defect_name_wout_charge, tls in tl_thermo._get_single_electron_tls().items():
-                for TL, (q_i, q_j), i_meta, j_meta in tls:
+                for TL, transition_level_charges, pos_meta, neg_meta, _faded in tls:
                     transition_level_map_list.append(
                         {
                             "Defect": defect_name_wout_charge,
-                            "Charges": _TL_naming_func([q_i, q_j], i_meta=i_meta, j_meta=j_meta),
+                            "Charges": _format_TL_charge_label(
+                                transition_level_charges, pos_meta=pos_meta, neg_meta=neg_meta, prefix="ε"
+                            )
+                            if format_charges
+                            else transition_level_charges,
                             "eV from VBM": round(TL, 3),
                             "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
-                            "N(Metastable)": [i_meta, j_meta].count(True),
-                            "-q_i": -q_i,  # for sorting
-                            "-q_j": -q_j,  # for sorting
+                            "N(Metastable)": [pos_meta, neg_meta].count(True),
+                            "-q_pos": -transition_level_charges[0],  # for sorting
+                            "-q_neg": -transition_level_charges[1],  # for sorting
                         }
                     )
 
@@ -3233,9 +3243,9 @@ class DefectThermodynamics(MSONable):
         # sort df by Defect appearance order in defect_entries, Defect, then by TL position:
         tl_df["Defect Appearance Order"] = tl_df["Defect"].map(tl_thermo._map_sort_func)
         tl_df = tl_df.sort_values(
-            by=["Defect Appearance Order", "Defect", "-q_i", "-q_j", "N(Metastable)", "eV from VBM"]
+            by=["Defect Appearance Order", "Defect", "-q_pos", "-q_neg", "N(Metastable)", "eV from VBM"]
         )
-        tl_df = tl_df.drop(columns=["Defect Appearance Order", "-q_i", "-q_j"])
+        tl_df = tl_df.drop(columns=["Defect Appearance Order", "-q_pos", "-q_neg"])
         if not all:
             tl_df = tl_df.drop(columns="N(Metastable)")
         return tl_df.set_index(["Defect", "Charges"])
@@ -3298,10 +3308,10 @@ class DefectThermodynamics(MSONable):
 
         else:
             # any pruning already applied above, so don't re-prune (unstable_entries=True):
-            all_TLs_df = tl_thermo.get_transition_levels(all=True, unstable_entries=True)
-            if all_TLs_df is None:
+            all_df = tl_thermo.get_transition_levels(all=True, unstable_entries=True)
+            if all_df is None:
                 return
-            for defect_name, tl_df in all_TLs_df.groupby("Defect", sort=False):
+            for defect_name, tl_df in all_df.groupby("Defect", sort=False):
                 bold_print(f"Defect: {defect_name}")
                 for index, row in tl_df.iterrows():
                     if index[1] != "None":  # charges
