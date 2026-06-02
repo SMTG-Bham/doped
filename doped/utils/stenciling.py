@@ -147,7 +147,7 @@ def get_defect_in_supercell(
     supercells should be negligible).
 
     Args:
-        defect_entry (|DefectEntry| | tuple[|Structure|, |Structure|] | tuple[|Structure|, |Structure|, np.ndarray]):
+        defect_entry (|DefectEntry| | tuple[|Structure|, |Structure|(, np.ndarray)?]):
             A |DefectEntry| object for which to re-generate the relaxed
             structure (taken from ``DefectEntry.defect_supercell``) in the
             ``target_supercell`` lattice. Alternatively, a tuple of

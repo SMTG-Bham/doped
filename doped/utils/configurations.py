@@ -228,7 +228,9 @@ def apply_s2_to_s1_transformation(
         else (
             trans_struct.lattice
             if new_lattice == "s2_like_s1"
-            else struct2.lattice if new_lattice == "struct2" else None
+            else struct2.lattice
+            if new_lattice == "struct2"
+            else None
         )
     )
     if lattice is None:
@@ -436,14 +438,11 @@ def orient_s2_like_s1(
 
         from doped.analysis import guess_defect_position  # avoid circular import
 
-        if (
-            s1_for_check.composition == s2_for_check.composition
-            and not check_atom_mapping_far_from_defect(
-                defect_supercell=s2_for_check,
-                bulk_supercell=s1_for_check,
-                defect_coords=guess_defect_position(s2_for_check, bulk_supercell=s1_for_check),
-                warning=False,
-            )
+        if s1_for_check.composition == s2_for_check.composition and not check_atom_mapping_far_from_defect(
+            defect_supercell=s2_for_check,
+            bulk_supercell=s1_for_check,
+            defect_coords=guess_defect_position(s2_for_check, bulk_supercell=s1_for_check),
+            warning=False,
         ):
             warnings.warn(
                 "After re-orientation, significant site mismatches remain between ``struct1`` and "

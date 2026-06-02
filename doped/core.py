@@ -2287,15 +2287,15 @@ class Defect(core.Defect):
         else:
             self.oxi_state = oxi_state
 
-        self.conventional_structure: Structure | None = doped_kwargs.get("conventional_structure", None)
-        self.conv_cell_frac_coords: np.ndarray | None = doped_kwargs.get("conv_cell_frac_coords", None)
+        self.conventional_structure: Structure | None = doped_kwargs.get("conventional_structure")
+        self.conv_cell_frac_coords: np.ndarray | None = doped_kwargs.get("conv_cell_frac_coords")
         self.equiv_conv_cell_frac_coords: list[np.ndarray] = doped_kwargs.get(
             "equiv_conv_cell_frac_coords", []
         )
         self._BilbaoCS_conv_cell_vector_mapping: list[int] = doped_kwargs.get(
             "_BilbaoCS_conv_cell_vector_mapping", [0, 1, 2]
         )
-        self.wyckoff: str | None = doped_kwargs.get("wyckoff", None)
+        self.wyckoff: str | None = doped_kwargs.get("wyckoff")
 
     def _set_oxi_state(self):
         # only try guessing bulk oxi states if not already set:

@@ -288,14 +288,14 @@ class DefectPlottingTestCase(unittest.TestCase):
         from doped.utils.plotting import _format_TL_charge_label, _get_transition_level_data
 
         assert _format_TL_charge_label((1, 0)) == "(+1/0)"
-        assert _format_TL_charge_label((1, 0), i_meta=True) == "(+1*/0)"
-        assert _format_TL_charge_label((-1, -2), j_meta=True) == "(-1/-2*)"
+        assert _format_TL_charge_label((1, 0), pos_meta=True) == "(+1*/0)"
+        assert _format_TL_charge_label((-1, -2), neg_meta=True) == "(-1/-2*)"
         assert _format_TL_charge_label((2, -3)) == "(+2/-3)"
 
         ground = _get_transition_level_data(self.CdTe_thermo, all_TLs=False)
         all_data = _get_transition_level_data(self.CdTe_thermo, all_TLs=True)
         faded = _get_transition_level_data(self.CdTe_thermo, all_TLs="faded")
-        # each entry is a 5-tuple (TL_eV, charges, i_meta, j_meta, faded):
+        # each entry is a 5-tuple (TL_eV, charges, pos_meta, neg_meta, faded):
         for tls in faded.values():
             for tl in tls:
                 assert len(tl) == 5

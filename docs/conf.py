@@ -141,6 +141,7 @@ rst_prolog = """
 .. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
 .. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
+.. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
 .. |ChemicalPotentialGrid| replace:: :class:`~doped.chemical_potentials.ChemicalPotentialGrid`
 .. |CompetingPhases| replace:: :class:`~doped.chemical_potentials.CompetingPhases`
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`

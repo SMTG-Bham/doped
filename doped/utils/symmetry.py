@@ -2518,7 +2518,8 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
             # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
             multiplied_wyckoff_symbol not in wyckoff_symbols
             for multiplied_wyckoff_symbol in [
-                _multiply_wyckoffs([wyckoff_label], n=n)[0] for n in range(1, 5)  # up to 4x
+                _multiply_wyckoffs([wyckoff_label], n=n)[0]
+                for n in range(1, 5)  # up to 4x
             ]
         ):
             return False  # break on first non-match

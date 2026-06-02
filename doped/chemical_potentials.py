@@ -553,7 +553,7 @@ def get_MP_summary_dicts(
         return MP_doc_dicts
 
     for entry in entries:
-        entry.MP_doc_dict = MP_doc_dicts.get(entry.data["material_id"], None)
+        entry.MP_doc_dict = MP_doc_dicts.get(entry.data["material_id"])
         if entry.MP_doc_dict is None and entry.data["material_id"] != "mp-0":
             warnings.warn(
                 f"No matching summary dictionary found for entry {entry.name, entry.data['material_id']} "
@@ -1400,9 +1400,9 @@ class CompetingPhases(MSONable):
         )
         _name_entries_and_handle_duplicates(self.entries)  # set entry names
         self.extrinsic_entries = [entry for entry in self.entries if entry not in self.intrinsic_entries]
-        assert len(self.intrinsic_entries) + len(self.extrinsic_entries) == len(
-            self.entries
-        ), "Error in extrinsic entries generation, please report this to the doped developers!"
+        assert len(self.intrinsic_entries) + len(self.extrinsic_entries) == len(self.entries), (
+            "Error in extrinsic entries generation, please report this to the doped developers!"
+        )
 
         _warn_if_many_polymorphs_per_composition(self.entries)
 
@@ -5312,7 +5312,7 @@ def get_X_rich_poor_limit(
     # parse X:
     if "rich" in X.lower() or "poor" in X.lower():
         rich = "rich" in X.lower()
-        X = X.split("-")[0]
+        X = X.split("-", maxsplit=1)[0]
     else:
         try:
             _ref = Element(X)

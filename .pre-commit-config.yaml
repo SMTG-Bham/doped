@@ -4,11 +4,13 @@ exclude: ^(examples|.github)
 repos:
   # Lint and format, isort, docstrings...
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.3.0
+    rev: v0.15.5  # keep in sync with locally installed ruff (rev must be a specific tag)
     hooks:
       - id: ruff
         <<: *skip_docs
         args: [--fix]
+      - id: ruff-format  # max line length 107 specified in pyproject.toml
+        <<: *skip_docs
 
   # Remove trailing whitespace, leave empty line at end of file
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -19,13 +21,6 @@ repos:
         <<: *skip_docs
         exclude: '\.dat$'
       - id: trailing-whitespace
-        <<: *skip_docs
-
-  # Code formatting
-  - repo: https://github.com/psf/black
-    rev: 24.2.0
-    hooks:
-      - id: black  # max line length 107 specified in pyproject.toml
         <<: *skip_docs
 
   - repo: https://github.com/pre-commit/mirrors-mypy

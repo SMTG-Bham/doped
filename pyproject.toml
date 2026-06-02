@@ -75,9 +75,6 @@ exclude = ["examples*", "*testing", "tests*", "docs*"]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
 
-[tool.black]
-line-length = 107
-
 [tool.ruff]
 line-length = 107
 lint.pydocstyle.convention = "google"
@@ -120,14 +117,16 @@ lint.ignore = [
   "PLR",     # pylint refactor
   "W605",    # Invalid escape sequence
   "PT011",   # too broad pytest.raises()
+  "PLC0415", # import-outside-top-level (deliberate lazy imports are used to avoid circular imports, ``vise`` issues...)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D102"]
 
-[[tool.mypy.overrides]]
-module = ["tabulate.*"]
-ignore_missing_imports = true
+[tool.mypy]
+python_version = "3.14"
+files = ["doped"]
+ignore_missing_imports = true  # doped depends on scientific libraries that don't have type stubs (pymatgen, vise, ...)
 
 [tool.docformatter]
 recursive = true

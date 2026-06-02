@@ -540,7 +540,9 @@ def get_eigenvalue_analysis(
                         color_list.append(
                             occupied_color
                             if occup > 0.9
-                            else unoccupied_color if occup < 0.1 else partial_color
+                            else unoccupied_color
+                            if occup < 0.1
+                            else partial_color
                         )
                         kpt_indices.append(kpt_idx)
                         energies.append(energy)

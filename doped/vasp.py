@@ -2420,7 +2420,7 @@ class DefectsSet(MSONable):
         json_filename = "defect_entries.json.gz"  # global statement in case, but should be skipped
         json_obj = defect_entries
         if type(defect_entries).__name__ == "DefectsGenerator":
-            defect_entries = cast(DefectsGenerator, defect_entries)
+            defect_entries = cast("DefectsGenerator", defect_entries)
             formula = defect_entries.primitive_structure.composition.get_reduced_formula_and_factor(
                 iupac_ordering=True
             )[0]

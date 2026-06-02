@@ -889,8 +889,7 @@ Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as th
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_fermi_level_and_concentrations()`,
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_dopability_limits()`,
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_doping_windows()` and
-:meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels()` methods for
-|DefectThermodynamics| objects, and the
+|get_TLs| methods for |DefectThermodynamics| objects, and the
 :attr:`~doped.chemical_potentials.CompetingPhasesAnalyzer.formation_energy_df` attribute and
 :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots()` method for
 |CompetingPhasesAnalyzer|. As mentioned in the tutorials, these

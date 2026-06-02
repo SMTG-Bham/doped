@@ -2313,17 +2313,17 @@ class DefectsGenerator(MSONable):
                         "bulk_supercell",
                         "name",
                     ],
-                    **{
-                        k: defect_additional_attributes
-                        for k in [
+                    **dict.fromkeys(
+                        [
                             "Interstitial",
                             "Substitution",
                             "Vacancy",
                             "Defect",
                             "DefectComplex",
                             "Adsorbate",
-                        ]
-                    },
+                        ],
+                        defect_additional_attributes,
+                    ),
                 }
 
                 if class_name in attribute_groups:
@@ -2608,7 +2608,9 @@ def _first_and_second_element(defect_name: str) -> tuple[str, str]:
     # by using ``format_defect_name``, we can simultaneously handle (amalgamated) old and new ``doped``
     # defect names:
     formatted_defect_name = format_defect_name(
-        defect_name, include_site_info=False, wout_charge=not defect_name.split("_")[-1].isdigit()
+        defect_name,
+        include_site_info=False,
+        wout_charge=not defect_name.rsplit("_", maxsplit=1)[-1].isdigit(),
     )
     if formatted_defect_name:
         if not formatted_defect_name.startswith("$"):  # substitution or interstitial
@@ -2622,7 +2624,10 @@ def _first_and_second_element(defect_name: str) -> tuple[str, str]:
         vacancy_elt = formatted_defect_name.split("$_{")[1].split("}")[0]  # else vacancy
         return (vacancy_elt, vacancy_elt)
 
-    return (defect_name.split("_")[0], defect_name.split("_")[1])  # return name split if formatting fails
+    return (
+        defect_name.split("_", maxsplit=1)[0],
+        defect_name.split("_")[1],
+    )  # return name split if formatting fails
 
 
 def _element_sort_func(element_str: str) -> tuple[int, int]:
