@@ -1765,6 +1765,7 @@ _TL_LINE_EPS_FRAC = 0.05  # half-thickness used to treat a TL line as a thin rec
 _TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouring (non-source) TL line
 
 
+# TODO: Need to review this function, then done
 def _optimise_side_placements(
     side_candidates_per_tl: list[list[LabelPosition]],
     placed_inline: list[LabelPosition],

@@ -483,7 +483,7 @@ def plot_site_displacements(
         with doped_plot_style(style_file, style="displacement"):
             # Color by species
             unique_species = list(set(disp_df["Species"]))
-            unique_species.sort(key=lambda x: element_list.index(x))
+            unique_species.sort(key=element_list.index)
             colors = plt.rcParams["axes.prop_cycle"].by_key()["color"] or list(
                 dict(mpl.colors.BASE_COLORS, **mpl.colors.CSS4_COLORS).keys()
             )
@@ -683,7 +683,7 @@ def calc_displacements_ellipsoid(
             / d
         )
 
-        U, s, rotation = np.linalg.svd(A)
+        _U, s, rotation = np.linalg.svd(A)
         # there can be some small numerical noise and ambiguity in this approach and ``numpy``\s SVD,
         # so here we ensure consistent & reproducible output regardless of OS etc., favouring alignment
         # with the positive octant (i.e. along [1, 1, 1]):
@@ -1098,7 +1098,7 @@ def plot_displacements_ellipsoid(
     return_list = []
     # If ellipsoid plotting is enabled, plot the ellipsoid with the given lattice matrix
     if plot_ellipsoid:
-        bulk_sc, defect_sc_with_site, defect_site_index = _get_bulk_struct_with_defect(defect_entry)
+        bulk_sc, _defect_sc_with_site, _defect_site_index = _get_bulk_struct_with_defect(defect_entry)
         lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
         func = _plotly_plot_ellipsoid if use_plotly else _mpl_plot_ellipsoid
         args = [ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix]

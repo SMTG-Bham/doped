@@ -313,7 +313,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
     with doped_plot_style(style_file):
         if ax is None:
             plt.close("all")  # close any previous figures
-            fig, ax = plt.subplots()
+            _fig, ax = plt.subplots()
         (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
         (line2,) = ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
         (line3,) = ax.plot(

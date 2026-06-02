@@ -713,7 +713,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                     if "No chemical potential limit specified!" in str(warn.message)
                 )
                 default_limit = str(warn_message).split("Using ")[1].split(" for computing")[0]
-                new_df, new_conc_output, new_conc_w = _run_func_and_capture_stdout_warnings(
+                new_df, _new_conc_output, new_conc_w = _run_func_and_capture_stdout_warnings(
                     defect_thermo.get_equilibrium_concentrations, limit=default_limit, **kwargs
                 )
                 assert not new_conc_w
@@ -920,7 +920,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         # test mismatching chempot warnings:
         print("Checking mismatching chempots")
-        mismatch_chempots = {el: -3 for el in Composition(defect_thermo.bulk_formula).as_dict()}
+        mismatch_chempots = dict.fromkeys(Composition(defect_thermo.bulk_formula).as_dict(), -3)
         with warnings.catch_warnings(record=True) as w:
             defect_thermo.chempots = mismatch_chempots
         _print_warning_info(w)
@@ -971,7 +971,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             for defect_entry_name in defect_thermo.defect_entries  # __contains__()
         )
 
-        random_name, random_defect_entry = random.choice(list(defect_thermo.defect_entries.items()))
+        _random_name, random_defect_entry = random.choice(list(defect_thermo.defect_entries.items()))
         print(f"Checking editing DefectThermodynamics entries dict, using {random_defect_entry.name}")
         assert (
             defect_thermo[random_defect_entry.name]
@@ -2899,14 +2899,14 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
         entry_to_alter = next(iter(self.CdTe_defect_thermo.defect_entries.values()))
         entry_to_alter.bulk_entry._energy = 0.1
 
-        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+        _defect_thermo, _output, w = _run_func_and_capture_stdout_warnings(
             DefectThermodynamics,
             defect_entries=[entry_to_alter, *list(self.CdTe_defect_thermo.defect_entries.values())[1:]],
             check_compatibility=False,
         )
         assert not w
 
-        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+        _defect_thermo, _output, w = _run_func_and_capture_stdout_warnings(
             DefectThermodynamics,
             defect_entries=[entry_to_alter, *list(self.CdTe_defect_thermo.defect_entries.values())[1:]],
         )
@@ -2931,7 +2931,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         # remove the altered entry (for consistent warning message in _check_compatibility_warnings):
         self.CdTe_defect_thermo.defect_entries.pop("v_Cd_0")
-        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+        _defect_thermo, _output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.add_entries,
             [
                 entry_to_alter,
@@ -2942,7 +2942,7 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
         # remove the altered entry (for consistent warning message in _check_compatibility_warnings):
         self.CdTe_defect_thermo.defect_entries.pop("v_Cd_0")
-        defect_thermo, output, w = _run_func_and_capture_stdout_warnings(
+        _defect_thermo, _output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_defect_thermo.add_entries,
             [
                 entry_to_alter,
@@ -3812,7 +3812,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         assert np.isclose(e_h[1], 4.5e13, rtol=0.05)  # CdTe_LZ_Te_rich_concentrations.png
 
         # test chempots behaviour:
-        fl, output, w = _run_func_and_capture_stdout_warnings(
+        _fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level,
         )
         assert not output
@@ -3833,7 +3833,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             },
             {
                 "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
-                "el_refs": {k: 0 for k in defect_thermo.chempots["elemental_refs"]},
+                "el_refs": dict.fromkeys(defect_thermo.chempots["elemental_refs"], 0),
             },
         ]
 
@@ -3856,7 +3856,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
         defect_thermo._chempots = None
         defect_thermo._el_refs = None
-        fl, output, w = _run_func_and_capture_stdout_warnings(
+        _fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level,
         )
         assert not output
@@ -3867,7 +3867,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
         defect_thermo = self.defect_thermo
         defect_thermo.chempots = None
-        fl, output, w = _run_func_and_capture_stdout_warnings(
+        _fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level,
         )
         assert not output
@@ -3890,9 +3890,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
             (defect_thermo.get_fermi_level_and_concentrations, {"limit": "Te-rich"}),
         ]:
-            fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
+            _fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             _check_CdTe_mismatch_fermi_dos_warning(output, w)
-            fl, output, w = _run_func_and_capture_stdout_warnings(
+            _fl, output, w = _run_func_and_capture_stdout_warnings(
                 func, bulk_dos=fd_up_fdos, skip_dos_check=True, **kwargs
             )
             assert not output
@@ -3903,7 +3903,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         _check_CdTe_mismatch_fermi_dos_warning(None, w)
 
         # no warning when already set:
-        fl, output, w = _run_func_and_capture_stdout_warnings(
+        _fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_equilibrium_fermi_level, limit="Te-rich"
         )
         assert not w
@@ -3919,7 +3919,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             (defect_thermo.get_equilibrium_fermi_level, {"limit": "Te-rich"}),
             (defect_thermo.get_fermi_level_and_concentrations, {"limit": "Te-rich"}),
         ]:
-            fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
+            _fl, output, w = _run_func_and_capture_stdout_warnings(func, bulk_dos=fd_up_fdos, **kwargs)
             assert any(
                 "The band gap of the bulk DOS calculation (VBM = 1.45 eV, band gap = 1.71 eV) differs by "
                 ">0.05 eV from `DefectThermodynamics.vbm/gap` (VBM = 1.65 eV, band gap = 1.50 eV; "
@@ -4199,9 +4199,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         assert (
             self.defect_thermo.get_fermi_level_and_concentrations(
                 limit="Te-rich",
-            )[-1].loc[
-                ("v_Cd", "0")
-            ]["Total Concentration (cm^-3)"]
+            )[-1].loc[("v_Cd", "0")]["Total Concentration (cm^-3)"]
             == "1.485e+16"
         )
         assert np.isclose(
@@ -4214,9 +4212,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         assert (
             self.defect_thermo.get_fermi_level_and_concentrations(
                 limit="Te-rich",
-            )[-1].loc[
-                ("v_Cd", "0")
-            ]["Charge State Population"]
+            )[-1].loc[("v_Cd", "0")]["Charge State Population"]
             == "93.80%"
         )
         assert np.isclose(
@@ -4255,7 +4251,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             f"No chemical potential limit specified! Using {limit}" in str(warn.message) for warn in w
         )
         assert limit == "Cd-CdTe"
-        new_results, new_output, new_w = _run_func_and_capture_stdout_warnings(
+        new_results, _new_output, new_w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_fermi_level_and_concentrations, limit=limit
         )
         assert not new_w
@@ -4273,7 +4269,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             },
             {
                 "chempots": defect_thermo.chempots["limits"]["Cd-CdTe"],
-                "el_refs": {k: 0 for k in defect_thermo.chempots["elemental_refs"]},
+                "el_refs": dict.fromkeys(defect_thermo.chempots["elemental_refs"], 0),
             },
         ]
 
@@ -4328,7 +4324,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
 
         defect_thermo = self.defect_thermo
         defect_thermo.chempots = None
-        fl, output, w = _run_func_and_capture_stdout_warnings(
+        _fl, output, w = _run_func_and_capture_stdout_warnings(
             defect_thermo.get_fermi_level_and_concentrations,
         )
         assert not output
@@ -4490,7 +4486,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         assert np.isclose(sym_h, new_h, rtol=1e-3)
 
         # asymmetric (delta_CBM-delta_VBM = 0.3, same gap change but different VBM/CBM placement):
-        asym_fermi, asym_e, asym_h, _ = defect_thermo.get_fermi_level_and_concentrations(
+        asym_fermi, _asym_e, _asym_h, _ = defect_thermo.get_fermi_level_and_concentrations(
             self.fermi_dos, limit="Te-rich", delta_VBM=-0.05, delta_CBM=0.25
         )
         # Fermi level (wrt VBM) should differ from symmetric case since defects stay fixed but VBM shifts
@@ -4588,16 +4584,16 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         # Asymmetric and no renormalisation land within the experimental range, symmetric over-estimates
         # (for T = 1500K synthesis temperature)
         n_exp_low, n_exp_high = 5e18, 5e19  # cm^-3; experimental range (Claes et al.)
-        assert (
-            n_exp_low < e_asym < n_exp_high
-        ), f"Asymmetric n={e_asym:.2e} not within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+        assert n_exp_low < e_asym < n_exp_high, (
+            f"Asymmetric n={e_asym:.2e} not within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+        )
         assert n_exp_low < e_no < n_exp_high, (
             f"No renormalisation n={e_no:.2e} not within experimental band [{n_exp_low:.2e},"
             f" {n_exp_high:.2e}]"
         )
-        assert not (
-            n_exp_low < e_sym < n_exp_high
-        ), f"Symmetric n={e_sym:.2e} within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+        assert not (n_exp_low < e_sym < n_exp_high), (
+            f"Symmetric n={e_sym:.2e} within experimental band [{n_exp_low:.2e}, {n_exp_high:.2e}]"
+        )
 
         # 3-panel figure (mirrors the thermodynamics tutorial / Claes et al. Fig. S6):
         for d in ("Ga_Zn", "Zn_Ga", "v_Zn", "v_O", "v_Ga"):
@@ -4619,9 +4615,9 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
                 gap_shift = belas_linear_fit(anneal_temp) - 1.5
                 (
                     fermi_level,
-                    e_conc,
-                    h_conc,
-                    conc_df,
+                    _e_conc,
+                    _h_conc,
+                    _conc_df,
                 ) = self.defect_thermo.get_fermi_level_and_concentrations(
                     # quenching to 300K (default)
                     bulk_dos=bulk_dos,
@@ -4794,7 +4790,7 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         output_dfs = []
 
         for relative_chempots in chempot_list:
-            fl, e_conc, h_conc, conc_df = self.defect_thermo.get_fermi_level_and_concentrations(
+            _fl, e_conc, h_conc, conc_df = self.defect_thermo.get_fermi_level_and_concentrations(
                 annealing_temperature=875,  # typical for CdTe
                 delta_gap=belas_linear_fit(875) - 1.5,
                 chempots=relative_chempots,

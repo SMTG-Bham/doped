@@ -214,7 +214,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         )
 
         assert len(cp.entries) == 14  # Zr4O now present
-        ZrO2_full_pd_entry_list = self.ZrO2_entry_list[:4] + ["Zr4O"] + self.ZrO2_entry_list[4:]
+        ZrO2_full_pd_entry_list = [*self.ZrO2_entry_list[:4], "Zr4O", *self.ZrO2_entry_list[4:]]
         assert [entry.name for entry in cp.entries] == ZrO2_full_pd_entry_list
         self._check_ZrO2_cp_init(cp, num_stable_entries=5)  # Zr4O is on hull
         self._check_cp_json_roundtrip(cp)
@@ -1344,13 +1344,13 @@ class ExtrinsicCompetingPhasesTestCase(unittest.TestCase):  # same setUp and tea
                 for ext_el in extrinsic_set:
                     n_ext = sum(1 for p in phases if ext_el in Composition(p).elements)
                     if cpa.single_extrinsic_phase_limits:
-                        assert (
-                            n_ext == 1
-                        ), f"Single-extrinsic-phase limit {limit!r} should have (only) 1 phase w/{ext_el}"
+                        assert n_ext == 1, (
+                            f"Single-extrinsic-phase limit {limit!r} should have (only) 1 phase w/{ext_el}"
+                        )
                     else:
-                        assert (
-                            n_ext >= 1
-                        ), f"Should have at least one extrinsic phase for element {ext_el} in {limit!r}"
+                        assert n_ext >= 1, (
+                            f"Should have at least one extrinsic phase for element {ext_el} in {limit!r}"
+                        )
 
         assert len(cpa_default.chempots_df) >= len(cpa_single_extrinsic_phase_limits.chempots_df)
 
@@ -1743,9 +1743,9 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         # each extrinsic element's limiting phase must appear at most once in every limit key
         for limit_key in cpa.chempots["limits_wrt_el_refs"]:
             for limiting_phase in (La_limiting_phase, Y_limiting_phase):
-                assert (
-                    limit_key.count(limiting_phase) <= 1
-                ), f"Limit key {limit_key!r} contains {limiting_phase!r} more than once"
+                assert limit_key.count(limiting_phase) <= 1, (
+                    f"Limit key {limit_key!r} contains {limiting_phase!r} more than once"
+                )
             assert La_limiting_phase in limit_key
             assert Y_limiting_phase in limit_key
 
@@ -2255,11 +2255,11 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
                 )  # only ground states of each phase (including Zr2O with EaH > 0)
 
             assert form_e_df.index.to_numpy().tolist() == (
-                self.ZrO2_entry_list if not prune_polymorphs else self.ZrO2_entry_list[:4] + ["Zr2O"]
+                self.ZrO2_entry_list if not prune_polymorphs else [*self.ZrO2_entry_list[:4], "Zr2O"]
             )
             space_groups = ["P2_1/c", "P6_3/mmc", "P4/mmm", "R-3c", "Pbca", "P6_322", "P312", "Ibam"]
             assert form_e_df["Space Group"].to_numpy().tolist() == (
-                space_groups if not prune_polymorphs else space_groups[:4] + ["P312"]
+                space_groups if not prune_polymorphs else [*space_groups[:4], "P312"]
             )
             assert np.allclose(form_e_df["Energy above Hull (eV/atom)"].to_numpy()[:4], 0)  # stable phases
 

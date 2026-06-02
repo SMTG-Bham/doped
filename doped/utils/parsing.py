@@ -677,7 +677,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     def process_interstitial(defect_supercell, bulk_supercell, composition_diff):
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
-        bulk_new_species_coords, bulk_new_species_idx = get_coords_and_idx_of_species(
+        bulk_new_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
             bulk_supercell, new_species
         )
         defect_new_species_coords, defect_new_species_idx = get_coords_and_idx_of_species(

@@ -1109,7 +1109,7 @@ Te_i_C3i         [+4,+3,+2,+1,0,-1,-2]        [0.000,0.000,0.000]  3a
 
         prim_struct = defect_gen.primitive_structure.copy().remove_oxidation_states()
         sga = SpacegroupAnalyzer(prim_struct)
-        conventional_structure, conv_sga = get_spglib_conv_structure(sga)
+        conventional_structure, _conv_sga = get_spglib_conv_structure(sga)
         reoriented_conv_structure = swap_axes(
             conventional_structure, defect_gen._BilbaoCS_conv_cell_vector_mapping
         )
@@ -2344,7 +2344,7 @@ Se_i_Td          [0,-1,-2]              [0.500,0.500,0.500]  4b"""
         assert info_line in repr(CdTe_defect_gen)
 
     def test_CdTe_no_generate_supercell_supercell_input(self):
-        CdTe_defect_gen, output = self._generate_and_test_no_warnings(
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(
             self.CdTe_bulk_supercell, generate_supercell=False
         )
 
@@ -3414,11 +3414,11 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         Test initialising |DefectsGenerator| with elements that don't have
         tabulated ICSD oxidation states.
         """
-        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Pt")
         # Pt has no tabulated ICSD oxidation states via pymatgen
         self._general_defect_gen_check(CdTe_defect_gen)
 
-        CdTe_defect_gen, output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
+        CdTe_defect_gen, _output = self._generate_and_test_no_warnings(self.prim_cdte, extrinsic="Cf")
         self._general_defect_gen_check(CdTe_defect_gen)
 
     def test_agsbte2(self):
@@ -3428,11 +3428,11 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         In particular, test that defect generation doesn't yield unsorted
         structures.
         """
-        agsbte2_defect_gen_a, output = self._generate_and_test_no_warnings(
+        agsbte2_defect_gen_a, _output = self._generate_and_test_no_warnings(
             self.sqs_agsbte2,
             supercell_gen_kwargs={"min_atoms": 40},  # 48 atoms in input cell
         )
-        agsbte2_defect_gen_b, output = self._generate_and_test_no_warnings(
+        agsbte2_defect_gen_b, _output = self._generate_and_test_no_warnings(
             self.sqs_agsbte2, generate_supercell=False
         )
         # same output regardless of `generate_supercell` because input supercell satisfies constraints
@@ -3464,14 +3464,14 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         """
         # it's a low-symmetry system so don't bother auto-generating supercell, this functionality is
         # sufficiently tested:
-        sn5o6_defect_gen, output = self._generate_and_test_no_warnings(
+        sn5o6_defect_gen, _output = self._generate_and_test_no_warnings(
             self.sn5o6 * 2, generate_supercell=False, min_image_distance=9.70
         )
         self._general_defect_gen_check(sn5o6_defect_gen)
 
         supercell_with_oxi = self.sn5o6 * 2
         supercell_with_oxi.add_oxidation_state_by_element({"Sn": 4, "O": -2})
-        sn5o6_w_oxi_defect_gen, output = self._generate_and_test_no_warnings(
+        sn5o6_w_oxi_defect_gen, _output = self._generate_and_test_no_warnings(
             supercell_with_oxi, generate_supercell=False, min_image_distance=9.70
         )
         for defect_gen, w_oxi in zip(
@@ -3530,7 +3530,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         expansion with only 112 atoms and a min periodic image distance > 10 Å
         is possible.
         """
-        liga5o8_defect_gen, output = self._generate_and_test_no_warnings(self.liga5o8)
+        liga5o8_defect_gen, _output = self._generate_and_test_no_warnings(self.liga5o8)
         self._general_defect_gen_check(liga5o8_defect_gen)
 
         assert len(liga5o8_defect_gen.bulk_supercell) == 112
@@ -3546,7 +3546,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         which is undesirable. Updated code gives exact same supercell for
         bulk/defect supercells.
         """
-        liga5o8_defect_gen, output = self._generate_and_test_no_warnings(
+        liga5o8_defect_gen, _output = self._generate_and_test_no_warnings(
             self.liga5o8 * 3, generate_supercell=False, interstitial_gen_kwargs=False
         )
         self._general_defect_gen_check(liga5o8_defect_gen)  # tests generate_supercell=False behaviour
@@ -3561,7 +3561,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         which is undesirable. Updated code gives exact same supercell for
         bulk/defect supercells.
         """
-        se_defect_gen, output = self._generate_and_test_no_warnings(
+        se_defect_gen, _output = self._generate_and_test_no_warnings(
             self.se_supercell, generate_supercell=False
         )
         self._general_defect_gen_check(se_defect_gen)  # tests generate_supercell=False behaviour
@@ -3580,7 +3580,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
             print(f"Testing translated supercell input for {initial_structure.formula}")
             translated_supercell = initial_structure.copy()
             translated_supercell = translate_structure(translated_supercell, vector)
-            defect_gen, output = self._generate_and_test_no_warnings(
+            defect_gen, _output = self._generate_and_test_no_warnings(
                 translated_supercell, generate_supercell=False
             )
             self._general_defect_gen_check(defect_gen)  # tests generate_supercell=False behaviour
@@ -3618,7 +3618,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
                             f"{symm_opped_struct.get_space_group_info()}"
                         )
 
-                    defect_gen, output = self._generate_and_test_no_warnings(
+                    defect_gen, _output = self._generate_and_test_no_warnings(
                         symm_opped_struct, generate_supercell=False
                     )
                     self._general_defect_gen_check(defect_gen)  # tests generate_supercell=False behaviour
@@ -3631,7 +3631,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         Previously failed as "D" gets renamed to "H" by `pymatgen` under the
         hood, and so wasn't present in `element_list`.
         """
-        Si_defect_gen, output = self._generate_and_test_no_warnings(self.conv_si, extrinsic="D")
+        Si_defect_gen, _output = self._generate_and_test_no_warnings(self.conv_si, extrinsic="D")
         self._general_defect_gen_check(Si_defect_gen)
 
         # test DefectsSet initialisation also fine:
@@ -3644,7 +3644,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         from shakenbreak.distortions import rattle
 
         rattled_struc = rattle(self.prim_cdte, 0.25)
-        defect_gen, output = self._generate_and_test_no_warnings(rattled_struc)
+        _defect_gen, output = self._generate_and_test_no_warnings(rattled_struc)
         assert "Note that the detected symmetry of the input structure is P1" in output
 
     def test_cspbcl3_no_generate_supercell(self):
@@ -3657,7 +3657,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         matrices (and using ``find_mapping`` rather than ``find_all_mappings``),
         but now fixed.
         """
-        defect_gen, output = self._generate_and_test_no_warnings(
+        defect_gen, _output = self._generate_and_test_no_warnings(
             self.cspbcl3_supercell, generate_supercell=False
         )
         self._general_defect_gen_check(defect_gen)
@@ -3709,7 +3709,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         transformation matrices). Now fixed, and also safeguarded in
         ``get_site_mapping_indices`` to prevent duplicate site matches.
         """
-        defect_gen, output = self._generate_and_test_no_warnings(
+        defect_gen, _output = self._generate_and_test_no_warnings(
             self.navcdo4_supercell, interstitial_gen_kwargs=False, generate_supercell=False
         )
         self._general_defect_gen_check(defect_gen)
@@ -3762,7 +3762,7 @@ v_Te         [+2,+1,0,-1,-2]     [0.332,0.001,0.260]  18f
         """
         spaced_struct = Structure(lattice=np.eye(3) * 15, species=["Sb"], coords=[[0, 0, 0]])
 
-        defect_gen, output = self._generate_and_test_no_warnings(spaced_struct)
+        defect_gen, _output = self._generate_and_test_no_warnings(spaced_struct)
         self._general_defect_gen_check(defect_gen)
 
     def test_adsorbate_interstitial_generation_in_low_dimensional_structures(self):

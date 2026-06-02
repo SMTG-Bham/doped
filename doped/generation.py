@@ -31,7 +31,7 @@ from pymatgen.core.entries import ComputedStructureEntry
 from pymatgen.core.periodic_table import DummySpecies
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from pymatgen.util.typing import PathLike
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore[import-untyped]
 from tqdm import tqdm
 
 from doped import pool_manager

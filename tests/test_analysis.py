@@ -2264,9 +2264,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert np.isclose(
             int_F_minus1_ent.defect_supercell_site.distance_and_image_from_frac_coords(
                 [-0.0005726049122470, -0.0001544430438804, 0.4780073657801472]
-            )[
-                0
-            ],  # relaxed site
+            )[0],  # relaxed site
             0.0,
             atol=1e-2,
         )  # approx match, not exact because relaxed bulk supercell
@@ -2308,7 +2306,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         # test returning correction error with plot:
-        corr, fig, corr_error = int_F_minus1_ent.get_kumagai_correction(
+        corr, _fig, corr_error = int_F_minus1_ent.get_kumagai_correction(
             return_correction_error=True, plot=True
         )
         assert np.isclose(corr.correction_energy, correction_dict["kumagai_charge_correction"], atol=1e-3)
@@ -2410,7 +2408,9 @@ class DefectsParsingTestCase(unittest.TestCase):
         )
 
         # test returning correction error with plot:
-        corr, fig, corr_error = F_O_1_ent.get_freysoldt_correction(return_correction_error=True, plot=True)
+        corr, _fig, corr_error = F_O_1_ent.get_freysoldt_correction(
+            return_correction_error=True, plot=True
+        )
         assert np.isclose(corr.correction_energy, 0.11670254204631794, atol=1e-3)
         assert np.isclose(corr_error, 0.000, atol=1e-3)
         assert np.isclose(
@@ -2748,7 +2748,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         the ``DefectThermodynamics.get_symmetries_and_degeneracies()`` tests
         in ``test_thermodynamics.py``.
         """
-        dp, w = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
+        dp, _warnings = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
         assert len(dp.defect_dict) == 17
 
         with warnings.catch_warnings(record=True) as w:
@@ -2880,7 +2880,7 @@ class DefectsParsingTestCase(unittest.TestCase):
                     lines[i] = lines[i].replace("450", "500")
                     break
 
-            new_vr_lines = lines[:11] + ['  <i type="logical" name="LDAU"> F  </i>\n'] + lines[11:]
+            new_vr_lines = [*lines[:11], '  <i type="logical" name="LDAU"> F  </i>\n', *lines[11:]]
 
         with open("./vasprun.xml", "w") as f_out:
             f_out.writelines(new_vr_lines)
@@ -3523,7 +3523,7 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert get_magnetization_from_vasprun(vr) == 0
 
         # test |DefectsParser| handling:
-        dp, w = _create_dp_and_capture_warnings(
+        dp, _w = _create_dp_and_capture_warnings(
             output_path=f"{data_dir}/Magnetization_Tests/CdTe",
             bulk_path=f"{self.CdTe_BULK_DATA_DIR}",
             dielectric=9.13,

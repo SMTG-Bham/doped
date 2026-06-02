@@ -648,7 +648,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
         This method is only used for the ``doped`` backend.
         """
-        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+        single_chempot_dict, _el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
         fermi_level, electrons, holes = self.solver_doped._get_fermi_level_and_carriers(
             single_chempot_dict=single_chempot_dict,
             el_refs=self.CdTe_thermo.el_refs,
@@ -688,7 +688,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test ``_equilibrium_solve`` method for both backends.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
+        single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         eq_solve_kwargs = {
             "single_chempot_dict": single_chempot_dict,
@@ -776,7 +776,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         ``temperature=700``, no effective dopant and Cd-rich conditions.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
+        single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit="Cd-rich")
 
         eq_solve_kwargs = {
             "single_chempot_dict": single_chempot_dict,
@@ -856,7 +856,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Test ``_equilibrium_solve`` method for a mocked ``py-sc-fermi`` backend
         (so test works even when ``py-sc-fermi`` is not installed).
         """
-        single_chempot_dict, el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
+        single_chempot_dict, _el_refs = self.solver_py_sc_fermi._get_single_chempot_dict(limit="Te-rich")
 
         # Mock _generate_defect_system
         self.solver_py_sc_fermi._generate_defect_system = MagicMock()
@@ -1380,7 +1380,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         equilibrium.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
+        _single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         dopant_concentrations = [0, 1e15, 1e16, 1e17]
         scan_dopant_kwargs = {
@@ -1884,7 +1884,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
             # should correspond to Cd-rich for max electrons, Te-rich for min electrons
             limit = "Cd-rich" if min_max == "max" else "Te-rich"
-            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+            single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit=limit)
             row = result.iloc[0]
             formal_chempots = {
                 mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
@@ -1977,7 +1977,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
             # should correspond to Te-rich for max holes, Cd-rich for min holes
             limit = "Te-rich" if min_max == "max" else "Cd-rich"
-            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+            single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit=limit)
             row = result.iloc[0]
             formal_chempots = {
                 mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
@@ -2187,7 +2187,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             formal_chempots = {
                 mu_col.strip("μ_").split()[0]: row[mu_col] for mu_col in row.index if "μ_" in mu_col
             }
-            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="S-rich")
+            single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit="S-rich")
             assert all(  # for S_Sb total concentration, maximised at S-rich limit:
                 np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
                 for el_key in single_chempot_dict
@@ -2268,7 +2268,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
 
             # corresponds to Te-rich/poor limits:
             limit = "Te-rich" if min_max == "max" else "Cd-rich"
-            single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit=limit)
+            single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit=limit)
             assert all(
                 np.isclose(formal_chempots[el_key], single_chempot_dict[el_key], atol=5e-2)
                 for el_key in single_chempot_dict
@@ -2393,7 +2393,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         concentrations.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
+        single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         concentrations_per_charge = solver._equilibrium_solve(
             single_chempot_dict=single_chempot_dict,
@@ -2450,7 +2450,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         Tests that ``per_site=True`` adds per-site concentration column.
         """
         solver = self.solver_doped if backend == "doped" else self.solver_py_sc_fermi
-        single_chempot_dict, el_refs = solver._get_single_chempot_dict(limit="Te-rich")
+        single_chempot_dict, _el_refs = solver._get_single_chempot_dict(limit="Te-rich")
 
         eq_solve_kwargs = {
             "single_chempot_dict": single_chempot_dict,
@@ -2737,9 +2737,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                     "Fermi Level (eV wrt VBM)"
                 ].iloc[0]
                 test_fermi = result[result["Temperature (K)"] == temp]["Fermi Level (eV wrt VBM)"].iloc[0]
-                assert np.isclose(
-                    ref_fermi, test_fermi, rtol=1e-3
-                ), f"Fermi level mismatch at T={temp}K for per_charge={key[0]}, per_site={key[1]}"
+                assert np.isclose(ref_fermi, test_fermi, rtol=1e-3), (
+                    f"Fermi level mismatch at T={temp}K for per_charge={key[0]}, per_site={key[1]}"
+                )
 
         # per_charge=False should have fewer unique defect indices
         per_charge_true_defects = results[(True, False)].index.unique().tolist()
@@ -2852,9 +2852,9 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
                     "Fermi Level (eV wrt VBM)"
                 ].iloc[0]
                 test_fermi = result[result["Dopant (cm^-3)"] == dopant]["Fermi Level (eV wrt VBM)"].iloc[0]
-                assert np.isclose(
-                    ref_fermi, test_fermi, rtol=1e-3
-                ), f"Fermi level mismatch at dopant={dopant} for per_charge={key[0]}, per_site={key[1]}"
+                assert np.isclose(ref_fermi, test_fermi, rtol=1e-3), (
+                    f"Fermi level mismatch at dopant={dopant} for per_charge={key[0]}, per_site={key[1]}"
+                )
 
         # per_charge=False should have fewer unique defect indices
         per_charge_true_defects = results[(True, False)].index.unique().tolist()

@@ -401,9 +401,9 @@ class TestGetTransformationAndApply(ConfigurationsTestCase):
         # Se), producing an equivalent lattice with a different matrix:
         rotated_V_Se_m2 = self.V_Se_m2_supercell.copy()
         rotated_V_Se_m2.apply_operation(SymmOp.from_axis_angle_and_translation([0, 0, 1], 120.0))
-        assert not np.allclose(
-            rotated_V_Se_m2.lattice.matrix, self.V_Se_m1_supercell.lattice.matrix
-        ), "Rotated V_Se^-2 lattice matrix should now differ from V_Se^-1"
+        assert not np.allclose(rotated_V_Se_m2.lattice.matrix, self.V_Se_m1_supercell.lattice.matrix), (
+            "Rotated V_Se^-2 lattice matrix should now differ from V_Se^-1"
+        )
 
         supercell_matrix, trans_vector, mapping = get_transformation_from_s2_to_s1(
             self.V_Se_m1_supercell, rotated_V_Se_m2

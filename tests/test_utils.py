@@ -142,9 +142,9 @@ def _compare_prim_interstitial_coords(result, expected):
     for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected, strict=False):
         assert np.array_equal(r_coord, e_coord), "Coordinates do not match"
         assert r_num == e_num, "Number of coordinates do not match"
-        assert all(
-            np.array_equal(r, e) for r, e in zip(r_list, e_list, strict=False)
-        ), "List of arrays do not match"
+        assert all(np.array_equal(r, e) for r, e in zip(r_list, e_list, strict=False)), (
+            "List of arrays do not match"
+        )
 
 
 def _compare_attributes(obj1, obj2, exclude=None):
@@ -177,9 +177,9 @@ def _compare_attributes(obj1, obj2, exclude=None):
         elif attr == "bulk_dos" and val1 is not None:
             assert val1.as_dict() == val2.as_dict()
         elif isinstance(val1, list | tuple) and all(isinstance(i, np.ndarray) for i in val1):
-            assert all(
-                np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)
-            ), "List of arrays do not match"
+            assert all(np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)), (
+                "List of arrays do not match"
+            )
         else:
             assert val1 == val2
 
@@ -198,16 +198,16 @@ def assert_df_rows_equal(df, expected_rows, check_len=False):
             Default is ``False``.
     """
     if check_len:
-        assert len(df) == len(
-            expected_rows
-        ), f"DataFrame has {len(df)} rows, expected {len(expected_rows)}"
+        assert len(df) == len(expected_rows), (
+            f"DataFrame has {len(df)} rows, expected {len(expected_rows)}"
+        )
 
     for i, row in enumerate(expected_rows):
         for ii, entry in enumerate(row):
             actual = df.iloc[i, ii]
             if isinstance(entry, float):
-                assert np.isclose(
-                    actual, entry
-                ), f"Row {i}, column {ii}: {actual} != {entry} (float comparison)"
+                assert np.isclose(actual, entry), (
+                    f"Row {i}, column {ii}: {actual} != {entry} (float comparison)"
+                )
             else:
                 assert actual == entry, f"Row {i}, column {ii}: {actual} != {entry}"

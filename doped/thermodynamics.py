@@ -3201,9 +3201,11 @@ class DefectThermodynamics(MSONable):
                 transition_level_map_list.extend(
                     {
                         "Defect": defect_name,
-                        "Charges": _format_TL_charge_label(transition_level_charges, prefix="ε")
-                        if format_charges
-                        else transition_level_charges,
+                        "Charges": (
+                            _format_TL_charge_label(transition_level_charges, prefix="ε")
+                            if format_charges
+                            else transition_level_charges
+                        ),
                         "eV from VBM": round(TL, 3),
                         "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
                         "-q_pos": -transition_level_charges[0],  # for sorting
@@ -3219,11 +3221,16 @@ class DefectThermodynamics(MSONable):
                     transition_level_map_list.append(
                         {
                             "Defect": defect_name_wout_charge,
-                            "Charges": _format_TL_charge_label(
-                                transition_level_charges, pos_meta=pos_meta, neg_meta=neg_meta, prefix="ε"
-                            )
-                            if format_charges
-                            else transition_level_charges,
+                            "Charges": (
+                                _format_TL_charge_label(
+                                    transition_level_charges,
+                                    pos_meta=pos_meta,
+                                    neg_meta=neg_meta,
+                                    prefix="ε",
+                                )
+                                if format_charges
+                                else transition_level_charges
+                            ),
                             "eV from VBM": round(TL, 3),
                             "In Band Gap?": (TL > 0) and tl_thermo.band_gap and (tl_thermo.band_gap > TL),
                             "N(Metastable)": [pos_meta, neg_meta].count(True),
@@ -6216,7 +6223,7 @@ class FermiSolver(MSONable):
 
     def _check_temperature_settings(
         self,
-        annealing_temperature: float | range | list[float] | np.ndarray = None,
+        annealing_temperature: float | range | list[float] | np.ndarray | None = None,
         temperature: float | range | list[float] | np.ndarray = 300,
         quenched_temperature: float | range | list[float] | np.ndarray = 300,
         range=False,

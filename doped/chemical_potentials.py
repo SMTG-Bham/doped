@@ -2383,7 +2383,7 @@ class CompetingPhases(MSONable):
                 formatted_entries.append(entry)
 
         # sort by energy above hull, num_species, then by periodic table positioning:
-        formatted_entries.sort(key=lambda x: _entries_sort_func(x))
+        formatted_entries.sort(key=_entries_sort_func)
 
         return formatted_entries
 

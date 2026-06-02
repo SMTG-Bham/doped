@@ -687,7 +687,7 @@ def doped_cluster_frac_coords(
                 frac_coords.append(fcoords[j])
             else:
                 fcoord = fcoords[j]  # We need the image to combine the frac_coords properly:
-                d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
+                _d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
                 frac_coords.append(fcoord + image)
 
         frac_coords.append(np.average(frac_coords, axis=0))  # midpoint of cluster
@@ -1858,9 +1858,9 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
     num_negs = np.sum(lattice_matrix < 0)
     diag_sum = np.round(np.sum(np.abs(np.diag(lattice_matrix))), 1)
     flat_matrix = lattice_matrix.ravel()
-    unique_vals, counts = np.unique(flat_matrix, return_counts=True)
+    _unique_vals, counts = np.unique(flat_matrix, return_counts=True)
     num_equals = np.sum(counts * (counts + 1) // 2)
-    abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
+    _abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
     num_abs_equals = np.sum(abs_counts * (abs_counts + 1) // 2)
     a, b, c = np.linalg.norm(lattice_matrix, axis=1)
 
@@ -2378,7 +2378,6 @@ def get_wyckoff_label_and_equiv_coord_list(
 
         Returns the matching array from the list.
         """
-        x, y, z = symbols("x y z")
         variable_dicts = [{}]  # list of dicts for x,y,z
 
         for sympy_array in coord_list:
@@ -2507,7 +2506,7 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
     doped_wyckoffs = []
 
     for site in conv_struct:
-        wyckoff_label, equiv_coords = get_wyckoff_label_and_equiv_coord_list(
+        wyckoff_label, _equiv_coords = get_wyckoff_label_and_equiv_coord_list(
             conv_cell_site=site, wyckoff_dict=wyckoff_dict
         )
         if all(
@@ -3065,7 +3064,7 @@ def _check_relaxed_defect_symmetry_determination(
     if unrelaxed_defect_structure is not None:
         bulk_supercell = _get_bulk_supercell(defect_entry)
         match = False
-        symm_dataset, unique_sites, symprec, dist_tol = _get_symm_dataset_of_struct_with_all_equiv_sites(
+        symm_dataset, unique_sites, symprec, _dist_tol = _get_symm_dataset_of_struct_with_all_equiv_sites(
             defect_supercell_bulk_site_coords,
             bulk_supercell,
             symprec=symprec,
@@ -3668,7 +3667,7 @@ def is_periodic_image(
 
     # first need to match sites with their closest (individual) periodic images, to account for order /
     # permutation invariance:
-    vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
+    _vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
     site_matches, _ = get_linear_assignment_solution(d_2)  # closest individual periodic image matches
     reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
 
