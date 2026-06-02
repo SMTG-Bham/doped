@@ -51,6 +51,7 @@ from doped.utils.parsing import (
     get_vasprun,
 )
 from doped.utils.plotting import (
+    _format_TL_charge_label,
     _rename_key_and_dicts,
     doped_plot_style,
     formation_energy_plot,
@@ -3175,11 +3176,7 @@ class DefectThermodynamics(MSONable):
         def _TL_naming_func(TL_charges, i_meta=False, j_meta=False):
             if not format_charges:
                 return TL_charges
-            i, j = TL_charges
-            return (
-                f"ε({'+' if i > 0 else ''}{i}{'*' if i_meta else ''}/"
-                f"{'+' if j > 0 else ''}{j}{'*' if j_meta else ''})"
-            )
+            return _format_TL_charge_label(TL_charges, i_meta=i_meta, j_meta=j_meta, prefix="ε")
 
         for defect_name, transition_level_dict in tl_thermo.transition_level_map.items():
             if not transition_level_dict:
