@@ -16,7 +16,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colormaps, ticker
-from matplotlib.colors import Colormap, ListedColormap
+from matplotlib.colors import Colormap, ListedColormap, to_rgba_array
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.table import Table
@@ -283,11 +283,13 @@ def _get_TLD_colors_and_linestyles(
         default = "batlow"  # set to colormap if not enough colours in listed colormaps
 
     cmap = get_colormap(colormap, default=default)
-    base = np.asarray(cmap.colors) if isinstance(cmap, ListedColormap) else np.empty(0)
+    base = (  # normalise to RGBA, as listed colormaps can mix RGB / RGBA colours (-> inhomogeneous array)
+        to_rgba_array(cmap.colors) if isinstance(cmap, ListedColormap) else np.empty(0)
+    )
     colors: np.ndarray  # typing
     if 0 < len(base) < 150:  # cmcrameri colormaps return 256 colours
         # repeat (tile) the listed colours (cycling) until we have one per line:
-        colors = np.tile(base, np.ceil(num_lines / len(base)))[:num_lines]
+        colors = np.tile(base, (int(np.ceil(num_lines / len(base))), 1))[:num_lines]
     else:
         colors = cmap(np.linspace(0, 1, num_lines))
 
@@ -1586,6 +1588,10 @@ def _get_transition_level_data(
               single-electron TLs that involve at least one metastable charge
               state (these latter are marked ``faded=True``).
     """
+
+    def sorted_tls(tl_list: list[TransitionLevel]) -> list[TransitionLevel]:
+        return sorted(tl_list, key=lambda x: x.TL_eV)  # sort by TL position wrt VBM
+
     # ground-state TLs (i.e. those visible on the formation energy diagram):
     gs_per_defect: dict[str, list[TransitionLevel]] = {}
     for defect_name, tl_dict in defect_thermodynamics.transition_level_map.items():
@@ -1595,9 +1601,7 @@ def _get_transition_level_data(
         ]
 
     if all is False:
-        for tls in gs_per_defect.values():
-            tls.sort(key=lambda x: x.TL_eV)
-        return gs_per_defect
+        return {name: sorted_tls(tls) for name, tls in gs_per_defect.items()}
 
     single_electron_TLs: dict[str, list[TransitionLevel]] = (
         defect_thermodynamics._get_single_electron_tls()  # already ``TransitionLevel`` tuples
@@ -1605,16 +1609,12 @@ def _get_transition_level_data(
 
     # defect order = transition_level_map order (which respects defect appearance order), with any
     # defects that are only present in single_electron_TLs appended afterwards:
-    ordered_names = list(defect_thermodynamics.transition_level_map.keys())
-    for name in single_electron_TLs:
-        if name not in ordered_names:
-            ordered_names.append(name)
+    ordered_names = list(
+        dict.fromkeys([*defect_thermodynamics.transition_level_map, *single_electron_TLs])
+    )  # dict.fromkeys ensures unique keys, so only unique keys from single_electron_TLs are appended
 
     if all is True:
-        return {
-            name: sorted(single_electron_TLs.get(name, []), key=lambda x: x.TL_eV)
-            for name in ordered_names
-        }
+        return {name: sorted_tls(single_electron_TLs.get(name, [])) for name in ordered_names}
 
     # all not ``True`` or ``False``; in {"faded", "faded_labels"}: ground-state TLs solid, metastable
     # single-electron faded
@@ -1626,8 +1626,7 @@ def _get_transition_level_data(
             for tl in single_electron_TLs.get(name, [])
             if tl.pos_meta or tl.neg_meta
         ]
-        merged.sort(key=lambda x: x.TL_eV)
-        out[name] = merged
+        out[name] = sorted_tls(merged)
     return out
 
 
@@ -1784,8 +1783,7 @@ _TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouri
 
 
 # TODO: Need to review this function, then done
-# TODO: Pure distance/overlap area cost cleaner/better than stratified cost functions here?
-# (like in _find_best_label_positions in chemical_potentials)
+# TODO: Re-test timing in the end to re-determine best brute-force crossover point
 def _optimise_side_placements(
     side_candidates_per_tl: list[list[TransitionLevelLabel]],
     placed_inline: list[TransitionLevelLabel],
@@ -1954,34 +1952,25 @@ def _optimise_side_placements(
         best_indices = np.unravel_index(int(np.argmin(grid)), grid.shape)
         return [side_candidates_per_tl[k][int(best_indices[k])] for k in range(n)]
 
-    # greedy + hill-climb fallback for large spaces, using the precomputed geometry. The cost of
-    # giving TL ``i`` pick ``a`` given the other chosen picks mirrors the original
-    # ``position_cost``: its unary cost plus, for every other chosen TL ``j``, their box-box
-    # overlap and this label's connector crossing the other's box.
+    # greedy + hill-climb fallback for large spaces, reusing the precomputed geometry. The cost of
+    # giving TL ``i`` pick ``a`` given the other chosen picks is its unary cost plus the same
+    # pairwise penalties tabulated in ``pair_items`` above (so the two cost paths cannot diverge).
+    pair_lookup = dict(pair_items)  # {(i, j): cost matrix} for i < j; pairwise cost is symmetric
+
     def _conditional_cost(i: int, a: int, picks: list[int]) -> int:
         """
         Cost of pick ``a`` of TL ``i`` given the current ``picks`` of other
         TLs.
 
-        Adds the unary cost to the pairwise penalties against already-chosen
-        picks: box-box overlap, plus `either` connector (this label's or the
-        already-placed pick's) crossing the `other`'s box, matching the
-        symmetric accounting in ``_pair_cost``.
+        Adds the unary cost to the tabulated pairwise cost against every
+        already-chosen pick (reusing ``pair_items``; symmetric, so the
+        ``i > j`` case just transposes the lookup).
         """
         cost = unary[i][a]
-        box_i = cand_boxes[i][a]
-        conn_i = cand_conns[i][a]
         for j, b in enumerate(picks):
             if b < 0 or j == i:
                 continue
-            box_j = cand_boxes[j][b]
-            if _boxes_overlap(box_i, box_j, x_buf=0, y_buf=y_buf):
-                cost += 10
-            if conn_i is not None and _segment_intersects_rect(*conn_i, *box_j):
-                cost += 4
-            conn_j = cand_conns[j][b]
-            if conn_j is not None and _segment_intersects_rect(*conn_j, *box_i):
-                cost += 4
+            cost += pair_lookup[(i, j)][a][b] if i < j else pair_lookup[(j, i)][b][a]
         return cost
 
     picks: list[int] = [-1] * n  # -1 == not yet chosen
