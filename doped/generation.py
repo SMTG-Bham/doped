@@ -12,7 +12,7 @@ from collections import defaultdict
 from copy import deepcopy
 from functools import lru_cache, partial, reduce
 from itertools import chain
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -144,7 +144,7 @@ def get_defect_entry_from_defect(
         defect=defect,
         charge_state=charge_state,
         sc_entry=computed_structure_entry,
-        sc_defect_frac_coords=sc_defect_frac_coords,
+        sc_defect_frac_coords=tuple(sc_defect_frac_coords) if sc_defect_frac_coords is not None else None,
     )
 
 
@@ -849,7 +849,7 @@ def charge_state_probability(
 
         return 1 / (2 * (abs(charge_state) - abs(host_charge)))
 
-    charge_state_guessing_log = {
+    charge_state_guessing_log: dict[str, Any] = {
         "input_parameters": {
             "charge_state": int(charge_state),
             "oxi_state": int(defect_el_oxi_state),
@@ -869,7 +869,7 @@ def charge_state_probability(
     }
     # product of charge_state_guessing_log["probability_factors"].values()
     charge_state_guessing_log["probability"] = (
-        np.prod(list(charge_state_guessing_log["probability_factors"].values()))
+        float(np.prod(list(charge_state_guessing_log["probability_factors"].values())))
         if charge_state != 0
         else 1
     )  # always include neutral charge state
@@ -1144,7 +1144,7 @@ def get_ideal_supercell_matrix(
     ideal_threshold: float = 0.1,
     verbose: bool = False,
     pbar: tqdm | None = None,
-) -> np.ndarray | None:
+) -> np.ndarray:
     """
     Determine the ideal supercell matrix for a given structure, based on the
     minimum image distance, minimum number of atoms and ``ideal_threshold`` for
@@ -1211,8 +1211,7 @@ def get_ideal_supercell_matrix(
             usage). Default is ``None``.
 
     Returns:
-        Ideal supercell matrix (``np.ndarray``) or ``None`` if no suitable
-        supercell could be found.
+        Ideal supercell matrix (``np.ndarray``).
     """
     if force_cubic or force_diagonal:
         cst = CubicSupercellTransformation(
@@ -1223,13 +1222,18 @@ def get_ideal_supercell_matrix(
 
         try:
             cst.apply_transformation(structure)
+            if cst.transformation_matrix is None:
+                raise RuntimeError(
+                    "CubicSupercellTransformation.apply_transformation() did not return a transformation "
+                    "matrix."
+                )
             return cst.transformation_matrix
 
-        except Exception:  # cubic supercell generation failed, used doped algorithm
+        except Exception as e:  # cubic supercell generation failed, used doped algorithm
             print(
                 f"Could not find a suitable cubic supercell within the limits:\nmin_atoms = {min_atoms}, "
-                f"min_image_distance = {min_image_distance}.\nAttempting doped supercell generation "
-                f"algorithm..."
+                f"min_image_distance = {min_image_distance}.\nGot exception: {e!r}\n"
+                f"Attempting doped supercell generation algorithm..."
             )
 
     # get min (hypothetical) target_size from min_atoms and min_image_distance:
@@ -1534,7 +1538,7 @@ class DefectsGenerator(MSONable):
         self.charge_state_gen_kwargs = (
             charge_state_gen_kwargs if charge_state_gen_kwargs is not None else {}
         )
-        self.supercell_gen_kwargs: dict[str, int | float | bool] = {
+        self.supercell_gen_kwargs: dict[str, Any] = {
             "min_image_distance": 10.0,  # same as current pymatgen-analysis-defects `min_length` ( = 10)
             "min_atoms": 50,  # different from current pymatgen-analysis-defects `min_atoms` ( = 80)
             "ideal_threshold": 0.1,
@@ -1671,7 +1675,7 @@ class DefectsGenerator(MSONable):
                 supercell_matrix = get_ideal_supercell_matrix(
                     structure=primitive_structure,
                     pbar=pbar,
-                    **self.supercell_gen_kwargs,  # type: ignore
+                    **self.supercell_gen_kwargs,
                 )
 
         if not self.generate_supercell or (
@@ -1699,8 +1703,9 @@ class DefectsGenerator(MSONable):
                 primitive_structure, self.structure, sga=sga, symprec=self.symprec
             )
 
-            self.primitive_structure, self._T = symmetry.get_clean_structure(
-                self.primitive_structure, return_T=True
+            self.primitive_structure, self._T = cast(
+                "tuple[Structure, np.ndarray]",  # typing; return_T -> (Structure, np.ndarray)
+                symmetry.get_clean_structure(self.primitive_structure, return_T=True),
             )  # T maps orig prim struct to new prim struct; T * Orig = New -> Orig = T^-1 * New
             # supercell matrix P was: P * Orig = Super -> P * T^-1 * New = Super -> P' = P * T^-1
 
@@ -1879,16 +1884,17 @@ class DefectsGenerator(MSONable):
         ):  # skip interstitials
             return
 
-        self.interstitial_gen_kwargs = (
+        interstitial_gen_kwargs: dict[str, Any] = (
             self.interstitial_gen_kwargs if isinstance(self.interstitial_gen_kwargs, dict) else {}
         )
-        self.interstitial_gen_kwargs["symprec"] = self.symprec
+        interstitial_gen_kwargs["symprec"] = self.symprec
+        self.interstitial_gen_kwargs = interstitial_gen_kwargs
 
         pbar.set_description("Generating interstitials")
         if self.interstitial_coords:
             # map interstitial coords to primitive structure, and get multiplicities
             for interstitial_frac_coords in self.interstitial_coords:
-                equiv_prim_coords = symmetry.get_equiv_frac_coords_in_primitive(
+                equiv_frac_coords_in_prim = symmetry.get_equiv_frac_coords_in_primitive(
                     frac_coords=interstitial_frac_coords,
                     primitive=self.primitive_structure,
                     supercell=self.structure,
@@ -1899,9 +1905,14 @@ class DefectsGenerator(MSONable):
                         "fixed_symprec_and_dist_tol_factor", False
                     ),
                     verbose=self.kwargs.get("verbose", False),
-                )
+                )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+                assert isinstance(equiv_frac_coords_in_prim, list[np.ndarray] | np.ndarray)
                 self.prim_interstitial_coords_mult_and_equiv_coords.append(
-                    (equiv_prim_coords[0], len(equiv_prim_coords), equiv_prim_coords)
+                    (
+                        equiv_frac_coords_in_prim[0],
+                        len(equiv_frac_coords_in_prim),
+                        equiv_frac_coords_in_prim,
+                    )
                 )
 
             sorted_sites_mul_and_equiv_fpos = self.prim_interstitial_coords_mult_and_equiv_coords
@@ -1910,30 +1921,26 @@ class DefectsGenerator(MSONable):
             # Generate interstitial sites using Voronoi tessellation
             sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
                 host_structure=self.primitive_structure,
-                **self.interstitial_gen_kwargs,  # type: ignore
+                **interstitial_gen_kwargs,
             )
 
         self.defects["interstitials"] = []
         for el in self.kwargs.get("interstitial_elements", self._element_list):
-            if (
-                el == "H"
-                and "min_dist" not in self.interstitial_gen_kwargs
-                and not self.interstitial_coords
-            ):
+            if el == "H" and "min_dist" not in interstitial_gen_kwargs and not self.interstitial_coords:
                 # Hydrogen present, min_dist not set, and no manually-specified interstitial sites;
                 # so re-generate interstitial sites for Hydrogen with min_dist = 0.5
                 ig = InterstitialGenerator(min_dist=0.5)
                 H_sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
                     host_structure=self.primitive_structure,
                     min_dist=0.5,
-                    **self.interstitial_gen_kwargs,  # type: ignore
+                    **interstitial_gen_kwargs,
                 )
                 cand_sites, multiplicity, equiv_fpos = zip(
                     *H_sorted_sites_mul_and_equiv_fpos, strict=False
                 )
 
             else:
-                ig = InterstitialGenerator(self.interstitial_gen_kwargs.get("min_dist", 0.9))
+                ig = InterstitialGenerator(interstitial_gen_kwargs.get("min_dist", 0.9))
                 cand_sites, multiplicity, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
 
             inter_generator = ig.generate(
@@ -1959,7 +1966,7 @@ class DefectsGenerator(MSONable):
                 warnings.warn(
                     f"\nNote that some manually-specified interstitial sites were skipped due to "
                     f"being too close to host lattice sites (minimum distance = `min_dist` = "
-                    f"{self.interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
+                    f"{interstitial_gen_kwargs.get('min_dist', 0.9):.2f} Å). If for some "
                     f"reason you still want to include these sites, you can adjust `min_dist` ("
                     f"default = 0.9 Å), or just use the default Voronoi tessellation algorithm "
                     f"for generating interstitials (by not setting the `interstitial_coords` "
@@ -2938,14 +2945,14 @@ def get_interstitial_sites(
         )
         return []
 
-    site_frac_coords_array: np.ndarray = symmetry.doped_cluster_frac_coords(
+    site_frac_coords_array = symmetry.doped_cluster_frac_coords(
         sites_array,
         host_structure,
         tol=clustering_tol,
         symm_pref_dist_factor=symm_pref_dist_factor,
     )
 
-    label_equiv_fpos_dict: dict[int, list[np.ndarray[float]]] = {}
+    label_equiv_fpos_dict: dict[int, list[np.ndarray]] = {}
     tight_dist = get_stol_equiv_dist(tight_stol, host_structure)  # 0.06 Å for CdTe, Sb2Si2Te6
 
     # this now depends on symprec in `get_all_equiv_sites` (doesn't matter in most cases,
@@ -2959,12 +2966,15 @@ def get_interstitial_sites(
 
         if not match_found:  # try equiv sites:
             this_equiv_fpos = [
-                site.frac_coords  # type: ignore
-                for site in symmetry.get_all_equiv_sites(
-                    frac_coords,
-                    host_structure,
-                    symprec=symprec,
-                    return_symprec_and_dist_tol_factor=False,
+                site.frac_coords
+                for site in cast(  # just_frac_coords=False -> PeriodicSite objects
+                    "list[PeriodicSite]",
+                    symmetry.get_all_equiv_sites(
+                        frac_coords,
+                        host_structure,
+                        symprec=symprec,
+                        return_symprec_and_dist_tol_factor=False,
+                    ),
                 )
             ]
             for label, equiv_fpos in list(label_equiv_fpos_dict.items()):
@@ -3007,7 +3017,7 @@ def get_interstitial_sites(
         if not match_found:
             looser_site_matched_dict[i].append(tight_cand_site_mul_and_equiv_fpos)
 
-    cand_site_mul_and_equiv_fpos_list = []
+    cand_site_mul_and_equiv_fpos_list: list[tuple] = []
     for tight_cand_site_mul_and_equiv_fpos_sublist in looser_site_matched_dict.values():
         if len(tight_cand_site_mul_and_equiv_fpos_sublist) == 1:
             cand_site_mul_and_equiv_fpos_list.append(tight_cand_site_mul_and_equiv_fpos_sublist[0])
@@ -3067,7 +3077,7 @@ def get_interstitial_sites(
             )
 
     sorted_sites_mul_and_equiv_fpos = []
-    for _cand_site, multiplicity, equiv_fpos in cand_site_mul_and_equiv_fpos_list:  # type: ignore
+    for _cand_site, multiplicity, equiv_fpos in cand_site_mul_and_equiv_fpos_list:
         # take site with equiv_fpos sorted by symmetry._frac_coords_sort_func:
         sorted_equiv_fpos = sorted(equiv_fpos, key=symmetry._frac_coords_sort_func)
         ideal_cand_site = sorted_equiv_fpos[0]

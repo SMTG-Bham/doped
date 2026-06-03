@@ -164,7 +164,7 @@ def _cache_ready_Composition_init(comp_input):
     return _cached_Composition_init(_get_hashable_dict(comp_input))
 
 
-def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
+def _fast_get_composition_from_sites(sites: Sequence[Site], assume_full_occupancy: bool = False):
     """
     Helper function to quickly get the composition of a collection of sites,
     faster than initializing a |Structure| object.
@@ -905,7 +905,7 @@ class DopedTopographyAnalyzer:
 
         # Perform the voronoi tessellation.
         voro = Voronoi(coords)
-        node_points_map = defaultdict(set)
+        node_points_map: defaultdict[int, set] = defaultdict(set)
         for pts, vs in voro.ridge_dict.items():
             for v in vs:
                 node_points_map[v].update(pts)
@@ -980,7 +980,7 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     # remove nodes less than 0.5 Å from sites in the structure
     voronoi_coords = remove_collisions(voronoi_coords, structure=prim_structure, min_dist=0.5)
     # cluster nodes within 0.2 Å of each other:
-    prim_vnodes: np.ndarray = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
+    prim_vnodes = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
 
     # map back to the supercell
     sm = StructureMatcher(primitive_cell=False, attempt_supercell=True)

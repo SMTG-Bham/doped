@@ -12,6 +12,7 @@ import os
 import warnings
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from monty.json import MontyDecoder
@@ -401,10 +402,8 @@ def defect_from_structures(
             # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
             # settings) to the final interstitial site, as this is likely the _initial_ interstitial site
             int_site = guessed_initial_defect_structure.pop(defect_site_index)
-            sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(
-                bulk_supercell,
-                **({"min_dist": 0.5} if int_site.species_string == "H" else {}),  # type: ignore
-            )
+            int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
+            sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
             _, _, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
             all_equiv_fpos = [fpos for equiv in equiv_fpos for fpos in equiv]
             closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
@@ -441,7 +440,8 @@ def defect_from_structures(
             for k, v in kwargs.items()
             if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
         },  # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
-    )
+    )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+    assert isinstance(equiv_frac_coords_in_prim, list[np.ndarray] | np.ndarray)
     equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
     equiv_defect_sites_in_prim = [
         PeriodicSite(
@@ -572,7 +572,7 @@ def defect_and_info_from_structures(
     """
     if _parameter_order_warn:
         _warn_parameter_order("defect_and_info_from_structures")  # TODO: Remove in doped v4.1
-    defect_structure_metadata = {}
+    defect_structure_metadata: dict[str, Any] = {}
 
     # identify defect site, structural information, and create defect object:
     # Can specify initial defect structure (to help find the defect site if we have a very distorted
@@ -643,7 +643,7 @@ def defect_and_info_from_structures(
         defect_structure_metadata["guessed_defect_displacement"] = guessed_displacement
     else:  # vacancy
         defect_structure_metadata["guessed_initial_defect_site"] = bulk_supercell[bulk_site_index]
-        defect_structure_metadata["guessed_defect_displacement"] = None  # type: ignore
+        defect_structure_metadata["guessed_defect_displacement"] = None
 
     defect_structure_metadata["unrelaxed_defect_structure"] = unrelaxed_defect_structure
     defect_structure_metadata["bulk_site"] = (
@@ -723,7 +723,7 @@ def guess_defect_position(
     soap_r_cut: float = 5.0,
     soap_n_max: int = 6,
     soap_l_max: int = 4,
-) -> np.ndarray[float]:
+) -> np.ndarray:
     """
     Guess the position (in Cartesian coordinates) of a defect in an input
     defect supercell, optionally using a bulk/reference supercell (but not
@@ -778,7 +778,7 @@ def guess_defect_position(
             SOAP maximum angular momentum (for ``dscribe``), default 4.
 
     Returns:
-        np.ndarray[float]:
+        np.ndarray:
             Guessed position of the defect in **Cartesian** coordinates.
     """
 
@@ -893,14 +893,14 @@ def defect_name_from_structures(
     if _parameter_order_warn:
         _warn_parameter_order("defect_name_from_structures")  # TODO: Remove in doped v4.1
     # set oxi_state and multiplicity to avoid wasting time trying to auto-determine when unnecessary here
-    default_init_kwargs = {"oxi_state": "Undetermined", "multiplicity": 1}
+    default_init_kwargs: dict[str, Any] = {"oxi_state": "Undetermined", "multiplicity": 1}
     default_init_kwargs.update(kwargs)
     defect = defect_from_structures(
         defect_supercell,
         bulk_supercell,
         return_all_info=False,
         _parameter_order_warn=False,
-        **default_init_kwargs,  # type: ignore
+        **default_init_kwargs,
     )
     assert isinstance(defect, Defect)  # mypy typing
 
@@ -1132,7 +1132,7 @@ class DefectsParser:
         # load and parse bulk corrections data once for efficiency:
         self.bulk_corrections_data = {}
         if not skip_corrections:
-            bulk_corr_kwargs = {
+            bulk_corr_kwargs: dict[str, Any] = {
                 "bulk_path": self.bulk_path,
                 "quiet": True,
             }
@@ -1141,7 +1141,7 @@ class DefectsParser:
             with contextlib.suppress(Exception):
                 self.bulk_corrections_data["bulk_site_potentials"] = _get_bulk_site_potentials(
                     total_energy=_get_total_energies(None, self.bulk_vr),
-                    **bulk_corr_kwargs,  # type: ignore
+                    **bulk_corr_kwargs,
                 )
 
         self.defect_dict = {}
@@ -1604,19 +1604,14 @@ def _resolve_bulk_path(
             f"manually."
         )
 
-    if bulk_path is not None:
-        bulk_path = Path(bulk_path)
-
+    assert bulk_path is not None  # all ``bulk_path is None`` branches above return or raise
+    bulk_path = Path(bulk_path)
+    if not bulk_path.is_dir():
+        bulk_path = out_root / bulk_path
         if not bulk_path.is_dir():
-            bulk_path = out_root / bulk_path
-            if not bulk_path.is_dir():
-                raise FileNotFoundError(
-                    f"Could not find bulk supercell calculation folder at '{bulk_path}'!"
-                )
+            raise FileNotFoundError(f"Could not find bulk supercell calculation folder at '{bulk_path}'!")
 
-        bulk_path = bulk_path.resolve()  # convert to absolute path
-
-    return bulk_path
+    return bulk_path.resolve()  # convert to absolute path
 
 
 def _append_subfolder_if_needed(bulk_path: Path, subfolder: PathLike, user_set: bool) -> Path:

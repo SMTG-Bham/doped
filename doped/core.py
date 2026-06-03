@@ -811,11 +811,9 @@ class DefectEntry(thermo.DefectEntry):
 
             # delete projected_eigenvalues attribute from defect_vr if present to expedite garbage
             # collection and thus reduce memory:
-            defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
-            defect_vr.projected_magnetization = (
-                None  # but keep for bulk_vr as this is likely being re-used
-            )
-            defect_vr.eigenvalues = None  # but keep for bulk_vr as this is likely being re-used
+            defect_vr.projected_eigenvalues = None  # but keep for bulk_vr as this is likely being reused
+            defect_vr.projected_magnetization = None  # but keep for bulk_vr as this is likely being reused
+            defect_vr.eigenvalues = None  # but keep for bulk_vr as this is likely being reused
 
     def get_eigenvalue_analysis(
         self,
@@ -2478,7 +2476,7 @@ class Defect(core.Defect):
     def get_supercell_structure(
         self,
         sc_mat: np.ndarray | None = None,
-        target_frac_coords: np.ndarray[float] | list[float] | None = None,
+        target_frac_coords: np.ndarray | list[float] | None = None,
         return_sites: bool = False,
         min_image_distance: float = 10.0,  # same as current ``pymatgen`` default
         min_atoms: int = 50,  # different to current ``pymatgen`` default (80)
@@ -2772,17 +2770,18 @@ class Defect(core.Defect):
         )
         if primitive_structure != self.structure:
             # accounts for potential periodicity breaking in Defect.structure (which may be a supercell):
+            volume_factor = len(self.structure) / len(primitive_structure)
             with contextlib.suppress(Exception):
-                return len(
-                    get_equiv_frac_coords_in_primitive(
-                        self.site.frac_coords,
-                        primitive_structure,
-                        self.structure,
-                        symprec=symprec or self.symprec,
-                        dist_tol_factor=dist_tol_factor,
-                        **kwargs,
-                    )
-                ) * round(len(self.structure) / len(primitive_structure))
+                equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
+                    self.site.frac_coords,
+                    primitive_structure,
+                    self.structure,
+                    symprec=symprec or self.symprec,
+                    dist_tol_factor=dist_tol_factor,
+                    **kwargs,
+                )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
+                assert isinstance(equiv_frac_coords_in_prim, list[np.ndarray] | np.ndarray)
+                return len(equiv_frac_coords_in_prim) * round(volume_factor)
 
         return len(
             get_all_equiv_sites(

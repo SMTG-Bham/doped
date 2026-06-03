@@ -1453,9 +1453,9 @@ class CompetingPhases(MSONable):
         ``"metals"`` or ``"molecules"``.
 
         When no structure exists in the entry (e.g. MP-missing bulk represented
-        by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and
-        supplies a nominal large-cell ``Structure`` so that ``INCAR`` and
-        ``POTCAR`` files can still be written.
+        by a hull-energy |ComputedEntry|), emits a ``UserWarning`` and supplies
+        a nominal large-cell ``Structure`` so that ``INCAR`` and ``POTCAR``
+        files can still be written.
         """
         categorised_entries = [
             (self.nonmetallic_entries, "non-metals"),
@@ -4135,6 +4135,7 @@ class CompetingPhasesAnalyzer(MSONable):
         """
         host_element_symbols = {elt.symbol for elt in self.composition.elements}
         for limit, chempot_series in list(chempots_df.iterrows()):
+            assert isinstance(limit, str)  # typing
             chempots_df.loc[limit, extrinsic_element.symbol] = np.nan
             potential_limiting_extrinsic_entries: list[tuple[ComputedEntry, float]] = []
             for entry in self.extrinsic_entries:
@@ -4870,9 +4871,8 @@ def plot_chempot_heatmap(
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
 
         if title:  # add title
-            if not isinstance(title, str):
-                title = latexify(f"{composition.reduced_formula}")
-            ax.set_title(title)
+            title_str = title if isinstance(title, str) else latexify(f"{composition.reduced_formula}")
+            ax.set_title(title_str)
 
         if bordering_phases:
             _plot_competing_phase_lines(  # plot competing phase lines and labels
@@ -4934,10 +4934,11 @@ def _plot_competing_phase_lines(
         # Fit line function, plot and get intersections:
         formula_x_vals = domain_pts[:, cpd.elements.index(independent_elts[0])]
         formula_y_vals = domain_pts[:, cpd.elements.index(independent_elts[1])]
+        intersection: np.ndarray | None  # typing
         if np.isclose(min(formula_x_vals), max(formula_x_vals), atol=5e-5):  # vertical line
             x = formula_x_vals[0]
             line = ax.axvline(x, label=latexify(formula), color="k")
-            intersection = ((x, ymin), (x, ymax)) if (x < xmax and x > xmin) else None
+            intersection = np.array(((x, ymin), (x, ymax))) if (x < xmax and x > xmin) else None
         else:
             m, b = np.polyfit(formula_x_vals, formula_y_vals, 1)
 
@@ -5006,7 +5007,7 @@ def _get_line_intersections(
 
 
 def _add_line_labels(
-    intersections: Sequence[NDArray[np.floating[Any]]],
+    intersections: Sequence[np.ndarray],
     lines: dict[str, plt.Line2D],
     x_range: float,
     y_range: float,
@@ -5017,31 +5018,30 @@ def _add_line_labels(
     """
     if label_positions is True:  # use custom doped algorithm
         poss_label_positions = _possible_label_positions_from_bbox_intersections(intersections)
-        label_positions, best_norm_min_dist = _find_best_label_positions(
+        plot_label_positions, best_norm_min_dist = _find_best_label_positions(
             poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
         )
         if best_norm_min_dist < 0.1:  # bump positions_per_line to 5 to try improve:
             poss_label_positions = _possible_label_positions_from_bbox_intersections(
                 intersections, positions_per_line=5
             )
-            label_positions, best_norm_min_dist = _find_best_label_positions(
+            plot_label_positions, best_norm_min_dist = _find_best_label_positions(
                 poss_label_positions, x_range=x_range, y_range=y_range, return_best_norm_dist=True
             )
 
     elif isinstance(label_positions, dict):  # pre-set label positions, match formula (key) to line:
         lines = {k: lines[k] for k in lines if k in label_positions}  # drop any without positions
-        label_positions = [label_positions[k] for k in lines]  # reorder to match lines
+        plot_label_positions = [label_positions[k] for k in lines]  # reorder to match lines
 
     if isinstance(label_positions, list):
-        label_positions = np.array(label_positions, dtype=float)
+        plot_label_positions = np.array(label_positions, dtype=float)
 
-    assert isinstance(label_positions, np.ndarray)  # typing; converted to array now
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", "The value at position")
         labelLines(
             list(lines.values()),  # must be in same order as plotting order...
-            xvals=label_positions[:, 0],
-            yoffsets=label_positions[:, 1],
+            xvals=plot_label_positions[:, 0],
+            yoffsets=plot_label_positions[:, 1],
             align=False,
             color="black",
         )
@@ -5061,7 +5061,7 @@ def _nudge_labels_inside_axes(ax: plt.Axes, padding: float | None) -> None:
     for text in latexified_labels.values():
         bbox = text.get_window_extent().transformed(ax.transData.inverted())
         new_position = text.get_position()
-        delta_x = delta_y = 0
+        delta_x = delta_y = 0.0
 
         if bbox.xmin < xlim[0] or bbox.xmax > xlim[1] or bbox.ymin < ylim[0] or bbox.ymax > ylim[1]:
             if bbox.xmin < xlim[0]:  # shift right if label starts before xmin
@@ -5397,8 +5397,8 @@ def get_X_rich_limit(X: str, chempots: dict, **kwargs) -> str:
     """
     Deprecated alias for ``get_X_rich_poor_limit(..., rich=True)``.
 
-    Will be removed in ``doped`` 4.1; use
-    :func:`get_X_rich_poor_limit(X, chempots, rich=True, ...)` instead.
+    Will be removed in ``doped`` 4.1; use :func:`get_X_rich_poor_limit` (with
+    ``rich=True``) instead.
     """
     warnings.warn(
         "`get_X_rich_limit` is deprecated and will be removed in doped 4.1; use "
@@ -5413,8 +5413,8 @@ def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
     """
     Deprecated alias for ``get_X_rich_poor_limit(..., rich=False)``.
 
-    Will be removed in ``doped`` 4.1; use
-    :func:`get_X_rich_poor_limit(X, chempots, rich=False, ...)` instead.
+    Will be removed in ``doped`` 4.1; use :func:`get_X_rich_poor_limit` (with
+    ``rich=False``) instead.
     """
     warnings.warn(
         "`get_X_poor_limit` is deprecated and will be removed in doped 4.1; use "

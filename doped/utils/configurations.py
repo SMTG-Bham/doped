@@ -7,6 +7,7 @@ radiative recombination calculations etc.
 import contextlib
 import os
 import warnings
+from collections.abc import Sequence
 from functools import lru_cache
 
 import numpy as np
@@ -740,29 +741,31 @@ def get_path_structures(
 
     disp_1_dict: dict[str, Structure] = {}
     disp_2_dict: dict[str, Structure] = {}
-    for structs_disps_dict_tuple in [
+    for structs, disps, disp_dict in [
         (disp_1, displacements, disp_1_dict),
         (disp_2, displacements2, disp_2_dict),
     ]:
-        structs, disps, disp_dict = structs_disps_dict_tuple
         if structs is None:
             continue  # NEB, only one directory written
-        if disps is not None:
-            disps = _smart_round(disps)
+        rounded_disps = _smart_round(disps) if disps is not None else None
 
         for i, struct in enumerate(structs):
-            key = f"0{i}" if displacements is None else f"delQ_{disps[i]}"  # type: ignore
+            if displacements is None:
+                key = f"0{i}"
+            else:  # CC/non-radiative: displacements (and so ``rounded_disps`` is a sequence)
+                assert isinstance(rounded_disps, Sequence)  # typing
+                key = f"delQ_{rounded_disps[i]}"
             disp_dict[key] = struct
 
     return (disp_1_dict, disp_2_dict) if disp_2_dict else disp_1_dict
 
 
 def _smart_round(
-    numbers: float | list[float] | np.ndarray[float],
+    numbers: float | list[float] | np.ndarray,
     tol: float = 1e-5,
     return_decimals: bool = False,
     consistent_decimals: bool = True,
-) -> float | list[float] | np.ndarray[float] | tuple[float | list[float] | np.ndarray[float], float]:
+) -> float | list[float] | np.ndarray | tuple[float | list[float] | np.ndarray, float]:
     """
     Custom rounding function that rounds the input number(s) to the lowest
     number of decimals which gives the same numerical value as the input, to
@@ -781,7 +784,7 @@ def _smart_round(
     minimum required for rounding to satisfy the tolerance for all elements.
 
     Args:
-        numbers (float, list[float], np.ndarray[float]):
+        numbers (float, list[float], np.ndarray):
             The number(s) to round.
         tol (float): The tolerance value for rounding.
             Default: ``1e-5``
@@ -795,7 +798,7 @@ def _smart_round(
             all elements. Default: ``True``
 
     Returns:
-        float | list[float] | np.ndarray[float] | tuple[..., float]:
+        float | list[float] | np.ndarray | tuple[..., float]:
             The rounded number(s). If ``return_decimals=True``, then a tuple is
             returned with the rounded number(s) and the number of decimals used
             for rounding.

@@ -3,7 +3,9 @@ Code to analyse site displacements around defects.
 """
 
 import warnings
+from collections.abc import Callable, Sequence
 from copy import deepcopy
+from typing import Any
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -136,7 +138,7 @@ def calc_site_displacements(
                     raise ValueError(
                         "Norm of vector to project on is zero! Choose a non-zero vector to project on."
                     )
-                proj = np.dot(disp, vector_to_project_on / norm)
+                proj = np.dot(disp, np.asarray(vector_to_project_on) / norm)
                 angle = np.arccos(proj / np.linalg.norm(disp))
                 rejection = np.linalg.norm(disp) * np.sin(angle)
                 disp_dict["Displacement projected along vector"].append(proj)
@@ -188,7 +190,7 @@ def plot_site_displacements(
     relaxed_distances: bool = False,
     vector_to_project_on: list | None = None,
     use_plotly: bool = False,
-    ax: mpl.axes.Axes | None = None,
+    ax: mpl.axes.Axes | Sequence[mpl.axes.Axes] | None = None,
     fig: go.Figure | None = None,
     style_file: PathLike | None = None,
 ):
@@ -512,16 +514,18 @@ def plot_site_displacements(
                     styled_font_size=styled_font_size,
                     ax=ax,
                 )
+            axes: Sequence[mpl.axes.Axes]
             if vector_to_project_on:
                 if ax is not None:
-                    if len(ax) != 2:
+                    axes = [ax] if isinstance(ax, mpl.axes.Axes) else list(ax)
+                    if len(axes) != 2:
                         raise ValueError(
                             f"For ``vector_to_project_on`` plots, ``ax`` must be a sequence of 2 "
-                            f"``Axes``, but got {len(ax)}."
+                            f"``Axes``, but got {len(axes)}."
                         )
-                    fig = ax[0].get_figure()
+                    fig = axes[0].get_figure()
                 else:
-                    fig, ax = plt.subplots(
+                    fig, axes = plt.subplots(
                         1,
                         2,
                         sharey=True,
@@ -540,27 +544,28 @@ def plot_site_displacements(
                     ],
                     strict=False,
                 ):
-                    ax[index].scatter(
+                    axes[index].scatter(
                         disp_df["Distance to defect"],
                         disp_df[i],
                         c=disp_df["Species"].map(color_dict),
                         alpha=0.4,
                         edgecolor="none",
                     )
-                    ax[index].axhline(0, color="grey", alpha=0.3, linestyle="--")
-                    ax[index].set_title(f"{title}", fontsize=styled_font_size)  # Title with direction
-                ax[0].set_ylabel("Displacements ($\\AA$)", fontsize=styled_font_size)
+                    axes[index].axhline(0, color="grey", alpha=0.3, linestyle="--")
+                    axes[index].set_title(f"{title}", fontsize=styled_font_size)  # Title with direction
+                axes[0].set_ylabel("Displacements ($\\AA$)", fontsize=styled_font_size)
 
             else:  # else separated by direction
                 if ax is not None:
-                    if len(ax) != 3:
+                    axes = [ax] if isinstance(ax, mpl.axes.Axes) else list(ax)
+                    if len(axes) != 3:
                         raise ValueError(
                             f"For ``separated_by_direction`` plots, ``ax`` must be a sequence of 3 "
-                            f"``Axes``, but got {len(ax)}."
+                            f"``Axes``, but got {len(axes)}."
                         )
-                    fig = ax[0].get_figure()
+                    fig = axes[0].get_figure()
                 else:
-                    fig, ax = plt.subplots(
+                    fig, axes = plt.subplots(
                         1,
                         3,
                         figsize=(2.0 * styled_fig_size[0], 0.6 * styled_fig_size[1]),  # (13, 4),
@@ -571,20 +576,21 @@ def plot_site_displacements(
                 # the user can do this manually easily by default:
                 signed = True
                 for index, title in enumerate(["x", "y", "z"]):
-                    ax[index].scatter(
+                    axes[index].scatter(
                         disp_df["Distance to defect"],
                         [v[index] if signed else abs(v[index]) for v in disp_df["Displacement vector"]],
                         c=disp_df["Species"].map(color_dict),
                         alpha=0.4,
                         edgecolor="none",
                     )
-                    ax[index].set_title(f"{title}")  # Title with direction
-                ax[0].set_ylabel("Site displacements ($\\AA$)", fontsize=styled_font_size)
+                    axes[index].set_title(f"{title}")  # Title with direction
+                axes[0].set_ylabel("Site displacements ($\\AA$)", fontsize=styled_font_size)
+                assert fig is not None  # typing
                 fig.subplots_adjust(wspace=0.07)  # Set separation between subplots
 
-            ax[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
+            axes[1].set_xlabel("Distance to defect ($\\AA$)", fontsize=styled_font_size)
             patches = [mpl.patches.Patch(color=color_dict[i], label=i) for i in unique_species]
-            ax[0].legend(handles=patches)  # Add legend with species manually
+            axes[0].legend(handles=patches)  # Add legend with species manually
     return fig
 
 
@@ -1100,12 +1106,12 @@ def plot_displacements_ellipsoid(
     if plot_ellipsoid:
         bulk_sc, _defect_sc_with_site, _defect_site_index = _get_bulk_struct_with_defect(defect_entry)
         lattice_matrix = bulk_sc.as_dict()["lattice"]["matrix"]
-        func = _plotly_plot_ellipsoid if use_plotly else _mpl_plot_ellipsoid
+        func: Callable[..., Any] = _plotly_plot_ellipsoid if use_plotly else _mpl_plot_ellipsoid
         args = [ellipsoid_center, ellipsoid_radii, ellipsoid_rotation, points, lattice_matrix]
         if not use_plotly:
             args.append(style_file)
 
-        return_list.append(func(*args))  # type: ignore
+        return_list.append(func(*args))
 
     # If anisotropy plotting is enabled, plot the ellipsoid's radii anisotropy
     if plot_anisotropy:
@@ -1114,7 +1120,7 @@ def plot_displacements_ellipsoid(
         if not use_plotly:
             args.append(style_file)
 
-        return_list.append(func(*args))  # type: ignore
+        return_list.append(func(*args))
 
     return next(iter(return_list)) if len(return_list) == 1 else tuple(return_list)
 
@@ -1134,6 +1140,7 @@ def _get_bulk_struct_with_defect(defect_entry: DefectEntry) -> tuple:
     defect_type = defect_entry.defect.defect_type.name
     bulk_sc_with_defect = _get_bulk_supercell(defect_entry).copy()
     relaxed_sc_defect_frac_coords = _get_defect_supercell_frac_coords(defect_entry, relaxed=True)
+    assert relaxed_sc_defect_frac_coords is not None  # always set for a parsed defect entry
 
     defect_sc_with_defect = _get_defect_supercell(defect_entry).copy()
     if defect_type == "Vacancy":  # Add Vacancy atom to defect structure

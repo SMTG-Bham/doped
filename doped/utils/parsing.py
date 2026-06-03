@@ -84,11 +84,14 @@ def parse_projected_eigen(
             (up/down), and the projected magnetization (if parsed).
     """
     root = elem.find("array/set")
+    assert root is not None  # projected eigenvalue array always present when this is called
     proj_eigen = {}
-    sets = root.findall("set")  # type: ignore[union-attr]
+    sets = root.findall("set")
 
     for s in sets:
-        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])  # type: ignore[index]
+        spin_match = re.match(r"spin(\d+)", s.attrib["comment"])
+        assert spin_match is not None
+        spin = int(spin_match[1])
         if spin == 1 or (spin == 2 and len(sets) == 2):
             spin_key = Spin.up if spin == 1 else Spin.down
         elif parse_mag:  # parse projected magnetization
@@ -295,8 +298,8 @@ def get_procar(procar_path: PathLike) -> Procar:
     """
     Read the ``PROCAR(.gz)`` file as a ``pymatgen`` |Procar| object.
 
-    Previously, ``pymatgen`` |Procar| parsing did not support SOC
-    calculations, however this was updated in
+    Previously, ``pymatgen`` |Procar| parsing did not support SOC calculations,
+    however this was updated in
     https://github.com/materialsproject/pymatgen/pull/3890 to use code from
     ``easyunfold`` (https://smtg-bham.github.io/easyunfold -- a package for
     unfolding electronic band structures for symmetry-broken / defect /
@@ -751,7 +754,7 @@ def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=
 
 
 def get_matching_site(
-    site: PeriodicSite | np.ndarray[float], structure: Structure, anonymous: bool = False, tol: float = 0.5
+    site: PeriodicSite | np.ndarray, structure: Structure, anonymous: bool = False, tol: float = 0.5
 ) -> PeriodicSite:
     """
     Get the (closest) matching |PeriodicSite| in ``structure`` for the input
@@ -764,7 +767,7 @@ def get_matching_site(
     states, site property dicts etc.
 
     Args:
-        site (|PeriodicSite| | np.ndarray[float]):
+        site (|PeriodicSite| | np.ndarray):
             The site for which to find the closest matching site in
             ``structure``, either as a |PeriodicSite| or fractional
             coordinates array. If fractional coordinates, then ``anonymous``
@@ -1001,7 +1004,7 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
 def check_atom_mapping_far_from_defect(
     defect_supercell: Structure,
     bulk_supercell: Structure,
-    defect_coords: np.ndarray[float],
+    defect_coords: np.ndarray,
     coords_are_cartesian: bool = False,
     displacement_tol: float = 0.5,
     warning: bool | str = "verbose",
@@ -1022,7 +1025,7 @@ def check_atom_mapping_far_from_defect(
             The defect structure.
         bulk_supercell (|Structure|):
             The bulk structure.
-        defect_coords (np.ndarray[float]):
+        defect_coords (np.ndarray):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
             Whether the defect coordinates are in Cartesian or fractional
@@ -1566,7 +1569,7 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     )
 
 
-def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray:
     """
     Determine the total magnetization from a |Vasprun| object.
 
@@ -1595,7 +1598,7 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
             magnetization.
 
     Returns:
-        int or float or np.ndarray[float]:
+        int or float or np.ndarray:
             The total magnetization of the system.
     """
     # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
@@ -1786,8 +1789,12 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry, **kwargs) -> Stru
     return defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
 
 
-def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True) -> np.ndarray[float] | None:
-    sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
+def _get_defect_supercell_frac_coords(
+    defect_entry: DefectEntry, relaxed=True
+) -> np.ndarray | tuple[float, float, float] | None:
+    sc_defect_frac_coords: np.ndarray | tuple[float, float, float] | None = (
+        defect_entry.sc_defect_frac_coords
+    )
     site = None
 
     if not relaxed:
@@ -1952,10 +1959,9 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
         num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
 
     try:
-        magnetization = get_magnetization_from_vasprun(vasprun)
-        if isinstance(magnetization, np.ndarray):
-            # take the vector norm as the total magnetization
-            magnetization = np.linalg.norm(magnetization)
+        raw_magnetization = get_magnetization_from_vasprun(vasprun)
+        # take the vector norm as the total magnetization (for NCL (SOC) / vector magnetization):
+        magnetization = float(np.linalg.norm(raw_magnetization))
 
         # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
         if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...

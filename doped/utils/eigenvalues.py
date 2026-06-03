@@ -523,9 +523,10 @@ def get_eigenvalue_analysis(
             Add eigenvalues to plot.
 
             Refactored from implementation in ``pydefect`` to avoid calling
-            ``ax.scatter`` individually many times when we have many kpoints and bands,
-            which can make the plotting quite slow (>10 seconds), and allow setting
-            custom colors for occupied, unoccupied, and partially occupied states.
+            ``ax.scatter`` individually many times when we have many kpoints
+            and bands, which can make the plotting quite slow (>10 seconds),
+            and allow setting custom colors for occupied, unoccupied, and
+            partially occupied states.
             """
             for _spin_idx, (eo_by_spin, ax) in enumerate(
                 zip(self._energies_and_occupations, self.axs, strict=False)

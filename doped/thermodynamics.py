@@ -14,7 +14,7 @@ from copy import copy, deepcopy
 from functools import lru_cache, partial, reduce
 from itertools import chain, product
 from operator import methodcaller
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1266,8 +1266,9 @@ class DefectThermodynamics(MSONable):
                         -1.0
                         * (
                             entry.get_ediff()
-                            + entry.charge_state * entry.calculation_metadata.get("vbm", self.vbm)
-                        ),  # type: ignore
+                            + entry.charge_state
+                            * float(entry.calculation_metadata.get("vbm", self.vbm or 0))
+                        ),
                     ]
                     for entry in sorted_defect_entries
                 ]
@@ -1663,20 +1664,19 @@ class DefectThermodynamics(MSONable):
         chosen using the ``limits`` argument.
 
         Alternatively this can be a dictionary of chemical potentials for a
-        single limit, in the format:
-        ``{element symbol: chemical potential}``. If manually specifying
-        chemical potentials this way, you can set the ``el_refs`` option with
-        the DFT reference energies of the elemental phases in order to show the
-        formal (relative) chemical potentials above the formation energy plot,
-        in which case it is the formal chemical potentials (i.e. relative to
-        the elemental references) that should be given here, otherwise the
-        absolute (DFT) chemical potentials should be given.
+        single limit, in the format: ``{element symbol: chemical potential}``.
+        If manually specifying chemical potentials this way, you can set the
+        ``el_refs`` option with the DFT reference energies of the elemental
+        phases in order to show the formal (relative) chemical potentials above
+        the formation energy plot, in which case it is the formal chemical
+        potentials (i.e. relative to the elemental references) that should be
+        given here, otherwise the absolute (DFT) chemical potentials should be
+        given.
 
         If ``None`` (default), sets all formal chemical potentials (i.e.
         relative to the elemental reference energies in ``el_refs``) to zero.
         Chemical potentials can also be supplied later in each analysis
-        function.
-        (Default: None)
+        function. (Default: None)
         """
         if isinstance(input_chempots, dict) and "elemental_refs" in input_chempots:
             # doped chempot dict input, use its el_refs
@@ -1818,6 +1818,7 @@ class DefectThermodynamics(MSONable):
         defect type group is calculated at the annealing temperature, and then
         the equilibrium relative population of the constituent entries is
         recalculated at the quenched temperature.
+
         ``dist_tol`` is also used to cluster defects of `all types` when
         determining site competition in defect concentration calculations.
         """
@@ -2540,7 +2541,7 @@ class DefectThermodynamics(MSONable):
                         chempots=fe_chempots,
                         limit=fe_limit,
                         el_refs=el_refs,
-                        fermi_level=0 if entry.charge_state > 0 else self.band_gap,  # type: ignore[arg-type]
+                        fermi_level=0 if entry.charge_state > 0 else self.band_gap,
                     ),
                 )
             )
@@ -3321,8 +3322,9 @@ class DefectThermodynamics(MSONable):
             for defect_name, tl_df in all_df.groupby("Defect", sort=False):
                 bold_print(f"Defect: {defect_name}")
                 for index, row in tl_df.iterrows():
-                    if index[1] != "None":  # charges
-                        print(f"Transition level {index[1]} at {row['eV from VBM']:.3f} eV above the VBM")
+                    tl_label = tuple(index)[1]
+                    if tl_label != "None":  # TL to print
+                        print(f"Transition level {tl_label} at {row['eV from VBM']:.3f} eV above the VBM")
                 print("")  # add space
 
     def get_symmetries_and_degeneracies(
@@ -3694,7 +3696,7 @@ class DefectThermodynamics(MSONable):
         skip_formatting = skip_formatting or lean
         per_site = per_site and not lean
 
-        energy_concentration_list = []
+        energy_concentration_list: list[dict[str, Any]] = []
 
         chempots, limit = self._sanitise_chempots_for_concentrations(
             chempots, el_refs, limit
@@ -3758,12 +3760,16 @@ class DefectThermodynamics(MSONable):
                         if concentration_dict["Lattice Site Index"] == cluster_number
                     ]
                     summed_per_site_concentration = sum(
-                        concentration_dict["Concentration (per site)"]
+                        float(concentration_dict["Concentration (per site)"])
                         for concentration_dict in matching_concentration_dicts
                     )
                     for concentration_dict in matching_concentration_dicts:
-                        concentration_dict["Concentration (per site)"] /= 1 + summed_per_site_concentration
-                        concentration_dict["Concentration (cm^-3)"] /= 1 + summed_per_site_concentration
+                        concentration_dict["Concentration (per site)"] = float(
+                            concentration_dict["Concentration (per site)"]
+                        ) / (1 + summed_per_site_concentration)
+                        concentration_dict["Concentration (cm^-3)"] = float(
+                            concentration_dict["Concentration (cm^-3)"]
+                        ) / (1 + summed_per_site_concentration)
 
         for concentration_dict in energy_concentration_list:
             if not per_site:
@@ -4382,7 +4388,7 @@ class DefectThermodynamics(MSONable):
             chempots=chempots,
             limit=limit,
             el_refs=el_refs,
-            fermi_level=annealing_fermi_level,  # type: ignore
+            fermi_level=annealing_fermi_level,
             temperature=annealing_temperature,
             per_charge=False,  # give total concentrations for each defect
             site_competition=site_competition,
@@ -4596,6 +4602,7 @@ class DefectThermodynamics(MSONable):
             # no TLs and already checked stable -> only stable charge state
             return np.inf
 
+        assert self.band_gap is not None
         stability_windows = np.array([self.band_gap - lowest, highest])
         return min(stability_windows[np.isfinite(stability_windows)])
 
@@ -4970,19 +4977,19 @@ def _get_limiting_intercept_row(
 
     For each chemical potential point, we first pick the intercept that
     constrains that point most (``inner_agg``, e.g. ``"max"`` for donor
-    dopability intercepts), then across points we pick the one giving the
-    most favourable such constraint (``outer_agg``, e.g. ``"idxmin"``).
-    Intercepts are rounded to ``rounding_dp`` d.p. for group/tie-break
-    comparisons, so float precision (e.g. 6-decimal rounding of grid-point
-    coordinates) doesn't cause interior points to be picked over vertex limits
-    when they give effectively the same intercept (``idxmax``/``idxmin`` return
-    the first index on ties, and vertex rows are always listed first).
+    dopability intercepts), then across points we pick the one giving the most
+    favourable such constraint (``outer_agg``, e.g. ``"idxmin"``). Intercepts
+    are rounded to ``rounding_dp`` d.p. for group/tie-break comparisons, so
+    float precision (e.g. 6-decimal rounding of grid-point coordinates) doesn't
+    cause interior points to be picked over vertex limits when they give
+    effectively the same intercept (``idxmax``/``idxmin`` return the first
+    index on ties, and vertex rows are always listed first).
     """
     intercept_df = pd.DataFrame(
         intercepts or [("N/A", "N/A", fallback)], columns=["limit", "name", "intercept"]
     )
     intercept_df["_r"] = intercept_df["intercept"].round(rounding_dp)
-    mask = intercept_df.groupby("limit")["_r"].transform(inner_agg) == intercept_df["_r"]
+    mask = intercept_df.groupby("limit")["_r"].transform(cast("Any", inner_agg)) == intercept_df["_r"]
     return intercept_df.iloc[getattr(intercept_df[mask]["_r"], outer_agg)()]
 
 
@@ -6296,7 +6303,7 @@ class FermiSolver(MSONable):
                     "delta_CBM": delta_CBM,
                     "delta_gap": delta_gap,
                     "return_annealing_values": return_annealing_values,
-                    "free_defects": free_defects,  # type: ignore
+                    "free_defects": free_defects,
                     "fix_charge_states": fix_charge_states,
                 }
             )
@@ -6547,7 +6554,7 @@ class FermiSolver(MSONable):
 
         single_chempot_dict, el_refs = self._get_single_chempot_dict(limit, chempots, el_refs)
 
-        temp_args = product(  # type: ignore
+        temp_args = product(
             *(
                 i if isinstance(i, Iterable) else [i]
                 for i in [annealing_temperature_list, quenched_temperature_list, temperature_list]
@@ -8890,7 +8897,7 @@ def _get_min_max_target_values(
 
 def _ensure_list(
     var: float | range | list | np.ndarray | None = None,
-) -> list[float | int] | np.ndarray[float | int] | None:
+) -> list[float | int] | np.ndarray | None:
     if isinstance(var, range):
         return list(var)
     return [var] if isinstance(var, int | float) else var

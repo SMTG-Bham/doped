@@ -52,7 +52,7 @@ def get_defect_in_supercell(
     ),
     target_supercell: Structure,
     check_bulk: bool = True,
-    target_frac_coords: np.ndarray[float] | list[float] | bool = True,
+    target_frac_coords: np.ndarray | list[float] | bool = True,
     edge_tol_range: float | range | list | np.ndarray | None = None,
     min_dist_tol_factor_range: float | range | list | np.ndarray | None = None,
     min_dist_warning_tol_factor: float = 0.9,
@@ -165,7 +165,7 @@ def get_defect_in_supercell(
             different atomic position bases to ``target_supercell`` (as
             described above) -- if so, a warning will be printed (unless
             ``check_bulk`` is ``False``). Default is ``True``.
-        target_frac_coords (np.ndarray[float] | list[float] | bool):
+        target_frac_coords (np.ndarray | list[float] | bool):
             The fractional coordinates to target for defect placement in the
             new supercell. If just set to ``True`` (default), will try to place
             the defect nearest to the centre of the superset cell (i.e.
@@ -231,6 +231,7 @@ def get_defect_in_supercell(
     bulk_mismatch_warning = False
 
     try:
+        orig_defect_frac_coords: np.ndarray | tuple[float, float, float] | None
         if isinstance(defect_entry, tuple):
             orig_supercell = defect_entry[0].copy()
             orig_bulk_supercell = defect_entry[1].copy()
@@ -282,7 +283,7 @@ def get_defect_in_supercell(
             struct2_pool=big_bulk_supercell,
         )
 
-        # now we try to pre-emptively reorient the big supercell to match the orientation of
+        # now we try to preemptively reorient the big supercell to match the orientation of
         # target_supercell (to try avoid output stenciled supercells with different tiling, requiring
         # additional bulk supercell calculations).
         # First, we reduce to only atoms closest to the centre for both target and super-supercells, to
@@ -447,7 +448,7 @@ def get_defect_in_supercell(
             bulk_mismatch_warning = not check_atom_mapping_far_from_defect(
                 oriented_new_bulk_supercell,  # could use defect or bulk supercell here, bulk cleaner
                 target_supercell,
-                [0.5, 0.5, 0.5],  # 'defect' site choice irrelevant here
+                np.array([0.5, 0.5, 0.5]),  # 'defect' site choice irrelevant here
                 warning=False,
             )
 
@@ -515,7 +516,7 @@ def get_defect_in_supercell(
 def _scan_symm_ops_to_place_site_closest_to_frac_coords(
     symm_ops: Structure | Sequence[SymmOp],
     site: PeriodicSite,
-    target_frac_coords: np.ndarray[float] | list[float] | None = None,
+    target_frac_coords: np.ndarray | list[float] | None = None,
 ) -> SymmOp:
     """
     Given either a list of symmetry operations or a structure (to extract
@@ -529,7 +530,7 @@ def _scan_symm_ops_to_place_site_closest_to_frac_coords(
             extract symmetry operations.
         site (|PeriodicSite|):
             The site to place closest to the target fractional coordinates.
-        target_frac_coords (np.ndarray[float] | list[float] | None):
+        target_frac_coords (np.ndarray | list[float] | None):
             The target fractional coordinates to place the site closest to.
             Default is ``None``, in which case the site is placed closest to
             the centre of the supercell (i.e. [0.5, 0.5, 0.5]).
@@ -1185,7 +1186,7 @@ def _get_matching_sites_from_s1_then_s2(
 def _get_superset_matrix_and_supercells(
     structure: Structure,
     target_supercell: Structure,
-) -> np.ndarray[int]:
+) -> np.ndarray:
     """
     Given a structure and a target supercell, return the transformation
     ('superset') matrix which makes all lattice vectors for the structure
@@ -1199,7 +1200,7 @@ def _get_superset_matrix_and_supercells(
             The target supercell.
 
     Returns:
-        superset_matrix (np.ndarray[int]):
+        superset_matrix (np.ndarray):
             Transformation matrix to make all lattice vectors for ``structure``
             larger than or equal to the largest lattice vector in
             ``target_supercell``.
@@ -1238,7 +1239,7 @@ def _get_all_encompassing_cube_length(lattice: Lattice) -> float:
 
 
 def is_within_frac_bounds(
-    lattice: Lattice, cart_coords: np.ndarray[float] | list[float], tol: float = 1e-5
+    lattice: Lattice, cart_coords: np.ndarray | list[float], tol: float = 1e-5
 ) -> bool:
     """
     Check if a given Cartesian coordinate is inside the unit cell defined by
@@ -1247,7 +1248,7 @@ def is_within_frac_bounds(
     Args:
         lattice (|Lattice|):
             |Lattice| object defining the unit cell.
-        cart_coords (np.ndarray[float] | list[float]):
+        cart_coords (np.ndarray | list[float]):
             The Cartesian coordinates to check.
         tol (float):
             A tolerance (in Angstrom / cartesian units) for coordinates to be
@@ -1263,12 +1264,12 @@ def is_within_frac_bounds(
     frac_tols = np.array([tol, tol, tol]) / lattice.abc
 
     # Check if fractional coordinates are in the range [0, 1)
-    return np.all((frac_coords + frac_tols >= 0) & (frac_coords - frac_tols < 1))
+    return bool(np.all((frac_coords + frac_tols >= 0) & (frac_coords - frac_tols < 1)))
 
 
 def _convert_defect_neighbours_to_X(
     defect_supercell: Structure,
-    defect_position: np.ndarray[float],
+    defect_position: np.ndarray,
     coords_are_cartesian: bool = False,
     ws_radius_fraction: float = 0.5,
 ) -> Structure:
@@ -1287,7 +1288,7 @@ def _convert_defect_neighbours_to_X(
     Args:
         defect_supercell (|Structure|):
             The defect supercell to edit.
-        defect_position (np.ndarray[float]):
+        defect_position (np.ndarray):
             The coordinates of the defect site, either fractional or Cartesian
             depending on ``coords_are_cartesian``.
         coords_are_cartesian (bool):

@@ -3,8 +3,8 @@ x-skip-docs: &skip_docs  # causes pre-commit warning but can be safely ignored
 exclude: ^(examples|.github)
 repos:
   # Lint and format, isort, docstrings...
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.15.5  # keep in sync with locally installed ruff (rev must be a specific tag)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.15  # keep in sync with locally installed ruff (rev must be a specific tag)
     hooks:
       - id: ruff
         <<: *skip_docs
@@ -24,14 +24,19 @@ repos:
         <<: *skip_docs
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+    rev: v2.1.0
     hooks:
       - id: mypy
         <<: *skip_docs
+        additional_dependencies:
+          - numpy
+          - pandas
+          - matplotlib
+          - pymatgen-core>=2026.4.7
 
   # Check typos:
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.6
+    rev: v2.4.2
     hooks:
       - id: codespell
         stages: [pre-commit,commit-msg]
@@ -42,7 +47,7 @@ repos:
 
   # format docstring length:
   - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.7
+    rev: v1.7.7  # v1.7.8 mangles ASCII-table docstrings (e.g. in tests) and splits URLs
     hooks:
       - id: docformatter
         additional_dependencies: [tomli]

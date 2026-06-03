@@ -29,7 +29,7 @@ def get_min_image_distance(structure: Structure) -> float:
     Returns:
         float: Minimum image distance.
     """
-    return _get_min_image_distance_from_matrix(structure.lattice.matrix)  # type: ignore
+    return _get_min_image_distance_from_matrix(structure.lattice.matrix)
 
 
 def min_dist(structure: Structure, ignored_species: list[str] | None = None) -> float:
@@ -312,8 +312,7 @@ def _lengths_and_angles_from_matrix(matrix: np.ndarray) -> tuple[Any, ...]:
         k = (dim + 2) % 3
         angles[dim] = np.clip(np.dot(matrix[j], matrix[k]) / (lengths[j] * lengths[k]), -1, 1)
     angles = np.arccos(angles) * 180.0 / np.pi
-    angles = tuple(angles.tolist())
-    return (*lengths, *angles)
+    return (*lengths, *tuple(angles.tolist()))
 
 
 def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.ndarray:
@@ -341,7 +340,9 @@ def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.nda
 
 
 def _P_matrix_sort_func(
-    P: np.ndarray, cell: np.ndarray = None, eff_norm_cubic_length: float | None = None
+    P: np.ndarray,
+    cell: np.ndarray | None = None,
+    eff_norm_cubic_length: float | None = None,
 ) -> tuple:
     """
     Sorting function to apply on an iterable of transformation matrices.
@@ -734,9 +735,8 @@ def find_ideal_supercell(
             is ``True``, the minimum image distance (in Å).
     """
     if target_size == 1:  # just identity innit
-        return np.eye(3, dtype=int), (
-            _get_min_image_distance_from_matrix(cell) if return_min_dist else np.eye(3, dtype=int)
-        )
+        identity = np.eye(3, dtype=int)
+        return (identity, _get_min_image_distance_from_matrix(cell)) if return_min_dist else identity
 
     # Initial code here is based off that in ASE's find_optimal_cell_shape() function, but with significant
     # efficiency improvements, and then re-based on the minimum image distance rather than cubic cell
@@ -768,14 +768,8 @@ def find_ideal_supercell(
         target_shape="FCC",
     )
     # recalculate min dists (reduces numerical errors inherited from transformations)
-    sc_min_dist = round(
-        _get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)),
-        3,  # type: ignore
-    )
-    fcc_min_dist = round(
-        _get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)),
-        3,  # type: ignore
-    )
+    sc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3)
+    fcc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3)
 
     sc_fcc_P_and_min_dists = [
         (sc_optimal_P, sc_min_dist),
