@@ -261,7 +261,8 @@ def raw_energy_from_chempots(composition: str | dict | Composition, chempots: di
         composition = Composition(composition)
 
     if "limits" not in chempots:
-        chempots, _el_refs = _parse_chempots(chempots)  # type: ignore
+        # non-``None`` dict input -> parsed chempots are non-``None``:
+        chempots, _el_refs = cast("tuple[dict, dict | None]", _parse_chempots(chempots))
 
     raw_energies_dict = dict(next(iter(chempots["limits"].values())))
 
@@ -523,13 +524,16 @@ def _group_defects_by_distance(
                 except ValueError:  # likely interstitials, need to add equiv sites to tuple
                     equiv_fcoords_tuple = (
                         tuple(  # tuple because lists aren't hashable (can't be dict keys)
-                            tuple(frac_coords)  # type: ignore
-                            for frac_coords in get_all_equiv_sites(
-                                entry_bulk_site.frac_coords,
-                                symm_bulk_struct,
-                                symprec=symprec,
-                                just_frac_coords=True,
-                                return_symprec_and_dist_tol_factor=False,
+                            tuple(frac_coords)
+                            for frac_coords in cast(  # just_frac_coords=True -> list[np.ndarray]
+                                "list[np.ndarray]",
+                                get_all_equiv_sites(
+                                    entry_bulk_site.frac_coords,
+                                    symm_bulk_struct,
+                                    symprec=symprec,
+                                    just_frac_coords=True,
+                                    return_symprec_and_dist_tol_factor=False,
+                                ),
                             )
                         )
                     )
@@ -1208,7 +1212,7 @@ class DefectThermodynamics(MSONable):
         # {VBM - 1, CBM + 1} eV for x (fermi level)
         min_y_lim = min(midgap_formation_energies) - 30
         max_y_lim = max(midgap_formation_energies) + 30
-        limits = [[-1, self.band_gap + 1], [min_y_lim, max_y_lim]]  # type: ignore
+        limits = [[-1, (self.band_gap or 0) + 1], [min_y_lim, max_y_lim]]
 
         stable_entries: dict[str, list[DefectEntry]] = {}
         defect_charge_map: dict[str, list[int]] = {}
@@ -1221,7 +1225,8 @@ class DefectThermodynamics(MSONable):
                     list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
                 )
             )  # {cluster index: {DefectEntry, ...}}; dict[int, set[DefectEntry]]
-            self.clustered_defect_entries_by_type = group_defects_by_type_and_distance(
+            # inner key is a cluster index (int) here, but a defect name (str) in the fallback below:
+            self.clustered_defect_entries_by_type: dict[str, Any] = group_defects_by_type_and_distance(
                 list(self.defect_entries.values()), dist_tol=self.dist_tol, symprec=symprec
             )  # {simple defect name: {cluster index: {DefectEntry, ...}}};
             # dict[str, dict[int, set[DefectEntry]]]
@@ -1236,7 +1241,7 @@ class DefectThermodynamics(MSONable):
             # dict[str, dict[str, set[DefectEntry]]]
             for defect_name_wout_charge, defect_entry_set in self.clustered_defect_entries.items():
                 self.clustered_defect_entries_by_type[next(iter(defect_entry_set)).defect.name][
-                    defect_name_wout_charge  # type: ignore
+                    defect_name_wout_charge
                 ] = defect_entry_set
 
             warnings.warn(
@@ -1281,7 +1286,7 @@ class DefectThermodynamics(MSONable):
                 [0, 1, -1 * limits[1][1]],
             ]
             hs_hyperplanes = np.vstack([hyperplanes, border_hyperplanes])
-            interior_point = [self.band_gap / 2, min(midgap_formation_energies) - 1.0]  # type: ignore
+            interior_point = [(self.band_gap or 0) / 2, min(midgap_formation_energies) - 1.0]
             hs_ints = HalfspaceIntersection(hs_hyperplanes, np.array(interior_point))
 
             # Group the intersections and corresponding facets
@@ -3515,7 +3520,7 @@ class DefectThermodynamics(MSONable):
         prints an info message to the user.
         """
         if fermi_level is None:
-            fermi_level = 0.5 * self.band_gap  # type: ignore
+            fermi_level = 0.5 * (self.band_gap or 0)
             print(
                 f"Fermi level was not set, so using mid-gap Fermi level (E_g/2 = {fermi_level:.2f} eV "
                 f"relative to the VBM)."
@@ -5513,13 +5518,16 @@ class FermiSolver(MSONable):
                 - The electron concentration (float) in cm^-3.
                 - The hole concentration (float) in cm^-3.
         """
-        fermi_level, electrons, holes = self.defect_thermodynamics.get_equilibrium_fermi_level(  # type: ignore
-            chempots=single_chempot_dict,
-            el_refs=el_refs,
-            temperature=temperature,
-            return_concs=True,
-            effective_dopant_concentration=effective_dopant_concentration,
-            site_competition=site_competition,
+        fermi_level, electrons, holes = cast(  # return_concs=True -> (fermi_level, electrons, holes)
+            "tuple[float, float, float]",
+            self.defect_thermodynamics.get_equilibrium_fermi_level(
+                chempots=single_chempot_dict,
+                el_refs=el_refs,
+                temperature=temperature,
+                return_concs=True,
+                effective_dopant_concentration=effective_dopant_concentration,
+                site_competition=site_competition,
+            ),
         )
         return fermi_level, electrons, holes
 
@@ -6165,12 +6173,15 @@ class FermiSolver(MSONable):
                 annealing_e_conc,
                 annealing_h_conc,
                 annealing_conc_df,
-            ) = self.defect_thermodynamics.get_fermi_level_and_concentrations(  # type: ignore
-                skip_formatting=True,  # keep concentration values as floats
-                site_competition=site_competition,
-                per_charge=per_charge,
-                per_site=per_site,
-                **common_kwargs,
+            ) = cast(  # full (annealing) output tuple as return_annealing_values=True
+                "tuple[float, float, float, pd.DataFrame, float, float, float, pd.DataFrame]",
+                self.defect_thermodynamics.get_fermi_level_and_concentrations(
+                    skip_formatting=True,  # keep concentration values as floats
+                    site_competition=site_competition,
+                    per_charge=per_charge,
+                    per_site=per_site,
+                    **common_kwargs,
+                ),
             )
 
         else:  # py-sc-fermi

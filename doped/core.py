@@ -6,7 +6,7 @@ import collections
 import contextlib
 import warnings
 from functools import cached_property
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from monty.serialization import dumpfn, loadfn
@@ -1775,7 +1775,8 @@ def is_shallow(defect_entry: DefectEntry, default: bool = False) -> bool:
             Default is ``False``.
     """
     try:
-        return defect_entry.get_eigenvalue_analysis(plot=False, _parameter_order_warn=False).is_shallow  # type: ignore
+        analysis = defect_entry.get_eigenvalue_analysis(plot=False, _parameter_order_warn=False)
+        return cast("BandEdgeStates", analysis).is_shallow  # plot=False returns only ``BandEdgeStates``
     except Exception:
         return default
 

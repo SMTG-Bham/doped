@@ -441,7 +441,7 @@ def defect_from_structures(
             if k in ["symprec", "dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
         },  # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
     )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
-    assert isinstance(equiv_frac_coords_in_prim, list[np.ndarray] | np.ndarray)
+    assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
     equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
     equiv_defect_sites_in_prim = [
         PeriodicSite(
