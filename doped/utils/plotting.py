@@ -1706,6 +1706,21 @@ def _label_box(
     return x_min, x_max, y_min, y_max
 
 
+def _TL_label_box(
+    TL_label: TransitionLevelLabel,
+    label_height: float = 0.0,
+    label_width: float = 0.0,
+) -> tuple[float, float, float, float]:
+    """
+    Bounding box ``(x_min, x_max, y_min, y_max)``, from ``_label_box`` for a
+    given ``TransitionLevelLabel``, ``label_height`` and ``label_width``
+    (defaults to ``TL_label.label_w``).
+    """
+    return _label_box(
+        TL_label.x, TL_label.y, TL_label.ha, TL_label.va, label_width or TL_label.label_w, label_height
+    )
+
+
 def _boxes_overlap(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float = 0.0) -> bool:
     """
     Whether two label boxes ``(x_min, x_max, y_min, y_max)`` overlap.
@@ -1778,8 +1793,7 @@ def _optimise_side_placements(
     TL_line_left: float,
     TL_line_right: float,
     x_center: float,
-    label_h: float,
-    label_w: float,
+    label_offset_eV: float,
     max_brute_force_ops: int = 1_000_000_000,
 ) -> list[TransitionLevelLabel]:
     r"""
@@ -1805,16 +1819,10 @@ def _optimise_side_placements(
     if n == 0:
         return []
 
-    def lbl_box(pos: TransitionLevelLabel, w: float = label_w) -> tuple[float, float, float, float]:
-        """
-        Bounding box ``(x_min, x_max, y_min, y_max)`` for a label at ``pos``.
-        """
-        return _label_box(pos.x, pos.y, pos.ha, pos.va, w, label_h)
-
     # add a small y-buffer (~30% of a label height) so two side labels packed almost
     # touch-to-touch on the same side are treated as overlapping (the same buffer applied
     # to inline label-vs-label checks):
-    y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_h
+    y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_offset_eV
 
     def conn_endpoints(pos: TransitionLevelLabel) -> tuple[float, float, float, float] | None:
         """
@@ -1824,11 +1832,10 @@ def _optimise_side_placements(
         if conn_y is None:
             return None
         return _connector_x0(x_pos, x_center, TL_line_left, TL_line_right), conn_y, x_pos, y_pos
+        # TODO: This function is duplicated a few times in _place_labels_for_column?
 
-    line_eps = _TL_LINE_EPS_FRAC * label_h
-    inline_boxes = [  # placed_inline label bounds
-        _label_box(p.x, p.y, p.ha, p.va, p.label_w, label_h) for p in placed_inline
-    ]
+    line_eps = _TL_LINE_EPS_FRAC * label_offset_eV
+    inline_boxes = [_TL_label_box(p, label_offset_eV) for p in placed_inline]  # placed_inline label bounds
     inline_connectors = [
         (p.conn_x, p.conn_y, p.x, p.y)
         for p in placed_inline
@@ -1842,7 +1849,7 @@ def _optimise_side_placements(
     # (overlaps with inline labels / TL lines, independent of the other side picks) and a pairwise
     # term between two side picks; both are tabulated once up front here.
     counts = [len(c) for c in side_candidates_per_tl]
-    cand_boxes = [[lbl_box(c) for c in cands] for cands in side_candidates_per_tl]
+    cand_boxes = [[_TL_label_box(c, label_offset_eV) for c in cands] for cands in side_candidates_per_tl]
     cand_conns = [[conn_endpoints(c) for c in cands] for cands in side_candidates_per_tl]
 
     def _unary_cost(i: int, a: int) -> int:
@@ -2023,12 +2030,12 @@ def _place_labels_for_column(
     r"""
     Decide where to place the labels for each TL in a single defect column.
 
-    For each TL (in input order), the label is tried first directly above the
-    TL line, then directly below, then directly to the side (preferentially
-    choosing the spacier side of right/left, based on the closest TL in a
-    neighbouring column) with a small horizontal connector to the column edge,
-    then diagonally up/down to the right and left, then stacked further above
-    or below. The first candidate position that doesn't overlap with another
+    For each TL (in input order), the label is tried first directly above or
+    below the TL line, then (if that overlaps with another TL/label) tries
+    directly to the side (preferentially choosing the spacier side of
+    right/left, based on the closest TL in a neighbouring column) with a small
+    horizontal connector to the column edge, or diagonally up/down to the right
+    and left. The first candidate position that doesn't overlap with another
     TL line in the same column, an already-placed label, the connector route
     of an already-placed label, or one of the band edges (VBM at 0 eV, CBM
     at ``band_gap``) is used.
@@ -2089,8 +2096,8 @@ def _place_labels_for_column(
     TL_line_right = x_center + half_w
     side_x_right = TL_line_right + _SIDE_LABEL_X_GAP
     side_x_left = TL_line_left - _SIDE_LABEL_X_GAP
-    label_h = label_offset_eV  # vertical "height" of a label in y-units (~ text height used for stacking)
-    label_w = label_width
+    # TODO: Do we need the .replace(label_width) calls? Just set as this width from the beginning?
+    # TODO: Rename from `pos`/positions to TL_label throughout, for clarity?
 
     # labels may extend up to `label_y_max` (slightly past ylim[1], into the buffer below the column
     # header) and down to `label_y_min` (slightly past ylim[0]); this lets TLs that sit in/near the CBM
@@ -2108,12 +2115,12 @@ def _place_labels_for_column(
         """
         Whether a label at ``y`` straddles a band edge or exceeds plot bounds.
         """
-        y_min, y_max = _label_axis_extent(y, va, label_h)
+        y_min, y_max = _label_axis_extent(y, va, label_offset_eV)
         if y_min < band_gap < y_max or y_min < 0.0 < y_max:  # straddles band edge
             return True
         if y_max > y_max_allowed or y_min < y_min_allowed:  # exceeds plot y-axis bounds:
             return True
-        lbl_left, lbl_right = _label_axis_extent(x_pos, ha, label_w)
+        lbl_left, lbl_right = _label_axis_extent(x_pos, ha, label_width)
         return lbl_left < xlim[0] or lbl_right > xlim[1]  # exceeds plot x-axis bounds?
 
     def collides_with_tl_line(
@@ -2122,18 +2129,18 @@ def _place_labels_for_column(
         """
         Whether a label at ``y`` collides with a TL (excluding ``source_y``).
         """
-        y_min, y_max = _label_axis_extent(y, va, label_h)
-        lbl_left, lbl_right = _label_axis_extent(x_pos, ha, label_w)
+        y_min, y_max = _label_axis_extent(y, va, label_offset_eV)
+        lbl_left, lbl_right = _label_axis_extent(x_pos, ha, label_width)
         if not (lbl_right > TL_line_left and lbl_left < TL_line_right):  # only check TL lines in column
             return False
 
         # require ~half a label-height of clearance from the (next) TL line so a label placed
         # direct-above/below is visually unambiguous (couldn't be mis-read as belonging to nearby TL
         # above/below). `source_y` is the TL we're labelling, so it is excluded from this check (it sits
-        # _DIRECT_LABEL_DY_FRAC*label_h from the anchor):
-        clearance = _TL_LINE_CLEARANCE_FRAC * label_h
+        # _DIRECT_LABEL_DY_FRAC*label_offset_eV from the anchor):
+        clearance = _TL_LINE_CLEARANCE_FRAC * label_offset_eV
         for ly in TL_y_positions:
-            if source_y is not None and abs(ly - source_y) < _TL_LINE_EPS_FRAC * label_h:
+            if source_y is not None and abs(ly - source_y) < _TL_LINE_EPS_FRAC * label_offset_eV:
                 continue  # source TL, ignore
             if y_min - clearance <= ly <= y_max + clearance:  # collision with other TL
                 return True
@@ -2143,12 +2150,11 @@ def _place_labels_for_column(
         """
         Whether a label at ``y`` overlaps an already-placed label.
         """
-        y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_h  # small vertical buffer (~30% label_h) between labels
-        box = _label_box(x_pos, y, ha, va, label_w, label_h)
-        for p in placed:
-            if _boxes_overlap(box, _label_box(p.x, p.y, p.ha, p.va, p.label_w, label_h), 0, y_buf):
-                return True
-        return False
+        y_buf = (
+            _LABEL_STACK_Y_BUFFER_FRAC * label_offset_eV
+        )  # small vertical buffer (~30% label_offset_eV) between labels
+        box = _label_box(x_pos, y, ha, va, label_width, label_offset_eV)
+        return any(_boxes_overlap(box, _TL_label_box(p, label_offset_eV), 0, y_buf) for p in placed)
 
     def connector_through_placed(conn_x0: float, conn_y0: float, conn_x1: float, conn_y1: float) -> bool:
         """
@@ -2156,7 +2162,7 @@ def _place_labels_for_column(
         """
         for p in placed:
             if _segment_intersects_rect(
-                conn_x0, conn_y0, conn_x1, conn_y1, *_label_box(p.x, p.y, p.ha, p.va, p.label_w, label_h)
+                conn_x0, conn_y0, conn_x1, conn_y1, *_TL_label_box(p, label_offset_eV)
             ):
                 return True
         return False
@@ -2166,7 +2172,7 @@ def _place_labels_for_column(
         Would the new label box be crossed by an already-placed label's
         connector?
         """
-        box = _label_box(x_pos, y_pos, ha, va, label_w, label_h)
+        box = _label_box(x_pos, y_pos, ha, va, label_width, label_offset_eV)
         for p in placed:
             if p.conn_x is None or p.conn_y is None:
                 continue
@@ -2178,7 +2184,7 @@ def _place_labels_for_column(
         """
         Does the connector cross any TL line in this column other than source?
         """
-        line_eps = _TL_LINE_EPS_FRAC * label_h  # treat TL lines as thin rectangles of this height
+        line_eps = _TL_LINE_EPS_FRAC * label_offset_eV  # treat TL lines as thin rectangles of this height
         for ly in TL_y_positions:
             if abs(ly - conn_y0) < line_eps:  # the source TL we're connecting from
                 continue
@@ -2219,7 +2225,7 @@ def _place_labels_for_column(
         right_first = closest_TL_dist_right_side >= closest_TL_dist_left_side
         direct_right = TransitionLevelLabel(side_x_right, tl_eV, "left", "center", None)
         direct_left = TransitionLevelLabel(side_x_left, tl_eV, "right", "center", None)
-        diag_dy = _DIAG_LABEL_DY_FRAC * label_h  # diagonal y-offset (+/- on either side)
+        diag_dy = _DIAG_LABEL_DY_FRAC * label_offset_eV  # diagonal y-offset (+/- on either side)
         return [
             direct_right if right_first else direct_left,
             direct_left if right_first else direct_right,
@@ -2266,9 +2272,11 @@ def _place_labels_for_column(
         chosen = None
         for cand in (
             TransitionLevelLabel(
-                x_center, tl_eV + _DIRECT_LABEL_DY_FRAC * label_h, "center", "bottom", None
+                x_center, tl_eV + _DIRECT_LABEL_DY_FRAC * label_offset_eV, "center", "bottom", None
             ),
-            TransitionLevelLabel(x_center, tl_eV - _DIRECT_LABEL_DY_FRAC * label_h, "center", "top", None),
+            TransitionLevelLabel(
+                x_center, tl_eV - _DIRECT_LABEL_DY_FRAC * label_offset_eV, "center", "top", None
+            ),
         ):  # direct above, then direct below
             if _candidate_ok(cand, source_y=tl_eV):
                 chosen = cand
@@ -2277,7 +2285,7 @@ def _place_labels_for_column(
             pending_placements.append((i, label, chosen))
             # commit to ``placed`` immediately so later phase-1 TLs see this label (for same-column
             # direct-above/below (neighbouring TL) collisions):
-            placed.append(chosen._replace(label_w=label_w))
+            placed.append(chosen._replace(label_w=label_width))
             continue
         side_bound.append((i, tl))
 
@@ -2310,8 +2318,7 @@ def _place_labels_for_column(
             TL_line_left=TL_line_left,
             TL_line_right=TL_line_right,
             x_center=x_center,
-            label_h=label_h,
-            label_w=label_w,
+            label_offset_eV=label_offset_eV,
         )
 
         for (i, tl), pos in zip(placeable, chosen_positions, strict=True):
@@ -2324,14 +2331,14 @@ def _place_labels_for_column(
                 if pos.conn_y is not None
                 else None
             )
-            placed.append(pos._replace(label_w=label_w, conn_x=conn_x))
+            placed.append(pos._replace(label_w=label_width, conn_x=conn_x))
 
     # ----- Phase 3: Assemble results in original TL order -----
     for i, label, pos in pending_placements:
         conn_x = (
             _connector_x0(pos.x, x_center, TL_line_left, TL_line_right) if pos.conn_y is not None else None
         )
-        results[i] = pos._replace(label_w=label_w, conn_x=conn_x, label=label)
+        results[i] = pos._replace(label_w=label_width, conn_x=conn_x, label=label)
 
     return results
 
@@ -2450,7 +2457,7 @@ def transition_level_diagram(
         figsize_h = styled_figsize[1] * 1.15
     else:
         figsize_w, figsize_h = figsize
-    label_width_est = _estimate_label_width(label_fontsize, 7, float(n_defects), figsize_w)
+    label_width_est = _estimate_label_width(label_fontsize, 9, float(n_defects), figsize_w)
     side_pad = half_w + label_width_est + 0.1
 
     # y-axis ticks point inward (when ytick.direction is "in"/"inout"; default in ``doped`` style) so the
@@ -2470,8 +2477,10 @@ def transition_level_diagram(
         (label_fontsize / 72.0) * (ylim[1] - ylim[0]) / max(figsize[1], 1.0) * 1.2,
         0.04,
     )  # scales with the height (in points) of the label text
-    # rough horizontal extent of labels in data units, for collision checks (~7 characters wide):
-    label_width = _estimate_label_width(label_fontsize, 7, xlim[1] - xlim[0], figsize[0])
+    # rough horizontal extent of labels in data units, for collision checks (max 9 characters wide):
+    label_width = _estimate_label_width(label_fontsize, 9, xlim[1] - xlim[0], figsize[0])
+    # TODO: If straightforward, could account for differing label widths of different labels by pulling
+    #  from TL_label objects? (via the label text)
     faded_alpha = 0.4
 
     # column headers sit a small distance above ylim[1]; labels for TLs near/inside the CB/VB band-edge
@@ -2550,7 +2559,7 @@ def transition_level_diagram(
                 skip_faded=(all != "faded_labels"),
                 label_y_max=label_y_max,
                 label_y_min=label_y_min,
-            )  # TODO: Can we not extract the same info from neighbor_columns/cross_column_placed?
+            )
 
         # initial pass: each column sees only earlier columns' placements as obstacles
         for i in range(n_defects):
@@ -2615,7 +2624,7 @@ def transition_level_diagram(
         force_right = show_band_labels is True
         all_placed_label_boxes: list[tuple[float, float, float, float]] = (
             [
-                _label_box(p.x, p.y, p.ha, p.va, p.label_w, label_offset_eV)
+                _TL_label_box(p, label_height=label_offset_eV)
                 for positions in column_positions
                 for p in _placed_boxes(positions)
             ]
