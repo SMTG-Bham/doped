@@ -1743,7 +1743,7 @@ def _boxes_overlap(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float = 0.0)
     """
     return (
         b1[1] + x_buf > b2[0] and b1[0] - x_buf < b2[1] and b1[3] + y_buf > b2[2] and b1[2] - y_buf < b2[3]
-    )  # TODO: Need to adjust x_buf or other settings?
+    )
 
 
 def _connector_x0(x_pos: float, x_center: float, TL_line_left: float, TL_line_right: float) -> float:
@@ -1811,7 +1811,6 @@ _TL_LINE_EPS_FRAC = 0.05  # half-thickness used to treat a TL line as a thin rec
 _TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouring (non-source) TL line
 
 
-# TODO: Re-test timing in the end to re-determine best brute-force crossover point
 class _SideBoundTL(NamedTuple):
     """
     A side-bound TL (one whose label could not be placed inline) awaiting side
@@ -1880,7 +1879,7 @@ def _cluster_side_bound_tls(
 def _optimise_side_placements(
     side_candidates_per_tl: list[list[TransitionLevelLabel]],
     label_height: float,
-    max_brute_force_ops: int = 1_000_000_000,
+    max_brute_force_ops: int = 3_500_000_000,
 ) -> list[TransitionLevelLabel]:
     r"""
     Pick one label position per side-bound-label TL so as to minimise total
@@ -1898,9 +1897,10 @@ def _optimise_side_placements(
     ``space * (n*(n-1)/2)`` integer cost-table reads (the per-combination
     ``n*(n-1)/2`` pairwise sums, ``space`` being the product of candidate
     counts and ``n`` being the number of side-bound-label TLs for which to
-    choose a candidate); the numpy build sustains ~1.5 G reads/s on a modern
+    choose a candidate); the numpy build sustains ~3 G reads/s on a modern
     laptop, so the default ``max_brute_force_ops`` keeps worst-case brute force
-    to ~1 s (~10 side-bound TLs, depending on their candidate counts).
+    to ~1 s (~10 side-bound TLs in a single potentially-overlapping cluster,
+    depending on their candidate counts).
 
     Args:
         side_candidates_per_tl (list[list[TransitionLevelLabel]]):
@@ -1943,7 +1943,7 @@ def _optimise_side_placements(
         """
         box_i = cand_boxes[i][a]
         box_j = cand_boxes[j][b]
-        cost = 10 if _boxes_overlap(box_i, box_j, x_buf=0, y_buf=y_buf) else 0  # label box-box overlap
+        cost = 10 if _boxes_overlap(box_i, box_j, y_buf=y_buf) else 0  # label box-box overlap
         for conn, box in [(cand_conns[i][a], box_j), (cand_conns[j][b], box_i)]:
             if conn is not None and _segment_intersects_rect(*conn, *box):
                 cost += 4  # connector - label box overlap
@@ -1975,7 +1975,12 @@ def _optimise_side_placements(
         # labels for each TL; return these optimal label choices:
         return [side_candidates_per_tl[k][int(best_indices[k])] for k in range(n)]
 
-    # otherwise we use greedy + hill-climb fallback for large spaces, reusing the precomputed geometry.
+    # Note: It is extremely unlikely that we reach this point, requiring the greedy algorithm (only in
+    # cases of >10 side-bound TLs in a given cluster), but we retain this code chunk to handle this
+    # potential edge case (e.g. many TLs and defects, which happen to overlap continuously across the plot
+    # range). Could be removed for brevity in future.
+
+    # Otherwise, use greedy + hill-climb fallback for large spaces, reusing the precomputed geometry.
     # The cost of giving TL ``i`` pick ``a`` given the other chosen picks is the sum of pairwise penalties
     # tabulated in ``pair_items`` above:
     pair_lookup = dict(pair_items)  # {(i, j): cost matrix} for i < j; pairwise cost is symmetric
@@ -2152,7 +2157,7 @@ def _place_inline_labels_for_column(
         """
         y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_height  # small vertical buffer; ~30% label_height
         box = _TL_label_box(TL_label, label_height)
-        return any(_boxes_overlap(box, _TL_label_box(p, label_height), 0, y_buf) for p in placed)
+        return any(_boxes_overlap(box, _TL_label_box(p, label_height), y_buf=y_buf) for p in placed)
 
     def _side_candidates(TL_label: TransitionLevelLabel) -> list[TransitionLevelLabel]:
         """
@@ -2215,9 +2220,11 @@ def _place_inline_labels_for_column(
     # Anything that doesn't fit cleanly inline becomes a "side-bound" TL, returned for the caller to
     # cluster and optimise globally (its off-column candidate positions are generated here).
     side_bound: list[_SideBoundTL] = []
-    for i, tl in enumerate(tls):  # TransitionLevel objects
+    for i, tl in enumerate(tls):  # ``TransitionLevel`` objects
+        # add ``None`` as placeholder; kept as ``None`` for unlabelled faded TLs and side-bound (the latter
+        # of which are overwritten later by this function's caller), and overwritten for inline labels here
+        results.append(None)
         if skip_faded and tl.faded:
-            results.append(None)  # skip labelling
             continue
         label = _format_TL_charge_label(tl.charges, pos_meta=tl.pos_meta, neg_meta=tl.neg_meta)
         label_w = per_char_label_width * len(label)
@@ -2233,7 +2240,7 @@ def _place_inline_labels_for_column(
                 chosen = cand  # suitable inline candidate label
                 break
         if chosen is not None:  # add to results and placed, then move to next TL in loop
-            results.append(chosen)
+            results[i] = chosen
             # add to ``placed`` to use for same-column above/below TL collision checks (later in this loop)
             placed.append(chosen)
             continue
@@ -2245,7 +2252,6 @@ def _place_inline_labels_for_column(
         if opts := [c for c in _side_candidates(TL_label) if not collides_with_band(c)]:
             side_bound.append(_SideBoundTL(-1, i, TL_label.TL_eV, opts))  # ``col`` set by the caller
         else:
-            results.append(None)  # no label found, set to ``None``
             warnings.warn(
                 f"Could not automatically find a suitable label position for {label}! It will be omitted, "
                 f"and an appropriate labelling can be added manually."
@@ -2480,7 +2486,6 @@ def transition_level_diagram(
         defect_column_positions = column_positions[i]
         if not show_charge_labels or defect_column_positions is None:
             continue
-        assert defect_column_positions is not None  # typing
         for TL_label, tl_tuple in zip(defect_column_positions, column_in_range_tls[i], strict=True):
             if TL_label is None:  # faded TL with skip_faded=True -- no label drawn
                 continue
