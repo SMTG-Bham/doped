@@ -23,6 +23,8 @@ from matplotlib.table import Table
 from pymatgen.core.periodic_table import Element
 from pymatgen.util.string import latexify
 from pymatgen.util.typing import PathLike
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
 from doped.utils.symmetry import sch_symbols  # point group symbols
 
@@ -1858,28 +1860,21 @@ def _cluster_side_bound_tls(
             A list of clusters, each a list of :class:`_SideBoundTL`.
     """
     n = len(side_bound)
-    parent = list(range(n))  # union-find
+    if n == 0:
+        return []
 
-    def find(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]  # path halving
-            i = parent[i]
-        return i
+    # build the link (adjacency) matrix from the proximity rule, then take its connected components:
+    cols = np.array([sb.col_idx for sb in side_bound])
+    tls = np.array([sb.TL_eV for sb in side_bound])
+    linked = (np.abs(cols[:, None] - cols[None, :]) <= 1) & (
+        np.abs(tls[:, None] - tls[None, :]) <= y_threshold
+    )
+    n_clusters, labels = connected_components(csr_matrix(linked), directed=False)
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            if (
-                abs(side_bound[i].col_idx - side_bound[j].col_idx) <= 1
-                and abs(side_bound[i].TL_eV - side_bound[j].TL_eV) <= y_threshold
-            ):
-                parent[find(i)] = find(j)
-
-    clusters: dict[int, list[_SideBoundTL]] = {}
-    for i in range(n):
-        clusters.setdefault(find(i), []).append(side_bound[i])
-    # TODO: Can we use scipy clustering algorithms directly? (With a defined connectivity function or
-    #  something?)
-    return list(clusters.values())
+    clusters: list[list[_SideBoundTL]] = [[] for _ in range(n_clusters)]
+    for i, label in enumerate(labels):
+        clusters[label].append(side_bound[i])
+    return clusters
 
 
 def _optimise_side_placements(
