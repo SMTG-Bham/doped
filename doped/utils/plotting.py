@@ -1555,24 +1555,22 @@ class TransitionLevelLabel(NamedTuple):
     A plot position for a charge transition level (TL) label.
 
     ``(x, y)`` is the label anchor position with alignments ``ha``/``va``;
-    ``conn_y``/``conn_x`` are the source TL line ``y``/column-edge ``x`` for an
-    off-column label that needs a connector (both ``None`` for an inline label
-    with no connector). ``label_w`` is the label width.
-
-    ``conn_x`` and ``label_w`` are set when the (candidate) label is built (see
-    ``_side_candidates``); used in collision checks is read. ``label`` (the
-    formatted charge-state text) is filled in only once a position is
-    `committed` (placed), for drawing.
+    ``label`` and ``label_w`` are the label text and width; ``TL_eV`` is the
+    TL position in eV from the VBM (same as for :class`TransitionLevel`);
+    ``conn_y`` and ``conn_x`` are the source TL line ``y``/column-edge ``x``
+    for an off-column label that needs a connector (both ``None`` for an inline
+    label with no connector).
     """
 
     x: float
     y: float
     ha: str
     va: str
+    label: str
+    label_w: float
+    TL_eV: float
     conn_y: float | None = None
-    label_w: float = 0.0
     conn_x: float | None = None
-    label: str = ""
 
 
 def _get_transition_level_data(
@@ -1811,11 +1809,81 @@ _TL_LINE_EPS_FRAC = 0.05  # half-thickness used to treat a TL line as a thin rec
 _TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouring (non-source) TL line
 
 
-# TODO: Not sure if I fully understand why we approach this iteratively / self-consistently...
 # TODO: Re-test timing in the end to re-determine best brute-force crossover point
+class _SideBoundTL(NamedTuple):
+    """
+    A side-bound TL (one whose label could not be placed inline) awaiting side
+    label placement.
+
+    ``col_idx`` is the defect column index and ``idx_in_col`` is the position
+    of this TL within that column's results list (so the chosen label position
+    can be written back). ``tl_eV`` is the TL energy (used for locality
+    clustering), and ``candidates`` is its off-column
+    :class:`TransitionLevelLabel` positions to choose from.
+    """
+
+    col_idx: int
+    idx_in_col: int
+    TL_eV: float
+    candidates: list[TransitionLevelLabel]
+
+
+def _cluster_side_bound_tls(
+    side_bound: list[_SideBoundTL], y_threshold: float
+) -> list[list[_SideBoundTL]]:
+    """
+    Group side-bound TLs into independent clusters by locality.
+
+    Two side-bound TLs are linked (placed in the same cluster) if they sit in
+    the same or a neighbouring defect column (``abs(col_i - col_j) <= 1``) and
+    are within ``y_threshold`` of each other vertically
+    (``abs(tl_eV_i - tl_eV_j) <= y_threshold``); clusters are the connected
+    components (i.e. transitive closure) of these links.
+
+    Only same-or-neighbouring columns can have overlapping side labels (their
+    label boxes/connectors are confined to the column edges), and TLs separated
+    by more than ``y_threshold`` vertically cannot overlap either, so distinct
+    clusters never interact and can be optimised independently (see
+    :func:`_optimise_side_placements`).
+
+    Args:
+        side_bound (list[_SideBoundTL]):
+            The side-bound TLs to cluster (across all columns).
+        y_threshold (float):
+            Maximum vertical separation (in eV) for two TLs in neighbouring
+            columns to be considered as possibly interacting.
+
+    Returns:
+        list[list[_SideBoundTL]]:
+            A list of clusters, each a list of :class:`_SideBoundTL`.
+    """
+    n = len(side_bound)
+    parent = list(range(n))  # union-find
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]  # path halving
+            i = parent[i]
+        return i
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if (
+                abs(side_bound[i].col_idx - side_bound[j].col_idx) <= 1
+                and abs(side_bound[i].TL_eV - side_bound[j].TL_eV) <= y_threshold
+            ):
+                parent[find(i)] = find(j)
+
+    clusters: dict[int, list[_SideBoundTL]] = {}
+    for i in range(n):
+        clusters.setdefault(find(i), []).append(side_bound[i])
+    # TODO: Can we use scipy clustering algorithms directly? (With a defined connectivity function or
+    #  something?)
+    return list(clusters.values())
+
+
 def _optimise_side_placements(
     side_candidates_per_tl: list[list[TransitionLevelLabel]],
-    placed_labels: list[TransitionLevelLabel],
     label_height: float,
     max_brute_force_ops: int = 1_000_000_000,
 ) -> list[TransitionLevelLabel]:
@@ -1832,24 +1900,18 @@ def _optimise_side_placements(
     Brute-force enumeration (vectorised with ``numpy``) is used when the
     estimated work is small enough, and otherwise we fall back to a greedy
     first-pick plus a few hill-climbing refinement passes. The work estimate is
-    ``space * (n + n*(n-1)/2)`` integer cost-table reads (the per-combination
-    ``n`` unary + ``n*(n-1)/2`` pairwise sums, ``space`` being the product of
-    candidate counts and ``n`` being the number of side-bound-label TLs for
-    which to choose a candidate); the numpy build sustains ~1.5 G reads/s on a
-    modern laptop, so the default ``max_brute_force_ops`` keeps worst-case
-    brute force to ~1 s (~10 side-bound TLs, depending on their candidate
-    counts).
+    ``space * (n*(n-1)/2)`` integer cost-table reads (the per-combination
+    ``n*(n-1)/2`` pairwise sums, ``space`` being the product of candidate
+    counts and ``n`` being the number of side-bound-label TLs for which to
+    choose a candidate); the numpy build sustains ~1.5 G reads/s on a modern
+    laptop, so the default ``max_brute_force_ops`` keeps worst-case brute force
+    to ~1 s (~10 side-bound TLs, depending on their candidate counts).
 
     Args:
         side_candidates_per_tl (list[list[TransitionLevelLabel]]):
             A list of lists of :class:`TransitionLevelLabel`s; one inner list
             per side-bound TL, containing its candidate
             :class:`TransitionLevelLabel` positions to choose from.
-        placed_labels (list[TransitionLevelLabel]):
-            Already-placed labels treated as fixed obstacles, including this
-            column's inline placements (``_place_labels_for_column`` Phase 1)
-            plus other columns' committed labels), used for label-box and
-            connector collision checks.
         label_height (float):
             Vertical height of a label in y-units (eV), used for stacking and
             collision buffers.
@@ -1873,52 +1935,10 @@ def _optimise_side_placements(
     # the same side are treated as overlapping (the same buffer applied to inline label-vs-label checks):
     y_buf = _LABEL_STACK_Y_BUFFER_FRAC * label_height
 
-    placed_boxes = [_TL_label_box(p, label_height) for p in placed_labels]  # placed label bounds
-    # connectors of the placed labels; only off-column side labels have one (``_connector_endpoints``
-    # returns ``None`` for inline labels, which are filtered out here):
-    placed_connectors = [conn for p in placed_labels if (conn := _connector_endpoints(p)) is not None]
-
     # Precompute the box and connector geometry for each candidate, so the search below works purely
-    # with cached coordinates and integer cost tables. The cost decomposes into a per-candidate "unary"
-    # term (overlaps with inline labels / TL lines, independent of the other side picks) and a pairwise
-    # term between (two) side picks; both are tabulated once up front here:
+    # with cached coordinates and integer cost tables:
     cand_boxes = [[_TL_label_box(c, label_height) for c in cands] for cands in side_candidates_per_tl]
     cand_conns = [[_connector_endpoints(c) for c in cands] for cands in side_candidates_per_tl]
-
-    def _unary_cost(i: int, a: int) -> int:
-        """
-        Overlap cost of pick ``a`` of TL ``i``, independent of other side
-        picks.
-
-        Sums penalties for the label box or connector overlapping placed labels
-        or other connectors.
-        """
-        cost = 0
-        box = cand_boxes[i][a]  # box -> (x_min, x_max, y_min, y_max)
-        conn = cand_conns[i][a]  # connector -> (x_0, y_0, x_1, y_1) or None
-        for ibox in placed_boxes:
-            if _boxes_overlap(box, ibox, x_buf=0, y_buf=y_buf):
-                cost += 10  # overlap with placed labels
-            if conn is not None and _segment_intersects_rect(*conn, *ibox):
-                cost += 4  # connector through placed box
-
-        for conn_j in placed_connectors:
-            if _segment_intersects_rect(*conn_j, *box):
-                cost += 4  # placed connector through candidate box
-            if conn is None:
-                continue
-            cox0, coy0, cox1, coy1 = conn_j
-            if _segment_intersects_rect(
-                *conn,
-                min(cox0, cox1) - 0.001,
-                max(cox0, cox1) + 0.001,
-                min(coy0, coy1) - 0.001,
-                max(coy0, coy1) + 0.001,
-            ):
-                cost += 2  # connector through placed connector
-        return cost
-
-    unary = [[_unary_cost(i, a) for a in range(counts[i])] for i in range(n)]
 
     def _pair_cost(i: int, a: int, j: int, b: int) -> int:
         """
@@ -1944,16 +1964,11 @@ def _optimise_side_placements(
         for j in range(i + 1, n)
     ]
 
-    per_combo_reads = n + n * (n - 1) // 2  # ``space * (n unary + n*(n-1)/2 pairwise)`` cost-table reads
+    per_combo_reads = n + n * (n - 1) // 2  # ``space * (n*(n-1)/2 pairwise)`` cost-table reads
     if space * per_combo_reads <= max_brute_force_ops:
         # Brute force via numpy broadcasting: build the full cost grid (one axis per TL, candidate index
-        # along that axis) by adding each unary vector along its own axis and each pairwise table along
-        # its two axes, then take the global argmin:
+        # along that axis) by adding each pairwise table along its two axes, then take the global argmin:
         grid = np.zeros(counts, dtype=np.int32)  # n dimensions, each of length i = num candidates per TL
-        for i, u in enumerate(unary):  # loop over each n (dimension)
-            shape = [1] * n  # n dimensions
-            shape[i] = counts[i]  # each dimension of length i = num candidates per TL (counts[i])
-            grid += np.asarray(u, dtype=np.int32).reshape(shape)  # add to cost grid
         for (i, j), mat in pair_items:
             shape = [1] * n  # n dimensions
             shape[i] = counts[i]  # each dimension of length i = num candidates per TL (counts[i])
@@ -1966,19 +1981,19 @@ def _optimise_side_placements(
         return [side_candidates_per_tl[k][int(best_indices[k])] for k in range(n)]
 
     # otherwise we use greedy + hill-climb fallback for large spaces, reusing the precomputed geometry.
-    # The cost of giving TL ``i`` pick ``a`` given the other chosen picks is its unary cost plus the same
-    # pairwise penalties tabulated in ``pair_items`` above:
+    # The cost of giving TL ``i`` pick ``a`` given the other chosen picks is the sum of pairwise penalties
+    # tabulated in ``pair_items`` above:
     pair_lookup = dict(pair_items)  # {(i, j): cost matrix} for i < j; pairwise cost is symmetric
 
     def _conditional_cost(i: int, a: int, picks: list[int]) -> int:
         """
         Cost of pick ``a`` of TL ``i`` given the current other TL ``picks``.
 
-        Adds the unary cost to the tabulated pairwise cost against every
-        already-chosen pick (reusing ``pair_items``; symmetric, so the
-        ``i > j`` case just transposes the lookup).
+        Adds the tabulated pairwise costs for every already-chosen pick
+        (reusing ``pair_items``; symmetric, so the ``i > j`` case just
+        transposes the lookup).
         """
-        cost = unary[i][a]
+        cost = 0
         for j, b in enumerate(picks):
             if b < 0 or j == i:  # b < 0 if not yet chosen, and ignore i-i pairs
                 continue
@@ -2012,7 +2027,7 @@ def _optimise_side_placements(
     return [side_candidates_per_tl[k][picks[k]] for k in range(n)]
 
 
-def _place_labels_for_column(
+def _place_inline_labels_for_column(
     tls: list[TransitionLevel],
     x_center: float,
     half_w: float,
@@ -2022,23 +2037,22 @@ def _place_labels_for_column(
     label_height: float,
     per_char_label_width: float,
     neighbor_columns: list[tuple[float, float, list[float]]] | None = None,
-    cross_column_placed: list[TransitionLevelLabel] | None = None,
     skip_faded: bool = True,
     label_y_max: float | None = None,
     label_y_min: float | None = None,
-) -> list[TransitionLevelLabel | None]:
+) -> tuple[list[TransitionLevelLabel | None], list[_SideBoundTL]]:
     r"""
-    Decide where to place the labels for each TL in a single defect column.
+    Place the inline (directly above/below) labels for one defect column, and
+    collect the remaining "side-bound" TLs for later global side placement.
 
-    For each TL (in input order), the label is tried first directly above or
-    below the TL line, then (if that overlaps with another TL/label) tries
-    directly to the side (preferentially choosing the spacier side of
-    right/left, based on the closest TL in a neighbouring column) with a small
-    horizontal connector to the column edge, or diagonally up/down to the right
-    and left. The first candidate position that doesn't overlap with another
-    TL line in the same column, an already-placed label, the connector route
-    of an already-placed label, or one of the band edges (VBM at 0 eV, CBM
-    at ``band_gap``) is used.
+    For each TL (in input order) the label is tried directly above, then
+    directly below the TL line; the first such inline position that doesn't
+    overlap another TL line in the same column, an already-placed (this-column)
+    label, or a band edge (VBM at 0 eV, CBM at ``band_gap``) is committed. Any
+    TL that cannot be placed inline becomes a :class:`_SideBoundTL` (with its
+    off-column candidate positions generated here), returned for
+    :func:`transition_level_diagram` to cluster and optimise globally via
+    :func:`_optimise_side_placements`.
 
     Args:
         tls (list[TransitionLevel]):
@@ -2066,9 +2080,6 @@ def _place_labels_for_column(
             List of ``(x_center, half_w, TL_y_positions)`` tuples for
             neighbouring columns, used to determine preference for direct right
             or left side label placement (i.e. to choose the 'spacier' side).
-        cross_column_placed (list[TransitionLevelLabel] | None):
-            List of already-placed label boxes from other columns, used to
-            avoid cross-column label overlaps.
         skip_faded (bool):
             If ``True``, faded TLs do not get labels (their lines are still
             part of collision checks however). Their entries in the returned
@@ -2080,17 +2091,16 @@ def _place_labels_for_column(
             If provided, labels are not allowed to extend below this ``y``.
 
     Returns:
-        list[TransitionLevelLabel | None]:
-            One committed :class:`TransitionLevelLabel` per TL, in input order
-            (or ``None`` for TLs whose label was skipped), zipped 1:1 with the
-            input TLs (``tls``). Each entry carries the full label geometry
-            (anchor ``x``/``y``, alignments ``ha``/``va``,
-            ``conn_y``/``conn_x`` for an off-column label's connector, and
-            ``label_w``) plus the formatted ``label`` text, used for label
-            drawing and -- after dropping the ``None`` skips -- the placed-box
-            list which :func:`transition_level_diagram` threads into other
-            columns' ``cross_column_placed`` for cross-column collision
-            avoidance.
+        tuple[list[TransitionLevelLabel | None], list[_SideBoundTL]]:
+
+            - ``results``: One entry per TL in input order, holding the
+              committed inline :class:`TransitionLevelLabel` or ``None``
+              (skipped/faded TLs, and side-bound TLs whose positions are filled
+              in later by the caller).
+            - ``side_bound``: One :class:`_SideBoundTL` per TL that could not
+              be placed inline (with off-column candidate positions), for
+              global clustering and side placement. ``col`` is left as ``-1``
+              here and set by the caller for index tracking.
     """
     TL_y_positions = [tl.TL_eV for tl in tls]
     TL_line_left = x_center - half_w
@@ -2104,10 +2114,8 @@ def _place_labels_for_column(
     y_max_allowed = label_y_max if label_y_max is not None else ylim[1]
     y_min_allowed = label_y_min if label_y_min is not None else ylim[0]
 
-    # ``placed`` accumulates label boxes for collision checks. We seed it with any labels already placed
-    # in earlier columns (``cross_column_placed``) so this column's labels avoid cross-column overlaps in
-    # addition to in-column ones. New labels placed by this call (for this column) are appended:
-    placed: list[TransitionLevelLabel] = list(cross_column_placed or [])
+    # ``placed`` accumulates this column's committed inline label boxes for in-column collision checks
+    placed: list[TransitionLevelLabel] = []
     results: list[TransitionLevelLabel | None] = []
 
     def collides_with_band(TL_label: TransitionLevelLabel) -> bool:
@@ -2151,58 +2159,12 @@ def _place_labels_for_column(
         box = _TL_label_box(TL_label, label_height)
         return any(_boxes_overlap(box, _TL_label_box(p, label_height), 0, y_buf) for p in placed)
 
-    def connector_through_placed(conn_x0: float, conn_y0: float, conn_x1: float, conn_y1: float) -> bool:
-        """
-        Does the connector pass through any already-placed label box?
-        """
-        for p in placed:
-            if _segment_intersects_rect(
-                conn_x0, conn_y0, conn_x1, conn_y1, *_TL_label_box(p, label_height)
-            ):
-                return True
-        return False
-
-    def label_through_placed_connector(TL_label: TransitionLevelLabel) -> bool:
-        """
-        Would the new label box be crossed by an already-placed label's
-        connector?
-        """
-        box = _TL_label_box(TL_label, label_height)
-        for p in placed:
-            if p.conn_x is None or p.conn_y is None:
-                continue
-            if _segment_intersects_rect(p.conn_x, p.conn_y, p.x, p.y, *box):
-                return True
-        return False
-
-    def connector_crosses_tl_line(conn_x0: float, conn_y0: float, conn_x1: float, conn_y1: float) -> bool:
-        """
-        Does the connector cross any TL line in this column other than source?
-        """
-        line_eps = _TL_LINE_EPS_FRAC * label_height  # treat TL lines as thin rectangles of this height
-        for ly in TL_y_positions:
-            if abs(ly - conn_y0) < line_eps:  # the source TL we're connecting from
-                continue
-            if _segment_intersects_rect(
-                conn_x0,
-                conn_y0,
-                conn_x1,
-                conn_y1,
-                TL_line_left,
-                TL_line_right,
-                ly - line_eps,
-                ly + line_eps,
-            ):
-                return True
-        return False
-
-    def _side_candidates(tl_eV: float, label_w: float) -> list[TransitionLevelLabel]:
+    def _side_candidates(TL_label: TransitionLevelLabel) -> list[TransitionLevelLabel]:
         """
         Return the off-column candidate positions for one TL: direct left/right
         (no connector) plus four diagonal positions (with connector).
 
-        ``label_w`` is set as the width of each candidate TL label. Ordered
-        with the spacier side first.
+        Ordered with the spacier side first.
         """
         # determine spacier side (side with greatest distance to other TLs/labels):
         closest_TL_dist_right_side: float = abs(xlim[1] - x_center)
@@ -2212,7 +2174,9 @@ def _place_labels_for_column(
                 if not ny_list:
                     continue  # no TLs in this neighbouring column -> no constraint from it
                 # Euclidean distance from this column's edge to the closest TL in the neighbouring column:
-                min_TL_dist = np.hypot(neighbour_x - x_center, min(abs(ny - tl_eV) for ny in ny_list))
+                min_TL_dist = np.hypot(
+                    neighbour_x - x_center, min(abs(ny - TL_label.TL_eV) for ny in ny_list)
+                )
                 if neighbour_x > x_center:
                     closest_TL_dist_right_side = min(closest_TL_dist_right_side, min_TL_dist)
                 else:
@@ -2223,20 +2187,20 @@ def _place_labels_for_column(
         # connector source x (column edge) for right/left diagonal candidates, fixed by their x:
         conn_x_right = _connector_x0(side_x_right, x_center, TL_line_left, TL_line_right)
         conn_x_left = _connector_x0(side_x_left, x_center, TL_line_left, TL_line_right)
-        direct_right = TransitionLevelLabel(side_x_right, tl_eV, "left", "center", None, label_w)
-        direct_left = TransitionLevelLabel(side_x_left, tl_eV, "right", "center", None, label_w)
+        direct_right = TL_label._replace(x=side_x_right, y=TL_label.TL_eV, ha="left", va="center")
+        direct_left = direct_right._replace(x=side_x_left, ha="right", va="center")
         # diagonal candidates are the direct side labels nudged up/down by ``diag_dy``, with a connector
         # back to the source TL line (``conn_y``/``conn_x`` set):
-        diag_right = direct_right._replace(conn_y=tl_eV, conn_x=conn_x_right)
-        diag_left = direct_left._replace(conn_y=tl_eV, conn_x=conn_x_left)
+        diag_right = direct_right._replace(conn_y=TL_label.TL_eV, conn_x=conn_x_right)
+        diag_left = direct_left._replace(conn_y=TL_label.TL_eV, conn_x=conn_x_left)
         diag_dy = _DIAG_LABEL_DY_FRAC * label_height  # diagonal y-offset (+/- on either side)
         return [
             direct_right if right_first else direct_left,
             direct_left if right_first else direct_right,
-            diag_right._replace(y=tl_eV + diag_dy),
-            diag_left._replace(y=tl_eV + diag_dy),
-            diag_right._replace(y=tl_eV - diag_dy),
-            diag_left._replace(y=tl_eV - diag_dy),
+            diag_right._replace(y=TL_label.TL_eV + diag_dy),
+            diag_left._replace(y=TL_label.TL_eV + diag_dy),
+            diag_right._replace(y=TL_label.TL_eV - diag_dy),
+            diag_left._replace(y=TL_label.TL_eV - diag_dy),
         ]
 
     def _candidate_ok(TL_label: TransitionLevelLabel, source_y: float | None = None) -> bool:
@@ -2246,94 +2210,53 @@ def _place_labels_for_column(
         Rejects band/figure-edge overlaps as well as TL-line, placed-label and
         connector collisions.
         """
-        if (
+        return not (
             collides_with_band(TL_label)
             or collides_with_tl_line(TL_label, source_y=source_y)
             or collides_with_placed(TL_label)
-            or label_through_placed_connector(TL_label)
-        ):
-            return False
-        conn = _connector_endpoints(TL_label)
-        return conn is None or not (connector_through_placed(*conn) or connector_crosses_tl_line(*conn))
-
-    # ----- Phase 1: Try direct above / below for each TL (greedy, cheap) -----
-    # Anything that doesn't fit cleanly inline becomes a "side-bound" TL handled in Phase 2.
-    side_bound: list[tuple[int, TransitionLevel]] = []  # (result_index, TL)
-    pending_placements: list[tuple[int, str, TransitionLevelLabel]] = []  # (result_index, label, TL_label)
-    for tl in tls:
-        tl_eV, charges, pos_meta, neg_meta, faded = tl
-        i = len(results)
-        results.append(None)  # placeholder, filled in phase 3
-        if skip_faded and faded:
-            continue
-        label = _format_TL_charge_label(charges, pos_meta=pos_meta, neg_meta=neg_meta)
-        label_w = per_char_label_width * len(label)
-        TL_label = TransitionLevelLabel(
-            x_center,
-            tl_eV + _DIRECT_LABEL_DY_FRAC * label_height,
-            "center",
-            "bottom",
-            None,
-            label_w,
         )
+
+    # ----- Try direct above / below for each TL (inline, greedy, cheap) -----
+    # Anything that doesn't fit cleanly inline becomes a "side-bound" TL, returned for the caller to
+    # cluster and optimise globally (its off-column candidate positions are generated here).
+    side_bound: list[_SideBoundTL] = []
+    for i, tl in enumerate(tls):  # TransitionLevel objects
+        if skip_faded and tl.faded:
+            results.append(None)  # skip labelling
+            continue
+        label = _format_TL_charge_label(tl.charges, pos_meta=tl.pos_meta, neg_meta=tl.neg_meta)
+        label_w = per_char_label_width * len(label)
+        above_TL_y = tl.TL_eV + _DIRECT_LABEL_DY_FRAC * label_height  # y-value for label directly above TL
+        TL_label = TransitionLevelLabel(x_center, above_TL_y, "center", "bottom", label, label_w, tl.TL_eV)
 
         chosen = None
         for cand in (
             TL_label,
-            TL_label._replace(y=tl_eV - _DIRECT_LABEL_DY_FRAC * label_height, va="top"),
+            TL_label._replace(y=tl.TL_eV - _DIRECT_LABEL_DY_FRAC * label_height, va="top"),
         ):  # direct above, then direct below
-            if _candidate_ok(cand, source_y=tl_eV):
-                chosen = cand
+            if _candidate_ok(cand, source_y=tl.TL_eV):
+                chosen = cand  # suitable inline candidate label
                 break
-        if chosen is not None:  # no easy placement, pass to phase 2 label placement optimisation
-            pending_placements.append((i, label, chosen))
-            # commit to ``placed`` immediately so later phase-1 TLs see this label (for same-column
-            # direct-above/below (neighbouring TL) collisions):
+        if chosen is not None:  # add to results and placed, then move to next TL in loop
+            results.append(chosen)
+            # add to ``placed`` to use for same-column above/below TL collision checks (later in this loop)
             placed.append(chosen)
             continue
-        side_bound.append((i, tl))
 
-    # ----- Phase 2: Optimise the side-bound TLs as a group -----
-    # For each side-bound TL we generate its 6 off-column candidates and pick the combination of positions
-    # that minimises a total overlap cost:
-    if side_bound:
-        # build each side-bound TL's candidate positions, dropping any that would straddle a band edge
-        # or fall outside the figure. A TL left with no valid candidate is skipped entirely (its label
-        # stays `None`) rather than being forced into a band-/figure-edge-violating position, but a warning
-        # is thrown to notify the user
-        placeable: list[tuple[int, str]] = []  # (result_index, label)
-        side_candidates_per_tl: list[list[TransitionLevelLabel]] = []
-        for i, tl in side_bound:
-            label = _format_TL_charge_label(tl.charges, pos_meta=tl.pos_meta, neg_meta=tl.neg_meta)
-            if opts := [
-                c
-                for c in _side_candidates(tl.TL_eV, label_w=per_char_label_width * len(label))
-                if not collides_with_band(c)
-            ]:
-                placeable.append((i, label))
-                side_candidates_per_tl.append(opts)
-            else:
-                warnings.warn(
-                    f"Could not automatically find a suitable label position for {label}! It will be "
-                    f"omitted, and an appropriate labelling can be added manually."
-                )
+        # no inline placement: build off-column candidate positions, dropping any that would straddle a
+        # band edge or fall outside the figure. A TL left with no valid candidate is skipped entirely (set
+        # to ``None``) rather than being forced into a band-/figure-edge-violating position,
+        # but a warning is thrown to notify the user:
+        if opts := [c for c in _side_candidates(TL_label) if not collides_with_band(c)]:
+            side_bound.append(_SideBoundTL(-1, i, TL_label.TL_eV, opts))  # ``col`` set by the caller
+        else:
+            results.append(None)  # no label found, set to ``None``
+            warnings.warn(
+                f"Could not automatically find a suitable label position for {label}! It will be omitted, "
+                f"and an appropriate labelling can be added manually."
+            )
 
-        chosen_TL_labels = _optimise_side_placements(
-            side_candidates_per_tl=side_candidates_per_tl,
-            # cross-column placed and phase 1 placed for `this column`:
-            placed_labels=list(placed),
-            label_height=label_height,
-        )
-
-        for (i, label), TL_label in zip(placeable, chosen_TL_labels, strict=True):
-            pending_placements.append((i, label, TL_label))
-            placed.append(TL_label)  # commit the label; later placements see it for collision checks
-
-    # ----- Phase 3: Assemble results in original TL order -----
-    for i, label, TL_label in pending_placements:
-        results[i] = TL_label._replace(label=label)  # add label text to TL label obj w/finalised position
-
-    return results
+    return results, side_bound
 
 
 def transition_level_diagram(
@@ -2439,14 +2362,14 @@ def transition_level_diagram(
     n_defects = len(tl_data)
     half_w = column_width / 2.0
     styled_font_size = plt.rcParams["font.size"]
-    label_fontsize = label_fontsize or (styled_font_size * 0.9)
+    label_fontsize = label_fontsize or (styled_font_size * 0.9)  # TODO: Bump?
 
     # estimate label horizontal extent (in data units = column spacing) so we can extend xlim to leave
     # room for labels at the sides of the outer columns. The data width is approximated by ``n_defects``
     # (columns are spaced 1 data-unit apart) as ``xlim`` is not yet known, assuming ~7-character labels:
     if figsize is None:
         styled_figsize = plt.rcParams["figure.figsize"]
-        figsize_w = max(styled_figsize[0], 0.8 * n_defects + 1.0)
+        figsize_w = max(styled_figsize[0], n_defects + 1.0)
         figsize_h = styled_figsize[1] * 1.15
     else:
         figsize_w, figsize_h = figsize
@@ -2471,8 +2394,8 @@ def transition_level_diagram(
         0.04,
     )  # scales with the height (in points) of the label text
     # horizontal extent of labels in (normalised) data units (column width = ``1``) per character count,
-    # used for collision checks in ``_place_labels_for_column`` (which doesn't have access to x-limits,
-    # figsize, fontsize etc.), ``_place_labels_for_column`` scales by each label's actual character count
+    # used for collision checks in ``_place_inline_labels_for_column`` (which doesn't have access to
+    # x-limits, figsize, fontsize etc.), scaled there by each label's actual character count
     per_char_label_width = _estimate_label_width(label_fontsize, 1, xlim[1] - xlim[0], figsize[0])
     faded_alpha = 0.4
 
@@ -2517,26 +2440,16 @@ def transition_level_diagram(
                 zorder=3,
             )
 
-    def _placed_boxes(positions: list | None) -> list[TransitionLevelLabel]:
-        """
-        Committed (non-``None``) label boxes from a column positions list.
-        """
-        return [p for p in positions if p is not None] if positions else []
-
     if show_charge_labels:  # label placement
         # ``column_positions[k]`` is column ``k``'s TL (& label) placement list (``TransitionLevelLabel``
-        # or ``None`` per input TL), or ``None`` if the column hasn't been placed yet. The committed label
-        # boxes (used for cross-column collision checks) are the non-``None`` entries
+        # or ``None`` per input TL). Placement is done globally in two stages: (1) place all inline
+        # (direct above/below) labels per column which don't overlap with other labels/TL lines,
+        # accumulating the leftover "side-bound" TLs; (2) cluster the side-bound TLs by locality and
+        # (globally) optimise each cluster's side-label positions:
         column_positions: list[list | None] = [None] * n_defects
-
-        def _place_column(i: int):
-            """
-            Place TL labels for column ``i``, treating other columns as
-            obstacles.
-            """
-            assert ylim is not None  # typing
-            assert defect_thermodynamics.band_gap is not None  # typing
-            return _place_labels_for_column(
+        side_bound: list[_SideBoundTL] = []
+        for i in range(n_defects):
+            column_positions[i], side_bound_i = _place_inline_labels_for_column(
                 tls=column_in_range_tls[i],
                 x_center=float(i),
                 half_w=half_w,
@@ -2546,29 +2459,24 @@ def transition_level_diagram(
                 label_height=label_height,
                 per_char_label_width=per_char_label_width,
                 neighbor_columns=[c for k, c in enumerate(columns_data) if k != i],
-                cross_column_placed=[
-                    p for k in range(n_defects) if k != i for p in _placed_boxes(column_positions[k])
-                ],
                 skip_faded=(all != "faded_labels"),
                 label_y_max=label_y_max,
                 label_y_min=label_y_min,
             )
+            side_bound.extend(sb._replace(col_idx=i) for sb in side_bound_i)
 
-        # initial pass: each column sees only earlier columns' placements as obstacles
-        for i in range(n_defects):
-            column_positions[i] = _place_column(i)
-
-        # global refinement: re-pick each column's labels with `full` cross-column context (columns can
-        # now see later-column placements too). Iterate until stable (or 7 iterations pass):
-        for _ in range(7):
-            changed = False
-            for i in range(n_defects):
-                positions = _place_column(i)
-                if positions != column_positions[i]:
-                    column_positions[i] = positions
-                    changed = True
-            if not changed:
-                break
+        # cluster side-bound TLs by locality and optimise each cluster independently:
+        cluster_y_threshold = 2.5 * _DIAG_LABEL_DY_FRAC * label_height
+        for cluster in _cluster_side_bound_tls(side_bound, cluster_y_threshold):
+            chosen_TL_labels = _optimise_side_placements(
+                side_candidates_per_tl=[sb.candidates for sb in cluster],
+                label_height=label_height,
+            )
+            for sb, TL_label in zip(cluster, chosen_TL_labels, strict=True):
+                this_defect_col_positions = column_positions[sb.col_idx]
+                assert isinstance(this_defect_col_positions, list)  # typing
+                # set the optimised TL label for the corresponding entry in column_positions[sb.col_idx]:
+                this_defect_col_positions[sb.idx_in_col] = TL_label
     else:
         column_positions = [None] * n_defects
 
@@ -2621,7 +2529,9 @@ def transition_level_diagram(
             [
                 _TL_label_box(p, label_height=label_height)
                 for positions in column_positions
-                for p in _placed_boxes(positions)
+                if positions
+                for p in positions
+                if p is not None
             ]
             if show_charge_labels
             else []
