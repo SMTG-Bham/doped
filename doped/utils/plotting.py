@@ -1525,7 +1525,6 @@ def plot_chemical_potential_table(
     return tab
 
 
-# TODO: General code condensing, simplification, readability, review with Codex
 # TODO: TL plotting examples in tutorials with CdTe and Se
 
 
@@ -2151,20 +2150,18 @@ def _place_inline_labels_for_column(
         """
         Whether a label straddles a band edge or exceeds the plot bounds.
         """
-        y_min, y_max = _label_axis_extent(TL_label.y, TL_label.va, label_height)
+        lbl_left, lbl_right, y_min, y_max = _TL_label_box(TL_label, label_height)
         if y_min < band_gap < y_max or y_min < 0.0 < y_max:  # straddles band edge
             return True
         if y_max > y_max_allowed or y_min < y_min_allowed:  # exceeds plot y-axis bounds:
             return True
-        lbl_left, lbl_right = _label_axis_extent(TL_label.x, TL_label.ha, TL_label.label_w)
         return lbl_left < xlim[0] or lbl_right > xlim[1]  # exceeds plot x-axis bounds?
 
     def collides_with_tl_line(TL_label: TransitionLevelLabel, source_y: float | None = None) -> bool:
         """
         Whether a label collides with a TL line (excluding ``source_y``).
         """
-        y_min, y_max = _label_axis_extent(TL_label.y, TL_label.va, label_height)
-        lbl_left, lbl_right = _label_axis_extent(TL_label.x, TL_label.ha, TL_label.label_w)
+        lbl_left, lbl_right, y_min, y_max = _TL_label_box(TL_label, label_height)
         if not (lbl_right > TL_line_left and lbl_left < TL_line_right):  # only check TL lines in column
             return False
 
@@ -2438,33 +2435,28 @@ def transition_level_diagram(
     label_y_max = ylim[1] + label_buf
     label_y_min = ylim[0] - label_buf
 
-    # pre-build per-column (x_center, half_w, [TL y-positions in range]) so that for each column we can
-    # pass the `other` columns as neighbour data to inform side-clearance picking:
+    # Build per-column TL lists, neighbour data and headers; then draw the TL lines, do implement
+    # intelligent label placement algorithm. ``columns_data`` holds per-column
+    # ``(x_center, half_w, [TL y-positions in range])`` so that for each column we can pass the `other`
+    # columns as neighbour data to inform side-clearance picking:
     columns_data: list[tuple[float, float, list[float]]] = []
-    for i, (_name, tls_for_col) in enumerate(tl_data.items()):
-        in_range_y = [tl.TL_eV for tl in tls_for_col if ylim[0] <= tl.TL_eV <= ylim[1]]
-        columns_data.append((float(i), half_w, in_range_y))
-
-    # Build per-column TL lists and headers, draw the TL lines, then do label placement globally with
-    # iterative cross-column refinement (so a label on the right side of column A can be moved if it
-    # overlaps a label on the left side of column A+1, and vice versa).
     column_in_range_tls: list[list[TransitionLevel]] = []
     formatted_names: list[str] = []
-    for i, (defect_name, tls) in enumerate(list(tl_data.items())):
-        header = _try_format_defect_name(defect_name, include_site_info)
-        formatted_names.append(header)
+    for i, (defect_name, tls) in enumerate(tl_data.items()):
+        formatted_names.append(_try_format_defect_name(defect_name, include_site_info))
 
         in_range_tls = [tl for tl in tls if ylim[0] <= tl.TL_eV <= ylim[1]]
         column_in_range_tls.append(in_range_tls)
+        columns_data.append((float(i), half_w, [tl.TL_eV for tl in in_range_tls]))
 
         # draw TL lines (faded grey for metastable-containing TLs when all="faded"):
         x_center = float(i)
-        for tl_eV, _charges, _pos_meta, _neg_meta, faded in in_range_tls:
+        for tl in in_range_tls:
             ax.plot(
                 [x_center - half_w, x_center + half_w],
-                [tl_eV, tl_eV],
-                color="0.45" if faded else "k",
-                alpha=faded_alpha if faded else 1.0,
+                [tl.TL_eV, tl.TL_eV],
+                color="0.45" if tl.faded else "k",
+                alpha=faded_alpha if tl.faded else 1.0,
                 lw=plt.rcParams["lines.linewidth"] * 1.1,
                 solid_capstyle="butt",
                 zorder=3,
@@ -2513,7 +2505,7 @@ def transition_level_diagram(
     # draw labels (and their connectors) for each column:
     for i in range(n_defects):
         defect_column_positions = column_positions[i]
-        if not show_charge_labels or defect_column_positions is None:
+        if defect_column_positions is None:
             continue
         for TL_label, tl_tuple in zip(defect_column_positions, column_in_range_tls[i], strict=True):
             if TL_label is None:  # faded TL with skip_faded=True -- no label drawn
