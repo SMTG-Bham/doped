@@ -1746,6 +1746,30 @@ def _boxes_overlap(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float = 0.0)
     )
 
 
+def _box_overlap_fraction(b1: tuple, b2: tuple, x_buf: float = 0.0, y_buf: float = 0.0) -> float:
+    """
+    Quantify how much two label boxes ``(x_min, x_max, y_min, y_max)`` overlap.
+
+    Returns the overlapping area as a fraction (``0.0``--``1.0``) of the smaller
+    box's area, padding each box by ``x_buf``/``y_buf`` (consistent with
+    :func:`_boxes_overlap`). ``0.0`` means no overlap, a small value means a
+    slight clip, and ``1.0`` means one box fully covers the other. This lets
+    the label placement optimiser prefer slight overlaps over full overlaps
+    when some overlap is unavoidable.
+    """
+    dx = min(b1[1], b2[1]) - max(b1[0], b2[0]) + x_buf
+    if dx <= 0:
+        return 0.0  # break early
+    dy = min(b1[3], b2[3]) - max(b1[2], b2[2]) + y_buf
+    if dy <= 0:
+        return 0.0  # break early
+    # determine smaller box, assuming label height is equal:
+    xrange1 = b1[1] - b1[0]
+    xrange2 = b2[1] - b2[0]
+    smaller_area = max(min(xrange1, xrange2) * (b1[3] - b1[2]), 1e-4)
+    return min(dx * dy / smaller_area, 1.0)
+
+
 def _connector_x0(x_pos: float, x_center: float, TL_line_left: float, TL_line_right: float) -> float:
     """
     X-coordinate at which an off-column label's connector meets its column; the
@@ -1809,6 +1833,11 @@ _DIRECT_LABEL_DY_FRAC = 0.4  # anchor offset of a direct above/below label from 
 _LABEL_STACK_Y_BUFFER_FRAC = 0.3  # extra vertical buffer enforced between two stacked labels
 _TL_LINE_EPS_FRAC = 0.05  # half-thickness used to treat a TL line as a thin rectangle
 _TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouring (non-source) TL line
+# Side-placement overlap penalties (integer cost-table weights). The box penalty is scaled by the overlap
+# fraction (0 - 1; see ``_box_overlap_fraction``), while the connector penalty is fixed. Their ratio
+# (10:4) sets box-vs-connector severity:
+_LABEL_OVERLAP_PENALTY = 100  # cost weight for a *full* label box-box overlap (scaled by overlap fraction)
+_CONNECTOR_OVERLAP_PENALTY = 40  # cost for a connector line crossing a label box
 
 
 class _SideBoundTL(NamedTuple):
@@ -1879,7 +1908,7 @@ def _cluster_side_bound_tls(
 def _optimise_side_placements(
     side_candidates_per_tl: list[list[TransitionLevelLabel]],
     label_height: float,
-    max_brute_force_ops: int = 3_500_000_000,
+    max_brute_force_ops: int = 6_000_000_000,
 ) -> list[TransitionLevelLabel]:
     r"""
     Pick one label position per side-bound-label TL so as to minimise total
@@ -1902,7 +1931,8 @@ def _optimise_side_placements(
     ``n*(n-1)/2`` pairwise sums, ``space`` being the product of candidate
     counts and ``n`` the number of side-bound-label TLs); the numpy build
     sustains ~3 G reads/s on a modern laptop, so the default
-    ``max_brute_force_ops`` keeps worst-case brute force to ~1 s.
+    ``max_brute_force_ops`` (with early skipping of independent i-j pairs;
+    ~50% cost reduction) keeps worst-case brute force to ~1 s.
 
     Args:
         side_candidates_per_tl (list[list[TransitionLevelLabel]]):
@@ -1941,15 +1971,19 @@ def _optimise_side_placements(
     def _pair_cost(i: int, a: int, j: int, b: int) -> int:
         """
         Pairwise cost between side pick ``a`` of TL ``i`` and pick ``b`` of TL
-        ``j``: box-box overlap plus `either` pick's connector crossing the
-        `other` pick's label box (checked symmetrically).
+        ``j``: box-box overlap (scaled by how much the boxes overlap) plus
+        `either` pick's connector crossing the `other` pick's label box
+        (checked symmetrically).
         """
         box_i = cand_boxes[i][a]
         box_j = cand_boxes[j][b]
-        cost = 10 if _boxes_overlap(box_i, box_j, y_buf=y_buf) else 0  # label box-box overlap
+        # scale the box-overlap penalty by the overlap fraction, with `any` non-zero overlap costing at
+        # least 1 (equivalent to 1% overlap):
+        frac = _box_overlap_fraction(box_i, box_j, y_buf=y_buf)
+        cost = 0 if frac == 0 else max(1, round(_LABEL_OVERLAP_PENALTY * frac))
         for conn, box in [(cand_conns[i][a], box_j), (cand_conns[j][b], box_i)]:
             if conn is not None and _segment_intersects_rect(*conn, *box):
-                cost += 4  # connector - label box overlap
+                cost += _CONNECTOR_OVERLAP_PENALTY  # connector - label box overlap
         return cost
 
     # tabulate pairwise costs for all i < j as ``pair_lookup[(i, j)][a][b]``:
@@ -2008,13 +2042,13 @@ def _optimise_side_placements(
     # Brute force via numpy broadcasting: build the full cost grid (one axis per TL, candidate index along
     # that axis) by adding each (non-zero) pairwise table along its two axes, then take the global argmin:
     grid = np.zeros(counts, dtype=np.int32)  # n dimensions, each of length = num candidates for that TL
-    for (i, j), mat in pair_lookup.items():
+    for (i, j), mat in pair_lookup.items():  # Note: Could possibly vectorise for efficiency if required...
         if not mat.any():  # independent pair (no overlap for any candidate combination), nothing to add
             continue
         shape = [1] * n
         shape[i] = counts[i]  # each dimension of length i = num candidates per TL (counts[i])
         shape[j] = counts[j]  # i < j in pair_items, so need both to fully determine shape
-        grid += mat.reshape(shape)
+        grid += mat.reshape(shape)  # Note: this grid building and reshaping dominates brute-force cost
     # argmin gives a flat index; unravel to per-axis candidate indices (one per TL / grid axis) to map back
     best_indices = np.unravel_index(int(np.argmin(grid)), grid.shape)
     # best_indices -> length n (corresponding to n dimensions/TLs to pick labels) w/indices of best
@@ -2358,7 +2392,7 @@ def transition_level_diagram(
     n_defects = len(tl_data)
     half_w = column_width / 2.0
     styled_font_size = plt.rcParams["font.size"]
-    label_fontsize = label_fontsize or (styled_font_size * 0.9)  # TODO: Bump?
+    label_fontsize = label_fontsize or (styled_font_size * 0.9)
 
     # estimate label horizontal extent (in data units = column spacing) so we can extend xlim to leave
     # room for labels at the sides of the outer columns. The data width is approximated by ``n_defects``
@@ -2400,7 +2434,7 @@ def transition_level_diagram(
     # can be placed directly above/below the TL line even when the TL itself sits inside a band-edge zone:
     header_pad_frac = 0.08
     header_y = ylim[1] + header_pad_frac * (ylim[1] - ylim[0])
-    label_buf = 0.35 * (header_y - ylim[1])
+    label_buf = 0.5 * (header_y - ylim[1])
     label_y_max = ylim[1] + label_buf
     label_y_min = ylim[0] - label_buf
 
