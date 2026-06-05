@@ -1891,16 +1891,18 @@ def _optimise_side_placements(
     label boxes and connector lines. The combination minimising the total cost
     is returned.
 
-    Brute-force enumeration (vectorised with ``numpy``) is used when the
-    estimated work is small enough, and otherwise we fall back to a greedy
-    first-pick plus a few hill-climbing refinement passes. The work estimate is
+    A greedy first-pick plus a few hill-climbing refinement passes is run
+    first. If this achieves zero total overlap cost, it corresponds to a global
+    optimum and is returned immediately -- the common case, since candidate
+    positions are generated precisely to allow overlap-free placements. Only
+    when residual overlap remains, we run an exact brute-force enumeration
+    (vectorised with ``numpy``), and only if the estimated work is small
+    enough; otherwise the greedy result is kept. The work estimate is
     ``space * (n*(n-1)/2)`` integer cost-table reads (the per-combination
     ``n*(n-1)/2`` pairwise sums, ``space`` being the product of candidate
-    counts and ``n`` being the number of side-bound-label TLs for which to
-    choose a candidate); the numpy build sustains ~3 G reads/s on a modern
-    laptop, so the default ``max_brute_force_ops`` keeps worst-case brute force
-    to ~1 s (~10 side-bound TLs in a single potentially-overlapping cluster,
-    depending on their candidate counts).
+    counts and ``n`` the number of side-bound-label TLs); the numpy build
+    sustains ~3 G reads/s on a modern laptop, so the default
+    ``max_brute_force_ops`` keeps worst-case brute force to ~1 s.
 
     Args:
         side_candidates_per_tl (list[list[TransitionLevelLabel]]):
@@ -1925,6 +1927,7 @@ def _optimise_side_placements(
         return []
     counts = [len(c) for c in side_candidates_per_tl]
     space = math.prod(counts)
+    per_combo_reads = n * (n - 1) // 2  # ``space * (n*(n-1)/2 pairwise)`` cost-table reads
 
     # add a small y-buffer (~30% of a label height) so two side labels packed almost touch-to-touch on
     # the same side are treated as overlapping (the same buffer applied to inline label-vs-label checks):
@@ -1949,58 +1952,32 @@ def _optimise_side_placements(
                 cost += 4  # connector - label box overlap
         return cost
 
-    # tabulate pairwise costs for all i < j as ``pairwise[(i, j)][a][b]``:
-    pair_items = [
-        (
-            (i, j),
+    # tabulate pairwise costs for all i < j as ``pair_lookup[(i, j)][a][b]``:
+    pair_lookup = {
+        (i, j): np.array(
             [[_pair_cost(i, a, j, b) for b in range(counts[j])] for a in range(counts[i])],
+            dtype=np.int32,
         )
         for i in range(n)
         for j in range(i + 1, n)
-    ]
+    }
 
-    per_combo_reads = n + n * (n - 1) // 2  # ``space * (n*(n-1)/2 pairwise)`` cost-table reads
-    if space * per_combo_reads <= max_brute_force_ops:
-        # Brute force via numpy broadcasting: build the full cost grid (one axis per TL, candidate index
-        # along that axis) by adding each pairwise table along its two axes, then take the global argmin:
-        grid = np.zeros(counts, dtype=np.int32)  # n dimensions, each of length i = num candidates per TL
-        for (i, j), mat in pair_items:
-            shape = [1] * n  # n dimensions
-            shape[i] = counts[i]  # each dimension of length i = num candidates per TL (counts[i])
-            shape[j] = counts[j]  # i < j in pair_items, so need both to fully determine shape
-            grid += np.asarray(mat, dtype=np.int32).reshape(shape)  # add to cost grid
-        # argmin gives flat index, convert to grid indices (n-tuple per-axis indices for ``grid.shape``):
-        best_indices = np.unravel_index(int(np.argmin(grid)), grid.shape)
-        # best_indices -> length n (corresponding to n dimensions/TLs to pick labels) w/indices of best
-        # labels for each TL; return these optimal label choices:
-        return [side_candidates_per_tl[k][int(best_indices[k])] for k in range(n)]
-
-    # Note: It is extremely unlikely that we reach this point, requiring the greedy algorithm (only in
-    # cases of >10 side-bound TLs in a given cluster), but we retain this code chunk to handle this
-    # potential edge case (e.g. many TLs and defects, which happen to overlap continuously across the plot
-    # range). Could be removed for brevity in future.
-
-    # Otherwise, use greedy + hill-climb fallback for large spaces, reusing the precomputed geometry.
-    # The cost of giving TL ``i`` pick ``a`` given the other chosen picks is the sum of pairwise penalties
-    # tabulated in ``pair_items`` above:
-    pair_lookup = dict(pair_items)  # {(i, j): cost matrix} for i < j; pairwise cost is symmetric
-
+    # Greedy first-pick plus a few hill-climbing passes, reusing the precomputed geometry. The cost of
+    # giving TL ``i`` pick ``a`` given the other chosen picks is the sum of the tabulated pairwise
+    # penalties (symmetric, so the ``i > j`` case just transposes the lookup):
     def _conditional_cost(i: int, a: int, picks: list[int]) -> int:
         """
-        Cost of pick ``a`` of TL ``i`` given the current other TL ``picks``.
-
-        Adds the tabulated pairwise costs for every already-chosen pick
-        (reusing ``pair_items``; symmetric, so the ``i > j`` case just
-        transposes the lookup).
+        Cost of pick ``a`` of TL ``i`` given the current other TL ``picks``
+        (ignoring unset picks).
         """
         cost = 0
         for j, b in enumerate(picks):
             if b < 0 or j == i:  # b < 0 if not yet chosen, and ignore i-i pairs
                 continue
             cost += pair_lookup[(i, j)][a][b] if i < j else pair_lookup[(j, i)][b][a]
-        return cost
+        return int(cost)
 
-    picks: list[int] = [-1] * n  # -1 == not yet chosen
+    picks = [-1] * n  # -1 == not yet chosen
     for i in range(n):  # greedy first-pick: lowest-cost candidate given prior picks
         best_idx, best_cost = 0, float("inf")
         for a in range(counts[i]):
@@ -2009,7 +1986,7 @@ def _optimise_side_placements(
                 best_idx, best_cost = a, c
         picks[i] = best_idx
 
-    for _ in range(max(n, 5)):  # hill-climbing refinement: swap to a lower-cost alternative until stable
+    for _ in range(max(n, 20)):  # hill-climbing refinement: swap to a lower-cost alternative until stable
         improved = False
         for i in range(n):
             best_alt, best_alt_cost = None, _conditional_cost(i, picks[i], picks)  # current best
@@ -2024,7 +2001,25 @@ def _optimise_side_placements(
         if not improved:  # no further improvement, break
             break
 
-    return [side_candidates_per_tl[k][picks[k]] for k in range(n)]
+    greedy_cost = sum(int(mat[picks[i]][picks[j]]) for (i, j), mat in pair_lookup.items())
+    if greedy_cost == 0 or space * per_combo_reads > max_brute_force_ops:
+        return [side_candidates_per_tl[k][picks[k]] for k in range(n)]  # use greedy result
+
+    # Brute force via numpy broadcasting: build the full cost grid (one axis per TL, candidate index along
+    # that axis) by adding each (non-zero) pairwise table along its two axes, then take the global argmin:
+    grid = np.zeros(counts, dtype=np.int32)  # n dimensions, each of length = num candidates for that TL
+    for (i, j), mat in pair_lookup.items():
+        if not mat.any():  # independent pair (no overlap for any candidate combination), nothing to add
+            continue
+        shape = [1] * n
+        shape[i] = counts[i]  # each dimension of length i = num candidates per TL (counts[i])
+        shape[j] = counts[j]  # i < j in pair_items, so need both to fully determine shape
+        grid += mat.reshape(shape)
+    # argmin gives a flat index; unravel to per-axis candidate indices (one per TL / grid axis) to map back
+    best_indices = np.unravel_index(int(np.argmin(grid)), grid.shape)
+    # best_indices -> length n (corresponding to n dimensions/TLs to pick labels) w/indices of best
+    # labels for each TL; return these optimal label choices:
+    return [side_candidates_per_tl[k][int(best_indices[k])] for k in range(n)]
 
 
 def _place_inline_labels_for_column(
