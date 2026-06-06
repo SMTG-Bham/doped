@@ -310,21 +310,16 @@ class DefectTransitionLevelPlotsTestCase(DefectThermodynamicsSetupMixin):
         y = np.linspace(ylim[0], ylim[1], 256)
         profile = -np.abs(y - band_gap / 2)
         grid = np.tile(profile[:, np.newaxis], (1, 2))  # vary only along the Fermi-level (y) axis
-        vmax = 0.0
-        vmin = -band_gap / 2  # symmetric about the gap centre
         ax.imshow(
             grid,
             extent=(xlim[0], xlim[1], ylim[0], ylim[1]),
             origin="lower",
             aspect="auto",
-            cmap="RdBu_r",
-            vmin=vmin,
-            vmax=vmax,
-            alpha=0.35,
+            cmap="Reds",
+            vmin=-band_gap / 2,  # symmetric about the gap centre
+            vmax=band_gap / 2,  # only ever reaches 50% vmax, to keep colours light and avoid greying out
             zorder=-10,  # behind the TL lines/labels
         )
-        ax.set_xlim(xlim)
-        ax.set_ylim(ylim)
         return fig
 
     def test_plot_transition_levels_returns_figure(self):
@@ -579,38 +574,38 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_manual_chempots(self):
         return self.CdTe_defect_thermo.plot(
-            chempots={"Cd": -1.25, "Te": 0}, el_refs=self.CdTe_chempots["elemental_refs"]
+            chempots={"Cd": -1.2513, "Te": 0}, el_refs=self.CdTe_chempots["elemental_refs"]
         )
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_manual_chempots_at_init(self):
         defect_thermo = DefectThermodynamics(
             list(self.CdTe_defect_dict.values()),
-            chempots={"Cd": -1.25, "Te": 0},
+            chempots={"Cd": -1.2513, "Te": 0},
             el_refs=self.CdTe_chempots["elemental_refs"],
         )
         return defect_thermo.plot()
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_manual_chempots_1by1(self):
-        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.2513, "Te": 0}
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
         return self.CdTe_defect_thermo.plot()
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_manual_chempots_1by1_other(self):
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.2513, "Te": 0}
         return self.CdTe_defect_thermo.plot()
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_manual_chempots_1by1_other2(self):
         self.CdTe_defect_thermo.el_refs = self.CdTe_chempots["elemental_refs"]
-        return self.CdTe_defect_thermo.plot(chempots={"Cd": -1.25, "Te": 0})
+        return self.CdTe_defect_thermo.plot(chempots={"Cd": -1.2513, "Te": 0})
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
     def test_default_CdTe_plot_manual_chempots_1by1_other3(self):
-        self.CdTe_defect_thermo.chempots = {"Cd": -1.25, "Te": 0}
+        self.CdTe_defect_thermo.chempots = {"Cd": -1.2513, "Te": 0}
         return self.CdTe_defect_thermo.plot(el_refs=self.CdTe_chempots["elemental_refs"])
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")

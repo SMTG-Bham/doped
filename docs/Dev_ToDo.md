@@ -12,7 +12,6 @@
   - Also see Fig. 6a of the `AiiDA-defects` preprint, want plotting tools like this?
 - Charge corrections for polarons; code there, just need to allow inputs of bare calculation outputs (and then can extend to allow polaron input file generation and parsing/plotting). Then update ``ShakeNBreak_Polaron_Workflow`` example with this too.
 - Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
-- 2D corrections?
 
 ## Docs
 - Add our recommended workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
@@ -50,4 +49,4 @@
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
 
 delta_VBM/CBM in notebooks. say it can be important to not assume symmetric shifts, esp with differences in eff masses (though note Ganose & Ling found the symmetric shift was fine??), and link to these papers
-Similarly, tests and examples in notebooks for TL plotting (CdTe, Se)
+Similarly, tests and examples in notebooks for TL plotting (CdTe, Se), and plot customisation (tutorial) with red gradient (see test)

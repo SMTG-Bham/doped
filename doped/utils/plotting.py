@@ -1525,9 +1525,6 @@ def plot_chemical_potential_table(
     return tab
 
 
-# TODO: TL plotting examples in tutorials with CdTe and Se
-
-
 class TransitionLevel(NamedTuple):
     """
     A charge transition level (TL), between charge states ``q_pos`` and
@@ -1831,7 +1828,7 @@ _DIAG_LABEL_DY_FRAC = 1.6  # vertical offset of a diagonal side label from its T
 _DIRECT_LABEL_DY_FRAC = 0.4  # anchor offset of a direct above/below label from its TL line
 _LABEL_STACK_Y_BUFFER_FRAC = 0.3  # extra vertical buffer enforced between two stacked labels
 _TL_LINE_EPS_FRAC = 0.05  # half-thickness used to treat a TL line as a thin rectangle
-_TL_LINE_CLEARANCE_FRAC = 0.5  # required clearance of a label from a neighbouring (non-source) TL line
+_TL_LINE_CLEARANCE_FRAC = 0.75  # required clearance of a label from a neighbouring (non-source) TL line
 # Side-placement overlap penalties (integer cost-table weights). The box penalty is scaled by the overlap
 # fraction (0 - 1; see ``_box_overlap_fraction``), while the connector penalty is fixed. Their ratio
 # (10:4) sets box-vs-connector severity:
@@ -2157,7 +2154,7 @@ def _place_inline_labels_for_column(
             return True
         return lbl_left < xlim[0] or lbl_right > xlim[1]  # exceeds plot x-axis bounds?
 
-    def collides_with_tl_line(TL_label: TransitionLevelLabel, source_y: float | None = None) -> bool:
+    def collides_with_tl_line(TL_label: TransitionLevelLabel, source_y: float) -> bool:
         """
         Whether a label collides with a TL line (excluding ``source_y``).
         """
@@ -2165,17 +2162,17 @@ def _place_inline_labels_for_column(
         if not (lbl_right > TL_line_left and lbl_left < TL_line_right):  # only check TL lines in column
             return False
 
-        # require ~half a label-height of clearance from the (next) TL line so a label placed
+        # require 75% label-height of clearance from the (next) TL line so a label placed
         # direct-above/below is visually unambiguous (couldn't be mis-read as belonging to nearby TL
         # above/below). `source_y` is the TL we're labelling, so it is excluded from this check (it sits
         # _DIRECT_LABEL_DY_FRAC*label_height from the anchor):
         clearance = _TL_LINE_CLEARANCE_FRAC * label_height
-        for ly in TL_y_positions:
-            if source_y is not None and abs(ly - source_y) < _TL_LINE_EPS_FRAC * label_height:
-                continue  # source TL, ignore
-            if y_min - clearance <= ly <= y_max + clearance:  # collision with other TL
-                return True
-        return False
+        # for TL labels above the TL, we don't worry about other TL lines below (which may still fall
+        # within the 'clearance' window), and vice versa for TL lines below the source TL:
+        y_min = y_min - clearance if TL_label.y < source_y else source_y
+        y_max = y_max + clearance if TL_label.y > source_y else source_y
+        # check collision with any other TL (except source TL):
+        return any(y_min <= TL_y <= y_max for TL_y in [ly for ly in TL_y_positions if ly != source_y])
 
     def collides_with_placed(TL_label: TransitionLevelLabel) -> bool:
         """
@@ -2229,7 +2226,7 @@ def _place_inline_labels_for_column(
             diag_left._replace(y=TL_label.TL_eV - diag_dy),
         ]
 
-    def _candidate_ok(TL_label: TransitionLevelLabel, source_y: float | None = None) -> bool:
+    def _candidate_ok(TL_label: TransitionLevelLabel, source_y: float) -> bool:
         """
         Whether a candidate label position is acceptable.
 
