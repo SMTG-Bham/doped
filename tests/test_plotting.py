@@ -217,6 +217,45 @@ class DefectTransitionLevelPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert not w
         return fig
 
+    # ``include_site_info`` for ``plot_transition_levels``; tested here with the pnictogen-in-Se thermo
+    # (rather than CdTe, where ``include_site_info`` has no effect as there are no inequivalent sites)
+    @custom_mpl_image_compare(filename="Se_pnictogen_transition_levels_plot.png")
+    def test_plot_transition_levels_Se_pnict_new_names(self):
+        """
+        Test ``plot_transition_levels`` with pnictogen impurities in Se, with
+        default ``include_site_info=False``.
+        """
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_pnict_thermo.plot_transition_levels
+        )
+        assert not w
+        label_txt = [t.get_text() for t in fig.get_axes()[0].texts]
+        print(label_txt)
+        for i in ["i_{", "{Se_{", "}}$", "-a", "-b"]:
+            assert all(i not in text for text in label_txt)
+
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_pnictogen_transition_levels_site_info_plot.png")
+    def test_plot_transition_levels_Se_pnict_site_info(self):
+        """
+        Test ``plot_transition_levels`` with pnictogen impurities in Se, with
+        ``include_site_info=True``.
+        """
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_pnict_thermo.plot_transition_levels, include_site_info=True
+        )
+        assert not w
+        label_txt = [t.get_text() for t in fig.get_axes()[0].texts]
+        print(label_txt)
+        # site info being added; C2 for interstitials, none for _Se (only one site):
+        defect_labels = [t for t in label_txt if "$" in t]  # defect-name labels (not charge/band labels)
+        assert defect_labels  # sanity check that we found the defect-name labels
+        assert all(any(i in text for i in ["{i_{C_{2}}}", "_{Se"]) for text in defect_labels)
+        assert any("{i_{C_{2}}}" in text for text in defect_labels)  # at least one interstitial w/ C2
+
+        return fig
+
     @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_all_kwargs.png")
     def test_plot_transition_levels_all_kwargs(self):
         """
@@ -232,7 +271,7 @@ class DefectTransitionLevelPlotsTestCase(DefectThermodynamicsSetupMixin):
                 all="faded_labels",  # but no unstable entries, so no faded labels to actually show
                 defect_subset=["v_", "Te_Cd", "Cd_Te"],
                 unstable_entries=False,
-                include_site_info=True,  # TODO: Doesn't work?
+                include_site_info=True,  # no effect for CdTe (no inequivalent sites)
                 ylim=(-0.2, self.CdTe_intrinsic_thermo.band_gap + 0.2),
                 show_charge_labels=True,
                 show_band_labels=False,
