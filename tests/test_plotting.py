@@ -18,37 +18,52 @@ from monty.serialization import loadfn
 from test_thermodynamics import DefectThermodynamicsSetupMixin
 from test_utils import (
     EXAMPLE_DIR,
+    STYLE,
     _print_warning_info,
     _run_func_and_capture_stdout_warnings,
     custom_mpl_image_compare,
     data_dir,
+    if_present_rm,
 )
 
 from doped.analysis import DefectParser
-from doped.core import Interstitial
+from doped.core import Interstitial, Substitution
 from doped.thermodynamics import DefectThermodynamics
 from doped.utils import plotting
 
 mpl.use("Agg")  # don't show interactive plots if testing from CLI locally
 
 
+# TODO: Refactor to TL plotting and TLD plotting TestCase classes here
 class DefectPlottingTestCase(unittest.TestCase):
-    def setUp(self):
-        self.CdTe_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "CdTe")
-        self.CdTe_thermo = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"))
-        self.CdTe_chempots = loadfn(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
-        self.YTOS_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "YTOS")
-        self.YTOS_thermo = loadfn(os.path.join(self.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json"))
-        self.Se_extrinsic_thermo = DefectThermodynamics.from_json(
+    @classmethod
+    def setUpClass(cls):
+        cls.CdTe_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "CdTe")
+        cls.CdTe_thermo = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_example_thermo.json"))
+        cls.CdTe_intrinsic_thermo = DefectThermodynamics(
+            loadfn(os.path.join(data_dir, "CdTe_defect_dict_v2.3.json.gz"))
+        )  # full intrinsic defect set
+        cls.CdTe_chempots = loadfn(os.path.join(cls.CdTe_EXAMPLE_DIR, "CdTe_chempots.json"))
+        cls.YTOS_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "YTOS")
+        cls.YTOS_thermo = loadfn(os.path.join(cls.YTOS_EXAMPLE_DIR, "YTOS_example_thermo.json"))
+        cls.Se_extrinsic_thermo = DefectThermodynamics.from_json(
             os.path.join(EXAMPLE_DIR, "Se", "Se_Amalgamated_Extrinsic_Thermo.json.gz")
         )
-        self.Se_extrinsic_interstitials_thermo = DefectThermodynamics(
+        cls.Se_extrinsic_interstitials_thermo = DefectThermodynamics(
             defect_entries=[
                 entry
-                for entry in self.Se_extrinsic_thermo.defect_entries.values()
+                for entry in cls.Se_extrinsic_thermo.defect_entries.values()
                 if isinstance(entry.defect, Interstitial)
             ],
-            chempots=self.Se_extrinsic_thermo.chempots,
+            chempots=cls.Se_extrinsic_thermo.chempots,
+        )
+        cls.Se_extrinsic_substitutions_thermo = DefectThermodynamics(
+            defect_entries=[
+                entry
+                for entry in cls.Se_extrinsic_thermo.defect_entries.values()
+                if isinstance(entry.defect, Substitution)
+            ],
+            chempots=cls.Se_extrinsic_thermo.chempots,
         )
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot.png")
@@ -91,46 +106,45 @@ class DefectPlottingTestCase(unittest.TestCase):
         assert any("You have not specified chemical potentials" in str(warn.message) for warn in w)
         return plot
 
-    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_faded.png")
+    # CdTe transition-level plots use the full intrinsic defect set (``self.CdTe_intrinsic_thermo``),
+    # except ``test_plot_transition_levels_CdTe_example_groundstate`` below, which uses the example thermo
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_faded.png")
     def test_plot_transition_levels_CdTe_faded(self):
-        # default: faded TLs drawn without labels (cleaner)
-        fig, _output, w = _run_func_and_capture_stdout_warnings(self.CdTe_thermo.plot_transition_levels)
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_intrinsic_thermo.plot_transition_levels
+        )  # default: faded TLs drawn without labels (cleaner)
         assert not w
         return fig
 
-    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_faded_labels.png")
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_faded_labels.png")
     def test_plot_transition_levels_CdTe_faded_labels(self):
-        # all="faded_labels": include labels for the faded metastable TLs as well
         fig, _output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_thermo.plot_transition_levels, all="faded_labels"
-        )
+            self.CdTe_intrinsic_thermo.plot_transition_levels, all="faded_labels"
+        )  # all="faded_labels": include labels for the faded metastable TLs as well
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_all.png")
+    def test_plot_transition_levels_CdTe_all(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_intrinsic_thermo.plot_transition_levels, all=True
+        )  # all single-electron (metastable) TLs at full strength
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_subset.png")
+    def test_plot_transition_levels_CdTe_defect_subset(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_intrinsic_thermo.plot_transition_levels, defect_subset=["v_"]
+        )  # only show defects whose name contains "v_" (i.e. the vacancy columns)
         assert not w
         return fig
 
     @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_groundstate.png")
-    def test_plot_transition_levels_CdTe_groundstate(self):
-        # only ground-state TLs
+    def test_plot_transition_levels_CdTe_example_groundstate(self):
         fig, _output, w = _run_func_and_capture_stdout_warnings(
             self.CdTe_thermo.plot_transition_levels, all=False
-        )
-        assert not w
-        return fig
-
-    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_all.png")
-    def test_plot_transition_levels_CdTe_all(self):
-        # all single-electron (metastable) TLs at full strength
-        fig, _output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_thermo.plot_transition_levels, all=True
-        )
-        assert not w
-        return fig
-
-    @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_subset.png")
-    def test_plot_transition_levels_CdTe_defect_subset(self):
-        # only show defects whose name contains "v_" (i.e. the v_Cd column)
-        fig, _output, w = _run_func_and_capture_stdout_warnings(
-            self.CdTe_thermo.plot_transition_levels, defect_subset=["v_"]
-        )
+        )  # the one CdTe TL plot test retained on the curated example thermo; only ground-state TLs
         assert not w
         return fig
 
@@ -141,7 +155,7 @@ class DefectPlottingTestCase(unittest.TestCase):
         return fig
 
     # Se extrinsic interstitials TL plots; many extrinsic interstitials, shallow/unstable states and
-    # metastable charge states:
+    # metastable charge states (so a tough edge case test):
     @custom_mpl_image_compare(filename="Se_extrinsic_interstitials_transition_levels_plot_faded.png")
     def test_plot_transition_levels_Se_extrinsic_interstitials_faded(self):
         fig, _output, w = _run_func_and_capture_stdout_warnings(
@@ -164,7 +178,7 @@ class DefectPlottingTestCase(unittest.TestCase):
     def test_plot_transition_levels_Se_extrinsic_interstitials_faded_labels(self):
         fig, _output, w = _run_func_and_capture_stdout_warnings(
             self.Se_extrinsic_interstitials_thermo.plot_transition_levels, all="faded_labels"
-        )
+        )  # Note: This gives some partially overlapping TL labels in this plot, basically unavoidable
         assert not w
         return fig
 
@@ -198,6 +212,105 @@ class DefectPlottingTestCase(unittest.TestCase):
             self.Se_extrinsic_interstitials_thermo.plot_transition_levels, all=True
         )
         assert not w
+        return fig
+
+    # Se extrinsic substitutions TL plots; many extrinsic substitutions with shallow/unstable states, but
+    # much less metastable states than the extrinsic interstitials (which had essentially duplicated sites)
+    @custom_mpl_image_compare(filename="Se_extrinsic_substitutions_transition_levels_plot_faded.png")
+    def test_plot_transition_levels_Se_extrinsic_substitutions_faded(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_substitutions_thermo.plot_transition_levels
+        )  # default ("faded"): metastable TLs faded without labels
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="Se_extrinsic_substitutions_transition_levels_plot_all.png")
+    def test_plot_transition_levels_Se_extrinsic_substitutions_all(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_substitutions_thermo.plot_transition_levels, all=True
+        )  # all single-electron (metastable) TLs at full strength
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(
+        filename="Se_extrinsic_substitutions_transition_levels_plot_faded_labels.png"
+    )
+    def test_plot_transition_levels_Se_extrinsic_substitutions_faded_labels(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.Se_extrinsic_substitutions_thermo.plot_transition_levels, all="faded_labels"
+        )  # all="faded_labels": include labels for the faded metastable TLs as well
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_all_kwargs.png")
+    def test_plot_transition_levels_all_kwargs(self):
+        """
+        Exercise every keyword argument of ``plot_transition_levels`` at once
+        (including a ``prune_to_stable_entries`` kwarg via ``**kwargs`` and
+        saving to ``filename``).
+        """
+        save_path = os.path.join(data_dir, "_test_TLD_all_kwargs_saved.png")
+        if_present_rm(save_path)
+        try:
+            fig, _output, w = _run_func_and_capture_stdout_warnings(
+                self.CdTe_intrinsic_thermo.plot_transition_levels,
+                all="faded_labels",  # but no unstable entries, so no faded labels to actually show
+                defect_subset=["v_", "Te_Cd", "Cd_Te"],
+                unstable_entries=False,
+                include_site_info=True,  # TODO: Doesn't work?
+                ylim=(-0.2, self.CdTe_intrinsic_thermo.band_gap + 0.2),
+                show_charge_labels=True,
+                show_band_labels=False,
+                label_fontsize=10,
+                column_width=0.5,
+                figsize=(8, 6),
+                style_file=STYLE,
+                filename=save_path,
+                charge_stability_tolerance=-0.1,  # passed through **kwargs to prune_to_stable_entries
+            )
+            assert not w
+            assert os.path.isfile(save_path)  # figure was saved to ``filename``
+        finally:
+            if_present_rm(save_path)
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_heatmap_overlay.png")
+    def test_plot_transition_levels_modify_output_figure(self):
+        """
+        Show that the returned ``Figure`` can be further customised, here by
+        adding a diverging symmetric heatmap behind the TL diagram which peaks
+        in the centre of the band gap and minimises at the band edges (e.g. if
+        one wanted to show trends in recombination/emission rates etc.).
+        """
+        import numpy as np
+
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_intrinsic_thermo.plot_transition_levels
+        )
+        assert not w
+        ax = fig.axes[0]
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        band_gap = self.CdTe_intrinsic_thermo.band_gap
+
+        # value peaks (=0) at the gap centre and decreases symmetrically towards the band edges:
+        y = np.linspace(ylim[0], ylim[1], 256)
+        profile = -np.abs(y - band_gap / 2)
+        grid = np.tile(profile[:, np.newaxis], (1, 2))  # vary only along the Fermi-level (y) axis
+        vmax = 0.0
+        vmin = -band_gap / 2  # symmetric about the gap centre
+        ax.imshow(
+            grid,
+            extent=(xlim[0], xlim[1], ylim[0], ylim[1]),
+            origin="lower",
+            aspect="auto",
+            cmap="RdBu_r",
+            vmin=vmin,
+            vmax=vmax,
+            alpha=0.35,
+            zorder=-10,  # behind the TL lines/labels
+        )
+        ax.set_xlim(xlim)
+        ax.set_ylim(ylim)
         return fig
 
     @custom_mpl_image_compare(filename="CdTe_example_defects_plot_subset.png")
