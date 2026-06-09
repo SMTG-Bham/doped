@@ -63,6 +63,7 @@ from doped.utils.parsing import (
     get_vasprun,
     spin_degeneracy_from_vasprun,
     total_charge_from_vasprun,
+    get_atomic_site_potentials
 )
 from doped.utils.plotting import format_defect_name
 from doped.utils.symmetry import (
@@ -799,7 +800,7 @@ class DefectsParser:
     # TODO: Will want ``code`` to be an optional argument, where it is intelligently automatically
     # determined from the file types/names present.
 
-    def __new__(cls, code: Literal["vasp", "espresso"], **kwargs):
+    def __new__(cls, code: Literal["vasp", "espresso"] = "vasp", **kwargs):
         code = code.lower()
         if code == "vasp":
             return DefectsParserVasp(**kwargs)
@@ -873,6 +874,8 @@ class DefectsParserVasp:
         processes: int | None = None,
         json_filename: PathLike | bool | None = None,
         parse_projected_eigen: bool | None = None,
+        use_LOCPOT: bool = False,
+        beta: float = 0.5,
         **kwargs,
     ):
         r"""
@@ -1003,6 +1006,20 @@ class DefectsParserVasp:
                 Default is ``None``, which will attempt to load this data but
                 with no warning if it fails (otherwise if ``True`` a warning
                 will be printed).
+            use_LOCPOT (bool):
+                If ``True``, atomic site potentials for the Kumagai (eFNV)
+                charge correction are computed from VASP ``LOCPOT(.gz)`` files
+                (via a Gaussian-smoothed FFT, as for QE ``.cube`` files) rather
+                than from ``OUTCAR(.gz)`` core-level potentials. Requires
+                ``LOCPOT(.gz)`` files in the bulk and defect folders.
+                Default is ``False`` (use ``OUTCAR``).
+            beta (float):
+                Gaussian broadening width used when computing atomic site
+                potentials from volumetric data (``LOCPOT`` or ``.cube``) for
+                the Kumagai (eFNV) correction. Units are bohr for ``.cube``
+                inputs and Å for ``LOCPOT``. Only used when ``use_LOCPOT=True``
+                (or when parsing QE calculations). Default is ``0.5``
+
             **kwargs:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
@@ -1045,8 +1062,13 @@ class DefectsParserVasp:
         self.processes = processes
         self.json_filename = json_filename
         self.parse_projected_eigen = parse_projected_eigen
+        self.use_LOCPOT = use_LOCPOT
+        self.beta = beta
         self.bulk_vr = None  # loaded later
         self.kwargs = kwargs
+        # propagate Kumagai-LOCPOT settings to per-defect parsers via kwargs:
+        self.kwargs["use_LOCPOT"] = use_LOCPOT
+        self.kwargs["beta"] = beta
 
         # get folders for parsing:
         self.defect_folders, self.output_path, self.subfolder, self.bulk_path = (
@@ -1085,11 +1107,24 @@ class DefectsParserVasp:
             }
             with contextlib.suppress(Exception):
                 self.bulk_corrections_data["bulk_locpot_dict"] = _get_bulk_locpot_dict(**bulk_corr_kwargs)
-            with contextlib.suppress(Exception):
-                self.bulk_corrections_data["bulk_site_potentials"] = _get_bulk_site_potentials(
-                    total_energy=_get_total_energies(None, self.bulk_vr),
-                    **bulk_corr_kwargs,  # type: ignore
-                )
+            if self.use_LOCPOT:
+                # compute bulk atomic site potentials from LOCPOT via Gaussian-smoothed FFT:
+                with contextlib.suppress(Exception):
+                    bulk_locpot_path, _multiple = _get_output_files_and_check_if_multiple(
+                        "LOCPOT", self.bulk_path
+                    )
+                    bulk_site_potentials_dict = get_atomic_site_potentials(
+                        bulk_locpot_path, beta=self.beta
+                    )
+                    self.bulk_corrections_data["bulk_site_potentials"] = np.array(
+                        bulk_site_potentials_dict["site_potentials"]
+                    )
+            else:
+                with contextlib.suppress(Exception):
+                    self.bulk_corrections_data["bulk_site_potentials"] = _get_bulk_site_potentials(
+                        total_energy=_get_total_energies(None, self.bulk_vr),
+                        **bulk_corr_kwargs,  # type: ignore
+                    )
 
         self.defect_dict = {}
         parsed_defect_entries: list[DefectEntry] = []
@@ -2732,6 +2767,7 @@ class DefectParserVasp:
         dielectric = self.defect_entry.calculation_metadata["dielectric"]
         bulk_path = self.defect_entry.calculation_metadata["bulk_path"]
         defect_path = self.defect_entry.calculation_metadata["defect_path"]
+        use_LOCPOT = self.kwargs.get("use_LOCPOT", False)
 
         # determine charge correction to use, based on what output files are available (`LOCPOT`s or
         # `OUTCAR`s), and whether the supplied dielectric is isotropic or not
@@ -2743,14 +2779,40 @@ class DefectParserVasp:
         # check if dielectric (3x3 matrix) has diagonal elements that differ by more than 20%
         isotropic_dielectric = all(np.isclose(i, dielectric[0, 0], rtol=0.2) for i in np.diag(dielectric))
 
-        # regardless, try parsing OUTCAR files first (quickest, more robust for cases where defect
+        if use_LOCPOT:
+            if _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
+                bulk_path, "LOCPOT"
+            ):
+                # user opted in to compute Kumagai (eFNV) site potentials from LOCPOT files:
+                try:
+                    self.load_eFNV_data(use_LOCPOT=True)
+                except Exception as kumagai_exc:
+                    warnings.warn(
+                        f"`use_LOCPOT=True` was set, but got the following error when attempting "
+                        f"to parse defect & bulk `LOCPOT` files to compute the Kumagai (eFNV) "
+                        f"charge correction:\n{kumagai_exc}\n"
+                        f"-> Charge corrections will not be applied for this defect."
+                    )
+                    skip_corrections = True
+                return skip_corrections
+            else:
+                warnings.warn(
+                    f"`use_LOCPOT=True` was set, but `LOCPOT` files are missing from the defect "
+                    f"and/or bulk folder ({defect_path}, {bulk_path}). Mixing `LOCPOT`-derived "
+                    f"bulk site potentials with `OUTCAR`-derived defect site potentials would "
+                    f"give incorrect eFNV energies, so charge corrections will not be applied for this defect."
+                    f"Either add the missing `LOCPOT(.gz)`, or rerun with `use_LOCPOT=False`."
+                )
+                return True  # skip_corrections
+
+        # otherwise, try parsing OUTCAR files first (quickest, more robust for cases where defect
         # charge is localised somewhat off the (auto-determined) defect site (e.g. split-interstitials
         # etc) and also works regardless of isotropic/anisotropic)
         if _check_folder_for_file_match(defect_path, "OUTCAR") and _check_folder_for_file_match(
             bulk_path, "OUTCAR"
         ):
             try:
-                self.load_eFNV_data()
+                self.load_eFNV_data(use_LOCPOT=False)
             except Exception as kumagai_exc:
                 if _check_folder_for_file_match(defect_path, "LOCPOT") and _check_folder_for_file_match(
                     bulk_path, "LOCPOT"
@@ -2896,20 +2958,25 @@ class DefectParserVasp:
 
         return bulk_locpot_dict
 
-    def load_eFNV_data(self, bulk_site_potentials: list | None = None):
+    def load_eFNV_data(
+        self, bulk_site_potentials: list | None = None, use_LOCPOT: bool | None = None
+    ):
         """
         Load metadata required for performing Kumagai correction (i.e. atomic
-        site potentials from the ``OUTCAR`` files).
+        site potentials from the ``OUTCAR`` files, or from ``LOCPOT`` files if
+        ``use_LOCPOT=True`` was set on the parent ``DefectsParser``).
 
         Requires "bulk_path" and "defect_path" to be present in
         ``DefectEntry.calculation_metadata``, and ``VASP`` ``OUTCAR`` files to
-        be present in these directories. Can read compressed ``OUTCAR.gz``
+        be present in these directories (or ``LOCPOT`` files if
+        ``use_LOCPOT=True``). Can read compressed ``OUTCAR.gz`` / ``LOCPOT.gz``
         files. The bulk_site_potentials can be supplied if already parsed, for
         expedited parsing of multiple defects.
 
         Saves the ``bulk_site_potentials`` and ``defect_site_potentials`` lists
         (containing the atomic site electrostatic potentials, from
-        ``-1*np.array(Outcar.electrostatic_potential)``) to
+        ``-1*np.array(Outcar.electrostatic_potential)`` for ``OUTCAR``, or a
+        Gaussian-smoothed FFT of the ``LOCPOT`` for ``use_LOCPOT=True``) to
         ``DefectEntry.calculation_metadata``, for use with
         ``DefectEntry.get_kumagai_correction()``.
 
@@ -2917,7 +2984,8 @@ class DefectParserVasp:
             bulk_site_potentials (list):
                 Atomic site potentials for the bulk supercell, if already
                 parsed. If ``None`` (default), will load from ``OUTCAR(.gz)``
-                file in ``defect_entry.calculation_metadata["bulk_path"]``.
+                file (or ``LOCPOT(.gz)`` if ``use_LOCPOT=True``) in
+                ``defect_entry.calculation_metadata["bulk_path"]``.
 
         Returns:
             ``bulk_site_potentials`` to reuse in parsing other defect entries.
@@ -2926,29 +2994,59 @@ class DefectParserVasp:
             # don't need to load outcars if charge is zero
             return None
 
+        if use_LOCPOT is None:
+            use_LOCPOT = self.kwargs.get("use_LOCPOT", False)
+        beta = self.kwargs.get("beta", 0.5)
+
         bulk_site_potentials = bulk_site_potentials or self.kwargs.get("bulk_site_potentials", None)
 
-        if bulk_site_potentials is None:
-            bulk_site_potentials = _get_bulk_site_potentials(
-                self.defect_entry.calculation_metadata["bulk_path"],
-                total_energy=_get_total_energies(self.defect_entry.bulk_entry, self.bulk_vr),
-            )
+        if use_LOCPOT:
+            if bulk_site_potentials is None:
+                bulk_locpot_path, _multiple = _get_output_files_and_check_if_multiple(
+                    "LOCPOT", self.defect_entry.calculation_metadata["bulk_path"]
+                )
+                bulk_site_potentials_dict = get_atomic_site_potentials(
+                    bulk_locpot_path, beta=beta
+                )
+                bulk_site_potentials = np.array(bulk_site_potentials_dict["site_potentials"])
 
-        defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
-            "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]
-        )
-        if multiple:
-            _multiple_files_warning(
-                "OUTCAR",
-                self.defect_entry.calculation_metadata["defect_path"],
+            defect_locpot_path, multiple = _get_output_files_and_check_if_multiple(
+                "LOCPOT", self.defect_entry.calculation_metadata["defect_path"]
+            )
+            if multiple:
+                _multiple_files_warning(
+                    "LOCPOT",
+                    self.defect_entry.calculation_metadata["defect_path"],
+                    defect_locpot_path,
+                    dir_type="defect",
+                )
+            defect_site_potentials_dict = get_atomic_site_potentials(
+                defect_locpot_path, beta=beta
+            )
+            defect_site_potentials = np.array(defect_site_potentials_dict["site_potentials"])
+
+        else:
+            if bulk_site_potentials is None:
+                bulk_site_potentials = _get_bulk_site_potentials(
+                    self.defect_entry.calculation_metadata["bulk_path"],
+                    total_energy=_get_total_energies(self.defect_entry.bulk_entry, self.bulk_vr),
+                )
+
+            defect_outcar_path, multiple = _get_output_files_and_check_if_multiple(
+                "OUTCAR", self.defect_entry.calculation_metadata["defect_path"]
+            )
+            if multiple:
+                _multiple_files_warning(
+                    "OUTCAR",
+                    self.defect_entry.calculation_metadata["defect_path"],
+                    defect_outcar_path,
+                    dir_type="defect",
+                )
+            defect_site_potentials = get_core_potentials_from_outcar(
                 defect_outcar_path,
                 dir_type="defect",
+                total_energy=_get_total_energies(self.defect_entry.sc_entry, self.defect_vr),
             )
-        defect_site_potentials = get_core_potentials_from_outcar(
-            defect_outcar_path,
-            dir_type="defect",
-            total_energy=_get_total_energies(self.defect_entry.sc_entry, self.defect_vr),
-        )
 
         self.defect_entry.calculation_metadata.update(
             {
@@ -3487,7 +3585,7 @@ class DefectParserEspresso:
                     parse_procar=bulk_procar is None,
                 )
                 bulk_vr = RunParser("espresso").ensure_band_edges(
-                    self.bulk_vr, occu_tol, backend="pymatgen"
+                    bulk_vr, occu_tol, backend="pymatgen"
                 )  ### bandgap for bulk_vr
 
                 if bulk_procar is None and reparsed_bulk_procar is not None:
@@ -3947,16 +4045,26 @@ class DefectParserEspresso:
 
         if bulk_site_potentials is None:
             bulk_path = self.defect_entry.calculation_metadata["bulk_path"]
-            bulk_cube_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path)
-            bulk_site_potentials_dict = RunParser(self.code)._get_atomic_site_potentials(
-                bulk_cube_path, beta=beta
+            # try QE .cube first, then fall back to VASP LOCPOT:
+            bulk_vol_data_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path)
+            if not os.path.exists(bulk_vol_data_path):
+                bulk_vol_data_path, multiple = _get_output_files_and_check_if_multiple(
+                    "LOCPOT", bulk_path
+                )
+            bulk_site_potentials_dict = get_atomic_site_potentials(
+                bulk_vol_data_path, beta=beta
             )
             bulk_site_potentials = np.array(bulk_site_potentials_dict["site_potentials"])
 
         defect_path = self.defect_entry.calculation_metadata["defect_path"]
-        defect_cube_path, multiple = _get_output_files_and_check_if_multiple(".cube", defect_path)
-        defect_site_potentials_dict = RunParser(self.code)._get_atomic_site_potentials(
-            defect_cube_path, beta=beta
+        # try QE .cube first, then fall back to VASP LOCPOT:
+        defect_vol_data_path, multiple = _get_output_files_and_check_if_multiple(".cube", defect_path)
+        if not os.path.exists(defect_vol_data_path):
+            defect_vol_data_path, multiple = _get_output_files_and_check_if_multiple(
+                "LOCPOT", defect_path
+            )
+        defect_site_potentials_dict = get_atomic_site_potentials(
+            defect_vol_data_path, beta=beta
         )
         defect_site_potentials = np.array(defect_site_potentials_dict["site_potentials"])
 
@@ -4180,6 +4288,7 @@ class DefectParserEspresso:
             warnings.warn(
                 "CBM and band_gap are infinite, which can cause downstream failures. "
                 "Reverting to use of bulk supercell calculation for band edge extrema."
+                "Add extra bands using the 'nbnd' parameter"
             )
             cbm = None
             band_gap = None
@@ -5175,12 +5284,19 @@ class DefectsParserEspresso(DefectsParserVasp):
                                     "espresso"
                                 )._get_bulk_locpot_dict(self.bulk_path, quiet=True)
                             elif k == "bulk_site_potentials":
-                                bulk_cube_path, _ = _get_output_files_warn_if_multiple(
-                                    "cube", self.bulk_path
+                                # try QE .cube first, then fall back to VASP LOCPOT:
+                                bulk_vol_data_path, _ = _get_output_files_and_check_if_multiple(
+                                    ".cube", self.bulk_path
                                 )
-                                self.bulk_corrections_data[k] = RunParser(
-                                    self.code
-                                )._get_atomic_site_potentials(cube_path=bulk_cube_path, beta=beta)
+                                if os.path.exists(bulk_vol_data_path):
+                                    _get_output_files_warn_if_multiple(".cube", self.bulk_path)
+                                else:
+                                    bulk_vol_data_path, _ = _get_output_files_warn_if_multiple(
+                                        "LOCPOT", self.bulk_path
+                                    )
+                                self.bulk_corrections_data[k] = get_atomic_site_potentials(
+                                    bulk_vol_data_path, beta=beta
+                                )
 
                 # Parallel processing of remaining folders
                 folders_to_process = [f for f in self.defect_folders if f != charged_defect_folder]
