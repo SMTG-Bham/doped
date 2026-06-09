@@ -77,6 +77,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
+- H. Jang et al. **_A Unified Mechanism for Strain- and Anneal-Induced Oxygen-Vacancy Behavior in Oxide Semiconductors_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.6c00577) 2026
 - M. A. Fadla, M. Grüning and L. Stella **_Universal Stability of Ga Split Vacancies across α-, β-, and κ-Ga<sub>2</sub>O<sub>3</sub> Polymorphs: A Machine-Learning Accelerated Study_** [_arXiv_](https://doi.org/10.48550/arXiv.2605.28743) 2026
 - N. Kawashima and S. Botti **_Intrinsic Point Defects and Frenkel Pair Formation in Photovoltaic Absorber Zn<sub>3</sub>P<sub>2</sub>: Regulating p-type Conductivity through Growth and Annealing Conditions_** [_arXiv_](https://doi.org/10.48550/arXiv.2605.23479) 2026
 - M. Birare, A. Dębski, W. Gąsior and W. Gierlotka **_Defect Thermodynamics and the Intrinsic Stability Window of Mg<sub>3</sub>Sb<sub>2</sub>_** [_Metals_](https://doi.org/10.3390/met16050558) 2026
