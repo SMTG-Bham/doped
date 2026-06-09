@@ -113,6 +113,27 @@ class DefectTransitionLevelPlotsTestCase(DefectThermodynamicsSetupMixin):
         assert not w
         return fig
 
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_ylim.png")
+    def test_plot_transition_levels_CdTe_ylim(self):
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_intrinsic_thermo.plot_transition_levels, ylim=(0, 2)
+        )  # custom energy-axis limits, shows additional TLs
+        assert not w
+        return fig
+
+    @custom_mpl_image_compare(filename="CdTe_all_intrinsic_transition_levels_plot_no_site_info.png")
+    def test_plot_transition_levels_CdTe_no_site_info(self):
+        # ``include_site_info=False``: never add site info, so the inequivalent ``Cd_i`` columns are
+        # disambiguated with "-a"/"-b" suffixes instead of site info
+        fig, _output, w = _run_func_and_capture_stdout_warnings(
+            self.CdTe_intrinsic_thermo.plot_transition_levels, include_site_info=False
+        )
+        assert not w
+        label_txt = [t.get_text() for t in fig.get_axes()[0].texts]
+        assert any("-a" in t or "-b" in t for t in label_txt)  # suffix-disambiguated columns present
+        assert all("T_{d}" not in t for t in label_txt)  # but no site info added to any column header
+        return fig
+
     @custom_mpl_image_compare(filename="CdTe_example_transition_levels_plot_groundstate.png")
     def test_plot_transition_levels_CdTe_example_groundstate(self):
         fig, _output, w = _run_func_and_capture_stdout_warnings(
@@ -680,6 +701,13 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
         lz_cdte_defect_thermo.dist_tol = 3  # increase to 3 Å to merge Te_i and Cd_i defects
 
         return lz_cdte_defect_thermo.plot(chempots=self.CdTe_chempots, limit="Te-rich")
+
+    @custom_mpl_image_compare(filename="CdTe_LZ_all_no_site_info.png")
+    def test_plot_CdTe_LZ_all_no_site_info(self):
+        # uses "-a", "-b" etc. to disambiguate interstitial sites, rather than site info:
+        return self.CdTe_LZ_thermo_wout_meta.plot(
+            self.CdTe_chempots, limit="CdTe-Te", include_site_info=False
+        )
 
     @custom_mpl_image_compare(filename="CdTe_FNV_all_default_Te_rich_old_names.png")
     def test_CdTe_FNV_all_defects_plot_default_old_names(self):

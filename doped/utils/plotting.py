@@ -584,14 +584,17 @@ def _set_title_and_save_figure(
 def format_defect_name(
     defect_species: str,
     include_site_info: bool = False,
-    wout_charge: bool = False,
+    include_charge: bool = True,
+    wout_charge: bool | None = None,
 ) -> str | None:
     r"""
     Format defect name using LaTeX styling, intended for plot labelling/titles.
 
     For example, converts ``"Cd_i_C3v_0"`` to ``"$Cd_{i}^{0}$"`` or
-    ``"$Cd_{i_{C3v}}^{0}$"``, if ``include_site_info`` is ``True``). Note this
-    assumes "V\_..." means vacancy not Vanadium.
+    ``"$Cd_{i_{C3v}}^{0}$"``, if ``include_site_info`` is ``True``), or
+    ``"$Cd_i$"`` if ``include_charge = False``. Note this assumes "V\_..."
+    means vacancy not Vanadium -- an edge case where manual re-formatting is
+    advised.
 
     Args:
         defect_species (str):
@@ -599,9 +602,13 @@ def format_defect_name(
         include_site_info (bool):
             Whether to include site info in name (e.g. ``"$Cd_{i}^{0}$"``
             or ``"$Cd_{i_{C3v}}^{0}$"``). Defaults to ``False``.
+        include_charge (bool):
+            Whether to include the charge state in the formatted
+            ``defect_species`` name. Defaults to ``True``.
         wout_charge (bool):
-            Whether to exclude the charge state from the formatted
-            ``defect_species`` name. Defaults to ``False``.
+            Deprecated alias for ``not include_charge`` (i.e. whether to
+            *exclude* the charge state). Will be removed in ``doped`` v4.1;
+            use ``include_charge`` instead.
 
     Returns:
         str | None:
@@ -610,7 +617,16 @@ def format_defect_name(
     if not isinstance(defect_species, str):  # check inputs
         raise TypeError(f"`defect_species` {defect_species} should be a string")
 
-    if wout_charge:
+    if wout_charge is not None:
+        warnings.warn(
+            "The `wout_charge` argument of `format_defect_name` is deprecated and will be removed in "
+            "doped v4.1. Use `include_charge` (with inverted meaning) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )  # TODO: Remove in v4.1
+        include_charge = not wout_charge
+
+    if not include_charge:
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
 
     try:
@@ -700,7 +716,7 @@ def format_defect_name(
     if defect_name is None:  # try matching to PyCDT/old-doped style:
         defect_name = _pycdt_style_defect_name(defect_species, charge_string, include_site_info)
 
-    return f"{defect_name.rsplit('^', 1)[0]}$" if (defect_name and wout_charge) else defect_name
+    return f"{defect_name.rsplit('^', 1)[0]}$" if (defect_name and not include_charge) else defect_name
 
 
 def _pycdt_style_defect_name(
@@ -992,7 +1008,7 @@ def _iter_old_site_info_matches(name: str):
                 yield match.groups()[1]  # the site-info group (2nd)
 
 
-def _try_format_defect_name(defect_entry_name: str, site_info: bool, wout_charge: bool = True) -> str:
+def _try_format_defect_name(defect_entry_name: str, site_info: bool, include_charge: bool = False) -> str:
     """
     `Try` to format a defect entry name in LaTeX style (for plotting), falling
     back to the raw name if formatting fails.
@@ -1001,7 +1017,7 @@ def _try_format_defect_name(defect_entry_name: str, site_info: bool, wout_charge
         formatted_name = format_defect_name(
             defect_species=defect_entry_name,
             include_site_info=site_info,
-            wout_charge=wout_charge,  # defect names without charge
+            include_charge=include_charge,
         )
         if formatted_name is None:  # fallback to exception handling below
             raise RuntimeError(f"Defect entry {defect_entry_name} could not be formatted.")
@@ -1011,54 +1027,85 @@ def _try_format_defect_name(defect_entry_name: str, site_info: bool, wout_charge
         return defect_entry_name
 
 
-def _get_legend_txt(
-    for_legend: list[str], all_entries: bool = False, include_site_info: bool = False
+def format_defect_names(
+    defect_names: list[str], include_charge: bool = False, include_site_info: bool | None = None
 ) -> list[str]:
     """
-    Get LaTeX-like legend labels for the given defect entry names.
+    Format a list of defect names into LaTeX-like labels for plotting (e.g.
+    plot legends or transition level diagram column headers).
 
-    Site info is omitted by default, but added (and "a, b, c..." suffixes
-    appended as a last resort) where needed to disambiguate duplicate names.
+    Each name is formatted with :func:`format_defect_name`
+    (e.g. ``"Cd_i_C3v_0"`` -> ``"$Cd_{i}^{0}$"``), and the labels are then made
+    unique so that no two defects share the same label. The handling of
+    crystallographic site info, used to disambiguate defects of the same type
+    at inequivalent sites, is controlled by ``include_site_info``. If names for
+    different defects are still not unique after formatting, and potentially
+    including site info, then "-a", "-b", "-c"... suffixes are appended to
+    differentiate defects.
+
+    Args:
+        defect_names (list[str]):
+            List of defect names to format (e.g. ``["Cd_i_C3v_0", "Cd_Te",
+            "v_Cd_-1", ...]``), as taken from ``DefectEntry.name`` or the keys
+            of a ``DefectThermodynamics`` transition-level dictionary.
+        include_charge (bool):
+            Whether to include the charge states in the formatted defect names.
+            Defaults to ``False``.
+        include_site_info (bool, None):
+            Whether to include crystallographic site info in the formatted
+            names (e.g. ``"$Cd_{i_{C3v}}$"`` rather than ``"$Cd_{i}$"``):
+
+            - ``None`` (default): site info is omitted, then added only to
+              defect names that would otherwise collide (to disambiguate
+              them), then "-a", "-b", "-c"... suffixes are appended as a last
+              resort if names still collide.
+            - ``False``: site info is omitted from all names, and "-a", "-b",
+              "-c"... suffixes are appended if names collide.
+            - ``True``: site info is shown on all names (when available), and
+              "-a", "-b", "-c"... suffixes are appended if names still collide.
+
+    Returns:
+        list[str]:
+            The formatted, unique defect labels, in the same order as the input
+            ``defect_names``.
     """
-    legend_txt = [_try_format_defect_name(name, include_site_info, not all_entries) for name in for_legend]
+    formatted_names = [
+        _try_format_defect_name(name, include_site_info is True, include_charge) for name in defect_names
+    ]
 
-    if len(legend_txt) == len(set(legend_txt)):  # no duplicates, good to go
-        return legend_txt
+    if len(formatted_names) == len(set(formatted_names)):  # no duplicates, good to go
+        return formatted_names
 
     # duplicates in defect names; rename to avoid overwriting:
-    if not include_site_info:  # first see if using site info with duplicates removes duplicate names
-        site_info_entry_names = [
-            _try_format_defect_name(name, True, not all_entries) for name in for_legend
-        ]
-        legend_txt = [
+    if include_site_info is None:  # first see if using site info with duplicates removes duplicate names
+        site_info_names = [_try_format_defect_name(name, True, include_charge) for name in defect_names]
+        formatted_names = [
             (
                 site_info_name
-                if site_info_entry_names.count(site_info_name) < legend_txt.count(non_site_info_name)
+                if site_info_names.count(site_info_name) < formatted_names.count(non_site_info_name)
                 else non_site_info_name
             )
-            for site_info_name, non_site_info_name in zip(site_info_entry_names, legend_txt, strict=False)
+            for site_info_name, non_site_info_name in zip(site_info_names, formatted_names, strict=False)
         ]
 
-    if len(legend_txt) == len(set(legend_txt)):
-        return legend_txt
+        if len(formatted_names) == len(set(formatted_names)):
+            return formatted_names
 
-    # duplicates in entry names and site info doesn't (fully) solve it, so append "a,b,c.." for different
-    # defect species with the same name:
-    final_legend_txt: list[str] = []
-    for defect_name in legend_txt:
-        final_legend_txt.append(
+    # duplicates in entry names and site info doesn't (fully) solve it (or ``include_site_info=False``),
+    # so append "a,b,c.." for different defect species with the same name:
+    final_names: list[str] = []
+    for defect_name in formatted_names:
+        final_names.append(
             _uniquified_name(
                 defect_name,
-                variant_exists=lambda base: any(base in i for i in final_legend_txt),
-                exact_exists=lambda n: n in final_legend_txt,
+                variant_exists=lambda base: any(base in i for i in final_names),
+                exact_exists=lambda n: n in final_names,
                 suffix=lambda base, i: f"{base}$_{{-{chr(96 + i)}}}$",
-                rename_prev=lambda old, new: final_legend_txt.__setitem__(
-                    final_legend_txt.index(old), new
-                ),
+                rename_prev=lambda old, new: final_names.__setitem__(final_names.index(old), new),
             )
         )
 
-    return final_legend_txt
+    return final_names
 
 
 def get_legend_font_size() -> float:
@@ -1283,7 +1330,7 @@ def formation_energy_plot(
     dft_chempots: dict | None = None,
     el_refs: dict | None = None,
     all_entries: bool | str = False,
-    include_site_info: bool = False,
+    include_site_info: bool | None = None,
     chempot_table: bool = True,
     defect_subset: list[str] | str | None = None,
     colormap: str | Colormap | None = None,
@@ -1318,13 +1365,15 @@ def formation_energy_plot(
             each Fermi level position (traditional). If instead set to "faded",
             will plot the equilibrium states in bold, and all unstable states
             in faded grey. (Default: False)
-        include_site_info (bool):
+        include_site_info (bool, None):
             Whether to include site info in defect names in the plot legend
-            (e.g. ``$Cd_{i_{C3v}}^{0}$`` rather than ``$Cd_{i}^{0}$``). Default
-            is ``False``, where site info is not included unless we have
-            inequivalent sites for the same defect type. If, even with site
-            info added, there are duplicate defect names, then "-a", "-b", "-c"
-            etc. are appended to the names to differentiate.
+            (e.g. ``$Cd_{i_{C3v}}$`` rather than ``$Cd_{i}$``). If ``None``
+            (default), site info is omitted unless needed to disambiguate
+            non-grouped defects with the same name (i.e. inequivalent sites for
+            the same defect type). If ``False``, site info is never included.
+            If ``True``, site info is shown for all defect names. In all cases,
+            if duplicate defect names remain, "-a", "-b", "-c" etc. are
+            appended to the names to differentiate them.
         chempot_table (bool):
             Whether to print the chemical potential table above the plot.
             (Default: True)
@@ -1433,9 +1482,9 @@ def formation_energy_plot(
         auto_labels=auto_labels,
     )
 
-    legend_txt = _get_legend_txt(
+    legend_txt = format_defect_names(
         list((plotting_xy).keys()),
-        all_entries=all_entries is True,
+        include_charge=all_entries is True,
         include_site_info=include_site_info,
     )
     user_figsize_legend_fontsize_ratio = (plt.rcParams["figure.figsize"][1] / get_legend_font_size()) / (
@@ -2287,7 +2336,7 @@ def transition_level_diagram(
     defect_thermodynamics: "DefectThermodynamics",
     all: bool | str = "faded",
     defect_subset: list[str] | str | None = None,
-    include_site_info: bool = False,
+    include_site_info: bool | None = None,
     ylim: tuple[float, float] | None = None,
     show_charge_labels: bool = True,
     show_band_labels: bool | None = None,
@@ -2331,10 +2380,15 @@ def transition_level_diagram(
             given substrings are plotted (e.g. ``["v_", "Te_Cd"]`` would keep
             all vacancies plus ``Te_Cd``). A bare string is treated as a
             single-element list. (Default: ``None`` -- all defects)
-        include_site_info (bool):
-            Whether to include site info in defect names in the column
-            headers (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``).
-            Defaults to ``False``.
+        include_site_info (bool, None):
+            Whether to include site info in defect names in the column headers
+            (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``). If ``None``
+            (default), site info is omitted unless needed to disambiguate
+            non-grouped defects with the same name (i.e. inequivalent sites for
+            the same defect type). If ``False``, site info is never included.
+            If ``True``, site info is shown for all defect names. In all cases,
+            if duplicate defect names remain, "-a", "-b", "-c" etc. are
+            appended to the names to differentiate them.
         ylim (tuple):
             Energy axis limits in eV (relative to VBM at 0). Defaults to
             ``(-0.05 * band_gap, 1.05 * band_gap)``.
@@ -2438,10 +2492,7 @@ def transition_level_diagram(
     # columns as neighbour data to inform side-clearance picking:
     columns_data: list[tuple[float, float, list[float]]] = []
     column_in_range_tls: list[list[TransitionLevel]] = []
-    formatted_names: list[str] = []
-    for i, (defect_name, tls) in enumerate(tl_data.items()):
-        formatted_names.append(_try_format_defect_name(defect_name, include_site_info))
-
+    for i, tls in enumerate(tl_data.values()):
         in_range_tls = [tl for tl in tls if ylim[0] <= tl.TL_eV <= ylim[1]]
         column_in_range_tls.append(in_range_tls)
         columns_data.append((float(i), half_w, [tl.TL_eV for tl in in_range_tls]))
@@ -2589,8 +2640,8 @@ def transition_level_diagram(
                 zorder=2,
             )
 
-    # column headers (defect names) at the top:
-    for i, name in enumerate(formatted_names):
+    # column headers (defect names) at the top; same order as TL data columns plotted above:
+    for i, name in enumerate(format_defect_names(list(tl_data), include_site_info=include_site_info)):
         ax.annotate(
             name,
             xy=(i, header_y),

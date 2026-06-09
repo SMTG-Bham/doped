@@ -2701,7 +2701,7 @@ class DefectThermodynamics(MSONable):
         xlim: tuple | None = None,
         ylim: tuple | None = None,
         fermi_level: float | None = None,
-        include_site_info: bool = False,
+        include_site_info: bool | None = None,
         colormap: str | colors.Colormap | None = None,
         linestyles: str | list[str] = "-",
         auto_labels: bool = False,
@@ -2837,13 +2837,15 @@ class DefectThermodynamics(MSONable):
                 typically used to indicate the equilibrium Fermi level position
                 if known/calculated (e.g. with
                 ``get_fermi_level_and_concentrations``). (Default: None)
-            include_site_info (bool):
+            include_site_info (bool, None):
                 Whether to include site info in defect names in the plot legend
-                (e.g. ``$Cd_{i_{C3v}}^{0}$`` rather than ``$Cd_{i}^{0}$``).
-                Default is ``False``, where site info is not included unless we
-                have inequivalent sites for the same defect type. If, even with
-                site info added, there are duplicate defect names, then
-                "-a", "-b", "-c"... are appended to the names to differentiate.
+                (e.g. ``$Cd_{i_{C3v}}$`` rather than ``$Cd_{i}$``). If ``None``
+                (default), site info is omitted unless needed to disambiguate
+                non-grouped defects with the same name (i.e. inequivalent sites
+                for the same defect type). If ``False``, site info is never
+                included. If ``True``, site info is shown for all defect names.
+                In all cases, if duplicate defect names remain, "-a", "-b",
+                "-c" etc. are appended to the names to differentiate them.
             colormap (str, matplotlib.colors.Colormap):
                 Colormap to use for the formation energy lines, either as a
                 string (which can be a colormap name from
@@ -2953,7 +2955,7 @@ class DefectThermodynamics(MSONable):
         all: bool | str = "faded",
         defect_subset: list[str] | str | None = None,
         unstable_entries: bool | str = "not shallow",
-        include_site_info: bool = False,
+        include_site_info: bool | None = None,
         ylim: tuple | None = None,
         show_charge_labels: bool = True,
         show_band_labels: bool | None = None,
@@ -3014,10 +3016,16 @@ class DefectThermodynamics(MSONable):
                 level in the band gap are `also` omitted. If ``True``, defect
                 entries are not pruned based on stability / shallow
                 classification. See ``prune_to_stable_entries`` for more info.
-            include_site_info (bool):
+            include_site_info (bool, None):
                 Whether to include site info in defect names in the column
-                headers (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``).
-                Defaults to ``False``.
+                headers (e.g. ``$V_{Cd_{Td}}$`` rather than ``$V_{Cd}$``). If
+                ``None`` (default), site info is omitted unless needed to
+                disambiguate non-grouped defects with the same name (i.e.
+                inequivalent sites for the same defect type). If ``False``,
+                site info is never included. If ``True``, site info is shown
+                for all defect names. In all cases, if duplicate defect names
+                remain, "-a", "-b", "-c" etc. are appended to the names to
+                differentiate them.
             ylim (tuple):
                 Energy axis limits in eV (relative to ``self.vbm``). Defaults
                 to ``(-0.05 * band_gap, 1.05 * band_gap)``.
@@ -4410,6 +4418,8 @@ class DefectThermodynamics(MSONable):
             )
         )
 
+        # TODO: Could be faster through just formation energy ratios, but hard to directly incorporate
+        #  degeneracy, but ...
         get_constrained_concentrations = partial(
             self._get_constrained_concentrations,
             total_concentrations=total_concentrations,

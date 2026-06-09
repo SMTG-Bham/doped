@@ -49,4 +49,6 @@
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
 
 delta_VBM/CBM in notebooks. say it can be important to not assume symmetric shifts, esp with differences in eff masses (though note Ganose & Ling found the symmetric shift was fine??), and link to these papers
-Similarly, tests and examples in notebooks for TL plotting (CdTe, Se), and plot customisation (tutorial) with red gradient (see test)
+Similarly, tests and examples in notebooks for TL plotting (CdTe, Se, link Xinwei and Botti papers as nice examples), and plot customisation (tutorial) with red gradient (see test)
+
+See some output examples in Xinwei papers (particularly Fig S2.3 in https://pubs.acs.org/doi/suppl/10.1021/acsenergylett.4c02722/suppl_file/nz4c02722_si_001.pdf (Sb2S3 paper)) and this paper from Silvana Botti: https://arxiv.org/pdf/2605.23479
