@@ -36,6 +36,18 @@ from pymatgen.entries.computed_entries import (
     ManualEnergyAdjustment,
 )
 from pymatgen.ext.matproj import MPRester, MPRestError
+from pymatgen.io.espresso.inputs.pwin import (
+    AtomicPositionsCard,
+    AtomicSpeciesCard,
+    CellNamelist,
+    CellParametersCard,
+    ControlNamelist,
+    ElectronsNamelist,
+    IonsNamelist,
+    KPointsCard,
+    PWin,
+    SystemNamelist,
+)
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
@@ -1385,7 +1397,6 @@ class CompetingPhases:
                 f"({', '.join([e.name for e in self.molecular_entries])} in this case), do not require "
                 f"k-point convergence testing, as Γ-only sampling is sufficient."
             )
-
     # TODO: Add vasp_ncl_setup(); noting in docstrings that SOC is important for formation energies /
     #  chemical potentials (-> Guidelines perspective)
     # But, can generally use non-SOC energies to reliably determine relative energies of polymorphs of the
@@ -2236,7 +2247,7 @@ class CompetingPhasesAnalyzer(MSONable):
 
         This class can be initialised from VASP outputs (``vasprun.xml``\s) by
         specifying the path to the directory containing the outputs (e.g.
-        ``"CompetingPhases"``) or a list of directories, or from a list of of
+        ``"CompetingPhases"``) or a list of directories, or from a list of
         ``ComputedEntry``\s / ``ComputedStructureEntry``\s (e.g. for use with
         high-throughput computing architectures such as ``atomate2`` or
         ``AiiDA``).
@@ -4100,3 +4111,984 @@ def combine_extrinsic(first: dict, second: dict, extrinsic_species: str) -> dict
         "limits": new_limits,
         "limits_wrt_el_refs": new_limits_wrt_el_refs,
     }
+
+## Edits for Quantum ESPRESSO chemical potentials integration:
+
+# ──────────────────────────────────────────────────────────────────────────
+# Default QE namelist settings
+# ──────────────────────────────────────────────────────────────────────────
+
+# QE pw.x input defaults, loaded from the YAML sets in ``doped/QE_sets``
+# (analogous to the VASP ``INCAR`` sets in ``doped/VASP_sets``):
+_qe_SSSP_convergence_defaults: dict = loadfn(
+    os.path.join(MODULE_DIR, "QE_sets/SSSP_Convergence_set.yaml")
+)
+_qe_hse_relax_defaults: dict = loadfn(os.path.join(MODULE_DIR, "QE_sets/HSE_set.yaml"))
+
+# Default {element: UPF filename} map from the SSSP 1.3.0 PBE Efficiency
+# library (https://www.materialscloud.org/discover/sssp), used for QE pseudos
+# unless the user supplies their own ``pseudo_map``:
+_qe_SSSP_pseudo_filenames: dict = {
+    element: metadata["filename"]
+    for element, metadata in loadfn(
+        os.path.join(MODULE_DIR, "QE_sets/SSSP_1.3.0_PBE_efficiency.json")
+    ).items()
+}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# QE parsing helpers
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _parse_entry_from_espresso_and_catch_exception(
+    espresso_path: PathLike,
+) -> tuple:
+    """
+    Parse a QE ``.xml`` output file into a ``ComputedStructureEntry``,
+    catching any exceptions and returning the error message and path if one
+    is raised.  Analogous to ``_parse_entry_from_vasprun_and_catch_exception``.
+    """
+    try:
+        from doped.utils.parsing import RunParserEspresso
+
+        pwxml = RunParserEspresso.get_run(espresso_path)
+        # ``PWxml`` (pymatgen-io-espresso) subclasses ``Vasprun`` but never sets the
+        # ``generator`` attribute (QE's espresso.xml has no ``<generator>`` block). Recent
+        # pymatgen versions access ``self.generator["DATE"]`` when building the default
+        # ``entry_id`` in the inherited ``Vasprun.get_computed_entry()``, raising
+        # ``AttributeError: 'PWxml' object has no attribute 'generator'``. Pass an explicit
+        # ``entry_id`` to bypass that branch:
+        entry = pwxml.get_computed_entry(entry_id=f"pwxml-{espresso_path}")
+        unique_symbols = sorted(set(pwxml.atomic_symbols))
+        summary_dict = {}
+        with contextlib.suppress(Exception):
+            summary_dict["band_gap"] = pwxml.eigenvalue_band_properties[0]
+            summary_dict["total_magnetization"] = get_magnetization_from_vasprun(pwxml)
+
+        entry.data.update(
+            {
+                "formula_pretty": entry.composition.reduced_formula,
+                "nsites": len(entry.structure),
+                "volume": entry.structure.volume,
+                "energy_per_atom": entry.energy_per_atom,
+                "elements": unique_symbols,
+                "nelements": len(unique_symbols),
+                "kpoints": list(pwxml.kpoints_frac),
+                "qe_input": pwxml.parameters,
+                "pseudo_filenames": list(pwxml.potcar_spec),
+                "summary": summary_dict,
+            }
+        )
+        electronic_converged = pwxml.converged_electronic
+        ionic_converged = pwxml.converged_ionic
+        folder = os.path.dirname(str(espresso_path))
+        return entry, folder, electronic_converged, ionic_converged
+    except Exception as e:
+        return str(e), espresso_path, False, False
+
+
+def _compare_qe_input_parameters(
+    ref_params: dict,
+    entry_params: dict,
+    ignore_params: set[str] | None = None,
+    ref_name: str = "reference",
+    entry_name: str = "entry",
+    warn: bool = True,
+) -> list | bool:
+    """
+    Check QE input parameters that can affect energies are consistent between
+    two calculations.  Analogous to ``_compare_incar_tags`` for VASP.
+
+    The ``ref_params`` and ``entry_params`` dicts are the nested parameter
+    dicts stored in ``entry.data["qe_input"]`` (i.e. ``PWxml.parameters``).
+
+    Returns ``True`` if no critical mismatches, otherwise a list of
+    ``(parameter, value_in_entry, value_in_reference)`` tuples.
+    """
+    fatal_qe_params = {
+        "ecutwfc": None,
+        "ecutrho": None,
+        "ibrav": None
+    }
+    if ignore_params:
+        fatal_qe_params = {k: v for k, v in fatal_qe_params.items() if k not in ignore_params}
+
+    def _flatten(params: dict) -> dict:
+        flat: dict = {}
+        flat["ecutwfc"] = params.get("basis", {}).get("ecutwfc")
+        flat["ecutrho"] = params.get("basis", {}).get("ecutrho")
+        flat["ibrav"] = params.get("basis", {}).get("ibrav")
+        return flat
+
+    def _vals_match(v1, v2) -> bool:
+        if v1 is None and v2 is None:
+            return True
+        if v1 is None or v2 is None:
+            return False
+        if isinstance(v1, int | float) and isinstance(v2, int | float):
+            return bool(np.isclose(v1, v2, rtol=1e-3))
+        if isinstance(v1, str):
+            return v1.lower() == str(v2).lower()
+        return v1 == v2
+
+    ref_flat = _flatten(ref_params or {})
+    entry_flat = _flatten(entry_params or {})
+
+    mismatch_list = []
+    for key in fatal_qe_params:
+        ref_val = ref_flat.get(key)
+        entry_val = entry_flat.get(key)
+        if not _vals_match(ref_val, entry_val):
+            mismatch_list.append((key, entry_val, ref_val))
+
+    if mismatch_list and warn:
+        warnings.warn(
+            f"There are mismatching QE input parameters for your {entry_name} and {ref_name} "
+            f"calculations which are likely to cause errors in the parsed results (energies). "
+            f"Found the following differences:\n"
+            f"(in the format: (QE parameter, value in {entry_name}, value in {ref_name})):"
+            f"\n{mismatch_list}\n"
+            f"In general, the same QE input settings should be used in all final calculations "
+            f"for parameters which can affect energies!"
+        )
+    return mismatch_list if mismatch_list else True
+
+
+def _compare_pseudo_symbols(
+    ref_pseudos: list[str],
+    entry_pseudos: list[str],
+    warn: bool = True,
+    only_matching_elements: bool = False,
+) -> list | bool:
+    """
+    Check pseudopotential filenames are consistent between two calculations.
+    Analogous to ``_compare_potcar_symbols`` for VASP.
+
+    Returns ``True`` if all pseudopotentials match, otherwise a list of
+    ``(entry_pseudo, ref_pseudo)`` mismatching pairs.
+    """
+    def _elem_from_pseudo(fname: str) -> str:
+        return os.path.basename(fname).split(".")[0].split("_")[0]
+
+    ref_list = list(ref_pseudos or [])
+    entry_list = list(entry_pseudos or [])
+
+    if only_matching_elements:
+        entry_elements = {_elem_from_pseudo(p) for p in entry_list}
+        ref_to_check = [p for p in ref_list if _elem_from_pseudo(p) in entry_elements]
+    else:
+        ref_to_check = ref_list
+
+    mismatches = []
+    for ref_p in ref_to_check:
+        if ref_p not in entry_list:
+            entry_match = next(
+                (p for p in entry_list if _elem_from_pseudo(p) == _elem_from_pseudo(ref_p)),
+                None,
+            )
+            mismatches.append((entry_match, ref_p))
+
+    if mismatches and warn:
+        warnings.warn(
+            f"There are mismatching pseudopotential filenames which are likely to cause errors in "
+            f"the parsed results. Found the following differences:\n"
+            f"(in the format: (entry pseudopotential, reference pseudopotential)):"
+            f"\n{mismatches}\n"
+            f"The same pseudopotentials should be used for all calculations for accurate results!"
+        )
+    return mismatches if mismatches else True
+
+
+def _format_mismatching_qe_input_warning(
+    mismatching_qe_input_warnings: list[tuple[str, set]],
+) -> str:
+    """
+    Generate a formatted warning string for mismatching QE input parameters.
+    Analogous to ``_format_mismatching_incar_warning`` for VASP.
+    """
+    mismatching_tags_name_list_dict = {
+        tuple(sorted(mismatching_set)): sorted(
+            [
+                name
+                for name, other_mismatching_set in mismatching_qe_input_warnings
+                if other_mismatching_set == mismatching_set
+            ]
+        )
+        for mismatching_set in [mismatching for name, mismatching in mismatching_qe_input_warnings]
+    }
+    return "\n".join(
+        f"Entries {names}: {list(tags)}"
+        for tags, names in mismatching_tags_name_list_dict.items()
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# QE input file generation helpers
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _kpoints_grid_from_reciprocal_density(structure: Structure, reciprocal_density: int) -> list[int]:
+    """
+    Return a ``[kx, ky, kz]`` Monkhorst-Pack grid for ``structure`` at the
+    given ``reciprocal_density`` (k-points per Å^-3 of reciprocal volume),
+    using the same algorithm as ``pymatgen``'s
+    ``Kpoints.automatic_density_by_vol``.
+    """
+    kpoints_obj = Kpoints.automatic_density_by_vol(structure, kppvol=reciprocal_density)
+    return [int(k) for k in kpoints_obj.kpts[0]]
+
+
+class _GammaKPointsCard(KPointsCard):
+    """
+    ``KPointsCard`` subclass that renders the ``gamma`` option correctly.
+
+    ``pymatgen.io.espresso``'s ``KPointsCard.get_body`` raises an
+    ``UnboundLocalError`` for the ``gamma`` option (Γ-only sampling),
+    since neither the ``automatic`` nor the explicit-grid branch assigns a body.
+    This override emits an empty body so that ``K_POINTS {gamma}`` is written with
+    no following lines, as QE expects.
+    """
+
+    def get_body(self, indent: str) -> str:
+        if self.option == "gamma":
+            return ""
+        return super().get_body(indent)
+
+
+def _write_qe_pw_input(
+    filepath: str,
+    structure: Structure,
+    namelist_settings: dict[str, dict],
+    kpoints: list[int] | None,
+    pseudo_map: dict[str, str] | None = None,
+) -> None:
+    """
+    Write a QE ``pw.in`` input file for ``structure``.
+
+    The file is assembled with ``pymatgen.io.espresso``'s ``PWin`` object
+    (namelists + cards) and written via ``PWin.to_file``.
+
+    Args:
+        filepath (str):
+            Destination path for the ``pw.in`` file.
+        structure (Structure):
+            Structure to write.
+        namelist_settings (dict):
+            Nested dict of QE namelist settings keyed by namelist name
+            (``"control"``, ``"system"``, ``"electrons"``, ``"ions"``,
+            ``"cell"``). Only namelists present as keys are written.
+            ``"cell"`` is omitted automatically for fixed-cell relaxations
+            (i.e. when ``control.calculation`` is ``"relax"`` or ``"scf"``).
+        kpoints (list[int] or None):
+            ``[kx, ky, kz]`` Monkhorst-Pack grid. Pass ``None`` for
+            Gamma-only sampling (e.g. molecules-in-a-box).
+        pseudo_map (dict or None):
+            ``{element_symbol: pseudo_filename}`` mapping. Defaults to the
+            SSSP 1.3.0 PBE Efficiency filename for each element. Any entries
+            given here override the SSSP default per element; elements absent
+            from the SSSP library fall back to ``"{element}.upf"``.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+    unique_species = sorted(
+        {str(el) for el in structure.species}, key=lambda s: Element(s).Z
+    )
+    resolved_pseudos = {
+        sp: _qe_SSSP_pseudo_filenames.get(sp, f"{sp}.upf") for sp in unique_species
+    }
+    resolved_pseudos.update(pseudo_map or {})
+    pseudo_map = resolved_pseudos
+
+    fixed_cell_calcs = {"relax", "scf", "nscf", "bands"}
+    calc_type = namelist_settings.get("control", {}).get("calculation", "vc-relax")
+
+    namelist_classes = {
+        "control": ControlNamelist,
+        "system": SystemNamelist,
+        "electrons": ElectronsNamelist,
+        "ions": IonsNamelist,
+        "cell": CellNamelist,
+    }
+    namelists: dict = {}
+    for nl_name, nl_cls in namelist_classes.items():
+        if nl_name not in namelist_settings:
+            continue
+        if nl_name == "cell" and calc_type in fixed_cell_calcs:
+            continue
+        namelists[nl_name] = nl_cls(namelist_settings[nl_name])
+
+    if kpoints is None:
+        k_points_card: KPointsCard = _GammaKPointsCard("gamma", [], [], [], [], [])
+    else:
+        kx, ky, kz = kpoints
+        k_points_card = KPointsCard("automatic", [kx, ky, kz], [0, 0, 0], [], [], [])
+
+    cards = {
+        "atomic_species": AtomicSpeciesCard(
+            None,
+            unique_species,
+            [float(Element(sp).atomic_mass) for sp in unique_species],
+            [pseudo_map.get(sp, f"{sp}.upf") for sp in unique_species],
+        ),
+        "atomic_positions": AtomicPositionsCard(
+            "angstrom",
+            [site.species_string for site in structure],
+            np.array([site.coords for site in structure]),
+            None,
+        ),
+        "k_points": k_points_card,
+        "cell_parameters": CellParametersCard(
+            "angstrom",
+            structure.lattice.matrix[0],
+            structure.lattice.matrix[1],
+            structure.lattice.matrix[2],
+        ),
+    }
+
+    PWin(namelists, cards).to_file(filepath)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# CompetingPhasesQE: QE input file generation for competing phases
+# ──────────────────────────────────────────────────────────────────────────
+
+
+class CompetingPhasesQE(CompetingPhases):
+    """
+    Extension of ``CompetingPhases`` to generate Quantum ESPRESSO ``pw.in``
+    input files for competing phase calculations, in place of VASP input files.
+
+    Inherits all MP-querying and phase-diagram logic from ``CompetingPhases``;
+    the new methods ``qe_convergence_setup`` and ``qe_std_setup`` are the QE
+    analogues of ``convergence_setup`` and ``vasp_std_setup``.
+    """
+
+    def qe_convergence_setup(
+        self,
+        kpoints_metals: tuple = (40, 1000, 5),
+        kpoints_nonmetals: tuple = (5, 120, 5),
+        kpoint_sweep_ecutwfc: int | None = None,
+        ecut_convergence: tuple = (20, 90, 10),
+        ecut_kpoints_metals: int = 200,
+        ecut_kpoints_nonmetals: int = 64,
+        pseudo_dir: str = "./pseudo_folder_name/",
+        pseudo_map: dict | None = None,
+        user_system_settings: dict | None = None,
+        user_control_settings: dict | None = None,
+        user_electron_settings: dict | None = None,
+    ) -> None:
+        """
+        Generates QE ``pw.in`` input files for k-points and plane-wave cutoff
+        (``ecutwfc``) convergence testing of competing phases, using SSSP pseudopotentials by default.
+        Analogous to ``CompetingPhases.convergence_setup`` for VASP.
+
+        Two separate sub-trees are written per phase:
+
+        - ``kpoint_converge/<kname>/pw.in``: k-point grid varied at fixed
+          ``ecutwfc``. Skipped for diatomic molecules (Γ-only is exact for
+          molecules-in-a-box, so there is no k-point grid to converge).
+        - ``ecut_convergence/ecutwfc_<N>/pw.in``: ``ecutwfc`` varied at a
+          fixed k-point grid. Generated for *all* phases including molecules
+          (the plane-wave cutoff must be converged for molecules too).
+          ``ecutrho`` is left at the set default while ``ecutwfc`` is swept,
+          following standard ``ecutwfc``-convergence methodology.
+
+        Args:
+            kpoints_metals (tuple):
+                ``(min, max, step)`` reciprocal k-point density (Å^-3) range
+                to test for metallic phases. Default ``(40, 1000, 5)``.
+            kpoints_nonmetals (tuple):
+                ``(min, max, step)`` reciprocal k-point density (Å^-3) range
+                to test for non-metallic phases. Default ``(5, 120, 5)``.
+            kpoint_sweep_ecutwfc (int or None):
+                ``ecutwfc`` (Ry) held fixed while the k-grid is swept.
+                ``None`` (default) keeps the YAML set default (60 Ry).
+            ecut_convergence (tuple):
+                ``(min, max, step)`` ``ecutwfc`` range in Ry for the cutoff
+                convergence sweep, with ``max`` inclusive. Default
+                ``(20, 90, 10)`` (i.e. 20, 30, 40, 50, 60, 70, 80, 90 Ry).
+            ecut_kpoints_metals (int):
+                Fixed reciprocal k-point density (Å^-3) used for metallic
+                phases during the ``ecutwfc`` sweep. Default 200.
+            ecut_kpoints_nonmetals (int):
+                Fixed reciprocal k-point density (Å^-3) used for non-metallic
+                phases during the ``ecutwfc`` sweep. Default 64. Molecules use
+                Γ-only sampling regardless.
+            pseudo_dir (str):
+                Path to the directory containing UPF pseudopotential files,
+                written into ``&CONTROL``. Default ``"./pseudo"``.
+            pseudo_map (dict or None):
+                ``{element_symbol: pseudo_filename}`` mapping, e.g.
+                ``{"O": "O.pbe-n-kjpaw_psl.0.1.UPF"}``. Defaults to the SSSP
+                1.3.0 PBE Efficiency filename for each element; any entries
+                given here override that default per element.
+            user_system_settings (dict or None):
+                Override default ``&SYSTEM`` namelist settings, e.g.
+                ``{"ecutwfc": 80, "ecutrho": 400"}``.
+            user_control_settings (dict or None):
+                Override default ``&CONTROL`` namelist settings.
+            user_electron_settings (dict or None):
+                Override default ``&ELECTRONS`` namelist settings.
+        """
+        base = copy.deepcopy(_qe_SSSP_convergence_defaults)
+        base["control"]["pseudo_dir"] = pseudo_dir
+        base["control"]["calculation"] = "scf"  # convergence testing uses single-point SCF
+        base["system"].update(user_system_settings or {})
+        base["control"].update(user_control_settings or {})
+        base["electrons"].update(user_electron_settings or {})
+
+        kpoints_by_metallicity = {"non-metals": kpoints_nonmetals, "metals": kpoints_metals}
+        ecut_kppvol_by_metallicity = {
+            "non-metals": ecut_kpoints_nonmetals,
+            "metals": ecut_kpoints_metals,
+        }
+        ecut_min, ecut_max, ecut_step = ecut_convergence
+
+        for entry, etype in self._iter_entries_with_types():
+            nl_settings = copy.deepcopy(base)
+            nl_settings["system"]["ibrav"] = 0
+            nl_settings["system"]["nat"] = len(entry.structure)
+            nl_settings["system"]["ntyp"] = len(set(entry.structure.species))
+
+            self._set_qe_spin_polarisation(nl_settings["system"], user_system_settings or {}, entry)
+            self._set_qe_default_metal_smearing(nl_settings["system"], user_system_settings or {})
+
+            phase_folder = f"CompetingPhases/{_get_competing_phase_folder_name(entry)}"
+
+            # k-point convergence: vary k-grid at fixed ecut. Skipped for
+            # molecules (Γ-only is exact for a molecule-in-a-box).
+            if "molecule" not in etype:
+                kpoint_nl_settings = copy.deepcopy(nl_settings)
+                if kpoint_sweep_ecutwfc is not None:
+                    kpoint_nl_settings["system"]["ecutwfc"] = kpoint_sweep_ecutwfc
+                min_k, max_k, step_k = kpoints_by_metallicity[etype]
+                for kpoint in range(min_k, max_k, step_k):
+                    kgrid = _kpoints_grid_from_reciprocal_density(entry.structure, kpoint)
+                    kname = (
+                        "k"
+                        + ("_" * (kgrid[0] // 10))
+                        + ",".join(str(k) for k in kgrid)
+                    )
+                    _write_qe_pw_input(
+                        filepath=os.path.join(phase_folder, "kpoint_converge", kname, "pw.in"),
+                        structure=entry.structure,
+                        namelist_settings=kpoint_nl_settings,
+                        kpoints=kgrid,
+                        pseudo_map=pseudo_map,
+                    )
+
+            # ecutwfc convergence: vary ecutwfc at a fixed k-grid.
+            ecut_kgrid = (
+                None
+                if "molecule" in etype
+                else _kpoints_grid_from_reciprocal_density(
+                    entry.structure, ecut_kppvol_by_metallicity[etype]
+                )
+            )
+            for ecut in range(ecut_min, ecut_max + 1, ecut_step):
+                ecut_nl_settings = copy.deepcopy(nl_settings)
+                ecut_nl_settings["system"]["ecutwfc"] = ecut
+                _write_qe_pw_input(
+                    filepath=os.path.join(
+                        phase_folder, "ecut_convergence", f"ecutwfc_{ecut}", "pw.in"
+                    ),
+                    structure=entry.structure,
+                    namelist_settings=ecut_nl_settings,
+                    kpoints=ecut_kgrid,
+                    pseudo_map=pseudo_map,
+                )
+
+        if self.molecular_entries:
+            print(
+                f"Note that diatomic molecular phases, calculated as molecules-in-a-box "
+                f"({', '.join([e.name for e in self.molecular_entries])} in this case), do not "
+                f"require k-point convergence testing (Γ-only sampling is sufficient), but are "
+                f"still included in the ecutwfc (plane-wave cutoff) convergence sweep."
+            )
+
+    def qe_std_setup(
+        self,
+        kpoints_metals: int = 200,
+        kpoints_nonmetals: int = 64,
+        pseudo_dir: str = "./pseudo_folder_name/",
+        pseudo_map: dict | None = None,
+        use_hse: bool = False,
+        user_system_settings: dict | None = None,
+        user_control_settings: dict | None = None,
+        user_electron_settings: dict | None = None,
+    ) -> None:
+        """
+        Generates QE ``pw.in`` input files for standard relaxations of
+        competing phases, using HSE06 hybrid DFT by default.  Analogous to
+        ``CompetingPhases.vasp_std_setup`` for VASP.
+
+        Args:
+            kpoints_metals (int):
+                Reciprocal k-point density (Å^-3) for metallic phases.
+                Default 200.
+            kpoints_nonmetals (int):
+                Reciprocal k-point density (Å^-3) for non-metallic phases.
+                Default 64.
+            pseudo_dir (str):
+                Path to the directory containing UPF pseudopotential files.
+                Default ``"./pseudo_folder_name/"``.
+            pseudo_map (dict or None):
+                ``{element_symbol: pseudo_filename}`` mapping. Defaults to the
+                SSSP 1.3.0 PBE Efficiency filename for each element; any
+                entries given here override that default per element.
+            use_hse (bool):
+                If ``True`` (default), use HSE06 hybrid DFT settings. If
+                ``False``, use SSSP settings. Note that any changes to
+                the functional should be consistent with those used for the
+                defect supercell calculations.
+                Default = 'False'
+            user_system_settings (dict or None):
+                Override default ``&SYSTEM`` namelist settings.
+            user_control_settings (dict or None):
+                Override default ``&CONTROL`` namelist settings.
+            user_electron_settings (dict or None):
+                Override default ``&ELECTRONS`` namelist settings.
+        """
+        base = copy.deepcopy(
+            _qe_hse_relax_defaults if use_hse else _qe_SSSP_convergence_defaults
+        )
+        base["control"]["pseudo_dir"] = pseudo_dir
+        base["control"]["calculation"] = "vc-relax"  # std setup does full cell relaxation
+        base["system"].update(user_system_settings or {})
+        base["control"].update(user_control_settings or {})
+        base["electrons"].update(user_electron_settings or {})
+
+        for entry, etype in self._iter_entries_with_types():
+            nl_settings = copy.deepcopy(base)
+            nl_settings["system"]["ibrav"] = 0
+            nl_settings["system"]["nat"] = len(entry.structure)
+            nl_settings["system"]["ntyp"] = len(set(entry.structure.species))
+
+            if "molecule" in etype:
+                nl_settings["control"]["calculation"] = "relax"
+                kgrid = None
+            elif "non-metals" in etype:
+                kgrid = _kpoints_grid_from_reciprocal_density(entry.structure, kpoints_nonmetals)
+            else:
+                kgrid = _kpoints_grid_from_reciprocal_density(entry.structure, kpoints_metals)
+
+            self._set_qe_spin_polarisation(nl_settings["system"], user_system_settings or {}, entry)
+            self._set_qe_default_metal_smearing(nl_settings["system"], user_system_settings or {})
+
+            folder = (
+                f"CompetingPhases/{_get_competing_phase_folder_name(entry)}/espresso_std"
+            )
+            _write_qe_pw_input(
+                filepath=os.path.join(folder, "pw.in"),
+                structure=entry.structure,
+                namelist_settings=nl_settings,
+                kpoints=kgrid,
+                pseudo_map=pseudo_map,
+            )
+
+    def _set_qe_spin_polarisation(
+        self,
+        system_settings: dict,
+        user_system_settings: dict,
+        entry: ComputedEntry | ComputedStructureEntry,
+    ) -> None:
+        """
+        Set ``nspin = 2`` and ``tot_magnetization`` in the QE ``&SYSTEM``
+        namelist if the entry has a non-zero total magnetization.
+        Analogous to ``CompetingPhases._set_spin_polarisation`` for VASP
+        (``ISPIN`` / ``NUPDOWN``).
+        """
+        magnetization = entry.data.get("summary", {}).get("total_magnetization")
+        with contextlib.suppress(TypeError):
+            if magnetization > 0:
+                system_settings["nspin"] = user_system_settings.get("nspin", 2)
+                if "tot_magnetization" not in system_settings and int(magnetization) > 0:
+                    system_settings["tot_magnetization"] = int(magnetization)
+
+    def _set_qe_default_metal_smearing(
+        self,
+        system_settings: dict,
+        user_system_settings: dict,
+    ) -> None:
+        """
+        Set ``occupations = 'smearing'``, ``smearing = 'gaussian'``
+        and ``degauss = 0.005`` Ry in the QE ``&SYSTEM``
+        namelist for metallic phases.  Analogous to
+        ``CompetingPhases._set_default_metal_smearing`` for VASP
+        (``ISMEAR`` / ``SIGMA``).
+        """
+        system_settings["occupations"] = "smearing"
+        system_settings["smearing"] = user_system_settings.get("smearing", "gaussian")
+        system_settings["degauss"] = user_system_settings.get("degauss", 0.005)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# CompetingPhasesAnalyzerQE: parse QE outputs and compute chemical potentials
+# ──────────────────────────────────────────────────────────────────────────
+
+
+class CompetingPhasesAnalyzerQE(CompetingPhasesAnalyzer):
+    """
+    Extension of ``CompetingPhasesAnalyzer`` to parse competing phase energies
+    from Quantum ESPRESSO ``.xml`` output files.
+
+    Any QE output file with a ``.xml`` extension is parsed (e.g.
+    ``espresso.xml``).
+
+    Usage is identical to ``CompetingPhasesAnalyzer`` — pass the path to a
+    ``CompetingPhases`` directory tree (generated by
+    ``CompetingPhasesQE.qe_std_setup``) or a list of paths to QE
+    ``.xml`` files.
+    """
+
+    def __init__(
+        self,
+        composition: str | Composition,
+        entries: (
+            PathLike | list[PathLike] | list[ComputedEntry] | list[ComputedStructureEntry]
+        ) = "CompetingPhases",
+        subfolder: PathLike | None = "espresso_std",
+        verbose: bool = True,
+        processes: int | None = None,
+        check_compatibility: bool = True,
+    ):
+        r"""
+        Args:
+            composition (str, ``Composition``):
+                Composition of the host material (e.g. ``'MgO'``).
+            entries (PathLike, list[PathLike], list[ComputedEntry]):
+                Either a path to the base folder containing QE outputs (e.g.
+                ``"CompetingPhases"``; with subfolders like
+                ``formula_EaH_X/espresso_std/espresso.xml``), a list of paths
+                to QE ``.xml`` output files, or a list of pre-built
+                ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+               
+            subfolder (PathLike):
+                Subfolder within each calculation directory that contains the
+                QE ``.xml`` output. Default ``"espresso_std"``.
+            verbose (bool):
+                Whether to warn about directories where no ``.xml`` output
+                was found. Default ``True``.
+            processes (int):
+                Number of worker processes for parallel parsing. ``None``
+                (default) uses a single process.
+            check_compatibility (bool):
+                Whether to check pseudopotential and QE input parameter
+                consistency across the parsed entries. Default ``True``.
+        """
+        self.composition = Composition(composition)
+        self.elements: list[str] = [c.symbol for c in self.composition.elements]
+        self.intrinsic_elements = self.elements.copy()
+        self.extrinsic_elements: list[str] = []
+
+        if not isinstance(entries, str | PathLike | list):
+            raise TypeError(
+                f"`entries` must be either a path to a directory containing QE outputs, "
+                f"a list of paths to QE `.xml` output files, or a list of "
+                f"ComputedEntry/ComputedStructureEntry objects, got type {type(entries)} instead!"
+            )
+
+        self.espresso_paths: list[str] = []
+        self.vasprun_paths: list[str] = []  # kept for MSONable / as_dict compatibility
+        self.parsed_folders: list[str] = []
+
+        if isinstance(entries, str | PathLike) or (
+            isinstance(entries, list) and isinstance(entries[0], str | PathLike)
+        ):
+            self._from_espresso_outputs(
+                path=entries,
+                subfolder=subfolder,
+                verbose=verbose,
+                processes=processes,
+                check_compatibility=check_compatibility,
+            )
+        else:
+            self._from_entries_qe(entries, check_compatibility=check_compatibility)
+
+
+#TODO:  Some pymatgen-espresso helpers are not present, eg. Unconverged calculation warnings (Find every one of these discrepancies and fix - at least the ones relevant to doped)
+    def _from_espresso_outputs(
+        self,
+        path: PathLike | list[PathLike] = "CompetingPhases",
+        subfolder: PathLike | None = "espresso_std",
+        verbose: bool = True,
+        processes: int | None = None,
+        check_compatibility: bool = True,
+    ) -> None:
+        r"""
+        Parses competing phase energies from QE ``.xml`` output files,
+        generating ``ComputedStructureEntry``\s and then continuing
+        initialisation with ``_from_entries_qe``.
+        Analogous to ``CompetingPhasesAnalyzer._from_vaspruns`` for VASP.
+
+
+        Args:
+            path (PathLike or list):
+                Either a path to the base folder containing competing phase
+                calculation outputs (e.g.
+                ``path/formula_EaH_X/{subfolder}/espresso.xml``), or a list
+                of paths to QE ``.xml`` output files.
+            subfolder (PathLike):
+                Subfolder containing the QE ``.xml`` output within each
+                calculation directory. Default ``"espresso_std"``.
+            verbose (bool):
+                Whether to warn about skipped directories.
+            processes (int):
+                Number of worker processes for parallel parsing. Defaults to 1
+                (serial); QE XML files are small enough that the overhead of
+                multiprocessing is rarely worthwhile.
+            check_compatibility (bool):
+                Whether to check pseudopotential and QE input parameter
+                consistency. Default ``True``.
+        """
+        skipped_folders: list = []
+
+        if isinstance(path, list):
+            for p in path:
+                if ".xml" in str(p) and os.path.isfile(p):
+                    self.espresso_paths.append(str(p))
+                elif os.path.isdir(p) and (xml_files := sorted(Path(str(p)).glob("*.xml*"))):
+                    self.espresso_paths.append(str(xml_files[0]))
+                else:
+                    skipped_folders.append(p)
+
+        elif isinstance(path, PathLike):
+            for p in os.listdir(path):
+                if os.path.isdir(os.path.join(path, p)) and not str(p).startswith("."):
+                    xml_path = "null_directory"
+                    with contextlib.suppress(FileNotFoundError):
+                        xml_path, multiple = _get_output_files_and_check_if_multiple(
+                            ".xml", f"{os.path.join(path, p)}/{subfolder}"
+                        )
+                        if multiple:
+                            folder_name = (
+                                f"{os.path.join(path, p)}/{subfolder}"
+                                if subfolder
+                                else os.path.join(path, p)
+                            )
+                            warnings.warn(
+                                f"Multiple `.xml` files found in directory: "
+                                f"{folder_name}. Using {xml_path} to parse the calculation "
+                                f"energy and metadata."
+                            )
+
+                    if os.path.exists(xml_path):
+                        self.espresso_paths.append(xml_path)
+                    else:
+                        with contextlib.suppress(FileNotFoundError):
+                            xml_path, multiple = _get_output_files_and_check_if_multiple(
+                                ".xml", os.path.join(path, p)
+                            )
+                            if multiple:
+                                warnings.warn(
+                                    f"Multiple `.xml` files found in directory: "
+                                    f"{os.path.join(path, p)}. Using {xml_path} to parse."
+                                )
+                        if os.path.exists(xml_path):
+                            self.espresso_paths.append(xml_path)
+                        else:
+                            skipped_folders += [f"{p} or {p}/{subfolder}"]
+        else:
+            raise ValueError(
+                "`path` should either be a path to a folder (with competing phase "
+                "calculations), or a list of paths to QE `.xml` output files."
+            )
+
+        skipped_folders_for_warning = []
+        for folder_name in skipped_folders:
+            comps = []
+            for part in str(folder_name).split(" or ")[0].split("_"):
+                with contextlib.suppress(ValueError):
+                    comps.append(Composition(part))
+            if "EaH" in str(folder_name) or comps:
+                skipped_folders_for_warning.append(folder_name)
+
+        if skipped_folders_for_warning and verbose:
+            parent_folder_string = f" (in {path})" if isinstance(path, PathLike) else ""
+            warnings.warn(
+                f"`.xml` files could not be found in the following "
+                f"directories{parent_folder_string}, and so they will be skipped for "
+                f"parsing:\n" + "\n".join(str(f) for f in skipped_folders_for_warning)
+            )
+
+        self.entries: list = []
+        failed_parsing_dict: dict[str, list] = {}
+        processes = processes or 1
+
+        parsing_results = []
+        if processes > 1:
+            with pool_manager(processes) as pool:
+                for result in tqdm(
+                    pool.imap_unordered(
+                        _parse_entry_from_espresso_and_catch_exception, self.espresso_paths
+                    ),
+                    total=len(self.espresso_paths),
+                    desc="Parsing QE `.xml` outputs...",
+                ):
+                    parsing_results.append(result)
+        else:
+            for xml_path in tqdm(self.espresso_paths, desc="Parsing QE `.xml` outputs..."):
+                parsing_results.append(
+                    _parse_entry_from_espresso_and_catch_exception(xml_path)
+                )
+
+        electronic_unconverged: list = []
+        ionic_unconverged: list = []
+        for result in parsing_results:
+            if isinstance(result[0], ComputedEntry | ComputedStructureEntry):
+                self.entries.append(result[0])
+                self.parsed_folders.append(result[1])
+                if not result[2]:
+                    electronic_unconverged.append(result[1])
+                if not result[3]:
+                    ionic_unconverged.append(result[1])
+            else:
+                if str(result[0]) in failed_parsing_dict:
+                    failed_parsing_dict[str(result[0])] += [result[1]]
+                else:
+                    failed_parsing_dict[str(result[0])] = [result[1]]
+
+        if failed_parsing_dict:
+            warnings.warn(
+                "Failed to parse the following `.xml` files:\n(files: error)\n"
+                + "\n".join(
+                    [f"{paths}: {error}" for error, paths in failed_parsing_dict.items()]
+                )
+            )
+
+        for unconverged, label in zip(
+            [electronic_unconverged, ionic_unconverged],
+            ["Electronic", "Ionic"],
+            strict=False,
+        ):
+            if unconverged:
+                warnings.warn(
+                    f"{label} convergence was not reached for QE `.xml` outputs in:\n"
+                    + "\n".join(unconverged)
+                )
+
+        if not self.entries:
+            raise FileNotFoundError(
+                "No `.xml` files have been parsed, suggesting issues with parsing! "
+                "Please check that folders and input parameters are in the correct format "
+                "(see docstrings/tutorials)."
+            )
+
+        self._from_entries_qe(self.entries, check_compatibility=check_compatibility)
+
+    def _from_entries_qe(
+        self,
+        entries: list[ComputedEntry | ComputedStructureEntry],
+        check_compatibility: bool = True,
+    ) -> None:
+        r"""
+        Initialises ``CompetingPhasesAnalyzerQE`` from a list of
+        ``ComputedEntry``\s / ``ComputedStructureEntry``\s.
+
+        Runs the full phase-diagram logic from
+        ``CompetingPhasesAnalyzer._from_entries`` (with VASP compatibility
+        checks disabled), then performs QE-specific compatibility checks on
+        pseudopotential filenames and key ``&SYSTEM`` input parameters.
+
+        Args:
+            entries (list):
+                ``ComputedEntry`` / ``ComputedStructureEntry`` objects to
+                build the phase diagram from.
+            check_compatibility (bool):
+                Whether to compare pseudopotential filenames and QE input
+                parameters across entries. Default ``True``.
+        """
+        #TODO: add more QE relevant checks?
+        self._from_entries(entries, check_compatibility=False)
+
+        if not check_compatibility:
+            return
+
+        # QE input parameter consistency check (analogous to INCAR check):
+        sorted_with_qe_input = [
+            entry
+            for entry in [self.bulk_entry, *entries]
+            if entry.data.get("qe_input")
+        ]
+        if sorted_with_qe_input:
+            ref_entry = sorted_with_qe_input[0]
+            for entry in entries:
+                mismatches = _compare_qe_input_parameters(
+                    ref_entry.data["qe_input"],
+                    entry.data.get("qe_input", {}),
+                    warn=False,
+                )
+                entry.data["mismatching_QE_input_params"] = (
+                    mismatches if not isinstance(mismatches, bool) else False
+                )
+
+            mismatching_qe_input_warnings = sorted(
+                [
+                    (entry.name, set(entry.data.get("mismatching_QE_input_params")))
+                    for entry in entries
+                    if entry.data.get("mismatching_QE_input_params")
+                ],
+                key=lambda x: (len(x[1]), x[0]),
+                reverse=True,
+            )
+            if mismatching_qe_input_warnings:
+                warnings.warn(
+                    f"There are mismatching QE input parameters for (some of) your competing "
+                    f"phases calculations which are likely to cause errors in the parsed results "
+                    f"(energies & thus chemical potential limits). Found the following "
+                    f"differences:\n"
+                    f"(in the format: 'Entries: (QE parameter, value in entry, value in "
+                    f"reference))':\n"
+                    f"{_format_mismatching_qe_input_warning(mismatching_qe_input_warnings)}\n"
+                    f"Where {ref_entry.name} was used as the reference entry calculation.\n"
+                    f"In general, the same QE input settings should be used in all final "
+                    f"calculations for parameters which can affect energies!"
+                )
+
+        # Pseudopotential consistency check (analogous to POTCAR check):
+        sorted_with_pseudo = [
+            entry
+            for entry in [self.bulk_entry, *entries]
+            if entry.data.get("pseudo_filenames")
+        ]
+        if sorted_with_pseudo:
+            pseudo_ref_entry = sorted_with_pseudo[0]
+            for entry in entries:
+                pseudo_mismatches = _compare_pseudo_symbols(
+                    pseudo_ref_entry.data["pseudo_filenames"],
+                    entry.data.get("pseudo_filenames", []),
+                    warn=False,
+                    only_matching_elements=True,
+                )
+                entry.data["mismatching_pseudo_filenames"] = (
+                    pseudo_mismatches if not isinstance(pseudo_mismatches, bool) else False
+                )
+
+            mismatching_pseudo_warnings = sorted(
+                [
+                    (entry.name, entry.data.get("mismatching_pseudo_filenames"))
+                    for entry in entries
+                    if entry.data.get("mismatching_pseudo_filenames")
+                ],
+                key=lambda x: (len(x[1]), x[0]),
+                reverse=True,
+            )
+            if mismatching_pseudo_warnings:
+                joined_info_string = "\n".join(
+                    [
+                        f"{name}: {mismatching}"
+                        for name, mismatching in mismatching_pseudo_warnings
+                    ]
+                )
+                warnings.warn(
+                    f"There are mismatching pseudopotential filenames for (some of) your "
+                    f"competing phases calculations which are likely to cause errors in the "
+                    f"parsed results (energies & thus chemical potential limits). Found the "
+                    f"following differences:\n"
+                    f"(in the format: (entry pseudopotential, reference pseudopotential)):\n"
+                    f"{joined_info_string}\n"
+                    f"Where {pseudo_ref_entry.name} was used as the reference entry "
+                    f"calculation.\n"
+                    f"The same pseudopotentials should be used in all final calculations!"
+                )
+
