@@ -65,6 +65,7 @@ from doped.utils.parsing import (
     get_locpot,
     get_site_mapping_indices,
     get_wigner_seitz_radius,
+    get_atomic_site_potentials
 )
 from doped.utils.plotting import _get_backend, format_defect_name
 
@@ -112,6 +113,7 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
     obj_type: str = "locpot",
     dir_type: str = "",
     total_energy: list | float | None = None,
+    beta: float = 0.5,
 ):
     if isinstance(locpot_or_outcar_or_cube, PathLike):
         if obj_type == "locpot":
@@ -120,7 +122,14 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
         elif obj_type == "cube":
             return RunParser("espresso").get_cube(locpot_or_outcar_or_cube)
 
-        else:
+        else:  # OUTCAR for VASP, or a LOCPOT/.cube path for atomic site potentials
+            path_basename = os.path.basename(str(locpot_or_outcar_or_cube)).lower()
+            if path_basename.endswith(".cube") or "locpot" in path_basename:
+                site_potentials_dict = get_atomic_site_potentials(
+                    locpot_or_outcar_or_cube, beta=beta
+                )
+                return np.array(site_potentials_dict["site_potentials"])
+
             return get_core_potentials_from_outcar(  # otherwise OUTCAR
                 locpot_or_outcar_or_cube, dir_type=dir_type, total_energy=total_energy
             )
@@ -131,7 +140,7 @@ def _check_if_pathlike_and_get_locpot_or_core_pots(
         )
 
     if isinstance(locpot_or_outcar_or_cube, VolumetricData):
-        return RunParser("espresso")._get_atomic_site_potentials(locpot_or_outcar_or_cube)
+        return get_atomic_site_potentials(locpot_or_outcar_or_cube)
 
     if not isinstance(locpot_or_outcar_or_cube, Locpot | Outcar | VolumetricData | dict):
         raise TypeError(
@@ -376,6 +385,7 @@ def get_kumagai_correction(
     filename: PathLike | None = None,
     verbose: bool = True,
     style_file: PathLike | None = None,
+    beta: float = 0.5,
     **kwargs,
 ) -> CorrectionResult:
     """
@@ -584,7 +594,7 @@ def get_kumagai_correction(
 
         if outcar is not None:
             core_potentials_dict[key] = _check_if_pathlike_and_get_locpot_or_core_pots(
-                outcar, obj_type="outcar", dir_type=key, total_energy=total_energy
+                outcar, obj_type="outcar", dir_type=key, total_energy=total_energy, beta=beta
             )
         else:
             core_potentials_dict[key] = _get_and_check_metadata(
