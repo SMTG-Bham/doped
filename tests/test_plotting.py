@@ -1138,9 +1138,10 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "vac_Cd_mult32_0": "$\\it{V}\\!$ $_{Cd}^{0}$",
             "VSb_0": "$\\it{V}\\!$ $_{Sb}^{0}$",
             "VI_9": "$\\it{V}\\!$ $_{I}^{+9}$",
-            "V_Sb_0": "$\\it{V}\\!$ $_{Sb}^{0}$",
-            "V_I,_-2": "$\\it{V}\\!$ $_{I}^{-2}$",
-            "V_I_-2": "$\\it{V}\\!$ $_{I}^{-2}$",
+            "VCd_0": "$\\it{V}\\!$ $_{Cd}^{0}$",
+            "V_Sb_0": "V$_{Sb}^{0}$",
+            "V_I,_-2": "V$_{I}^{-2}$",
+            "V_I_-2": "V$_{I}^{-2}$",
             "VacSb_2": "$\\it{V}\\!$ $_{Sb}^{+2}$",
             "VacI_2": "$\\it{V}\\!$ $_{I}^{+2}$",
             "Vac_Sb_3": "$\\it{V}\\!$ $_{Sb}^{+3}$",
@@ -1149,6 +1150,20 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "VaI_9": "$\\it{V}\\!$ $_{I}^{+9}$",
             "Va_Sb_10": "$\\it{V}\\!$ $_{Sb}^{+10}$",
             "Va_I_4": "$\\it{V}\\!$ $_{I}^{+4}$",
+            "V_Cd_0": "V$_{Cd}^{0}$",  # V substitution on Cd
+            "V_on_Cd_0": "V$_{Cd}^{0}$",
+            "V_O_2": "V$_{O}^{+2}$",
+            "V_S_-1": "V$_{S}^{-1}$",
+            "V_i_0": "V$_i^{0}$",  # V interstitial
+            "Int_V_1_2": "V$_i^{+2}$",
+            "inter_3_V_-1": "V$_i^{-1}$",
+            "iV_0": "V$_i^{0}$",
+            "Cd_V_0": "Cd$_{V}^{0}$",  # substitution/antisite on a vanadium site
+            "Cd_on_V_0": "Cd$_{V}^{0}$",
+            "Te_V_-2": "Te$_{V}^{-2}$",
+            "v_V_0": "$\\it{V}\\!$ $_{V}^{0}$",  # vacancy *of* vanadium
+            "Vac_V_1": "$\\it{V}\\!$ $_{V}^{+1}$",
+            "vac_1_V_0": "$\\it{V}\\!$ $_{V}^{0}$",
             "i_Sb_1": "Sb$_i^{+1}$",
             "Sb_i_3": "Sb$_i^{+3}$",
             "iSb_8": "Sb$_i^{+8}$",
@@ -1232,6 +1247,13 @@ class DefectFormationEnergiesPlotsTestCase(DefectThermodynamicsSetupMixin):
             "v_Cd_-1": "$\\it{V}\\!$ $_{Cd}^{-1}$",
             "v_Te_2": "$\\it{V}\\!$ $_{Te}^{+2}$",
             "v_Tea_2": "$\\it{V}\\!$ $_{Te}^{+2}$",
+            # Vanadium (capitalised "V") with site info; cf. vacancy *of* vanadium (lowercase "v"):
+            "V_i_C3v_0": "V$_{i_{C_{3v}}}^{0}$",  # V interstitial
+            "V_i_Td_V2.83_0": "V$_{i_{T_{d}-V2.83}}^{0}$",
+            "Int_V_mult4_1": "V$_{i_{m4}}^{+1}$",
+            "V_Cd_C2v_0": "V$_{Cd_{C_{2v}}}^{0}$",  # V substitution
+            "Cd_V_C3v_0": "Cd$_{V_{C_{3v}}}^{0}$",  # substitution on a vanadium site
+            "vac_1_V_0": "$\\it{V}\\!$ $_{V_{1}}^{0}$",  # vacancy *of* vanadium
             "Te_Cd_s32_2": "Te$_{Cd_{s32}}^{+2}$",
             "Te_Cd_s32c_2": "Te$_{Cd_{s32c}}^{+2}$",
             "Cd_Te_+2": "Cd$_{Te}^{+2}$",

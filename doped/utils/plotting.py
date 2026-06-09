@@ -32,10 +32,12 @@ if TYPE_CHECKING:
     from doped.thermodynamics import DefectThermodynamics
 
 # Recognised vacancy/interstitial substrings in defect names, used by ``format_defect_name`` to infer
-# the defect type. Sorted longest-first so the most specific match is found first. Note "V"/"_V" are
-# treated as vacancies (not Vanadium) and "I"/"_I" are `not` treated as interstitials (could be iodine).
+# the defect type. Sorted longest-first so the most specific match is found first. Note capitalised "V"
+# is treated as Vanadium when separated from the following element by an underscore (e.g. "V_Sb"), but
+# as a vacancy when directly concatenated (e.g. "VSb"; handled in ``format_defect_name``). Likewise "I" is
+# treated as Iodine (not an interstitial).
 recognised_pre_vacancy_strings = sorted(
-    ["v_", "v", "va_", "Va_", "va", "Va", "V_", "V", "Vac", "vac", "Vac_", "vac_"],
+    ["v_", "v", "va_", "Va_", "va", "Va", "Vac", "vac", "Vac_", "vac_"],
     key=len,
     reverse=True,
 )
@@ -592,9 +594,14 @@ def format_defect_name(
 
     For example, converts ``"Cd_i_C3v_0"`` to ``"$Cd_{i}^{0}$"`` or
     ``"$Cd_{i_{C3v}}^{0}$"``, if ``include_site_info`` is ``True``), or
-    ``"$Cd_i$"`` if ``include_charge = False``. Note this assumes "V\_..."
-    means vacancy not Vanadium -- an edge case where manual re-formatting is
-    advised.
+    ``"$Cd_i$"`` if ``include_charge = False``.
+
+    Note that capitalised ``"V"`` is treated as Vanadium when separated from
+    the following element by an underscore (e.g. ``"V_Sb"``), but as a vacancy
+    when directly concatenated (e.g. ``"VSb"``); lowercase ``"v"`` or
+    ``"Va"``/``"Vac"`` are always vacancies. Likewise ``"I"`` is treated as
+    Iodine (not an interstitial; lowercase ``"i"`` or ``"Int"`` are used for
+    interstitials).
 
     Args:
         defect_species (str):
@@ -616,6 +623,10 @@ def format_defect_name(
     """
     if not isinstance(defect_species, str):  # check inputs
         raise TypeError(f"`defect_species` {defect_species} should be a string")
+
+    # capitalised "V" directly concatenated with an element (e.g. "VSb", "VI") treated as a vacancy.
+    defect_species = re.sub(r"^V(?=[A-Z])", "v_", defect_species)
+    # "V" separated from the element by an underscore (e.g. "V_Sb") is instead treated as Vanadium.
 
     if wout_charge is not None:
         warnings.warn(
