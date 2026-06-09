@@ -2307,14 +2307,6 @@ class Defect(core.Defect):
                 self.structure, timeout_1=5, timeout_2=5, break_early_if_expensive=True
             ):
                 self.structure = struct_w_oxi
-                if self.defect_type != core.DefectType.Interstitial:
-                    self._defect_site = min(
-                        self.structure.get_sites_in_sphere(
-                            self.site.coords,
-                            0.5,
-                        ),
-                        key=lambda x: x[1],
-                    )
             else:
                 self.oxi_state = "Undetermined"
                 return
@@ -2806,7 +2798,8 @@ class Defect(core.Defect):
         super().__setattr__(name, value)
         if name in ["site", "structure"]:
             # delete internal pre-computed attributes, so they are re-computed when needed:
-            for attr in ["_defect_site", "_volume", "_element_changes"]:
+            self.__dict__.pop("defect_site", None)  # invalidate ``defect_site`` cached_property
+            for attr in ["_volume", "_element_changes"]:
                 if hasattr(self, attr):
                     delattr(self, attr)
 
@@ -2835,7 +2828,7 @@ class Defect(core.Defect):
             )
         )
 
-    @property
+    @cached_property
     def defect_site(self) -> PeriodicSite:
         """
         The defect site in the structure.
@@ -2843,21 +2836,21 @@ class Defect(core.Defect):
         Re-written from ``pymatgen-analysis-defects`` version to be far more
         efficient, when used in loops (e.g. for calculating defect
         concentrations as functions of chemical potentials, temperature etc.).
+
+        Cached for efficiency; the cache is invalidated (in ``__setattr__``)
+        whenever ``structure`` or ``site`` are changed.
         """
         if self.defect_type == core.DefectType.Interstitial:
             return self.site  # same as self.defect_site
 
         # else defect_site is the closest site in ``structure`` to the provided ``site``:
-        if not hasattr(self, "_defect_site"):
-            self._defect_site = min(
-                self.structure.get_sites_in_sphere(
-                    self.site.coords,
-                    0.5,
-                ),
-                key=lambda x: x[1],
-            )
-
-        return self._defect_site
+        return min(
+            self.structure.get_sites_in_sphere(
+                self.site.coords,
+                0.5,
+            ),
+            key=lambda x: x[1],
+        )
 
     @property
     def volume(self) -> float:

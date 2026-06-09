@@ -3777,12 +3777,10 @@ class DefectThermodynamics(MSONable):
                         for concentration_dict in matching_concentration_dicts
                     )
                     for concentration_dict in matching_concentration_dicts:
-                        concentration_dict["Concentration (per site)"] = float(
-                            concentration_dict["Concentration (per site)"]
-                        ) / (1 + summed_per_site_concentration)
-                        concentration_dict["Concentration (cm^-3)"] = float(
-                            concentration_dict["Concentration (cm^-3)"]
-                        ) / (1 + summed_per_site_concentration)
+                        for conc_key in ["Concentration (per site)", "Concentration (cm^-3)"]:
+                            concentration_dict[conc_key] = float(concentration_dict[conc_key]) / (
+                                1 + summed_per_site_concentration
+                            )
 
         for concentration_dict in energy_concentration_list:
             if not per_site:
@@ -4418,8 +4416,6 @@ class DefectThermodynamics(MSONable):
             )
         )
 
-        # TODO: Could be faster through just formation energy ratios, but hard to directly incorporate
-        #  degeneracy, but ...
         get_constrained_concentrations = partial(
             self._get_constrained_concentrations,
             total_concentrations=total_concentrations,

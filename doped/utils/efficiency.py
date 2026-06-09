@@ -177,7 +177,7 @@ def _fast_get_composition_from_sites(sites: Sequence[Site], assume_full_occupanc
         if assume_full_occupancy:
             elem_map[next(iter(site._species))] += 1
         else:
-            for species, occu in site.species.items():
+            for species, occu in site._species.items():
                 elem_map[species] += occu
     return Composition(elem_map)
 
@@ -206,15 +206,42 @@ def _parse_site_species_str(site: Site, wout_charge: bool = False) -> str:
             Species string of the :class:`~pymatgen.core.sites.Site`, with or
             without charge information.
     """
-    species = site._species
-    if isinstance(species, Element):
-        return species.symbol
-    if isinstance(species, str):
-        species_string = species
-    elif isinstance(species, Composition | dict):
-        species_string = str(next(iter(species)))
+    return _parse_species_str(site._species, wout_charge=wout_charge)
+
+
+def _parse_species_str(sp_el: Species | Element, wout_charge: bool = False) -> str:
+    """
+    Get the string representation of a
+    :class:`~pymatgen.core.periodic_table.Species` or
+    :class:`~pymatgen.core.periodic_table.Element`, with or without charge
+    information.
+
+    Much faster than direct ``str(sp_el)``.
+
+    Args:
+        sp_el (Species | Element):
+            :class:`~pymatgen.core.periodic_table.Species` or
+            :class:`~pymatgen.core.periodic_table.Element` for which to get the
+            string representation.
+        wout_charge (bool):
+            Whether to remove charge information from the species string.
+            Default is ``False``.
+
+    Returns:
+        str:
+            String representation of ``sp_el``, with or without charge
+            information.
+    """
+    if isinstance(sp_el, str):
+        species_string = sp_el
+    elif isinstance(sp_el, Species) and wout_charge:
+        return sp_el.element.symbol  # no charge info, return element sybmol
+    elif isinstance(sp_el, Element):
+        return sp_el.symbol
+    elif isinstance(sp_el, Composition | Species):
+        species_string = str(sp_el)
     else:
-        raise ValueError(f"Unexpected species type: {type(species)}")
+        species_string = str(Composition(sp_el))
 
     # remove all digits, +, - or . from species string, if `wout_charge` is True
     return species_string.translate(_TRANSLATE_REMOVE_CHARGE) if wout_charge else species_string
@@ -231,22 +258,12 @@ def _periodic_site__hash__(self):
         else {}
     )
 
-    species_info = tuple(str(el) for el in self.species)  # string representation is used for species hash
+    species_info = tuple(str(el) for el in self._species)  # string representation is used for species hash
+    base_hash_tuple = (species_info, self.lattice, tuple(self.frac_coords))
     try:
-        return hash(
-            (
-                species_info,
-                tuple(self.coords),
-                frozenset(property_dict.items()),
-            )
-        )
+        return hash(base_hash_tuple + frozenset(property_dict.items()))
     except Exception:  # hash without the property dict
-        return hash(
-            (
-                species_info,
-                tuple(self.coords),
-            )
-        )
+        return hash(base_hash_tuple)
 
 
 def cache_ready_PeriodicSite__eq__(self, other):
