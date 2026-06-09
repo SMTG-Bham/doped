@@ -318,7 +318,8 @@ def _get_output_files_and_check_if_multiple(
     Args:
         output_file (PathLike):
             The filename to search for (case-insensitive). Should be either
-            ``vasprun.xml``, ``OUTCAR``, ``LOCPOT`` or ``PROCAR`` or ``.cube``.
+            ``vasprun.xml``, ``OUTCAR``, ``LOCPOT``, ``PROCAR``, ``.cube`` or
+            ``.xml`` (matching any file with that extension).
         path (PathLike):
             The path to the directory to search in.
 
@@ -977,6 +978,7 @@ def get_site_mapping_indices(
     dists_only: bool = False,
     anonymous: bool = False,
     ignored_species: list[str] | None = None,
+    frac_coords: bool = True,
 ):
     """
     Get the site mapping indices between two structures (from ``struct1`` to
@@ -985,19 +987,17 @@ def get_site_mapping_indices(
     The template structure may have a different species ordering to the
     ``input_structure``.
 
-    NOTE: This assumes that both structures have the same lattice definitions
-    (i.e. that they match, and aren't rigidly translated/rotated with respect
-    to each other), which is mostly the case unless we have a mismatching
-    defect/bulk supercell (in which case the
-    ``check_atom_mapping_far_from_defect`` warning should be thrown anyway
-    during parsing). Currently, this function is only used for analysing site
-    displacements in the ``displacements`` module so this is fine (user will
-    already have been warned at this point if there is a possible mismatch).
+    NOTE: if ``frac_coords = True`` (default), this assumes that both
+    structures have the same lattice definitions (i.e. that they match, and
+    aren't rigidly translated/rotated with respect to each other), which is
+    mostly the case unless we have a mismatching defect/bulk supercell (in
+    which case the ``check_atom_mapping_far_from_defect`` warning should be
+    thrown anyway during parsing).
 
     Args:
-        struct1 (Structure):
+        struct1 (|Structure|):
             The input structure.
-        struct2 (Structure):
+        struct2 (|Structure|):
             The template structure.
         species (str):
             If provided, only sites of this species will be considered when
@@ -1019,6 +1019,12 @@ def get_site_mapping_indices(
         ignored_species (list[str]):
             A list of species to ignore when matching sites. Default is no
             species ignored.
+        frac_coords (bool):
+            Whether to match sites based on their fractional coordinate
+            distances (i.e. assuming PBC with matching lattice definitions,
+            using the lattice of ``struct1``)(default). If ``False``, instead
+            matches sites based on distances between their Cartesian
+            coordinates, with no consideration of PBC.
 
     Returns:
         list:
@@ -1027,10 +1033,20 @@ def get_site_mapping_indices(
             ``True``, then only the distances between matched sites are
             returned.
     """
+
+    def get_coords(site: PeriodicSite):
+        return list(site.frac_coords) if frac_coords else list(site.coords)
+
+    def get_distances(
+        coords1: np.ndarray | list, coords2: np.ndarray | list, lattice: Lattice | None = None
+    ):
+        if frac_coords:
+            assert lattice is not None, "Lattice needs to be given if frac_coords is True!"
+            return lattice.get_all_distances(coords1, coords2)
+        return all_distances(coords1, coords2)
+
     ## Generate a site matching table between the input and the template
-    min_dist_with_index = []
-    all_input_fcoords = [list(site.frac_coords) for site in struct1]
-    all_template_fcoords = [list(site.frac_coords) for site in struct2]
+    min_dist_with_index: list[tuple] = []
     s1_species_symbols = (
         [
             species.symbol
@@ -1044,60 +1060,69 @@ def get_site_mapping_indices(
     for s1_species_symbol in s1_species_symbols:
         if species is not None and s1_species_symbol != species:
             continue
-        input_fcoords = [
-            list(site.frac_coords)
-            for site in struct1
+        # Build (struct1_index, coords) pairs for this species, preserving ``struct1`` order:
+        species_input = [
+            (i, get_coords(site))
+            for i, site in enumerate(struct1)
             if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
-        template_fcoords = [
-            list(site.frac_coords)
-            for site in struct2
-            if (site.specie.symbol == s1_species_symbol or anonymous)
+        input_coords = [coords for _, coords in species_input]
+        species_s2_indices = [
+            i for i, site in enumerate(struct2) if (site.specie.symbol == s1_species_symbol or anonymous)
         ]
+        template_coords = [get_coords(struct2[i]) for i in species_s2_indices]
 
-        dmat = struct1.lattice.get_all_distances(input_fcoords, template_fcoords)
-        for index, coords in enumerate(all_input_fcoords):
-            if coords in input_fcoords:
-                dists = dmat[input_fcoords.index(coords)]
-                if not dists.size:
+        dmat = (
+            get_distances(input_coords, template_coords, lattice=struct1.lattice)
+            if template_coords
+            else None
+        )
+
+        if not allow_duplicates and dmat is not None:
+            # Use linear assignment for order-independent optimal matching.
+            # get_linear_assignment_solution returns (col_ind, total_cost), where col_ind[i] is the
+            # template index assigned to input row i (requires n_rows <= n_cols). For n > m, transpose
+            # the problem (assign each template to one input) and invert the mapping:
+            if len(input_coords) <= len(template_coords):
+                tmpl_col_indices, _ = get_linear_assignment_solution(dmat)
+                input_to_template = dict(enumerate(tmpl_col_indices.tolist()))
+            else:
+                # dmat.T is (n_templates, n_inputs): each template row j is assigned input column
+                # input_col_indices[j]. We need input_idx -> tmpl_idx for the loop below:
+                input_col_indices, _ = get_linear_assignment_solution(dmat.T)
+                input_to_template = {int(input_col_indices[j]): j for j in range(len(template_coords))}
+        else:
+            input_to_template = None
+
+        for input_idx, (index, _) in enumerate(species_input):
+            if dmat is None:
+                min_dist_with_index.append((None, index) if dists_only else (None, index, None))
+                continue
+
+            if input_to_template is not None:
+                if input_idx not in input_to_template:
+                    # No unique template available (more inputs than templates for this species)
                     min_dist_with_index.append((None, index) if dists_only else (None, index, None))
                     continue
+                tmpl_idx = input_to_template[input_idx]
 
-                dists_argmin = dists.argmin()
-                current_dist = dists[dists_argmin]
-                template_fcoord = template_fcoords[dists_argmin]
-                template_index = None  # only compute if needed
+            else:  # allow_duplicates=True: each input independently picks its closest template
+                dists = dmat[input_idx]
+                tmpl_idx = dists.argmin()
 
-                if current_dist > threshold:
-                    template_index = all_template_fcoords.index(template_fcoord)
-                    site_a = struct1[index]
-                    site_b = struct2[template_index]
-                    warnings.warn(
-                        f"Large site displacement {current_dist:.2f} Å detected when matching atomic "
-                        f"sites: {site_a} -> {site_b}."
-                    )
+            current_dist = float(dmat[input_idx, tmpl_idx])
+            # Map species-local template index (tmpl_idx) to global struct2 index (species_s2_indices):
+            template_index = species_s2_indices[tmpl_idx]
 
-                if dists_only:
-                    min_dist_with_index.append(
-                        (
-                            current_dist,
-                            index,
-                        )
-                    )
-                else:
-                    template_index = template_index or all_template_fcoords.index(template_fcoord)
-                    min_dist_with_index.append(
-                        (
-                            current_dist,
-                            index,
-                            template_index,
-                        )
-                    )
+            if current_dist > threshold:
+                warnings.warn(
+                    f"Large site displacement {current_dist:.2f} Å detected when matching atomic sites: "
+                    f"{struct1[index]} -> {struct2[template_index]}."
+                )
 
-                if not allow_duplicates:
-                    # drop template_fcoord from template_fcoords and dmat to avoid duplicates:
-                    template_fcoord = template_fcoords.pop(dists.argmin())
-                    dmat = np.delete(dmat, dists.argmin(), axis=1)
+            min_dist_with_index.append(
+                (current_dist, index) if dists_only else (current_dist, index, template_index)
+            )
 
     if not min_dist_with_index:
         raise RuntimeError(
@@ -2175,26 +2200,31 @@ class RunParserEspresso:
     @classmethod
     def _get_cube_dict(cls, bulk_path, quiet=False):
 
-        bulk_cube_path, multiple = _get_output_files_warn_if_multiple(filename, bulk_path, dir_type="bulk")
+        bulk_cube_path, multiple = _get_output_files_warn_if_multiple(".cube", bulk_path, dir_type="bulk")
 
         bulk_cube = cls.get_cube(bulk_cube_path)
         return {str(k): bulk_cube.get_average_along_axis(k) for k in [0, 1, 2]}
 
     @classmethod
     def _get_bulk_site_potentials(
-        cls, bulk_path: PathLike, quiet: bool = False, total_energy: list | float | None = None
+        cls, bulk_path: PathLike, quiet: bool = False, total_energy: list | float | None = None, beta: float = 0.5
     ):
-        # TODO bulk site potentials need to be read from cube files
-        bulk_cube_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path)
+        # try QE .cube first, then fall back to VASP LOCPOT:
+        bulk_vol_data_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path)
+        output_file = ".cube"
+        if not os.path.exists(bulk_vol_data_path):
+            bulk_vol_data_path, multiple = _get_output_files_and_check_if_multiple("LOCPOT", bulk_path)
+            output_file = "LOCPOT"
         if multiple and not quiet:
             _multiple_files_warning(
-                ".cube",
+                output_file,
                 bulk_path,
-                bulk_cube_path,
+                bulk_vol_data_path,
                 dir_type="bulk",
             )
-        return cls._get_core_site_potentials(bulk_cube_path)
+        return get_atomic_site_potentials(bulk_vol_data_path, beta=beta)
 
+    #TODO: Not needed?
     @classmethod
     def _get_neutral_nelect_from_pp(cls, vasprun: Vasprun, pp_folder: str | Path) -> float:
         """
@@ -2458,70 +2488,84 @@ class RunParserEspresso:
         en_per_atom = energy / n_atoms
         return en_per_atom
 
-    @classmethod
-    def _get_atomic_site_potentials(cls, cube_path: PathLike, beta: float = 0.5):
-        """
-        Calculates atomic gaussian average site potential.
+def get_atomic_site_potentials(volumetric_data_path: PathLike | VolumetricData, beta: float = 0.5):
+    """
+            Calculates atomic gaussian average site potential.
 
-        cube_path:  cube path for the potential
+            cube_path:  cube path for the potential
 
-        beta : Gaussian broadening factor at atomic sites (in bohr)
+            beta : Gaussian broadening factor at atomic sites (in bohr)
 
-        Returns:
-             dict with keys:
-                 atomic sites
-                 Positions
-                 site_potential
-        """
-        cube_data = VolumetricData.from_cube(cube_path)
-        nx, ny, nz = cube_data.data["total"].shape
-        lattice = cube_data.structure.lattice
+            Returns:
+                 dict with keys:
+                     atomic sites
+                     Positions
+                     site_potential
+            """
+    if isinstance(volumetric_data_path, VolumetricData):
+        volumetric_data = volumetric_data_path
+        is_cube = False
+    elif str(volumetric_data_path).endswith('.cube'):
+        volumetric_data = VolumetricData.from_cube(volumetric_data_path)
+        is_cube = True
+    else:
+        volumetric_data = get_locpot(volumetric_data_path)
+        is_cube = False
 
-        reci_latt = lattice.reciprocal_lattice
-        # integer Miller indices along each reciprocal axis, FFT-ordered:
-        nx_idx = np.roll(np.arange(-nx // 2, nx // 2, 1, dtype=int), int(nx // 2))
-        ny_idx = np.roll(np.arange(-ny // 2, ny // 2, 1, dtype=int), int(ny // 2))
-        nz_idx = np.roll(np.arange(-nz // 2, nz // 2, 1, dtype=int), int(nz // 2))
+    nx, ny, nz = volumetric_data.dim
+    lattice = volumetric_data.structure.lattice
 
-        Nx, Ny, Nz = np.meshgrid(nx_idx, ny_idx, nz_idx, indexing="ij")
-        # G = n1*b1 + n2*b2 + n3*b3; compute |G|^2 using the reciprocal metric tensor to correctly handle
-        # non-orthorhombic cells:
-        recip_matrix = reci_latt.matrix  # rows are b1, b2, b3
-        metric = recip_matrix @ recip_matrix.T  # G_ij = bi . bj
-        g2 = (
-            Nx**2 * metric[0, 0]
-            + Ny**2 * metric[1, 1]
-            + Nz**2 * metric[2, 2]
+    reci_latt = lattice.reciprocal_lattice
+    # integer Miller indices along each reciprocal axis, FFT-ordered:
+    nx_idx = np.roll(np.arange(-nx // 2, nx // 2, 1, dtype=int), int(nx // 2))
+    ny_idx = np.roll(np.arange(-ny // 2, ny // 2, 1, dtype=int), int(ny // 2))
+    nz_idx = np.roll(np.arange(-nz // 2, nz // 2, 1, dtype=int), int(nz // 2))
+
+    Nx, Ny, Nz = np.meshgrid(nx_idx, ny_idx, nz_idx, indexing="ij")
+    # G = n1*b1 + n2*b2 + n3*b3; compute |G|^2 using the reciprocal metric tensor to correctly handle
+    # non-orthorhombic cells:
+    recip_matrix = reci_latt.matrix  # rows are b1, b2, b3
+    metric = recip_matrix @ recip_matrix.T  # G_ij = bi . bj
+    g2 = (
+            Nx ** 2 * metric[0, 0]
+            + Ny ** 2 * metric[1, 1]
+            + Nz ** 2 * metric[2, 2]
             + 2 * Nx * Ny * metric[0, 1]
             + 2 * Nx * Nz * metric[0, 2]
             + 2 * Ny * Nz * metric[1, 2]
-        )
+    )
+    if is_cube:  # QE cube: potential in Ry, beta given in bohr (atomic units)
+        pot = volumetric_data.data["total"] * -Ry_to_eV
+        beta_angstrom = beta * BOHR_TO_ANGSTROM
+    else:  # VASP LOCPOT: potential already in eV, and beta given directly in angstroms
+        pot = -volumetric_data.data["total"]
+        beta_angstrom = beta
 
-        pot = cube_data.data["total"] * -Ry_to_eV
-        v_G = np.fft.fftn(pot)
-        beta_angstrom = beta * BOHR_TO_ANGSTROM  # TODO: Just use beta in units of Angstrom later?
-        v_G *= np.exp(-0.5 * (beta_angstrom**2) * g2)  # Gaussian broadening in reciprocal space
-        v_R = np.real(np.fft.ifftn(v_G))
+    v_G = np.fft.fftn(pot)
+    v_G *= np.exp(-0.5 * (beta_angstrom ** 2) * g2)  # Gaussian broadening in reciprocal space
+    v_R = np.real(np.fft.ifftn(v_G))
 
-        v_R_atomic_sites = interpolate_potentials_at_atomic_sites(v_R, cube_data)
+    v_R_atomic_sites = interpolate_potentials_at_atomic_sites(v_R, volumetric_data)
 
-        sites = cube_data.structure.sites
-        coords = np.array([site.coords for site in sites])
+    sites = volumetric_data.structure.sites
+    coords = np.array([site.coords for site in sites])
 
-        efnv_plot_data_dict = {"positions": [], "site_potentials": [], "atoms": []}
+    efnv_plot_data_dict = {"positions": [], "site_potentials": [], "atoms": []}
 
-        efnv_plot_data_dict["site_potentials"].extend(v_R_atomic_sites)
-        efnv_plot_data_dict["positions"].extend(coords)
-        efnv_plot_data_dict["atoms"].extend(site.specie.symbol for site in sites)
+    efnv_plot_data_dict["site_potentials"].extend(v_R_atomic_sites)
+    efnv_plot_data_dict["positions"].extend(coords)
+    efnv_plot_data_dict["atoms"].extend(site.specie.symbol for site in sites)
 
-        return efnv_plot_data_dict
+    return efnv_plot_data_dict
+
+
 
 
 def interpolate_potentials_at_atomic_sites(
     smoothed_potential: np.ndarray,
-    cube_data: VolumetricData,
+    volumetric_data: VolumetricData,
 ):
-    nx, ny, nz = cube_data.data["total"].shape
+    nx, ny, nz = volumetric_data.dim
 
     xpoints = np.linspace(0.0, 1.0, nx, endpoint=False)
     ypoints = np.linspace(0.0, 1.0, ny, endpoint=False)
@@ -2546,6 +2590,355 @@ def interpolate_potentials_at_atomic_sites(
         method="cubic",  # 'linear' is faster, but 'cubic' is more accurate for interpolation
         bounds_error=True,
     )
-    frac_coords = np.mod(cube_data.structure.frac_coords, 1.0)
+    frac_coords = np.mod(volumetric_data.structure.frac_coords, 1.0)
 
     return interpolator(frac_coords)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# QE convergence + relaxation input generation from a bare ``Structure``
+# ──────────────────────────────────────────────────────────────────────────
+
+import copy as _copy
+
+from pymatgen.io.espresso.inputs.pwin import (
+    AtomicPositionsCard,
+    AtomicSpeciesCard,
+    CellNamelist,
+    CellParametersCard,
+    ControlNamelist,
+    ElectronsNamelist,
+    IonsNamelist,
+    KPointsCard,
+    PWin,
+    SystemNamelist,
+)
+from pymatgen.io.vasp.inputs import Kpoints as _Kpoints
+
+# ``doped`` package directory — equivalent to ``doped.vasp.MODULE_DIR``, but
+# computed locally to avoid a circular import (``doped.vasp`` imports from
+# ``doped.generation``, which imports this module).
+_DOPED_MODULE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+_QE_SSSP_CONVERGENCE_DEFAULTS: dict = loadfn(
+    os.path.join(_DOPED_MODULE_DIR, "QE_sets/SSSP_Convergence_set.yaml")
+)
+_QE_SSSP_PSEUDO_FILENAMES: dict = {
+    element: metadata["filename"]
+    for element, metadata in loadfn(
+        os.path.join(_DOPED_MODULE_DIR, "QE_sets/SSSP_1.3.0_PBE_efficiency.json")
+    ).items()
+}
+
+
+class _GammaKPointsCard(KPointsCard):
+    """``KPointsCard`` that emits an empty body for ``gamma`` (Γ-only) sampling."""
+
+    def get_body(self, indent: str) -> str:
+        if self.option == "gamma":
+            return ""
+        return super().get_body(indent)
+
+
+def _kpoints_grid_from_reciprocal_density(structure: Structure, reciprocal_density: int) -> list[int]:
+    """``[kx, ky, kz]`` Monkhorst-Pack grid at the given k-points-per-Å^-3 density."""
+    kpoints_obj = _Kpoints.automatic_density_by_vol(structure, kppvol=reciprocal_density)
+    return [int(k) for k in kpoints_obj.kpts[0]]
+
+
+def _write_qe_pw_input(
+    filepath: str,
+    structure: Structure,
+    namelist_settings: dict[str, dict],
+    kpoints: list[int] | None,
+    pseudo_map: dict[str, str] | None = None,
+) -> None:
+    """
+    Write a QE ``pw.in`` for ``structure``.
+
+    Args:
+        filepath: Destination path for ``pw.in`` (parent dirs are created).
+        structure: Structure to write.
+        namelist_settings: ``{namelist: {key: value, ...}}`` for the QE
+            ``control``/``system``/``electrons``/``ions``/``cell`` namelists.
+        kpoints: ``[kx, ky, kz]`` Monkhorst-Pack grid, or ``None`` for
+            Γ-only sampling.
+        pseudo_map: ``{element: UPF filename}`` overrides on top of the SSSP
+            defaults; missing elements fall back to ``"{element}.upf"``.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+    unique_species = sorted(
+        {str(el) for el in structure.species}, key=lambda s: Element(s).Z
+    )
+    resolved_pseudos = {
+        sp: _QE_SSSP_PSEUDO_FILENAMES.get(sp, f"{sp}.upf") for sp in unique_species
+    }
+    resolved_pseudos.update(pseudo_map or {})
+
+    fixed_cell_calcs = {"relax", "scf", "nscf", "bands"}
+    calc_type = namelist_settings.get("control", {}).get("calculation", "vc-relax")
+
+    namelist_classes = {
+        "control": ControlNamelist,
+        "system": SystemNamelist,
+        "electrons": ElectronsNamelist,
+        "ions": IonsNamelist,
+        "cell": CellNamelist,
+    }
+    namelists: dict = {}
+    for nl_name, nl_cls in namelist_classes.items():
+        if nl_name not in namelist_settings:
+            continue
+        if nl_name == "cell" and calc_type in fixed_cell_calcs:
+            continue
+        namelists[nl_name] = nl_cls(namelist_settings[nl_name])
+
+    if kpoints is None:
+        k_points_card: KPointsCard = _GammaKPointsCard("gamma", [], [], [], [], [])
+    else:
+        kx, ky, kz = kpoints
+        k_points_card = KPointsCard("automatic", [kx, ky, kz], [0, 0, 0], [], [], [])
+
+    cards = {
+        "atomic_species": AtomicSpeciesCard(
+            None,
+            unique_species,
+            [float(Element(sp).atomic_mass) for sp in unique_species],
+            [resolved_pseudos[sp] for sp in unique_species],
+        ),
+        "atomic_positions": AtomicPositionsCard(
+            "angstrom",
+            [site.species_string for site in structure],
+            np.array([site.coords for site in structure]),
+            None,
+        ),
+        "k_points": k_points_card,
+        "cell_parameters": CellParametersCard(
+            "angstrom",
+            structure.lattice.matrix[0],
+            structure.lattice.matrix[1],
+            structure.lattice.matrix[2],
+        ),
+    }
+
+    PWin(namelists, cards).to_file(filepath)
+
+
+def _build_qe_base_settings(
+    structure: Structure,
+    pseudo_dir: str,
+    is_metal: bool,
+    user_control_settings: dict | None,
+    user_system_settings: dict | None,
+    user_electron_settings: dict | None,
+) -> dict:
+    """
+    Build the per-structure base namelist dict from the SSSP convergence
+    YAML defaults: sets ``ibrav=0``, ``nat``, ``ntyp``, ``pseudo_dir``,
+    optional metallic smearing, and merges any user overrides.
+    """
+    base = _copy.deepcopy(_QE_SSSP_CONVERGENCE_DEFAULTS)
+    base["control"]["pseudo_dir"] = pseudo_dir
+    base["control"].update(user_control_settings or {})
+    base["system"].update(user_system_settings or {})
+    base["electrons"].update(user_electron_settings or {})
+
+    base["system"]["ibrav"] = 0
+    base["system"]["nat"] = len(structure)
+    base["system"]["ntyp"] = len(set(structure.species))
+
+    if is_metal:
+        base["system"].setdefault("occupations", "smearing")
+        base["system"].setdefault("smearing", "gaussian")
+        base["system"].setdefault("degauss", 0.005)
+
+    return base
+
+
+def qe_convergence_setup_from_structure(
+    structure: Structure,
+    output_dir: PathLike = "QE_convergence",
+    kpoint_density_range: tuple = (20, 200, 20),
+    kpoint_sweep_ecutwfc: int | None = None,
+    ecut_range: tuple = (20, 90, 10),
+    ecut_sweep_kpoint_density: int = 100,
+    is_metal: bool = False,
+    pseudo_dir: str = "./pseudo_folder_name/",
+    pseudo_map: dict | None = None,
+    user_control_settings: dict | None = None,
+    user_system_settings: dict | None = None,
+    user_electron_settings: dict | None = None,
+) -> dict[str, list[str]]:
+    """
+    Generate QE ``pw.in`` files for k-point and plane-wave cutoff
+    (``ecutwfc``) convergence testing from a single ``pymatgen``
+    ``Structure``.
+
+    Elements are read from ``structure.species`` and matched against the
+    bundled SSSP 1.3.0 PBE Efficiency library (``doped/QE_sets``); the
+    resolved UPF filenames are written into the ``ATOMIC_SPECIES`` card of
+    every ``pw.in``. ``pseudo_map`` can override individual entries or
+    supply pseudos for elements absent from SSSP.
+
+    Two sub-trees are written under ``output_dir``:
+
+    - ``kpoint_converge/k<kx>_<ky>_<kz>/pw.in`` — ``ecutwfc`` held at
+      ``kpoint_sweep_ecutwfc`` (or the set default if ``None``), k-grid
+      swept over ``kpoint_density_range``. Duplicate grids produced by
+      nearby densities are skipped.
+    - ``ecut_convergence/ecutwfc_<N>/pw.in`` — k-grid held at
+      ``ecut_sweep_kpoint_density``, ``ecutwfc`` swept over ``ecut_range``.
+      ``ecutrho`` is left at the set default.
+
+    After running these and choosing converged values, call
+    :func:`qe_relax_setup_from_structure` (with those converged values
+    and, ideally, the relaxed structure) to write the final ``vc-relax``.
+
+    Args:
+        structure: Input structure (no MP lookup is performed).
+        output_dir: Root folder for the two sub-trees. Default
+            ``"QE_convergence"``.
+        kpoint_density_range: ``(min, max, step)`` reciprocal k-point
+            density (Å^-3) sweep for the k-grid test (``max`` exclusive,
+            matching ``range``). Default ``(20, 200, 20)``.
+        kpoint_sweep_ecutwfc: ``ecutwfc`` (Ry) held fixed while the
+            k-grid is swept. ``None`` (default) keeps the YAML set default
+            (60 Ry). 
+        ecut_range: ``(min, max, step)`` ``ecutwfc`` (Ry) sweep for the
+            cutoff test (``max`` inclusive). Default ``(20, 90, 10)``.
+        ecut_sweep_kpoint_density: k-point density (Å^-3) held fixed
+            while ``ecutwfc`` is swept. Default 100.
+        is_metal: If ``True``, set ``occupations='smearing'``,
+            ``smearing='gaussian'``, ``degauss=0.005`` in ``&SYSTEM``.
+        pseudo_dir: Path written to ``&CONTROL.pseudo_dir``.
+        pseudo_map: ``{element: UPF filename}`` overrides on top of SSSP.
+        user_control_settings, user_system_settings, user_electron_settings:
+            Per-namelist overrides merged on top of the YAML defaults.
+
+    Returns:
+        ``{"kpoint_converge": [...], "ecut_convergence": [...]}`` listing
+        every ``pw.in`` path written.
+    """
+    base = _build_qe_base_settings(
+        structure,
+        pseudo_dir,
+        is_metal,
+        user_control_settings,
+        user_system_settings,
+        user_electron_settings,
+    )
+
+    written: dict[str, list[str]] = {"kpoint_converge": [], "ecut_convergence": []}
+
+    # ── k-point convergence: vary k-grid at a fixed ecutwfc ──
+    kp_min, kp_max, kp_step = kpoint_density_range
+    kpoint_scf = _copy.deepcopy(base)
+    kpoint_scf["control"]["calculation"] = "scf"
+    if kpoint_sweep_ecutwfc is not None:
+        kpoint_scf["system"]["ecutwfc"] = kpoint_sweep_ecutwfc
+    seen_kgrids: set[tuple[int, int, int]] = set()
+    for density in range(kp_min, kp_max, kp_step):
+        kgrid = _kpoints_grid_from_reciprocal_density(structure, density)
+        kgrid_tuple = (kgrid[0], kgrid[1], kgrid[2])
+        if kgrid_tuple in seen_kgrids:
+            continue
+        seen_kgrids.add(kgrid_tuple)
+        kname = "k" + ("_" * (kgrid[0] // 10)) + ",".join(str(k) for k in kgrid)
+        filepath = os.path.join(str(output_dir), "kpoint_converge", kname, "pw.in")
+        _write_qe_pw_input(
+            filepath=filepath,
+            structure=structure,
+            namelist_settings=kpoint_scf,
+            kpoints=kgrid,
+            pseudo_map=pseudo_map,
+        )
+        written["kpoint_converge"].append(filepath)
+
+    # ── ecutwfc convergence: vary ecutwfc at a fixed k-grid ──
+    ecut_kgrid = _kpoints_grid_from_reciprocal_density(structure, ecut_sweep_kpoint_density)
+    ecut_min, ecut_max, ecut_step = ecut_range
+    for ecut in range(ecut_min, ecut_max + 1, ecut_step):
+        ecut_scf = _copy.deepcopy(base)
+        ecut_scf["control"]["calculation"] = "scf"
+        ecut_scf["system"]["ecutwfc"] = ecut
+        filepath = os.path.join(str(output_dir), "ecut_convergence", f"ecutwfc_{ecut}", "pw.in")
+        _write_qe_pw_input(
+            filepath=filepath,
+            structure=structure,
+            namelist_settings=ecut_scf,
+            kpoints=ecut_kgrid,
+            pseudo_map=pseudo_map,
+        )
+        written["ecut_convergence"].append(filepath)
+
+    return written
+
+
+def qe_relax_setup_from_structure(
+    structure: Structure,
+    ecutwfc: int,
+    kpoint_density: int,
+    output_dir: PathLike = "QE_relax",
+    ecutrho: int | None = None,
+    calculation: str = "vc-relax",
+    is_metal: bool = False,
+    pseudo_dir: str = "./pseudo_folder_name/",
+    pseudo_map: dict | None = None,
+    user_control_settings: dict | None = None,
+    user_system_settings: dict | None = None,
+    user_electron_settings: dict | None = None,
+) -> str:
+    """
+    Generate a QE ``pw.in`` for a final relaxation, using the converged
+    ``ecutwfc`` and k-point density obtained from
+    :func:`qe_convergence_setup_from_structure`.
+
+    Pass the *relaxed* (or best-current) structure here once convergence
+    is done — element identification and pseudopotential lookup use the
+    same SSSP 1.3.0 PBE Efficiency map as the convergence helper.
+
+    Args:
+        structure: Structure to relax (ideally the one returned by the
+            converged SCF/relax workflow).
+        ecutwfc: Converged plane-wave cutoff (Ry) from the ``ecutwfc``
+            sweep. Required.
+        kpoint_density: Converged reciprocal k-point density (Å^-3) from
+            the k-grid sweep. Required.
+        output_dir: Folder to write ``pw.in`` into. Default ``"QE_relax"``.
+        ecutrho: Optional ``ecutrho`` (Ry); ``None`` keeps the set default.
+        calculation: ``"vc-relax"`` (default, full cell+ions) or
+            ``"relax"`` (ions only, fixed cell).
+        is_metal: If ``True``, set ``occupations='smearing'``,
+            ``smearing='gaussian'``, ``degauss=0.005`` in ``&SYSTEM``.
+        pseudo_dir: Path written to ``&CONTROL.pseudo_dir``.
+        pseudo_map: ``{element: UPF filename}`` overrides on top of SSSP.
+        user_control_settings, user_system_settings, user_electron_settings:
+            Per-namelist overrides merged on top of the YAML defaults.
+
+    Returns:
+        Path of the written ``pw.in``.
+    """
+    base = _build_qe_base_settings(
+        structure,
+        pseudo_dir,
+        is_metal,
+        user_control_settings,
+        user_system_settings,
+        user_electron_settings,
+    )
+    base["control"]["calculation"] = calculation
+    base["system"]["ecutwfc"] = ecutwfc
+    if ecutrho is not None:
+        base["system"]["ecutrho"] = ecutrho
+
+    kgrid = _kpoints_grid_from_reciprocal_density(structure, kpoint_density)
+    filepath = os.path.join(str(output_dir), "pw.in")
+    _write_qe_pw_input(
+        filepath=filepath,
+        structure=structure,
+        namelist_settings=base,
+        kpoints=kgrid,
+        pseudo_map=pseudo_map,
+    )
+    return filepath
+
