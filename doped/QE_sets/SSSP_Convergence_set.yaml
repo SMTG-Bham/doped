@@ -1,0 +1,20 @@
+# Quantum ESPRESSO pw.x input defaults for k-point / cutoff convergence
+# testing of competing phases, using SSSP (PBEsol-compatible) pseudopotentials.
+# Used by doped.chemical_potentials.CompetingPhasesQE.qe_convergence_setup
+# (and qe_std_setup when use_hse=False). Mirrors the role of
+# VASP_sets/PBEsol_ConvergenceSet.yaml for VASP.
+#
+# Keys are QE namelists. Empty namelists ({}) are intentional and must be
+# kept: the namelist is still written to pw.in, and user_*_settings are
+# merged into it at runtime.
+control:
+  calculation: scf
+  tprnfor: true
+  tstress: true
+system:
+  ecutwfc: 60
+  ecutrho: 240
+electrons:
+  conv_thr: 1.0e-8
+ions: {}
+cell: {}

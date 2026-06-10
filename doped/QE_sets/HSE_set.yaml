@@ -1,0 +1,31 @@
+# Quantum ESPRESSO pw.x input defaults for HSE06 hybrid-DFT relaxations of
+# competing phases. Used by
+# doped.chemical_potentials.CompetingPhasesQE.qe_std_setup (use_hse=True).
+# Mirrors the role of VASP_sets/HSESet.yaml for VASP.
+#
+# Keys are QE namelists. Empty namelists ({}) are intentional and must be
+# kept: the namelist is still written to pw.in, and user_*_settings are
+# merged into it at runtime.
+control:
+  calculation: vc-relax
+  tprnfor: true
+  tstress: true
+system:
+  ecutwfc: 60
+  ecutrho: 240
+  input_dft: HSE
+  exx_fraction: 0.25
+  screening_parameter: 0.106
+  # Change exxdiv_treatment according to the nature of the simulation
+  # (currently set for cubic/quasi-cubic cells); refer to the following link for more information:
+  # https://gitlab.com/QEF/q-e/-/tree/master/PW/examples/EXX_example
+  exxdiv_treatment: gygi-baldereschi
+  nqx1: 1
+  nqx2: 1
+  nqx3: 1
+electrons:
+  conv_thr: 1.0e-8
+ions: {}
+cell: {}
+
+# Refer to the pw.x documentation for more information: https://www.quantum-espresso.org/Doc/INPUT_PW.html
