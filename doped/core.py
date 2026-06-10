@@ -452,6 +452,8 @@ class DefectEntry(thermo.DefectEntry):
         return_correction_error: bool = False,
         error_tolerance: float = 0.05,
         style_file: PathLike | None = None,
+        beta: float = 0.5,
+        use_LOCPOT: bool = False,
         **kwargs,
     ):
         """
@@ -540,6 +542,23 @@ class DefectEntry(thermo.DefectEntry):
                 Path to a ``.mplstyle`` file to use for the plot. If ``None``
                 (default), uses the default doped style
                 (from ``doped/utils/doped.mplstyle``).
+            beta (float):
+                Gaussian broadening width used when computing atomic site
+                potentials from volumetric data (``LOCPOT`` or ``.cube``) for
+                the Kumagai (eFNV) correction. Units are bohr for ``.cube``
+                inputs and Å for ``LOCPOT``. Only used when ``use_LOCPOT=True``
+                or when a ``LOCPOT``/``.cube`` path is passed as
+                ``defect_outcar``/``bulk_outcar``. Default is ``0.5``; for VASP
+            use_LOCPOT (bool):
+                If ``True``, compute atomic site potentials for the eFNV
+                correction from VASP ``LOCPOT(.gz)`` files (via Gaussian-
+                smoothed FFT) rather than ``OUTCAR``. When set, ``LOCPOT``
+                files are looked up in
+                ``defect_entry.calculation_metadata["defect_path"]`` /
+                ``["bulk_path"]`` and passed in place of any explicit
+                ``defect_outcar``/``bulk_outcar`` argument (and any cached
+                ``defect/bulk_site_potentials`` in ``calculation_metadata``
+                are ignored). Default is ``False``.
             **kwargs:
                 Additional kwargs to pass to
                 ``pydefect.corrections.efnv_correction.ExtendedFnvCorrection``
@@ -561,6 +580,36 @@ class DefectEntry(thermo.DefectEntry):
                 "defect_entry.calculation_metadata."
             )
 
+        if use_LOCPOT:
+            # resolve LOCPOT paths from calculation_metadata and route them through the OUTCAR
+            # kwargs; the path-basename check in
+            # `corrections._check_if_pathlike_and_get_locpot_or_core_pots` detects "locpot" and
+            # dispatches to `get_atomic_site_potentials(beta=beta)`:
+            from doped.utils.parsing import _get_output_files_and_check_if_multiple
+
+            if defect_outcar is None:
+                defect_path = self.calculation_metadata.get("defect_path")
+                if defect_path is None:
+                    raise ValueError(
+                        "`use_LOCPOT=True` requires `defect_path` in "
+                        "`defect_entry.calculation_metadata`, or an explicit "
+                        "path to a `LOCPOT` file."
+                    )
+                defect_outcar, _multiple = _get_output_files_and_check_if_multiple(
+                    "LOCPOT", defect_path
+                )
+            if bulk_outcar is None:
+                bulk_path = self.calculation_metadata.get("bulk_path")
+                if bulk_path is None:
+                    raise ValueError(
+                        "`use_LOCPOT=True` requires `bulk_path` in "
+                        "`defect_entry.calculation_metadata`, or an explicit "
+                        "path to a `LOCPOT` file."
+                    )
+                bulk_outcar, _multiple = _get_output_files_and_check_if_multiple(
+                    "LOCPOT", bulk_path
+                )
+
         efnv_correction_output = get_kumagai_correction(
             defect_entry=self,
             dielectric=dielectric,
@@ -571,6 +620,7 @@ class DefectEntry(thermo.DefectEntry):
             plot=plot,
             filename=filename,
             style_file=style_file,
+            beta=beta,
             **kwargs,
         )
         correction = efnv_correction_output if not plot and filename is None else efnv_correction_output[0]
