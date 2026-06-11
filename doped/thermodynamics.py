@@ -2981,6 +2981,14 @@ class DefectThermodynamics(MSONable):
         Metastable charge states are denoted with a ``*`` in the charge
         transition labels.
 
+        This function uses an intelligent dynamic label placement algorithm to
+        try and label each of the charge transition levels without having
+        overlapping labels/lines. However, in some edge cases (e.g. with many
+        bunched transition levels, metastable charge states etc.) this can
+        still give imperfect results, in which case we advise saving to PDF or
+        another vector graphic file type, and manually editing (for
+        publication-ready figures).
+
         Args:
             all (bool, str):
                 Controls inclusion of single-electron transition levels
