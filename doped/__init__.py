@@ -59,26 +59,43 @@ def patch_vise_for_windows():
 
 @contextlib.contextmanager
 def vise_handling(level=logging.CRITICAL):
+    r"""
+    Tame ``vise``/``pydefect`` side effects, by combining
+    :func:`suppress_logging`, ``warnings.catch_warnings()`` and
+    :func:`patch_vise_for_windows`.
+
+    The steps are ordered to handle two things that must happen _before_
+    ``vise.defaults`` is first imported anywhere:
+
+    1. ``vise.util.logger.get_logger`` is replaced with ``logging.getLogger``,
+       to avoid repeated ``vise`` INFO messages (and duplicate handlers) under
+       parallelism. Only ``vise.util.logger`` is imported for this, which does
+       _not_ pull in ``vise.defaults``, so the patch is in effect before
+       ``vise.defaults`` builds its module-level logger.
+
+    2. Import ``vise.defaults`` now, within ``catch_warnings()`` so its
+       ``warnings.simplefilter("ignore", UserWarning)`` is reverted on exit.
+       Otherwise this fires the first time ``vise.defaults`` is imported --
+       which, with multiprocessing parsing, happens lazily during
+       _result unpickling_ with ``Pool`` (importing a ``pydefect``
+       ``BandEdgeStates`` object -> ``pydefect.defaults`` ->
+       ``vise.defaults``), i.e. _outside_ any ``vise_handling()`` block.
+
+    Calling this once at ``doped`` import (below) leaves ``vise.defaults`` in
+    ``sys.modules`` with both fixes applied, so later imports are no-ops and
+    never re-trigger warning suppression.
     """
-    Suppress logging, patch fatal Windows issue and prevent warning suppression
-    with ``vise``/``pydefect``, by combining the :func:`suppress_logging`,
-    :func:`patch_vise_for_windows` and ``warnings.catch_warnings()`` context
-    managers.
-    """
-    # warnings context manager shouldn't be necessary in some cases (e.g. w/``vise.util.logger`` below,
-    # which doesn't import ``vise.defaults`` -- where the problematic
-    # ``warnings.simplefilter("ignore", UserWarning)`` call is), but we still use it in all
-    # ``vise``/``pydefect`` imports here just in case ``vise`` import paths are updated etc.
-    with suppress_logging(level), patch_vise_for_windows(), warnings.catch_warnings():
-        yield
+    with suppress_logging(level), warnings.catch_warnings():
+        import vise.util.logger
+
+        vise.util.logger.get_logger = logging.getLogger
+
+        with patch_vise_for_windows():  # imports ``vise.defaults`` / builds the ``Defaults`` singleton
+            yield
 
 
-# Patch ``vise.util.logger.get_logger`` _before_ any ``vise``/``pydefect`` module is imported (not using
-# ``vise_handling()`` as that imports ``vise.defaults`` before this override would take effect):
-with suppress_logging(), warnings.catch_warnings():
-    import vise.util.logger
-
-    vise.util.logger.get_logger = logging.getLogger  # avoid repeated vise INFO messages with Parallel code
+with vise_handling():  # tame ``vise``/``pydefect`` side effects at import time (see :func:`vise_handling`)
+    pass
 
 
 def _ignore_pmg_warnings():
@@ -101,7 +118,8 @@ def _ignore_pmg_warnings():
     # ignore warning about structure charge that appears when getting Vasprun.as_dict():
     warnings.filterwarnings("ignore", message="Structure charge")
 
-    # ignore UFloat warning about std_dev==0 (from MP energy corrections)
+    # ignore UFloat warning about std_dev==0 (from MP energy corrections), can potentially be removed in
+    # future if/when this issue resolved upstream
     warnings.filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
 
 

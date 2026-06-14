@@ -1354,7 +1354,7 @@ def get_equiv_frac_coords_in_primitive(
         )
 
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning)
+            warnings.filterwarnings("ignore", message="No mapping")
             rotated_struct, matrix = _rotate_and_get_supercell_matrix(
                 prim_with_all_X,
                 primitive,

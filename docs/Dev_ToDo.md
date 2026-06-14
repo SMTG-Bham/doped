@@ -48,4 +48,4 @@
 - Re-run pytest timings (with proper heavy-test skipping now, updated pmg `LOCPOT` parsing, many test changes etc)
 - For v4.1; search for deprecation warnings, parameter-order warnings and remove (mostly flagged by TODOs) -- also a couple in SnB to remove.
 
-delta_VBM/CBM in notebooks. say it can be important to not assume symmetric shifts, esp with differences in eff masses (though note Ganose & Ling found the symmetric shift was fine??), and link to these papers
+delta_VBM/CBM in notebooks (thermodynamics and FermiSolver). say it can be important to not assume symmetric shifts, esp with differences in eff masses (though note Ganose & Ling found the symmetric shift was fine??), and link to these papers
