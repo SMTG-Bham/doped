@@ -76,6 +76,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 
 ## Studies using `doped`, so far
 
+- N.-R. Skogemyr **_First-Principles Defect Thermodynamics of MgSnN<sub>2</sub>: Origin and Suppression of Unintentional n-Type Conductivity_** [_MSc Thesis, Linköping University_](https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510) 2026
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
 - H. Jang et al. **_A Unified Mechanism for Strain- and Anneal-Induced Oxygen-Vacancy Behavior in Oxide Semiconductors_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.6c00577) 2026
 - M. A. Fadla, M. Grüning and L. Stella **_Universal Stability of Ga Split Vacancies across α-, β-, and κ-Ga<sub>2</sub>O<sub>3</sub> Polymorphs: A Machine-Learning Accelerated Study_** [_arXiv_](https://doi.org/10.48550/arXiv.2605.28743) 2026
