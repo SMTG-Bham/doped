@@ -2033,61 +2033,38 @@ class DefectThermodynamics(MSONable):
             ``pandas`` ``DataFrame`` sorted by formation energy
         """
         table = []
+        dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
 
         for name, defect_entry in self.defect_entries.items():
-            row = [
-                name.rsplit("_", 1)[0],  # name without charge,
-                (
-                    defect_entry.charge_state
-                    if skip_formatting
-                    else f"{'+' if defect_entry.charge_state > 0 else ''}{defect_entry.charge_state}"
-                ),
-            ]
-            row += [defect_entry.get_ediff() - sum(defect_entry.corrections.values())]
-            row += [defect_entry.charge_state * defect_entry.calculation_metadata.get("vbm", self.vbm)]
-            row += [defect_entry.charge_state * fermi_level]
-            row += [defect_entry._get_chempot_term(el_refs) if any(el_refs.values()) else "N/A"]
-            row += [defect_entry._get_chempot_term(relative_chempots)]
-            row += [sum(defect_entry.corrections.values())]
-            dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
-            formation_energy = defect_entry.formation_energy(
-                chempots=dft_chempots,
-                fermi_level=fermi_level,
-                vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
-            )
-            row += [formation_energy]
-            row += [defect_entry.calculation_metadata.get("defect_path", "N/A")]
-            row += [
-                sum(
-                    [
+            charge = defect_entry.charge_state
+            vbm = defect_entry.calculation_metadata.get("vbm", self.vbm)
+            correction = sum(defect_entry.corrections.values())
+            table.append(
+                {
+                    "Defect": name.rsplit("_", 1)[0],  # name without charge
+                    "q": charge if skip_formatting else f"{'+' if charge > 0 else ''}{charge}",
+                    "ΔEʳᵃʷ": defect_entry.get_ediff() - correction,
+                    "qE_VBM": charge * vbm,
+                    "qE_F": charge * fermi_level,
+                    # ignore missing-elt chempot warnings (already warned in ``get_formation_energies``):
+                    "Σμ_ref": defect_entry._get_chempot_term(el_refs, missing_elts_warning=False),
+                    "Σμ_formal": defect_entry._get_chempot_term(
+                        relative_chempots, missing_elts_warning=False
+                    ),
+                    "E_corr": correction,
+                    "Eᶠᵒʳᵐ": defect_entry.formation_energy(
+                        chempots=dft_chempots, fermi_level=fermi_level, vbm=vbm, missing_elts_warning=False
+                    ),
+                    "Path": defect_entry.calculation_metadata.get("defect_path", "N/A"),
+                    "Δ[E_corr]": sum(
                         val
                         for key, val in defect_entry.corrections_metadata.items()
                         if "charge_correction_error" in key
-                    ]
-                )
-            ]
+                    ),
+                }
+            )
 
-            table.append(row)
-
-        formation_energy_df = pd.DataFrame(
-            table,
-            columns=[
-                "Defect",
-                "q",
-                "ΔEʳᵃʷ",
-                "qE_VBM",
-                "qE_F",
-                "Σμ_ref",
-                "Σμ_formal",
-                "E_corr",
-                "Eᶠᵒʳᵐ",
-                "Path",
-                "Δ[E_corr]",
-            ],
-        )
-
-        # round all floats to 3dp:
-        formation_energy_df = formation_energy_df.round(3)
+        formation_energy_df = pd.DataFrame(table).round(3)  # round all floats to 3 decimal places
         return formation_energy_df.set_index(["Defect", "q"])
 
     def get_formation_energy(
