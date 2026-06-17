@@ -28,8 +28,8 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vas
 from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
 
-from doped import _warn_parameter_order
 from doped.core import DefectEntry, remove_site_oxi_state
+from doped.utils import _warn_parameter_order
 
 
 @lru_cache(maxsize=1000)  # cache POTCAR generation to speed up generation and writing

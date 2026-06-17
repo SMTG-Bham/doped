@@ -81,7 +81,7 @@ def if_present_rm(path):
 
 
 def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
-    from doped import _ignore_pmg_warnings
+    from doped.utils import _ignore_pmg_warnings
 
     original_stdout = sys.stdout  # Save a reference to the original standard output
     sys.stdout = StringIO()  # Redirect standard output to a stringIO object.

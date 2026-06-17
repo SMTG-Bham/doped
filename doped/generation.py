@@ -34,7 +34,6 @@ from pymatgen.util.typing import PathLike
 from tabulate import tabulate  # type: ignore[import-untyped]
 from tqdm import tqdm
 
-from doped import pool_manager
 from doped.core import (
     Defect,
     DefectEntry,
@@ -45,7 +44,7 @@ from doped.core import (
     get_oxi_probabilities,
     guess_and_set_oxi_states_with_timeout,
 )
-from doped.utils import parsing, supercells, symmetry
+from doped.utils import parsing, pool_manager, supercells, symmetry
 from doped.utils.efficiency import Composition, DopedTopographyAnalyzer, Element, PeriodicSite, Structure
 from doped.utils.parsing import reorder_s1_like_s2
 from doped.utils.plotting import format_defect_name

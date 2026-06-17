@@ -44,8 +44,8 @@ from pymatgen.util.typing import PathLike
 from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.generation import _element_sort_func
+from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.parsing import (
     _compare_incar_tags,

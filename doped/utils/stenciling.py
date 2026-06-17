@@ -244,8 +244,8 @@ def get_defect_in_supercell(
                 assert isinstance(defect_site, PeriodicSite)
                 orig_defect_frac_coords = defect_site.frac_coords
         else:
-            orig_supercell = _get_defect_supercell(defect_entry)
-            orig_bulk_supercell = _get_bulk_supercell(defect_entry)
+            orig_supercell = _get_defect_supercell(defect_entry).copy()
+            orig_bulk_supercell = _get_bulk_supercell(defect_entry).copy()
             orig_defect_frac_coords = defect_entry.sc_defect_frac_coords
 
         target_supercell = target_supercell.copy()

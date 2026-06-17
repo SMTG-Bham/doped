@@ -169,14 +169,15 @@ default settings – in reality you likely need to customise some options!) woul
 .. code:: python
 
     from pymatgen.core.structure import Structure
-    from doped import generation, vasp
+    from doped.generation import DefectsGenerator
+    from doped.vasp import DefectsSet
 
     def generate_and_write_vasp_files():
         primitive_struct = Structure.from_file("prim_POSCAR")
         # generate defects:
-        defect_gen = generation.DefectsGenerator(primitive_struct)
+        defect_gen = DefectsGenerator(primitive_struct)
         # generate VASP input files:
-        defects_set = vasp.DefectsSet(defect_gen)
+        defects_set = DefectsSet(defect_gen)
         defects_set.write_files()
 
     if __name__ == '__main__':

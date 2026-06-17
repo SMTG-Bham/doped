@@ -29,13 +29,6 @@ from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import (
-    _doped_obj_properties_methods,
-    _ignore_pmg_warnings,
-    _warn_parameter_order,
-    get_mp_context,
-    pool_manager,
-)
 from doped.core import Defect, DefectEntry, guess_and_set_oxi_states_with_timeout
 from doped.generation import (
     get_defect_name_from_defect,
@@ -45,6 +38,13 @@ from doped.generation import (
     sort_defect_entries,
 )
 from doped.thermodynamics import DefectThermodynamics
+from doped.utils import (
+    _doped_obj_properties_methods,
+    _ignore_pmg_warnings,
+    _warn_parameter_order,
+    get_mp_context,
+    pool_manager,
+)
 from doped.utils.efficiency import StructureMatcher_scan_stol, _parse_site_species_str
 from doped.utils.parsing import (
     _CALC_OUTPUT_MASK,

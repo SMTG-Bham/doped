@@ -22,7 +22,6 @@ from pymatgen.io.vasp.sets import VaspInputSet
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.core import DefectEntry
 from doped.generation import (
     DefectsGenerator,
@@ -30,6 +29,7 @@ from doped.generation import (
     get_defect_name_from_entry,
     name_defect_entries,
 )
+from doped.utils import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,

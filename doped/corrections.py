@@ -52,8 +52,8 @@ from pymatgen.core.periodic_table import Element
 from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
-from doped import vise_handling
 from doped.analysis import _convert_dielectric_to_tensor
+from doped.utils import vise_handling
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_core_potentials_from_outcar_obj,
