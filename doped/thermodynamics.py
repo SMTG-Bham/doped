@@ -2654,7 +2654,7 @@ class DefectThermodynamics(MSONable):
         return DefectThermodynamics.from_dict(defect_thermo_dict)
 
     # TODO: Default to plot both the most (most-electronegative-)anion-rich and the
-    # (most-electropositive-)cation-rich chempot limits? (Rather than all limits)
+    #   (most-electropositive-)cation-rich chempot limits? (Rather than all limits)
     # TODO: Should have similar colours for similar defect types, an option to just show amalgamated
     #  lowest energy charge states for each _defect type_) -- equivalent to setting the dist_tol to
     #  infinity (but should be easier to just do here by taking the short defect name). NaP is an example

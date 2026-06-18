@@ -19,7 +19,7 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
-from doped.utils import _doped_obj_properties_methods, get_mp_context, vise_handling
+from doped.utils import _doped_obj_properties_methods, get_mp_context, vise_handling, warn_once
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -1265,6 +1265,52 @@ class DefectEntry(thermo.DefectEntry):
             except Exception as e:
                 warnings.warn(f"Unable to determine spin degeneracy for {self.name}, got error:\n{e!r}")
 
+        # warn if degeneracy factors are not present or we have periodicity breaking:
+        self._warn_about_degeneracy_factors()
+
+    def _warn_about_degeneracy_factors(self):
+        """
+        Warn about missing spin/orientational degeneracy factors or
+        periodicity-breaking supercells (which affect the computed defect
+        concentrations / Fermi level), if relevant for this |DefectEntry|.
+        """
+        if "spin degeneracy" not in self.degeneracy_factors:
+            warn_once(  # warn once per defect entry
+                f"'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute "
+                f"for {self.name}. "
+                "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
+                "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
+                "(discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ...)."
+                "This will affect the computed defect concentration / Fermi level!\n"
+                "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
+                "'spin degeneracy' in the degeneracy_factors attribute(s) -- usually 2 for odd-electron "
+                "defect species and 1 for even-electron).",
+            )
+
+        if (
+            "orientational degeneracy" not in self.degeneracy_factors
+            and self.defect.defect_type != core.DefectType.Interstitial
+        ):
+            warn_once(  # warn once per defect entry
+                f"'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
+                f"attribute for {self.name}. This factor contributes to the "
+                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- "
+                "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ... "
+                "-- and is automatically computed when parsing with doped if possible (if the defect "
+                "supercell doesn't break the host periodicity). This will affect the computed defect "
+                "concentrations / Fermi level!\n"
+                "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
+                "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s).",
+            )
+
+        if self.calculation_metadata.get("periodicity_breaking_supercell", False):
+            # warn once per defect supercell lattice and frac coords (which should change if periodicity
+            # breaking does):
+            warn_once(
+                _orientational_degeneracy_warning,
+                key=(self.defect_supercell.lattice, tuple(self.sc_defect_frac_coords)),
+            )
+
     def equilibrium_concentration(
         self,
         temperature: float = 300,
@@ -1423,37 +1469,6 @@ class DefectEntry(thermo.DefectEntry):
                 ``per_site`` is ``True``).
         """
         self._parse_and_set_symmetries_and_degeneracies(symprec=symprec, **kwargs)
-
-        if "spin degeneracy" not in self.degeneracy_factors:
-            warnings.warn(
-                "'spin degeneracy' is not defined in the DefectEntry degeneracy_factors attribute. "
-                "This factor contributes to the degeneracy term 'g' in the defect concentration equation "
-                "(N_X = N*g*exp(-E/kT)) and is automatically computed when parsing with doped "
-                "(discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ...)."
-                "This will affect the computed defect concentration / Fermi level!\n"
-                "To avoid this, you can (re-)parse your defect(s) with doped, or manually set "
-                "'spin degeneracy' in the degeneracy_factors attribute(s) -- usually 2 for odd-electron "
-                "defect species and 1 for even-electron)."
-            )
-
-        if (
-            "orientational degeneracy" not in self.degeneracy_factors
-            and self.defect.defect_type != core.DefectType.Interstitial
-        ):
-            warnings.warn(
-                "'orientational degeneracy' is not defined in the DefectEntry degeneracy_factors "
-                "attribute (for this vacancy/substitution defect). This factor contributes to the "
-                "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- "
-                "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ... "
-                "-- and is automatically computed when parsing with doped if possible (if the defect "
-                "supercell doesn't break the host periodicity). This will affect the computed defect "
-                "concentrations / Fermi level!\n"
-                "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
-                "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s)."
-            )
-
-        if self.calculation_metadata.get("periodicity_breaking_supercell", False):
-            warnings.warn(_orientational_degeneracy_warning)
 
         if formation_energy is None:
             formation_energy = self.formation_energy(  # if chempots is None, this will throw warning

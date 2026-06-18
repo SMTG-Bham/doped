@@ -12,6 +12,8 @@ import logging
 import multiprocessing
 import os
 import warnings
+from functools import cache
+from typing import Any
 
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
@@ -116,6 +118,29 @@ def _ignore_pmg_warnings():
 
 
 _ignore_pmg_warnings()
+
+
+@cache
+def warn_once(message: str, category: type[Warning] = UserWarning, key: Any = None) -> None:
+    """
+    Emit ``message`` as a warning at most once per unique ``(message, category,
+    key)``, unless ``warn_once.cache_clear()`` is called.
+
+    Unlike Python's default "show once per location" behaviour, this is
+    immune to the ``__warningregistry__`` being reset whenever the warning
+    filters are mutated (which dependencies such as ``pandas`` do internally,
+    defeating the default dedup when warning repeatedly in a loop -- e.g. over
+    temperatures/conditions).
+
+    ``key`` is an optional `cheap` hashable used to check if the warning has
+    already been called for a given object/situation; e.g. a |DefectEntry|
+    ``name`` to warn once `per defect entry`.
+
+    Used for the periodicity-breaking supercell and missing-degeneracy-factor
+    warnings, which can otherwise be emitted many times in thermodynamic
+    analysis loops.
+    """
+    warnings.warn(message, category, stacklevel=3)
 
 
 class ParameterOrderWarning(FutureWarning):
