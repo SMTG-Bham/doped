@@ -19,7 +19,7 @@ from pymatgen.util.typing import PathLike
 from scipy.constants import value as constants_value
 from scipy.stats import sem
 
-from doped import _doped_obj_properties_methods, get_mp_context, vise_handling
+from doped.utils import _doped_obj_properties_methods, get_mp_context, vise_handling
 from doped.utils.efficiency import (
     Composition,
     Element,
@@ -948,10 +948,10 @@ class DefectEntry(thermo.DefectEntry):
 
         return get_eigenvalue_analysis(self, plot=plot, filename=filename, **kwargs)
 
-    def _get_chempot_term(self, chemical_potentials=None) -> float:
-        chemical_potentials = chemical_potentials or {}
+    def _get_chempot_term(self, chemical_potentials: dict | None = None) -> float:
+        chempot_dict: dict = chemical_potentials or {}
         element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
-        missing_elts = [elt for elt in element_changes if elt not in chemical_potentials]
+        missing_elts = [elt for elt in element_changes if elt not in chempot_dict]
         if missing_elts:
             warnings.warn(
                 f"Chemical potentials not present for elements: {missing_elts}. Assuming zero chemical "
@@ -961,7 +961,7 @@ class DefectEntry(thermo.DefectEntry):
 
         return sum(
             chem_pot * -element_changes[el]
-            for el, chem_pot in chemical_potentials.items()
+            for el, chem_pot in chempot_dict.items()
             if el in element_changes
         )
 
@@ -1089,6 +1089,16 @@ class DefectEntry(thermo.DefectEntry):
             _no_chempots_warning("Formation energies (and concentrations)")
 
         dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
+        return self._formation_energy(dft_chempots, vbm=vbm, fermi_level=fermi_level)
+
+    def _formation_energy(
+        self, dft_chempots: dict | None, vbm: float | None = None, fermi_level: float = 0
+    ) -> float:
+        """
+        Compute the formation energy from `already-resolved` single-limit DFT
+        chemical potentials (i.e. ``{element symbol: chemical potential}``, or
+        ``None`` for no chemical potentials).
+        """
         chempot_correction = 0 if dft_chempots is None else self._get_chempot_term(dft_chempots)
         formation_energy = self.get_ediff() + chempot_correction
 

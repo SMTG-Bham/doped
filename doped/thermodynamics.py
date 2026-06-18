@@ -31,7 +31,6 @@ from scipy.optimize import brentq
 from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
-from doped import _doped_obj_properties_methods
 from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
 from doped.core import (
     DefectEntry,
@@ -40,6 +39,7 @@ from doped.core import (
     _orientational_degeneracy_warning,
 )
 from doped.generation import sort_defect_entries
+from doped.utils import _doped_obj_properties_methods
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
 from doped.utils.efficiency import _fast_dict_deepcopy_max_two_levels
 from doped.utils.parsing import (
@@ -3701,7 +3701,13 @@ class DefectThermodynamics(MSONable):
         )  # warns about chempots/limit choices if necessary
 
         # build reverse lookup for cluster numbers (avoids repeated linear scan in conc loop below):
-        _entry_to_cluster = {entry: k for k, v in self.clustered_defect_entries.items() for entry in v}
+        # keyed by ``id(entry)`` rather than the entry itself, as hashing ``DefectEntry`` objects becomes a
+        # bottleneck when called many times in thermodynamic analysis loops; the entry objects are stable
+        # within this call so ``id()`` is a safe, cheap key:
+        _entry_to_cluster = {id(entry): k for k, v in self.clustered_defect_entries.items() for entry in v}
+
+        # resolve the single-limit DFT chemical potentials once to avoid re-parsing in the loop below:
+        dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
 
         # Note: DataFrame initialisation from the list of dicts here actually ends up contributing a
         # non-negligible compute cost (~10%), which could be made faster by using a dict of lists/arrays
@@ -3709,10 +3715,8 @@ class DefectThermodynamics(MSONable):
         # competition rescaling). Could be revisited if needed
         for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
             for defect_entry in defect_entry_list:
-                formation_energy = defect_entry.formation_energy(
-                    chempots=chempots,
-                    limit=limit,
-                    el_refs=el_refs,
+                formation_energy = defect_entry._formation_energy(  # pre-parsed single limit chempots
+                    dft_chempots,
                     fermi_level=fermi_level,
                     vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
                 )
@@ -3745,7 +3749,7 @@ class DefectThermodynamics(MSONable):
                         "Concentration (cm^-3)": raw_concentration,
                         "Formation Energy (eV)": round(formation_energy, 3),
                         "Concentration (per site)": per_site_concentration,
-                        "Lattice Site Index": _entry_to_cluster[defect_entry],  # cluster index
+                        "Lattice Site Index": _entry_to_cluster[id(defect_entry)],  # cluster index
                     }
                 )
 
@@ -5644,11 +5648,11 @@ class FermiSolver(MSONable):
         if append_chempots:
             for key, value in single_chempot_dict.items():
                 concentrations[f"μ_{key} (eV)"] = value
-        if effective_dopant_concentration is not None:
-            # drop Dopant row, included as column instead
-            with warnings.catch_warnings():  # dropping on a non-lexsorted multi-index, fine as small df
-                warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
-                concentrations = concentrations.drop("Dopant", errors="ignore")
+
+        if effective_dopant_concentration is not None:  # drop Dopant row, included as column instead:
+            concentrations = concentrations[
+                concentrations.index.get_level_values("Defect") != "Dopant"
+            ].copy()
             concentrations["Dopant (cm^-3)"] = effective_dopant_concentration
 
         return concentrations
