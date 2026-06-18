@@ -1153,7 +1153,7 @@ def get_ideal_supercell_matrix(
     The ideal supercell is the smallest possible supercell which has a minimum
     image distance (i.e. minimum distance between periodic images of
     atoms/sites in a lattice) greater than ``min_image_distance`` (default = 10
-    Å -- which is a typical threshold value used in DFT defect supercell
+    Å -- which is a typical threshold value used in QM/DFT defect supercell
     calculations) and a number of atoms greater than ``min_atoms`` (default =
     50). Once these criteria have been reached, ``doped`` will then continue
     searching up to supercell sizes (numbers of atoms) ``1 + ideal_threshold``

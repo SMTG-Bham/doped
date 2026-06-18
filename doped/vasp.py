@@ -826,7 +826,7 @@ class DefectRelaxSet(MSONable):
             vasp_nkred_std (DefectDictSet):
                 ``DefectDictSet`` for relaxation with a non-Γ-only kpoint mesh,
                 using ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for
-                the HF exchange part of the hybrid DFT calculation. Not
+                the HF exchange part of a hybrid DFT calculation. Not
                 generated for GGA calculations (if ``LHFCALC`` is set to
                 ``False`` in ``user_incar_settings``) or if only Gamma kpoint
                 sampling is required.
@@ -869,7 +869,7 @@ class DefectRelaxSet(MSONable):
                 ``DefectDictSet`` for a single-point (static) `bulk`
                 ``vasp_std`` supercell calculation (i.e. with a non-Γ-only
                 kpoint mesh) and ``NKRED(X,Y,Z)`` ``INCAR`` tag(s) to
-                downsample kpoints for the HF exchange part of the hybrid DFT
+                downsample kpoints for the HF exchange part of a hybrid DFT
                 calculation. Not generated for GGA calculations (if ``LHFCALC``
                 is set to ``False`` in ``user_incar_settings``) or if only
                 Gamma kpoint sampling is required.

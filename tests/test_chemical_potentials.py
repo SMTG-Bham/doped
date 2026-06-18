@@ -2247,7 +2247,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         cpa = self.ZrO2_cpa
 
         def _check_ZrO2_form_e_df(
-            form_e_df, skip_rounding=False, include_dft_energies=False, prune_polymorphs=False
+            form_e_df, skip_rounding=False, include_raw_energies=False, prune_polymorphs=False
         ):
             if prune_polymorphs:
                 assert (
@@ -2263,15 +2263,15 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
             )
             assert np.allclose(form_e_df["Energy above Hull (eV/atom)"].to_numpy()[:4], 0)  # stable phases
 
-            _check_form_e_df(cpa, form_e_df, skip_rounding, include_dft_energies, prune_polymorphs)
+            _check_form_e_df(cpa, form_e_df, skip_rounding, include_raw_energies, prune_polymorphs)
 
         for kwargs in [
             {},
             {"skip_rounding": True},
-            {"include_dft_energies": True},
-            {"skip_rounding": True, "include_dft_energies": True},
+            {"include_raw_energies": True},
+            {"skip_rounding": True, "include_raw_energies": True},
             {"prune_polymorphs": True},
-            {"prune_polymorphs": True, "skip_rounding": True, "include_dft_energies": True},
+            {"prune_polymorphs": True, "skip_rounding": True, "include_raw_energies": True},
         ]:
             _check_ZrO2_form_e_df(cpa.get_formation_energy_df(**kwargs), **kwargs)
 
@@ -2361,10 +2361,10 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
         for kwargs in [
             {},
             {"skip_rounding": True},
-            {"include_dft_energies": True},
-            {"skip_rounding": True, "include_dft_energies": True},
+            {"include_raw_energies": True},
+            {"skip_rounding": True, "include_raw_energies": True},
             {"prune_polymorphs": True},
-            {"prune_polymorphs": True, "skip_rounding": True, "include_dft_energies": True},
+            {"prune_polymorphs": True, "skip_rounding": True, "include_raw_energies": True},
         ]:
             _check_form_e_df(cpa, cpa.get_formation_energy_df(**kwargs), **kwargs)
 
@@ -2580,7 +2580,7 @@ class ChemPotAnalyzerTestCase(unittest.TestCase):
 
 
 def _check_form_e_df(
-    cpa, form_e_df, skip_rounding=False, include_dft_energies=False, prune_polymorphs=False
+    cpa, form_e_df, skip_rounding=False, include_raw_energies=False, prune_polymorphs=False
 ):
     if not prune_polymorphs:
         assert len(form_e_df) == len(cpa.entries)  # all entries
@@ -2598,16 +2598,16 @@ def _check_form_e_df(
             atol=2e-3,
             rtol=1e-3,
         )
-        if include_dft_energies:
+        if include_raw_energies:
             assert np.isclose(
-                series["DFT Energy (eV/fu)"],
-                series["DFT Energy (eV/atom)"] * comp.num_atoms,
+                series["Raw Energy (eV/fu)"],
+                series["Raw Energy (eV/atom)"] * comp.num_atoms,
                 atol=2e-3,
                 rtol=1e-3,
             )
 
-    assert ("DFT Energy (eV/fu)" in form_e_df.columns) == include_dft_energies
-    assert ("DFT Energy (eV/atom)" in form_e_df.columns) == include_dft_energies
+    assert ("Raw Energy (eV/fu)" in form_e_df.columns) == include_raw_energies
+    assert ("Raw Energy (eV/atom)" in form_e_df.columns) == include_raw_energies
 
     # assert values are all rounded to 3 dp:
     assert form_e_df.round(3).equals(form_e_df) == (not skip_rounding)

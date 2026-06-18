@@ -38,7 +38,7 @@ All features and functionality are fully-customisable:
 
 - **Supercell Generation**: Generate an optimal supercell, maximising periodic image separation for the minimum number of atoms (computational cost).
 - **Defect Generation**: Generate defect supercells and likely charge states from chemical intuition.
-- **Calculation I/O**: Automatically write inputs & parse calculations (``VASP`` & other DFT/force-field codes).
+- **Calculation I/O**: Automatically write inputs & parse calculations (``VASP`` & other QM/DFT/force-field codes).
 - **Chemical Potentials**: Determine relevant competing phases for chemical potential limits, with automated calculation setup, parsing and analysis.
 - **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
 - **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials, full inclusion of metastable states etc.
@@ -57,8 +57,8 @@ Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect f
 **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)**
 defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration
 heatmap plots from ``doped``. Automated plots of **(i,j)** single-particle eigenvalues and **(k)** site
-displacements from DFT supercell calculations. See the
-`JOSS paper <https://doi.org/10.21105/joss.06433>`__ for more details.
+displacements from supercell calculations. See the `JOSS paper <https://doi.org/10.21105/joss.06433>`__
+for more details.
 
 Installation
 ============

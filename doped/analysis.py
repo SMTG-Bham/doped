@@ -412,7 +412,7 @@ def defect_from_structures(
                 )
             ]
             guessed_initial_defect_structure.insert(
-                defect_site_index,  # Place defect at same position as in DFT calculation
+                defect_site_index,  # Place defect at same position as in supercell calculation
                 int_site.species_string,
                 closest_cand_int_fcoords,
                 coords_are_cartesian=False,
@@ -1356,12 +1356,12 @@ class DefectsParser:
                 for a single limit, in the format:
                 ``{element symbol: chemical potential}``. If manually
                 specifying chemical potentials this way, you can set the
-                ``el_refs`` option with the DFT reference energies of the
+                ``el_refs`` option with the (QM/DFT) reference energies of the
                 elemental phases in order to show the formal (relative)
                 chemical potentials above the formation energy plot, in which
                 case it is the formal chemical potentials (i.e. relative to the
                 elemental references) that should be given here, otherwise the
-                absolute (DFT) chemical potentials should be given.
+                absolute (QM/DFT) chemical potentials should be given.
 
                 If ``None`` (default), sets all chemical potentials to zero.
                 Chemical potentials can also be supplied later in each analysis

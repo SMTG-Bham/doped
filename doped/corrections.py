@@ -305,7 +305,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
 
     x = plot_data["pot_plot_data"]["x"]
     v_R = plot_data["pot_plot_data"]["Vr"]
-    dft_diff = plot_data["pot_plot_data"]["dft_diff"]
+    diff = plot_data["pot_plot_data"]["dft_diff"]
     short_range = plot_data["pot_plot_data"]["short_range"]
     check = plot_data["pot_plot_data"]["check"]
     C = plot_data["pot_plot_data"]["shift"]
@@ -315,7 +315,7 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
             plt.close("all")  # close any previous figures
             _fig, ax = plt.subplots()
         (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
-        (line2,) = ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
+        (line2,) = ax.plot(x, diff, c="red", label=r"$\Delta$(Locpot)")
         (line3,) = ax.plot(
             x,
             short_range,
@@ -331,8 +331,8 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
         ax.legend(handles=[line4, poly_coll], loc=8)  # bottom middle legend
 
         ax.set_xlim(round(x[0]), round(x[-1]))
-        ymin = min(*v_R, *dft_diff, *short_range)
-        ymax = max(*v_R, *dft_diff, *short_range)
+        ymin = min(*v_R, *diff, *short_range)
+        ymax = max(*v_R, *diff, *short_range)
         ax.set_ylim(-0.2 + ymin, 0.2 + ymax)
         ax.set_xlabel(r"Distance along axis ($\AA$)")
         ax.set_ylabel("Potential (V)")

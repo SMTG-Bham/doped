@@ -1,4 +1,4 @@
-Formula,Formation Energy (eV/fu),Formation Energy (eV/atom),DFT Energy (eV/atom),DFT Energy (eV/fu),DFT Energy (eV),k-points,Cs,Sn,Br,H,O,Cl,Ti,I
+Formula,Formation Energy (eV/fu),Formation Energy (eV/atom),Raw Energy (eV/atom),Raw Energy (eV/fu),Raw Energy (eV),k-points,Cs,Sn,Br,H,O,Cl,Ti,I
 Cs2SnBr6,-12.784507527586204,-1.420500836398467,-3.8668539155555552,-34.80168524,-34.80168524,3x3x3,2.0,1.0,6.0,0.0,0.0,0.0,0.0,0.0
 Br,0.0,0.0,-2.505645065,-2.505645065,-10.02258026,6x6x3,0.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0
 Cl2,0.0,0.0,-2.655503765,-5.31100753,-5.31100753,1x1x1,0.0,0.0,0.0,0.0,0.0,2.0,0.0,0.0

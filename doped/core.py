@@ -1039,10 +1039,10 @@ class DefectEntry(thermo.DefectEntry):
                 for a single limit, in the format:
                 ``{element symbol: chemical potential}``.
                 If manually specifying chemical potentials this way, you can
-                set the ``el_refs`` option with the DFT reference energies of
-                the elemental phases, in which case it is the formal chemical
+                set the ``el_refs`` option with the (QM/DFT) reference energies
+                of the elemental phases, in which case it is the formal chemical
                 potentials (i.e. relative to the elemental references) that
-                should be given here, otherwise the absolute (DFT) chemical
+                should be given here, otherwise the absolute (QM/DFT) chemical
                 potentials should be given.
 
                 If ``None`` (default), sets all chemical potentials to zero.
@@ -1088,18 +1088,18 @@ class DefectEntry(thermo.DefectEntry):
         if chempots is None:
             _no_chempots_warning("Formation energies (and concentrations)")
 
-        dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
-        return self._formation_energy(dft_chempots, vbm=vbm, fermi_level=fermi_level)
+        abs_chempots = _get_abs_chempots(chempots, el_refs, limit)
+        return self._formation_energy(abs_chempots, vbm=vbm, fermi_level=fermi_level)
 
     def _formation_energy(
-        self, dft_chempots: dict | None, vbm: float | None = None, fermi_level: float = 0
+        self, abs_chempots: dict | None, vbm: float | None = None, fermi_level: float = 0
     ) -> float:
         """
-        Compute the formation energy from `already-resolved` single-limit DFT
-        chemical potentials (i.e. ``{element symbol: chemical potential}``, or
-        ``None`` for no chemical potentials).
+        Compute the formation energy from `already-resolved` single-limit
+        absolute (QM/DFT) chemical potentials (``{elt: chempot}``), or ``None``
+        for no chemical potentials).
         """
-        chempot_correction = 0 if dft_chempots is None else self._get_chempot_term(dft_chempots)
+        chempot_correction = 0 if abs_chempots is None else self._get_chempot_term(abs_chempots)
         formation_energy = self.get_ediff() + chempot_correction
 
         if vbm is not None:
@@ -1829,9 +1829,9 @@ def _no_chempots_warning(property="Formation energies (and concentrations)"):
     )
 
 
-def _get_dft_chempots(chempots: dict | None, el_refs: dict | None = None, limit: str | None = None):
+def _get_abs_chempots(chempots: dict | None, el_refs: dict | None = None, limit: str | None = None):
     """
-    Parse the DFT chempots from the input chempots and limit.
+    Parse the absolute (e.g. DFT) chempots from the input chempots and limit.
     """
     from doped.thermodynamics import _parse_chempots, _parse_limit
 

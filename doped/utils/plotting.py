@@ -168,17 +168,17 @@ def _style_figure_draws(fig: "mpl.figure.Figure", style_file: PathLike) -> "mpl.
     return fig
 
 
-def _chempot_warning(dft_chempots: dict | None) -> None:
+def _chempot_warning(abs_chempots: dict | None) -> None:
     """
-    Issue a warning if DFT chemical potentials are not provided.
+    Issue a warning if absolute (QM/DFT) chemical potentials are not provided.
 
     Args:
-        dft_chempots (dict | None):
+        abs_chempots (dict | None):
             Dictionary of chemical potentials (to be used for computing
             formation energies for plotting). If ``None``, a warning is raised
             indicating that absolute formation energies will be inaccurate.
     """
-    if dft_chempots is None:
+    if abs_chempots is None:
         warnings.warn(
             "You have not specified chemical potentials (`chempots`), so chemical potentials are set to "
             "zero for each species. This will give large errors in the absolute values of formation "
@@ -362,7 +362,7 @@ def _plot_transition_level_markers(
     defect_thermodynamics: "DefectThermodynamics",
     defect_names: Iterable[str],
     colors: Sequence[str | tuple[float, ...]] | np.ndarray,
-    dft_chempots: dict | None,
+    abs_chempots: dict | None,
     styled_markersize: float,
     styled_font_size: float,
     all_entries: bool | str = False,
@@ -387,7 +387,7 @@ def _plot_transition_level_markers(
         colors (list[mpl.colors.Color]):
             List of colors to use for the transition level markers, matching
             the order of ``defect_names``.
-        dft_chempots (dict | None):
+        abs_chempots (dict | None):
             Dictionary of chemical potentials to use for the formation energy
             calculations.
         styled_markersize (float):
@@ -411,7 +411,7 @@ def _plot_transition_level_markers(
             y_trans.append(
                 next(
                     defect_thermodynamics.get_formation_energy(
-                        defect_entry, chempots=dft_chempots, fermi_level=x_val
+                        defect_entry, chempots=abs_chempots, fermi_level=x_val
                     )
                     for defect_entry in defect_thermodynamics.stable_entries[def_name]
                     if defect_entry.charge_state == chargeset[0]  # formation energy of first entry in TL
@@ -1218,7 +1218,7 @@ def _rename_key_and_dicts(
 
 def _get_formation_energy_lines(
     defect_thermodynamics: "DefectThermodynamics",
-    dft_chempots: dict | None,
+    abs_chempots: dict | None,
     xlim: tuple[float, float],
     defect_subset: list[str] | str | None = None,
 ):
@@ -1237,7 +1237,7 @@ def _get_formation_energy_lines(
         Formation energy of ``defect_entry`` at the given Fermi level.
         """
         return defect_thermodynamics.get_formation_energy(
-            defect_entry, chempots=dft_chempots, fermi_level=fermi_level
+            defect_entry, chempots=abs_chempots, fermi_level=fermi_level
         )
 
     def _entry_with_charge(entries, charge):
@@ -1338,7 +1338,7 @@ def _get_ylim_from_y_range_vals(
 
 def formation_energy_plot(
     defect_thermodynamics: "DefectThermodynamics",
-    dft_chempots: dict | None = None,
+    abs_chempots: dict | None = None,
     el_refs: dict | None = None,
     all_entries: bool | str = False,
     include_site_info: bool | None = None,
@@ -1364,9 +1364,9 @@ def formation_energy_plot(
     Args:
         defect_thermodynamics (|DefectThermodynamics|):
             |DefectThermodynamics| object containing defect entries to plot.
-        dft_chempots (dict):
-            Dictionary of ``{Element: value}`` giving the chemical potential of
-            each element.
+        abs_chempots (dict):
+            Dictionary of ``{Element: value}`` giving the absolute chemical
+            potential of each element.
         el_refs (dict):
             Dictionary of ``{Element: value}`` giving the reference energy of
             each element.
@@ -1433,7 +1433,7 @@ def formation_energy_plot(
     Returns:
         ``matplotlib`` ``Figure`` object.
     """
-    _chempot_warning(dft_chempots)
+    _chempot_warning(abs_chempots)
     if defect_thermodynamics.band_gap is None:
         raise ValueError(
             "`band_gap` is not set for `DefectThermodynamics`, cannot plot formation energies."
@@ -1443,7 +1443,7 @@ def formation_energy_plot(
         xlim = (-0.3, defect_thermodynamics.band_gap + 0.3)
 
     (xy, y_range_vals), (all_lines_xy, all_entries_y_range_vals), ymin = _get_formation_energy_lines(
-        defect_thermodynamics, dft_chempots, xlim, defect_subset=defect_subset
+        defect_thermodynamics, abs_chempots, xlim, defect_subset=defect_subset
     )  # get formation energy lines data
 
     plotting_xy = all_lines_xy if all_entries is True else xy
@@ -1486,7 +1486,7 @@ def formation_energy_plot(
         defect_thermodynamics,
         (xy).keys(),
         colors,
-        dft_chempots,
+        abs_chempots,
         styled_markersize=styled_markersize,
         styled_font_size=styled_font_size,
         all_entries=all_entries,
@@ -1525,8 +1525,8 @@ def formation_energy_plot(
     if fermi_level is not None:
         ax.axvline(x=fermi_level, linestyle="-.", color="k")
 
-    if chempot_table and dft_chempots:
-        plot_chemical_potential_table(ax, dft_chempots, el_refs=el_refs)
+    if chempot_table and abs_chempots:
+        plot_chemical_potential_table(ax, chempots=abs_chempots, el_refs=el_refs)
 
     _set_title_and_save_figure(ax, title, chempot_table, filename, styled_font_size)
 
@@ -1535,7 +1535,7 @@ def formation_energy_plot(
 
 def plot_chemical_potential_table(
     ax: plt.Axes,
-    dft_chempots: dict[str, float],
+    chempots: dict[str, float],
     cellLoc: Literal["left", "center", "right"] = "left",
     el_refs: dict[str, float] | None = None,
 ) -> Table:
@@ -1545,7 +1545,7 @@ def plot_chemical_potential_table(
     Args:
         ax (plt.Axes):
             Axes object to plot the table in.
-        dft_chempots (dict):
+        chempots (dict):
             Dictionary of chemical potentials of the form ``{Element: value}``.
         cellLoc (str):
             Alignment of text in cells. Default is "left".
@@ -1559,13 +1559,13 @@ def plot_chemical_potential_table(
         ``ax`` object).
     """
     if el_refs is not None:
-        dft_chempots = {el: energy - el_refs[el] for el, energy in dft_chempots.items()}
-    labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(dft_chempots.keys())]
+        chempots = {el: energy - el_refs[el] for el, energy in chempots.items()}
+    labels = [rf"$\mathregular{{\mu_{{{s}}}}}$," for s in sorted(chempots.keys())]
     labels[0] = f"({labels[0]}"
     labels[-1] = f"{labels[-1][:-1]})"  # [:-1] removes trailing comma
     labels = ["Chemical Potentials", *labels, " Units:"]
 
-    text_list = [f"{dft_chempots[el]:.2f}," for el in sorted(dft_chempots.keys())]
+    text_list = [f"{chempots[el]:.2f}," for el in sorted(chempots.keys())]
 
     # add brackets to first and last entries:
     text_list[0] = f"({text_list[0]}"
@@ -1574,7 +1574,7 @@ def plot_chemical_potential_table(
         text_list = ["(wrt Elemental refs)", *text_list, "  [eV]"]
     else:
         text_list = ["(from calculations)", *text_list, "  [eV]"]
-    widths = [0.1] + [0.9 / len(dft_chempots)] * (len(dft_chempots) + 2)
+    widths = [0.1] + [0.9 / len(chempots)] * (len(chempots) + 2)
     tab = ax.table(cellText=[text_list], colLabels=labels, colWidths=widths, loc="top", cellLoc=cellLoc)
     tab.auto_set_column_width(list(range(len(widths))))
 

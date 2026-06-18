@@ -34,7 +34,7 @@ from tqdm import tqdm
 from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
 from doped.core import (
     DefectEntry,
-    _get_dft_chempots,
+    _get_abs_chempots,
     _no_chempots_warning,
     _orientational_degeneracy_warning,
 )
@@ -779,12 +779,12 @@ class DefectThermodynamics(MSONable):
                 for a single limit, in the format:
                 ``{element symbol: chemical potential}``.
                 If manually specifying chemical potentials this way, you can
-                set the ``el_refs`` option with the DFT reference energies of
-                the elemental phases in order to show the formal (relative)
+                set the ``el_refs`` option with the (QM/DFT) reference energies
+                of the elemental phases in order to show the formal (relative)
                 chemical potentials above the formation energy plot, in which
                 case it is the formal chemical potentials (i.e. relative to
                 the elemental references) that should be given here, otherwise
-                the absolute (DFT) chemical potentials should be given.
+                the absolute (QM/DFT) chemical potentials should be given.
 
                 If ``None`` (default), sets all chemical potentials to zero.
                 Chemical potentials can also be supplied later in each analysis
@@ -2033,7 +2033,7 @@ class DefectThermodynamics(MSONable):
             ``pandas`` ``DataFrame`` sorted by formation energy
         """
         table = []
-        dft_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
+        abs_chempots = {el: energy + el_refs[el] for el, energy in relative_chempots.items()}
 
         for name, defect_entry in self.defect_entries.items():
             charge = defect_entry.charge_state
@@ -2053,7 +2053,7 @@ class DefectThermodynamics(MSONable):
                     ),
                     "E_corr": correction,
                     "Eᶠᵒʳᵐ": defect_entry.formation_energy(
-                        chempots=dft_chempots, fermi_level=fermi_level, vbm=vbm, missing_elts_warning=False
+                        chempots=abs_chempots, fermi_level=fermi_level, vbm=vbm, missing_elts_warning=False
                     ),
                     "Path": defect_entry.calculation_metadata.get("defect_path", "N/A"),
                     "Δ[E_corr]": sum(
@@ -2896,7 +2896,7 @@ class DefectThermodynamics(MSONable):
         with doped_plot_style(style_file):
             figs = []
             for limit in limits:
-                dft_chempots = chempots["limits"][limit]
+                abs_chempots = chempots["limits"][limit]
                 plot_title = limit if len(limits) > 1 else None
                 plot_filename = (
                     f"{filename.rsplit('.', 1)[0]}_{limit}.{filename.rsplit('.', 1)[1]}"
@@ -2908,7 +2908,7 @@ class DefectThermodynamics(MSONable):
                     warnings.filterwarnings("ignore", "No chemical potentials")
                     fig = formation_energy_plot(
                         thermo_to_plot,
-                        dft_chempots=dft_chempots,
+                        abs_chempots=abs_chempots,
                         el_refs=el_refs,
                         chempot_table=chempot_table if chempot_table is not None else len(limits) > 1,
                         all_entries=all_entries,
@@ -3706,8 +3706,8 @@ class DefectThermodynamics(MSONable):
         # within this call so ``id()`` is a safe, cheap key:
         _entry_to_cluster = {id(entry): k for k, v in self.clustered_defect_entries.items() for entry in v}
 
-        # resolve the single-limit DFT chemical potentials once to avoid re-parsing in the loop below:
-        dft_chempots = _get_dft_chempots(chempots, el_refs, limit)
+        # resolve the single-limit absolute (e.g. DFT) chemical potentials to avoid repeated re-parsing:
+        abs_chempots = _get_abs_chempots(chempots, el_refs, limit)
 
         # Note: DataFrame initialisation from the list of dicts here actually ends up contributing a
         # non-negligible compute cost (~10%), which could be made faster by using a dict of lists/arrays
@@ -3716,7 +3716,7 @@ class DefectThermodynamics(MSONable):
         for defect_name_wout_charge, defect_entry_list in self.all_entries.items():
             for defect_entry in defect_entry_list:
                 formation_energy = defect_entry._formation_energy(  # pre-parsed single limit chempots
-                    dft_chempots,
+                    abs_chempots,
                     fermi_level=fermi_level,
                     vbm=defect_entry.calculation_metadata.get("vbm", self.vbm),
                 )
@@ -8311,7 +8311,7 @@ class FermiSolver(MSONable):
         single_chempot_dict, el_refs = self.defect_thermodynamics._get_chempots(
             single_chempot_dict, el_refs
         )  # returns self.defect_thermodynamics.chempots/self.defect_thermodynamics.el_refs if None
-        dft_chempots = _get_dft_chempots(single_chempot_dict, el_refs)
+        abs_chempots = _get_abs_chempots(single_chempot_dict, el_refs)
 
         defect_species = []  # dicts of: {"charge_states": {...}, "nsites": X, "name": label}
         for label, entry_list in self.defect_thermodynamics.all_entries.items():
@@ -8338,7 +8338,7 @@ class FermiSolver(MSONable):
             for entry in entry_list:
                 formation_energy = self.defect_thermodynamics.get_formation_energy(
                     entry,
-                    chempots=dft_chempots,
+                    chempots=abs_chempots,
                     fermi_level=self.py_sc_fermi_dos.vbm - self.defect_thermodynamics.vbm,
                 )
                 degeneracy_factor = (

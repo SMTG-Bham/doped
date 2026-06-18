@@ -21,7 +21,7 @@ Tutorials showing the code functionality and usage are provided on the [docs](ht
 All features and functionality are fully-customisable:
 - **Supercell Generation**: Generate an optimal supercell, maximising periodic image separation for the minimum number of atoms (computational cost).
 - **Defect Generation**: Generate defect supercells and guess likely charge states based on chemical intuition.
-- **Calculation I/O**: Automatically write inputs and parse calculations (`VASP` & other DFT/force-field codes).
+- **Calculation I/O**: Automatically write inputs and parse calculations (`VASP` & other QM/DFT/force-field codes).
 - **Chemical Potentials**: Determine relevant competing phases for chemical potential limits, with automated calculation setup, parsing and analysis.
 - **Defect Analysis**: Automatically parse calculation outputs to compute defect formation energies, finite-size corrections (FNV & eFNV), symmetries, degeneracies, transition levels, etc.
 - **Thermodynamic Analysis**: Compute (non-)equilibrium Fermi levels, defect/carrier concentrations etc. as functions of annealing/cooling temperature, chemical potentials etc.
@@ -32,7 +32,7 @@ All features and functionality are fully-customisable:
 ### Performance and Example Outputs
 ![https://joss.theoj.org/papers/10.21105/joss.06433](docs/JOSS/doped_JOSS_figure.png)
 **(a)** Optimal supercell generation comparison. **(b)** Charge state estimation comparison. Example **(c)** Kumagai-Oba (eFNV) finite-size correction plot, **(d)** defect formation energy diagram, **(e)** chemical potential / stability region, **(f)** Fermi level vs. annealing temperature, **(g)** defect/carrier concentrations vs. annealing temperature and **(h)** Fermi level / carrier concentration heatmap plots from `doped`. Automated plots of **(i,j)** single-particle eigenvalues and **(k)** site
-displacements from DFT supercell calculations. See the [JOSS paper](https://doi.org/10.21105/joss.06433) for more details.
+displacements from supercell calculations. See the [JOSS paper](https://doi.org/10.21105/joss.06433) for more details.
 
 ## Installation
 ```bash

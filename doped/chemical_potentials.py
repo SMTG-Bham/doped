@@ -617,8 +617,9 @@ def prune_entries_to_border_candidates(
     (``bulk_computed_entry``), returns the subset of entries which `could`
     border the host on the phase diagram (and therefore be a competing phase
     which determines the host chemical potential limits), allowing for an error
-    tolerance for the semi-local DFT database energies (``energy_above_hull``,
-    set to ``self.energy_above_hull`` -- 0.05 eV/atom by default).
+    tolerance (i.e. for semi-local DFT database energies
+    (``energy_above_hull``, set to ``self.energy_above_hull`` -- 0.05 eV/atom
+    by default)).
 
     If ``phase_diagram`` is provided then this is used as the reference phase
     diagram, otherwise it is generated from ``entries`` and
@@ -639,7 +640,7 @@ def prune_entries_to_border_candidates(
             Maximum energy above hull (in eV/atom) of Materials Project entries
             to be considered as competing phases. This is an uncertainty range
             for the MP-calculated formation energies, which may not be accurate
-            due to functional choice (GGA vs hybrid DFT / GGA+U / RPA etc.),
+            due to functional choice (e.g. GGA vs hybrid DFT / GGA+U / RPA etc.),
             lack of vdW corrections etc. All phases that would border the host
             material on the phase diagram, if their relative energy was
             downshifted by ``energy_above_hull``, are included.
@@ -967,8 +968,8 @@ class CompetingPhases(MSONable):
                 Maximum energy above hull (in eV/atom) of Materials Project
                 entries to be considered as competing phases. This is an
                 uncertainty range for the MP-calculated formation energies,
-                which may not be accurate due to functional choice (GGA vs
-                hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
+                which may not be accurate due to functional choice (e.g. GGA
+                vs hybrid DFT / GGA+U / RPA etc.), lack of vdW corrections etc.
                 All phases that would border the host material on the phase
                 diagram, if their relative energy was downshifted by
                 ``energy_above_hull``, are included.
@@ -3878,7 +3879,7 @@ class CompetingPhasesAnalyzer(MSONable):
     def get_formation_energy_df(
         self,
         prune_polymorphs: bool = False,
-        include_dft_energies: bool = False,
+        include_raw_energies: bool = False,
         skip_rounding: bool = False,
     ) -> pd.DataFrame:
         """
@@ -3902,8 +3903,8 @@ class CompetingPhasesAnalyzer(MSONable):
                 composition. Doesn't affect chemical potential limits (only the
                 ground-state polymorphs matter for this).
                 Default is False.
-            include_dft_energies (bool):
-                Whether to include the raw DFT energies in the output
+            include_raw_energies (bool):
+                Whether to include the raw (QM/DFT) energies in the output
                 ``DataFrame``. Default is ``False``.
             skip_rounding (bool):
                 Whether to skip rounding the energies to 3 decimal places
@@ -3932,8 +3933,8 @@ class CompetingPhasesAnalyzer(MSONable):
                     "Energy above Hull (eV/atom)": entry.data.get("energy_above_hull", "N/A"),
                     "Formation Energy (eV/fu)": self.phase_diagram.get_form_energy(entry) / formula_units,
                     "Formation Energy (eV/atom)": self.phase_diagram.get_form_energy_per_atom(entry),
-                    "DFT Energy (eV/fu)": entry.energy / formula_units,
-                    "DFT Energy (eV/atom)": entry.energy_per_atom,
+                    "Raw Energy (eV/fu)": entry.energy / formula_units,
+                    "Raw Energy (eV/atom)": entry.energy_per_atom,
                     "k-points": kpoints_string,
                 }
             )
@@ -3941,12 +3942,12 @@ class CompetingPhasesAnalyzer(MSONable):
         formation_energy_df = pd.DataFrame(rows)
 
         if prune_polymorphs:  # only keep the lowest energy polymorphs
-            indices = formation_energy_df.groupby("Formula")["DFT Energy (eV/atom)"].idxmin()
+            indices = formation_energy_df.groupby("Formula")["Raw Energy (eV/atom)"].idxmin()
             formation_energy_df = formation_energy_df.loc[sorted(indices)]  # retain ordering
 
-        if not include_dft_energies:
+        if not include_raw_energies:
             formation_energy_df = formation_energy_df.drop(
-                columns=["DFT Energy (eV/fu)", "DFT Energy (eV/atom)"]
+                columns=["Raw Energy (eV/fu)", "Raw Energy (eV/atom)"]
             )
         formation_energy_df = formation_energy_df.round(3) if not skip_rounding else formation_energy_df
 

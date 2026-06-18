@@ -219,7 +219,7 @@ particularly for metals, which are often the most expensive competing phases -- 
     `k`-points in each direction, so they can sometimes be awkward to use with symmetry-on ``vasp_std`` 
     calculations (where the `irreducible` `k`-point grid isn't set beforehand).
 
-- **Memory vs k-points:** Because DFT calculations for metals typically need dense `k`-meshes, memory usage 
+- **Memory vs k-points:** Because QM/DFT calculations for metals typically need dense `k`-meshes, memory usage
   can sometimes become the limiting factor (particularly if using hybrid DFT and/or SOC). In some cases, it 
   can be preferable to use a larger `supercell` of the phase, with a correspondingly reduced k-point grid 
   (rather than a small cell with a very dense mesh) to help stay within memory limits.
@@ -489,7 +489,7 @@ supercells and plotting the charge density. Important terms include:
    PHS (but you should use your own judgement of course).
 4. ``Localized Orbital(s)``: Information about localised defect states, if present.
 
-Additionally, ``Index`` refers to the band/eigenvalue index in the DFT calculation, ``Energy`` is its
+Additionally, ``Index`` refers to the band/eigenvalue index in the QM/DFT calculation, ``Energy`` is its
 eigenvalue energy at the given ``K-point coords``, ``Orbitals`` lists the projected orbital contributions
 to that state, and ``OrbDiff`` is the normalised difference in projected orbital contributions to the
 VBM/CBM states between the bulk and defect supercells.
@@ -580,7 +580,7 @@ The bulk DOS (``bulk_dos``) calculation should be a static calculation with the 
   and an accurate band gap.
 - Ideally tetrahedron smearing (``ISMEAR = -5`` in ``VASP``) for improved DOS convergence with respect to
   `k`-points.
-- Consistent DFT functional settings as used for the final bulk/defect supercell calculations (e.g. ``LHFCALC``,
+- Consistent QM/DFT functional settings as used for the final bulk/defect supercell calculations (e.g. ``LHFCALC``,
   ``AEXX``, ``LSORBIT`` etc).
 - The same host crystal structure used to generate the bulk/defect supercells, and same pseudopotentials
   (``POTCAR``\s in ``VASP``) used for the supercell calculations.
@@ -715,7 +715,7 @@ states.
 
 .. note::
 
-    In general, it is best to explicitly specify the system spin state (i.e. with ``NUPDOWN``) in DFT
+    In general, it is best to explicitly specify the system spin state (i.e. with ``NUPDOWN``) in QM/DFT
     calculations, rather than leaving this as a free parameter, as not enforcing this constraint can often
     lead to erroneous and unphysical results in the form of partial orbital occupation and spins. This
     can occur because the DFT self-interaction error initially favours delocalisation of the unpaired

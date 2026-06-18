@@ -1,4 +1,4 @@
-Formula,Formation Energy (eV/fu),Formation Energy (eV/atom),DFT Energy (eV/atom),DFT Energy (eV/fu),DFT Energy (eV),k-points,Zr,O,La
+Formula,Formation Energy (eV/fu),Formation Energy (eV/atom),Raw Energy (eV/atom),Raw Energy (eV/fu),Raw Energy (eV),k-points,Zr,O,La
 ZrO2,-10.975428440000002,-3.658476146666667,-11.610769603333333,-34.83230881,-139.32923524,3x3x3,1.0,2.0,0.0
 La,0.0,0.0,-5.00458616,-5.00458616,-20.01834464,10x10x3,0.0,0.0,1.0
 O2,0.0,0.0,-7.006602065,-14.01320413,-14.01320413,2x2x2,0.0,2.0,0.0
