@@ -62,6 +62,16 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    the ``api_key`` parameter, or set via the ``MP_API_KEY`` environment variable (e.g.
    ``export MP_API_KEY=your_api_key``).
 
+   .. tip::
+
+      To debug or verify that your ``pymatgen`` config file is correctly located and parsed, you can run 
+      these commands from the terminal:
+
+      .. code-block:: bash
+
+         python -c "from pymatgen.core import SETTINGS_FILE; print(SETTINGS_FILE)"  # should show the path to your ``.pmgrc.yaml`` file
+         python -c "from pymatgen.core import SETTINGS; print(SETTINGS)"  # should show your ``.pmgrc.yaml`` settings
+
 2. If you have not previously setup your ``POTCAR`` directory in this way with ``pymatgen``, then follow these steps:
 
    .. code-block:: bash
