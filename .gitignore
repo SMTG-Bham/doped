@@ -54,3 +54,5 @@ examples/MgO/Bulk_relax/*KPOINTS
 # Cursor files
 .cursor/
 CLAUDE.md
+.claude/
+.rtk/

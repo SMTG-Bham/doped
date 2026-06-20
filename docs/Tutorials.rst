@@ -31,6 +31,7 @@ tutorials:
 .. toctree::
    :maxdepth: 2
 
+   quickstart_tutorial
    generation_tutorial
    parsing_tutorial
    thermodynamics_tutorial
@@ -40,3 +41,4 @@ tutorials:
    plotting_customisation_tutorial
    GGA_workflow_tutorial
    CCD_NEB_tutorial
+   stenciling_tutorial

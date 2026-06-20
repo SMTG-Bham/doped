@@ -1,7 +1,7 @@
 ALGO = Normal
 CSHIFT = 1e-06
 EDIFF = 1e-07
-ENCUT = 450
+ENCUT = 450.0
 GGA = Ps
 ISMEAR = -5
 ISPIN = 2

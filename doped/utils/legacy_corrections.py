@@ -8,7 +8,7 @@ Adam Jackson and Alex Ganose.
 Note that bandfilling corrections are no longer supported, as in most cases
 they shouldn't be used (see https://doi.org/10.1038/s41578-025-00879-y). If
 for some reason bandfilling corrections are desired, they can be manually added
-to `corrections` attributes of DefectEntry objects. See
+to `corrections` attributes of |DefectEntry| objects. See
 https://github.com/materialsproject/pymatgen/pull/2193
 """
 

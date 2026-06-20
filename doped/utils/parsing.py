@@ -7,26 +7,29 @@ import itertools
 import os
 import re
 import warnings
+from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache, partialmethod
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 from xml.etree.ElementTree import Element as XML_Element
 
 import numpy as np
+import pandas as pd
 from monty.io import reverse_readfile
 from monty.serialization import loadfn
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.core.periodic_table import Element
 from pymatgen.core.structure import Composition, Lattice, PeriodicSite, Structure
+from pymatgen.core.structure_matcher import get_linear_assignment_solution, pbc_shortest_vectors
 from pymatgen.electronic_structure.core import Spin
-from pymatgen.entries.computed_entries import ComputedStructureEntry
 from pymatgen.io.vasp.inputs import POTCAR_STATS_PATH, UnknownPotcarWarning
 from pymatgen.io.vasp.outputs import Locpot, Outcar, Procar, Vasprun, _parse_vasp_array
+from pymatgen.util.coord import all_distances
 from pymatgen.util.typing import PathLike, SpeciesLike
 from scipy.interpolate import RegularGridInterpolator
 
+from doped import _warn_parameter_order
 from doped.core import DefectEntry, remove_site_oxi_state
 
 
@@ -58,17 +61,17 @@ def parse_projected_eigen(
     elem: XML_Element, parse_mag: bool = True
 ) -> tuple[dict[Spin, np.ndarray], np.ndarray | None]:
     """
-    Parse the projected eigenvalues from a ``Vasprun`` object (used during
+    Parse the projected eigenvalues from a |Vasprun| object (used during
     initialisation), but excluding the projected magnetization for efficiency.
 
     Note that following SK's PRs to ``pymatgen`` (#4359, #4360), parsing of
-    projected eigenvalues adds minimal additional cost to Vasprun parsing
+    projected eigenvalues adds minimal additional cost to |Vasprun| parsing
     (~1-5%), while parsing of projected magnetization can add ~30% cost.
 
     This is a modified version of ``_parse_projected_eigen`` from
-    ``pymatgen.io.vasp.outputs.Vasprun``, which allows skipping of projected
-    magnetization parsing in order to expedite parsing in ``doped``, as well as
-    some small adjustments to maximise efficiency.
+    |Vasprun|, which allows skipping of projected magnetization parsing in
+    order to expedite parsing in ``doped``, as well as some small adjustments
+    to maximise efficiency.
 
     Args:
         elem (Element):
@@ -77,16 +80,19 @@ def parse_projected_eigen(
             Whether to parse the projected magnetization. Default is ``True``.
 
     Returns:
-        Tuple[Dict[Spin, np.ndarray], Optional[np.ndarray]]:
+        tuple[dict[Spin, np.ndarray], np.ndarray | None]:
             A dictionary of projected eigenvalues for each spin channel
             (up/down), and the projected magnetization (if parsed).
     """
     root = elem.find("array/set")
+    assert root is not None  # projected eigenvalue array always present when this is called
     proj_eigen = {}
-    sets = root.findall("set")  # type: ignore[union-attr]
+    sets = root.findall("set")
 
     for s in sets:
-        spin = int(re.match(r"spin(\d+)", s.attrib["comment"])[1])  # type: ignore[index]
+        spin_match = re.match(r"spin(\d+)", s.attrib["comment"])
+        assert spin_match is not None
+        spin = int(spin_match[1])
         if spin == 1 or (spin == 2 and len(sets) == 2):
             spin_key = Spin.up if spin == 1 else Spin.down
         elif parse_mag:  # parse projected magnetization
@@ -117,7 +123,7 @@ def parse_projected_eigen(
 
 def get_vasprun(vasprun_path: PathLike, parse_mag: bool = True, **kwargs):
     """
-    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` ``Vasprun`` object.
+    Read the ``vasprun.xml(.gz)`` file as a ``pymatgen`` |Vasprun| object.
     """
     vasprun_path = str(vasprun_path)  # convert to string if Path object
     warnings.filterwarnings(
@@ -180,7 +186,7 @@ def _get_outcar_path(outcar_path: PathLike, raise_error=True):
 
 def get_outcar(outcar_path: PathLike):
     """
-    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` ``Outcar`` object.
+    Read the ``OUTCAR(.gz)`` file as a ``pymatgen`` |Outcar| object.
     """
     outcar_path = _get_outcar_path(outcar_path)
     return Outcar(outcar_path)
@@ -190,20 +196,20 @@ def get_core_potentials_from_outcar(
     outcar_path: PathLike, dir_type: str = "", total_energy: list | float | None = None
 ):
     """
-    Get the core potentials from the OUTCAR file, which are needed for the
+    Get the core potentials from the ``OUTCAR`` file, which are needed for the
     Kumagai-Oba (eFNV) finite-size correction.
 
-    This parser skips the full ``pymatgen`` ``Outcar`` initialisation/parsing,
+    This parser skips the full ``pymatgen`` |Outcar| initialisation/parsing,
     to expedite parsing and make it more robust (doesn't fail if ``OUTCAR`` is
     incomplete, as long as it has the core potentials information).
 
     Args:
         outcar_path (PathLike):
-            The path to the OUTCAR file.
+            The path to the ``OUTCAR`` file.
         dir_type (str):
-            The type of directory the OUTCAR is in (e.g. ``bulk`` or
+            The type of directory the ``OUTCAR`` is in (e.g. ``bulk`` or
             ``defect``) for informative error messages.
-        total_energy (Optional[Union[list, float]]):
+        total_energy (list | float | None):
             The already-parsed total energy for the structure. If provided,
             will check that the total energy of the ``OUTCAR`` matches this
             value / one of these values, and throw a warning if not.
@@ -277,7 +283,7 @@ def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""
     Raise error about supplied ``OUTCAR`` not having atomic core potential
     info.
 
-    Input outcar is either a path or a ``pymatgen`` ``Outcar`` object
+    Input outcar is either a path or a ``pymatgen`` |Outcar| object
     """
     outcar_info = f"`OUTCAR` at {outcar}" if isinstance(outcar, PathLike) else "`OUTCAR` object"
     dir_type = f"{dir_type} " if dir_type else ""
@@ -291,10 +297,10 @@ def _raise_incomplete_outcar_error(outcar: PathLike | Outcar, dir_type: str = ""
 
 def get_procar(procar_path: PathLike) -> Procar:
     """
-    Read the ``PROCAR(.gz)`` file as a ``pymatgen`` ``Procar`` object.
+    Read the ``PROCAR(.gz)`` file as a ``pymatgen`` |Procar| object.
 
-    Previously, ``pymatgen`` ``Procar`` parsing did not support SOC
-    calculations, however this was updated in
+    Previously, ``pymatgen`` |Procar| parsing did not support SOC calculations,
+    however this was updated in
     https://github.com/materialsproject/pymatgen/pull/3890 to use code from
     ``easyunfold`` (https://smtg-bham.github.io/easyunfold -- a package for
     unfolding electronic band structures for symmetry-broken / defect /
@@ -309,7 +315,10 @@ def get_procar(procar_path: PathLike) -> Procar:
 
 
 def _get_output_files_and_check_if_multiple(
-    output_file: PathLike = "vasprun.xml", path: PathLike = "."
+    output_file: PathLike = "vasprun.xml",
+    path: PathLike = ".",
+    dir_type: str | None = None,
+    quiet: bool = False,
 ) -> tuple[PathLike, bool]:
     """
     Search for all files with filenames matching ``output_file``, case-
@@ -322,6 +331,16 @@ def _get_output_files_and_check_if_multiple(
             ``.xml`` (matching any file with that extension).
         path (PathLike):
             The path to the directory to search in.
+        dir_type (str | None):
+            Optional label (e.g. ``"bulk"`` / ``"defect"``) for the directory.
+            When provided and multiple matching files are found, a
+            ``_multiple_files_warning`` is emitted internally (unless
+            ``quiet``). When ``None`` (default), no warning is emitted and the
+            caller is responsible for warning, preserving the original
+            two-argument behaviour.
+        quiet (bool):
+            If ``True``, suppress the multiple-files warning even when
+            ``dir_type`` is provided.
 
     Returns:
         Tuple[PathLike, bool]:
@@ -346,36 +365,178 @@ def _get_output_files_and_check_if_multiple(
         reverse=True,
     ):
         output_path = os.path.join(path, output_files[0])
-        return (output_path, True) if len(output_files) > 1 else (output_path, False)
+        multiple = len(output_files) > 1
+        if multiple and dir_type is not None and not quiet:
+            _multiple_files_warning(output_file, path, output_path, dir_type=dir_type)
+        return output_path, multiple
     return (
         os.path.join(path, output_file),
         False,
     )  # so `get_X()` will raise an informative FileNotFoundError
 
 
-def _get_output_files_warn_if_multiple(
-    output_file: PathLike = "vasprun.xml",
-    path: PathLike = ".",
-    dir_type: None | str = None,
-    quiet: bool = False,
-) -> tuple[PathLike, bool]:
+_CALC_OUTPUT_MASK = ("vasprun.xml", "vasprun.xml.gz")
+"""
+Filename patterns that identify calculation output files.
+"""
+
+_SUBFOLDER_PRIORITY = [
+    "vasp_ncl",
+    "singlepoint",
+    "final",
+    "relax",
+    "vasp_std",
+    "vasp_nkred_std",
+    "vasp_gam",
+]
+"""
+Priority order when auto-detecting calculation subfolders.
+"""
+
+
+def _dataframe_of_files(root: Path) -> pd.DataFrame:
     """
-    Wrapper for _get_output_files_and_check_if_multiple to include warning
-    inside.
+    Get a dataframe with one row per file under ``root``, found recursively.
+
+    Hidden files/directories (names starting with ``"."``) and files
+    sitting directly in ``root`` (i.e. with only one path component
+    relative to ``root``) are excluded.
+
+    Columns: ``filename``, ``full_path``, ``folder_path``,
+    ``folder_in_root`` (the first path component relative to ``root``).
+
+    Args:
+        root (Path):
+            Path to the root directory.
+
+    Returns:
+        pd.DataFrame:
+            One row per discovered file.
     """
-    file_path, multiple = _get_output_files_and_check_if_multiple(output_file, path)
-    if multiple and not quiet:
-        _multiple_files_warning(
-            output_file,
-            path,
-            file_path,
-            dir_type=dir_type,
-        )
-    return file_path, multiple
+    root = Path(root)
+    rows: list[dict[str, Any]] = []
+    for f in root.rglob("*"):  # recursively find all files under root, ignoring hidden folders/files
+        if f.is_file():
+            relative_parts = f.relative_to(root).parts
+            if any(part.startswith(".") for part in relative_parts) or len(relative_parts) < 2:
+                continue  # ignore hidden files and folders, and files in root directory itself
+            rows.append(
+                {
+                    "filename": f.name,
+                    "full_path": f,
+                    "folder_path": f.parent,
+                    "folder_in_root": relative_parts[0],
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _get_calc_files_df(root: Path, calc_output_mask: Iterable[str] = _CALC_OUTPUT_MASK) -> pd.DataFrame:
+    """
+    Get a DataFrame of calculation output files (matching ``calc_output_mask``)
+    found recursively under ``root``, excluding hidden files/directories and
+    files sitting directly in ``root``.
+
+    This is a filtered view of :func:`_dataframe_of_files`.
+
+    Args:
+        root (Path):
+            Path to the root directory.
+        calc_output_mask (Iterable[str]):
+            Iterable of filename patterns to match.  Defaults to
+            ``_CALC_OUTPUT_MASK`` (``("vasprun.xml", "vasprun.xml.gz")``).
+            Matching is case-insensitive.
+
+    Returns:
+        pd.DataFrame:
+            One row per matching calculation output file.
+    """
+    files_df = _dataframe_of_files(root)
+    if files_df.empty:
+        return pd.DataFrame()
+    pattern = "|".join(map(re.escape, calc_output_mask))
+    return files_df[files_df["filename"].str.contains(pattern, regex=True, na=False)]
+
+
+def _determine_subfolder(
+    files_df: pd.DataFrame,
+    candidate_folders: list[str] | None = None,
+    subfolder_priority: list[str] = _SUBFOLDER_PRIORITY,
+) -> str:
+    """
+    Pick the highest-priority calculation subfolder name present in
+    ``files_df`` (restricted to rows whose ``folder_in_root`` is in
+    ``candidate_folders``), or ``"."`` if none of the priority names are found.
+
+    Args:
+        files_df (pd.DataFrame):
+            DataFrame produced by :func:`_dataframe_of_files`, filtered
+            to calculation output files.
+        candidate_folders (list[str]):
+            Top-level folder names to consider. If ``None`` (default),
+            considers all top-level folder names.
+        subfolder_priority (list[str]):
+            Priority order for subfolder names.  Defaults to
+            ``_SUBFOLDER_PRIORITY``
+            (``["vasp_ncl", "singlepoint", "final", "relax", "vasp_std", "vasp_nkred_std", "vasp_gam"]``)
+            where folder names are compared case-insensitively.
+
+    Returns:
+        str:
+            The detected subfolder name, or ``"."``.
+    """
+    candidate_folder_df = (
+        files_df[files_df["folder_in_root"].isin(candidate_folders)]
+        if candidate_folders is not None
+        else files_df
+    )
+    for subfolder in subfolder_priority:
+        if any(subfolder in p.name.lower() for p in candidate_folder_df["folder_path"].unique()):
+            return subfolder
+    return "."
+
+
+def _find_calc_outputs(
+    output_path: PathLike,
+    subfolder: PathLike | None = None,
+) -> tuple[pd.DataFrame, list[str], str]:
+    """
+    Recursively find calculation output files under ``output_path`` and auto-
+    detect the calculation subfolder when ``subfolder`` is ``None``.
+
+    Shared discovery logic used by both :func:`~doped.analysis.DefectsParser`
+    and :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer`.
+
+    Args:
+        output_path (PathLike):
+            Root directory to search.
+        subfolder (PathLike | None):
+            Explicit subfolder name (e.g. ``"vasp_std"``).  If
+            ``None``, auto-detected using ``_SUBFOLDER_PRIORITY``
+            (``["vasp_ncl", "singlepoint", "final", "relax", "vasp_std", "vasp_nkred_std", "vasp_gam"]``)
+            where folder names are compared case-insensitively.
+
+    Returns:
+        tuple[pd.DataFrame, list[str], str]:
+            ``(calc_files_df, candidate_folders, resolved_subfolder)``
+            where *resolved_subfolder* is ``"."`` when no priority
+            subfolder is found.
+    """
+    calc_files_df = _get_calc_files_df(Path(output_path))
+    if calc_files_df.empty:
+        return pd.DataFrame(), [], "."
+
+    candidate_folders = calc_files_df["folder_in_root"].unique().tolist()
+    resolved_subfolder = (
+        _determine_subfolder(calc_files_df, candidate_folders) if subfolder is None else str(subfolder)
+    )
+    return calc_files_df, candidate_folders, resolved_subfolder
 
 
 def get_defect_type_and_composition_diff(
-    bulk: Structure | Composition, defect: Structure | Composition
+    defect: Structure | Composition,
+    bulk: Structure | Composition,
+    _parameter_order_warn: bool = True,
 ) -> tuple[str, dict]:
     """
     Get the difference in composition between a bulk structure and a defect
@@ -385,17 +546,19 @@ def get_defect_type_and_composition_diff(
     extrinsic species and code efficiency/robustness improvements.
 
     Args:
-        bulk (Union[Structure, Composition]):
-            The bulk structure or composition.
-        defect (Union[Structure, Composition]):
+        defect (|Structure| | |Composition|):
             The defect structure or composition.
+        bulk (|Structure| | |Composition|):
+            The bulk structure or composition.
 
     Returns:
-        tuple[str, Dict[str, int]]:
+        tuple[str, dict[str, int]]:
             The defect type (``interstitial``, ``vacancy`` or ``substitution``)
             and the composition difference between the bulk and defect
             structures as a dictionary.
     """
+    if _parameter_order_warn:
+        _warn_parameter_order("get_defect_type_and_composition_diff")  # TODO: Remove in doped v4.1
     bulk_comp = bulk.composition if isinstance(bulk, Structure) else bulk
     defect_comp = defect.composition if isinstance(defect, Structure) else defect
 
@@ -424,8 +587,9 @@ def get_defect_type_and_composition_diff(
 
 
 def get_defect_type_site_idxs_and_unrelaxed_structure(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
+    bulk_supercell: Structure,
+    _parameter_order_warn: bool = True,
 ) -> tuple[str, int | None, int | None, Structure]:
     """
     Get the defect type, site (indices in the bulk and defect supercells) and
@@ -434,15 +598,19 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     relaxation), and the pristine bulk structure with the `final` relaxed
     interstitial site for interstitials.
 
+    Note that this assumes consistent cell definitions (lattice vectors and
+    bases) for the input defect and bulk supercells, and does not perform any
+    structural re-orientations.
+
     Initial draft contributed by Dr. Alex Ganose (@ Imperial Chemistry) and
     refactored for extrinsic species and several code efficiency/robustness
     improvements.
 
     Args:
-        bulk_supercell (Structure):
-            The bulk supercell structure.
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             The defect supercell structure.
+        bulk_supercell (|Structure|):
+            The bulk supercell structure.
 
     Returns:
         defect_type (str):
@@ -453,14 +621,18 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
             defect site in the defect structure.
         defect_site_idx (int):
             Index of the defect site in the defect structure.
-        unrelaxed_defect_structure (Structure):
+        unrelaxed_defect_structure (|Structure|):
             Pristine defect supercell structure for vacancies/substitutions
             (i.e. pristine bulk with unrelaxed vacancy/substitution), or the
             pristine bulk structure with the `final` relaxed interstitial site
             for interstitials.
     """
+    if _parameter_order_warn:
+        _warn_parameter_order(  # TODO: Remove in doped v4.1
+            "get_defect_type_site_idxs_and_unrelaxed_structure"
+        )
 
-    def process_substitution(bulk_supercell, defect_supercell, composition_diff):
+    def process_substitution(defect_supercell, bulk_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
@@ -503,7 +675,7 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
         )
         return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
 
-    def process_vacancy(bulk_supercell, defect_supercell, composition_diff):
+    def process_vacancy(defect_supercell, bulk_supercell, composition_diff):
         old_species = _get_species_from_composition_diff(composition_diff, -1)
         bulk_old_species_coords, bulk_old_species_idx = get_coords_and_idx_of_species(
             bulk_supercell, old_species
@@ -523,10 +695,10 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
         )
         return bulk_site_idx, defect_site_idx, unrelaxed_defect_structure
 
-    def process_interstitial(bulk_supercell, defect_supercell, composition_diff):
+    def process_interstitial(defect_supercell, bulk_supercell, composition_diff):
         new_species = _get_species_from_composition_diff(composition_diff, 1)
 
-        bulk_new_species_coords, bulk_new_species_idx = get_coords_and_idx_of_species(
+        bulk_new_species_coords, _bulk_new_species_idx = get_coords_and_idx_of_species(
             bulk_supercell, new_species
         )
         defect_new_species_coords, defect_new_species_idx = get_coords_and_idx_of_species(
@@ -563,18 +735,16 @@ def get_defect_type_site_idxs_and_unrelaxed_structure(
     }
 
     try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(bulk_supercell, defect_supercell)
+        defect_type, comp_diff = get_defect_type_and_composition_diff(
+            defect_supercell, bulk_supercell, _parameter_order_warn=False
+        )
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
             f"{len(bulk_supercell)} in bulk vs. {len(defect_supercell)} in defect?"
         ) from exc
 
-    return (defect_type, *handlers[defect_type](bulk_supercell, defect_supercell, comp_diff))
-
-
-# maintain backwards compatibility with old function name for now, to be removed in next major release
-get_defect_site_idxs_and_unrelaxed_structure = get_defect_type_site_idxs_and_unrelaxed_structure
+    return (defect_type, *handlers[defect_type](defect_supercell, bulk_supercell, comp_diff))
 
 
 def _get_species_from_composition_diff(composition_diff, el_change):
@@ -602,11 +772,11 @@ def get_coords_and_idx_of_species(structure_or_sites, species_name, frac_coords=
 
 
 def get_matching_site(
-    site: PeriodicSite | np.ndarray[float], structure: Structure, anonymous: bool = False, tol: float = 0.5
+    site: PeriodicSite | np.ndarray, structure: Structure, anonymous: bool = False, tol: float = 0.5
 ) -> PeriodicSite:
     """
-    Get the (closest) matching ``PeriodicSite`` in ``structure`` for the input
-    ``site``, which can be a ``PeriodicSite`` or fractional coordinates.
+    Get the (closest) matching |PeriodicSite| in ``structure`` for the input
+    ``site``, which can be a |PeriodicSite| or fractional coordinates.
 
     If the closest matching site in ``structure`` is > ``tol`` Å (0.5 Å by
     default) away from the input ``site`` coordinates, an error is raised.
@@ -615,18 +785,18 @@ def get_matching_site(
     states, site property dicts etc.
 
     Args:
-        site (PeriodicSite | np.ndarray[float]):
+        site (|PeriodicSite| | np.ndarray):
             The site for which to find the closest matching site in
-            ``structure``, either as a ``PeriodicSite`` or fractional
+            ``structure``, either as a |PeriodicSite| or fractional
             coordinates array. If fractional coordinates, then ``anonymous``
             is set to ``True``.
-        structure (Structure):
+        structure (|Structure|):
             The structure in which to search for matching sites to ``site``.
         anonymous (bool):
             Whether to use anonymous matching, allowing different
             species/elements to match each other (i.e. just matching based on
             coordinates). Default is ``False`` if ``site`` is a
-            ``PeriodicSite``, and ``True`` if ``site`` is fractional
+            |PeriodicSite|, and ``True`` if ``site`` is fractional
             coordinates.
         tol (float):
             A distance tolerance (in Å), where an error will be thrown if the
@@ -709,13 +879,13 @@ def find_nearest_coords(
     in ``candidate_frac_coords`` to ``target_frac_coords``.
 
     Args:
-        candidate_frac_coords (Union[list, np.ndarray]):
+        candidate_frac_coords (list | np.ndarray):
             Fractional coordinates (typically from a bulk supercell), to find
             the nearest coordinates to ``target_frac_coords``.
-        target_frac_coords (Union[list, np.ndarray]):
+        target_frac_coords (list | np.ndarray):
             The target coordinates to find the nearest coordinates to in
             ``candidate_frac_coords``.
-        lattice (Lattice):
+        lattice (|Lattice|):
             The lattice object to use with the fractional coordinates.
         return_idx (bool):
             Whether to also return the index of the nearest coordinates in
@@ -746,11 +916,11 @@ def find_missing_idx(
     larger set of coordinates.
 
     Args:
-        frac_coords1 (Union[list, np.ndarray]):
+        frac_coords1 (list | np.ndarray):
             First set of fractional coordinates.
-        frac_coords2 (Union[list, np.ndarray]):
+        frac_coords2 (list | np.ndarray):
             Second set of fractional coordinates.
-        lattice (Lattice):
+        lattice (|Lattice|):
             The lattice object to use with the fractional coordinates.
     """
     subset, superset = (  # supa-set
@@ -785,9 +955,9 @@ def _create_unrelaxed_defect_structure(
     initial site is ambiguous).
 
     Args:
-        bulk_supercell (Structure):
+        bulk_supercell (|Structure|):
             The bulk supercell structure.
-        frac_coords (Union[list, np.ndarray]):
+        frac_coords (list | np.ndarray):
             The fractional coordinates of the defect site. Unnecessary if
             ``bulk_site_idx`` is provided.
         new_species (str):
@@ -832,9 +1002,9 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
     (https://github.com/SMTG-Bham/doped/issues/147).
 
     Args:
-        lattice (Union[Structure,Lattice]):
-            The lattice of the structure (either a ``pymatgen`` ``Structure``
-            or ``Lattice`` object).
+        lattice (|Structure| | |Lattice|):
+            The lattice of the structure (either a ``pymatgen`` |Structure|
+            or |Lattice| object).
 
     Returns:
         float:
@@ -850,9 +1020,9 @@ def get_wigner_seitz_radius(lattice: Structure | Lattice) -> float:
 
 
 def check_atom_mapping_far_from_defect(
-    bulk_supercell: Structure,
     defect_supercell: Structure,
-    defect_coords: np.ndarray[float],
+    bulk_supercell: Structure,
+    defect_coords: np.ndarray,
     coords_are_cartesian: bool = False,
     displacement_tol: float = 0.5,
     warning: bool | str = "verbose",
@@ -869,11 +1039,11 @@ def check_atom_mapping_far_from_defect(
     the largest sphere which can fit in the cell.
 
     Args:
-        bulk_supercell (Structure):
-            The bulk structure.
-        defect_supercell (Structure):
+        defect_supercell (|Structure|):
             The defect structure.
-        defect_coords (np.ndarray[float]):
+        bulk_supercell (|Structure|):
+            The bulk structure.
+        defect_coords (np.ndarray):
             The coordinates of the defect site.
         coords_are_cartesian (bool):
             Whether the defect coordinates are in Cartesian or fractional
@@ -1160,9 +1330,9 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
     reintroduced at any point, this point should be noted!
 
     Args:
-        s1_structure (Structure):
+        s1_structure (|Structure|):
             The input structure.
-        s2_structure (Structure):
+        s2_structure (|Structure|):
             The template structure.
         threshold (float):
             If the distance between a pair of matched sites is larger than
@@ -1191,10 +1361,10 @@ def reorder_s1_like_s2(s1_structure: Structure, s2_structure: Structure, thresho
 
 
 def _compare_potcar_symbols(
-    bulk_potcar_symbols,
     defect_potcar_symbols,
-    bulk_name="bulk",
+    bulk_potcar_symbols,
     defect_name="defect",
+    bulk_name="bulk",
     warn=True,
     only_matching_elements=False,
 ):
@@ -1248,12 +1418,12 @@ def _compare_potcar_symbols(
 
 
 def _compare_kpoints(
-    bulk_actual_kpoints,
     defect_actual_kpoints,
-    bulk_kpoints=None,
+    bulk_actual_kpoints,
     defect_kpoints=None,
-    bulk_name="bulk",
+    bulk_kpoints=None,
     defect_name="defect",
+    bulk_name="bulk",
     warn=True,
 ):
     """
@@ -1304,12 +1474,12 @@ def _compare_kpoints(
 
 
 def _compare_incar_tags(
-    bulk_incar_dict: dict[str, str | int | float],
     defect_incar_dict: dict[str, str | int | float],
+    bulk_incar_dict: dict[str, str | int | float],
     fatal_incar_mismatch_tags: dict[str, str | int | float] | None = None,
     ignore_tags: set[str] | None = None,
-    bulk_name: str = "bulk",
     defect_name: str = "defect",
+    bulk_name: str = "bulk",
     warn: bool = True,
 ):
     """
@@ -1417,9 +1587,9 @@ def _format_mismatching_incar_warning(mismatching_INCAR_warnings: list[tuple[str
     )
 
 
-def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray[float]:
+def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray:
     """
-    Determine the total magnetization from a ``Vasprun`` object.
+    Determine the total magnetization from a |Vasprun| object.
 
     For spin-polarised calculations, this is the difference between the number
     of spin-up vs spin-down electrons. For non-spin-polarised calculations,
@@ -1441,12 +1611,12 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
     total magnetization for tricky cases.
 
     Args:
-        vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract the total
+        vasprun (|Vasprun|):
+            The |Vasprun| object from which to extract the total
             magnetization.
 
     Returns:
-        int or float or np.ndarray[float]:
+        int or float or np.ndarray:
             The total magnetization of the system.
     """
     # in theory should be able to use vasprun.idos (integrated dos), but this doesn't show
@@ -1501,11 +1671,11 @@ def get_magnetization_from_vasprun(vasprun: Vasprun) -> int | float | np.ndarray
 
 def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
     """
-    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object.
+    Determine the number of electrons (``NELECT``) from a |Vasprun| object.
 
     Args:
-        vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract ``NELECT``.
+        vasprun (|Vasprun|):
+            The |Vasprun| object from which to extract ``NELECT``.
 
     Returns:
         int or float: The number of electrons in the system.
@@ -1531,12 +1701,12 @@ def get_nelect_from_vasprun(vasprun: Vasprun) -> int | float:
 
 def get_neutral_nelect_from_vasprun(vasprun: Vasprun, skip_potcar_init: bool = False) -> int:
     """
-    Determine the number of electrons (``NELECT``) from a ``Vasprun`` object,
+    Determine the number of electrons (``NELECT``) from a |Vasprun| object,
     corresponding to a neutral charge state for the structure.
 
     Args:
-        vasprun (Vasprun):
-            The ``Vasprun`` object from which to extract ``NELECT``.
+        vasprun (|Vasprun|):
+            The |Vasprun| object from which to extract ``NELECT``.
         skip_potcar_init (bool):
             Whether to skip the initialisation of the ``POTCAR`` statistics
             (i.e. the auto-charge determination) and instead try to reverse
@@ -1639,8 +1809,12 @@ def _get_unrelaxed_defect_structure(defect_entry: DefectEntry, **kwargs) -> Stru
     return defect_entry.calculation_metadata.get("unrelaxed_defect_structure")
 
 
-def _get_defect_supercell_frac_coords(defect_entry: DefectEntry, relaxed=True) -> np.ndarray[float] | None:
-    sc_defect_frac_coords = defect_entry.sc_defect_frac_coords
+def _get_defect_supercell_frac_coords(
+    defect_entry: DefectEntry, relaxed=True
+) -> np.ndarray | tuple[float, float, float] | None:
+    sc_defect_frac_coords: np.ndarray | tuple[float, float, float] | None = (
+        defect_entry.sc_defect_frac_coords
+    )
     site = None
 
     if not relaxed:
@@ -1690,21 +1864,21 @@ def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs
 def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite: bool = False, **kwargs):
     """
     Helper function to reparse the defect site information for a given
-    ``DefectEntry``, updating the relevant attributes and calculation metadata.
+    |DefectEntry|, updating the relevant attributes and calculation metadata.
 
     Args:
-        defect_entry (DefectEntry):
-            The ``DefectEntry`` object for which to update the defect site
+        defect_entry (|DefectEntry|):
+            The |DefectEntry| object for which to update the defect site
             information.
         overwrite (bool):
-            Whether to overwrite existing ``DefectEntry`` attributes with the
+            Whether to overwrite existing |DefectEntry| attributes with the
             newly parsed values. Default is ``False`` (i.e. only update if the
             attributes are not already set).
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
+            |Defect| initialization (such as ``oxi_state``, ``multiplicity``,
             ``symprec``, ``dist_tol_factor``) in the
             ``defect_and_info_from_structures`` function.
     """
@@ -1717,8 +1891,9 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
         defect_site,
         defect_structure_metadata,
     ) = defect_and_info_from_structures(
-        bulk_supercell,
         defect_supercell,
+        bulk_supercell,
+        _parameter_order_warn=False,
         **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
     )
     if not getattr(defect_entry, "calculation_metadata", None):
@@ -1740,69 +1915,6 @@ def _update_defect_entry_structure_metadata(defect_entry: DefectEntry, overwrite
             setattr(defect_entry, attr_name, value)
 
 
-def _partial_defect_entry_from_structures(
-    bulk_supercell: Structure, defect_supercell: Structure, **kwargs
-) -> DefectEntry:
-    """
-    Helper function to create a partial ``DefectEntry`` from the input bulk and
-    defect supercells.
-
-    Uses ``defect_and_info_from_structures`` to extract the defect structural
-    information, and creates a corresponding ``DefectEntry`` object (which has
-    no ``bulk_entry`` and a fake zero-energy ``sc_entry``, and so cannot be
-    used for energy analyses). Primarily intended for internal usage in
-    ``doped`` parsing/analysis functions.
-
-    Args:
-        bulk_supercell (Structure):
-            The bulk supercell structure.
-        defect_supercell (Structure):
-            The defect supercell structure.
-        **kwargs:
-            Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
-            (such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``) and/or
-            ``Defect`` initialization (such as ``oxi_state``, ``multiplicity``,
-            ``symprec``, ``dist_tol_factor``) in the
-            ``defect_and_info_from_structures`` function.
-
-    Returns:
-        DefectEntry:
-            A partial ``DefectEntry`` object containing the defect and defect
-            site information, but no ``bulk_entry`` and a zero-energy
-            ``sc_entry``.
-    """
-    from doped.analysis import defect_and_info_from_structures
-
-    (
-        defect,
-        defect_site,
-        defect_structure_metadata,
-    ) = defect_and_info_from_structures(
-        bulk_supercell,
-        defect_supercell,
-        **kwargs,  # pass any additional kwargs (e.g. oxidation state, multiplicity, etc.)
-    )
-
-    return DefectEntry(
-        # pmg attributes:
-        defect=defect,  # this corresponds to _unrelaxed_ defect
-        charge_state=0,
-        sc_entry=ComputedStructureEntry(
-            structure=bulk_supercell,
-            energy=0.0,  # needs to be set, so set to 0.0
-        ),
-        sc_defect_frac_coords=defect_site.frac_coords,  # _relaxed_ defect site
-        bulk_entry=None,
-        # doped attributes:
-        name="Partial Defect Entry",
-        defect_supercell_site=defect_site,  # _relaxed_ defect site
-        defect_supercell=defect_supercell,
-        bulk_supercell=bulk_supercell,
-        calculation_metadata=defect_structure_metadata,  # only structural metadata here
-    )
-
-
 def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0) -> int:
     """
     Get the total number of electrons (including core electrons! -- so
@@ -1810,7 +1922,7 @@ def _num_electrons_from_charge_state(structure: Structure, charge_state: int = 0
     charge state.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure for which to get the total number of electrons.
         charge_state (int):
             The charge state of the system. Default is 0.
@@ -1850,8 +1962,8 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
     numbers for odd-electron systems).
 
     Args:
-        vasprun (Vasprun):
-            ``pymatgen`` ``Vasprun`` for which to determine spin degeneracy.
+        vasprun (|Vasprun|):
+            ``pymatgen`` |Vasprun| for which to determine spin degeneracy.
         charge_state (int):
             The charge state of the system, which can be used to determine the
             number of electrons. If ``None`` (default), automatically
@@ -1867,10 +1979,9 @@ def spin_degeneracy_from_vasprun(vasprun: Vasprun, charge_state: int | None = No
         num_electrons = _num_electrons_from_charge_state(vasprun.final_structure, charge_state)
 
     try:
-        magnetization = get_magnetization_from_vasprun(vasprun)
-        if isinstance(magnetization, np.ndarray):
-            # take the vector norm as the total magnetization
-            magnetization = np.linalg.norm(magnetization)
+        raw_magnetization = get_magnetization_from_vasprun(vasprun)
+        # take the vector norm as the total magnetization (for NCL (SOC) / vector magnetization):
+        magnetization = float(np.linalg.norm(raw_magnetization))
 
         # round to nearest possible value (even numbers for even-electron systems, odd for odd-electron):
         if num_electrons % 2 == 0:  # even-electron system, spin degeneracy = 1, 3, 5, ...
@@ -1905,26 +2016,22 @@ def _simple_spin_degeneracy_from_num_electrons(num_electrons: int = 0) -> int:
     return int(num_electrons % 2 + 1)
 
 
-def total_charge_from_vasprun(
-    vasprun: Vasprun, code: str = "vasp", pp_folder: str | PathLike | None = None
-) -> int:
+def total_charge_from_vasprun(vasprun: Vasprun) -> int | None:
     """
-    Determine the total charge state of a system from the vasprun, and compare
-    to the expected charge state if provided.
+    Determine the total charge state of a system from the vasprun.
+
+    This is VASP-specific; for Quantum ESPRESSO the charge is read directly
+    from the ``PWxml`` object (``PWxml.total_charge``, parsed from the QE
+    ``tot_charge`` XML field).
 
     Note that if the system is charged, then this function relies on access to
     ``POTCAR`` data, which can be setup with ``pymatgen`` as detailed on the
-    installation page here:
-    https://doped.readthedocs.io/en/latest/Installation.html#setup-potcars-and-materials-project-api
+    :ref:`installation page <setup_potcars_mp_api>`.
 
     Args:
-        vasprun (Vasprun):
-            ``pymatgen`` ``Vasprun`` object for which to determine the total
+        vasprun (|Vasprun|):
+            ``pymatgen`` |Vasprun| object for which to determine the total
             charge.
-        code (str):
-            String to judge which neutral_nelect procedure to use.
-        pp_folder (str | PathLike):
-            Folder which contains pseudopotential files. For QE currently.
 
     Returns:
         int or None:
@@ -1934,17 +2041,12 @@ def total_charge_from_vasprun(
         return 0  # neutral if NELECT not specified
 
     auto_charge = None
-    with contextlib.suppress(Exception):  # otherwise determine neutral NELECT from vasprun & POTCARs:
+    with contextlib.suppress(Exception):  # determine neutral NELECT from vasprun & POTCARs:
         nelect = get_nelect_from_vasprun(vasprun)
-
-        if code == "vasp":
-            neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
-        elif code == "espresso":
-            neutral_nelect = RunParser("espresso")._get_neutral_nelect_from_pp(vasprun, pp_folder)
-
+        neutral_nelect = get_neutral_nelect_from_vasprun(vasprun)
         auto_charge = -1 * (nelect - neutral_nelect)
 
-        if abs(auto_charge) >= 10 and code == "vasp":
+        if abs(auto_charge) >= 10:
             neutral_nelect = get_neutral_nelect_from_vasprun(vasprun, skip_potcar_init=True)
             auto_charge = -1 * (nelect - neutral_nelect)
 
@@ -1952,7 +2054,7 @@ def total_charge_from_vasprun(
 
 
 def _get_bulk_locpot_dict(bulk_path, quiet=False, filename="LOCPOT"):
-    bulk_locpot_path, multiple = _get_output_files_warn_if_multiple(
+    bulk_locpot_path, multiple = _get_output_files_and_check_if_multiple(
         filename, bulk_path, dir_type="bulk", quiet=quiet
     )
 
@@ -2013,7 +2115,7 @@ def get_dimer_bonds(structure: Structure, rtol: float = 1.05) -> dict[str, list[
     length.
 
     Args:
-        structure (Structure): The structure to get the dimer bond lengths for.
+        structure (|Structure|): The structure to get the dimer bond lengths for.
         rtol (float):
             The relative tolerance to use for classifying bonds as dimer bonds,
             where distances < ``rtol * get_dimer_bond_length(elt, elt)`` are
@@ -2081,8 +2183,8 @@ class RunParserEspresso:
         )  # `message` only needs to match start of message
         default_kwargs = {"parse_dos": False, "exception_on_bad_xml": False}
         default_kwargs.update(kwargs)
-
-        # PWxml._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag) #??? Never called in doped? PWxml already has a _parse_projected_eigen though it only accepts filproj.
+        #TODO: Devise a test for working with projected eigenvalues: Currently untested with doped examples.
+        #PWxml._parse_projected_eigen = partialmethod(parse_projected_eigen, parse_mag=parse_mag) #??? Never called in doped? PWxml already has a _parse_projected_eigen though it only accepts filproj.
 
         try:
             with warnings.catch_warnings(record=True) as w:
@@ -2093,7 +2195,7 @@ class RunParserEspresso:
                 # else:
                 vasprun = PWxml(find_archived_fname(espressorun_path), **default_kwargs)
 
-                # hacks because PWxml does not initialize atomic states and kpoints_opt_props
+                # PWxml does not initialize atomic states and kpoints_opt_props
                 # see https://github.com/Griffin-Group/pymatgen-io-espresso/issues/27
                 vasprun.atomic_states = None
 
@@ -2200,7 +2302,7 @@ class RunParserEspresso:
     @classmethod
     def _get_cube_dict(cls, bulk_path, quiet=False):
 
-        bulk_cube_path, multiple = _get_output_files_warn_if_multiple(".cube", bulk_path, dir_type="bulk")
+        bulk_cube_path, multiple = _get_output_files_and_check_if_multiple(".cube", bulk_path, dir_type="bulk")
 
         bulk_cube = cls.get_cube(bulk_cube_path)
         return {str(k): bulk_cube.get_average_along_axis(k) for k in [0, 1, 2]}
@@ -2224,77 +2326,6 @@ class RunParserEspresso:
             )
         return get_atomic_site_potentials(bulk_vol_data_path, beta=beta)
 
-    #TODO: Not needed?
-    @classmethod
-    def _get_neutral_nelect_from_pp(cls, vasprun: Vasprun, pp_folder: str | Path) -> float:
-        """
-        Compute NELECT for a QE system using a Vasprun object and QE UPF
-        pseudopotentials.
-
-        Args:
-            vasprun (Vasprun): VASP vasprun.xml parsed object.
-            pp_folder (str | Path): Path to QE UPF pseudopotential folder.
-
-        Returns:
-            float: Total number of electrons for the system (neutral).
-        """
-
-        def _get_zval_from_upf(pp_file: Path) -> float:
-            """
-            Extract z_valence from a QE UPF pseudopotential file (supports v1,
-            v2 XML, and old format).
-            """
-            with open(pp_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if "z_valence" in line:
-                        if "=" in line:
-                            m = re.search(r'z_valence\s*=\s*"([^"]*)"', line)
-                            if not m:
-                                return None  # or raise error
-
-                            raw = m.group(1).strip().replace(" ", "")
-                            return float(raw)
-                        elif "<z_valence>" in line:
-                            val = line.split(">")[1].split("<")[0]
-                            return float(val.strip('"'))
-                    elif "Z valence" in line and any(char.isdigit() for char in line):
-                        val = line.split()[0]
-                        return float(val.strip('"'))
-            raise ValueError(f"z_valence not found in {pp_file}")
-
-        def _extract_element_from_filename(filename: str, valid_elements: list[str]) -> str:
-            """
-            Safely match UPF filename to a chemical element symbol.
-            """
-            for el in valid_elements:
-                if re.search(rf"\b{el}\b", filename, flags=re.IGNORECASE):
-                    return el
-            for el in valid_elements:
-                if el.lower() in filename.lower():
-                    return el
-            raise ValueError(f"Could not match element for {filename}")
-
-        pp_folder = Path(pp_folder)
-        structure = vasprun.final_structure
-        composition = structure.composition.get_el_amt_dict()
-
-        total_nelect = 0.0
-
-        for pp_filename in vasprun.potcar_spec:
-            pp_name = Path(pp_filename).stem
-            element = _extract_element_from_filename(pp_name, list(composition.keys()))
-
-            pp_path = pp_folder / pp_filename
-            if not pp_path.exists():
-                raise FileNotFoundError(f"UPF file not found: {pp_path}")
-
-            zval = _get_zval_from_upf(pp_path)
-            count = composition[element]
-
-            total_nelect += count * zval
-
-        return round(total_nelect, 6)
 
     @classmethod
     def get_cube(cls, cube_path: PathLike):
@@ -2314,55 +2345,12 @@ class RunParserEspresso:
         return cube
 
     def _get_bulk_cube_dict(bulk_path, quiet=False, filename=".cube"):
-        bulk_cube_path, multiple = _get_output_files_warn_if_multiple(
+        bulk_cube_path, multiple = _get_output_files_and_check_if_multiple(
             filename, bulk_path, dir_type="bulk", quiet=quiet
         )
 
         bulk_cube = RunParser("espresso").get_cube(bulk_cube_path)
         return {str(k): bulk_cube.get_average_along_axis(k) for k in [0, 1, 2]}
-
-    # @classmethod
-    # def potcar_spec_fix(cls, vasprun_obj):
-    #     """
-    #     Converts QE-style pseudopotential filenames to VASP-style potcar_spec dictionaries
-    #     by extracting the element and pseudopotential type from the filename.
-
-    #     Parameters:
-    #         vasprun_obj: An object with `potcar_spec` as a list of pseudopotential filenames.
-
-    #     Returns:
-    #         List[dict]: VASP-style potcar_spec list.
-    #     """
-    #     import re
-    #     qe_pseudos = vasprun_obj.potcar_spec
-    #     vasp_specs = []
-
-    #     for pseudo in qe_pseudos:
-    #         # Extract element (first word or token before `_` or `.`)
-    #         element_match = re.match(r'^([A-Za-z]+)', pseudo)
-    #         element = element_match.group(1).capitalize() if element_match else "X"
-
-    #         # Infer functional (e.g., PBE, LDA)
-    #         functional_match = re.search(r'_(pbe|lda|pw91|revpbe)', pseudo, re.IGNORECASE)
-    #         functional = functional_match.group(1).upper() if functional_match else "PBE"
-
-    #         # Infer potential type (PAW/USPP)
-    #         if 'paw' in pseudo.lower():
-    #             method = "PAW"
-    #         elif 'uspp' in pseudo.lower():
-    #             method = "USPP"
-    #         else:
-    #             method = "PAW"  # default guess
-
-    #         titel = f"{method}_{functional} {element} UNKNOWN"
-
-    #         vasp_specs.append({
-    #             'titel': titel,
-    #             'hash': None,
-    #             'summary_stats': {}
-    #         })
-
-    #     return vasp_specs
 
     @classmethod
     def _get_core_site_potentials(
@@ -2803,7 +2791,7 @@ def qe_convergence_setup_from_structure(
             matching ``range``). Default ``(20, 200, 20)``.
         kpoint_sweep_ecutwfc: ``ecutwfc`` (Ry) held fixed while the
             k-grid is swept. ``None`` (default) keeps the YAML set default
-            (60 Ry). 
+            (60 Ry).
         ecut_range: ``(min, max, step)`` ``ecutwfc`` (Ry) sweep for the
             cutoff test (``max`` inclusive). Default ``(20, 90, 10)``.
         ecut_sweep_kpoint_density: k-point density (Å^-3) held fixed

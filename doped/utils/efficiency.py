@@ -6,41 +6,46 @@ functions/workflows/calculations in ``doped``.
 import contextlib
 import itertools
 import operator
-import re
 from collections import defaultdict
 from collections.abc import Callable, Generator, Sequence
 from functools import cached_property, lru_cache
+from string import digits
 from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 from pymatgen.analysis.defects.generators import VacancyGenerator
 from pymatgen.analysis.defects.utils import VoronoiPolyhedron, remove_collisions
-from pymatgen.analysis.structure_matcher import (
+from pymatgen.core.composition import Composition, DummySpecies
+from pymatgen.core.lattice import Lattice
+from pymatgen.core.periodic_table import Element, Species
+from pymatgen.core.sites import PeriodicSite, Site
+from pymatgen.core.structure import IStructure, Molecule, Structure
+from pymatgen.core.structure_matcher import (
     AbstractComparator,
     ElementComparator,
     FrameworkComparator,
     StructureMatcher,
 )
-from pymatgen.core.composition import Composition, DummySpecies
-from pymatgen.core.periodic_table import Element, Species
-from pymatgen.core.sites import PeriodicSite, Site
-from pymatgen.core.structure import IStructure, Molecule, Structure
 from pymatgen.io.vasp.sets import get_valid_magmom_struct
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer, SymmOp
 from scipy.spatial import Voronoi
 
 if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
     from doped.core import Vacancy
 
 # Note that any overrides of ``__eq__`` should also override ``__hash__``, and vice versa
+
+_TRANSLATE_REMOVE_CHARGE = str.maketrans("", "", digits + "+-.")
 
 
 # Composition overrides:
 def _composition__hash__(self):
     """
-    Custom ``__hash__`` method for ``Composition`` instances, to make
-    composition comparisons faster (used in structure matching etc.).
+    Custom ``__hash__`` method for |Composition| instances, to make composition
+    comparisons faster (used in structure matching etc.).
 
     ``pymatgen`` composition has just hashes the chemical system (without
     stoichiometry), which cannot then be used to distinguish different
@@ -49,10 +54,10 @@ def _composition__hash__(self):
     return hash(frozenset(self._data.items()))
 
 
-@lru_cache(maxsize=int(1e8))
+@lru_cache(maxsize=int(1e5))  # maxsize on the order of 30 Mb
 def doped_Composition_eq_func(self_hash, other_hash):
     r"""
-    Update equality function for ``Composition`` instances, which breaks early
+    Update equality function for |Composition| instances, which breaks early
     for mismatches and also uses caching, making it orders of magnitude faster
     than ``pymatgen``\s equality function.
     """
@@ -64,7 +69,7 @@ def doped_Composition_eq_func(self_hash, other_hash):
 
 def fast_Composition_eq(self, other):
     """
-    Fast equality function for ``Composition`` instances, breaking early for
+    Fast equality function for |Composition| instances, breaking early for
     mismatches.
     """
     # skip matching object type check here, as already checked upstream in ``_Composition__eq__``
@@ -80,7 +85,7 @@ def fast_Composition_eq(self, other):
 
 def _Composition__eq__(self, other):
     """
-    Custom ``__eq__`` method for ``Composition`` instances, using a cached
+    Custom ``__eq__`` method for |Composition| instances, using a cached
     equality function to speed up comparisons.
     """
     if not isinstance(other, type(self) | dict):
@@ -108,13 +113,13 @@ class Hashabledict(dict):
         def _freeze(obj):
             if isinstance(obj, dict):  # convert to frozenset of tuples
                 return frozenset((k, _freeze(v)) for k, v in obj.items())
-            if isinstance(obj, list):  # lists → tuples
+            if isinstance(obj, list):  # lists -> tuples
                 return tuple(_freeze(v) for v in obj)
-            if isinstance(obj, set):  # sets → frozensets
+            if isinstance(obj, set):  # sets -> frozensets
                 return frozenset(_freeze(v) for v in obj)
-            if isinstance(obj, tuple):  # tuples → tuples of frozen values
+            if isinstance(obj, tuple):  # tuples -> tuples of frozen values
                 return tuple(_freeze(v) for v in obj)
-            # else assume it's already hashable (int, str, custom …)
+            # else assume it's already hashable (int, str, custom ...)
             return obj
 
         return hash(_freeze(self))
@@ -152,17 +157,17 @@ def _fast_dict_deepcopy_max_two_levels(d: dict) -> dict:
 
 @lru_cache(maxsize=int(1e5))
 def _cached_Composition_init(comp_input):
-    return Composition(comp_input)
+    return Composition(comp_input).copy()  # copy to avoid mutability issues with cached objects
 
 
 def _cache_ready_Composition_init(comp_input):
     return _cached_Composition_init(_get_hashable_dict(comp_input))
 
 
-def _fast_get_composition_from_sites(sites, assume_full_occupancy=False):
+def _fast_get_composition_from_sites(sites: Sequence[Site], assume_full_occupancy: bool = False):
     """
     Helper function to quickly get the composition of a collection of sites,
-    faster than initializing a ``Structure`` object.
+    faster than initializing a |Structure| object.
 
     Used in initial drafts of defect stenciling code, but replaced by faster
     methods.
@@ -182,26 +187,43 @@ Composition.__eq__ = _Composition__eq__
 Composition.__hash__ = _composition__hash__
 
 
-@lru_cache(maxsize=int(1e5))
-def _parse_site_species_str(site: Site, wout_charge: bool = False):
-    if isinstance(site._species, Element):
-        return site._species.symbol
-    if isinstance(site._species, str):
-        species_string = site._species
-    elif isinstance(site._species, Composition | dict):
-        species_string = str(next(iter(site._species)))
-    else:
-        raise ValueError(f"Unexpected species type: {type(site._species)}")
+def _parse_site_species_str(site: Site, wout_charge: bool = False) -> str:
+    """
+    Get the species string of a :class:`~pymatgen.core.sites.Site`, with or
+    without charge information.
 
-    if wout_charge:  # remove all digits, + or - from species string
-        return re.sub(r"\d+|[\+\-]", "", species_string)
-    return species_string
+    Much faster than direct ``str(Site)``. Note that this is faster without
+    caching.
+
+    Args:
+        site (Site):
+            :class:`~pymatgen.core.sites.Site` to get the species string of.
+        wout_charge (bool):
+            Whether to remove charge information from the species string.
+
+    Returns:
+        str:
+            Species string of the :class:`~pymatgen.core.sites.Site`, with or
+            without charge information.
+    """
+    species = site._species
+    if isinstance(species, Element):
+        return species.symbol
+    if isinstance(species, str):
+        species_string = species
+    elif isinstance(species, Composition | dict):
+        species_string = str(next(iter(species)))
+    else:
+        raise ValueError(f"Unexpected species type: {type(species)}")
+
+    # remove all digits, +, - or . from species string, if `wout_charge` is True
+    return species_string.translate(_TRANSLATE_REMOVE_CHARGE) if wout_charge else species_string
 
 
 # PeriodicSite overrides:
 def _periodic_site__hash__(self):
     """
-    Custom ``__hash__`` method for ``PeriodicSite`` instances.
+    Custom ``__hash__`` method for |PeriodicSite| instances.
     """
     property_dict = (  # Convert properties to a hashable form
         {k: tuple(v) if isinstance(v, list | np.ndarray) else v for k, v in self.properties.items()}
@@ -229,9 +251,12 @@ def _periodic_site__hash__(self):
 
 def cache_ready_PeriodicSite__eq__(self, other):
     """
-    Custom ``__eq__`` method for ``PeriodicSite`` instances, using a cached
+    Custom ``__eq__`` method for |PeriodicSite| instances, using a cached
     equality function to speed up comparisons.
     """
+    if self is other:
+        return True
+
     needed_attrs = ("_species", "coords", "properties")
 
     if not all(hasattr(other, attr) for attr in needed_attrs):
@@ -240,12 +265,15 @@ def cache_ready_PeriodicSite__eq__(self, other):
     return (
         self._species == other._species  # should always work fine (and is faster) if Site initialised
         # without ``skip_checks`` (default)
-        and cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
+        and (
+            self.coords is other.coords  # if coords are the same object
+            or cached_allclose(tuple(self.coords), tuple(other.coords), atol=type(self).position_atol)
+        )
         and self.properties == other.properties
     )
 
 
-@lru_cache(maxsize=int(1e8))
+@lru_cache(maxsize=int(2e3))  # maxsize on the order of 1 Mb
 def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08):
     """
     Cached version of ``np.allclose``, taking tuples as inputs (so that they
@@ -257,14 +285,52 @@ def cached_allclose(a: tuple, b: tuple, rtol: float = 1e-05, atol: float = 1e-08
 PeriodicSite.__eq__ = cache_ready_PeriodicSite__eq__
 PeriodicSite.__hash__ = _periodic_site__hash__
 
+
+# Lattice overrides:
+_orig_lattice_get_all_distances = Lattice.get_all_distances
+
+
+@lru_cache(maxsize=int(1e4))  # maxsize on the order of 20 Mb for typical use cases
+def _cached_get_all_distances(self: Lattice, frac_coords1: tuple, frac_coords2: tuple):
+    return _orig_lattice_get_all_distances(self, np.array(frac_coords1), np.array(frac_coords2))
+
+
+def array_to_tuple(array: "ArrayLike | tuple") -> tuple:
+    """
+    Convert an array-like input to tuple.
+    """
+    array = np.array(array)
+    if array.ndim == 1:
+        return tuple(array)
+    return tuple(map(tuple, array))
+
+
+def get_all_distances(
+    self,
+    frac_coords1: "ArrayLike",
+    frac_coords2: "ArrayLike",
+) -> NDArray[np.float64]:
+    """
+    Get the distances between two lists of coordinates taking into account
+    periodic boundary conditions and the lattice.
+
+    See :meth:`~pymatgen.core.lattice.get_all_distances`.
+    """
+    return _cached_get_all_distances(
+        self, array_to_tuple(frac_coords1), array_to_tuple(frac_coords2)
+    ).copy()
+
+
+Lattice.get_all_distances = get_all_distances
+
 # Structure overrides:
 
 
 def _structure__hash__(self):
     """
-    Custom ``__hash__`` method for ``Structure`` instances.
+    Custom ``__hash__`` method for |Structure| instances.
     """
-    return hash((self.lattice, frozenset(self.sites)))
+    return hash((self.lattice, tuple(self.sites)))  # tuple rather than frozenset of sites; order-dependent
 
 
 @contextlib.contextmanager
@@ -309,14 +375,14 @@ def doped_Structure__eq__(self, other: IStructure) -> bool:
 @lru_cache(maxsize=int(1e4))
 def cached_Structure_eq_func(self_hash, other_hash):
     """
-    Cached equality function for ``Structure`` instances.
+    Cached equality function for |Structure| instances.
     """
     return doped_Structure__eq__(IStructure.__instances__[self_hash], IStructure.__instances__[other_hash])
 
 
 def _Structure__eq__(self, other):
     """
-    Custom ``__eq__`` method for ``Structure``/``IStructure`` instances, using
+    Custom ``__eq__`` method for |Structure|/``IStructure`` instances, using
     both caching and an updated, faster equality function to speed up
     comparisons.
     """
@@ -408,7 +474,7 @@ def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
 
     Refactored from ``pymatgen`` to allow caching, to boost efficiency.
     """
-    return _original_get_symmetry_operations(self)  # call the original method, now a cacheable class
+    return _original_get_symmetry_operations(self).copy()  # call the orig method, now a cacheable class
 
 
 SpacegroupAnalyzer.__hash__ = _sga__hash__
@@ -459,13 +525,13 @@ def get_element_indices(
 ) -> dict[str, list[int]]:
     """
     Convenience function to generate a dictionary of ``{element: [indices]}``
-    for a given ``Structure``, where ``indices`` are the indices of the sites
-    in the structure corresponding to the given ``elements`` (default is all
+    for a given |Structure|, where ``indices`` are the indices of the sites in
+    the structure corresponding to the given ``elements`` (default is all
     elements in the structure).
 
     Args:
-        structure (Structure):
-            ``Structure`` to get the indices from.
+        structure (|Structure|):
+            |Structure| to get the indices from.
         elements (list[Element | Species | str] | None):
             List of elements to get the indices of. If ``None`` (default), all
             elements in the structure are used.
@@ -494,12 +560,13 @@ def get_element_indices(
 def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> dict:
     r"""
     Get a dictionary of ``{element: (min_bond_length, max_bond_length)}`` for a
-    given ``Structure``, where ``min_bond_length`` and ``max_bond_length`` are
-    the minimum and maximum bond lengths for each element in the structure.
+    given |Structure|, where ``min_bond_length`` and ``max_bond_length`` are
+    the minimum and maximum `smallest` interatomic bond lengths for each
+    element in the structure.
 
     Args:
-        structure (Structure):
-            Structure to calculate bond lengths for.
+        structure (|Structure|):
+            |Structure| to calculate bond lengths for.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``comparator`` has been set here (if
@@ -514,7 +581,9 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
     comparator = sm_kwargs.get("comparator")
 
     if len(structure) == 1:
-        structure = structure * 2  # need at least two sites to calculate bond lengths
+        structure *= 2  # need at least two sites to calculate bond lengths
+    elif len(structure) == 0:  # edge case of a 'defect structure' in a primitive cell with 1 atom
+        return {}
 
     # get the distance matrix broken down by species:
     element_idx_dict = get_element_indices(structure, comparator=comparator)
@@ -522,19 +591,30 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
         idx for elt in sm_kwargs.get("ignored_species", []) for idx in element_idx_dict.get(elt, [])
     ]
 
+    # Note: The repeated distance_matrix call here, particularly when this function is called twice in
+    # ``apply_s2_to_s1_transformation()``, can become expensive for large structures (due to the NxN
+    # distance calculation). In ``apply_s2_to_s1_transformation()``, where this function is called
+    # twice, we sub-select sites in the structure to run the min/max bond lengths test, for this reason
     distance_matrix = structure.distance_matrix
     np.fill_diagonal(distance_matrix, np.inf)  # set diagonal to np.inf to ignore self-distances of 0
     distance_matrix[:, ignored_indices] = np.inf  # set ignored indices to np.inf to ignore these distances
     distance_matrix[ignored_indices, :] = np.inf  # set ignored indices to np.inf to ignore these distances
-    element_min_max_bond_length_dict = {elt: np.array([0, 0]) for elt in element_idx_dict}
+    element_min_max_bond_length_dict = {
+        elt: np.array([np.min(structure.lattice.abc), np.max(structure.lattice.abc)])
+        for elt in element_idx_dict
+    }  # default to min/max lattice vectors (for cases where there are no other matching non-ignored atoms)
 
     for elt, site_indices in element_idx_dict.items():
         element_dist_matrix = distance_matrix[:, site_indices]  # (N_of_that_element, N_sites) matrix
         if element_dist_matrix.size != 0:
             min_interatomic_distances_per_atom = np.min(element_dist_matrix, axis=0)  # min along columns
-            element_min_max_bond_length_dict[elt] = np.array(
-                [np.min(min_interatomic_distances_per_atom), np.max(min_interatomic_distances_per_atom)]
-            )
+            if np.min(min_interatomic_distances_per_atom) != np.inf:  # other non-ignored matching atoms
+                element_min_max_bond_length_dict[elt] = np.array(
+                    [
+                        np.min(min_interatomic_distances_per_atom),
+                        np.max(min_interatomic_distances_per_atom),
+                    ]
+                )
 
     return element_min_max_bond_length_dict
 
@@ -542,31 +622,31 @@ def get_element_min_max_bond_length_dict(structure: Structure, **sm_kwargs) -> d
 def get_dist_equiv_stol(dist: float, structure: Structure) -> float:
     """
     Get the equivalent ``stol`` value for a given Cartesian distance (``dist``)
-    in a given ``Structure``.
+    in a given |Structure|.
 
     ``stol`` is a site tolerance parameter used in ``pymatgen``
-    ``StructureMatcher`` functions, defined as the fraction of the average free
+    |StructureMatcher| functions, defined as the fraction of the average free
     length per atom := ( V / Nsites ) ** (1/3).
 
     Args:
         dist (float): Cartesian distance in Å.
-        structure (Structure): Structure to calculate ``stol`` for.
+        structure (|Structure|): |Structure| to calculate ``stol`` for.
 
     Returns:
         float: Equivalent ``stol`` value for the given distance.
     """
-    return dist / (structure.volume / len(structure)) ** (1 / 3)
+    return dist / (structure.volume / max(len(structure), 1)) ** (1 / 3)  # max to ensure no divide-by-zero
 
 
 def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) -> float:
     """
     Get the minimum possible ``stol`` value which will give a match between
-    ``struct1`` and ``struct2`` using ``StructureMatcher``, based on the ranges
+    ``struct1`` and ``struct2`` using |StructureMatcher|, based on the ranges
     of per-element minimum interatomic distances in the two structures.
 
     Args:
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
         **sm_kwargs:
             Additional keyword arguments to pass to ``StructureMatcher()``.
             Just used to check if ``ignored_species`` or ``comparator`` has
@@ -592,13 +672,16 @@ def get_min_stol_for_s1_s2(struct1: Structure, struct2: Structure, **sm_kwargs) 
 
     min_min_dist_change = 1e-4
     with contextlib.suppress(Exception):
-        min_min_dist_change = max(
-            {
-                elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
-                for elt in common_elts
-                if elt not in sm_kwargs.get("ignored_species", [])
-            }.values()
-        )
+        min_min_dist_change = (
+            max(
+                {
+                    elt: max(np.abs(s1_min_max_bond_length_dict[elt] - s2_min_max_bond_length_dict[elt]))
+                    for elt in common_elts
+                    if elt not in sm_kwargs.get("ignored_species", [])
+                }.values()
+            )
+            / 2
+        )  # divide by two as sites may have displaced toward each other (so Δbond-length = 2*Δsite)
 
     return max(get_dist_equiv_stol(min_min_dist_change, struct1), 1e-4)
 
@@ -609,16 +692,16 @@ def _sm_get_atomic_disps(sm: StructureMatcher, struct1: Structure, struct2: Stru
     two structures, normalized by the mean free length per atom:
     ``(Vol/Nsites)^(1/3)``.
 
-    These values are not directly returned by ``StructureMatcher`` methods.
+    These values are not directly returned by |StructureMatcher| methods.
     This function replicates ``StructureMatcher.get_rms_dist()``, but changes
     the return value from ``match[0], max(match[1])`` to ``match[0], match[1]``
     to allow further analysis of displacements. Mainly intended for use by
-    ``ShakeNBreak``.
+    |ShakeNBreak|.
 
     Args:
-        sm (StructureMatcher): ``pymatgen`` ``StructureMatcher`` object.
-        struct1 (Structure): Initial structure.
-        struct2 (Structure): Final structure.
+        sm (|StructureMatcher|): ``pymatgen`` |StructureMatcher| object.
+        struct1 (|Structure|): Initial structure.
+        struct2 (|Structure|): Final structure.
 
     Returns:
         tuple:
@@ -640,17 +723,17 @@ def StructureMatcher_scan_stol(
     struct2: Structure,
     func_name: str = "get_s2_like_s1",
     min_stol: float | None = None,
-    max_stol: float = 5.0,
+    max_stol: float = 0.3,
     stol_factor: float = 0.5,
     **sm_kwargs,
 ):
     r"""
     Utility function to scan through a range of ``stol`` values for
-    ``StructureMatcher`` until a match is found between ``struct1`` and
+    |StructureMatcher| until a match is found between ``struct1`` and
     ``struct2`` (i.e. ``StructureMatcher.{func_name}`` returns a result).
 
     The ``StructureMatcher.match()`` function (used in most
-    ``StructureMatcher`` methods) speed is heavily dependent on ``stol``, with
+    |StructureMatcher| methods) speed is heavily dependent on ``stol``, with
     smaller values being faster, so we can speed up evaluation by starting with
     small values and increasing until a match is found (especially with the
     ``doped`` efficiency tools which implement caching (and other improvements)
@@ -661,11 +744,16 @@ def StructureMatcher_scan_stol(
     considered match-able). This can be controlled with
     ``sm_kwargs['comparator']``.
 
+    Note: If you know reduction to primitive cells is not possible/needed, then
+    setting ``primitive_cell=False`` in ``sm_kwargs`` can significantly speed
+    up matching here (by avoiding expensive reduction to primitive cells for
+    large structures).
+
     Args:
-        struct1 (Structure): ``struct1`` for ``StructureMatcher.match()``.
-        struct2 (Structure): ``struct2`` for ``StructureMatcher.match()``.
+        struct1 (|Structure|): ``struct1`` for ``StructureMatcher.match()``.
+        struct2 (|Structure|): ``struct2`` for ``StructureMatcher.match()``.
         func_name (str):
-            The name of the ``StructureMatcher`` method to return the result
+            The name of the |StructureMatcher| method to return the result
             of ``StructureMatcher.{func_name}(struct1, struct2)`` for, such
             as:
 
@@ -680,7 +768,8 @@ def StructureMatcher_scan_stol(
             ``stol`` necessary, and start with 2x this value to achieve fast
             structure-matching in most cases.
         max_stol (float):
-            Maximum ``stol`` value to try. Default: 5.0.
+            Maximum ``stol`` value to try. Default: 0.3 (matching
+            |StructureMatcher| default).
         stol_factor (float):
             Fractional increment to increase ``stol`` by each time (when a
             match is not found). Default value of 0.5 increases ``stol`` by 50%
@@ -707,7 +796,7 @@ def StructureMatcher_scan_stol(
     # much longer to run as it cycles through multiple possible matches. So we start with a low ``stol``
     # and break once a match is found:
     stol = min_stol
-    while stol < max_stol:
+    while stol <= max_stol:
         if user_stol := sm_kwargs.pop("stol", False):  # first run, try using user-provided stol first:
             sm_full_user_custom = StructureMatcher(stol=user_stol, **sm_kwargs)
             result = getattr(sm_full_user_custom, func_name)(struct1, struct2)
@@ -723,7 +812,10 @@ def StructureMatcher_scan_stol(
         ):
             return result
 
-        stol *= 1 + stol_factor
+        if stol == max_stol:  # failed with max_stol; break
+            break
+
+        stol = min(stol * (1 + stol_factor), max_stol)
         # Note: this function could possibly be sped up if ``StructureMatcher._match()`` was updated to
         # return the guessed ``best_match`` value (even if larger than ``stol``), which will always be
         # >= the best possible match it seems, and then using this to determine the next ``stol`` value
@@ -737,8 +829,8 @@ def StructureMatcher_scan_stol(
 class DopedTopographyAnalyzer:
     """
     This is a modified version of
-    ``pymatgen.analysis.defects.utils.TopographyAnalyzer`` to lean down the
-    input options and make initialisation far more efficient (~2 orders of
+    :class:`~pymatgen.analysis.defects.utils.TopographyAnalyzer` to lean down
+    the input options and make initialisation far more efficient (~2 orders of
     magnitude faster).
 
     The original code was written by Danny Broberg and colleagues
@@ -756,8 +848,8 @@ class DopedTopographyAnalyzer:
     ) -> None:
         """
         Args:
-            structure (Structure):
-                Structure to analyse.
+            structure (|Structure|):
+                |Structure| to analyse.
             image_tol (float):
                 A tolerance distance for the analysis, used to determine if
                 sites are periodic images of each other. Default (of 1e-4) is
@@ -813,7 +905,7 @@ class DopedTopographyAnalyzer:
 
         # Perform the voronoi tessellation.
         voro = Voronoi(coords)
-        node_points_map = defaultdict(set)
+        node_points_map: defaultdict[int, set] = defaultdict(set)
         for pts, vs in voro.ridge_dict.items():
             for v in vs:
                 node_points_map[v].update(pts)
@@ -853,19 +945,19 @@ class DopedTopographyAnalyzer:
 
 def get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     """
-    Get the Voronoi nodes of a ``pymatgen`` ``Structure``.
+    Get the Voronoi nodes of a ``pymatgen`` |Structure|.
 
     Maximises efficiency by mapping down to the primitive cell, doing Voronoi
     analysis (with the efficient ``DopedTopographyAnalyzer`` class), and then
     mapping back to the original structure (typically a supercell).
 
     Args:
-        structure (Structure):
-            ``pymatgen`` ``Structure`` object.
+        structure (|Structure|):
+            ``pymatgen`` |Structure| object.
 
     Returns:
         list[PeriodicSite]:
-            List of ``PeriodicSite`` objects representing the Voronoi nodes.
+            List of |PeriodicSite| objects representing the Voronoi nodes.
     """
     try:
         return _hashable_get_voronoi_nodes(structure)
@@ -888,13 +980,13 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     # remove nodes less than 0.5 Å from sites in the structure
     voronoi_coords = remove_collisions(voronoi_coords, structure=prim_structure, min_dist=0.5)
     # cluster nodes within 0.2 Å of each other:
-    prim_vnodes: np.ndarray = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
+    prim_vnodes = doped_cluster_frac_coords(voronoi_coords, prim_structure, tol=0.2)
 
     # map back to the supercell
     sm = StructureMatcher(primitive_cell=False, attempt_supercell=True)
     mapping = sm.get_supercell_matrix(structure, prim_structure)
     voronoi_struct = Structure.from_sites(
-        [PeriodicSite("X", fpos, structure.lattice) for fpos in prim_vnodes]
+        [PeriodicSite(Composition("X"), fpos, structure.lattice, skip_checks=True) for fpos in prim_vnodes]
     )  # Structure with Voronoi nodes as sites
     voronoi_struct.make_supercell(mapping)  # Map back to the supercell
 
@@ -905,7 +997,7 @@ def _hashable_get_voronoi_nodes(structure: Structure) -> list[PeriodicSite]:
     if not np.allclose(fractional_shift, 0):
         voronoi_struct.translate_sites(range(len(voronoi_struct)), fractional_shift, frac_coords=True)
 
-    return voronoi_struct.sites
+    return voronoi_struct.sites.copy()  # copy() to help avoid mutability issues with cached outputs
 
 
 def _generic_group_labels(list_in: Sequence, comp: Callable = operator.eq) -> list[int]:
@@ -958,7 +1050,7 @@ class DopedVacancyGenerator(VacancyGenerator):
         Generate vacancy defects.
 
         Args:
-            structure (Structure):
+            structure (|Structure|):
                 The structure to generate vacancy defects in.
             rm_species (set[str | Species] | list[str | Species] | None):
                 List/set of species to be removed (i.e. to consider for vacancy

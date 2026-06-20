@@ -16,19 +16,19 @@ import numpy as np
 import pytest
 from ase.build import bulk, make_supercell
 from monty.serialization import loadfn
-from pymatgen.analysis.structure_matcher import ElementComparator
 from pymatgen.io.vasp.inputs import BadIncarWarning, Incar, Kpoints, Poscar, Potcar
 from test_utils import (
     EXAMPLE_DIR,
     _compare_attributes,
     _potcars_available,
     _print_warning_info,
+    _run_heavy_tests,
     data_dir,
     if_present_rm,
 )
 
 from doped.generation import DefectsGenerator
-from doped.utils.efficiency import Structure, StructureMatcher
+from doped.utils.efficiency import Structure, StructureMatcher_scan_stol
 from doped.vasp import (
     DefectDictSet,
     DefectRelaxSet,
@@ -37,7 +37,7 @@ from doped.vasp import (
     DopedKpoints,
     default_defect_relax_set,
     default_potcar_dict,
-    singleshot_incar_settings,
+    singlepoint_incar_settings,
 )
 
 
@@ -64,6 +64,10 @@ def _check_nelect_nupdown_error(message):
     )
 
 
+def _check_nelect_structure_charge_error(message):
+    return "NELECT (i.e. structure charge) INCAR flag cannot be set" in str(message)
+
+
 def _check_nupdown_neutral_cell_warning(message):
     return all(
         x in str(message)
@@ -76,8 +80,6 @@ def _check_nupdown_neutral_cell_warning(message):
 
 class DefectDictSetTest(unittest.TestCase):
     def setUp(self):
-        # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
-        self.heavy_tests = bool(_potcars_available())
         self.CdTe_data_dir = os.path.join(data_dir, "CdTe")
         self.prim_cdte = Structure.from_file(f"{EXAMPLE_DIR}/CdTe/relaxed_primitive_POSCAR")
         self.CdTe_defect_gen = DefectsGenerator(self.prim_cdte)
@@ -93,11 +95,10 @@ class DefectDictSetTest(unittest.TestCase):
         self.sqs_agsbte2 = Structure.from_file(f"{data_dir}/AgSbTe2_SQS_POSCAR")
 
         self.neutral_def_incar_min = {
-            "ICORELEVEL": "0  # Needed if using the Kumagai-Oba (eFNV) anisotropic charge "
-            "correction scheme".lower(),
+            "ICORELEVEL": 0,  # now set to int without comment in pymatgen>=2026
             "ISIF": 2,  # Fixed supercell for defects
             "ISPIN": 2,  # Spin polarisation likely for defects
-            "ISYM": "0  # Symmetry breaking extremely likely for defects".lower(),
+            "ISYM": 0,  # now set to int without comment in pymatgen>=2026
             "LVHAR": True,
             "ISMEAR": 0,
         }
@@ -319,6 +320,23 @@ class DefectDictSetTest(unittest.TestCase):
         self._write_and_check_dds_files(dds)
         self._write_and_check_dds_files(dds, poscar=False)
 
+    def test_charged_doped_dict_set_no_potcars(self):
+        r"""
+        Test that ``DopedDictSet.incar`` raises ``ValueError`` for charged
+        structures when ``POTCAR``\s are unavailable.
+        """
+        kpts = {"reciprocal_density": 100}
+        dds_charged = DopedDictSet(self.prim_cdte.copy(), charge_state=1, user_kpoints_settings=kpts)
+        dds_neutral = DopedDictSet(self.prim_cdte.copy(), charge_state=0, user_kpoints_settings=kpts)
+        if _potcars_available():
+            _incar = dds_charged.incar  # should not raise
+            _incar = dds_neutral.incar
+        else:
+            with pytest.raises(ValueError) as e:
+                _incar = dds_charged.incar
+            assert _check_nelect_structure_charge_error(e.value)
+            _incar = dds_neutral.incar  # neutral should not raise error, regardless
+
     def test_user_settings_defect_incar(self):
         user_incar_settings = {"EDIFF": 1e-8, "EDIFFG": 0.1, "ENCUT": 720, "NCORE": 4, "KPAR": 7}
 
@@ -378,8 +396,7 @@ class DefectDictSetTest(unittest.TestCase):
             "KPOINTS are Γ-only (i.e. only one kpoint), so KPAR is being set to 1" in str(warning.message)
             for warning in w
         )
-        assert "1  # only one k-point" in dds.incar["KPAR"]  # pmg makes it lowercase and can change
-        # gamma symbol
+        assert dds.incar["KPAR"] == 1  # converted to int without comment in pymatgen>=2026
 
         self.kpts_nelect_nupdown_check(dds, 1, 18, 0)  # reciprocal_density = 1/Å⁻³ for prim CdTe
         self._write_and_check_dds_files(dds)
@@ -491,14 +508,15 @@ class DefectDictSetTest(unittest.TestCase):
             # load INCAR and check it matches dds.incar
             written_incar = Incar.from_file(f"{output_path}/INCAR")
             dds_incar_without_comments = dds.incar.copy()
-            dds_incar_without_comments["ICORELEVEL"] = 0
-            dds_incar_without_comments["ISYM"] = 0
-            dds_incar_without_comments["ISEARCH"] = 1
-            dds_incar_without_comments["ALGO"] = (
+            expected_algo = (
                 "Normal"
                 if "normal" in dds_incar_without_comments.get("ALGO", "normal").lower()
                 else dds_incar_without_comments.get("ALGO", "normal")
             )
+            dds_incar_without_comments["ALGO"] = expected_algo
+            dds_incar_without_comments["ICORELEVEL"] = 0
+            dds_incar_without_comments["ISYM"] = 0
+            dds_incar_without_comments["ISEARCH"] = 1
             if "KPAR" in dds_incar_without_comments and isinstance(
                 dds_incar_without_comments["KPAR"], str
             ):
@@ -510,11 +528,14 @@ class DefectDictSetTest(unittest.TestCase):
                 incar_lines = f.readlines()
             print(f"{output_path}/INCAR:", incar_lines)
             print("Testing comment strings")
-            for comment_string in [
+            expected_comment_strings = [
                 "# MAY WANT TO CHANGE NCORE, KPAR, AEXX, ENCUT",
-                "needed if using the kumagai-oba",
-                "symmetry breaking extremely likely",
-            ]:
+                # "needed if using the kumagai-oba",  # set to int by pymatgen>=2026
+                # "symmetry breaking extremely likely",  # set to int by pymatgen>=2026
+            ]
+            if expected_algo.lower().startswith("n"):  # ALGO = Normal
+                expected_comment_strings.append("# change to all if zhegv, fexcp/f or zbrent")
+            for comment_string in expected_comment_strings:
                 assert any(comment_string in line for line in incar_lines)
 
             print("Testing ALGO")
@@ -564,7 +585,7 @@ class DefectDictSetTest(unittest.TestCase):
 
         if kwargs.get("poscar", True):
             written_poscar = Poscar.from_file(f"{output_path}/POSCAR")
-            # `get_defect_name_from_entry(relaxed=True)` causes `Defect` initialisation which adds oxi
+            # `get_defect_name_from_entry(relaxed=True)` causes |Defect| initialisation which adds oxi
             # states to `structure` (`defect_entry.bulk_supercell` in this case), which is used in our
             # YTOS defect gen tests (to test periodicity breaking warning), so remove these for comparison:
             written_poscar.structure.remove_oxidation_states()
@@ -629,7 +650,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                 assert parent_drs.vasp_std
             if "LSORBIT" in child_incar_settings and "LSORBIT" not in parent_drs.user_incar_settings:
                 assert child_incar_settings.pop("LSORBIT") is True
-                for k, v in singleshot_incar_settings.items():
+                for k, v in singlepoint_incar_settings.items():
                     assert child_incar_settings.pop(k) == v
                 assert parent_drs.soc
             if any("NKRED" in k for k in child_incar_settings) and all(
@@ -640,7 +661,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                         assert child_incar_settings.pop(k) in [2, 3]
                 assert parent_drs.vasp_nkred_std
             if "NSW" in child_incar_settings and "NSW" not in parent_drs.user_incar_settings:
-                for k, v in singleshot_incar_settings.items():  # bulk singleshots
+                for k, v in singlepoint_incar_settings.items():  # bulk singleshots
                     assert child_incar_settings.pop(k) == v
 
             print("Checking incar settings")
@@ -721,13 +742,13 @@ class DefectRelaxSetTest(unittest.TestCase):
             ]
         )
 
+    # don't run heavy tests on GH Actions, these are run locally (too slow without multiprocessing etc)
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_initialisation_and_writing(self):
         """
         Test the initialisation of DefectRelaxSet for a range of
         `DefectEntry`s.
         """
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
 
         def _check_drs_defect_entry_attribute_transfer(parent_drs, input_defect_entry):
             assert parent_drs.defect_entry == input_defect_entry
@@ -1116,10 +1137,6 @@ class DefectsSetTest(unittest.TestCase):
         self.drs_test.setUp()
 
         self.CdTe_defect_gen = DefectsGenerator.from_json(f"{data_dir}/CdTe_defect_gen.json")
-        self.structure_matcher = StructureMatcher(
-            comparator=ElementComparator(), primitive_cell=False
-        )  # ignore oxidation states when comparing structures
-
         # Note this is different to above: (for testing against pre-generated input files with these
         # settings):
         self.CdTe_custom_test_incar_settings = {"ENCUT": 350, "NCORE": 10, "LVHAR": False, "ALGO": "All"}
@@ -1243,10 +1260,8 @@ class DefectsSetTest(unittest.TestCase):
             ]
         )
 
+    @pytest.mark.skipif(not _run_heavy_tests(), reason="Skipping heavy test")
     def test_CdTe_files(self):
-        if not self.heavy_tests:
-            pytest.skip("Skipping heavy test on GH Actions")
-
         CdTe_se_defect_gen = DefectsGenerator(self.prim_cdte, extrinsic="Se")
         defects_set = DefectsSet(
             CdTe_se_defect_gen,
@@ -1279,9 +1294,12 @@ class DefectsSetTest(unittest.TestCase):
         defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True, rattle=False)
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        assert StructureMatcher_scan_stol(
+            bulk_supercell,
+            self.CdTe_defect_gen.bulk_supercell,
+            func_name="fit",
+        )
         # check_generated_vasp_inputs also checks bulk folders
-
         assert os.path.exists("CdTe_defects_generator.json.gz")
         CdTe_se_defect_gen.to_json("test_CdTe_defects_generator.json")
         with (
@@ -1514,7 +1532,7 @@ class DefectsSetTest(unittest.TestCase):
             "lmno_defect_gen",
             "cu_defect_gen",
         ]
-        if self.heavy_tests:  # uses too much memory on GH Actions
+        if _run_heavy_tests():  # uses too much memory on GH Actions
             defect_gens_to_test.extend(
                 [
                     "ytos_defect_gen_supercell",
@@ -1567,7 +1585,7 @@ class DefectsSetTest(unittest.TestCase):
 
             if kwargs.get("poscar", True):
                 struct = Structure.from_file(f"{folder_name}/POSCAR")
-                assert self.structure_matcher.fit(struct, structure)
+                assert StructureMatcher_scan_stol(struct, structure, func_name="fit")
             else:
                 assert not os.path.exists(f"{folder_name}/POSCAR")
 
@@ -1815,7 +1833,9 @@ class DefectsSetTest(unittest.TestCase):
         defects_set.write_files(potcar_spec=True, poscar=True, vasp_gam=True)
 
         bulk_supercell = Structure.from_file("CdTe_bulk/vasp_ncl/POSCAR")
-        assert self.structure_matcher.fit(bulk_supercell, self.CdTe_defect_gen.bulk_supercell)
+        assert StructureMatcher_scan_stol(
+            bulk_supercell, self.CdTe_defect_gen.bulk_supercell, func_name="fit"
+        )
         # check_generated_vasp_inputs also checks bulk folders
         assert os.path.exists("CdTe_defects_generator.json.gz")
 
@@ -1841,13 +1861,11 @@ class DefectsSetTest(unittest.TestCase):
                     f"{self.CdTe_data_dir}/{defect_entry_name}/vasp_gam/POSCAR"
                 )
                 generated_struct = Structure.from_file(f"{defect_entry_name}/vasp_std/POSCAR")
-                assert not StructureMatcher(stol=0.1).fit(
-                    reference_struct, generated_struct
-                )  # now rattled
-                print(StructureMatcher().get_rms_dist(reference_struct, generated_struct))  # for debugging
-                assert (
-                    StructureMatcher().get_rms_dist(reference_struct, generated_struct)[0] > 0.05
-                )  # rattled
+                rms_dist = StructureMatcher_scan_stol(
+                    reference_struct, generated_struct, func_name="get_rms_dist", max_stol=0.3
+                )
+                print(f"RMS dist after rattling: {rms_dist}")  # for debugging
+                assert rms_dist[0] > 0.1  # after rattling
 
                 for other_vasp_dir in ["vasp_gam", "vasp_nkred_std", "vasp_ncl"]:
                     print(f"Checking {other_vasp_dir}")
@@ -1888,6 +1906,3 @@ class DefectsSetTest(unittest.TestCase):
 
 
 # TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
-
-if __name__ == "__main__":
-    unittest.main()

@@ -59,8 +59,8 @@ def _print_warning_info(warnings_list):
 
 def plot_chempot_heatmap_and_test_no_warnings(cpa_or_defect_thermo, **kwargs):
     """
-    Plot chemical potential heatmap from a ``CompetingPhasesAnalyzer`` or
-    ``DefectThermodynamics`` object and assert no warnings are raised.
+    Plot chemical potential heatmap from a |CompetingPhasesAnalyzer| or
+    |DefectThermodynamics| object and assert no warnings are raised.
     """
     with warnings.catch_warnings(record=True) as w:
         plot = cpa_or_defect_thermo.plot_chempot_heatmap(**kwargs)
@@ -81,11 +81,16 @@ def if_present_rm(path):
 
 
 def _run_func_and_capture_stdout_warnings(func, *args, **kwargs):
+    from doped import _ignore_pmg_warnings
+
     original_stdout = sys.stdout  # Save a reference to the original standard output
     sys.stdout = StringIO()  # Redirect standard output to a stringIO object.
     w = None
     try:
         with warnings.catch_warnings(record=True) as w:
+            # Re-apply ``doped`` noise-suppressing warning filters, since ``pytest`` and
+            # ``catch_warnings`` can reset the filters in ``warnings.catch_warnings(record=True)``:
+            _ignore_pmg_warnings()
             result = func(*args, **kwargs)
         output = sys.stdout.getvalue()  # Return a str containing the printed output
     finally:
@@ -116,6 +121,13 @@ def _potcars_available() -> bool:
         return False
 
 
+def _run_heavy_tests() -> bool:
+    """
+    Whether or not to run (computationally-)heavy tests.
+    """
+    return _potcars_available() and os.getenv("DOPED_SKIP_HEAVY_TESTS", "false").lower() != "true"
+
+
 def _compare_prim_interstitial_coords(result, expected):
     """
     Check that prim_interstitial_coords_mult_and_equiv_coords attribute values
@@ -130,9 +142,9 @@ def _compare_prim_interstitial_coords(result, expected):
     for (r_coord, r_num, r_list), (e_coord, e_num, e_list) in zip(result, expected, strict=False):
         assert np.array_equal(r_coord, e_coord), "Coordinates do not match"
         assert r_num == e_num, "Number of coordinates do not match"
-        assert all(
-            np.array_equal(r, e) for r, e in zip(r_list, e_list, strict=False)
-        ), "List of arrays do not match"
+        assert all(np.array_equal(r, e) for r, e in zip(r_list, e_list, strict=False)), (
+            "List of arrays do not match"
+        )
 
 
 def _compare_attributes(obj1, obj2, exclude=None):
@@ -140,9 +152,9 @@ def _compare_attributes(obj1, obj2, exclude=None):
     Check that two objects are equal by comparing their public
     attributes/properties.
 
-    Handles special cases for ``DefectsGenerator``
+    Handles special cases for |DefectsGenerator|
     (``prim_interstitial_coords_mult_and_equiv_coords``)
-    and ``DefectThermodynamics`` (``bulk_dos``) objects.
+    and |DefectThermodynamics| (``bulk_dos``) objects.
     """
     if exclude is None:
         exclude = set()  # Create an empty set if no exclusions
@@ -165,9 +177,9 @@ def _compare_attributes(obj1, obj2, exclude=None):
         elif attr == "bulk_dos" and val1 is not None:
             assert val1.as_dict() == val2.as_dict()
         elif isinstance(val1, list | tuple) and all(isinstance(i, np.ndarray) for i in val1):
-            assert all(
-                np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)
-            ), "List of arrays do not match"
+            assert all(np.array_equal(i, j) for i, j in zip(val1, val2, strict=False)), (
+                "List of arrays do not match"
+            )
         else:
             assert val1 == val2
 
@@ -186,16 +198,16 @@ def assert_df_rows_equal(df, expected_rows, check_len=False):
             Default is ``False``.
     """
     if check_len:
-        assert len(df) == len(
-            expected_rows
-        ), f"DataFrame has {len(df)} rows, expected {len(expected_rows)}"
+        assert len(df) == len(expected_rows), (
+            f"DataFrame has {len(df)} rows, expected {len(expected_rows)}"
+        )
 
     for i, row in enumerate(expected_rows):
         for ii, entry in enumerate(row):
             actual = df.iloc[i, ii]
             if isinstance(entry, float):
-                assert np.isclose(
-                    actual, entry
-                ), f"Row {i}, column {ii}: {actual} != {entry} (float comparison)"
+                assert np.isclose(actual, entry), (
+                    f"Row {i}, column {ii}: {actual} != {entry} (float comparison)"
+                )
             else:
                 assert actual == entry, f"Row {i}, column {ii}: {actual} != {entry}"

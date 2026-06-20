@@ -149,13 +149,15 @@ For issues relating to the ``ShakeNBreak`` part of the defect calculation workfl
 Installation
 ------------
 
-For any issues relating to installation, please see the `Installation`_ page.
+For any issues relating to installation, please see the :doc:`Installation` page.
 
+
+.. _errors_with_python_scripts:
 
 Errors with ``Python`` Scripts
 ------------------------------
 The recommended usage of ``doped`` is through interactive python sessions, such as with Jupyter notebooks,
-``IPython`` or an IDE (e.g. ``PyCharm`` or ``VSCode``), as shown in the ``doped`` `tutorials`_.
+``IPython`` or an IDE (e.g. ``PyCharm`` or ``VSCode``), as shown in the ``doped`` :doc:`tutorials <Tutorials>`.
 However, it is possible to also use ``doped`` through ``Python`` scripts if preferred.
 Due to the use of the ``multiprocessing`` module in ``doped.generation``, ``doped.vasp`` and
 ``doped.analysis``, you need to use the proper syntax for running ``Python`` scripts, with
@@ -198,11 +200,7 @@ If you do not use the ``if __name__ == '__main__':...`` syntax, you may encounte
         To fix this issue, refer to the "Safe importing of main module"
         section in https://docs.python.org/3/library/multiprocessing.html
 
-.. _tutorials: https://doped.readthedocs.io/en/latest/Tutorials.html
-
 .. NOTE::
     If you run into any issues using ``doped`` that aren't addressed above, please post your issue on the
     `doped MatSci community forum <https://matsci.org/c/doped/70>`__; see
     `instructions here <https://matsci.org/t/questions-related-to-doped/66448>`__.
-
-.. _Installation: https://doped.readthedocs.io/en/latest/Installation.html

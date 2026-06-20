@@ -19,20 +19,6 @@ Alternatively if desired, ``doped`` can also be installed from ``conda`` with:
 .. code-block:: bash
 
    conda install -c conda-forge doped
-   pip install pydefect  # pydefect not available on conda, so needs to be installed with pip or otherwise, if using the eFNV correction
-
-If you are installing ``doped`` via ``conda`` and you plan on using the eFNV (Kumagai-Oba) finite-size
-correction, you will need to install the ``pydefect`` package with ``pip`` as shown or otherwise, as it is
-not available on ``conda``.
-
-.. NOTE::
-   Due to a recent change in the python build procedure for ``phonopy`` (an indirect dependency of
-   ``doped``), in version ``2.26``, ``pip install doped`` can fail on some older systems (with
-   older versions of ``gcc``). This can be resolved by either (1) installing ``doped`` from ``conda``
-   (as above), (2) installing ``phonopy`` from ``conda`` (see
-   `here <https://phonopy.github.io/phonopy/install.html>`__) and then ``doped`` with ``pip``,
-   (3) installing ``phonopy<=2.25``  (``pip install phonopy<=2.25``) and then ``doped`` with ``pip``,
-   or (4) upgrading your system's ``gcc`` to a more recent version if possible.
 
 It may be desirable to install ``doped`` in a virtual environment (e.g. if you encounter package dependency
 conflict warnings during installation etc). You can do this with ``conda`` with:
@@ -43,6 +29,8 @@ conflict warnings during installation etc). You can do this with ``conda`` with:
    conda activate doped
    pip install doped
 
+
+.. _setup_potcars_mp_api:
 
 Setup ``POTCAR``\s and Materials Project API
 --------------------------------------------
@@ -64,6 +52,15 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    Within your ``VASP pseudopotential top directory``, you should have a folder named
    ``POT_GGA_PAW_PBE``/``potpaw_PBE.54``/``POT_GGA_PAW_PBE_54`` which contains ``POTCAR.X(.gz)`` files,
    generated using ``pmg config``.
+
+   Note the Materials Project API key is required for determining the necessary competing phases to
+   calculate in order to determine the chemical potential limits (required for defect formation energies).
+   Your API key can be obtained at: https://next-gen.materialsproject.org/dashboard
+
+   Alternatively, your MP API key can be passed directly to the ``doped``
+   :func:`~doped.chemical_potentials.CompetingPhases` class or other :mod:`~doped.chemical_potentials` functions using
+   the ``api_key`` parameter, or set via the ``MP_API_KEY`` environment variable (e.g.
+   ``export MP_API_KEY=your_api_key``).
 
 2. If you have not previously setup your ``POTCAR`` directory in this way with ``pymatgen``, then follow these steps:
 
@@ -94,10 +91,6 @@ for charged defects, your ``POTCAR`` directory needs to be setup to work with ``
    .. code-block:: yaml
 
       PMG_DEFAULT_FUNCTIONAL: PBE  # whatever functional label your POTCARs have
-
-   Note the Materials Project API key is required for determining the necessary competing phases to
-   calculate in order to determine the chemical potential limits (required for defect formation energies).
-   Your API key can be obtained at: https://next-gen.materialsproject.org/dashboard
 
 
 If you use ``doped`` in your research, please cite:

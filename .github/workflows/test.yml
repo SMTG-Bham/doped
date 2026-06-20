@@ -14,7 +14,7 @@ jobs:
 
       matrix:
         os: [ ubuntu-latest, macos-14 ]  # Windows in theory possible, but needs circumventing ``vise`` issues
-        python-version: [ '3.10', '3.13' ]  # lowest and highest supported Python versions
+        python-version: [ '3.11', '3.14' ]  # lowest and highest supported Python versions; 3.10 should still be possible, but latest ``pymatgen`` (2026) only supports 3.11-3.14
 
         # if durations files present, pytest-split will use them to intelligently distribute tests
         split: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ]
@@ -38,7 +38,7 @@ jobs:
 
       - name: Test
         shell: bash
-        run: |  # update durations file with `pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting`
+        run: |  # update durations file with ``export DOPED_SKIP_HEAVY_TESTS=False; pytest -vv -m "not mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_non_plotting``
           pytest -vv -m "not mpl_image_compare" \
             --splits 10 --group ${{ matrix.split }} \
             --durations-path tests/.pytest_split_durations_non_plotting \
@@ -50,7 +50,7 @@ jobs:
         id: plotting_tests  # Add an ID to this step for reference
         env:
           MPLBACKEND: Agg  # non-interactive backend for matplotlib
-        run: |  # update durations file with `pytest -vv -m "mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_plotting`
+        run: |  # update durations file with ``export DOPED_SKIP_HEAVY_TESTS=False; pytest -vv -m "mpl_image_compare" tests --store-durations --durations-path tests/.pytest_split_durations_plotting``
           pytest -vv --mpl -m "mpl_image_compare" \
             --splits 10 --group ${{ matrix.split }} \
             --durations-path tests/.pytest_split_durations_plotting \

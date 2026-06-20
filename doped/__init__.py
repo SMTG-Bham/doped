@@ -1,38 +1,27 @@
 """
 ``doped`` is a python package for managing solid-state defect calculations,
 with functionality to generate defect structures and relevant competing phases
-(for chemical potentials), interface with ShakeNBreak
+(for chemical potentials), interface with |ShakeNBreak|
 (https://shakenbreak.readthedocs.io) for defect structure-searching (see
 https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
 """
 
 import contextlib
+import importlib
 import inspect
 import logging
 import multiprocessing
+import os
 import warnings
-from importlib.metadata import PackageNotFoundError, version
 
 from pymatgen.io.vasp.inputs import UnknownPotcarWarning
 from pymatgen.io.vasp.sets import BadInputSetWarning
 
-try:
-    import vise.util.logger
-
-    vise.util.logger.get_logger = (
-        logging.getLogger
-    )  # to avoid repeated vise INFO messages with Parallel code
-except ImportError:
-    warnings.warn(
-        "pydefect is required for performing the eFNV correction and eigenvalue/orbital analysis, and can "
-        "be installed with `pip install pydefect`."
-    )
-
 # set __version__ for older users who use this convention:
 try:
-    __version__ = version("doped")  # from package metadata (pyproject.toml)
-except PackageNotFoundError:
+    __version__ = importlib.metadata.version("doped")  # from package metadata (pyproject.toml)
+except importlib.metadata.PackageNotFoundError:
     __version__ = "No version found"  # fallback for local development or if package isn't installed
 
 
@@ -47,6 +36,49 @@ def suppress_logging(level=logging.CRITICAL):
         yield
     finally:
         logging.disable(previous_level)  # restore the original logging level
+
+
+@contextlib.contextmanager
+def patch_vise_for_windows():
+    """
+    Context manager to patch
+    ``vise.defaults.UserSettings._make_yaml_file_list``, so that it returns an
+    empty list.
+
+    Fixes an issue where this function gives an infinite recursive search on
+    Windows, causing hanging.
+    """
+    try:
+        vd = importlib.import_module("vise.defaults")
+        orig = vd.UserSettings._make_yaml_file_list
+        vd.UserSettings._make_yaml_file_list = lambda *args, **kwargs: []
+        yield
+    finally:  # restore original
+        vd.UserSettings._make_yaml_file_list = orig
+
+
+@contextlib.contextmanager
+def vise_handling(level=logging.CRITICAL):
+    """
+    Suppress logging, patch fatal Windows issue and prevent warning suppression
+    with ``vise``/``pydefect``, by combining the :func:`suppress_logging`,
+    :func:`patch_vise_for_windows` and ``warnings.catch_warnings()`` context
+    managers.
+    """
+    # warnings context manager shouldn't be necessary in some cases (e.g. w/``vise.util.logger`` below,
+    # which doesn't import ``vise.defaults`` -- where the problematic
+    # ``warnings.simplefilter("ignore", UserWarning)`` call is), but we still use it in all
+    # ``vise``/``pydefect`` imports here just in case ``vise`` import paths are updated etc.
+    with suppress_logging(level), patch_vise_for_windows(), warnings.catch_warnings():
+        yield
+
+
+# Patch ``vise.util.logger.get_logger`` _before_ any ``vise``/``pydefect`` module is imported (not using
+# ``vise_handling()`` as that imports ``vise.defaults`` before this override would take effect):
+with suppress_logging(), warnings.catch_warnings():
+    import vise.util.logger
+
+    vise.util.logger.get_logger = logging.getLogger  # avoid repeated vise INFO messages with Parallel code
 
 
 def _ignore_pmg_warnings():
@@ -69,8 +101,50 @@ def _ignore_pmg_warnings():
     # ignore warning about structure charge that appears when getting Vasprun.as_dict():
     warnings.filterwarnings("ignore", message="Structure charge")
 
+    # ignore UFloat warning about std_dev==0 (from MP energy corrections)
+    warnings.filterwarnings("ignore", message="Using UFloat objects with std_dev==0")
+
 
 _ignore_pmg_warnings()
+
+
+class ParameterOrderWarning(FutureWarning):
+    """
+    Warning about the ``(bulk, defect)`` -> ``(defect, bulk)`` parameter
+    ordering change for some functions in ``doped`` v4.0.
+
+    TODO: Remove all parameter-order warning handling in v4.1.
+    """
+
+
+def _check_parameter_order_warning():
+    """
+    Check if the parameter order warning should be shown, based on the
+    ``DOPED_WARN_PARAMETER_ORDER`` environment variable.
+
+    Defaults to ``True`` if the environment variable is not set.
+    """
+    env = os.environ.get("DOPED_WARN_PARAMETER_ORDER")
+    if env is None:
+        return True
+    return env.lower() not in ("0", "false", "no")
+
+
+def _warn_parameter_order(func_name: str, stacklevel: int = 3):
+    """
+    Emit a ``ParameterOrderWarning`` for the given function name.
+    """
+    if not _check_parameter_order_warning():
+        return
+    warnings.warn(
+        f"In doped v4.0, the parameter ordering for `{func_name}` was changed from "
+        f"`(bulk_..., defect_..., ...)` to `(defect_..., bulk_..., ...)`. Please ensure your code uses "
+        f"the correct ordering (and/or uses keyword arguments rather than positional arguments). This "
+        f"warning can be disabled by setting the environment variable DOPED_WARN_PARAMETER_ORDER=false, "
+        f"and will be removed in doped v4.1.",
+        ParameterOrderWarning,
+        stacklevel=stacklevel,
+    )
 
 
 def _doped_obj_properties_methods(obj):
@@ -100,6 +174,14 @@ def get_mp_context():
         return multiprocessing.get_context("spawn")
 
 
+def get_mp_processes(processes: int | None = None):
+    """
+    Get the number of processes to use with ``Pool``.
+    """
+    mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
+    return processes or max(1, mp.cpu_count() - 1)
+
+
 @contextlib.contextmanager
 def pool_manager(processes: int | None = None):
     r"""
@@ -107,8 +189,8 @@ def pool_manager(processes: int | None = None):
     message when ``RuntimeError``\s are raised ``multiprocessing`` within
     ``doped`` is used in a python script.
 
-    See
-    https://doped.readthedocs.io/en/latest/Troubleshooting.html#errors-with-python-scripts
+    See the
+    :ref:`Errors with Python Scripts <errors_with_python_scripts>` section.
 
     Args:
         processes (int | None):
@@ -123,7 +205,7 @@ def pool_manager(processes: int | None = None):
     pool = None
     try:
         mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
-        pool = mp.Pool(processes or max(1, mp.cpu_count() - 1))
+        pool = mp.Pool(get_mp_processes(processes))
         yield pool
     except RuntimeError as orig_exc:
         if "freeze_support()" in str(orig_exc):

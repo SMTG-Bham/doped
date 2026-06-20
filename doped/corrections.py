@@ -55,6 +55,7 @@ from pymatgen.io.vasp.outputs import Locpot, Outcar
 from pymatgen.util.typing import PathLike
 
 from doped.analysis import _convert_dielectric_to_tensor, _get_output_files_and_check_if_multiple
+from doped import vise_handling
 from doped.utils.parsing import (
     RunParser,
     _get_bulk_supercell,
@@ -67,7 +68,7 @@ from doped.utils.parsing import (
     get_wigner_seitz_radius,
     get_atomic_site_potentials
 )
-from doped.utils.plotting import _get_backend, format_defect_name
+from doped.utils.plotting import doped_plot_style, format_defect_name
 
 
 def _monty_decode_nested_dicts(d):
@@ -176,9 +177,16 @@ def get_freysoldt_correction(
     (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
     but this can be overridden with the ``defect_frac_coords`` keyword argument.
 
+    As a general rule of thumb, the charge correction terms should follow
+    relatively consistent trends in terms of magnitudes. A large outlier
+    (easily scanned with
+    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
+    often indicates something unusual/unexpected. See the FNV/eFNV and other
+    finite-size charge correction papers for further details.
+
     Args:
         defect_entry:
-            ``DefectEntry`` object for which to compute the FNV finite-size
+            |DefectEntry| object for which to compute the FNV finite-size
             charge correction.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constants (ionic + static contributions), in the
@@ -187,9 +195,9 @@ def get_freysoldt_correction(
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
             ``defect_entry`` ``calculation_metadata`` if available.
-            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-            for information on calculating and converging the dielectric
-            constant.
+            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+            tutorial section for information on calculating and converging the
+            dielectric constant.
         defect_locpot:
             Path to the output VASP LOCPOT file from the defect supercell
             calculation, or the corresponding ``pymatgen`` ``Locpot`` object,
@@ -223,7 +231,7 @@ def get_freysoldt_correction(
             (from ``doped/utils/doped.mplstyle``).
         **kwargs:
             Additional kwargs to pass to
-            ``pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction``
+            :func:`~pymatgen.analysis.defects.corrections.freysoldt.get_freysoldt_correction`
             (e.g. ``energy_cutoff``, ``mad_tol``, ``q_model``, ``step``,
             ``defect_frac_coords``).
 
@@ -278,27 +286,23 @@ def get_freysoldt_correction(
     if not plot and filename is None:
         return fnv_correction
 
-    with contextlib.suppress(Exception):
-        from shakenbreak.plotting import _install_custom_font
-
-        _install_custom_font()  # in case not installed already
-
     axis_label_dict = {0: r"$a$-axis", 1: r"$b$-axis", 2: r"$c$-axis"}
     if axis is None:
-        fig, axs = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
-        for direction in range(3):
-            plot_FNV(
-                fnv_correction.metadata["plot_data"][direction],
-                ax=axs[direction],
-                title=axis_label_dict[direction],
-                style_file=style_file,
-            )
+        with doped_plot_style(style_file):
+            fig, axs = plt.subplots(1, 3, sharey=True, figsize=(12, 3.5), dpi=600)
+            for direction in range(3):
+                plot_FNV(
+                    fnv_correction.metadata["plot_data"][direction],
+                    ax=axs[direction],
+                    title=axis_label_dict[direction],
+                    style_file=style_file,
+                )
     else:
         plot_FNV(fnv_correction.metadata["plot_data"][axis], title=axis_label_dict[axis])
         fig = plt.gcf()
 
     if filename:
-        plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+        plt.savefig(filename, bbox_inches="tight", transparent=True)
 
     return fnv_correction, fig
 
@@ -338,12 +342,10 @@ def plot_FNV(plot_data, title=None, ax=None, style_file=None):
     check = plot_data["pot_plot_data"]["check"]
     C = plot_data["pot_plot_data"]["shift"]
 
-    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-    with plt.style.context(style_file):
+    with doped_plot_style(style_file):
         if ax is None:
             plt.close("all")  # close any previous figures
-            fig, ax = plt.subplots()
+            _fig, ax = plt.subplots()
         (line1,) = ax.plot(x, v_R, c="black", zorder=1, label="FNV long-range model ($V_{lr}$)")
         (line2,) = ax.plot(x, dft_diff, c="red", label=r"$\Delta$(Locpot)")
         (line3,) = ax.plot(
@@ -414,12 +416,20 @@ def get_kumagai_correction(
     example on doped docs Tips page.
 
     The defect coordinates are taken as the relaxed defect site by default
-    (``DefectEntry.defect_supercell_site``) -- which is the bulk site for vacancies,
-    but this can be overridden with the ``defect_coords`` keyword argument.
+    (``DefectEntry.defect_supercell_site``) -- which is the bulk site for
+    vacancies, but this can be overridden with the ``defect_coords`` keyword
+    argument.
+
+    As a general rule of thumb, the charge correction terms should follow
+    relatively consistent trends in terms of magnitudes. A large outlier
+    (easily scanned with
+    :meth:`~doped.thermodynamics.DefectThermodynamics.get_formation_energies`)
+    often indicates something unusual/unexpected. See the FNV/eFNV and other
+    finite-size charge correction papers for further details.
 
     Args:
-        defect_entry (DefectEntry):
-            ``DefectEntry`` object for which to compute the Kumagai finite-size
+        defect_entry (|DefectEntry|):
+            |DefectEntry| object for which to compute the Kumagai finite-size
             charge correction.
         dielectric (float or int or 3x1 matrix or 3x3 matrix):
             Total dielectric constants (ionic + static contributions), in the
@@ -428,9 +438,9 @@ def get_kumagai_correction(
             calculation, if an oddly-defined primitive cell is used). If
             ``None``, then the dielectric constant is taken from the
             ``defect_entry`` ``calculation_metadata`` if available.
-            See https://doped.readthedocs.io/en/latest/GGA_workflow_tutorial.html#dielectric-constant
-            for information on calculating and converging the dielectric
-            constant.
+            See the :ref:`Dielectric Constant <GGA_workflow_tutorial:7. Dielectric constant>`
+            tutorial section for information on calculating and converging the
+            dielectric constant.
         defect_region_radius (float):
             Radius of the defect region (in Å). Sites outside the defect
             region are used for sampling the electrostatic potential far
@@ -441,14 +451,14 @@ def get_kumagai_correction(
             List of site indices (in the defect supercell) to exclude from
             the site potential sampling in the correction calculation/plot.
             If ``None`` (default), no sites are excluded.
-        defect_outcar (PathLike or Outcar):
+        defect_outcar (PathLike or |Outcar|):
             Path to the output ``VASP`` ``OUTCAR`` file from the defect
-            supercell calculation, or the corresponding ``pymatgen`` ``Outcar``
+            supercell calculation, or the corresponding ``pymatgen`` |Outcar|
             object. If ``None``, will try to use the ``defect_site_potentials``
             from the ``defect_entry`` ``calculation_metadata`` if available.
-        bulk_outcar (PathLike or Outcar):
+        bulk_outcar (PathLike or |Outcar|):
             Path to the output ``VASP`` ``OUTCAR`` file from the bulk supercell
-            calculation, or the corresponding ``pymatgen`` ``Outcar`` object.
+            calculation, or the corresponding ``pymatgen`` |Outcar| object.
             If ``None``, will try to use the ``bulk_site_potentials``
             from the ``defect_entry`` ``calculation_metadata`` if available.
         plot (bool):
@@ -472,22 +482,13 @@ def get_kumagai_correction(
         metadata), and the ``matplotlib`` ``Figure`` object if ``plot`` is
         ``True``.
     """
-    from doped import suppress_logging
-
-    with suppress_logging(), warnings.catch_warnings():  # avoid vise warning suppression and INFO messages
-        try:
-            from pydefect.analyzer.calc_results import CalcResults
-            from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
-            from pydefect.corrections.ewald import Ewald
-            from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
-            from pydefect.defaults import defaults
-            from pydefect.util.error_classes import SupercellError
-
-        except ImportError as exc:
-            raise ImportError(
-                "To use the Kumagai (eFNV) charge correction, you need to install pydefect. "
-                "You can do this by running `pip install pydefect`."
-            ) from exc
+    with vise_handling():  # avoid vise issues (warning suppression, logging, Windows bug)
+        from pydefect.analyzer.calc_results import CalcResults
+        from pydefect.corrections.efnv_correction import ExtendedFnvCorrection, PotentialSite
+        from pydefect.corrections.ewald import Ewald
+        from pydefect.corrections.site_potential_plotter import SitePotentialMplPlotter
+        from pydefect.defaults import defaults
+        from pydefect.util.error_classes import SupercellError
 
     def doped_make_efnv_correction(
         charge: float,
@@ -657,18 +658,11 @@ def get_kumagai_correction(
     if not plot and filename is None:
         return kumagai_correction_result
 
-    with contextlib.suppress(Exception):
-        from shakenbreak.plotting import _install_custom_font
-
-        _install_custom_font()  # in case not installed already
-
     spp = SitePotentialMplPlotter.from_efnv_corr(
         title=f"{format_defect_name(defect_entry.name, False)} -- eFNV Site Potentials",
         efnv_correction=efnv_correction,
     )
-    style_file = style_file or f"{os.path.dirname(__file__)}/utils/doped.mplstyle"
-    plt.style.use(style_file)  # enforce style, as style.context currently doesn't work with jupyter
-    with plt.style.context(style_file):
+    with doped_plot_style(style_file):
         plt.close("all")  # close any previous figures
         spp.construct_plot()
         fig = spp.plt.gcf()
@@ -695,9 +689,8 @@ def get_kumagai_correction(
             )
             for label in labels
         ]
-        dummy_h = Element("H")  # dummy element to check if valid symbol
         labels = [
-            label + r" ($V_{defect} - V_{bulk}$)" if dummy_h.is_valid_symbol(label) else label
+            label + r" ($V_{defect} - V_{bulk}$)" if Element.is_valid_symbol(label) else label
             for label in labels
         ]
 
@@ -711,6 +704,6 @@ def get_kumagai_correction(
         ax.set_xlabel(f"Distance from defect ({spp._x_unit})", size=spp._mpl_defaults.label_font_size)
 
     if filename:
-        spp.plt.savefig(filename, bbox_inches="tight", transparent=True, backend=_get_backend(filename))
+        spp.plt.savefig(filename, bbox_inches="tight", transparent=True)
 
     return kumagai_correction_result, fig

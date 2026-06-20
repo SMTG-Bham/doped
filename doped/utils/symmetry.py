@@ -7,40 +7,38 @@ import math
 import os
 import warnings
 from collections.abc import Iterable, Sequence
-from copy import deepcopy
 from functools import lru_cache
 from itertools import permutations, product
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import spglib
 from numpy.typing import ArrayLike
 from pymatgen.analysis.defects.core import DefectType
-from pymatgen.analysis.structure_matcher import (
+from pymatgen.core.operations import SymmOp
+from pymatgen.core.structure import Lattice
+from pymatgen.core.structure_matcher import (
     ElementComparator,
-    StructureMatcher,
     get_linear_assignment_solution,
     pbc_shortest_vectors,
 )
-from pymatgen.core.operations import SymmOp
-from pymatgen.core.structure import Lattice
 from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
 from pymatgen.transformations.standard_transformations import SupercellTransformation
 from pymatgen.util.coord import is_coord_subset_pbc
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
-from sympy import Eq, Expr, simplify, solve, symbols
+from sympy import Eq, Expr, simplify, solve
 from tqdm import tqdm
 
-from doped.core import Defect, DefectEntry
+from doped.core import Defect, DefectEntry, template_defect_entry_from_structures
+from doped.utils.configurations import orient_s2_like_s1
 from doped.utils.efficiency import PeriodicSite, SpacegroupAnalyzer, Structure
 from doped.utils.parsing import (
     _get_bulk_supercell,
     _get_defect_supercell,
     _get_defect_supercell_frac_coords,
-    _get_defect_supercell_site,
     _get_unrelaxed_defect_structure,
-    _partial_defect_entry_from_structures,
     get_site_mapping_indices,
 )
 
@@ -66,6 +64,7 @@ def _set_spglib_warnings_error_handling_env_var():
     Set the SPGLIB environment variable to use new error handling.
     """
     os.environ["SPGLIB_OLD_ERROR_HANDLING"] = "False"  # can be removed with spglib >=2.8
+    os.environ["SPGLIB_WARNING"] = "OFF"
 
 
 def _check_spglib_version():
@@ -85,8 +84,8 @@ def _check_spglib_version():
         )  # previously also had to do conda or special pip install settings, with spglib <2.5
 
 
-_check_spglib_version()
 _set_spglib_warnings_error_handling_env_var()
+_check_spglib_version()
 
 
 def _round_floats(obj, places: int = 5):
@@ -151,7 +150,7 @@ def _get_num_places_for_dist_precision(
     differences in fraction coordinates become significant).
 
     Args:
-        structure (Structure | Lattice):
+        structure (|Structure| | |Lattice|):
             The input structure or lattice.
         dist_precision (float):
             The desired distance precision in Å (default: 0.001).
@@ -227,7 +226,7 @@ def _frac_coords_sort_func(coords):
         for i in range(len(coords_for_sorting))
         for j in range(i + 1, len(coords_for_sorting))
     )
-    magnitude = _custom_round(np.linalg.norm(coords_for_sorting))
+    magnitude = _custom_round(np.linalg.norm(coords))
     return (-num_equals, magnitude, *np.abs(coords_for_sorting))
 
 
@@ -244,7 +243,7 @@ def get_sga(struct: Structure, symprec: float = 0.01) -> SpacegroupAnalyzer:
     ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
     Args:
-        struct (Structure):
+        struct (|Structure|):
             The input structure.
         symprec (float):
             The symmetry precision to use (default: 0.01).
@@ -269,7 +268,7 @@ def get_sga_and_symprec(struct: Structure, symprec: float = 0.01) -> tuple[Space
     ``os.environ["USE_MAGNETIC_SYMMETRY"] = "1"`` in Python).
 
     Args:
-        struct (Structure):
+        struct (|Structure|):
             The input structure.
         symprec (float):
             The symmetry precision to use (default: 0.01).
@@ -302,10 +301,10 @@ def _cache_ready_get_sga(
 ) -> SpacegroupAnalyzer | tuple[SpacegroupAnalyzer, float]:
     """
     ``get_sga`` code, with hashable input arguments for caching (using
-    ``Structure`` hash function from ``doped.utils.efficiency``).
+    |Structure| hash function from ``doped.utils.efficiency``).
     """
     if not use_magnetic_symmetry:  # don't use magnetic symmetry by default
-        struct = deepcopy(struct)
+        struct = struct.copy()
         for site in struct:
             site.properties = {}
 
@@ -351,14 +350,14 @@ def apply_symm_op_to_site(
     Args:
         symm_op (SymmOp):
             ``pymatgen`` ``SymmOp`` object.
-        site (PeriodicSite):
-            ``pymatgen`` ``PeriodicSite`` object.
+        site (|PeriodicSite|):
+            ``pymatgen`` |PeriodicSite| object.
         fractional (bool):
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
             ``site.coords``). Default: False
-        rotate_lattice (Union[Lattice, bool]):
-            Either a ``pymatgen`` ``Lattice`` object (to use as the new lattice
+        rotate_lattice (|Lattice| | bool):
+            Either a ``pymatgen`` |Lattice| object (to use as the new lattice
             basis of the transformed site, which can be provided to reduce
             computation time when looping) or ``True/False``. If ``True``
             (default), the ``SymmOp`` rotation matrix will be applied to the
@@ -433,7 +432,7 @@ def apply_symm_op_to_struct(
         symm_op:
             ``pymatgen`` ``SymmOp`` object.
         struct:
-            ``pymatgen`` ``Structure`` object.
+            ``pymatgen`` |Structure| object.
         fractional:
             If the ``SymmOp`` is in fractional or Cartesian (default)
             coordinates (i.e. to apply to ``site.frac_coords`` or
@@ -444,13 +443,12 @@ def apply_symm_op_to_struct(
 
     Returns:
         Structure:
-            Structure with the symmetry operation applied.
+            |Structure| with the symmetry operation applied.
     """
     # using modified version of ``pymatgen``\'s ``apply_operation`` method:
     if rotate_lattice:
         if not fractional:
             rotated_lattice = Lattice([symm_op.apply_rotation_only(row) for row in struct._lattice.matrix])
-
         else:
             rotated_lattice = Lattice(np.dot(symm_op.rotation_matrix, struct._lattice.matrix))
     else:
@@ -466,32 +464,32 @@ def apply_symm_op_to_struct(
     )
 
 
-def summed_rms_dist(
+def summed_dist(
     struct_a: Structure, struct_b: Structure, ignored_species: list[str] | None = None
 ) -> float:
     """
-    Get the summed root-mean-square (RMS) distance between the sites of two
-    structures, in Å.
+    Get the summed distance between closest-matched sites of two structures, in
+    Å.
 
     Note that this assumes the lattices of the two structures are equal!
 
     Args:
-        struct_a: ``pymatgen`` ``Structure`` object.
-        struct_b: ``pymatgen`` ``Structure`` object.
+        struct_a: ``pymatgen`` |Structure| object.
+        struct_b: ``pymatgen`` |Structure| object.
         ignored_species:
             List of species to ignore when calculating the RMS distance
             (default: None).
 
     Returns:
         float:
-            The summed RMS distance between the sites of the two structures, in
-            Å.
+            The summed distance between the sites of the two structures, in Å.
     """
     # orders of magnitude faster than StructureMatcher.get_rms_dist() from pymatgen
     # (though this assumes lattices are equal)
     # set threshold to a large number to avoid possible site-matching warnings
     return sum(
-        get_site_mapping_indices(
+        d if d is not None else 0
+        for d in get_site_mapping_indices(
             struct_a, struct_b, threshold=1e10, dists_only=True, ignored_species=ignored_species
         )
     )
@@ -505,7 +503,7 @@ def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
     Args:
         fcoords (ArrayLike):
             Fractional coordinates to get distances between.
-        lattice (Lattice):
+        lattice (|Lattice|):
             Lattice for the fractional coordinates.
 
     Returns:
@@ -513,7 +511,8 @@ def get_distance_matrix(fcoords: ArrayLike, lattice: Lattice) -> np.ndarray:
             Matrix of distances between the input fractional coordinates in the
             input lattice.
     """
-    return _get_distance_matrix(tuple(tuple(i) for i in fcoords), lattice)  # tuple-ify for caching
+    # tuple-ify for caching:
+    return _get_distance_matrix(tuple(tuple(row) for row in np.asarray(fcoords)), lattice)
 
 
 @lru_cache(maxsize=int(1e2))
@@ -525,8 +524,8 @@ def _get_distance_matrix(fcoords: tuple[tuple, ...], lattice: Lattice):
     This function requires the input fcoords to be given as tuples, to allow
     hashing and caching for efficiency.
     """
-    dist_matrix = np.array(lattice.get_all_distances(fcoords, fcoords))
-    return (dist_matrix + dist_matrix.T) / 2
+    # copy() to help avoid mutability issues with cached outputs:
+    return np.array(lattice.get_all_distances(fcoords, fcoords)).copy()
 
 
 def cluster_coords(
@@ -547,16 +546,19 @@ def cluster_coords(
     Nearest Point algorithm and is the recommended choice for ``method`` when
     ``dist_tol`` is small, but can be sensitive to how many fractional
     coordinates are included in ``fcoords`` (allowing for daisy-chaining of
-    sites to give large spaced-out clusters), while ``"centroid"`` or
-    ``"ward"`` are good choices to avoid this issue.
+    sites to give large spaced-out clusters), while ``"average"`` or
+    ``"complete"`` (furthest point algorithm) are good choices to avoid this
+    issue. ``"centroid"``/``"median"``/``"ward"`` should not be used for
+    ``method`` as they assume a flat Euclidean space, which is violated with
+    PBC distances.
 
     See the ``scipy`` API docs for more info.
 
     Args:
         fcoords (ArrayLike):
             Fractional coordinates to cluster.
-        structure (Structure | Lattice):
-            Structure or lattice to which the fractional coordinates
+        structure (|Structure| | |Lattice|):
+            |Structure| or |Lattice| to which the fractional coordinates
             correspond.
         dist_tol (float):
             Distance tolerance for clustering, in Å (default: 0.01). For the
@@ -564,11 +566,17 @@ def cluster_coords(
             tolerance will be clustered together (when ``method = "single"``,
             giving the Nearest Point algorithm, as is the default).
         method (str):
-            Clustering algorithm to use with ``linkage()`` (default:
-            ``"single"``).
+            Clustering algorithm to use with ``linkage()``. Default is
+            ``"single"`` (recommended for small ``dist_tol``), while
+            ``"average"`` or ``"complete"`` are recommended with medium/large
+            ``dist_tol`` (e.g. for candidate interstitial site clustering or
+            defect site clustering (for determining defect site competition)).
+            ``"centroid"``/``"median"``/``"ward"`` should not be used for
+            as they assume a flat Euclidean space, which is violated with PBC
+            distances.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
-            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+            linkage matrix, used with ``fcluster()``. Default: ``"distance"``.
 
     Returns:
         np.ndarray:
@@ -576,15 +584,27 @@ def cluster_coords(
             ``fcoords`` (i.e. corresponding to the index/number of the cluster
             to which that fractional coordinate belongs).
     """
-    if len(fcoords) == 1:  # only one input coordinates
+    fcoords = np.asarray(fcoords)
+    if len(fcoords) == 1:  # only one input coordinate
         return np.array([0])
 
     lattice = structure if isinstance(structure, Lattice) else structure.lattice
     condensed_m = squareform(get_distance_matrix(fcoords, lattice), checks=False)
     z = linkage(condensed_m, method=method)
-    # Note: with method = "centroid", the z distances are the distances between
-    # cluster centroids, while for method = "single", the z distances are the
-    # minimum distances between all points in different clusters
+    # Note: with method = "single", the z distances are the minimum pairwise distance between any point in
+    # one and any point in the other cluster (so two clusters should merge when any site in one is within
+    # ``dist_tol`` of any site in the other, and kept separate when all points in one are >``dist_tol``
+    # away from all points in the other), which of course can easily lead to daisy-chaining (for medium /
+    # large dist_tol values).
+    # With method = "complete", the z distances are instead the maximum pairwise distance between any point
+    # in one and any point in the other cluster (so two clusters should merge only when _every_ site in one
+    # is within ``dist_tol`` of _every_ site in the other cluster). Clusters are thus compact and bounded
+    # -- the diameter of any cluster is guaranteed <= ``dist_tol``, with every pair of sites within a
+    # cluster within ``dist_tol`` of each other.
+    # With method = "average", the z distances are the mean pairwise distance across all point pairs (one
+    # from each cluster), so two clusters should merge only when the average distance drops below
+    # ``dist_tol``. This is a compromise; less chain-prone than "single", less outlier-sensitive than
+    # "complete". Mean within-cluster distance is controlled, but individual pairs can exceed ``dist_tol``.
     return fcluster(z, dist_tol, criterion=criterion)
 
 
@@ -593,9 +613,9 @@ def doped_cluster_frac_coords(
     structure: Structure,
     tol: float = 0.55,
     symm_pref_dist_factor: float = 0.85,
-    method: str = "centroid",
+    method: str = "average",
     criterion: str = "distance",
-) -> np.typing.NDArray:
+) -> np.ndarray:
     """
     Cluster fractional coordinates that are within a certain distance tolerance
     of each other, and return the cluster site.
@@ -609,7 +629,7 @@ def doped_cluster_frac_coords(
     possible ``min_dist``. This is because we want to favour the higher
     symmetry interstitial sites (as these are typically the more intuitive
     sites for placement, cleaner, easier for analysis etc, and work well when
-    combined with ``ShakeNBreak`` or other structure-searching techniques to
+    combined with |ShakeNBreak| or other structure-searching techniques to
     account for symmetry-breaking), but also interstitials are often
     lowest-energy when furthest from host atoms (i.e. in the largest
     interstitial voids -- particularly for fully-ionised charge states), and so
@@ -617,12 +637,15 @@ def doped_cluster_frac_coords(
 
     In ``pymatgen-analysis-defects``, the average cluster position is used,
     which breaks symmetries and is less easy to manipulate in the following
-    interstitial generation functions.
+    interstitial generation functions. ``pymatgen-analysis-defects`` also uses
+    the default ``"single"`` method for site clustering, which can lead to
+    large unwanted daisy-chaining effects, unintentionally grouping
+    interstitials with distances far larger than ``tol``.
 
     Args:
         fcoords (ArrayLike):
             Fractional coordinates of points to cluster.
-        structure (Structure):
+        structure (|Structure|):
             The host structure.
         tol (float):
             Distance tolerance for clustering Voronoi nodes. Default is 0.55 Å.
@@ -631,18 +654,26 @@ def doped_cluster_frac_coords(
             symmetry-favoured sites vs distance-to-host-favoured sites, for
             which to prefer symmetry-favoured sites. Default is 0.85.
         method (str):
-            Clustering algorithm to use with ``linkage()`` (default:
-            ``"centroid"``, better than the ``scipy`` default of ``"single``
-            for interstitial generation to avoid daisy-chaining clusters).
+            Clustering algorithm to use with ``linkage()``. Default is
+            ``"average"``, which is typically better than the ``scipy`` default
+            of ``"single`` for interstitial generation, as it avoids
+            unintentional daisy-chaining effects. Another reasonable choice is
+            ``"complete"``, which ensures that no two sites in a given cluster
+            are more than ``tol`` apart. See the docstrings and source code of
+            :func:`~doped.utils.symmetry.cluster_coords` for more details.
+            ``"centroid"``/``"median"``/``"ward"`` should not be used for
+            as they assume a flat Euclidean space, which is violated with PBC
+            distances.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
-            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+            linkage matrix, used with ``fcluster()`` Default is ``"distance"``.
 
     Returns:
-        np.typing.NDArray: Clustered fractional coordinates.
+        np.ndarray: Clustered fractional coordinates.
     """
+    fcoords = np.asarray(fcoords)
     if len(fcoords) == 0:
-        return None
+        return np.array([])
     if len(fcoords) == 1:
         return _vectorized_custom_round(np.mod(_vectorized_custom_round(fcoords, 5), 1), 4)  # to unit cell
 
@@ -660,7 +691,7 @@ def doped_cluster_frac_coords(
                 frac_coords.append(fcoords[j])
             else:
                 fcoord = fcoords[j]  # We need the image to combine the frac_coords properly:
-                d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
+                _d, image = lattice.get_distance_and_image(frac_coords[0], fcoord)
                 frac_coords.append(fcoord + image)
 
         frac_coords.append(np.average(frac_coords, axis=0))  # midpoint of cluster
@@ -702,7 +733,7 @@ def get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float]:
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     """
     Get a list of all equivalent sites of the input fractional coordinates in
     ``structure``.
@@ -712,8 +743,8 @@ def get_all_equiv_sites(
     Args:
         frac_coords (ArrayLike):
             Fractional coordinates to get equivalent sites of.
-        structure (Structure):
-            Structure to use for the lattice, to which the fractional
+        structure (|Structure|):
+            |Structure| to use for the lattice, to which the fractional
             coordinates correspond, and for determining symmetry operations
             if not provided.
         symprec (float):
@@ -744,7 +775,7 @@ def get_all_equiv_sites(
             Species to use for the equivalent sites (default: "X").
         just_frac_coords (bool):
             If ``True``, just returns the fractional coordinates of the
-            equivalent sites (rather than ``pymatgen`` ``PeriodicSite``
+            equivalent sites (rather than ``pymatgen`` |PeriodicSite|
             objects). Default: False.
         return_symprec_and_dist_tol_factor (bool):
             If ``True``, returns the final symmetry precision and distance
@@ -763,13 +794,17 @@ def get_all_equiv_sites(
     Returns:
         list[PeriodicSite | np.ndarray]:
             List of equivalent sites of the input fractional coordinates in
-            ``structure``, either as ``pymatgen`` ``PeriodicSite`` objects or
+            ``structure``, either as ``pymatgen`` |PeriodicSite| objects or
             as fractional coordinates (depending on the value of
             ``just_frac_coords``).
+
+        If ``return_symprec_and_dist_tol_factor`` is ``True`` (default is
+        ``False``), also returns the final ``symprec`` and ``dist_tol_factor``
+        values used for the equivalent site generation.
     """
     try:
         return _cache_ready_get_all_equiv_sites(
-            tuple(frac_coords),
+            tuple(cast("Sequence", frac_coords)),
             structure,
             symprec,
             dist_tol_factor,
@@ -804,8 +839,8 @@ def _cache_ready_get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-):
-    return _raw_get_all_equiv_sites(
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
+    output = _raw_get_all_equiv_sites(
         frac_coords,
         structure,
         symprec,
@@ -816,6 +851,13 @@ def _cache_ready_get_all_equiv_sites(
         fixed_symprec_and_dist_tol_factor,
         verbose,
     )
+    # copy() to help avoid mutability issues with cached outputs:
+    if not return_symprec_and_dist_tol_factor:
+        assert isinstance(output, list)
+        return output.copy()
+
+    assert isinstance(output, tuple)  # typing
+    return output[0].copy(), output[1], output[2]
 
 
 _TRIAL_SYMPREC_DIST_TOL_FACTORS = np.array([1, 1.05, 0.95, 1.1, 0.9, 1.2, 0.8, 1.5, 0.75, 2, 0.5, 10, 0.1])
@@ -831,7 +873,7 @@ def _raw_get_all_equiv_sites(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-):
+) -> list[PeriodicSite | np.ndarray] | tuple[list[PeriodicSite | np.ndarray], float, float]:
     # ensure sites have the same property keys, otherwise can cause issues with pymatgen primitive
     # structure determination:
     if (
@@ -915,33 +957,36 @@ def _raw_get_all_equiv_sites(
 
 
 def cluster_sites_by_dist_tol(
-    sites: Iterable[PeriodicSite | np.ndarray[float]],
+    sites: Iterable[PeriodicSite | np.ndarray],
     structure: Structure | Lattice,
     dist_tol: float = 0.01,
     method: str = "single",
     criterion: str = "distance",
-) -> list[PeriodicSite | np.ndarray[float]]:
+) -> list[PeriodicSite | np.ndarray]:
     r"""
     Cluster sites based on their distances (using ``cluster_coords``).
 
     Args:
-        sites (Iterable[PeriodicSite | np.ndarray[float]]):
-            Sites to cluster, as an iterable of ``PeriodicSite`` objects or
+        sites (Iterable[|PeriodicSite| | np.ndarray]):
+            Sites to cluster, as an iterable of |PeriodicSite| objects or
             fractional coordinates.
-        structure (Structure | Lattice):
-            Structure or lattice to which the sites correspond.
+        structure (|Structure| | |Lattice|):
+            |Structure| or |Lattice| to which the sites correspond.
         dist_tol (float):
             Distance tolerance for clustering, in Å (default: 0.01).
         method (str):
             Clustering algorithm to use with ``scipy``\'s ``linkage()``
-            clustering function in ``cluster_coords`` (default: ``"single"``).
+            clustering function in ``cluster_coords``. Default is ``"single"``,
+            which is the ``scipy`` default and is typically recommended when
+            ``dist_tol`` is small. See the docstrings and source code of
+            :func:`~doped.utils.symmetry.cluster_coords` for more details.
         criterion (str):
             Criterion to use for flattening hierarchical clusters from the
-            linkage matrix, used with ``fcluster()`` (default: ``"distance"``).
+            linkage matrix, used with ``fcluster()``. Default: ``"distance"``.
 
     Returns:
-        list[PeriodicSite | np.ndarray[float]]:
-            List of clustered sites, as ``PeriodicSite`` objects or fractional
+        list[PeriodicSite | np.ndarray]:
+            List of clustered sites, as |PeriodicSite| objects or fractional
             coordinates depending on the input ``sites`` type.
     """
     dist_precision_num_places = _get_num_places_for_dist_precision(structure, dist_tol)
@@ -949,7 +994,9 @@ def cluster_sites_by_dist_tol(
     sites = list(sites)  # needs to be indexable for reducing to unique sites below
     all_frac_coords = [
         tuple(np.round(i, dist_precision_num_places))
-        for i in (sites if just_frac_coords else [site.frac_coords for site in sites])
+        for i in (
+            sites if just_frac_coords else [cast("PeriodicSite", site).frac_coords for site in sites]
+        )
     ]
     unique_frac_coords, unique_indices = np.unique(all_frac_coords, axis=0, return_index=True)
     unique_sites = [sites[i] for i in unique_indices]
@@ -966,8 +1013,6 @@ def cluster_sites_by_dist_tol(
     return [unique_sites[np.where(cn == n)[0][0]] for n in set(cn)]  # take 1st of each cluster
 
 
-# TODO: Should use equiv frac coords in primitive instead here, to avoid any possible issues with
-#  periodicity-breaking cells
 def get_min_dist_between_equiv_sites(
     site_1: PeriodicSite | Sequence[float] | Defect | DefectEntry,
     site_2: PeriodicSite | Sequence[float] | Defect | DefectEntry,
@@ -980,23 +1025,23 @@ def get_min_dist_between_equiv_sites(
 ) -> float | tuple[float, float, float]:
     """
     Get the minimum distance (in Å) between equivalent sites of two input
-    site/``Defect``/``DefectEntry`` objects in a structure.
+    site/|Defect|/|DefectEntry| objects in a structure.
 
     Args:
-        site_1 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
+        site_1 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
             First site to get equivalent sites of, to determine minimum
             distance to equivalent sites of ``site_2``. Can be a
-            ``PeriodicSite`` object, a sequence of fractional coordinates, or a
-            ``Defect``/``DefectEntry`` object.
-        site_2 (PeriodicSite | Sequence[float, float, float] | Defect | DefectEntry):
+            |PeriodicSite| object, a sequence of fractional coordinates, or a
+            |Defect|/|DefectEntry| object.
+        site_2 (|PeriodicSite| | Sequence[float, float, float] | |Defect| | |DefectEntry|):
             Second site to get equivalent sites of, to determine minimum
             distance to equivalent sites of ``site_1``. Can be a
-            ``PeriodicSite`` object, a sequence of fractional coordinates, or a
-            ``Defect``/``DefectEntry`` object.
-        structure (Structure):
-            Structure to use for determining symmetry-equivalent sites of
+            |PeriodicSite| object, a sequence of fractional coordinates, or a
+            |Defect|/|DefectEntry| object.
+        structure (|Structure|):
+            |Structure| to use for determining symmetry-equivalent sites of
             ``site_1`` and ``site_2``. Required if ``site_1`` and ``site_2``
-            are not ``Defect`` or ``DefectEntry`` objects. Default: None.
+            are not |Defect| or |DefectEntry| objects. Default: None.
         symprec (float):
             Symmetry precision to use for determining symmetry operations.
             Default is 0.01. If ``fixed_symprec_and_dist_tol_factor`` is
@@ -1042,76 +1087,53 @@ def get_min_dist_between_equiv_sites(
             ``dist_tol_factor``) if ``return_symprec_and_dist_tol_factor`` is
             ``True``.
     """
-
-    def _parse_site_to_frac_coords(site):
-        if isinstance(site, PeriodicSite):
-            return site.frac_coords
-        if isinstance(site, DefectEntry):
-            return _get_defect_supercell_frac_coords(site)
-        if isinstance(site, Defect):
-            return site.site.frac_coords
-        return site
-
-    frac_coords_1 = _parse_site_to_frac_coords(site_1)
-    frac_coords_2 = _parse_site_to_frac_coords(site_2)
     if structure is None:
-        for site in [site_1, site_2]:
+        for site in [site_2, site_1]:  # if both ``DefectEntry``s/``Defect``s, take structure from site_1
             if isinstance(site, DefectEntry):
-                structure = _get_bulk_supercell(site)
-                break
-            if isinstance(site, Defect):
+                structure = site.defect.structure
+            elif isinstance(site, Defect):
                 structure = site.structure
-                break
     if structure is None:
         raise ValueError(
             "Structure must be provided if site_1 and site_2 are not DefectEntry or Defect objects."
         )
 
-    bulk_lattice = structure.lattice
-    bulk_supercell_sga, symprec = get_sga_and_symprec(structure, symprec=symprec)
-    symm_bulk_struct = bulk_supercell_sga.get_symmetrized_structure()
+    def _parse_site_to_PeriodicSite(site):
+        if isinstance(site, DefectEntry):
+            return site.defect.site
+        if isinstance(site, Defect):
+            return site.site
+        if isinstance(site, PeriodicSite):
+            return site
+        return None  # frac coords provided, not site
 
-    def _get_equiv_frac_coords_symprec_and_dist_tol(
-        frac_coords, site, symprec=symprec, dist_tol_factor=dist_tol_factor
-    ):
-        try:
-            bulk_site = site.calculation_metadata.get("bulk_site") or _get_defect_supercell_site(site)
-        except AttributeError:  # not a DefectEntry
-            try:
-                bulk_site = site.site
-            except AttributeError:  # not a Defect
-                bulk_site = None
+    def _parse_site_to_frac_coords(site):
+        if periodic_site := _parse_site_to_PeriodicSite(site):
+            return periodic_site.frac_coords
+        return site  # otherwise ``site`` should be frac coords
 
-        equiv_sites = []
-        if bulk_site is not None:
-            with contextlib.suppress(ValueError):  # faster, but will fail for interstitials
-                equiv_sites = [i.frac_coords for i in symm_bulk_struct.find_equivalent_sites(bulk_site)]
+    primitive = get_primitive_structure(structure)
 
-        if not equiv_sites:
-            equiv_sites, symprec, dist_tol_factor = get_all_equiv_sites(
-                frac_coords,
-                symm_bulk_struct,
-                symprec=symprec,
-                dist_tol_factor=dist_tol_factor,
-                just_frac_coords=True,
-                return_symprec_and_dist_tol_factor=True,
-                fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
-                verbose=verbose,
-            )
+    def _get_equiv_fcoords_symprec_and_dist_tol(site, symprec=symprec, dist_tol_factor=dist_tol_factor):
+        frac_coords = _parse_site_to_frac_coords(site)
+        equiv_fcoords, symprec, dist_tol_factor = get_equiv_frac_coords_in_primitive(
+            frac_coords,
+            primitive,
+            structure,
+            symprec=symprec,
+            dist_tol_factor=dist_tol_factor,
+            return_symprec_and_dist_tol_factor=True,
+            fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+            verbose=verbose,
+        )
 
-        return equiv_sites, symprec, dist_tol_factor
+        return equiv_fcoords, symprec, dist_tol_factor
 
-    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_frac_coords_symprec_and_dist_tol(
-        frac_coords_1, site_1
-    )
-    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_frac_coords_symprec_and_dist_tol(
-        frac_coords_2, site_2
-    )
+    equiv_fcoords_1, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_1)
+    equiv_fcoords_2, symprec, dist_tol_factor = _get_equiv_fcoords_symprec_and_dist_tol(site_2)
 
-    min_dist = np.min(bulk_lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
-    if return_symprec_and_dist_tol_factor:
-        return min_dist, symprec, dist_tol_factor
-    return min_dist
+    min_dist = np.min(primitive.lattice.get_all_distances(equiv_fcoords_1, equiv_fcoords_2))
+    return (min_dist, symprec, dist_tol_factor) if return_symprec_and_dist_tol_factor else min_dist
 
 
 def _get_symm_dataset_of_struct_with_all_equiv_sites(
@@ -1141,7 +1163,7 @@ def _get_symm_dataset_of_struct_with_all_equiv_sites(
     """
     try:
         return _cache_ready_get_symm_dataset_of_struct_with_all_equiv_sites(
-            tuple(frac_coords),
+            tuple(cast("Sequence", frac_coords)),
             struct,
             symprec,
             dist_tol_factor,
@@ -1197,7 +1219,7 @@ def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
     verbose: bool = False,
 ):
     equiv_sites_output = get_all_equiv_sites(
-        list(frac_coords),
+        frac_coords,
         struct,
         symprec=symprec,
         dist_tol_factor=dist_tol_factor,
@@ -1206,7 +1228,7 @@ def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
         fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
         verbose=verbose,
     )
-    assert len(equiv_sites_output) == 3  # typing, return_symprec_and_dist_tol_factor = True
+    assert isinstance(equiv_sites_output, tuple)  # return_symprec_and_dist_tol_factor = True
     unique_sites, symprec, dist_tol_factor = equiv_sites_output
     struct_with_all_X = _get_struct_with_all_X(struct, unique_sites)
     sga_with_all_X, symprec = get_sga_and_symprec(struct_with_all_X, symprec=symprec)
@@ -1219,7 +1241,7 @@ def _raw_get_symm_dataset_of_struct_with_all_equiv_sites(
 def _get_struct_with_all_X(struct, unique_sites):
     """
     Add all sites in unique_sites to a ``copy`` of ``struct``, and return this
-    new ``Structure``.
+    new |Structure|.
     """
     struct_with_all_X = struct.copy()
     struct_with_all_X.sites += unique_sites
@@ -1236,7 +1258,7 @@ def get_equiv_frac_coords_in_primitive(
     return_symprec_and_dist_tol_factor: bool = False,
     fixed_symprec_and_dist_tol_factor: bool = False,
     verbose: bool = False,
-) -> list[np.ndarray] | np.ndarray | tuple[list[np.ndarray] | np.ndarray, float, float]:
+) -> list[np.ndarray] | np.ndarray | tuple[list[np.ndarray] | np.ndarray, float, float] | None:
     """
     Get equivalent fractional coordinates of ``frac_coords`` (in ``supercell``)
     in the given ``primitive`` cell.
@@ -1252,9 +1274,9 @@ def get_equiv_frac_coords_in_primitive(
         frac_coords (ArrayLike):
             Fractional coordinates in the supercell, for which to get
             equivalent coordinates in the primitive cell.
-        primitive (Structure):
+        primitive (|Structure|):
             Primitive cell structure.
-        supercell (Structure):
+        supercell (|Structure|):
             Supercell structure.
         symprec (float):
             Symmetry precision to use for determining symmetry operations.
@@ -1324,7 +1346,7 @@ def get_equiv_frac_coords_in_primitive(
             fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
             verbose=verbose,
         )
-        assert len(equiv_sites_output) == 3  # typing, return_symprec_and_dist_tol_factor = True
+        assert isinstance(equiv_sites_output, tuple)  # return_symprec_and_dist_tol_factor = True
         unique_sites, adjusted_trial_symprec, adjusted_trial_dist_tol_factor = equiv_sites_output
         supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
         prim_with_all_X = get_primitive_structure(
@@ -1367,10 +1389,9 @@ def get_equiv_frac_coords_in_primitive(
 
     dist_tol = symprec * dist_tol_factor
     primitive_with_all_X = rotated_struct * matrix
-    orig_rms_dist = summed_rms_dist(primitive, primitive_with_all_X, ignored_species=["X"])
-    if orig_rms_dist != 0:
+    orig_summed_dist = summed_dist(primitive, primitive_with_all_X, ignored_species=["X"])
+    if orig_summed_dist != 0:
         # may have different primitive cell definitions, try re-orienting
-        from doped.utils.configurations import orient_s2_like_s1
         from doped.utils.supercells import min_dist
 
         orig_min_dist = min_dist(primitive_with_all_X, ignored_species=["X"])
@@ -1382,9 +1403,9 @@ def get_equiv_frac_coords_in_primitive(
             comparator=ElementComparator(),
         )
         new_min_dist = min_dist(reoriented_primitive_with_all_X, ignored_species=["X"])
-        new_rms_dist = summed_rms_dist(primitive, reoriented_primitive_with_all_X, ignored_species=["X"])
+        new_summed_dist = summed_dist(primitive, reoriented_primitive_with_all_X, ignored_species=["X"])
         if (
-            abs(new_rms_dist - orig_rms_dist) > abs(orig_min_dist - new_min_dist)
+            abs(new_summed_dist - orig_summed_dist) > abs(orig_min_dist - new_min_dist)
             and abs(orig_min_dist - new_min_dist) < dist_tol * 2
         ):  # only take re-oriented cell if it improves RMS diff and doesn't significantly change min_dist
             primitive_with_all_X = reoriented_primitive_with_all_X
@@ -1439,9 +1460,9 @@ def are_equivalent_lattices(
     cell sizes.
 
     Args:
-        lattice_1 (Lattice | Structure):
+        lattice_1 (|Lattice| | |Structure|):
             The first lattice to check for equivalence.
-        lattice_2 (Lattice | Structure):
+        lattice_2 (|Lattice| | |Structure|):
             The second lattice to check for equivalence.
         ltol (float):
             Fractional tolerance for matching lattice vector lengths.
@@ -1461,7 +1482,7 @@ def are_equivalent_lattices(
 
 def _rotate_and_get_supercell_matrix(
     prim_struct: Structure, target_struct: Structure, ltol: float = 1e-5, atol: float = 1
-) -> tuple[Structure, np.ndarray]:
+) -> tuple[Structure, np.ndarray] | tuple[None, None]:
     """
     Rotates the input ``prim_struct`` to match the ``target_struct``
     orientation, and returns the supercell matrix to convert from the rotated
@@ -1470,9 +1491,9 @@ def _rotate_and_get_supercell_matrix(
     Returns ``(None, None)`` if no mapping is found.
 
     Args:
-        prim_struct (Structure):
+        prim_struct (|Structure|):
             The primitive structure.
-        target_struct (Structure):
+        target_struct (|Structure|):
             The target structure to match.
         ltol (float):
             Length tolerance for matching the lattice vectors (default: 1e-5).
@@ -1528,7 +1549,7 @@ def translate_structure(
     Translate a structure and its sites by a given vector (**not in place**).
 
     Args:
-        structure: ``pymatgen`` ``Structure`` object.
+        structure: ``pymatgen`` |Structure| object.
         vector: Translation vector, fractional or Cartesian.
         frac_coords:
             Whether the input vector is in fractional coordinates.
@@ -1538,7 +1559,7 @@ def translate_structure(
             (Default: True)
 
     Returns:
-        ``pymatgen`` ``Structure`` object with translated sites.
+        ``pymatgen`` |Structure| object with translated sites.
     """
     translated_structure = structure.copy()
     return translated_structure.translate_sites(
@@ -1567,8 +1588,8 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
     primitive cell definitions from spglib.
 
     Args:
-        prim_struct: ``pymatgen`` ``Structure`` object of the primitive cell.
-        target_struct: ``pymatgen`` ``Structure`` object of the target cell.
+        prim_struct: ``pymatgen`` |Structure| object of the primitive cell.
+        target_struct: ``pymatgen`` |Structure| object of the target cell.
         sga:
             ``SpacegroupAnalyzer`` object of the primitive cell. If ``None``,
             will be computed from ``prim_struct``.
@@ -1610,7 +1631,7 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
 
         return prim_struct, transformation_matrix
 
-    rms_dists_w_candidate_prim_structs_and_T_matrices = []
+    summed_dists_w_candidate_prim_structs_and_T_matrices = []
     # Could also apply possible origin shifts to other structs (refined, find_primitive) as well,
     # if we find any structures for which this code still fails
     candidate_prim_structs = [
@@ -1632,7 +1653,7 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
             # not integer or doesn't exactly match bulk supercell, so bad transformation matrix, skip
             continue
         new_prim_struct = Structure.from_sites([site.to_unit_cell() for site in new_prim_struct])
-        rms_dist_to_target = summed_rms_dist(
+        summed_dist_to_target = summed_dist(
             Structure.from_sites(
                 [
                     site.to_unit_cell()
@@ -1641,12 +1662,12 @@ def _get_supercell_matrix_and_possibly_redefine_prim(
             ),
             target_struct,
         )
-        rms_dists_w_candidate_prim_structs_and_T_matrices.append(
-            (rms_dist_to_target, new_prim_struct, transformation_matrix)
+        summed_dists_w_candidate_prim_structs_and_T_matrices.append(
+            (summed_dist_to_target, new_prim_struct, transformation_matrix)
         )
 
     closest_match = sorted(  # sort to get ideal primitive cell definition
-        rms_dists_w_candidate_prim_structs_and_T_matrices,
+        summed_dists_w_candidate_prim_structs_and_T_matrices,
         key=lambda x: (
             round(x[0], 3),
             _lattice_matrix_sort_func(x[1].lattice.matrix),
@@ -1724,8 +1745,8 @@ def get_wyckoff(
     Args:
         frac_coords (ArrayLike):
             Fractional coordinates of the site to get the Wyckoff label of.
-        struct (Structure):
-            Structure for which ``frac_coords`` corresponds to.
+        struct (|Structure|):
+            |Structure| for which ``frac_coords`` corresponds to.
         equiv_sites (bool):
             If ``True``, returns a tuple of (Wyckoff label, list of equivalent
             sites). Default is ``False``.
@@ -1772,7 +1793,7 @@ def _struct_sort_func(struct: Structure | np.ndarray) -> tuple:
 
     Args:
         struct:
-            ``pymatgen`` ``Structure`` object, or an array of fractional
+            ``pymatgen`` |Structure| object, or an array of fractional
             coordinates of sites in the structure (in which case the lattice
             matrix metric is skipped).
 
@@ -1837,16 +1858,16 @@ def _lattice_matrix_sort_func(lattice_matrix: np.ndarray) -> tuple:
 
     def is_symmetric(matrix: np.ndarray, tol: float = 1e-3) -> bool:
         iu = np.triu_indices_from(matrix, k=1)  # indices of upper triangle of matrix
-        return np.all(np.abs(matrix[iu] - matrix.T[iu]) <= tol)
+        return bool(np.all(np.abs(matrix[iu] - matrix.T[iu]) <= tol))
 
     is_diagonal = np.all(np.abs(lattice_matrix[~np.eye(3, dtype=bool)]) < 1e-3)
     symmetric = is_diagonal or is_symmetric(lattice_matrix)
     num_negs = np.sum(lattice_matrix < 0)
     diag_sum = np.round(np.sum(np.abs(np.diag(lattice_matrix))), 1)
     flat_matrix = lattice_matrix.ravel()
-    unique_vals, counts = np.unique(flat_matrix, return_counts=True)
+    _unique_vals, counts = np.unique(flat_matrix, return_counts=True)
     num_equals = np.sum(counts * (counts + 1) // 2)
-    abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
+    _abs_vals, abs_counts = np.unique(np.abs(flat_matrix), return_counts=True)
     num_abs_equals = np.sum(abs_counts * (abs_counts + 1) // 2)
     a, b, c = np.linalg.norm(lattice_matrix, axis=1)
 
@@ -1873,7 +1894,7 @@ def get_clean_structure(
     diagonals and c >= b >= a).
 
     Args:
-        structure (Structure): Structure object.
+        structure (|Structure|): |Structure| object.
         return_T (bool):
             Whether to return the transformation matrix from the original
             structure lattice to the new structure lattice (T * Orig = New).
@@ -1921,7 +1942,7 @@ def get_clean_structure(
     new_structure = Structure(
         new_lattice_matrix,
         structure.species_and_occu,
-        structure.cart_coords,  # type: ignore
+        structure.cart_coords,
         coords_are_cartesian=True,
         to_unit_cell=True,
         site_properties=structure.site_properties,
@@ -1989,21 +2010,21 @@ def get_primitive_structure(
 ):
     """
     Get a consistent/deterministic primitive structure from a ``pymatgen``
-    ``Structure``.
+    |Structure|.
 
     For some materials (e.g. zinc blende), there are multiple equivalent
     primitive cells (e.g. Cd (0,0,0) & Te (0.25,0.25,0.25); Cd (0,0,0) & Te
     (0.75,0.75,0.75) for F-43m CdTe), so for reproducibility and in line with
     most structure conventions/definitions, take the one with the cleanest
-    lattice and structure definition, according to ``struct_sort_func``.
+    lattice and structure definition, according to ``_struct_sort_func``.
 
     If ``ignored_species`` is set, then the sorting function used to determine
     the ideal primitive structure will ignore sites with species in
     ``ignored_species``.
 
     Args:
-        structure (Structure):
-            Structure to get the corresponding primitive structure of.
+        structure (|Structure|):
+            |Structure| to get the corresponding primitive structure of.
         ignored_species (list | None):
             List of species to ignore when determining the ideal primitive
             structure. (Default: None)
@@ -2046,7 +2067,7 @@ def _cache_ready_get_primitive_structure(
 ):
     """
     ``get_primitive_structure`` code, with hashable input arguments for caching
-    (using ``Structure`` hash function from ``doped.utils.efficiency``).
+    (using |Structure| hash function from ``doped.utils.efficiency``).
     """
     # clean structure site_properties (if mismatching ``None`` values present, can mess with primitive
     # structure determination) -- this can happen if e.g. a slab structure is input with "bulk_wyckoff"
@@ -2081,7 +2102,8 @@ def _cache_ready_get_primitive_structure(
     if clean:
         prim_structs = [get_clean_structure(struct) for struct in prim_structs]
 
-    return prim_structs if return_all else _get_best_pos_det_structure(prim_structs[0])
+    # copy() to help avoid mutability issues with cached outputs:
+    return prim_structs.copy() if return_all else _get_best_pos_det_structure(prim_structs[0]).copy()
 
 
 def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, SpacegroupAnalyzer]:
@@ -2099,7 +2121,7 @@ def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, Space
     SGN 216).
     """
     possible_conv_structs_and_sgas = []
-    for _i in range(4):
+    for _i in range(3):
         struct = sga.get_conventional_standard_structure()
         possible_conv_structs_and_sgas.append((struct, sga))
         sga = get_sga(sga.get_primitive_standard_structure(), symprec=sga._symprec)
@@ -2115,7 +2137,7 @@ def get_spglib_conv_structure(sga: SpacegroupAnalyzer) -> tuple[Structure, Space
 
 def get_BCS_conventional_structure(
     structure: Structure, pbar: tqdm | None = None, return_wyckoff_dict: bool = False
-) -> tuple[Structure, np.ndarray] | tuple[Structure, np.ndarray, dict[str, np.ndarray]]:
+) -> tuple[Structure, list[int]] | tuple[Structure, list[int], dict[str, list[list[Expr]]]]:
     """
     Get the conventional crystal structure of the input structure, according to
     the Bilbao Crystallographic Server (BCS) definition.
@@ -2125,8 +2147,8 @@ def get_BCS_conventional_structure(
     structure definition to the BCS definition.
 
     Args:
-        structure (Structure):
-            Structure for which to get the corresponding BCS conventional
+        structure (|Structure|):
+            |Structure| for which to get the corresponding BCS conventional
             crystal structure.
         pbar (ProgressBar):
             ``tqdm`` progress bar object, to update progress. Default is
@@ -2182,6 +2204,7 @@ def get_BCS_conventional_structure(
     bcs_conv_structure = get_clean_structure(
         swap_axes(conventional_structure, lattice_vec_swap_array), niggli_reduce=False
     )
+    assert isinstance(bcs_conv_structure, Structure)  # return_T = False
 
     if return_wyckoff_dict:
         return bcs_conv_structure, lattice_vec_swap_array, wyckoff_label_dict
@@ -2198,7 +2221,7 @@ def get_conv_cell_site(defect_entry: DefectEntry) -> PeriodicSite | None:
     conventional structure definition.
 
     Args:
-        defect_entry: ``DefectEntry`` object.
+        defect_entry: |DefectEntry| object.
 
     Returns:
         PeriodicSite | None:
@@ -2214,50 +2237,40 @@ def get_conv_cell_site(defect_entry: DefectEntry) -> PeriodicSite | None:
 
     sga = get_sga(bulk_prim_structure)
     # convert to match sga primitive structure first:
-    sm = StructureMatcher(primitive_cell=False, ignored_species=["X"], comparator=ElementComparator())
     sga_prim_struct = sga.get_primitive_standard_structure()
-    s2_like_s1 = sm.get_s2_like_s1(sga_prim_struct, prim_struct_with_X)
-    if not s2_like_s1:
+    prim_struct_with_X_like_sga_prim = orient_s2_like_s1(
+        sga_prim_struct,
+        prim_struct_with_X,
+        primitive_cell=False,
+        ignored_species=["X"],
+        comparator=ElementComparator(),
+    )
+    if not prim_struct_with_X_like_sga_prim:
         warnings.warn(
-            "The transformation from the DefectEntry primitive cell to the spglib primitive "
-            "cell could not be determined, and so the corresponding conventional cell site "
-            "cannot be identified."
+            "The transformation from the DefectEntry primitive cell to the spglib primitive cell could "
+            "not be determined, and so the corresponding conventional cell site cannot be identified."
         )
         return None
-    s2_really_like_s1 = Structure.from_sites(
-        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
-            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
-                site.specie,
-                site.frac_coords,
-                sga_prim_struct.lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
-    )
 
-    conv_struct_with_X = s2_really_like_s1 * np.linalg.inv(
+    conv_struct_with_X = prim_struct_with_X_like_sga_prim * np.linalg.inv(
         sga.get_conventional_to_primitive_transformation_matrix()
     )
 
     # convert to match defect_entry conventional structure definition
     assert defect_entry.conventional_structure is not None
-    s2_like_s1 = sm.get_s2_like_s1(defect_entry.conventional_structure, conv_struct_with_X)
-    s2_really_like_s1 = Structure.from_sites(
-        [  # sometimes this get_s2_like_s1 doesn't work properly due to different (but equivalent) lattice
-            PeriodicSite(  # vectors (e.g. a=(010) instead of (100) etc.), so do this to be sure
-                site.specie,
-                site.frac_coords,
-                defect_entry.conventional_structure.lattice,
-                to_unit_cell=True,
-            )
-            for site in s2_like_s1.sites
-        ]
+    conv_struct_with_X_like_defect_entry_conv = orient_s2_like_s1(
+        defect_entry.conventional_structure,
+        conv_struct_with_X,
+        primitive_cell=False,
+        ignored_species=["X"],
+        comparator=ElementComparator(),
     )
 
-    conv_cell_site = next(site for site in s2_really_like_s1.sites if site.specie.symbol == "X")
+    conv_cell_site = next(
+        site for site in conv_struct_with_X_like_defect_entry_conv.sites if site.specie.symbol == "X"
+    )
     # site choice doesn't matter so much here, as we later get the equivalent coordinates using the
-    # Wyckoff dict and choose the conventional site based on that anyway (in the DefectsGenerator
+    # Wyckoff dict and choose the conventional site based on that anyway (in the ``DefectsGenerator``
     # initialisation)
     conv_cell_site.to_unit_cell()
     conv_cell_site.frac_coords = _vectorized_custom_round(conv_cell_site.frac_coords)
@@ -2373,7 +2386,6 @@ def get_wyckoff_label_and_equiv_coord_list(
 
         Returns the matching array from the list.
         """
-        x, y, z = symbols("x y z")
         variable_dicts = [{}]  # list of dicts for x,y,z
 
         for sympy_array in coord_list:
@@ -2502,7 +2514,7 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
     doped_wyckoffs = []
 
     for site in conv_struct:
-        wyckoff_label, equiv_coords = get_wyckoff_label_and_equiv_coord_list(
+        wyckoff_label, _equiv_coords = get_wyckoff_label_and_equiv_coord_list(
             conv_cell_site=site, wyckoff_dict=wyckoff_dict
         )
         if all(
@@ -2513,7 +2525,8 @@ def _compare_wyckoffs(wyckoff_symbols, conv_struct, wyckoff_dict):
             # allow for BCS conv cell (and thus wyckoffs) being a multiple of sga conv cell (allow it fam)
             multiplied_wyckoff_symbol not in wyckoff_symbols
             for multiplied_wyckoff_symbol in [
-                _multiply_wyckoffs([wyckoff_label], n=n)[0] for n in range(1, 5)  # up to 4x
+                _multiply_wyckoffs([wyckoff_label], n=n)[0]
+                for n in range(1, 5)  # up to 4x
             ]
         ):
             return False  # break on first non-match
@@ -2608,13 +2621,13 @@ def point_symmetry_from_defect(
     **kwargs,
 ) -> str:
     """
-    Get the defect site point symmetry from a `Defect` object.
+    Get the defect site point symmetry from a |Defect| object.
 
     Note that this is intended only to be used for unrelaxed, as-generated
-    ``Defect`` objects (rather than parsed defects).
+    |Defect| objects (rather than parsed defects).
 
     Args:
-        defect (Defect): ``Defect`` object.
+        defect (|Defect|): |Defect| object.
         symprec (float):
             Symmetry precision to use for determining symmetry operations and
             thus point symmetries. Default is 0.01. If
@@ -2664,14 +2677,15 @@ def point_symmetry_from_defect_entry(
     relaxed: bool = True,
     verbose: bool | None = None,
     return_periodicity_breaking: bool = False,
+    attempt_periodicity_restoration: bool = True,
     **kwargs,
 ) -> str | tuple[str, bool]:
     r"""
-    Get the defect site point symmetry from a ``DefectEntry`` object.
+    Get the defect site point symmetry from a |DefectEntry| object.
 
     Note: If ``relaxed = True`` (default), then this tries to use the
     ``defect_entry.defect_supercell`` to determine the site symmetry. This will
-    thus give the `relaxed` defect point symmetry if this is a ``DefectEntry``
+    thus give the `relaxed` defect point symmetry if this is a |DefectEntry|
     created from parsed defect calculations. However, it should be noted that
     this is not guaranteed to work in all cases; namely for non-diagonal
     supercell expansions, or sometimes for non-scalar supercell expansion
@@ -2691,14 +2705,14 @@ def point_symmetry_from_defect_entry(
                   get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on
-    your parsed `relaxed` ``DefectEntry`` objects should correctly determine
+    your parsed `relaxed` |DefectEntry| objects should correctly determine
     the final relaxed defect symmetry -- otherwise periodicity-breaking
     prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can
     manually determine the relaxed defect and bulk-site point symmetries,
     and/or orientational degeneracy, from visualising the structures (e.g.
-    using VESTA)(can use ``get_orientational_degeneracy`` to obtain the
+    using VESTA)(can use |get_orientational_degeneracy| to obtain the
     corresponding orientational degeneracy factor for given defect/bulk-site
     point symmetries) and setting the corresponding values in the
     ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']``
@@ -2715,7 +2729,7 @@ def point_symmetry_from_defect_entry(
     https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
-        defect_entry (DefectEntry): ``DefectEntry`` object.
+        defect_entry (|DefectEntry|): |DefectEntry| object.
         symprec (float):
             Symmetry precision to use for determining symmetry operations and
             thus point symmetries with ``spglib``. Default is 0.01 for
@@ -2745,7 +2759,13 @@ def point_symmetry_from_defect_entry(
             If ``True``, also returns a boolean specifying if the supercell has
             been detected to break the crystal periodicity (and hence not be
             able to return a reliable `relaxed` point symmetry) or not. Mainly
-            for internal ``doped`` usage. Default is ``False``.
+            for internal ``doped`` usage, and always ``False`` if ``relaxed``
+            is ``False``. Default is ``False``.
+        attempt_periodicity_restoration (bool):
+            If ``True`` and periodicity-breaking is detected, will attempt to
+            restore periodicity by stenciling the relaxed defect geometry into
+            a supercell which retains periodicity, and then getting the point
+            symmetry for that. Default is ``True``.
         **kwargs:
             Additional keyword arguments to pass to ``get_all_equiv_sites``,
             such as ``dist_tol_factor`` and
@@ -2757,12 +2777,91 @@ def point_symmetry_from_defect_entry(
             ``return_periodicity_breaking = True``, a boolean specifying if the
             supercell has been detected to break the crystal periodicity).
     """
+    with warnings.catch_warnings(record=True) as w:
+        result = _point_symmetry_from_defect_entry(
+            defect_entry,
+            symprec=symprec,
+            relaxed=relaxed,
+            verbose=verbose,
+            return_periodicity_breaking=relaxed,  # always return periodicity-breaking if relaxed=True
+            **kwargs,
+        )
+
+    if not (relaxed and attempt_periodicity_restoration):
+        for warning in w:
+            warnings.warn(warning.message, warning.category)
+        return result
+
+    assert isinstance(result, tuple)  # typing
+    relaxed_point_group, periodicity_breaking = result
+
+    if periodicity_breaking and attempt_periodicity_restoration:
+        with contextlib.suppress(Exception):
+            from doped.utils.stenciling import get_defect_in_supercell
+            from doped.utils.supercells import get_min_image_distance
+
+            primitive = defect_entry.defect.structure
+            min_expansion_factor = get_min_image_distance(
+                defect_entry.bulk_supercell
+            ) / get_min_image_distance(primitive)
+            target_supercell = primitive * np.ceil(min_expansion_factor)
+
+            periodicity_restored_defect_supercell, periodicity_restored_bulk_supercell = (
+                get_defect_in_supercell(
+                    defect_entry,
+                    target_supercell,
+                    check_bulk=False,
+                    show_pbar=False,  # may be called during defect parsing etc, so don't show progress bar
+                )
+            )
+            periodicity_restored_defect_entry = template_defect_entry_from_structures(
+                periodicity_restored_defect_supercell,
+                periodicity_restored_bulk_supercell,
+            )
+            with warnings.catch_warnings(record=True) as w:
+                result = _point_symmetry_from_defect_entry(
+                    periodicity_restored_defect_entry,
+                    symprec=symprec,
+                    relaxed=relaxed,
+                    verbose=verbose,
+                    return_periodicity_breaking=True,
+                    **kwargs,
+                )
+            assert isinstance(result, tuple)  # typing
+            relaxed_point_group, periodicity_breaking = result
+
+    for warning in w:
+        warnings.warn(warning.message, warning.category)
+
+    return (
+        relaxed_point_group
+        if not return_periodicity_breaking
+        else (relaxed_point_group, periodicity_breaking)
+    )
+
+
+def _point_symmetry_from_defect_entry(
+    defect_entry: DefectEntry,
+    symprec: float | None = None,
+    relaxed: bool = True,
+    verbose: bool | None = None,
+    return_periodicity_breaking: bool = False,
+    **kwargs,
+) -> str | tuple[str, bool]:
+    r"""
+    Internal function to get the defect site point symmetry from a
+    |DefectEntry| object.
+
+    See ``point_symmetry_from_defect_entry`` for full documentation.
+    """
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
         # May need to adjust symprec (e.g. for Ag2Se, symprec of 0.2 is too large as we have very
         # slight distortions present in the unrelaxed material).
     periodicity_breaking_verbose = verbose is not False  # None/True -> True, False -> False
     equiv_sites_verbose = verbose is True  # True -> True, None/False -> False
+    if not relaxed:
+        return_periodicity_breaking = False  # always False when relaxed=False
 
     # from spglib docs: For atomic positions, roughly speaking, two position vectors x and x' in
     # Cartesian coordinates are considered to be the same if |x' - x| < symprec. The angle distortion
@@ -2806,7 +2905,7 @@ def point_symmetry_from_defect_entry(
             )
         else:
             warnings.warn(
-                "`relaxed` was set to True (i.e. get _relaxed_ defect symmetry), but the "
+                "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but the "
                 "`calculation_metadata`/`bulk_entry.structure` attributes are not set for `DefectEntry`, "
                 "suggesting that this DefectEntry was not parsed from calculations using doped. This "
                 "means doped cannot automatically check if the supercell shape is breaking the cell "
@@ -2972,7 +3071,7 @@ def _check_relaxed_defect_symmetry_determination(
     if unrelaxed_defect_structure is not None:
         bulk_supercell = _get_bulk_supercell(defect_entry)
         match = False
-        symm_dataset, unique_sites, symprec, dist_tol = _get_symm_dataset_of_struct_with_all_equiv_sites(
+        symm_dataset, unique_sites, symprec, _dist_tol = _get_symm_dataset_of_struct_with_all_equiv_sites(
             defect_supercell_bulk_site_coords,
             bulk_supercell,
             symprec=symprec,
@@ -3062,7 +3161,7 @@ def point_symmetry_from_structure(
                   get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on
-    your parsed `relaxed` ``DefectEntry`` objects should correctly determine
+    your parsed `relaxed` |DefectEntry| objects should correctly determine
     the final relaxed defect symmetry -- otherwise periodicity-breaking
     prevents this.
 
@@ -3073,10 +3172,10 @@ def point_symmetry_from_structure(
     interstitial site when placed in the (unrelaxed) bulk structure.
 
     Args:
-        structure (Structure):
-            ``Structure`` object for which to determine the point symmetry.
-        bulk_structure (Structure):
-            ``Structure`` object of the bulk structure, if known. Default is
+        structure (|Structure|):
+            |Structure| object for which to determine the point symmetry.
+        bulk_structure (|Structure|):
+            |Structure| object of the bulk structure, if known. Default is
             ``None``. If provided and ``relaxed = True``, will be used to check
             if the supercell is breaking the crystal periodicity (and thus
             preventing accurate determination of the relaxed defect point
@@ -3121,11 +3220,13 @@ def point_symmetry_from_structure(
         **kwargs:
             Additional keyword arguments to pass to ``get_all_equiv_sites``,
             such as ``dist_tol_factor`` and
-            ``fixed_symprec_and_dist_tol_factor``.
+            ``fixed_symprec_and_dist_tol_factor``, and
+            ``point_symmetry_from_defect_entry``, such as
+            ``attempt_periodicity_restoration``.
 
     Returns:
         str:
-            Structure point symmetry (and if
+            |Structure| point symmetry (and if
             ``return_periodicity_breaking = True``, a boolean specifying if the
             supercell has been detected to break the crystal periodicity).
     """
@@ -3146,9 +3247,9 @@ def point_symmetry_from_structure(
             )
 
     if bulk_structure is not None:
-        defect_entry = _partial_defect_entry_from_structures(
-            bulk_structure,
+        defect_entry = template_defect_entry_from_structures(
             structure,
+            bulk_structure,
             oxi_state="Undetermined",
             multiplicity=1,
             skip_atom_mapping_check=skip_atom_mapping_check,
@@ -3181,13 +3282,13 @@ def point_symmetry_from_site(
     Get the point symmetry of a site in a structure.
 
     Args:
-        site (Union[PeriodicSite, np.ndarray, list]):
+        site (|PeriodicSite| | np.ndarray | list):
             Site for which to determine the point symmetry. Can be a
-            ``PeriodicSite`` object, or a list or numpy array of the
+            |PeriodicSite| object, or a list or numpy array of the
             coordinates of the site (fractional coordinates by default, or
             Cartesian if ``coords_are_cartesian = True``).
-        structure (Structure):
-            ``Structure`` object for which to determine the point symmetry of
+        structure (|Structure|):
+            |Structure| object for which to determine the point symmetry of
             the site.
         coords_are_cartesian (bool):
             If ``True``, the site coordinates are assumed to be in Cartesian
@@ -3360,10 +3461,10 @@ def get_orientational_degeneracy(
 ) -> float:
     r"""
     Get the orientational degeneracy factor for a given `relaxed`
-    ``DefectEntry``, by supplying either the ``DefectEntry`` object or the
-    bulk-site & relaxed defect point group symbols (e.g. "Td", "C3v" etc.).
+    |DefectEntry|, by supplying either the |DefectEntry| object or the bulk-
+    site & relaxed defect point group symbols (e.g. "Td", "C3v" etc.).
 
-    If a ``DefectEntry`` is supplied (and the point group symbols are not),
+    If a |DefectEntry| is supplied (and the point group symbols are not),
     this is computed by determining the `relaxed` defect point symmetry and the
     (unrelaxed) bulk site symmetry, and then getting the ratio of their point
     group orders (equivalent to the ratio of partition functions or number of
@@ -3396,14 +3497,14 @@ def get_orientational_degeneracy(
                   get_defect_name_from_entry(defect_entry), "\n")
 
     And if the point symmetries match in each case, then using this function on
-    your parsed `relaxed` ``DefectEntry`` objects should correctly determine
+    your parsed `relaxed` |DefectEntry| objects should correctly determine
     the final relaxed defect symmetry (and orientational degeneracy) --
     otherwise periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can
     manually determine the relaxed defect and bulk-site point symmetries,
     and/or orientational degeneracy, from visualising the structures (e.g.
-    using VESTA)(can use ``get_orientational_degeneracy`` to obtain the
+    using VESTA)(can use |get_orientational_degeneracy| to obtain the
     corresponding orientational degeneracy factor for given defect/bulk-site
     point symmetries) and setting the corresponding values in the
     ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']``
@@ -3420,13 +3521,13 @@ def get_orientational_degeneracy(
     https://doi.org/10.1038/s41578-025-00879-y...).
 
     Args:
-        defect_entry (DefectEntry):
-            ``DefectEntry`` object. (Default = None)
-        relaxed_point_group (str):
+        defect_entry (|DefectEntry|):
+            |DefectEntry| object. (Default = None)
+        relaxed_point_group (str | None):
             Point group symmetry (e.g. "Td", "C3v" etc.) of the `relaxed`
             defect structure, if already calculated / manually determined.
             Default is ``None`` (automatically calculated by ``doped``).
-        bulk_site_point_group (str):
+        bulk_site_point_group (str | None):
             Point group symmetry (e.g. "Td", "C3v" etc.) of the defect site in
             the bulk, if already calculated / manually determined. For
             vacancies/substitutions, this should match the site symmetry label
@@ -3463,7 +3564,8 @@ def get_orientational_degeneracy(
         **kwargs:
             Additional keyword arguments to pass to ``get_all_equiv_sites``,
             such as ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
-            and ``verbose``.
+            and ``verbose``, and to ``point_symmetry_from_defect_entry``, such
+            as ``attempt_periodicity_restoration``.
 
     Returns:
         float: Orientational degeneracy factor for the defect.
@@ -3475,28 +3577,29 @@ def get_orientational_degeneracy(
                 "provided for doped to determine the orientational degeneracy! "
             )
 
-    elif defect_entry.bulk_entry is None:
-        raise ValueError(
-            "bulk_entry must be set for defect_entry to determine the (relaxed) orientational degeneracy! "
-            "(i.e. must be a parsed DefectEntry)"
-        )
+    else:
+        if relaxed_point_group is None:
+            # this will throw warning if auto-detected that supercell breaks trans symmetry
+            relaxed_point_group = cast(
+                "str",
+                point_symmetry_from_defect_entry(
+                    defect_entry,
+                    symprec=symprec,
+                    relaxed=True,  # relaxed
+                    **kwargs,
+                ),
+            )  # str as return_periodicity_breaking is False
 
-    if relaxed_point_group is None:
-        # this will throw warning if auto-detected that supercell breaks trans symmetry
-        relaxed_point_group = point_symmetry_from_defect_entry(
-            defect_entry,  # type: ignore
-            symprec=symprec,
-            relaxed=True,  # relaxed
-            **kwargs,
-        )
-
-    if bulk_site_point_group is None:
-        bulk_site_point_group = point_symmetry_from_defect_entry(
-            defect_entry,  # type: ignore
-            symprec=bulk_symprec,  # same default (None) as equiv_sites (-> multiplicity) for consistency
-            relaxed=False,  # unrelaxed
-            **kwargs,
-        )
+        if bulk_site_point_group is None:
+            bulk_site_point_group = cast(
+                "str",
+                point_symmetry_from_defect_entry(
+                    defect_entry,
+                    symprec=bulk_symprec,  # same default as equiv_sites (-> multiplicity) for consistency
+                    relaxed=False,  # unrelaxed
+                    **kwargs,
+                ),
+            )  # str as return_periodicity_breaking is False
 
     # actually fine for split-vacancies (e.g. Ke's V_Sb in Sb2O5), or antisite-swaps etc:
     # (so avoid warning for now; user will be warned anyway if symmetry determination failing)
@@ -3522,7 +3625,7 @@ def is_periodic_image(
     same_image: bool = False,
 ) -> bool:
     r"""
-    Determine if the ``PeriodicSite``/``frac_coords`` in ``sites_1`` are a
+    Determine if the |PeriodicSite|/``frac_coords`` in ``sites_1`` are a
     periodic image of those in ``sites_2``.
 
     This function determines if the set of fractional coordinates in
@@ -3541,8 +3644,8 @@ def is_periodic_image(
     ``PeriodicSite.is_periodic_image`` method could be used).
 
     Args:
-        sites_1 (list): List of ``PeriodicSite``\s or ``frac_coords`` arrays.
-        sites_2 (list): List of ``PeriodicSite``\s or ``frac_coords`` arrays.
+        sites_1 (list): List of |PeriodicSite|\s or ``frac_coords`` arrays.
+        sites_2 (list): List of |PeriodicSite|\s or ``frac_coords`` arrays.
         frac_tol (float): Fractional coordinate tolerance for comparing sites.
         same_image (bool):
             If ``True``, also check that the sites are the `same` periodic
@@ -3557,19 +3660,22 @@ def is_periodic_image(
     sites_1_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_1]
     sites_2_frac_coords = [site.frac_coords if hasattr(site, "frac_coords") else site for site in sites_2]
 
+    if len(sites_1_frac_coords) != len(sites_2_frac_coords):
+        raise ValueError("``is_periodic_image`` requires the same number of sites in both lists!")
+
     if not same_image:
         return len(sites_1_frac_coords) == len(sites_2_frac_coords) and is_coord_subset_pbc(
             sites_1_frac_coords, sites_2_frac_coords
         )
 
     lattice = Lattice(np.eye(3))  # if fractional coords
-    for sites in [sites_1, sites_2]:
-        if isinstance(next(iter(sites)), PeriodicSite):
-            lattice = next(iter(sites)).lattice
+    for site in [next(iter(sites_1)), next(iter(sites_2))]:
+        if isinstance(site, PeriodicSite):
+            lattice = site.lattice
 
     # first need to match sites with their closest (individual) periodic images, to account for order /
     # permutation invariance:
-    vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
+    _vecs, d_2 = pbc_shortest_vectors(lattice, sites_1_frac_coords, sites_2_frac_coords, return_d2=True)
     site_matches, _ = get_linear_assignment_solution(d_2)  # closest individual periodic image matches
     reordered_sites_2_frac_coords = [sites_2_frac_coords[i] for i in site_matches]
 

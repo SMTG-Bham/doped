@@ -21,25 +21,26 @@ def get_min_image_distance(structure: Structure) -> float:
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     Args:
-        structure (Structure): Structure object.
+        structure (|Structure|): |Structure| object.
 
     Returns:
         float: Minimum image distance.
     """
-    return _get_min_image_distance_from_matrix(structure.lattice.matrix)  # type: ignore
+    return _get_min_image_distance_from_matrix(structure.lattice.matrix)
 
 
 def min_dist(structure: Structure, ignored_species: list[str] | None = None) -> float:
     """
-    Return the minimum interatomic distance in a structure.
+    Return the minimum interatomic distance in a structure (ignoring any zero
+    distances).
 
     Uses ``numpy`` vectorisation for fast computation.
 
     Args:
-        structure (Structure):
+        structure (|Structure|):
             The structure to check.
         ignored_species (list[str]):
             A list of species symbols to ignore when calculating the minimum
@@ -88,16 +89,17 @@ def _proj(b: np.ndarray, a: np.ndarray) -> np.ndarray:
 
 
 def _get_min_image_distance_from_matrix(
-    matrix: np.ndarray, normalised: bool = False, break_if_less_than: float | None = None
-) -> float | tuple[float, float]:
+    matrix: np.ndarray,
+    normalised: bool = False,
+) -> float:
     """
     Get the minimum image distance (i.e. minimum distance between periodic
     images of sites in a lattice) for the input lattice matrix, using the
-    ``pymatgen`` ``get_points_in_sphere()`` ``Lattice`` method.
+    ``pymatgen`` ``get_points_in_sphere()`` |Lattice| method.
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     Args:
         matrix (np.ndarray): Lattice matrix.
@@ -105,46 +107,36 @@ def _get_min_image_distance_from_matrix(
             If the cell matrix volume is normalised (to 1). This is done in the
             ``doped`` supercell generation functions, and boosts efficiency by
             skipping volume calculation. Default = False.
-        break_if_less_than (Optional[float]):
-            If the minimum image distance is definitely less than this value
-            (based on the minimum cell vector length), then return early with
-            the minimum cell length and this value. Mainly for internal use in
-            ``doped`` to speed up supercell generation. Default = None.
 
     Returns:
-        Union[float, tuple[float, float]]:
-            Minimum image distance, or tuple of minimum image distance and the
-            break value if ``break_if_less_than`` is not None.
+        float: Minimum image distance.
     """
     # Note that the max hypothetical min image distance in a 3D lattice is sixth root of 2 times the
-    # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems
-    # while of course the minimum possible min image distance is the minimum cell vector length
+    # effective cubic lattice parameter (i.e. the cube root of the volume), which is for HCP/FCC systems,
+    # which is also the cell vector length. In near-cubic cells, the minimum image distance is typically
+    # approximately equal to the minimum cell vector length. So, the max possible min image distance is
+    # typically in the range: ``(~0.8*min_cell_length, min_cell_length]``, for near-cubic cells
+    # (see Figure 1; doped JOSS)
     lattice = Lattice(matrix)
-    if break_if_less_than is not None:
-        min_cell_length = np.min(lattice.abc)
-        if min_cell_length < break_if_less_than:
-            return min_cell_length, break_if_less_than
-
-    volume = 1 if normalised else lattice.volume
-    eff_cubic_length = volume ** (1 / 3)
-    max_min_dist = eff_cubic_length * (2 ** (1 / 6))  # max hypothetical min image distance in 3D lattice
+    if normalised:
+        max_min_dist = 2 ** (1 / 6)
+    else:
+        volume = lattice.volume
+        eff_cubic_length = volume ** (1 / 3)
+        max_min_dist = eff_cubic_length * 2 ** (1 / 6)  # max hypothetical min image distance in 3D lattice
 
     _fcoords, dists, _idxs, _images = lattice.get_points_in_sphere(
         np.array([[0, 0, 0]]), [0, 0, 0], r=max_min_dist * 1.01, zip_results=False
     )
-    dists.sort()
-    min_dist = dists[1]  # second in list is min image (first is itself, zero)
+    dists = np.array(dists)
+    min_dist = np.min(dists[dists > 0])  # second in list is min image (first is itself, zero)
     if min_dist <= 0:
         raise ValueError(
             "Minimum image distance less than or equal to zero! This is possibly due to a co-planar / "
             "non-orthogonal lattice. Please check your inputs!"
         )
-    # round to 4 decimal places to avoid tiny numerical differences messing with sorting:
-    min_dist = round(min_dist, 4)
-    if break_if_less_than is not None:
-        return min_dist, max(min_dist, break_if_less_than)
 
-    return min_dist
+    return round(min_dist, 4)  # round to 4 decimal places to avoid issues with tiny numerical differences
 
 
 def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 10) -> float:
@@ -155,7 +147,7 @@ def _get_min_image_distance_from_matrix_raw(matrix: np.ndarray, max_ijk: int = 1
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     As the cell angles deviate more from cubic (90°), the required
     ``max_ijk`` to get the correct converged result increases. For near-cubic
@@ -262,9 +254,11 @@ def cell_metric(
 
     This is an expanded version of the cell metric function in ASE
     (``get_deviation_from_optimal_cell_shape``), described in
-    https://wiki.fysik.dtu.dk/ase/tutorials/defects/defects.html
+    https://ase-lib.org/examples_generated/tutorials/defects.html
     which previously did not account for rotational invariance (now fixed;
-    https://gitlab.com/ase/ase/-/merge_requests/3404) and has less flexibility.
+    https://gitlab.com/ase/ase/-/merge_requests/3404,
+    https://gitlab.com/ase/ase/-/merge_requests/3616).
+
 
     Args:
         cell_matrix (np.ndarray):
@@ -285,8 +279,8 @@ def cell_metric(
     Returns:
         float: Cell metric (0 is perfect score).
     """
-    # TODO: Update to use ``eval_length_deviation`` and ``eval_shape_deviation`` from
-    #  https://gitlab.com/ase/ase/-/merge_requests/3616, when merged.
+    # Note that ``eval_length_deviation`` and ``eval_shape_deviation`` from ASE >=3.25 also now implement
+    # this functionality
     if eff_cubic_length is None:
         eff_cubic_length = np.abs(np.linalg.det(cell_matrix)) ** (1 / 3)
     norms = np.linalg.norm(cell_matrix, axis=1)
@@ -318,8 +312,7 @@ def _lengths_and_angles_from_matrix(matrix: np.ndarray) -> tuple[Any, ...]:
         k = (dim + 2) % 3
         angles[dim] = np.clip(np.dot(matrix[j], matrix[k]) / (lengths[j] * lengths[k]), -1, 1)
     angles = np.arccos(angles) * 180.0 / np.pi
-    angles = tuple(angles.tolist())
-    return (*lengths, *angles)
+    return (*lengths, *tuple(angles.tolist()))
 
 
 def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.ndarray:
@@ -328,6 +321,9 @@ def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.nda
 
     Matrices is a numpy array of shape (n, 3, 3), where n is the number of
     matrices.
+
+    No longer used, superseded by better Gram matrix based approach, for
+    determining rotationally-invariant unique cell matrix descriptors.
     """
     lengths = np.linalg.norm(matrices, axis=2)  # Compute lengths (norms of row vectors)
 
@@ -344,7 +340,9 @@ def _vectorized_lengths_and_angles_from_matrices(matrices: np.ndarray) -> np.nda
 
 
 def _P_matrix_sort_func(
-    P: np.ndarray, cell: np.ndarray = None, eff_norm_cubic_length: float | None = None
+    P: np.ndarray,
+    cell: np.ndarray | None = None,
+    eff_norm_cubic_length: float | None = None,
 ) -> tuple:
     """
     Sorting function to apply on an iterable of transformation matrices.
@@ -433,6 +431,71 @@ def _P_matrix_sort_func(
     )
 
 
+def _argmin_p_matrix_sort(P_batch: np.ndarray, cell: np.ndarray, eff: float) -> int:
+    """
+    Index of the best ``P`` in ``P_batch`` under the same ordering as
+    ``_P_matrix_sort_func(P, cell, eff)``, without a Python loop (vectorised).
+    """
+    P_batch = np.asarray(P_batch)
+    transformed = P_batch @ cell
+    norms = np.linalg.norm(transformed, axis=2)
+    d = norms / eff - 1.0
+    cubic_metric = np.round(np.sum(d * d, axis=1), 4)
+
+    abs_P = np.abs(P_batch)
+    abs_sum = np.sum(abs_P, axis=(1, 2))
+    diag_P = np.diagonal(P_batch, axis1=1, axis2=2)
+    abs_diag_sum = np.sum(np.abs(diag_P), axis=1)
+    abs_sum_off_diag = abs_sum - abs_diag_sum
+    diag_sum = np.sum(diag_P, axis=1)
+    num_negs = np.sum(P_batch < 0, axis=(1, 2))
+    max_abs = np.max(abs_P, axis=(1, 2))
+
+    P_sorted = np.sort(P_batch.reshape(-1, 9), axis=1)
+    num_equals = np.sum(np.diff(P_sorted, axis=1) == 0, axis=1)
+
+    sym_m = (
+        (P_batch[:, 0, 1] == P_batch[:, 1, 0])
+        & (P_batch[:, 0, 2] == P_batch[:, 2, 0])
+        & (P_batch[:, 1, 2] == P_batch[:, 2, 1])
+    )
+    diag_m = sym_m & (P_batch[:, 0, 1] == 0) & (P_batch[:, 0, 2] == 0) & (P_batch[:, 1, 2] == 0)
+    ge3 = num_equals >= 3
+    symmetric = np.where(ge3, sym_m, False)
+    is_diagonal = np.where(ge3, diag_m, False)
+
+    t = transformed
+    lat_sym = (
+        np.isclose(t[:, 0, 1], t[:, 1, 0])
+        & np.isclose(t[:, 0, 2], t[:, 2, 0])
+        & np.isclose(t[:, 1, 2], t[:, 2, 1])
+    )
+    lat_diag = lat_sym & np.isclose(t[:, 0, 1], 0) & np.isclose(t[:, 0, 2], 0) & np.isclose(t[:, 1, 2], 0)
+
+    not_is_diag = (~is_diagonal).astype(np.int8)
+    not_lat_diag = (~lat_diag).astype(np.int8)
+    not_lat_sym = (~lat_sym).astype(np.int8)
+    not_sym = (~symmetric).astype(np.int8)
+
+    order = np.lexsort(
+        (
+            -diag_sum.astype(np.float64),
+            -abs_diag_sum.astype(np.float64),
+            -num_equals.astype(np.float64),
+            max_abs.astype(np.float64),
+            num_negs.astype(np.float64),
+            abs_sum.astype(np.float64),
+            abs_sum_off_diag.astype(np.float64),
+            not_sym,
+            not_lat_sym,
+            not_lat_diag,
+            cubic_metric.astype(np.float64),
+            not_is_diag,
+        )
+    )
+    return int(order[0])
+
+
 def _lean_sort_func(P):
     abs_P = np.abs(P)
     abs_sum = np.sum(abs_P)
@@ -468,7 +531,7 @@ def _get_candidate_P_arrays(
     limit: int = 2,
     verbose: bool = False,
     target_metric: np.ndarray | None = None,
-    label="SC",
+    target_shape="SC",
 ) -> tuple:
     """
     Get the possible supercell transformation (P) matrices for the given cell,
@@ -483,17 +546,17 @@ def _get_candidate_P_arrays(
     norm_cell = norm * cell
 
     if verbose:
-        print(f"{label} normalization factor (Q): {norm}")
+        print(f"{target_shape} normalization factor (Q): {norm}")
 
     ideal_P = np.matmul(target_metric, np.linalg.inv(norm_cell))  # Approximate initial P matrix
 
     if verbose:
-        print(f"{label} idealized transformation matrix (ideal_P):")
+        print(f"{target_shape} idealized transformation matrix (ideal_P):")
         print(ideal_P)
 
     starting_P = np.array(np.around(ideal_P, 0), dtype=int)
     if verbose:
-        print(f"{label} closest integer transformation matrix (P_0, starting_P):")
+        print(f"{target_shape} closest integer transformation matrix (P_0, starting_P):")
         print(starting_P)
 
     P_array = starting_P[None, :, :] + (np.indices([2 * limit + 1] * 9).reshape(9, -1).T - limit).reshape(
@@ -509,6 +572,7 @@ def _get_candidate_P_arrays(
 
     # get unique lattices before computing metrics:
     cell_matrices = np.einsum("ijk,kl->ijl", valid_P, norm_cell)
+
     lengths_angles = _vectorized_lengths_and_angles_from_matrices(cell_matrices)
     # for each row in lengths_angles, get the product multiplied by the sum, as a hash:
     lengths_angles_hash = np.around(np.prod(lengths_angles, axis=1) / np.sum(lengths_angles, axis=1), 4)
@@ -516,11 +580,11 @@ def _get_candidate_P_arrays(
     unique_cell_matrices = cell_matrices[indices]
 
     if verbose:
-        print(f"{label} searched matrices (P_array): {len(P_array)}")
-        print(f"{label} valid matrices (matching target_size; valid_P): {len(valid_P)}")
-        print(f"{label} unique valid matrices (unique_cell_matrices): {len(unique_cell_matrices)}")
+        print(f"{target_shape} searched matrices (P_array): {len(P_array)}")
+        print(f"{target_shape} valid matrices (matching target_size; valid_P): {len(valid_P)}")
+        print(f"{target_shape} unique valid matrices (unique_cell_matrices): {len(unique_cell_matrices)}")
 
-    return valid_P, norm, norm_cell, unique_cell_matrices, unique_hashes, lengths_angles_hash
+    return valid_P, norm_cell, unique_cell_matrices, unique_hashes, lengths_angles_hash
 
 
 def _check_and_return_scalar_matrix(P, cell=None):
@@ -546,33 +610,32 @@ def _check_and_return_scalar_matrix(P, cell=None):
 
 
 def _get_optimal_P(
-    valid_P, selected_indices, unique_hashes, lengths_angles_hash, norm_cell, verbose, label, cell
+    valid_P, selected_indices, unique_hashes, lengths_angles_hash, norm_cell, verbose, target_shape, cell
 ):
     """
     Get the optimal/cleanest P matrix from the given valid_P array (with
     provided set of grouped unique matrices), according to the
     ``_P_matrix_sort_func``.
     """
-    poss_P = []
-    for idx in selected_indices:
-        hash_value = unique_hashes[idx]
-        matching_indices = np.where(lengths_angles_hash == hash_value)[0]
-        poss_P.extend(valid_P[matching_indices])
+    # collect all valid P matrices whose cell shape (lengths and angles) matches any of the selected unique
+    # shapes (based on their minimum image distances):
+    selected_hashes = unique_hashes[selected_indices]
+    poss_P = valid_P[np.isin(lengths_angles_hash, selected_hashes)]
 
     eff_norm_cubic_length = Lattice(np.matmul(next(iter(poss_P)), norm_cell)).volume ** (1 / 3)
-    poss_P.sort(key=lambda x: _P_matrix_sort_func(x, norm_cell, eff_norm_cubic_length))
     if verbose:
-        print(f"{label} number of possible P matrices with best score (poss_P): {len(poss_P)}")
+        print(f"{target_shape} number of possible P matrices with best score (poss_P): {len(poss_P)}")
 
-    optimal_P = poss_P[0]
+    optimal_P = poss_P[_argmin_p_matrix_sort(poss_P, norm_cell, eff_norm_cubic_length)]
+
     # check if P is equivalent to a scalar multiple of the identity matrix
     optimal_P = _check_and_return_scalar_matrix(optimal_P, cell)
 
     # Finalize.
     if verbose:
-        print(f"{label} optimal transformation matrix (P_opt):")
+        print(f"{target_shape} optimal transformation matrix (P_opt):")
         print(optimal_P)
-        print(f"{label} supercell size:")
+        print(f"{target_shape} supercell size:")
         print(np.round(np.matmul(optimal_P, cell), 4))
 
     return optimal_P
@@ -588,7 +651,7 @@ def _min_sum_off_diagonals(prim_struct: Structure, supercell_matrix: np.ndarray)
     transformation matrix of either the primitive or conventional cells).
 
     Args:
-        prim_struct (Structure): Primitive structure.
+        prim_struct (|Structure|): Primitive structure.
         supercell_matrix (np.ndarray): Supercell matrix to check.
 
     Returns:
@@ -638,10 +701,10 @@ def find_ideal_supercell(
 
     This is also known as the Shortest Vector Problem (SVP), and has no known
     analytical solution, requiring enumeration type approaches.
-    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_(SVP)
+    https://wikipedia.org/wiki/Lattice_problem#Shortest_vector_problem_%28SVP%29
 
     Note that this function is used by default to generate defect supercells
-    with the ``doped`` ``DefectsGenerator`` class, unless specific supercell
+    with the ``doped`` |DefectsGenerator| class, unless specific supercell
     settings are used.
 
     Args:
@@ -663,7 +726,8 @@ def find_ideal_supercell(
             Whether to return the minimum image distance (in Å) as a second
             return value. (Default = False)
         verbose (bool):
-            Whether to print out extra information. (Default = False)
+            Whether to print out extra information about the supercell search.
+            (Default = False)
 
     Returns:
         np.ndarray | tuple[np.ndarray, float]:
@@ -671,9 +735,8 @@ def find_ideal_supercell(
             is ``True``, the minimum image distance (in Å).
     """
     if target_size == 1:  # just identity innit
-        return np.eye(3, dtype=int), (
-            _get_min_image_distance_from_matrix(cell) if return_min_dist else np.eye(3, dtype=int)
-        )
+        identity = np.eye(3, dtype=int)
+        return (identity, _get_min_image_distance_from_matrix(cell)) if return_min_dist else identity
 
     # Initial code here is based off that in ASE's find_optimal_cell_shape() function, but with significant
     # efficiency improvements, and then re-based on the minimum image distance rather than cubic cell
@@ -693,7 +756,7 @@ def find_ideal_supercell(
         limit=limit,
         verbose=verbose,
         target_metric=sc_target_metric,
-        label="SC",
+        target_shape="SC",
     )  # tested and found that amalgamating SC/FCC target matrices earlier leads to massive slowdown,
     # so more efficient to just generate both this way and compare
     fcc_optimal_P = _find_ideal_supercell_for_target_metric(
@@ -702,15 +765,11 @@ def find_ideal_supercell(
         limit=limit,
         verbose=verbose,
         target_metric=fcc_target_metric,
-        label="FCC",
+        target_shape="FCC",
     )
     # recalculate min dists (reduces numerical errors inherited from transformations)
-    sc_min_dist = round(
-        _get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3  # type: ignore
-    )
-    fcc_min_dist = round(
-        _get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3  # type: ignore
-    )
+    sc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(sc_optimal_P, cell)), 3)
+    fcc_min_dist = round(_get_min_image_distance_from_matrix(np.matmul(fcc_optimal_P, cell)), 3)
 
     sc_fcc_P_and_min_dists = [
         (sc_optimal_P, sc_min_dist),
@@ -760,7 +819,7 @@ def _find_ideal_supercell_for_target_metric(
     limit: int = 2,
     verbose: bool = False,
     target_metric: np.ndarray | None = None,
-    label="SC",
+    target_shape="SC",
 ):
     """
     Find the optimal supercell transformation matrix for the given ``cell``,
@@ -776,7 +835,6 @@ def _find_ideal_supercell_for_target_metric(
     target_metric = np.eye(3) if target_metric is None else target_metric
     (
         valid_P,
-        norm,
         norm_cell,
         unique_cell_matrices,
         unique_hashes,
@@ -787,29 +845,42 @@ def _find_ideal_supercell_for_target_metric(
         limit=limit,
         verbose=verbose,
         target_metric=target_metric,
-        label=label,
+        target_shape=target_shape,
     )
 
-    current_best_min_image_distance = 0.001
+    if len(unique_cell_matrices) == 0:
+        raise ValueError("No valid P matrices found with given settings")
+
+    # first we do a quick filter by getting the min image distances when considering vectors up to +/-2 in
+    # cell indices, which is far quicker and helps quickly filter many candidates
+    inds = (-2, -1, 0, 1, 2)
+    coeffs = np.array(  # all non-zero integer vectors in (-2, 2)^3 -- the 124 nearest image vectors
+        [[i, j, k] for i in inds for j in inds for k in inds if (i, j, k) != (0, 0, 0)]
+    )  # shape (124, 3)
+
+    # possible lattice vectors for every candidate cell at once:
+    # cell_matrices: (N, 3, 3), coeffs: (125, 3) -> vectors: (N, 125, 3)
+    lattice_vectors = np.einsum("ij,kjl->kil", coeffs, unique_cell_matrices)
+    max_min_image_dists = np.linalg.norm(lattice_vectors, axis=2).min(axis=1).round(4)  # (N,)
+
     min_dists = []
-    # for near cubic systems, the min image distance in most cases is just the minimum cell vector,
-    # so if the efficiency of this function was the bottleneck we could rank first with the fixed
-    # cubic-cell metric, then subselect and apply this function, but at present this is not the
-    # limiting factor in this function so not worth it
-    for cell_matrix in unique_cell_matrices:
-        min_dist, current_best_min_image_distance = _get_min_image_distance_from_matrix(
-            cell_matrix, normalised=True, break_if_less_than=current_best_min_image_distance
-        )  # type: ignore
+    current_best_min_image_distance = 0.001
+    for cell_matrix, min_dist in zip(unique_cell_matrices, max_min_image_dists, strict=False):
+        if min_dist >= current_best_min_image_distance:
+            min_dist = _get_min_image_distance_from_matrix(  # noqa: PLW2901
+                cell_matrix,
+                normalised=True,
+            )
+        if min_dist > current_best_min_image_distance:
+            current_best_min_image_distance = min_dist
         min_dists.append(min_dist)
 
     min_image_dists = np.array(min_dists)
-    if len(min_image_dists) == 0:
-        raise ValueError("No valid P matrices found with given settings")
 
     # get indices of min_image_dists that are equal to the minimum
     best_min_dist = np.max(min_image_dists)  # in terms of supercell effective cubic length
     if verbose:
-        print(f"{label} best minimum image distance (best_min_dist): {best_min_dist}")
+        print(f"{target_shape} best minimum image distance (best_min_dist): {best_min_dist}")
 
     min_dist_indices = np.where(min_image_dists == best_min_dist)[0]
 
@@ -820,7 +891,7 @@ def _find_ideal_supercell_for_target_metric(
         lengths_angles_hash=lengths_angles_hash,
         norm_cell=norm_cell,
         verbose=verbose,
-        label=label,
+        target_shape=target_shape,
         cell=cell,
     )
 
@@ -845,8 +916,8 @@ def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) 
     value will be set to an empty dict.
 
     Args:
-        struct (Structure):
-            Structure to generate supercells for.
+        struct (|Structure|):
+            |Structure| to generate supercells for.
         uc_range (tuple):
             Range of numbers of unit cells to search over.
 
@@ -874,112 +945,3 @@ def get_pmg_cubic_supercell_dict(struct: Structure, uc_range: tuple = (1, 200)) 
             pmg_supercell_dict[i] = {}
 
     return pmg_supercell_dict
-
-
-def find_optimal_cell_shape(
-    cell: np.ndarray,
-    target_size: int,
-    target_shape: str = "SC",
-    limit: int = 2,
-    return_score: bool = False,
-    verbose: bool = False,
-) -> np.ndarray | tuple[np.ndarray, float]:
-    r"""
-    Find the transformation matrix that produces a supercell corresponding to
-    ``target_size`` unit cells that most closely approximates the shape defined
-    by ``target_shape``.
-
-    This is an updated version of ASE's ``find_optimal_cell_shape`` function,
-    fixed to be rotationally-invariant (now fixed in ASE with MR 3404) and
-    having significant efficiency improvements, and then secondarily sorted by
-    the (fixed) cell metric (in ``doped``), and then by some other criteria to
-    give the cleanest output.
-
-    Note: This function will be deprecated by the updates in
-    https://gitlab.com/ase/ase/-/merge_requests/3616, which improves
-    performance, and will be removed once that MR is merged. (TODO)
-
-    Finds the optimal supercell transformation matrix by calculating the
-    deviation of the possible supercell matrices from an ideal simple cubic (if
-    target = "SC") or face-centred cubic (if target = "FCC") matrix, and then
-    taking that with the best (lowest) score by evaluating the root mean square
-    (RMS) difference of the vector lengths from that of the idealised values
-    (i.e. the corresponding SC/FCC lattice vector lengths for the given cell
-    volume).
-
-    For target = "SC", the idealised lattice vector length is the effective
-    cubic length (i.e. the cube root of the volume), while for "FCC" it is
-    2^(1/6) (~1.12) times the effective cubic length.
-
-    Args:
-        cell (np.ndarray):
-            Unit cell matrix for which to find a supercell transformation.
-        target_size (int):
-            Target supercell size (in number of ``cell``\s).
-        target_shape (str):
-            Target cell shape, for which to calculate the normalised deviation
-            score from. Either "SC" for simple cubic or "FCC" for face-centred
-            cubic. Default = "SC"
-        limit (int):
-            Supercell matrices are searched for by first identifying the ideal
-            (fractional) transformation matrix (P) that would yield a perfectly
-            SC/FCC supercell with volume equal to ``target_size``, and then
-            scanning over all matrices where the elements are within
-            +/-``limit`` of the ideal P matrix elements (rounded to the nearest
-            integer). (Default = 2)
-        return_score (bool):
-            Whether to return the cell metric score as a second return value.
-            (Default = False)
-        verbose (bool):
-            Whether to print out extra information. (Default = False)
-
-    Returns:
-        np.ndarray | tuple[np.ndarray, float]:
-            The supercell transformation matrix (P), and if ``return_score``
-            is ``True``, the cell metric (where 0 is perfect score).
-    """
-    # Set up target metric
-    if target_shape.lower() in {"sc", "simple-cubic"}:
-        target_shape = "SC"
-        target_metric = np.eye(3)
-    elif target_shape.lower() in {"fcc", "face-centered cubic"}:
-        target_shape = "FCC"
-        target_metric = 0.5 * np.array([[0, 1, 1], [1, 0, 1], [1, 1, 0]], dtype=float)
-
-    (
-        valid_P,
-        norm,
-        norm_cell,
-        unique_cell_matrices,
-        unique_hashes,
-        lengths_angles_hash,
-    ) = _get_candidate_P_arrays(
-        cell=cell,
-        target_size=target_size,
-        limit=limit,
-        verbose=verbose,
-        target_metric=target_metric,
-        label=target_shape,
-    )
-
-    score_list = [
-        cell_metric(cell_matrix, target=target_shape, rms=False) for cell_matrix in unique_cell_matrices
-    ]
-    best_msd = np.min(score_list)
-    if verbose:
-        print(f"Best score: {np.sqrt(best_msd)}")
-
-    best_score_indices = np.where(np.array(score_list) == best_msd)[0]
-
-    optimal_P = _get_optimal_P(
-        valid_P=valid_P,
-        selected_indices=best_score_indices,
-        unique_hashes=unique_hashes,
-        lengths_angles_hash=lengths_angles_hash,
-        norm_cell=norm_cell,
-        verbose=verbose,
-        label=target_shape,
-        cell=cell,
-    )
-
-    return (optimal_P, np.sqrt(best_msd)) if return_score else optimal_P

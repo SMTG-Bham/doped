@@ -1,8 +1,8 @@
 [project]
 name = "doped"
-version = "3.2.1"
+version = "4.0.0"
 description = "Python package to setup, process and analyse solid-state defect calculations with VASP"
-authors = [{name = "Seán Kavanagh", email = "skavanagh@seas.harvard.edu"}]
+authors = [{name = "Seán Kavanagh", email = "sk2045@cam.ac.uk"}]
 readme = "README.md"
 license = {file = "LICENSE"}
 classifiers = [
@@ -16,15 +16,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.10"  # dictated by "pymatgen>=2025" requirement
+requires-python = ">=3.11"  # dictated by pymatgen-core>2026.4
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen>=2025.10.7",  # breaking changes to LinearAssignment
+    # pinned to git main: FermiDos.get_e_h_concs (PR #64) not yet in a PyPI release (>2026.5.18)
+    "pymatgen-core @ git+https://github.com/materialsproject/pymatgen-core.git@3d7a88d19185fc3776cb4160a58d9e25a9f352eb",
     # requires spglib >= 2.5
-    "pymatgen-analysis-defects>=2023.8.22",
-    "shakenbreak>=3.4.2",  # doped StructureMatcher efficiency updates (using ``StructureMatcher_scan_stol``)
+    "pymatgen-analysis-defects>=2023.8.22",  # TODO: Update to (fully) pymatgen-core compatible version
+    "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
+    "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
     "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.9.9",  # eigenvalue parsing updates
@@ -46,11 +48,11 @@ Repository = "https://github.com/SMTG-Bham/doped"
 tests = [
     "pytest>=8.3",
     "pytest-mpl>=0.16.1",
-    "py-sc-fermi",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested
+    "py-sc-fermi>=2.2.0",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested, this version ensures full consistency
     "pytest-split>=0.10.0",  # for test splitting
 ]
 docs = [
-    "sphinx>7",
+    "sphinx>7,<9",  # current issue with Sphinx 9: https://github.com/sphinx-doc/sphinx/issues/14270; remove limit once resolved
     "myst-nb>=1.0",
     "recommonmark",
     "renku-sphinx-theme>=0.5.0",
@@ -60,12 +62,11 @@ docs = [
 ]
 analysis = [
     "easyunfold",
-    "py-sc-fermi",
+    "py-sc-fermi>=2.2.0",
     "sumo",
     "nonrad",
     #"CarrierCapture.jl"
 ]
-pdf = ["pycairo"]
 
 [tool.setuptools.packages.find]
 exclude = ["examples*", "*testing", "tests*", "docs*"]
@@ -74,9 +75,6 @@ exclude = ["examples*", "*testing", "tests*", "docs*"]
 "doped" = ["py.typed"]
 "doped.VASP_sets" = ["*.yaml"]
 "doped.utils" = ["*.dat", "*.mplstyle"]
-
-[tool.black]
-line-length = 107
 
 [tool.ruff]
 line-length = 107
@@ -120,14 +118,16 @@ lint.ignore = [
   "PLR",     # pylint refactor
   "W605",    # Invalid escape sequence
   "PT011",   # too broad pytest.raises()
+  "PLC0415", # import-outside-top-level (deliberate lazy imports are used to avoid circular imports, ``vise`` issues...)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D102"]
 
-[[tool.mypy.overrides]]
-module = ["tabulate.*"]
-ignore_missing_imports = true
+[tool.mypy]
+python_version = "3.14"
+files = ["doped"]
+ignore_missing_imports = true  # doped depends on scientific libraries that don't have type stubs (pymatgen, vise, ...)
 
 [tool.docformatter]
 recursive = true
@@ -139,4 +139,4 @@ wrap-descriptions = 79
 # argument descriptions
 
 [tool.codespell]
-ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll,atomate,coo"  # lowercase!
+ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll,atomate,coo,inout"  # lowercase!

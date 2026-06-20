@@ -172,6 +172,58 @@ underlying calculation and/or extreme forces.
 For tips on the ``ShakeNBreak`` part of the defect calculation workflow, please refer to the
 |ShakeNBreakDocs|.
 
+Competing Phases & Chemical Potentials
+--------------------------------------
+Accurate chemical potential limits require well-converged total energies for the host and all competing
+phases (see the |CompetingPhases| / |CompetingPhasesAnalyzer| classes and the
+:doc:`chemical potentials tutorial <chemical_potentials_tutorial>`). ``doped`` automates `k`-point
+convergence testing and input file generation for these calculations, setting sensible defaults for
+smearing/magnetisation (``ISMEAR``/``SIGMA``/``NUPDOWN`` in ``VASP``) etc. depending on whether a phase is 
+a metal, semiconductor/insulator or molecule. A few tips for keeping these calculations efficient -- 
+particularly for metals, which are often the most expensive competing phases -- are given below:
+
+- **Pre-screen polymorphs without SOC:** While spin-orbit coupling (SOC) can be important for accurate
+  `absolute` energies in heavy-element systems (as discussed in |Guidelines Perspective|, Box 1), 
+  `relative` energies of polymorphs `of the same composition/oxidation states`` are usually reliable 
+  without SOC. Thus for systems with many candidate polymorphs, you can cheaply pre-screen with non-SOC 
+  calculations, and then only perform the (expensive) SOC calculations on the ground-state polymorph of 
+  each competing phase.
+
+- **Smearing:** Gaussian and Methfessel-Paxton smearing (``ISMEAR = 0`` and ``2``) are the ``doped`` 
+  default settings for insulators and metals for geometry relaxations, but tetrahedron smearing 
+  (``ISMEAR = -5``) typically gives more accurate total energies for the `final` single-point calculation 
+  and converges at lower `k`-point densities. This can be particularly useful for metallic competing 
+  phases, which require high `k`-point densities and thus can be very expensive, particularly if also using 
+  hybrid DFT and/or including spin-orbit coupling (SOC). It can be worth re-running k-point convergence 
+  testing (with :meth:`~doped.chemical_potentials.CompetingPhases.write_kpoint_convergence_files`) using 
+  ``ISMEAR = -5`` to check for cheaper converged `k`-point densities for these final single-point 
+  calculations.
+
+- **``NKRED`` with hybrid DFT:** The Fock exchange contribution in hybrid DFT typically converges at lower 
+  `k`-point densities than the other DFT energy terms, so the
+  `NKRED(X,Y,Z) <https://www.vasp.at/wiki/index.php/NKRED>`__ ``INCAR`` in ``VASP`` (or 
+  `nqx1/2/3 <https://gitlab.com/QEF/q-e/-/tree/develop/PW/examples/EXX_example?ref_type=heads>`__ in 
+  ``Quantum ESPRESSO``) can be used to reduce the number of `k`-points used for the Fock exchange to 
+  greatly reduce the cost with minimal loss of accuracy -- as encouraged in the defect supercell 
+  workflow (see the :ref:`VASP input file generation <generation_tutorial:Prepare VASP calculation files with doped>`
+  section of the defect generation tutorial, and the
+  :attr:`~doped.vasp.DefectRelaxSet.vasp_nkred_std` property). 
+  This is particularly useful for metallic competing phases, which require high `k`-point densities and 
+  thus can be very expensive/memory-demanding, particularly if also using hybrid DFT and/or including 
+  spin-orbit coupling (SOC), but can often use reduced Fock exchange `k`-point densities without 
+  significant loss of accuracy. Of course, if using results from calculations with reduced Fock exchange
+  `k`-point densities, it's important to check the accuracy of this approximation for your system (e.g. by
+  running some quick accuracy/convergence tests).
+
+  - Note however that ``NKRED`` (or alternatively ``ODDONLY``/``EVENONLY``) must divide the number of 
+    `k`-points in each direction, so they can sometimes be awkward to use with symmetry-on ``vasp_std`` 
+    calculations (where the `irreducible` `k`-point grid isn't set beforehand).
+
+- **Memory vs k-points:** Because DFT calculations for metals typically need dense `k`-meshes, memory usage 
+  can sometimes become the limiting factor (particularly if using hybrid DFT and/or SOC). In some cases, it 
+  can be preferable to use a larger `supercell` of the phase, with a correspondingly reduced k-point grid 
+  (rather than a small cell with a very dense mesh) to help stay within memory limits.
+
 Layered / Low Dimensional Materials
 --------------------------------------
 Layered and low-dimensional materials introduce complications for defect analysis. One point is that
@@ -263,6 +315,23 @@ Below are the two resulting charge correction plots (using ``defect_region_radiu
     :height: 320px
     :align: right
 
+.. tip::
+
+    In other cases, if the error in the finite-size corrections are too large, we may need to compute the 
+    given defect in a larger supercell. The stenciling functions in ``doped``, which allow the 
+    re-generation of (relaxed) defect structures in arbitrary supercells, can be very useful in these 
+    cases. See the :doc:`stenciling tutorial <stenciling_tutorial>` for examples and discussion.
+
+.. tip::
+
+    Given that the magnitude of finite-size effects can vary dramatically by direction in 
+    layered/2D/highly-anisotropic materials (as discussed here), often the optimal supercell for these 
+    cases can differ from that returned by the default supercell generation algorithm (which optimises the
+    minimum image distance for the minimum number of atoms), with e.g. a dielectric-weighted supercell 
+    generation approach often being more appropriate. See the 
+    :ref:`dielectric-weighted supercell generation section <advanced_analysis_tutorial:Dielectric-Weighted Supercell Generation>`
+    of the advanced analysis tutorial for an example and discussion.
+
 
 2D Materials and Surface Defects
 --------------------------------
@@ -344,7 +413,7 @@ default). Note that for VASP to output the necessary data for this analysis, you
 include ``LORBIT > 10`` (to obtain the projected orbitals).
 
 In the examples below (both of which are shown in the
-`advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#eigenvalue-electronic-structure-analysis>`__),
+:ref:`advanced analysis tutorial <advanced_analysis_tutorial:Eigenvalue / Electronic Structure Analysis>`),
 we plot the single particle levels for the
 `cadmium vacancy in CdTe <https://pubs.acs.org/doi/10.1021/acsenergylett.1c00380>`__ (`V`\ :sub:`Cd`) in each of
 its charge states (0, -1 and -2); calculated with spin-orbit coupling (SOC) and a 2x2x2 `k`-point mesh:
@@ -397,7 +466,7 @@ As discussed below, this is performed automatically in ``doped``.
     (i.e. binding energy of an electron in a hydrogen atom; ~13.6 eV).
     This formula is used in the :func:`~doped.analysis.shallow_dopant_binding_energy()` convenience
     function, with example usage shown
-    `here in the advanced analysis tutorial <https://doped.readthedocs.io/en/latest/advanced_analysis_tutorial.html#estimate-dopant-acceptor-binding-energy>`__.
+    :ref:`here in the advanced analysis tutorial <advanced_analysis_tutorial:Estimate Dopant (Acceptor) Binding Energy>`.
     As shown in the tutorial example, this formula can also be used to estimate the Wannier-Mott exciton
     binding energy, when the reduced mass of the electron-hole pair is used for the effective mass.
 
@@ -498,7 +567,7 @@ the band gap are omitted from plotting for clarity & accuracy.
 Density of States (DOS) Calculations
 ------------------------------------
 As discussed in the
-`thermodynamics & doping tutorial <https://doped.readthedocs.io/en/latest/thermodynamics_tutorial.html#doping-calculations>`__,
+:ref:`thermodynamics & doping tutorial <thermodynamics_tutorial:Doping Calculations>`,
 the electronic density of states (DOS) of the bulk material (provided as ``bulk_dos``) is required to
 determine carrier concentrations and thus (quasi-)equilibrium Fermi levels and defect concentrations under
 various conditions, along with the defect formation energies and other inputs.
@@ -515,6 +584,10 @@ The bulk DOS (``bulk_dos``) calculation should be a static calculation with the 
   ``AEXX``, ``LSORBIT`` etc).
 - The same host crystal structure used to generate the bulk/defect supercells, and same pseudopotentials
   (``POTCAR``\s in ``VASP``) used for the supercell calculations.
+
+See the
+:ref:`MgO GGA workflow tutorial <GGA_workflow_tutorial:8. Density of States (DOS)>`
+for an example of setting up a bulk DOS calculation.
 
 
 If there is a significant mismatch between the VBM eigenvalue or band gap of the bulk DOS (``bulk_dos``)
@@ -816,8 +889,7 @@ Many analysis methods in ``doped`` return ``pandas`` ``DataFrame`` objects as th
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_fermi_level_and_concentrations()`,
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_dopability_limits()`,
 :meth:`~doped.thermodynamics.DefectThermodynamics.get_doping_windows()` and
-:meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels()` methods for
-|DefectThermodynamics| objects, and the
+|get_TLs| methods for |DefectThermodynamics| objects, and the
 :attr:`~doped.chemical_potentials.CompetingPhasesAnalyzer.formation_energy_df` attribute and
 :meth:`~doped.chemical_potentials.CompetingPhasesAnalyzer.calculate_chempots()` method for
 |CompetingPhasesAnalyzer|. As mentioned in the tutorials, these

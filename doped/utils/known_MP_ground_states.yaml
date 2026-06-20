@@ -1,0 +1,39 @@
+# Known Materials Project (MP) ground-state / room-temperature phases for common
+# elements and compounds, which can be used to reduce the number of competing-phase
+# calculations required for chemical potential / phase diagram analyses, when appropriate.
+#
+# Keys are composition formulae; values are lists of MP IDs (mp-* identifiers) for
+# phases that are typically relevant as the lowest-energy / room-temperature phases.
+# See ``docs/known_MP_ground_states.md`` for full discussion, citations, and the
+# rationale behind each entry.
+
+# Chalcogens
+S: [mp-77, mp-994911, mp-1064933]
+Se: [mp-14, mp-570481]
+Te: [mp-19]
+
+# Alkali Metals
+Li: [mp-51, mp-136]
+Na: [mp-127, mp-10172]
+K: [mp-58, mp-604325]
+Rb: [mp-70, mp-656615]
+Cs: [mp-1, mp-1184151]
+
+# Pnictogens
+P: [mp-157, mp-1198724]
+As: [mp-11]
+Sb: [mp-104]
+Bi: [mp-23152]
+
+# Halogens
+Br: [mp-23154]
+I: [mp-1525634]
+
+# Miscellaneous Metals
+Ag: [mp-124, mp-989737]
+Sn: [mp-117, mp-84]
+Ti: [mp-46, mp-72, mp-73]
+
+# Oxides
+TiO2: [mp-2657, mp-390, mp-1840]
+SnO2: [mp-856]

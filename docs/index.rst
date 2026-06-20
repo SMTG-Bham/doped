@@ -1,10 +1,8 @@
 .. image:: https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg
    :target: https://github.com/SMTG-Bham/doped/actions
-.. .. image:: https://readthedocs.org/projects/doped/badge/?version=latest&style=flat
-..    :target: https://doped.readthedocs.io/en/latest/
 .. image:: https://img.shields.io/pypi/v/doped
    :target: https://pypi.org/project/doped
-.. image:: https://img.shields.io/conda/vn/conda-forge/doped.svg
+.. image:: https://img.shields.io/conda/vn/conda-forge/doped?label=conda
    :target: https://anaconda.org/conda-forge/doped
 .. image:: https://img.shields.io/pypi/dm/doped
    :target: https://pypi.org/project/doped
@@ -65,9 +63,8 @@ displacements from DFT supercell calculations. See the
 Installation
 ============
 ``doped`` can be installed via PyPI (``pip install doped``) or ``conda`` if preferred
-(``conda install -c conda-forge doped; pip install pydefect``), and further instructions for setting up
-``POTCAR`` files with ``pymatgen`` (needed for input file generation), if not already done, are provided
-on the :ref:`Installation` page.
+(``conda install -c conda-forge doped``), and further instructions for setting up ``POTCAR`` files with ``pymatgen``
+(needed for input file generation), if not already done, are provided on the :ref:`Installation` page.
 
 Citation
 ========
@@ -108,6 +105,24 @@ Studies using ``doped``, so far
 ===============================
 
 - A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
+- M\. A. Fadla, M. Grüning and L. Stella **Universal Stability of Ga Split Vacancies across α-, β-, and κ-Ga₂O₃ Polymorphs: A Machine-Learning Accelerated Study** `arXiv <https://doi.org/10.48550/arXiv.2605.28743>`__ 2026
+- N\. Kawashima and S. Botti **Intrinsic Point Defects and Frenkel Pair Formation in Photovoltaic Absorber Zn₃P₂: Regulating p-type Conductivity through Growth and Annealing Conditions** `arXiv <https://doi.org/10.48550/arXiv.2605.23479>`__ 2026
+- M\. Birare, A. Dębski, W. Gąsior and W. Gierlotka **Defect Thermodynamics and the Intrinsic Stability Window of Mg₃Sb₂** `Metals <https://doi.org/10.3390/met16050558>`__ 2026
+- D\. Halbing et al. **Oxygen Vacancy Evolution at Li** :sub:`x` **V** :sub:`2` **O** :sub:`5` **/LiPON Solid State Electrochemical Interfaces Using Depth Resolved Cathodoluminescence Spectroscopy** `ACS Applied Materials & Interfaces <https://doi.org/10.1021/acsami.5c25104>`__ 2026
+- K\. Li et al. **Resonant Doping in Binary Sb(V)-oxide Sb₂O₅ for High-Mobility Transparent Conductors** `ChemRxiv <https://doi.org/10.26434/chemrxiv.15001890/v1>`__ 2026
+- R\. Wu & J. J. Acton, S. Wang and A. M. Ganose **On the possibility of hybrid chalcogenide perovskite photovoltaics** `arXiv <https://doi.org/10.48550/arXiv.2604.06555>`__ 2026
+- P\. Panagis Filippatos, T. J. P. Irons, N. Kuganathan and A. Chroneos **First-principles calculations of quantum defects in bulk WS₂: Effect of carbon doping in spin-photon interfaces** `Physical Review B <https://doi.org/10.1103/d3bx-gnhq>`__ 2026
+- P\. Panagis Filippatos and A. Chroneos **Carbon substitutional spin defects in bulk hBN using r2SCAN** `Low Temperature Physics <https://doi.org/10.1063/10.0043202>`__ 2026
+- N\. Singh et al. **Data-driven discovery of high-performance quaternary chalcogenide photovoltaics** `Physical Review Applied <https://doi.org/10.1103/r77p-wl3l>`__ 2026
+- S\. Meher, M. Dey and A\. K. Singh **Origin of Bright Quantum Emissions with a High Debye-Waller Factor in Silicon Nitride** `Nano Letters <https://doi.org/10.1021/acs.nanolett.5c06190>`__ 2026
+- B\. Bakhit et al. **HfO₂-based memristive synapses with asymmetrically extended p-n heterointerfaces for highly energy-efficient neuromorphic hardware** `Science Advances <https://doi.org/10.1126/sciadv.aec2324>`__ 2026
+- M\. Saminathan et al. **Interplay between Cu Delocalization and Bonding Anisotropy on the Thermoelectric Performance of Double-Cation Chalcohalides CuBiSeX₂ (X = Cl, Br)** `ACS Applied Energy Materials <https://doi.org/10.1021/acsaem.6c00087>`__ 2026
+- A\. Zhang et al. **Theoretical insight into the strategy for high electron carrier concentration in Bi₂WO₆ with intrinsic point defects** `Physical Review B <https://doi.org/10.1103/jkj7-dnqj>`__ 2026
+- L\. Zhang, M. Zhou and A. M. Ganose **Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs** `arXiv <https://doi.org/10.48550/arXiv.2603.16310>`__ 2026
+- X\. Wang, I. Mosquera-Lois and A. Walsh **Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects** `arXiv <https://doi.org/10.48550/arXiv.2603.05238>`__ 2026
+- R\. Claes, K. Li, A. G. Squires and D. O. Scanlon **Screening ASb₂O₆ (A = Mg, Ca, Sr, Ba, Cd) for High Performance Transparent Conducting Oxides** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-39bbf>`__ 2026
+- S\. Ling et al. **Investigations of Defect Physics and Quenching Effect for Optimizing n-type Carrier Concentration in CuWO** :sub:`4` **Photocatalyst** `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.5c05718>`__ 2026
+- W\. Yang et al. **Electronic origins of p-type transparent conductivity in SrCu₂O₂** `Applied Physics Letters <https://doi.org/10.1063/5.0324820>`__ 2026
 - G\. Arora et al. **Development of interatomic potential and effect of ordering on defect properties in CrMnV** `Journal of Applied Physics <https://doi.org/10.1063/5.0302848>`__ 2025
 - A\. Abudulimu et al. **Radiative Defects in Chloride-Activated CdSe Thin Films** `ACS Energy Letters <https://doi.org/10.1021/acsenergylett.5c03191>`__ 2026
 - H\. Ma, J. E. McLeod and C. Stampfl **Toward tunable carrier polarity in monolayer ZrS₂: A hybrid functional study of intrinsic and extrinsic defects** `Physical Review B <https://doi.org/10.1103/spjk-wj13>`__ 2026
@@ -192,8 +207,7 @@ for computational defect modelling, given the many steps and complexities involv
 be directly output to lightweight ``json(.gz)`` files be shared in open-access repositories upon 
 publication, along with relevant raw computational data. It is also helpful to use the ``doped`` summary 
 functions to tabulate key quantities in Supplementary Information files. See the 
-`Open Science <https://doped.readthedocs.io/en/latest/Tips.html#open-science-and-reproducibility>`__
-section of the docs Tips page for details.
+:ref:`Open Science <Tips:Open Science and Reproducibility>` section of the docs Tips page for details.
 
 
 Acknowledgements

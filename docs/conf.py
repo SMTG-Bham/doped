@@ -15,7 +15,7 @@ copyright = "2023, Seán R. Kavanagh"
 author = "Seán R. Kavanagh"  # https://sam-lab.net
 
 # The full version, including alpha/beta/rc tags
-release = "3.2.1"
+release = "4.0.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -109,6 +109,12 @@ intersphinx_mapping = {
     "pymatgen": ("https://pymatgen.org/", None),
     "shakenbreak": ("https://shakenbreak.readthedocs.io/en/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
+    "pymatgen.analysis.defects": (
+        "https://materialsproject.github.io/pymatgen-analysis-defects/api_ref/",
+        None,
+    ),
+    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------
@@ -135,6 +141,9 @@ rst_prolog = """
 .. |DefectsGenerator| replace:: :class:`~doped.generation.DefectsGenerator`
 .. |DefectsParser| replace:: :class:`~doped.analysis.DefectsParser`
 .. |DefectThermodynamics| replace:: :class:`~doped.thermodynamics.DefectThermodynamics`
+.. |get_TLs| replace:: :meth:`~doped.thermodynamics.DefectThermodynamics.get_transition_levels`
+.. |ChemicalPotentialGrid| replace:: :class:`~doped.chemical_potentials.ChemicalPotentialGrid`
+.. |CompetingPhases| replace:: :class:`~doped.chemical_potentials.CompetingPhases`
 .. |CompetingPhasesAnalyzer| replace:: :class:`~doped.chemical_potentials.CompetingPhasesAnalyzer`
 .. |Defect| replace:: :class:`~doped.core.Defect`
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
@@ -142,7 +151,17 @@ rst_prolog = """
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
 .. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
+.. |Composition| replace:: :class:`~pymatgen.core.composition.Composition`
+.. |Lattice| replace:: :class:`~pymatgen.core.lattice.Lattice`
+.. |Atoms| replace:: :class:`~ase.Atoms`
 .. |Vasprun| replace:: :class:`~pymatgen.io.vasp.outputs.Vasprun`
+.. |Procar| replace:: :class:`~pymatgen.io.vasp.outputs.Procar`
+.. |Outcar| replace:: :class:`~pymatgen.io.vasp.outputs.Outcar`
+.. |StructureMatcher| replace:: :class:`~pymatgen.core.structure_matcher.StructureMatcher`
+.. |StructureMatcher_scan_stol| replace:: :func:`~doped.utils.efficiency.StructureMatcher_scan_stol`
+.. |ComputedEntry| replace:: :class:`~pymatgen.core.entries.ComputedEntry`
+.. |ComputedStructureEntry| replace:: :class:`~pymatgen.core.entries.ComputedStructureEntry`
+.. |PhaseDiagram| replace:: :class:`~pymatgen.analysis.phase_diagram.PhaseDiagram`
 .. |ShakeNBreak| replace:: `ShakeNBreak <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakDocs| replace:: `ShakeNBreak documentation <https://shakenbreak.readthedocs.io>`__
 .. |ShakeNBreakTips| replace:: `ShakeNBreak tips <https://shakenbreak.readthedocs.io/en/latest/Tips.html>`__

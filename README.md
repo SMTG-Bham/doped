@@ -1,7 +1,7 @@
 [![Build status](https://github.com/SMTG-Bham/doped/actions/workflows/test.yml/badge.svg)](https://github.com/SMTG-Bham/doped/actions)
 [![Documentation Status](https://readthedocs.org/projects/doped/badge/?version=latest&style=flat)](https://doped.readthedocs.io/en/latest/)
 [![PyPI](https://img.shields.io/pypi/v/doped)](https://pypi.org/project/doped)
-[![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped.svg)](https://anaconda.org/conda-forge/doped)
+[![Conda Version](https://img.shields.io/conda/vn/conda-forge/doped?label=conda)](https://anaconda.org/conda-forge/doped)
 [![Downloads](https://img.shields.io/pypi/dm/doped)](https://pypi.org/project/doped)
 [![DOI](https://joss.theoj.org/papers/10.21105/joss.06433/status.svg)](https://doi.org/10.21105/joss.06433)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/SMTG-Bham/doped)
@@ -50,10 +50,7 @@ Alternatively if desired, `doped` can also be installed from `conda` with:
 
 ```bash
   conda install -c conda-forge doped
-  pip install pydefect  # pydefect not available on conda, so needs to be installed with pip or otherwise, if using the eFNV correction
 ```
-
-See the [Installation docs](https://doped.readthedocs.io/en/latest/Installation.html) if you encounter any issues (e.g. known issue with `phonopy` `CMake` build).
 
 If you haven't done so already, you will need to set up your VASP `POTCAR` files and `Materials Project` API with `pymatgen` using the `.pmgrc.yaml` file, in order for `doped` to automatically generate VASP input files for defect calculations and determine competing phases for chemical potentials.
 See the docs [Installation](https://doped.readthedocs.io/en/latest/Installation.html) page for details on this.
@@ -80,6 +77,24 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 ## Studies using `doped`, so far
 
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
+- M. A. Fadla, M. Grüning and L. Stella **_Universal Stability of Ga Split Vacancies across α-, β-, and κ-Ga<sub>2</sub>O<sub>3</sub> Polymorphs: A Machine-Learning Accelerated Study_** [_arXiv_](https://doi.org/10.48550/arXiv.2605.28743) 2026
+- N. Kawashima and S. Botti **_Intrinsic Point Defects and Frenkel Pair Formation in Photovoltaic Absorber Zn<sub>3</sub>P<sub>2</sub>: Regulating p-type Conductivity through Growth and Annealing Conditions_** [_arXiv_](https://doi.org/10.48550/arXiv.2605.23479) 2026
+- M. Birare, A. Dębski, W. Gąsior and W. Gierlotka **_Defect Thermodynamics and the Intrinsic Stability Window of Mg<sub>3</sub>Sb<sub>2</sub>_** [_Metals_](https://doi.org/10.3390/met16050558) 2026
+- D. Halbing et al. **_Oxygen Vacancy Evolution at Li<sub>x</sub>V<sub>2</sub>O<sub>5</sub>/LiPON Solid State Electrochemical Interfaces Using Depth Resolved Cathodoluminescence Spectroscopy_** [_ACS Applied Materials & Interfaces_](https://doi.org/10.1021/acsami.5c25104) 2026
+- K. Li et al. **_Resonant Doping in Binary Sb(V)-oxide Sb<sub>2</sub>O<sub>5</sub> for High-Mobility Transparent Conductors_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv.15001890/v1) 2026
+- R. Wu & J. J. Acton, S. Wang and A. M. Ganose **_On the possibility of hybrid chalcogenide perovskite photovoltaics_** [_arXiv_](https://doi.org/10.48550/arXiv.2604.06555) 2026
+- P. Panagis Filippatos, T. J. P. Irons, N. Kuganathan and A. Chroneos **_First-principles calculations of quantum defects in bulk WS<sub>2</sub>: Effect of carbon doping in spin-photon interfaces_** [_Physical Review B_](https://doi.org/10.1103/d3bx-gnhq) 2026
+- P. Panagis Filippatos and A. Chroneos **_Carbon substitutional spin defects in bulk hBN using r2SCAN_** [_Low Temperature Physics_](https://doi.org/10.1063/10.0043202) 2026
+- N. Singh et al. **_Data-driven discovery of high-performance quaternary chalcogenide photovoltaics_** [_Physical Review Applied_](https://doi.org/10.1103/r77p-wl3l) 2026
+- S. Meher, M. Dey and A. K. Singh **_Origin of Bright Quantum Emissions with a High Debye–Waller Factor in Silicon Nitride_** [_Nano Letters_](https://doi.org/10.1021/acs.nanolett.5c06190) 2026
+- B. Bakhit et al. **_HfO<sub>2</sub>-based memristive synapses with asymmetrically extended p-n heterointerfaces for highly energy-efficient neuromorphic hardware_** [_Science Advances_](https://doi.org/10.1126/sciadv.aec2324) 2026
+- M. Saminathan et al. **_Interplay between Cu Delocalization and Bonding Anisotropy on the Thermoelectric Performance of Double-Cation Chalcohalides CuBiSeX<sub>2</sub> (X = Cl, Br)_** [_ACS Applied Energy Materials_](https://doi.org/10.1021/acsaem.6c00087) 2026
+- A. Zhang et al. **_Theoretical insight into the strategy for high electron carrier concentration in Bi<sub>2</sub>WO<sub>6</sub> with intrinsic point defects_** [_Physical Review B_](https://doi.org/10.1103/jkj7-dnqj) 2026
+- L. Zhang, M. Zhou and A. M. Ganose **_Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.16310) 2026
+- X. Wang, I. Mosquera-Lois and A. Walsh **_Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.05238) 2026
+- R. Claes, K. Li, A. G. Squires and D. O. Scanlon **_Screening ASb<sub>2</sub>O<sub>6</sub> (A = Mg, Ca, Sr, Ba, Cd) for High Performance Transparent Conducting Oxides_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-39bbf) 2026
+- S. Ling et al. **_Investigations of Defect Physics and Quenching Effect for Optimizing n-type Carrier Concentration in CuWO<sub>4</sub> Photocatalyst_** [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.5c05718) 2026
+- W. Yang et al. **_Electronic origins of p-type transparent conductivity in SrCu<sub>2</sub>O<sub>2</sub>_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0324820) 2026
 - G. Arora et al. **_Development of interatomic potential and effect of ordering on defect properties in CrMnV_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0302848) 2025
 - A. Abudulimu et al. **_Radiative Defects in Chloride-Activated CdSe Thin Films_** [_ACS Energy Letters_](https://doi.org/10.1021/acsenergylett.5c03191) 2026  <!-- SI cite though unfortunately, likely also used SnB -->
 - H. Ma, J. E. McLeod and C. Stampfl **_Toward tunable carrier polarity in monolayer ZrS<sub>2</sub>: A hybrid functional study of intrinsic and extrinsic defects_** [_Physical Review B_](https://doi.org/10.1103/spjk-wj13) 2026
