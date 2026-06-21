@@ -41,18 +41,6 @@ from pymatgen.core.entries import (
 # Materials Project API client used throughout this module, e.g. ``mpr.materials.summary.search``).
 # Do not re-import them from ``pymatgen.ext.matproj`` here — that legacy ``MPRester`` is a different
 # class lacking the new API, and (being imported later) would silently shadow the intended one.
-from pymatgen.io.espresso.inputs.pwin import (
-    AtomicPositionsCard,
-    AtomicSpeciesCard,
-    CellNamelist,
-    CellParametersCard,
-    ControlNamelist,
-    ElectronsNamelist,
-    IonsNamelist,
-    KPointsCard,
-    PWin,
-    SystemNamelist,
-)
 from pymatgen.io.vasp.inputs import Kpoints
 from pymatgen.io.vasp.outputs import UnconvergedVASPWarning, Vasprun
 from pymatgen.util.string import latexify, latexify_spacegroup
@@ -61,7 +49,11 @@ from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.generation import _element_sort_func
+from doped.generation import (
+    _element_sort_func,
+    _kpoints_grid_from_reciprocal_density,
+    _write_qe_pw_input,
+)
 from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.parsing import (
     _compare_incar_tags,
@@ -5448,20 +5440,12 @@ def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
 
 # QE pw.x input defaults, loaded from the YAML sets in ``doped/QE_sets``
 # (analogous to the VASP ``INCAR`` sets in ``doped/VASP_sets``):
+# Please cite the SSSP workflow in the way described here:
+# https://legacy.materialscloud.org/discover/sssp/table/efficiency
 _qe_SSSP_convergence_defaults: dict = loadfn(
     os.path.join(MODULE_DIR, "QE_sets/SSSP_Convergence_set.yaml")
 )
 _qe_hse_relax_defaults: dict = loadfn(os.path.join(MODULE_DIR, "QE_sets/HSE_set.yaml"))
-
-# Default {element: UPF filename} map from the SSSP 1.3.0 PBE Efficiency
-# library (https://www.materialscloud.org/discover/sssp), used for QE pseudos
-# unless the user supplies their own ``pseudo_map``:
-_qe_SSSP_pseudo_filenames: dict = {
-    element: metadata["filename"]
-    for element, metadata in loadfn(
-        os.path.join(MODULE_DIR, "QE_sets/SSSP_1.3.0_PBE_efficiency.json")
-    ).items()
-}
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -5652,131 +5636,6 @@ def _format_mismatching_qe_input_warning(
         f"Entries {names}: {list(tags)}"
         for tags, names in mismatching_tags_name_list_dict.items()
     )
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# QE input file generation helpers
-# ──────────────────────────────────────────────────────────────────────────
-
-
-def _kpoints_grid_from_reciprocal_density(structure: Structure, reciprocal_density: int) -> list[int]:
-    """
-    Return a ``[kx, ky, kz]`` Monkhorst-Pack grid for ``structure`` at the
-    given ``reciprocal_density`` (k-points per Å^-3 of reciprocal volume),
-    using the same algorithm as ``pymatgen``'s
-    ``Kpoints.automatic_density_by_vol``.
-    """
-    kpoints_obj = Kpoints.automatic_density_by_vol(structure, kppvol=reciprocal_density)
-    return [int(k) for k in kpoints_obj.kpts[0]]
-
-
-class _GammaKPointsCard(KPointsCard):
-    """
-    ``KPointsCard`` subclass that renders the ``gamma`` option correctly.
-
-    ``pymatgen.io.espresso``'s ``KPointsCard.get_body`` raises an
-    ``UnboundLocalError`` for the ``gamma`` option (Γ-only sampling),
-    since neither the ``automatic`` nor the explicit-grid branch assigns a body.
-    This override emits an empty body so that ``K_POINTS {gamma}`` is written with
-    no following lines, as QE expects.
-    """
-
-    def get_body(self, indent: str) -> str:
-        if self.option == "gamma":
-            return ""
-        return super().get_body(indent)
-
-
-def _write_qe_pw_input(
-    filepath: str,
-    structure: Structure,
-    namelist_settings: dict[str, dict],
-    kpoints: list[int] | None,
-    pseudo_map: dict[str, str] | None = None,
-) -> None:
-    """
-    Write a QE ``pw.in`` input file for ``structure``.
-
-    The file is assembled with ``pymatgen.io.espresso``'s ``PWin`` object
-    (namelists + cards) and written via ``PWin.to_file``.
-
-    Args:
-        filepath (str):
-            Destination path for the ``pw.in`` file.
-        structure (Structure):
-            Structure to write.
-        namelist_settings (dict):
-            Nested dict of QE namelist settings keyed by namelist name
-            (``"control"``, ``"system"``, ``"electrons"``, ``"ions"``,
-            ``"cell"``). Only namelists present as keys are written.
-            ``"cell"`` is omitted automatically for fixed-cell relaxations
-            (i.e. when ``control.calculation`` is ``"relax"`` or ``"scf"``).
-        kpoints (list[int] or None):
-            ``[kx, ky, kz]`` Monkhorst-Pack grid. Pass ``None`` for
-            Gamma-only sampling (e.g. molecules-in-a-box).
-        pseudo_map (dict or None):
-            ``{element_symbol: pseudo_filename}`` mapping. Defaults to the
-            SSSP 1.3.0 PBE Efficiency filename for each element. Any entries
-            given here override the SSSP default per element; elements absent
-            from the SSSP library fall back to ``"{element}.upf"``.
-    """
-    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
-    unique_species = sorted(
-        {str(el) for el in structure.species}, key=lambda s: Element(s).Z
-    )
-    resolved_pseudos = {
-        sp: _qe_SSSP_pseudo_filenames.get(sp, f"{sp}.upf") for sp in unique_species
-    }
-    resolved_pseudos.update(pseudo_map or {})
-    pseudo_map = resolved_pseudos
-
-    fixed_cell_calcs = {"relax", "scf", "nscf", "bands"}
-    calc_type = namelist_settings.get("control", {}).get("calculation", "vc-relax")
-
-    namelist_classes = {
-        "control": ControlNamelist,
-        "system": SystemNamelist,
-        "electrons": ElectronsNamelist,
-        "ions": IonsNamelist,
-        "cell": CellNamelist,
-    }
-    namelists: dict = {}
-    for nl_name, nl_cls in namelist_classes.items():
-        if nl_name not in namelist_settings:
-            continue
-        if nl_name == "cell" and calc_type in fixed_cell_calcs:
-            continue
-        namelists[nl_name] = nl_cls(namelist_settings[nl_name])
-
-    if kpoints is None:
-        k_points_card: KPointsCard = _GammaKPointsCard("gamma", [], [], [], [], [])
-    else:
-        kx, ky, kz = kpoints
-        k_points_card = KPointsCard("automatic", [kx, ky, kz], [0, 0, 0], [], [], [])
-
-    cards = {
-        "atomic_species": AtomicSpeciesCard(
-            None,
-            unique_species,
-            [float(Element(sp).atomic_mass) for sp in unique_species],
-            [pseudo_map.get(sp, f"{sp}.upf") for sp in unique_species],
-        ),
-        "atomic_positions": AtomicPositionsCard(
-            "angstrom",
-            [site.species_string for site in structure],
-            np.array([site.coords for site in structure]),
-            None,
-        ),
-        "k_points": k_points_card,
-        "cell_parameters": CellParametersCard(
-            "angstrom",
-            structure.lattice.matrix[0],
-            structure.lattice.matrix[1],
-            structure.lattice.matrix[2],
-        ),
-    }
-
-    PWin(namelists, cards).to_file(filepath)
 
 
 # ──────────────────────────────────────────────────────────────────────────
