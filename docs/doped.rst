@@ -15,6 +15,7 @@ Modules
    doped.corrections
    doped.generation
    doped.init
+   doped.qe
    doped.thermodynamics
    doped.utils
    doped.vasp

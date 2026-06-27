@@ -49,10 +49,12 @@ from scipy.spatial import ConvexHull, Delaunay
 from tqdm import tqdm
 
 from doped import _doped_obj_properties_methods, _ignore_pmg_warnings, get_mp_context, pool_manager
-from doped.generation import (
-    _element_sort_func,
+from doped.generation import _element_sort_func
+from doped.qe import (
     _kpoints_grid_from_reciprocal_density,
     _write_qe_pw_input,
+    default_qe_HSE_set as _qe_hse_relax_defaults,
+    default_qe_SSSP_set as _qe_SSSP_convergence_defaults,
 )
 from doped.utils.efficiency import StructureMatcher_scan_stol
 from doped.utils.parsing import (
@@ -5435,20 +5437,6 @@ def get_X_poor_limit(X: str, chempots: dict, **kwargs) -> str:
 ## Edits for Quantum ESPRESSO chemical potentials integration:
 
 # ──────────────────────────────────────────────────────────────────────────
-# Default QE namelist settings
-# ──────────────────────────────────────────────────────────────────────────
-
-# QE pw.x input defaults, loaded from the YAML sets in ``doped/QE_sets``
-# (analogous to the VASP ``INCAR`` sets in ``doped/VASP_sets``):
-# Please cite the SSSP workflow in the way described here:
-# https://legacy.materialscloud.org/discover/sssp/table/efficiency
-_qe_SSSP_convergence_defaults: dict = loadfn(
-    os.path.join(MODULE_DIR, "QE_sets/SSSP_Convergence_set.yaml")
-)
-_qe_hse_relax_defaults: dict = loadfn(os.path.join(MODULE_DIR, "QE_sets/HSE_set.yaml"))
-
-
-# ──────────────────────────────────────────────────────────────────────────
 # QE parsing helpers
 # ──────────────────────────────────────────────────────────────────────────
 
@@ -5663,6 +5651,7 @@ class CompetingPhasesQE(CompetingPhases):
         ecut_kpoints_nonmetals: int = 64,
         pseudo_dir: str = "./pseudo_folder_name/",
         pseudo_map: dict | None = None,
+        kpoints_shift: tuple[int, int, int] = (0, 0, 0),
         user_system_settings: dict | None = None,
         user_control_settings: dict | None = None,
         user_electron_settings: dict | None = None,
@@ -5712,6 +5701,11 @@ class CompetingPhasesQE(CompetingPhases):
                 ``{"O": "O.pbe-n-kjpaw_psl.0.1.UPF"}``. Defaults to the SSSP
                 1.3.0 PBE Efficiency filename for each element; any entries
                 given here override that default per element.
+            kpoints_shift (tuple):
+                ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
+                ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
+                half-grid (Γ-shifted) Monkhorst-Pack mesh. Default
+                ``(0, 0, 0)`` (no shift).
             user_system_settings (dict or None):
                 Override default ``&SYSTEM`` namelist settings, e.g.
                 ``{"ecutwfc": 80, "ecutrho": 400"}``.
@@ -5765,6 +5759,7 @@ class CompetingPhasesQE(CompetingPhases):
                         namelist_settings=kpoint_nl_settings,
                         kpoints=kgrid,
                         pseudo_map=pseudo_map,
+                        kpoints_shift=kpoints_shift,
                     )
 
             # ecutwfc convergence: vary ecutwfc at a fixed k-grid.
@@ -5786,6 +5781,7 @@ class CompetingPhasesQE(CompetingPhases):
                     namelist_settings=ecut_nl_settings,
                     kpoints=ecut_kgrid,
                     pseudo_map=pseudo_map,
+                    kpoints_shift=kpoints_shift,
                 )
 
         if self.molecular_entries:
@@ -5803,6 +5799,7 @@ class CompetingPhasesQE(CompetingPhases):
         pseudo_dir: str = "./pseudo_folder_name/",
         pseudo_map: dict | None = None,
         use_hse: bool = False,
+        kpoints_shift: tuple[int, int, int] = (0, 0, 0),
         user_system_settings: dict | None = None,
         user_control_settings: dict | None = None,
         user_electron_settings: dict | None = None,
@@ -5832,6 +5829,11 @@ class CompetingPhasesQE(CompetingPhases):
                 the functional should be consistent with those used for the
                 defect supercell calculations.
                 Default = 'False'
+            kpoints_shift (tuple):
+                ``(sx, sy, sz)`` grid offset (each 0 or 1) for the
+                ``K_POINTS automatic`` card, e.g. ``(1, 1, 1)`` for a
+                half-grid (Γ-shifted) Monkhorst-Pack mesh. Default
+                ``(0, 0, 0)`` (no shift). Ignored for molecules (Γ-only).
             user_system_settings (dict or None):
                 Override default ``&SYSTEM`` namelist settings.
             user_control_settings (dict or None):
@@ -5874,6 +5876,7 @@ class CompetingPhasesQE(CompetingPhases):
                 namelist_settings=nl_settings,
                 kpoints=kgrid,
                 pseudo_map=pseudo_map,
+                kpoints_shift=kpoints_shift,
             )
 
     def _set_qe_spin_polarisation(
