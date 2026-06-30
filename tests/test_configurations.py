@@ -24,7 +24,11 @@ from doped.utils.configurations import (
     orient_s2_like_s1,
     write_path_structures,
 )
-from doped.utils.parsing import get_site_mappings
+from doped.utils.parsing import (
+    check_atom_mapping_far_from_defect,
+    get_site_mappings,
+    get_wigner_seitz_radius,
+)
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure
 
@@ -342,6 +346,56 @@ class TestOrientS2LikeS1(ConfigurationsTestCase):
             check_mapping=False,
         )
         assert not w
+
+    def test_check_atom_mapping_detects_partial_mismatch(self):
+        """
+        ``check_atom_mapping_far_from_defect`` should detect a *partial* atomic
+        basis mismatch -- where only a fraction of far-from-defect sites are
+        strongly displaced and the rest are well-matched -- which a mean/median
+        displacement metric would dilute/hide, while remaining robust to a
+        small number of outlier sites.
+        """
+        bulk = self.Se_intrinsic_thermo["vac_1_Se_-1"].bulk_supercell
+        defect_coords = np.array([0.5, 0.5, 0.5])
+        ws_radius = get_wigner_seitz_radius(bulk.lattice)
+        far_indices = [  # sites outside the defect Wigner-Seitz radius
+            i
+            for i in range(len(bulk))
+            if bulk.lattice.get_all_distances(bulk[i].frac_coords, defect_coords).ravel()[0] > ws_radius
+        ]
+
+        def _displace_fraction(fraction, magnitude):
+            # displace ``fraction`` of the far-from-defect sites by ``magnitude`` Å
+            structure = bulk.copy()
+            chosen = np.random.default_rng(0).choice(
+                far_indices, size=round(fraction * len(far_indices)), replace=False
+            )
+            for i in chosen:
+                structure.translate_sites(int(i), [magnitude, 0, 0], frac_coords=False, to_unit_cell=True)
+            return structure
+
+        # 40% strongly displaced -> mismatch detected (returns False), even though 60% match perfectly
+        # (a median displacement would sit in the well-matched 60% and miss this):
+        assert not check_atom_mapping_far_from_defect(
+            _displace_fraction(0.4, 3.0), bulk, defect_coords, warning=False
+        )
+        # a small fraction (10%) of outlier sites should not trigger a (false-positive) mismatch:
+        assert check_atom_mapping_far_from_defect(
+            _displace_fraction(0.1, 3.0), bulk, defect_coords, warning=False
+        )
+        # a well-matched supercell (no displacements) should not be flagged:
+        assert check_atom_mapping_far_from_defect(bulk, bulk, defect_coords, warning=False)
+
+        # test displacing 25% of far-from-defect atoms by 1 Å (mean would not catch,
+        # but significant-fraction check should):
+        assert not check_atom_mapping_far_from_defect(
+            _displace_fraction(0.25, 1.0), bulk, defect_coords, warning=False
+        )
+
+        # but then bumping ``fraction_tol`` then accepts this partial mismatch:
+        assert check_atom_mapping_far_from_defect(
+            _displace_fraction(0.25, 1.0), bulk, defect_coords, fraction_tol=0.3, warning=False
+        )
 
 
 class TestGetTransformationAndApply(ConfigurationsTestCase):

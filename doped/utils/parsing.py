@@ -981,6 +981,7 @@ def check_atom_mapping_far_from_defect(
     defect_coords: np.ndarray,
     coords_are_cartesian: bool = False,
     displacement_tol: float = 0.5,
+    fraction_tol: float = 0.2,
     warning: bool | str = "verbose",
 ) -> bool:
     """
@@ -988,11 +989,13 @@ def check_atom_mapping_far_from_defect(
     warn the user if they are large (often indicates a mismatch between the
     bulk and defect supercell definitions).
 
-    The threshold for identifying 'large' displacements is if the mean
-    displacement of any species is greater than ``displacement_tol`` Ångströms
-    for sites of that species outside the Wigner-Seitz radius of the defect in
-    the defect supercell. The Wigner-Seitz radius corresponds to the radius of
-    the largest sphere which can fit in the cell.
+    For sites of a given species outside the Wigner-Seitz radius of the defect
+    (the radius of the largest sphere which can fit in the cell), a 'large'
+    displacement is flagged if either the *mean* displacement exceeds
+    ``displacement_tol`` Ångströms (capturing a systematic/global mismatch),
+    *or* the *fraction* of such sites individually displaced by more than
+    ``displacement_tol`` exceeds ``fraction_tol`` (capturing a partial mismatch
+    without being triggered by single outlier sites).
 
     Args:
         defect_supercell (|Structure|):
@@ -1005,8 +1008,12 @@ def check_atom_mapping_far_from_defect(
             Whether the defect coordinates are in Cartesian or fractional
             coordinates. Default is ``False`` (fractional).
         displacement_tol (float):
-            The tolerance for the displacement of atoms far from the defect
-            site, in Ångströms. Default is 0.5 Å.
+            The tolerance for the displacement of individual atoms far from the
+            defect site, in Ångströms. Default is 0.5 Å.
+        fraction_tol (float):
+            The tolerance for the fraction of far-from-defect sites (of a given
+            species) displaced by more than ``displacement_tol``, above which a
+            mismatch is flagged. Default is 0.2 (i.e. 20%).
         warning (bool, str):
             Whether to throw a warning if a mismatch is detected. If
             ``warning = "verbose"`` (default), the individual atomic
@@ -1016,7 +1023,6 @@ def check_atom_mapping_far_from_defect(
         bool:
             Returns ``False`` if a mismatch is detected, else ``True``.
     """
-    far_from_defect_disps: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     wigner_seitz_radius = get_wigner_seitz_radius(bulk_supercell.lattice)
     defect_frac_coords = (
         defect_coords
@@ -1043,6 +1049,7 @@ def check_atom_mapping_far_from_defect(
         )[0]
     ]
 
+    disps_outside_ws: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     for species in bulk_supercell.composition.elements:  # divide and vectorise calc for efficiency
         bulk_species_outside_near_ws_coords = get_coords_and_idx_of_species(
             bulk_sites_outside_or_at_ws_radius, species.name
@@ -1059,29 +1066,33 @@ def check_atom_mapping_far_from_defect(
         ):
             continue  # if no sites of this species outside the WS radius, skip
 
-        displacement_dists = np.min(
-            bulk_supercell.lattice.get_all_distances(
-                defect_species_outside_ws_coords, bulk_species_outside_near_ws_coords
-            ),
-            axis=1,
+        site_mapping_outside_ws = _get_site_mapping_from_coords_and_indices(
+            defect_species_outside_ws_coords,
+            bulk_species_outside_near_ws_coords,
+            lattice=bulk_supercell.lattice,
         )
-        far_from_defect_disps[species.name].extend(np.round(displacement_dists, 2))
+        displacement_dists = [dist for dist, _i, _j in site_mapping_outside_ws if dist is not None]
+        disps_outside_ws[species.name].extend(np.round(displacement_dists, 2))
 
-    if far_from_defect_large_disps := {
+    if large_disps_outside_ws := {
         specie: list
-        for specie, list in far_from_defect_disps.items()
-        if list and np.mean(list) > displacement_tol
+        for specie, list in disps_outside_ws.items()
+        if list
+        and (
+            np.mean(list) > displacement_tol  # mean displacement of ``specie`` sites exceeds tolerance
+            or np.mean(np.array(list) > displacement_tol) > fraction_tol  # significant fraction exceed
+        )
     }:
         message = (
             f"Detected atoms far from the defect site (>{wigner_seitz_radius:.2f} Å) with major "
             f"displacements (>{displacement_tol} Å) in the defect supercell. This likely indicates a "
             f"mismatch between the bulk and defect supercell definitions (-> see troubleshooting docs) or "
-            f"an unconverged supercell size, both of which could cause errors in parsing. The mean "
-            f"displacement of the following species, at sites far from the determined defect position, "
-            f"is >{displacement_tol} Å: {list(far_from_defect_large_disps.keys())}"
+            f"an unconverged supercell size, both of which could cause errors in parsing. The mean (or at "
+            f"least {fraction_tol:.0%}) of displacements of the following species, at sites far from the "
+            f"determined defect position, is >{displacement_tol} Å: {list(large_disps_outside_ws.keys())}"
         )
         if warning == "verbose":
-            message += f", with displacements (Å): {far_from_defect_large_disps}"
+            message += f", with displacements (Å): {large_disps_outside_ws}"
         if warning:
             warnings.warn(message)
 

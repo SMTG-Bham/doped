@@ -2178,9 +2178,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             def_type,
             missing_bulk_site_indices,
             additional_defect_site_indices,
-        ) = get_defect_type_and_site_indices(
-            initial_defect_structure, bulk_sc_structure, _parameter_order_warn=False
-        )
+        ) = get_defect_type_and_site_indices(initial_defect_structure, bulk_sc_structure)
         bulk_site_idx = next(iter(missing_bulk_site_indices), None)
         defect_site_idx = next(iter(additional_defect_site_indices), None)
         assert bulk_site_idx is None
@@ -2223,9 +2221,7 @@ class DefectsParsingTestCase(unittest.TestCase):
             def_type,
             missing_bulk_site_indices,
             additional_defect_site_indices,
-        ) = get_defect_type_and_site_indices(
-            initial_defect_structure, bulk_sc_structure, _parameter_order_warn=False
-        )
+        ) = get_defect_type_and_site_indices(initial_defect_structure, bulk_sc_structure)
         assert def_type == "substitution"
         bulk_site_idx = next(iter(missing_bulk_site_indices), None)
         defect_site_idx = next(iter(additional_defect_site_indices), None)
