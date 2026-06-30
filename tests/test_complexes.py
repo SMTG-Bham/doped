@@ -50,6 +50,7 @@ def if_present_rm(path):
             shutil.rmtree(path)
 
 
+# TODO: Note that some tests fail at present, will need to investigate origins
 class ComplexDefectGenerationTest(unittest.TestCase):
     def setUp(self):
         self.R3c_Ga2O3 = Structure.from_file(os.path.join(data_dir, "Ga2O3_R3c_POSCAR"))
