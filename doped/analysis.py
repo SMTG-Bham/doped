@@ -51,6 +51,7 @@ from doped.utils.parsing import (
     _compare_incar_tags,
     _compare_kpoints,
     _compare_potcar_symbols,
+    _create_unrelaxed_defect_structure,
     _determine_subfolder,
     _find_calc_outputs,
     _format_mismatching_incar_warning,
@@ -63,7 +64,7 @@ from doped.utils.parsing import (
     _vasp_file_parsing_action_dict,
     check_atom_mapping_far_from_defect,
     get_core_potentials_from_outcar,
-    get_defect_type_site_idxs_and_unrelaxed_structure,
+    get_defect_type_and_site_indices,
     get_dimer_bonds,
     get_locpot,
     get_matching_site,
@@ -238,13 +239,19 @@ def defect_site_from_structures(
     if _parameter_order_warn:
         _warn_parameter_order("defect_site_from_structures")  # TODO: Remove in doped v4.1
     try:  # automatic defect site detection -- this gives us the "unrelaxed" defect structure
-        (
-            defect_type,
-            bulk_site_index,
-            defect_site_index,
-            unrelaxed_defect_structure,
-        ) = get_defect_type_site_idxs_and_unrelaxed_structure(
-            defect_supercell, bulk_supercell, _parameter_order_warn=False
+        defect_type, missing_bulk_site_indices, additional_defect_site_indices = (
+            get_defect_type_and_site_indices(defect_supercell, bulk_supercell)
+        )
+        # TODO: Update to use missing_bulk_site_indices and additional_defect_site_indices to handle
+        #  defect complexes; for now just taking first of each and assuming single point defect:
+        bulk_site_index = missing_bulk_site_indices[0] if missing_bulk_site_indices else None
+        defect_site_index = additional_defect_site_indices[0] if additional_defect_site_indices else None
+        unrelaxed_defect_structure = _create_unrelaxed_defect_structure(
+            defect_supercell,
+            bulk_supercell,
+            defect_site_idx=defect_site_index,
+            bulk_site_idx=bulk_site_index,
+            defect_coords=defect_type == "interstitial",
         )
 
     except RuntimeError as exc:
@@ -366,7 +373,8 @@ def defect_from_structures(
     """
     if _parameter_order_warn:
         _warn_parameter_order("defect_from_structures")  # TODO: Remove in doped v4.1
-    (
+    (  # TODO: Add handling of complex defects (multiple bulk/defect sites here). Need ComplexDefect class
+        # etc...
         defect_site,
         defect_type,
         defect_site_in_bulk,

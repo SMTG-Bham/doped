@@ -24,7 +24,7 @@ from doped.utils.configurations import (
     orient_s2_like_s1,
     write_path_structures,
 )
-from doped.utils.parsing import get_site_mapping_indices
+from doped.utils.parsing import get_site_mappings
 from doped.utils.supercells import min_dist
 from doped.utils.symmetry import get_clean_structure, point_symmetry_from_structure
 
@@ -133,8 +133,8 @@ class TestGetDQ(ConfigurationsTestCase):
     def test_reorient_true_matches_site_mapping_formula(self):
         """
         ``get_dQ(..., reorient=True)`` should match the equivalent ΔQ computed
-        from ``get_site_mapping_indices`` with a mapped weighted-distance sum,
-        **if** no re-orientation is required (only re-ordering).
+        from ``get_site_mappings`` with a mapped weighted-distance sum, **if**
+        no re-orientation is required (only re-ordering).
         """
         struct1 = self.V_Se_m1_supercell
         struct2 = get_clean_structure(self.V_Se_m2_supercell)  # re-order to break ordering match
@@ -144,7 +144,7 @@ class TestGetDQ(ConfigurationsTestCase):
         dQ_from_mapping = np.sqrt(
             sum(
                 (struct1[i].distance(struct2[j]) ** 2) * struct1[i].specie.atomic_mass
-                for _, i, j in get_site_mapping_indices(struct1, struct2)
+                for _, i, j in get_site_mappings(struct1, struct2)
                 if i is not None and j is not None
             )
         )

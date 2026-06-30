@@ -61,7 +61,7 @@ from doped.utils.parsing import (
     _get_defect_supercell_frac_coords,
     get_core_potentials_from_outcar,
     get_locpot,
-    get_site_mapping_indices,
+    get_site_mappings,
     get_wigner_seitz_radius,
 )
 from doped.utils.plotting import doped_plot_style, format_defect_name
@@ -486,7 +486,7 @@ def get_kumagai_correction(
 
         excluded_indices = [] if excluded_indices is None else [int(i) for i in excluded_indices]
 
-        mapping = get_site_mapping_indices(
+        mapping = get_site_mappings(
             calc_results.structure, perfect_calc_results.structure, threshold=np.inf
         )
 

@@ -31,7 +31,7 @@ from doped.utils.parsing import (
     check_atom_mapping_far_from_defect,
     get_coords_and_idx_of_species,
     get_defect_type_and_composition_diff,
-    get_site_mapping_indices,
+    get_site_mappings,
     get_wigner_seitz_radius,
 )
 from doped.utils.supercells import _largest_cube_length_from_matrix, min_dist
@@ -1123,7 +1123,7 @@ def _get_matching_sites_from_s1_then_s2(
     single_defect_subcell_sites = []
 
     # Uses linear assignment per species for unambiguous optimal matching, for template_struct sites
-    mapping = get_site_mapping_indices(template_struct, struct1_pool, frac_coords=False, threshold=np.inf)
+    mapping = get_site_mappings(template_struct, struct1_pool, frac_coords=False, threshold=np.inf)
     pool1_indices = [  # mapping entries are (dist, template_idx, pool_idx)
         pool_idx
         for _, template_idx, pool_idx in mapping
@@ -1132,7 +1132,7 @@ def _get_matching_sites_from_s1_then_s2(
     assert len(set(pool1_indices)) == len(pool1_indices)  # check no duplicate indices
     single_defect_subcell_sites = [struct1_pool[i] for i in pool1_indices]
 
-    # for struct2_pool, it's not as straightforward to use ``get_site_mapping_indices``, as we are trying
+    # for struct2_pool, it's not as straightforward to use ``get_site_mappings``, as we are trying
     # to compare defect-containing supercells to a bulk supercell, so have to account for different
     # compositions / number of sites etc; so more straightforward/robust to follow this approach, where we
     # get the required number of sites from ``struct2_pool``, which are furthest from those in

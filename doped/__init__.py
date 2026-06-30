@@ -7,10 +7,10 @@ https://www.nature.com/articles/s41524-023-00973-1), write VASP input files for
 defect supercell calculations, and automatically parse and analyse the results.
 """
 
-import importlib
+from importlib.metadata import PackageNotFoundError, version
 
 # set __version__ for older users who use this convention:
 try:
-    __version__ = importlib.metadata.version("doped")  # from package metadata (pyproject.toml)
-except importlib.metadata.PackageNotFoundError:
+    __version__ = version("doped")  # from package metadata (pyproject.toml)
+except PackageNotFoundError:
     __version__ = "0.0.0"  # fallback for local development or if package isn't installed
