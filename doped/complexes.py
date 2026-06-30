@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from functools import lru_cache
 from itertools import chain, combinations, product
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from pymatgen.analysis.ewald import EwaldMinimizer, EwaldSummation
@@ -17,7 +17,7 @@ from pymatgen.analysis.molecule_matcher import BruteForceOrderMatcher
 from pymatgen.util.coord import get_angle, pbc_shortest_vectors
 from tqdm import tqdm
 
-from doped.core import _get_single_valence_oxi_states, guess_and_set_oxi_states_with_timeout
+from doped.core import _get_oxi_state_modes, guess_and_set_oxi_states_with_timeout
 from doped.utils.efficiency import Composition, DopedVacancyGenerator, Molecule, PeriodicSite, Structure
 from doped.utils.parsing import (
     get_coords_and_idx_of_species,
@@ -134,22 +134,18 @@ def classify_vacancy_geometry(
         )
     )
     # ignore indices for other species:
-    missing_bulk_site_indices = np.asarray(missing_bulk_site_indices)[
-        np.isin(missing_bulk_site_indices, bulk_species_indices)
-    ]
-    additional_defect_site_indices = np.asarray(additional_defect_site_indices)[
-        np.isin(additional_defect_site_indices, vacancy_species_indices)
-    ]
+    num_missing_bulk_sites = np.isin(missing_bulk_site_indices, bulk_species_indices).sum()
+    num_additional_defect_sites = np.isin(additional_defect_site_indices, vacancy_species_indices).sum()
 
-    if len(missing_bulk_site_indices) == 1 and len(additional_defect_site_indices) == 0:
+    if num_missing_bulk_sites == 1 and num_additional_defect_sites == 0:
         return "Simple Vacancy"
 
-    if len(missing_bulk_site_indices) == 2 and len(additional_defect_site_indices) == 1:
+    if num_missing_bulk_sites == 2 and num_additional_defect_sites == 1:
         return "Split Vacancy"
 
     if verbose:  # otherwise, we have a non-trivial vacancy
-        print(f"{len(additional_defect_site_indices)} offsite atoms in defect compared to bulk")
-        print(f"{len(missing_bulk_site_indices)} offsite atoms in bulk compared to defect")
+        print(f"{num_additional_defect_sites} offsite atoms in defect compared to bulk")
+        print(f"{num_missing_bulk_sites} offsite atoms in bulk compared to defect")
 
     return "Non-Trivial"
 
@@ -421,26 +417,32 @@ def get_equivalent_complex_defect_sites_in_primitive(
     complex_equiv_prim_frac_coords_dict = {
         site: {  # dict of sets of equivalent frac coords in primitive unit cell, for each point defect
             tuple(frac_coords.round(4))  # type: ignore  # (return_symprec_and_dist_tol_factor=False)
-            for frac_coords in get_equiv_frac_coords_in_primitive(
-                site.frac_coords,
-                primitive_structure,
-                bulk_supercell,
-                symprec=symprec,
-                dist_tol_factor=dist_tol_factor,
-                return_symprec_and_dist_tol_factor=False,
-                **kwargs,
+            for frac_coords in cast(
+                "list[np.ndarray] | np.ndarray",
+                get_equiv_frac_coords_in_primitive(
+                    site.frac_coords,
+                    primitive_structure,
+                    bulk_supercell,
+                    symprec=symprec,
+                    dist_tol_factor=dist_tol_factor,
+                    return_symprec_and_dist_tol_factor=False,
+                    **kwargs,
+                ),
             )
         }
         for site in complex_defect_sites
     }
-    _, symprec, dist_tol_factor = get_equiv_frac_coords_in_primitive(
-        complex_defect_sites[-1].frac_coords,
-        primitive_structure,
-        bulk_supercell,
-        symprec=symprec,
-        dist_tol_factor=dist_tol_factor,
-        return_symprec_and_dist_tol_factor=True,
-        **kwargs,
+    _, symprec, dist_tol_factor = cast(
+        "tuple[list[np.ndarray] | np.ndarray, float, float]",
+        get_equiv_frac_coords_in_primitive(
+            complex_defect_sites[-1].frac_coords,
+            primitive_structure,
+            bulk_supercell,
+            symprec=symprec,
+            dist_tol_factor=dist_tol_factor,
+            return_symprec_and_dist_tol_factor=True,
+            **kwargs,
+        ),
     )  # get dynamically-adjusted symprec / dist_tol_factor
     # Note: In original drafts, we used ``get_matching_site`` and ``SymmetrizedStructure.equivalent_sites``
     # to get the symmetry-equivalent sites of vacancies/substitutions in the primitive unit cell at this
@@ -834,10 +836,7 @@ def get_split_vacancies(
     bulk_supercell = defect_gen.bulk_supercell
     bulk_oxi_states = bulk_oxi_states or defect_gen._bulk_oxi_states
     if not bulk_oxi_states and (bulk_oxi_states := guess_and_set_oxi_states_with_timeout(bulk_supercell)):
-        print(
-            f"Guessed oxidation states for input structure: "
-            f"{_get_single_valence_oxi_states(bulk_oxi_states)}"
-        )
+        print(f"Guessed oxidation states for input structure: {_get_oxi_state_modes(bulk_oxi_states)}")
 
     if elements is None and bulk_oxi_states is None:
         raise ValueError(  # TODO: Will need to handle this in DefectsGenerator usage
@@ -846,8 +845,8 @@ def get_split_vacancies(
             "Please explicitly provide oxidation states using `bulk_oxi_states`."
         )
 
-    single_valence_oxi_states = _get_single_valence_oxi_states(bulk_oxi_states)
-    cations = {elt for elt, oxi in single_valence_oxi_states.items() if oxi > 0}
+    mode_oxi_states = _get_oxi_state_modes(bulk_oxi_states)
+    cations = {elt for elt, oxi in mode_oxi_states.items() if oxi > 0}
 
     if elements is None:
         elements = cations
@@ -1124,19 +1123,16 @@ def get_split_vacancies_from_electrostatics(
         bulk_oxi_states = bulk_supercell
     if bulk_oxi_states is None:
         if bulk_oxi_states := guess_and_set_oxi_states_with_timeout(bulk_supercell):
-            print(
-                f"Guessed oxidation states for input structure: "
-                f"{_get_single_valence_oxi_states(bulk_oxi_states)}"
-            )
+            print(f"Guessed oxidation states for input structure: {_get_oxi_state_modes(bulk_oxi_states)}")
         else:
             raise ValueError(
                 "Oxidation states could not be guessed for the input structure, please explicitly "
                 "provide oxidation states using `bulk_oxi_states`."
             )
 
-    single_valence_oxi_states = _get_single_valence_oxi_states(bulk_oxi_states)
+    mode_oxi_states = _get_oxi_state_modes(bulk_oxi_states)
     bulk_supercell_w_oxi_states = bulk_supercell.copy()
-    bulk_supercell_w_oxi_states.add_oxidation_state_by_element(single_valence_oxi_states)
+    bulk_supercell_w_oxi_states.add_oxidation_state_by_element(mode_oxi_states)
 
     try:  # generate candidate split vacancies from geometric analysis:
         candidate_split_vacancies = get_split_vacancies_by_geometry(
@@ -1179,7 +1175,7 @@ def get_split_vacancies_from_electrostatics(
             coords=interstitial_site.frac_coords,
             properties=interstitial_site.properties,
         )  # idx will be len(bulk_supercell_with_all_interstitial_sites) + i
-    bulk_supercell_with_all_interstitial_sites.add_oxidation_state_by_element(single_valence_oxi_states)
+    bulk_supercell_with_all_interstitial_sites.add_oxidation_state_by_element(mode_oxi_states)
 
     # generate manipulations for EwaldMinimizer; manipulations are of the format:
     # [oxi_state_multiplication_factor, num_sites_to_place, allowed_site_indices, species]

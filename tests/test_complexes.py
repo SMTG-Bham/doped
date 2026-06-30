@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from monty.serialization import loadfn
 from pymatgen.analysis.molecule_matcher import KabschMatcher
+from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Molecule, Structure
 from pymatgen.util.coord import is_coord_subset_pbc
 from test_generation import _check_defect_entry
@@ -24,7 +25,7 @@ from doped.complexes import (
     get_complex_defect_multiplicity,
     get_split_vacancies,
 )
-from doped.core import Interstitial, Vacancy
+from doped.core import Interstitial, Vacancy, _get_oxi_state_modes
 from doped.generation import DefectsGenerator
 from doped.utils.parsing import get_matching_site
 from doped.utils.symmetry import (
@@ -696,3 +697,61 @@ class SymmetryMultiplicityTest(unittest.TestCase):
                 assert eq_mol_count == 80
             # Note that a lot of these have matching equivalent relaxed complexes, so would make good test
             # cases for future functionality for this (TODO)
+
+
+class GetOxiStateModesTest(unittest.TestCase):
+    """
+    Tests for the ``_get_oxi_state_modes`` helper, which returns the mode (most
+    common, weighted by amount) oxidation state per element.
+    """
+
+    def _mixed_valence_structure(self):
+        # 3x Fe3+, 1x Fe2+, 4x O2-:
+        return Structure(
+            Lattice.cubic(5.0),
+            ["Fe3+", "Fe3+", "Fe3+", "Fe2+", "O2-", "O2-", "O2-", "O2-"],
+            [[i * 0.1, i * 0.1, i * 0.1] for i in range(8)],
+        )
+
+    def test_mixed_valence_structure_returns_mode(self):
+        # Fe3+ is more common than Fe2+, so the mode (not the last-encountered value) is returned:
+        assert _get_oxi_state_modes(self._mixed_valence_structure()) == {"Fe": 3.0, "O": -2.0}
+
+    def test_mixed_valence_composition_returns_mode(self):
+        comp = self._mixed_valence_structure().composition
+        assert _get_oxi_state_modes(comp) == {"Fe": 3.0, "O": -2.0}
+
+    def test_single_valence_structure(self):
+        struct = Structure(
+            Lattice.cubic(5.0),
+            ["Ga3+", "Ga3+", "O2-", "O2-", "O2-"],
+            [[i * 0.1, i * 0.1, i * 0.1] for i in range(5)],
+        )
+        assert _get_oxi_state_modes(struct) == {"Ga": 3.0, "O": -2.0}
+
+    def test_mode_differs_from_rounded_mean(self):
+        # 2x Mn2+, 1x Mn4+: mode is +2, but the rounded mean would be
+        # ``round((2 + 2 + 4) / 3) = round(2.67) = +3``, so this confirms the mode (not the rounded mean)
+        # is correctly used:
+        struct = Structure(
+            Lattice.cubic(5.0),
+            ["Mn2+", "Mn2+", "Mn4+", "O2-", "O2-", "O2-"],
+            [[i * 0.1, i * 0.1, i * 0.1] for i in range(6)],
+        )
+        assert _get_oxi_state_modes(struct) == {"Mn": 2.0, "O": -2.0}
+
+    def test_dict_passthrough(self):
+        oxi_dict = {"Fe": 3, "O": -2}
+        assert _get_oxi_state_modes(oxi_dict) == oxi_dict
+
+    def test_undecorated_structure_defaults_to_zero(self):
+        struct = Structure(
+            Lattice.cubic(5.0),
+            ["Ga", "O"],
+            [[0.0, 0.0, 0.0], [0.5, 0.5, 0.5]],
+        )
+        assert _get_oxi_state_modes(struct) == {"Ga": 0, "O": 0}
+
+    def test_invalid_input_raises(self):
+        with pytest.raises(TypeError, match="must be a pymatgen Structure, Composition or dict"):
+            _get_oxi_state_modes("not a valid input")

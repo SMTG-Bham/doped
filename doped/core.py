@@ -2934,22 +2934,47 @@ def remove_site_oxi_state(site: PeriodicSite):
     site.species = Composition(new_sp)
 
 
-def _get_single_valence_oxi_states(bulk_oxi_states: Structure | Composition | dict = False) -> dict:
+def _get_oxi_state_modes(bulk_oxi_states: Structure | Composition | dict = False) -> dict:
+    """
+    Get the mode (most common) oxidation state for each element from the input
+    oxidation-state information.
+
+    For mixed-valence inputs (where an element takes multiple oxidation
+    states), the most common oxidation state per element -- weighted by the
+    composition / site amounts -- is returned.
+
+    Args:
+        bulk_oxi_states:
+            Either an oxidation-state-decorated ``pymatgen`` |Structure| or
+            |Composition| object, or a dict of ``{element: oxi_state}`` (which
+            is assumed to already be single-valence and returned unchanged).
+
+    Returns:
+        dict:
+            ``{element_symbol: oxi_state}`` with a single (mode) oxidation
+            state per element.
+    """
+    if isinstance(bulk_oxi_states, dict):
+        return bulk_oxi_states
     if isinstance(bulk_oxi_states, Structure):
-        single_valence_oxi_states = {
-            el.symbol: el.oxi_state for el in bulk_oxi_states.composition.elements
-        }
+        composition = bulk_oxi_states.composition
     elif isinstance(bulk_oxi_states, Composition):
-        single_valence_oxi_states = {el.symbol: el.oxi_state for el in bulk_oxi_states.elements}
-    elif isinstance(bulk_oxi_states, dict):
-        single_valence_oxi_states = bulk_oxi_states
+        composition = bulk_oxi_states
     else:
         raise TypeError(
             f"Input bulk_oxi_states must be a pymatgen Structure, Composition or dict, not "
             f"{type(bulk_oxi_states)}."
         )
 
-    return single_valence_oxi_states
+    # accumulate the total amount for each (element, oxi_state) pair, then take the most common oxidation
+    # state (by amount) per element:
+    element_oxi_amounts: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
+    for species, amount in composition.items():
+        element_oxi_amounts[species.symbol][getattr(species, "oxi_state", 0)] += amount
+
+    return {
+        element: oxi_amounts.most_common(1)[0][0] for element, oxi_amounts in element_oxi_amounts.items()
+    }
 
 
 def defect_structure_from_sites(
