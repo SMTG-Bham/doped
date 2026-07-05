@@ -5157,7 +5157,18 @@ def scissor_dos(
         np.where((dos_densities > tol) & (dos.energies - dos.efermi < dos_gap / 2))[0][-1]
     ]
 
-    if not (
+
+    values_to_remove_or_add = int(new_cbm_index - cbm_index)
+
+    if values_to_remove_or_add == 0 and not np.isclose(delta_gap, 0):
+        # non-zero gap change below the DOS grid resolution -> no grid points to add/remove:
+        warnings.warn(
+            f"The requested band gap change (delta_CBM - delta_VBM = {delta_gap:.4g} eV) is "
+            f"smaller than the DOS energy grid spacing, so no grid points are added/removed. "
+            f"The requested VBM/CBM shifts are still applied exactly (as rigid energy shifts), "
+            f"but the scissored band edges are only resolved to the grid spacing."
+        )
+    elif not (
         np.isclose(cbm_energy - vbm_energy, dos_gap, atol=1e-1)
         and np.isclose(new_cbm_energy - cbm_energy, delta_gap, atol=1e-2)
     ):
@@ -5168,8 +5179,6 @@ def scissor_dos(
             f"from dos.get_gap(tol=tol) and new gap: {dos_gap + delta_gap}"
         )
 
-    # Determine the number of values in energies/densities to remove/add to avoid duplication
-    values_to_remove_or_add = int(new_cbm_index - cbm_index)
     scissored_dos_dict = dos.as_dict()
 
     # Shift the CBM and remove/add values:
@@ -5198,6 +5207,11 @@ def scissor_dos(
                 dos_densities[cbm_index:],
             )
         )
+    else:  
+        scissored_dos_dict["energies"] = np.concatenate(
+            (dos.energies[:cbm_index], dos.energies[cbm_index:] + delta_gap)
+        )
+        scissored_dos_dict["densities"][Spin.up] = dos_densities
 
     # Assuming non-spin-polarised bulk here:
     scissored_dos_dict["densities"][Spin.down] = scissored_dos_dict["densities"][Spin.up]
@@ -8924,6 +8938,7 @@ def get_fermi_dos_from_espresso_dos(
     dos: PathLike,
     bulk_pwxml: PathLike | None = None,
     structure=None,
+    nelecs: float | None = None,
 ) -> FermiDos:
     r"""
     Create a ``pymatgen`` ``FermiDos`` object from a Quantum ESPRESSO density
@@ -8951,26 +8966,32 @@ def get_fermi_dos_from_espresso_dos(
         bulk_pwxml (PathLike | PWxml | None):
             A ``pymatgen`` ``PWxml`` object, or a path to the bulk supercell
             ``espresso.xml`` file (i.e. the cell the DOS was computed on), used
-            to obtain the ``structure`` for the volume normalisation. Ignored
-            if ``structure`` is provided directly.
+            to obtain the ``structure`` for the volume normalisation and the
+            number of valence electrons (``nelec``) for the DOS normalisation.
         structure (Structure | None):
             The structure of the cell the DOS was computed on (usually the bulk
-            supercell), used for the volume -> cm^-3 normalisation. Required if
-            ``bulk_pwxml`` is not provided.
+            supercell), used for the volume -> cm^-3 normalisation. Taken from
+            ``bulk_pwxml`` if not provided directly.
+        nelecs (float | None):
+            The number of valence electrons in the cell the DOS was computed on
+            (Quantum ESPRESSO's ``nelec``), used to normalise the DOS. Taken
+            from ``bulk_pwxml`` if not provided directly. If neither is given,
+            ``FermiDos`` falls back to the all-electron count (with a warning),
+            which inflates carrier concentrations.
 
     Returns:
         FermiDos: The ``FermiDos`` object.
     """
     from pymatgen.io.espresso.outputs.dos import EspressoDos
+    from pymatgen.io.espresso.outputs.pwxml import PWxml
 
     if not isinstance(dos, EspressoDos):
         dos = EspressoDos.from_fildos(dos)
 
-    if structure is None and bulk_pwxml is not None:
-        from pymatgen.io.espresso.outputs.pwxml import PWxml
+    if bulk_pwxml is not None and not isinstance(bulk_pwxml, PWxml):
+        bulk_pwxml = PWxml(bulk_pwxml)
 
-        if not isinstance(bulk_pwxml, PWxml):
-            bulk_pwxml = PWxml(bulk_pwxml)
+    if structure is None and isinstance(bulk_pwxml, PWxml):
         structure = bulk_pwxml.final_structure
 
     if structure is None:
@@ -8980,7 +9001,20 @@ def get_fermi_dos_from_espresso_dos(
             "supercell `espresso.xml`) or `structure` directly."
         )
 
+
+    if nelecs is None and isinstance(bulk_pwxml, PWxml):
+        nelecs = bulk_pwxml.nelec
+
+    if nelecs is None:
+        warnings.warn(
+            "The number of valence electrons (`nelec`) could not be determined (no `bulk_pwxml` or "
+            "`nelecs` is provided), so the `FermiDos` will normalise the DOS to the all-electron count "
+            "from the structure composition. This results in the wrong carrier concentrations."
+            " Please provide `bulk_pwxml` (the bulk supercell `espresso.xml`) or set `nelecs` explicitly (Quantum ESPRESSO's `nelec`)."
+        )
+
     return FermiDos(
         Dos(efermi=dos.efermi, energies=dos.energies, densities=dos.tdos),
         structure=structure,
+        nelecs=nelecs,
     )
