@@ -451,7 +451,7 @@ def _plot_transition_level_markers(
                 )
 
 
-def _shade_band_edges(
+def shade_band_edges(
     ax: plt.Axes,
     band_gap: float,
     xlim: tuple[float, float],
@@ -1517,7 +1517,7 @@ def formation_energy_plot(
             auto_labels=auto_labels,
         )
 
-    _shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="horizontal")
+    shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="horizontal")
     _set_TLD_axis_labels_limits_ticks(ax, xlim, ylim)
 
     # dashed line for E_formation = 0 (in case ymin < 0) and Fermi level if provided:
@@ -2475,7 +2475,7 @@ def transition_level_diagram(
     fig, ax = plt.subplots(figsize=figsize)
     xlim = (-side_pad - left_extra_pad, n_defects - 1 + side_pad)
 
-    _shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="vertical")
+    shade_band_edges(ax, defect_thermodynamics.band_gap, xlim, ylim, orientation="vertical")
 
     # determine label widths and overlap offsets:
     label_height = max(  # minimum vertical spacing (in eV) between successive labels to avoid overlap
