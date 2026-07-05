@@ -114,7 +114,7 @@ intersphinx_mapping = {
         "https://materialsproject.github.io/pymatgen-analysis-defects/api_ref/",
         None,
     ),
-    "ase": ("https://wiki.fysik.dtu.dk/ase/", None),
+    "ase": ("https://docs.ase-lib.org/", None),
 }
 
 # -- Options for autodoc -----------------------------------------------------
@@ -133,7 +133,7 @@ def setup(app):
 
 
 # ignore non-consecutive level header warnings, and attempted image editing:
-suppress_warnings = ["myst.header", "mystnb.image"]
+suppress_warnings = ["myst.header", "mystnb.image", "mystnb.unknown_mime_type"]
 
 # -- Global substitutions for external links ------------------------------------
 # These substitutions are available in all RST files

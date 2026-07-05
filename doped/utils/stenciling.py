@@ -136,7 +136,7 @@ def get_defect_in_supercell(
     for parsing defect calculations with the generated supercell. Of course, if
     generating multiple defects in the same ``target_supercell`` with this
     issue occurring, only one such bulk supercell calculation should be
-    required (`should` correspond to the same bulk supercell in each case).
+    required (*should* correspond to the same bulk supercell in each case).
 
     We note that the algorithm employed here is not guaranteed to be
     deterministic. It can depend on site orderings, small differences in cell
@@ -147,7 +147,7 @@ def get_defect_in_supercell(
     supercells should be negligible).
 
     Args:
-        defect_entry (|DefectEntry| | tuple[|Structure|, |Structure|(, np.ndarray)?]):
+        defect_entry (DefectEntry or tuple of Structure objects, with optional np.ndarray):
             A |DefectEntry| object for which to re-generate the relaxed
             structure (taken from ``DefectEntry.defect_supercell``) in the
             ``target_supercell`` lattice. Alternatively, a tuple of

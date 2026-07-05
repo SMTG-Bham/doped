@@ -71,7 +71,7 @@ def vise_handling(level=logging.CRITICAL):
        ``warnings.simplefilter("ignore", UserWarning)`` is reverted on exit.
        Otherwise this fires the first time ``vise.defaults`` is imported --
        which, with multiprocessing parsing, happens lazily during
-       _result unpickling_ with ``Pool`` (importing a ``pydefect``
+       *result unpickling* with ``Pool`` (importing a ``pydefect``
        ``BandEdgeStates`` object -> ``pydefect.defaults`` ->
        ``vise.defaults``), i.e. _outside_ any ``vise_handling()`` block.
 
