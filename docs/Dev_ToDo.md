@@ -14,6 +14,7 @@
 - Kumagai GKFO and CC diagram corrections. Implemented in `pydefect` and relatively easy to port?
 
 ## Docs
+- Notebook using MLIPs to relax defects and compute formation energies via ASE calculators (and of course noting inability to do charges / charge corrections)
 - Add our recommended workflow (gam, NKRED, std, ncl). See https://sites.tufts.edu/andrewrosen/density-functional-theory/vasp/ for some possibly useful general tips.
 - Workflow diagram with: https://twitter.com/Andrew_S_Rosen/status/1678115044348039168?s=20
 - Example on docs (miscellaneous/advanced analysis tutorial page?) for adding entries / combining multiple `DefectThermodynamics` objects

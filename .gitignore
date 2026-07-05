@@ -56,3 +56,5 @@ examples/MgO/Bulk_relax/*KPOINTS
 CLAUDE.md
 .claude/
 .rtk/
+# Added by code-review-graph
+.code-review-graph/
