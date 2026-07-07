@@ -2945,16 +2945,15 @@ def _point_symmetry_from_defect_entry(
                 # Note:
                 # This code works to get the site symmetry of a defect site in a periodicity-breaking
                 # supercell, but only when the defect has not yet been relaxed. Still has the issue that
-                # once we have relaxation around the defect site in a periodicity-breaking supercell,
-                # then the (local) point symmetry cannot be easily determined as the whole supercell
-                # symmetry is broken. In future will try use stenciling to regenerate the structure in a
-                # non-periodicity-breaking cell, and then determine symmetry. Alternatively, could try some
-                # local structure analysis approach, but hacky...
-                # unique_sites = get_all_equiv_sites(  # defect site but bulk supercell
-                #     site.frac_coords, bulk_supercell,
-                # )
-                # sga_with_all_X = _get_sga_with_all_X(  # defect unique sites but bulk supercell
-                #     bulk_supercell, unique_sites, symprec=symprec
+                # once we have relaxation around the defect site in a periodicity-breaking supercell, then
+                # the (local) point symmetry cannot be easily determined as the whole supercell symmetry is
+                # broken. Alternatively, could try some local structure analysis approach, but quite
+                # awkward...
+                #
+                # sga_with_all_X = _get_sga_with_all_X(
+                #     bulk_supercell,
+                #     get_all_equiv_sites(site.frac_coords, bulk_supercell),
+                #     symprec=symprec
                 # )
                 # symm_dataset = sga_with_all_X.get_symmetry_dataset()
             except AttributeError:
