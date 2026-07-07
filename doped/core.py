@@ -60,7 +60,17 @@ _falling_back_to_common_oxi_states_warning = (
 
 class DefectEntry(thermo.DefectEntry):
     """
-    ``doped`` |DefectEntry| object.
+    ``doped`` |DefectEntry| object, representing a single calculation of a
+    defect, in a given charge state and supercell.
+
+    While |Defect| defines a defect type (in terms of its site(s) and
+    host structure, independent of charge state or supercell),
+    ``DefectEntry`` represents a `calculation` of a defect; in a
+    specific charge state and supercell, along with the associated
+    calculation settings & metadata, results (energies, structures,
+    eigenvalues etc.), finite-size charge corrections, degeneracy
+    factors etc. These are the objects used to compute defect formation
+    energies and concentrations (see |DefectThermodynamics|).
     """
 
     def __init__(
@@ -2240,7 +2250,16 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
 
 class Defect(core.Defect):
     """
-    ``doped`` |Defect| object.
+    ``doped`` |Defect| object, defining a defect by its unrelaxed
+    (initial/ideal) defect site(s) in a given host structure (typically the
+    primitive cell of the host crystal).
+
+    This defines the defect type (i.e. what the defect is and where
+    it sits in the ideal bulk crystal), independent of charge state,
+    supercell or any calculation results -- a single ``Defect`` is
+    shared by all charge states of that defect, and can be shared by
+    multiple |DefectEntry| objects from different supercells, calculation
+    settings, spin states, final relaxed geometries etc.
     """
 
     def __init__(
