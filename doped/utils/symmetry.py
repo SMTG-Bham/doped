@@ -2706,22 +2706,22 @@ def point_symmetry_from_defect_entry(
 
     And if the point symmetries match in each case, then using this function on
     your parsed `relaxed` |DefectEntry| objects should correctly determine
-    the final relaxed defect symmetry -- otherwise periodicity-breaking
-    prevents this.
+    the relaxed defect symmetry -- otherwise periodicity-breaking prevents
+    this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can
-    manually determine the relaxed defect and bulk-site point symmetries,
+    manually determine the relaxed defect and bulk site point symmetries,
     and/or orientational degeneracy, from visualising the structures (e.g.
     using VESTA)(can use |get_orientational_degeneracy| to obtain the
-    corresponding orientational degeneracy factor for given defect/bulk-site
+    corresponding orientational degeneracy factor for given defect/bulk site
     point symmetries) and setting the corresponding values in the
     ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']``
     and/or ``degeneracy_factors['orientational degeneracy']`` attributes. Note
-    that the bulk-site point symmetry corresponds to that of
+    that the bulk site point symmetry corresponds to that of
     ``DefectEntry.defect``, or equivalently
     ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``, which
     for vacancies/substitutions is the symmetry of the corresponding bulk site,
-    while for interstitials it is the point symmetry of the `final relaxed`
+    while for interstitials it is the point symmetry of the `relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
     concentrations and Fermi level behaviour (discussion in
@@ -3162,13 +3162,13 @@ def point_symmetry_from_structure(
 
     And if the point symmetries match in each case, then using this function on
     your parsed `relaxed` |DefectEntry| objects should correctly determine
-    the final relaxed defect symmetry -- otherwise periodicity-breaking
-    prevents this.
+    the relaxed defect symmetry -- otherwise periodicity-breaking prevents
+    this.
 
     If ``bulk_structure`` is supplied and ``relaxed`` is set to ``False``, then
     returns the bulk site symmetry of the defect, which for
     vacancies/substitutions is the symmetry of the corresponding bulk site,
-    while for interstitials it is the point symmetry of the `final relaxed`
+    while for interstitials it is the point symmetry of the `relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure.
 
     Args:
@@ -3498,22 +3498,22 @@ def get_orientational_degeneracy(
 
     And if the point symmetries match in each case, then using this function on
     your parsed `relaxed` |DefectEntry| objects should correctly determine
-    the final relaxed defect symmetry (and orientational degeneracy) --
-    otherwise periodicity-breaking prevents this.
+    the relaxed defect symmetry (and orientational degeneracy) -- otherwise
+    periodicity-breaking prevents this.
 
     If periodicity-breaking prevents auto-symmetry determination, you can
-    manually determine the relaxed defect and bulk-site point symmetries,
+    manually determine the relaxed defect and bulk site point symmetries,
     and/or orientational degeneracy, from visualising the structures (e.g.
     using VESTA)(can use |get_orientational_degeneracy| to obtain the
-    corresponding orientational degeneracy factor for given defect/bulk-site
+    corresponding orientational degeneracy factor for given defect/bulk site
     point symmetries) and setting the corresponding values in the
     ``calculation_metadata['relaxed point symmetry']/['bulk site symmetry']``
     and/or ``degeneracy_factors['orientational degeneracy']`` attributes. Note
-    that the bulk-site point symmetry corresponds to that of
+    that the bulk site point symmetry corresponds to that of
     ``DefectEntry.defect``, or equivalently
     ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``, which
     for vacancies/substitutions is the symmetry of the corresponding bulk site,
-    while for interstitials it is the point symmetry of the `final relaxed`
+    while for interstitials it is the point symmetry of the `relaxed`
     interstitial site when placed in the (unrelaxed) bulk structure. The
     degeneracy factor is used in the calculation of defect/carrier
     concentrations and Fermi level behaviour (discussion in
@@ -3532,8 +3532,8 @@ def get_orientational_degeneracy(
             the bulk, if already calculated / manually determined. For
             vacancies/substitutions, this should match the site symmetry label
             from ``doped`` when generating the defect, while for interstitials
-            it should be the point symmetry of the `final relaxed` interstitial
-            site, when placed in the bulk structure.
+            it should be the point symmetry of the `relaxed` interstitial site,
+            when placed in the bulk structure.
             Default is ``None`` (automatically calculated by ``doped``).
         symprec (float):
             Symmetry precision to use for determining symmetry operations and

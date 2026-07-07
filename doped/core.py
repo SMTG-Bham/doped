@@ -2250,21 +2250,21 @@ def _rough_oxi_state_cost_icsd_prob_from_comp(comp: str | Composition, max_sites
 
 class Defect(core.Defect):
     """
-    ``doped`` |Defect| object, defining a defect by its unrelaxed
-    (initial/ideal) defect site(s) in a given host structure (typically the
-    primitive cell of the host crystal).
+    ``doped`` |Defect| object, defining a defect by its (unrelaxed) bulk
+    site(s) in a given host structure (typically the primitive cell of the host
+    crystal).
 
     This defines the defect type (i.e. what the defect is and where
     it sits in the ideal bulk crystal), independent of charge state,
     supercell or any calculation results -- a single ``Defect`` is
     shared by all charge states of that defect, and can be shared by
     multiple |DefectEntry| objects from different supercells, calculation
-    settings, spin states, final relaxed geometries etc.
+    settings, spin states, relaxed geometries etc.
 
     Note that for interstitials parsed/generated from `relaxed` calculations,
-    the defect ``site`` is the final `relaxed` interstitial site, placed in the
-    (unrelaxed) host structure -- used for site multiplicity and initial
-    (bulk-site) point symmetry analyses.
+    the defect ``site`` is the `relaxed` interstitial site, placed in the
+    (unrelaxed) host structure. ``Defect.site`` is used for site multiplicity
+    and bulk site point symmetry analyses.
     """
 
     def __init__(

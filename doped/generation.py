@@ -449,7 +449,7 @@ def get_defect_name_from_entry(
 
     And if the point symmetries match in each case, then using this function on
     your parsed `relaxed` |DefectEntry| objects should correctly determine the
-    final relaxed defect symmetry (and closest site info) -- otherwise
+    relaxed defect symmetry (and closest site info) -- otherwise
     periodicity-breaking prevents this.
 
     Args:

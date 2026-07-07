@@ -1858,8 +1858,8 @@ def _get_defect_supercell_frac_coords(
 def _get_defect_supercell_site(defect_entry: DefectEntry, relaxed=True, **kwargs) -> PeriodicSite | None:
     def _return_defect_supercell_site(defect_entry: DefectEntry, relaxed=True):
         if relaxed or defect_entry.defect.defect_type == DefectType.Interstitial:
-            # always final relaxed site for interstitials (note that "bulk_site" may be guessed initial
-            # site if it is close enough to the final relaxed site):
+            # always relaxed site for interstitials (note that "bulk_site" may be guessed initial site if
+            # it is close enough to the relaxed site):
             if site := getattr(defect_entry, "defect_supercell_site", None):
                 return site
 

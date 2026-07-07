@@ -3333,7 +3333,7 @@ class DefectThermodynamics(MSONable):
         **kwargs,
     ) -> pd.DataFrame:
         r"""
-        Generates a table of the bulk-site & relaxed defect point group
+        Generates a table of the bulk site & relaxed defect point group
         symmetries, spin/orientational/total degeneracies and (bulk-)site
         multiplicities for each defect in the |DefectThermodynamics| object.
 
@@ -3380,12 +3380,12 @@ class DefectThermodynamics(MSONable):
                       get_defect_name_from_entry(defect_entry), "\n")
 
         And if the point symmetries match in each case, then doped should be
-        able to correctly determine the final relaxed defect symmetry (and
+        able to correctly determine the relaxed defect symmetry (and
         orientational degeneracy) -- otherwise periodicity-breaking prevents
         this.
 
         If periodicity-breaking prevents auto-symmetry determination, you can
-        manually determine the relaxed defect and bulk-site point symmetries,
+        manually determine the relaxed defect and bulk site point symmetries,
         and/or orientational degeneracy, from visualising the structures (e.g.
         using VESTA)(can use |get_orientational_degeneracy| to obtain the
         corresponding orientational degeneracy factor for given defect/bulk
@@ -3394,12 +3394,12 @@ class DefectThermodynamics(MSONable):
         ``DefectEntry.calculation_metadata`` and/or
         ``DefectEntry.degeneracy_factors['orientational degeneracy']``
         attributes.
-        Note that the bulk-site point symmetry corresponds to that of
+        Note that the bulk site point symmetry corresponds to that of
         ``DefectEntry.defect``, or equivalently
         ``calculation_metadata["bulk_site"]/["unrelaxed_defect_structure"]``,
         which for vacancies/substitutions is the symmetry of the corresponding
         bulk site, while for interstitials it is the point symmetry of the
-        `final relaxed` interstitial site when placed in the (unrelaxed) bulk
+        `relaxed` interstitial site when placed in the (unrelaxed) bulk
         structure. The degeneracy factor is used in the calculation of
         defect/carrier concentrations and Fermi level behaviour (e.g.
         https://doi.org/10.1038/s41578-025-00879-y,

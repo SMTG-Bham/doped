@@ -216,7 +216,7 @@ def defect_site_from_structures(
         defect_site (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object of the defect site in the
             `defect` supercell. For substitutions and interstitials, this is
-            the final `relaxed` site of the substituting/interstitial atom,
+            the `relaxed` site of the substituting/interstitial atom,
             while for vacancies (which have no corresponding atom in the
             defect supercell) it is the vacated site from the (unrelaxed)
             `bulk` supercell.
@@ -227,13 +227,12 @@ def defect_site_from_structures(
             The type of defect as a string (``interstitial``, ``vacancy`` or
             ``substitution``).
         defect_site_in_bulk (|PeriodicSite|):
-            ``pymatgen`` |PeriodicSite| object of the unrelaxed defect site
-            in the `bulk` supercell. For vacancies, this is the vacated bulk
-            site; for substitutions, it is the substituted bulk site but
-            with the `substituting` species; for interstitials, it is the
-            guessed initial (unrelaxed) interstitial site `if` this is
-            within 1 Å of the final `relaxed` site, otherwise the final
-            `relaxed` site.
+            ``pymatgen`` |PeriodicSite| of the bulk site (in the bulk
+            supercell) corresponding to the defect site. For vacancies, this is
+            the vacated bulk site; for substitutions, it is the substituted
+            bulk site but with the `substituting` species; for interstitials,
+            it is the guessed initial (unrelaxed) interstitial site `if` this
+            is within 1 Å of the `relaxed` site, otherwise the `relaxed` site.
         defect_site_index (int):
             Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
@@ -295,7 +294,7 @@ def defect_site_from_structures(
     guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
     if defect_type == "interstitial":
         # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
-        # settings) to the final interstitial site, as this is likely the _initial_ interstitial site
+        # settings) to the relaxed interstitial site, as this is likely the _initial_ interstitial site
         int_site = guessed_initial_defect_structure.pop(defect_site_index)
         int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
         sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
@@ -348,14 +347,12 @@ def defect_from_structures(
 
     - `relaxed` defect site in the defect supercell (or the vacated bulk
       site for vacancies)
-    - the unrelaxed defect site in the bulk supercell (which must be guessed
-      for interstitials)
+    - the bulk site (in the bulk supercell) corresponding to the defect site
     - defect site index in the defect supercell
     - bulk site index (index of defect site in bulk supercell)
     - guessed initial defect structure (before relaxation)
     - 'unrelaxed defect structure' (also before relaxation, but with
-      interstitials at their final `relaxed` positions, and all bulk atoms at
-      their unrelaxed positions).
+      interstitials at their `relaxed` positions).
 
     See the ``Returns`` docstring section for full descriptions.
 
@@ -390,29 +387,27 @@ def defect_from_structures(
     Returns:
         defect (|Defect|):
             ``doped`` |Defect| object, defined in the primitive structure,
-            where ``Defect.site`` is the unrelaxed bulk site for vacancies
-            and substitutions, or the final `relaxed` site (placed in the
-            unrelaxed primitive host structure) for interstitials. This
-            site is used for site multiplicity and initial (bulk-site)
-            point symmetry analyses.
+            where ``Defect.site`` is the bulk site for vacancies and
+            substitutions, or the `relaxed` site (placed in the primitive host
+            structure) for interstitials. This site is used for site
+            multiplicity and bulk site point symmetry analyses.
 
         If ``return_all_info`` is True, then also returns:
 
         defect_site (|PeriodicSite|):
             ``pymatgen`` |PeriodicSite| object of the defect site in the
             `defect` supercell. For substitutions and interstitials, this is
-            the final `relaxed` site of the substituting/interstitial atom,
+            the `relaxed` site of the substituting/interstitial atom,
             while for vacancies (which have no corresponding atom in the
             defect supercell) it is the vacated site from the (unrelaxed)
             `bulk` supercell.
         defect_site_in_bulk (|PeriodicSite|):
-            ``pymatgen`` |PeriodicSite| object of the unrelaxed defect site
-            in the `bulk` supercell. For vacancies, this is the vacated bulk
-            site; for substitutions, it is the substituted bulk site but
-            with the `substituting` species; for interstitials, it is the
-            guessed initial (unrelaxed) interstitial site `if` this is
-            within 1 Å of the final `relaxed` site, otherwise the final
-            `relaxed` site.
+            ``pymatgen`` |PeriodicSite| of the bulk site (in the bulk
+            supercell) corresponding to the defect site. For vacancies, this is
+            the vacated bulk site; for substitutions, it is the substituted
+            bulk site but with the `substituting` species; for interstitials,
+            it is the guessed initial (unrelaxed) interstitial site `if` this
+            is within 1 Å of the `relaxed` site, otherwise the `relaxed` site.
         defect_site_index (int):
             Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
@@ -459,8 +454,7 @@ def defect_from_structures(
 
     # get defect site in primitive structure, for Defect generation:
     primitive_structure = get_primitive_structure(bulk_supercell, symprec=kwargs.get("symprec") or 0.01)
-    # use relaxed/final defect site as ``Defect.site`` for interstitials, and (unrelaxed/initial) defect
-    # site in the bulk structure for vacancies/substitutions:
+    # Defect.site = `relaxed` site for interstitials, (unrelaxed) bulk site for vacancies/substitutions:
     defect_site_for_defect_obj = defect_site if defect_type == "interstitial" else defect_site_in_bulk
     equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
         frac_coords=defect_site_for_defect_obj.frac_coords,
@@ -574,19 +568,18 @@ def defect_and_info_from_structures(
     Returns:
         tuple[Defect, PeriodicSite, dict]:
             defect (|Defect|):
-                ``doped`` |Defect| object, defined in the primitive
-                structure, where ``Defect.site`` is the unrelaxed bulk site
-                for vacancies and substitutions, or the final `relaxed`
-                site (placed in the unrelaxed primitive host structure) for
-                interstitials -- used for site multiplicity and initial
-                (bulk-site) point symmetry analyses.
+                ``doped`` |Defect| object, defined in the primitive structure,
+                where ``Defect.site`` is the bulk site for vacancies and
+                substitutions, or the `relaxed` site (placed in the primitive
+                host structure) for interstitials. This site is used for site
+                multiplicity and bulk site point symmetry analyses.
             defect_site (|PeriodicSite|):
                 ``pymatgen`` |PeriodicSite| object of the defect site in the
                 `defect` supercell. For substitutions and interstitials,
-                this is the final `relaxed` site of the
-                substituting/interstitial atom, while for vacancies (which
-                have no corresponding atom in the defect supercell) it is
-                the vacated site from the (unrelaxed) `bulk` supercell.
+                this is the `relaxed` site of the substituting/interstitial
+                atom, while for vacancies (which have no corresponding atom in
+                the defect supercell) it is the vacated site from the
+                (unrelaxed) `bulk` supercell.
             defect_structure_metadata (dict):
                 Dictionary containing metadata about the defect structure,
                 including:
@@ -594,7 +587,7 @@ def defect_and_info_from_structures(
                 - ``guessed_initial_defect_structure``: The guessed initial
                   defect structure (before relaxation).
                 - ``guessed_defect_displacement``: Displacement from the
-                  guessed initial defect site to the final `relaxed` site
+                  guessed initial defect site to the `relaxed` site
                   (``None`` for vacancies).
                 - ``defect_site_index``: Index of the defect site in the defect
                   supercell (``None`` for vacancies).
@@ -602,15 +595,14 @@ def defect_and_info_from_structures(
                   supercell (``None`` for interstitials).
                 - ``unrelaxed_defect_structure``: The unrelaxed defect
                   structure (similar to ``guessed_initial_defect_structure``,
-                  but with interstitials at their final `relaxed` positions,
-                  and all bulk atoms at their unrelaxed positions).
-                - ``bulk_site``: The unrelaxed defect site in the bulk
-                  supercell. For vacancies and substitutions, this is the
-                  corresponding site in the bulk supercell (with the
-                  `original` bulk species for substitutions); for
+                  but with interstitials at their `relaxed` positions).
+                - ``bulk_site``: The bulk site (in the bulk supercell)
+                  corresponding to the defect site. For vacancies and
+                  substitutions, this is the corresponding bulk supercell site
+                  (with the `original` bulk species, for substitutions); for
                   interstitials, it is the guessed initial (unrelaxed)
-                  interstitial site `if` this is within 1 Å of the final
-                  `relaxed` site, otherwise the final `relaxed` site.
+                  interstitial site `if` this is within 1 Å of the `relaxed`
+                  site, otherwise the `relaxed` site.
     """
     if _parameter_order_warn:
         _warn_parameter_order("defect_and_info_from_structures")  # TODO: Remove in doped v4.1
@@ -640,7 +632,7 @@ def defect_and_info_from_structures(
     defect_structure_metadata["defect_site_index"] = defect_site_index
     defect_structure_metadata["bulk_site_index"] = bulk_site_index
 
-    # add displacement from (guessed) initial site to final defect site:
+    # add displacement from (guessed) initial site to relaxed defect site:
     if defect_site_index is not None:  # not a vacancy
         guessed_initial_site = guessed_initial_defect_structure[defect_site_index]
         guessed_displacement = defect_site.distance(guessed_initial_site)
@@ -1076,7 +1068,7 @@ class DefectsParser:
                 with ``shallow_charge_stability_tolerance``.
                 Note that ``bulk_symprec`` can be supplied as the ``symprec``
                 value to use for determining equivalent sites (and thus defect
-                multiplicities / unrelaxed site symmetries), while an input
+                multiplicities / bulk site symmetries), while an input
                 ``symprec`` value will be used for determining `relaxed` site
                 symmetries.
 
@@ -2220,7 +2212,7 @@ def _parse_charge_state(
 
 def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
     """
-    Determine the unrelaxed ('bulk') and relaxed defect point symmetries for
+    Determine the (unrelaxed) bulk site and relaxed defect point symmetries for
     the input |DefectEntry|, whether there is any periodicity-breaking in the
     supercell, and the corresponding orientational degeneracy factor.
 
@@ -2418,7 +2410,7 @@ class DefectParser:
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
                 use for determining equivalent sites (and thus defect
-                multiplicities / unrelaxed site symmetries), while an input
+                multiplicities / bulk site symmetries), while an input
                 ``symprec`` value will be used for determining `relaxed` site
                 symmetries.
         """
@@ -2547,7 +2539,7 @@ class DefectParser:
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
                 use for determining equivalent sites (and thus defect
-                multiplicities / unrelaxed site symmetries), while an input
+                multiplicities / bulk site symmetries), while an input
                 ``symprec`` value will be used for determining `relaxed` site
                 symmetries.
 
