@@ -389,7 +389,12 @@ def defect_from_structures(
 
     Returns:
         defect (|Defect|):
-            ``doped`` |Defect| object, defined in the primitive structure.
+            ``doped`` |Defect| object, defined in the primitive structure,
+            where ``Defect.site`` is the unrelaxed bulk site for vacancies
+            and substitutions, or the final `relaxed` site (placed in the
+            unrelaxed primitive host structure) for interstitials. This
+            site is used for site multiplicity and initial (bulk-site)
+            point symmetry analyses.
 
         If ``return_all_info`` is True, then also returns:
 
@@ -569,7 +574,12 @@ def defect_and_info_from_structures(
     Returns:
         tuple[Defect, PeriodicSite, dict]:
             defect (|Defect|):
-                ``doped`` |Defect| object, defined in the primitive structure.
+                ``doped`` |Defect| object, defined in the primitive
+                structure, where ``Defect.site`` is the unrelaxed bulk site
+                for vacancies and substitutions, or the final `relaxed`
+                site (placed in the unrelaxed primitive host structure) for
+                interstitials -- used for site multiplicity and initial
+                (bulk-site) point symmetry analyses.
             defect_site (|PeriodicSite|):
                 ``pymatgen`` |PeriodicSite| object of the defect site in the
                 `defect` supercell. For substitutions and interstitials,

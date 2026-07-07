@@ -2260,6 +2260,11 @@ class Defect(core.Defect):
     shared by all charge states of that defect, and can be shared by
     multiple |DefectEntry| objects from different supercells, calculation
     settings, spin states, final relaxed geometries etc.
+
+    Note that for interstitials parsed/generated from `relaxed` calculations,
+    the defect ``site`` is the final `relaxed` interstitial site, placed in the
+    (unrelaxed) host structure -- used for site multiplicity and initial
+    (bulk-site) point symmetry analyses.
     """
 
     def __init__(
