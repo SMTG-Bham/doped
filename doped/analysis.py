@@ -18,13 +18,11 @@ import numpy as np
 from monty.json import MontyDecoder
 from monty.serialization import dumpfn
 from mp_api.client import MPRester
-from pymatgen.analysis.defects import core
 from pymatgen.analysis.defects.finder import cosine_similarity
 from pymatgen.core import Element
 from pymatgen.core.sites import PeriodicSite
 from pymatgen.core.structure import Composition, Structure
 from pymatgen.electronic_structure.dos import FermiDos
-from pymatgen.io.vasp.inputs import Poscar
 from pymatgen.io.vasp.outputs import Procar, Vasprun
 from pymatgen.util.typing import PathLike
 from tqdm import tqdm
@@ -196,7 +194,7 @@ def defect_site_from_structures(
     bulk_supercell: Structure,
     return_all_info: bool = False,
     _parameter_order_warn: bool = True,
-) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure]:
+) -> PeriodicSite | tuple[PeriodicSite, str, PeriodicSite, int | None, int | None, Structure, Structure]:
     """
     Auto-determines the defect site from the supplied bulk and defect
     structures, returning the corresponding |PeriodicSite|.
@@ -232,6 +230,9 @@ def defect_site_from_structures(
             Index of defect site in defect supercell (None for vacancies)
         bulk_site_index (int):
             Index of defect site in bulk supercell (None for interstitials)
+        guessed_initial_defect_structure (|Structure|):
+            ``pymatgen`` |Structure| object of the guessed initial defect
+            structure.
         unrelaxed_defect_structure (|Structure|):
             ``pymatgen`` |Structure| object of the unrelaxed defect
             structure.
@@ -281,12 +282,39 @@ def defect_site_from_structures(
     if not return_all_info:
         return defect_site
 
+    # for interstitials, we define the site-in-bulk (unrelaxed site) as the closest candidate interstitial
+    # site in the bulk supercell, to the relaxed site (in the defect supercell):
+    guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
+    if defect_type == "interstitial":
+        # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
+        # settings) to the final interstitial site, as this is likely the _initial_ interstitial site
+        int_site = guessed_initial_defect_structure.pop(defect_site_index)
+        int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
+        sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
+        _, _, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
+        all_equiv_fpos = [fpos for equiv in equiv_fpos for fpos in equiv]
+        closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
+            np.argmin(bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos))
+        ]
+        guessed_initial_defect_structure.insert(
+            defect_site_index,  # Place defect at same position as in supercell calculation
+            int_site.species_string,
+            closest_cand_int_fcoords,
+            coords_are_cartesian=False,
+            validate_proximity=True,
+        )
+        # if guessed initial site is sufficiently close to the relaxed site, then use it as
+        # "defect_site_in_bulk", otherwise use the relaxed site:
+        if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_cand_int_fcoords)[0] < 1:
+            defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
+
     return (
         defect_site,
         defect_type,
         defect_site_in_bulk,
         defect_site_index,
         bulk_site_index,
+        guessed_initial_defect_structure,
         unrelaxed_defect_structure,
     )
 
@@ -373,13 +401,13 @@ def defect_from_structures(
     """
     if _parameter_order_warn:
         _warn_parameter_order("defect_from_structures")  # TODO: Remove in doped v4.1
-    (  # TODO: Add handling of complex defects (multiple bulk/defect sites here). Need ComplexDefect class
-        # etc...
+    (  # TODO: Add handling of complex defects (multiple bulk/defect sites here). Need ComplexDefect etc.
         defect_site,
         defect_type,
         defect_site_in_bulk,
         defect_site_index,
         bulk_site_index,
+        guessed_initial_defect_structure,
         unrelaxed_defect_structure,
     ) = defect_site_from_structures(
         defect_supercell, bulk_supercell, return_all_info=True, _parameter_order_warn=False
@@ -404,45 +432,15 @@ def defect_from_structures(
         # in these situations, where there are many possible defect cell translations etc which match the
         # bulk cell...
 
-    if unrelaxed_defect_structure:
-        guessed_initial_defect_structure = unrelaxed_defect_structure.copy()
-        if defect_type == "interstitial":
-            # get closest candidate interstitial site in bulk supercell (based on default interstitial gen
-            # settings) to the final interstitial site, as this is likely the _initial_ interstitial site
-            int_site = guessed_initial_defect_structure.pop(defect_site_index)
-            int_gen_kwargs: dict[str, Any] = {"min_dist": 0.5} if int_site.species_string == "H" else {}
-            sorted_sites_mul_and_equiv_fpos = get_interstitial_sites(bulk_supercell, **int_gen_kwargs)
-            _, _, equiv_fpos = zip(*sorted_sites_mul_and_equiv_fpos, strict=False)
-            all_equiv_fpos = [fpos for equiv in equiv_fpos for fpos in equiv]
-            closest_cand_int_fcoords = all_equiv_fpos[  # closest candidate interstitial frac coords
-                np.argmin(
-                    bulk_supercell.lattice.get_all_distances(defect_site.frac_coords, all_equiv_fpos)
-                )
-            ]
-            guessed_initial_defect_structure.insert(
-                defect_site_index,  # Place defect at same position as in supercell calculation
-                int_site.species_string,
-                closest_cand_int_fcoords,
-                coords_are_cartesian=False,
-                validate_proximity=True,
-            )
-            # if guessed initial site is sufficiently close to the relaxed site, then use it as
-            # "defect_site_in_bulk", otherwise use the relaxed site:
-            if defect_site_in_bulk.distance_and_image_from_frac_coords(closest_cand_int_fcoords)[0] < 1:
-                defect_site_in_bulk = guessed_initial_defect_structure[defect_site_index]
-
-    else:
-        warnings.warn(
-            "Cannot determine the unrelaxed `initial_defect_structure`. Please ensure the "
-            "`initial_defect_structure` is indeed unrelaxed."
-        )
-
     # get defect site in primitive structure, for Defect generation:
     primitive_structure = get_primitive_structure(bulk_supercell, symprec=kwargs.get("symprec") or 0.01)
+    # use relaxed/final defect site as ``Defect.site`` for interstitials, and (unrelaxed/initial) defect
+    # site in the bulk structure for vacancies/substitutions:
+    defect_site_for_defect_obj = defect_site if defect_type == "interstitial" else defect_site_in_bulk
     equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
-        (defect_site if defect_type == "interstitial" else defect_site_in_bulk).frac_coords,
-        primitive_structure,
-        bulk_supercell,
+        frac_coords=defect_site_for_defect_obj.frac_coords,
+        primitive=primitive_structure,
+        supercell=bulk_supercell,
         **{
             k: v
             for k, v in kwargs.items()
@@ -450,6 +448,8 @@ def defect_from_structures(
         },  # allowed kwargs for ``get_equiv_frac_coords_in_primitive``
     )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
     assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
+    # sort equiv_frac_coords_in_prim deterministically, using _frac_coords_sort_func: (first coords in
+    # equiv_frac_coords_in_prim are used as ``Defect.site``, for point defects)
     equiv_frac_coords_in_prim = sorted(equiv_frac_coords_in_prim, key=_frac_coords_sort_func)
     equiv_defect_sites_in_prim = [
         PeriodicSite(
@@ -475,10 +475,10 @@ def defect_from_structures(
             if k not in ["dist_tol_factor", "fixed_symprec_and_dist_tol_factor", "verbose"]
         }
 
-    defect = MontyDecoder().process_decoded(  # initialise doped Defect object
+    defect = MontyDecoder().process_decoded(  # initialise doped ``Defect`` object
         {
             "@module": "doped.core",
-            "@class": defect_type.capitalize(),
+            "@class": defect_type.capitalize(),  # Defect type
             "structure": primitive_structure,  # defined in primitive structure, matching defect generation
             # defect site in bulk (differs from defect_site for substitutions)
             "site": equiv_defect_sites_in_prim[0],
@@ -505,7 +505,6 @@ def defect_and_info_from_structures(
     defect_supercell: Structure,
     bulk_supercell: Structure,
     skip_atom_mapping_check: bool = False,
-    initial_defect_structure_path: PathLike | None = None,
     _parameter_order_warn: bool = True,
     **kwargs,
 ) -> tuple[Defect, PeriodicSite, dict]:
@@ -533,10 +532,6 @@ def defect_and_info_from_structures(
             corrections). Can be used to speed up parsing when you are sure
             the cell definitions match (e.g. both supercells were generated
             with ``doped``). Default is ``False``.
-        initial_defect_structure_path (PathLike):
-            Path to the initial/unrelaxed defect structure. Only recommended
-            for use if structure matching with the relaxed defect structure(s)
-            fails (rare). Default is ``None``.
         **kwargs:
             Keyword arguments to pass to ``get_equiv_frac_coords_in_primitive``
             (such as ``symprec``, ``dist_tol_factor``,
@@ -583,61 +578,24 @@ def defect_and_info_from_structures(
     defect_structure_metadata: dict[str, Any] = {}
 
     # identify defect site, structural information, and create defect object:
-    # Can specify initial defect structure (to help find the defect site if we have a very distorted
-    # final structure), but regardless try using the final structure (from defect OUTCAR) first:
-    try:
-        (
-            defect,
-            defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
-            defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
-            # w/interstitials (if guessed initial site is sufficiently close to the relaxed site, then
-            # it is used here, otherwise the actual relaxed site is used)
-            defect_site_index,
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-        ) = defect_from_structures(
-            defect_supercell,
-            bulk_supercell,
-            skip_atom_mapping_check=skip_atom_mapping_check,
-            return_all_info=True,
-            _parameter_order_warn=False,
-            **kwargs,
-        )
-
-    except RuntimeError:
-        if not initial_defect_structure_path:
-            raise
-
-        defect_structure_for_ID = Poscar.from_file(initial_defect_structure_path).structure.copy()
-        (
-            defect,
-            defect_site_in_initial_struct,
-            defect_site_in_bulk,  # bulk site for vac/sub, relaxed defect site w/interstitials
-            defect_site_index,  # in this initial_defect_structure
-            bulk_site_index,
-            guessed_initial_defect_structure,
-            unrelaxed_defect_structure,
-        ) = defect_from_structures(
-            defect_structure_for_ID,
-            bulk_supercell,
-            skip_atom_mapping_check=skip_atom_mapping_check,
-            return_all_info=True,
-            _parameter_order_warn=False,
-            **kwargs,
-        )
-
-        # then try get defect_site in final structure:
-        # need to check that it's the correct defect site and hasn't been reordered/changed compared to
-        # the initial_defect_structure used here -> check same element and distance reasonable:
-        defect_site = defect_site_in_initial_struct
-
-        if defect.defect_type != core.DefectType.Vacancy:
-            final_defect_site = defect_supercell[defect_site_index]
-            if (
-                defect_site_in_initial_struct.specie.symbol == final_defect_site.specie.symbol
-            ) and final_defect_site.distance(defect_site_in_initial_struct) < 2:
-                defect_site = final_defect_site
+    (
+        defect,
+        defect_site,  # _relaxed_ defect site in supercell (if substitution/interstitial)
+        defect_site_in_bulk,  # bulk site for vacancies/substitutions, relaxed defect site
+        # w/interstitials (if guessed initial site is sufficiently close to the relaxed site, then
+        # it is used here, otherwise the actual relaxed site is used)
+        defect_site_index,
+        bulk_site_index,
+        guessed_initial_defect_structure,
+        unrelaxed_defect_structure,
+    ) = defect_from_structures(
+        defect_supercell,
+        bulk_supercell,
+        skip_atom_mapping_check=skip_atom_mapping_check,
+        return_all_info=True,
+        _parameter_order_warn=False,
+        **kwargs,
+    )
 
     defect_structure_metadata["guessed_initial_defect_structure"] = guessed_initial_defect_structure
     defect_structure_metadata["defect_site_index"] = defect_site_index
@@ -1073,7 +1031,7 @@ class DefectsParser:
                 ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
                 ``multiplicity``, ``angle_tolerance``,
                 ``attempt_periodicity_restoration``, ``user_charges``,
-                ``initial_defect_structure_path``, ``rtol`` etc. (see their
+                ``rtol`` etc. (see their
                 docstrings); or for controlling shallow defect charge
                 correction error warnings (see ``error_tolerance`` description)
                 with ``shallow_charge_stability_tolerance``.
@@ -2416,8 +2374,7 @@ class DefectParser:
                 ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
                 ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
                 ``angle_tolerance``, ``attempt_periodicity_restoration``,
-                ``user_charges``, ``initial_defect_structure_path`` etc (see
-                their docstrings).
+                ``user_charges`` etc (see their docstrings).
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2546,8 +2503,7 @@ class DefectParser:
                 ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
                 ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
                 ``angle_tolerance``, ``attempt_periodicity_restoration``,
-                ``user_charges``, ``initial_defect_structure_path`` etc (see
-                their docstrings).
+                ``user_charges`` etc (see their docstrings).
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2620,7 +2576,6 @@ class DefectParser:
                     "dist_tol_factor",  # for interstitial multiplicities
                     "angle_tolerance",
                     "user_charges",
-                    "initial_defect_structure_path",
                     "fixed_symprec_and_dist_tol_factor",
                     "verbose",
                 ]
