@@ -4821,3 +4821,70 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
         ax.legend()
 
         return f
+
+
+class ScissorDosMgOTestCase(unittest.TestCase):
+    """
+    Tests for the ``scissor_dos`` function using the (VASP) MgO bulk DOS,
+    focusing on the ``delta_VBM == delta_CBM`` (rigid shift) and the
+    sub-grid-spacing gap-change warning.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.MgO_EXAMPLE_DIR = os.path.join(EXAMPLE_DIR, "MgO")
+        cls.mgo_fermi_dos = get_fermi_dos(
+            os.path.join(cls.MgO_EXAMPLE_DIR, "MgO_DOS_vasprun.xml.gz")
+        )
+    
+        cls.grid_spacing = float(np.median(np.diff(np.asarray(cls.mgo_fermi_dos.energies))))
+
+    def test_scissor_dos_rigid_shift_preserves_gap(self):
+        """
+        With ``delta_VBM == delta_CBM`` (here both 0.5 eV), the gap change
+        (``delta_CBM - delta_VBM``) is zero, so ``scissor_dos`` rigidly shifts
+        the whole DOS: the band gap is unchanged while both band edges move by
+        the requested shift.
+        """
+        orig_gap = self.mgo_fermi_dos.get_gap(tol=1e-8)
+        orig_cbm, orig_vbm = self.mgo_fermi_dos.get_cbm_vbm()
+
+        shift = 0.5
+        scissored_dos = scissor_dos(
+            self.mgo_fermi_dos, delta_VBM=shift, delta_CBM=shift, verbose=False
+        )
+
+        # ensuring that the band gap is unchanged after a rigid shift:
+        assert np.isclose(scissored_dos.get_gap(tol=1e-8), orig_gap, atol=1e-4)
+
+
+        new_cbm, new_vbm = scissored_dos.get_cbm_vbm()
+        assert np.isclose(new_vbm - orig_vbm, shift, atol=1e-4)
+        assert np.isclose(new_cbm - orig_cbm, shift, atol=1e-4)
+
+
+        assert isinstance(scissored_dos, FermiDos)
+
+    def test_scissor_dos_sub_grid_gap_change_warns(self):
+        """
+        When the requested gap change (``delta_CBM - delta_VBM``) is smaller
+        than the DOS energy grid spacing, ``scissor_dos`` cannot add/remove any
+        grid points and warns that the band edges are only resolved to the grid
+        spacing.
+        """
+        sub_grid_gap_change = self.grid_spacing / 3
+
+        _dos, _output, w = _run_func_and_capture_stdout_warnings(
+            scissor_dos,
+            self.mgo_fermi_dos,
+            delta_VBM=0.0,
+            delta_CBM=sub_grid_gap_change,
+            verbose=False,
+        )
+        expected_warning = (
+            f"The requested band gap change (delta_CBM - delta_VBM = {sub_grid_gap_change:.4g} eV) is "
+            "smaller than the DOS energy grid spacing, so no grid points are added/removed. "
+            "The requested VBM/CBM shifts are still applied exactly (as rigid energy shifts), "
+            "but the scissored band edges are only resolved to the grid spacing."
+        )
+        assert any(str(warn.message) == expected_warning for warn in w)
