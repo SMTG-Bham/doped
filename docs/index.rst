@@ -107,6 +107,7 @@ Studies using ``doped``, so far
 - N\.-R. Skogemyr **First-Principles Defect Thermodynamics of MgSnN₂: Origin and Suppression of Unintentional n-Type Conductivity** `MSc Thesis, Linköping University <https://urn.kb.se/resolve?urn=urn:nbn:se:liu:diva-224510>`__ 2026
 - A\. S. Hauck, M. Jin and B. R. Tuttle **Nonradiative carrier capture by point defects in irradiated GaN** `Journal of Applied Physics <https://doi.org/10.1063/5.0325688>`__ 2026
 - X\. Lei et al. **Enhanced antibonding coupling enables optical transparency in p-type semiconductors by orbital engineering** `Applied Physics Letters <https://doi.org/10.1063/5.0342323>`__ 2026
+- L\.-B. Paşca, H. J. Snaith and V. L. Deringer **Data-driven atomistic modelling of hybrid halide perovskite passivation** `arXiv <https://doi.org/10.48550/arXiv.2607.05321>`__ 2026
 - G\. Pustorino et al. **Multi-ion defect model for space-charge layer formation at LiPON/Li** :sub:`x` **V** :sub:`2` **O** :sub:`5` **electrochemical interfaces** `npj Computational Materials <https://doi.org/10.1038/s41524-026-02182-y>`__ 2026
 - A\. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **Guidelines for robust and reproducible point defect simulations in crystals** `Nature Reviews Materials <https://doi.org/10.1038/s41578-025-00879-y>`__ 2026
 - H\. Jang et al. **A Unified Mechanism for Strain- and Anneal-Induced Oxygen-Vacancy Behavior in Oxide Semiconductors** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.6c00577>`__ 2026
