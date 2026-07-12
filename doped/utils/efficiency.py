@@ -491,7 +491,8 @@ def _get_symmetry_operations(self, cartesian: bool = False) -> list[SymmOp]:
 
     Refactored from ``pymatgen`` to allow caching, to boost efficiency.
     """
-    return _original_get_symmetry_operations(self).copy()  # call the orig method, now a cacheable class
+    # ``.copy()`` so callers cannot mutate the cached list:
+    return _original_get_symmetry_operations(self, cartesian=cartesian).copy()
 
 
 SpacegroupAnalyzer.__hash__ = _sga__hash__
