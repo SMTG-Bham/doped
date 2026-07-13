@@ -80,6 +80,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - A. S. Hauck, M. Jin and B. R. Tuttle **_Nonradiative carrier capture by point defects in irradiated GaN_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0325688) 2026
 - X. Lei et al. **_Enhanced antibonding coupling enables optical transparency in p-type semiconductors by orbital engineering_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0342323) 2026
 - L.-B. Paşca, H. J. Snaith and V. L. Deringer **_Data-driven atomistic modelling of hybrid halide perovskite passivation_** [_arXiv_](https://doi.org/10.48550/arXiv.2607.05321) 2026
+- R. Claes, P. P. Russell, A. G. Squires and D. O. Scanlon **_Optimizing the Thermoelectric Performance of the Earth-Abundant Layered Phosphide BaCuP through Defect Engineering_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv.15005826/v1) 2026
 - G. Pustorino et al. **_Multi-ion defect model for space-charge layer formation at LiPON/Li<sub>x</sub>V<sub>2</sub>O<sub>5</sub> electrochemical interfaces_** [_npj Computational Materials_](https://doi.org/10.1038/s41524-026-02182-y) 2026
 - A. G. Squires, S. R. Kavanagh, A. Walsh and D. O. Scanlon **_Guidelines for robust and reproducible point defect simulations in crystals_** [_Nature Reviews Materials_](https://doi.org/10.1038/s41578-025-00879-y) 2026
 - H. Jang et al. **_A Unified Mechanism for Strain- and Anneal-Induced Oxygen-Vacancy Behavior in Oxide Semiconductors_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.6c00577) 2026
