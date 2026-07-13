@@ -126,7 +126,7 @@ Studies using ``doped``, so far
 - A\. Zhang et al. **Theoretical insight into the strategy for high electron carrier concentration in Bi₂WO₆ with intrinsic point defects** `Physical Review B <https://doi.org/10.1103/jkj7-dnqj>`__ 2026
 - L\. Zhang, M. Zhou and A. M. Ganose **Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs** `arXiv <https://doi.org/10.48550/arXiv.2603.16310>`__ 2026
 - X\. Wang, I. Mosquera-Lois and A. Walsh **Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects** `arXiv <https://doi.org/10.48550/arXiv.2603.05238>`__ 2026
-- R\. Claes, K. Li, A. G. Squires and D. O. Scanlon **Screening ASb₂O₆ (A = Mg, Ca, Sr, Ba, Cd) for High Performance Transparent Conducting Oxides** `ChemRxiv <https://doi.org/10.26434/chemrxiv-2025-39bbf>`__ 2026
+- R\. Claes et al. **Screening ASb₂O₆ (A = Mg, Ca, Sr, Ba, or Cd) for High-Performance Transparent Conducting Oxides** `Chemistry of Materials <https://doi.org/10.1021/acs.chemmater.6c00854>`__ 2026
 - S\. Ling et al. **Investigations of Defect Physics and Quenching Effect for Optimizing n-type Carrier Concentration in CuWO** :sub:`4` **Photocatalyst** `Inorganic Chemistry <https://doi.org/10.1021/acs.inorgchem.5c05718>`__ 2026
 - W\. Yang et al. **Electronic origins of p-type transparent conductivity in SrCu₂O₂** `Applied Physics Letters <https://doi.org/10.1063/5.0324820>`__ 2026
 - G\. Arora et al. **Development of interatomic potential and effect of ordering on defect properties in CrMnV** `Journal of Applied Physics <https://doi.org/10.1063/5.0302848>`__ 2025
@@ -136,6 +136,7 @@ Studies using ``doped``, so far
 - A\. Lannerd et al. **Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La** :sub:`0.5` **Sr** :sub:`0.5` **CoO** :sub:`3-δ` `Physical Review Materials <https://doi.org/10.1103/tgp7-n673>`__ 2026
 - L\. Tian et al. **Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts** `Chemical Science <https://doi.org/10.1039/D5SC08101G>`__ 2026
 - M\. Biswas et al. **Unified Graph-based Interatomic Potential for Perovskite Structure Optimization** `Journal of Chemical Information and Modeling <https://doi.org/10.1021/acs.jcim.5c01611>`__ 2026
+- M\. E. Turiansky et al. **Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects** `ACS Nano <https://doi.org/10.1021/acsnano.5c15446>`__ 2026
 - S\. R. Kavanagh **Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics** `JPhys Energy <https://doi.org/10.1088/2515-7655/ade916>`__ 2025
 - R\. Claes, A. G. Squires and D. O. Scanlon **Establishing Doping Limits for ZnGa₂O₄ for Ultra Wide Bandgap Semiconductor Applications** `ACS Applied Materials & Interfaces <https://doi.org/10.1021/acsami.5c19146>`__ 2025
 - T\. Oikawa et al. **Semi-automated estimation of hydrogenic initial states for localized Wannier functions** `arXiv <https://arxiv.org/abs/2512.19900>`__ 2025
@@ -152,7 +153,6 @@ Studies using ``doped``, so far
 - P\. Panagis Filippatos, A. Chroneos and N. Kelaidis **A first-principles investigation of halogen doped diamond and its application to quantum technologies** `Journal of Applied Physics <https://doi.org/10.1063/5.0279139>`__ 2025
 - P\. Panagis Filippatos, T. J. P. Irons and K. Inzani **Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN** `arXiv <https://dx.doi.org/10.48550/arXiv.2509.09002>`__ 2025
 - M\. A. Fadla et al. **Tailoring the Electronic Properties of Monoclinic (In** :sub:`x` **Al** :sub:`1-x` **)₂O₃ Alloys via Substitutional Donors and Acceptors** `Physical Review Materials <https://doi.org/10.1103/78f8-j9m2>`__ 2025
-- M\. E. Turiansky et al. **Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects** `arXiv <https://arxiv.org/abs/2508.09113>`__ 2025
 - C\. López et al. **Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers** `ACS Energy Letters <https://pubs.acs.org/doi/10.1021/acsenergylett.5c01267>`__ 2025
 - K\. Ogawa et al. **Defect Tolerance via External Passivation in the Photocatalyst SrTiO₃:Al** `Journal of the American Chemical Society <https://doi.org/10.1021/jacs.5c07104>`__ 2025
 - M\. S. Islam et al. **Diffusion Characteristics of Ru and Oxygen Vacancies in Ta₂O₅ for Resistive Random Access Memory Devices: A Density Functional Theory Investigation** `Advanced Electronic Materials <https://doi.org/10.1002/aelm.202500128>`__ 2025

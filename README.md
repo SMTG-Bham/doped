@@ -98,7 +98,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - A. Zhang et al. **_Theoretical insight into the strategy for high electron carrier concentration in Bi<sub>2</sub>WO<sub>6</sub> with intrinsic point defects_** [_Physical Review B_](https://doi.org/10.1103/jkj7-dnqj) 2026
 - L. Zhang, M. Zhou and A. M. Ganose **_Dopability limits in Al-rich AlGaN alloys for far-UVC LEDs_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.16310) 2026
 - X. Wang, I. Mosquera-Lois and A. Walsh **_Multi-fidelity Machine Learning Interatomic Potentials for Charged Point Defects_** [_arXiv_](https://doi.org/10.48550/arXiv.2603.05238) 2026
-- R. Claes, K. Li, A. G. Squires and D. O. Scanlon **_Screening ASb<sub>2</sub>O<sub>6</sub> (A = Mg, Ca, Sr, Ba, Cd) for High Performance Transparent Conducting Oxides_** [_ChemRxiv_](https://doi.org/10.26434/chemrxiv-2025-39bbf) 2026
+- R. Claes et al. **_Screening ASb<sub>2</sub>O<sub>6</sub> (A = Mg, Ca, Sr, Ba, or Cd) for High-Performance Transparent Conducting Oxides_** [_Chemistry of Materials_](https://doi.org/10.1021/acs.chemmater.6c00854) 2026
 - S. Ling et al. **_Investigations of Defect Physics and Quenching Effect for Optimizing n-type Carrier Concentration in CuWO<sub>4</sub> Photocatalyst_** [_Inorganic Chemistry_](https://doi.org/10.1021/acs.inorgchem.5c05718) 2026
 - W. Yang et al. **_Electronic origins of p-type transparent conductivity in SrCu<sub>2</sub>O<sub>2</sub>_** [_Applied Physics Letters_](https://doi.org/10.1063/5.0324820) 2026
 - G. Arora et al. **_Development of interatomic potential and effect of ordering on defect properties in CrMnV_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0302848) 2025
@@ -108,6 +108,7 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - A. Lannerd et al. **_Thermodynamics of proton insertion across the perovskite-brownmillerite transition in La<sub>0.5</sub>Sr<sub>0.5</sub>CoO<sub>3-δ</sub>_** [_Physical Review Materials_](https://doi.org/10.1103/tgp7-n673) 2026
 - L. Tian et al. **_Optical Spectroscopic Determination of Photoexcited Small-Polaron Hopping in Transition Metal Oxide Photocatalysts_** [_Chemical Science_](https://doi.org/10.1039/D5SC08101G) 2026
 - M. Biswas et al. **_Unified Graph-based Interatomic Potential for Perovskite Structure Optimization_** [_Journal of Chemical Information and Modeling_](https://doi.org/10.1021/acs.jcim.5c01611) 2026
+- M. E. Turiansky et al. **_Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects_** [_ACS Nano_](https://doi.org/10.1021/acsnano.5c15446) 2026
 - S. R. Kavanagh **_Identifying Split Vacancy Defects with Machine-Learned Foundation Models and Electrostatics_** [_JPhys Energy_](https://doi.org/10.1088/2515-7655/ade916) 2025
 - R. Claes, A. G. Squires and D. O. Scanlon **_Establishing Doping Limits for ZnGa<sub>2</sub>O<sub>4</sub> for Ultra Wide Bandgap Semiconductor Applications_** [_ACS Applied Materials & Interfaces_](https://doi.org/10.1021/acsami.5c19146) 2025
 - T. Oikawa et al. **_Semi-automated estimation of hydrogenic initial states for localized Wannier functions_** [_arXiv_](https://arxiv.org/abs/2512.19900) 2025
@@ -124,7 +125,6 @@ As shown in the `doped` tutorials, it is highly recommended to use the [`ShakeNB
 - P. Panagis Filippatos, T. J. P. Irons and K. Inzani **_Revisiting intrinsic spin defects in hexagonal boron nitride with r2SCAN_** [_arXiv_](https://dx.doi.org/10.48550/arXiv.2509.09002) 2025
 - P. Panagis Filippatos, A. Chroneos and N. Kelaidis **_A first-principles investigation of halogen doped diamond and its application to quantum technologies_** [_Journal of Applied Physics_](https://doi.org/10.1063/5.0279139) 2025
 - M. A. Fadla et al. **_Tailoring the Electronic Properties of Monoclinic (In<sub>x</sub>Al<sub>1-x</sub>)<sub>2</sub>O<sub>3</sub> Alloys via Substitutional Donors and Acceptors_** [_Physical Review Materials_](https://doi.org/10.1103/78f8-j9m2) 2025
-- M. E. Turiansky et al. **_Machine Learning Phonon Spectra for Fast and Accurate Optical Lineshapes of Defects_** [_arXiv_](https://arxiv.org/abs/2508.09113) 2025
 - C. López et al. **_Chalcogen Vacancies Rule Charge Recombination in Pnictogen Chalcohalide Solar-Cell Absorbers_** [_ACS Energy Letters_](https://pubs.acs.org/doi/10.1021/acsenergylett.5c01267) 2025
 - K. Ogawa et al. **_Defect Tolerance via External Passivation in the Photocatalyst SrTiO<sub>3</sub>:Al_** [_Journal of the American Chemical Society_](https://doi.org/10.1021/jacs.5c07104) 2025
 - M. S. Islam et al. **_Diffusion Characteristics of Ru and Oxygen Vacancies in Ta<sub>2</sub>O<sub>5</sub> for Resistive Random Access Memory Devices: A Density Functional Theory Investigation_** [_Advanced Electronic Materials_](https://doi.org/10.1002/aelm.202500128) 2025
