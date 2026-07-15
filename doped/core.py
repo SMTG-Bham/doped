@@ -958,15 +958,17 @@ class DefectEntry(thermo.DefectEntry):
 
         return get_eigenvalue_analysis(self, plot=plot, filename=filename, **kwargs)
 
-    def _get_chempot_term(self, chemical_potentials: dict | None = None) -> float:
+    def _get_chempot_term(
+        self, chemical_potentials: dict | None = None, missing_elts_warning: bool = True
+    ) -> float:
         chempot_dict: dict = chemical_potentials or {}
         element_changes = {elt.symbol: change for elt, change in self.defect.element_changes.items()}
         missing_elts = [elt for elt in element_changes if elt not in chempot_dict]
-        if missing_elts:
+        if missing_elts and missing_elts_warning:
             warnings.warn(
                 f"Chemical potentials not present for elements: {missing_elts}. Assuming zero chemical "
-                "potentials for these elements! (Absolute formation energies will likely be very "
-                "inaccurate)"
+                f"potentials for these elements! (Absolute formation energies will likely be very "
+                f"inaccurate)"
             )
 
         return sum(
@@ -1031,6 +1033,7 @@ class DefectEntry(thermo.DefectEntry):
         el_refs: dict | None = None,
         vbm: float | None = None,
         fermi_level: float = 0,
+        missing_elts_warning: bool = True,
     ) -> float:
         r"""
         Compute the formation energy for the |DefectEntry| at a given chemical
@@ -1091,6 +1094,9 @@ class DefectEntry(thermo.DefectEntry):
             fermi_level (float):
                 Value corresponding to the electron chemical potential,
                 referenced to the VBM eigenvalue. Default is 0 (i.e. the VBM).
+            missing_elts_warning (bool):
+                Whether to warn if chemical potentials are missing for any
+                elements involved in the defect. Default is ``True``.
 
         Returns:
             Formation energy value (float)
@@ -1099,17 +1105,27 @@ class DefectEntry(thermo.DefectEntry):
             _no_chempots_warning("Formation energies (and concentrations)")
 
         abs_chempots = _get_abs_chempots(chempots, el_refs, limit)
-        return self._formation_energy(abs_chempots, vbm=vbm, fermi_level=fermi_level)
+        return self._formation_energy(
+            abs_chempots, vbm=vbm, fermi_level=fermi_level, missing_elts_warning=missing_elts_warning
+        )
 
     def _formation_energy(
-        self, abs_chempots: dict | None, vbm: float | None = None, fermi_level: float = 0
+        self,
+        abs_chempots: dict | None,
+        vbm: float | None = None,
+        fermi_level: float = 0,
+        missing_elts_warning: bool = True,
     ) -> float:
         """
         Compute the formation energy from `already-resolved` single-limit
         absolute (QM/DFT) chemical potentials (``{elt: chempot}``), or ``None``
         for no chemical potentials).
         """
-        chempot_correction = 0 if abs_chempots is None else self._get_chempot_term(abs_chempots)
+        chempot_correction = (
+            0
+            if abs_chempots is None
+            else self._get_chempot_term(abs_chempots, missing_elts_warning=missing_elts_warning)
+        )
         formation_energy = self.get_ediff() + chempot_correction
 
         if vbm is not None:
