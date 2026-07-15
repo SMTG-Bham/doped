@@ -32,12 +32,7 @@ from scipy.spatial import HalfspaceIntersection
 from tqdm import tqdm
 
 from doped.chemical_potentials import ChemicalPotentialGrid, get_X_rich_poor_limit, plot_chempot_heatmap
-from doped.core import (
-    DefectEntry,
-    _get_abs_chempots,
-    _no_chempots_warning,
-    _orientational_degeneracy_warning,
-)
+from doped.core import DefectEntry, _get_abs_chempots, _no_chempots_warning
 from doped.generation import sort_defect_entries
 from doped.utils import _doped_obj_properties_methods
 from doped.utils.configurations import apply_s2_to_s1_transformation, get_transformation_from_s2_to_s1
@@ -3357,41 +3352,20 @@ class DefectThermodynamics(MSONable):
 
         Point group symmetries are taken from the calculation_metadata
         ("relaxed point symmetry" and "bulk site symmetry") if present (should
-        be, if parsed with doped and defect supercell doesn't break host
-        periodicity), otherwise are attempted to be recalculated.
+        be, if parsed with doped), otherwise are attempted to be recalculated.
+        Relaxed point symmetries are determined by direct isometry analysis of
+        the local defect environment (see
+        ``point_symmetry_from_defect_entry``), which is insensitive to
+        periodicity-breaking supercell shapes (unlike global space-group
+        analysis).
 
-        Note: ``doped`` tries to use the ``defect_entry.defect_supercell`` to
-        determine the `relaxed` site symmetry. However, it should be noted that
-        this is not guaranteed to work in all cases; namely for non-diagonal
-        supercell expansions, or sometimes for non-scalar supercell expansion
-        matrices (e.g. a 2x1x2 expansion)(particularly with high-symmetry
-        materials) which can mess up the periodicity of the cell. doped tries
-        to automatically check if this is the case, and will warn you if so.
-
-        This can also be checked by using this function on your doped
-        `generated` defects:
-
-        .. code-block:: python
-
-            from doped.generation import get_defect_name_from_entry
-            for defect_name, defect_entry in defect_gen.items():
-                print(defect_name,
-                      get_defect_name_from_entry(defect_entry, relaxed=False),
-                      get_defect_name_from_entry(defect_entry), "\n")
-
-        And if the point symmetries match in each case, then doped should be
-        able to correctly determine the relaxed defect symmetry (and
-        orientational degeneracy) -- otherwise periodicity-breaking prevents
-        this.
-
-        If periodicity-breaking prevents auto-symmetry determination, you can
-        manually determine the relaxed defect and bulk site point symmetries,
-        and/or orientational degeneracy, from visualising the structures (e.g.
-        using VESTA)(can use |get_orientational_degeneracy| to obtain the
-        corresponding orientational degeneracy factor for given defect/bulk
-        site point symmetries) and setting the corresponding values in the
-        ``'relaxed point symmetry'`` / ``'bulk site symmetry'`` entries in
-        ``DefectEntry.calculation_metadata`` and/or
+        You can also manually determine the relaxed defect and bulk site point
+        symmetries, and/or orientational degeneracy, from visualising the
+        structures (e.g. using VESTA)(can use |get_orientational_degeneracy| to
+        obtain the corresponding orientational degeneracy factor for given
+        defect/bulk site point symmetries) and setting the corresponding values
+        in the ``'relaxed point symmetry'`` / ``'bulk site symmetry'`` entries
+        in ``DefectEntry.calculation_metadata`` and/or
         ``DefectEntry.degeneracy_factors['orientational degeneracy']``
         attributes.
         Note that the bulk site point symmetry corresponds to that of
@@ -3411,23 +3385,16 @@ class DefectThermodynamics(MSONable):
                 strings (and keep as ``int``\s and ``float``\s instead).
                 (default: ``False``)
             symprec (float):
-                Symmetry precision to use for determining symmetry operations
-                and thus point symmetries with ``spglib``, for the `relaxed`
-                defect supercell. Default in ``doped`` is ``0.1`` which matches
-                that used by the ``Materials Project`` and is larger than the
-                ``pymatgen`` default of ``0.01`` to account for residual
-                structural noise in relaxed defect supercells. If set, then
-                site symmetries & degeneracies will be re-parsed/computed even
-                if already present in the |DefectEntry| object
-                ``calculation_metadata``.
+                Distance tolerance (in Å) for `relaxed` defect point symmetry
+                determination (see ``point_symmetry_from_defect_entry``).
+                Default in ``doped`` is ``0.1`` which matches that used by the
+                ``Materials Project`` and is larger than the ``pymatgen``
+                default of ``0.01`` to account for residual structural noise in
+                relaxed defect supercells. If set, then site symmetries &
+                degeneracies will be re-parsed/computed even if already present
+                in the |DefectEntry| object ``calculation_metadata``.
                 You may want to adjust for your system (e.g. if there are very
-                slight octahedral distortions etc.). If
-                ``fixed_symprec_and_dist_tol_factor`` is ``False`` (default),
-                this value will be automatically adjusted (up to 10x, down to
-                0.1x) until the identified equivalent sites from ``spglib``
-                have consistent point group symmetries. Setting ``verbose`` to
-                ``True`` will print information on the trialled ``symprec``
-                (and ``dist_tol_factor`` values).
+                slight octahedral distortions etc.).
                 (Default: None)
             bulk_symprec (float):
                 Symmetry precision to use for determining symmetry operations
@@ -3491,12 +3458,6 @@ class DefectThermodynamics(MSONable):
                     "Mult": multiplicity_per_unit_cell,
                 }
             )
-
-        if any(
-            defect_entry.calculation_metadata.get("periodicity_breaking_supercell", False)
-            for defect_entry in self.defect_entries.values()
-        ):
-            warnings.warn(_orientational_degeneracy_warning)
 
         symmetry_df = pd.DataFrame(table_list)
 

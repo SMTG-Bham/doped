@@ -1061,11 +1061,10 @@ class DefectsParser:
                 including ``bulk_locpot_dict``, ``bulk_site_potentials``,
                 ``use_MP``, ``mpid``, ``api_key``, ``oxi_state``,
                 ``multiplicity``, ``angle_tolerance``,
-                ``attempt_periodicity_restoration``, ``user_charges``,
-                ``rtol`` etc. (see their
-                docstrings); or for controlling shallow defect charge
-                correction error warnings (see ``error_tolerance`` description)
-                with ``shallow_charge_stability_tolerance``.
+                ``user_charges``, ``rtol`` etc. (see their docstrings); or for
+                controlling shallow defect charge correction error warnings
+                (see ``error_tolerance`` description) with
+                ``shallow_charge_stability_tolerance``.
                 Note that ``bulk_symprec`` can be supplied as the ``symprec``
                 value to use for determining equivalent sites (and thus defect
                 multiplicities / bulk site symmetries), while an input
@@ -2213,14 +2212,8 @@ def _parse_charge_state(
 def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
     """
     Determine the (unrelaxed) bulk site and relaxed defect point symmetries for
-    the input |DefectEntry|, whether there is any periodicity-breaking in the
-    supercell, and the corresponding orientational degeneracy factor.
-
-    If the supercell is detected to break the crystal periodicity, and
-    ``attempt_periodicity_restoration`` is ``True`` (default), then periodicity
-    will be attempted to be restored by stenciling the relaxed defect geometry
-    into a supercell which retains periodicity, and then determining the point
-    symmetry for that.
+    the input |DefectEntry|, and the corresponding orientational degeneracy
+    factor.
 
     Results are stored in the ``calculation_metadata`` and
     ``degeneracy_factors`` property dicts of the |DefectEntry|.
@@ -2237,32 +2230,13 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
             such as ``symprec``, ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor``, ``verbose`` and
             ``bulk_symprec``.
-            Also includes ``attempt_periodicity_restoration``, which if
-            ``True`` (default), will attempt to restore periodicity for
-            periodicity-breaking defect supercells (mostly an edge case) by
-            attempting to stencil the relaxed defect geometry into a supercell
-            which retains periodicity, and then getting the point symmetry for
-            that.
     """
-    result = point_symmetry_from_defect_entry(
+    relaxed_point_group = point_symmetry_from_defect_entry(
         defect_entry,
         relaxed=True,
         verbose=kwargs.get("verbose", False),
-        return_periodicity_breaking=True,
-        **{
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in [
-                "symprec",
-                "dist_tol_factor",
-                "fixed_symprec_and_dist_tol_factor",
-                "attempt_periodicity_restoration",
-            ]
-        },
+        **{k: v for k, v in kwargs.items() if k in ["symprec"]},
     )
-    assert isinstance(result, tuple)  # typing
-    relaxed_point_group, periodicity_breaking = result
 
     bulk_site_point_group = point_symmetry_from_defect_entry(
         defect_entry,
@@ -2293,7 +2267,6 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
         )
     defect_entry.calculation_metadata["relaxed point symmetry"] = relaxed_point_group
     defect_entry.calculation_metadata["bulk site symmetry"] = bulk_site_point_group
-    defect_entry.calculation_metadata["periodicity_breaking_supercell"] = periodicity_breaking
 
 
 def _parse_vr_and_poss_procar(
@@ -2404,8 +2377,8 @@ class DefectParser:
                 ``defect_and_info_from_structures``, including
                 ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
                 ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
-                ``angle_tolerance``, ``attempt_periodicity_restoration``,
-                ``user_charges`` etc (see their docstrings).
+                ``angle_tolerance``, ``user_charges`` etc (see their
+                docstrings).
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to
@@ -2533,8 +2506,8 @@ class DefectParser:
                 ``defect_and_info_from_structures``, including
                 ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
                 ``mpid``, ``api_key``, ``oxi_state``, ``multiplicity``,
-                ``angle_tolerance``, ``attempt_periodicity_restoration``,
-                ``user_charges`` etc (see their docstrings).
+                ``angle_tolerance``, ``user_charges`` etc (see their
+                docstrings).
                 Primarily used by |DefectsParser| to expedite parsing by
                 avoiding reloading bulk data for each defect. Note that
                 ``bulk_symprec`` can be supplied as the ``symprec`` value to

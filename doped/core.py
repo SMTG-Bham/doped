@@ -37,17 +37,6 @@ if TYPE_CHECKING:
 
 mp = get_mp_context()  # https://github.com/python/cpython/pull/100229
 
-_orientational_degeneracy_warning = (
-    "The defect supercell has been detected to possibly have a non-scalar matrix expansion, "
-    "which could be breaking the cell periodicity and possibly preventing the correct _relaxed_ "
-    "point group symmetries (and thus orientational degeneracies) from being automatically determined.\n"
-    "This will not affect defect formation energies / transition levels, but can be important for "
-    "concentrations/doping/Fermi level behaviour (10.1039/D2FD00043A, 10.1039/D3CS00432E, "
-    "10.1038/s41578-025-00879-y ...).\n"
-    "You can manually check (and edit) the computed defect point symmetries and corresponding "
-    "orientational degeneracy factors by inspecting/editing the calculation_metadata['relaxed point "
-    "symmetry'] and degeneracy_factors['orientational degeneracy'] attributes."
-)
 
 _falling_back_to_common_oxi_states_warning = (
     "Oxidation states could not be guessed. The most common oxidation state for each element will be "
@@ -1196,9 +1185,7 @@ class DefectEntry(thermo.DefectEntry):
                 ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``, and
                 ``verbose``, and/or |Defect| initialization (such as
                 ``oxi_state``, ``multiplicity``, ``dist_tol_factor``) in the
-                ``defect_and_info_from_structures`` function, or
-                ``point_symmetry_from_defect_entry``, such as
-                ``attempt_periodicity_restoration``.
+                ``defect_and_info_from_structures`` function.
         """
         from doped.utils.parsing import (
             _num_electrons_from_charge_state,
@@ -1209,28 +1196,12 @@ class DefectEntry(thermo.DefectEntry):
         reparse = symprec is not None or bulk_symprec is not None
         if reparse or "relaxed point symmetry" not in self.calculation_metadata:
             try:
-                point_symm_and_periodicity_breaking = point_symmetry_from_defect_entry(
+                self.calculation_metadata["relaxed point symmetry"] = point_symmetry_from_defect_entry(
                     self,
                     relaxed=True,
-                    return_periodicity_breaking=True,
                     verbose=kwargs.get("verbose", False),
                     symprec=symprec,
-                    **{
-                        k: v
-                        for k, v in kwargs.items()
-                        if k
-                        in [
-                            "dist_tol_factor",
-                            "fixed_symprec_and_dist_tol_factor",
-                            "attempt_periodicity_restoration",
-                        ]
-                    },
                 )
-                assert isinstance(point_symm_and_periodicity_breaking, tuple)  # typing (tuple returned)
-                (
-                    self.calculation_metadata["relaxed point symmetry"],
-                    self.calculation_metadata["periodicity_breaking_supercell"],
-                ) = point_symm_and_periodicity_breaking
 
             except Exception as e:
                 warnings.warn(
@@ -1291,14 +1262,13 @@ class DefectEntry(thermo.DefectEntry):
             except Exception as e:
                 warnings.warn(f"Unable to determine spin degeneracy for {self.name}, got error:\n{e!r}")
 
-        # warn if degeneracy factors are not present or we have periodicity breaking:
-        self._warn_about_degeneracy_factors()
+        self._warn_about_degeneracy_factors()  # warn if degeneracy factors are not present
 
     def _warn_about_degeneracy_factors(self):
         """
-        Warn about missing spin/orientational degeneracy factors or
-        periodicity-breaking supercells (which affect the computed defect
-        concentrations / Fermi level), if relevant for this |DefectEntry|.
+        Warn about missing spin/orientational degeneracy factors (which affect
+        the computed defect concentrations / Fermi level), if relevant for this
+        |DefectEntry|.
         """
         if "spin degeneracy" not in self.degeneracy_factors:
             warn_once(  # warn once per defect entry
@@ -1322,19 +1292,10 @@ class DefectEntry(thermo.DefectEntry):
                 f"attribute for {self.name}. This factor contributes to the "
                 "degeneracy term 'g' in the defect concentration equation (N_X = N*g*exp(-E/kT) -- "
                 "discussion in 10.1039/D2FD00043A, 10.1039/D3CS00432E, 10.1038/s41578-025-00879-y ... "
-                "-- and is automatically computed when parsing with doped if possible (if the defect "
-                "supercell doesn't break the host periodicity). This will affect the computed defect "
-                "concentrations / Fermi level!\n"
+                "-- and is automatically computed when parsing with doped, if possible. This will affect "
+                "the computed defect concentrations / Fermi level!\n"
                 "To avoid this, you can (re-)parse your defects with doped (if not tried already), or "
                 "manually set 'orientational degeneracy' in the degeneracy_factors attribute(s).",
-            )
-
-        if self.calculation_metadata.get("periodicity_breaking_supercell", False):
-            # warn once per defect supercell lattice and frac coords (which should change if periodicity
-            # breaking does):
-            warn_once(
-                _orientational_degeneracy_warning,
-                key=(self.defect_supercell.lattice, tuple(self.sc_defect_frac_coords)),
             )
 
     def equilibrium_concentration(

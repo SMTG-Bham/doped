@@ -426,31 +426,13 @@ def get_defect_name_from_entry(
     r"""
     Get the doped/SnB defect name from a |DefectEntry| object.
 
-    Note: If relaxed = True (default), then this tries to use the
-    defect_entry.defect_supercell to determine the site symmetry. This will
-    thus give the `relaxed` defect point symmetry if this is a DefectEntry
-    created from parsed defect calculations. However, it should be noted that
-    this is not guaranteed to work in all cases; namely for non-diagonal
-    supercell expansions, or sometimes for non-scalar supercell expansion
-    matrices (e.g. a 2x1x2 expansion)(particularly with high-symmetry
-    materials) which can mess up the periodicity of the cell. doped tries to
-    automatically check if this is the case, and will warn you if so.
-
-    This can also be checked by using this function on your doped `generated`
-    defects:
-
-    .. code-block:: python
-
-        from doped.generation import get_defect_name_from_entry
-        for defect_name, defect_entry in defect_gen.items():
-            print(defect_name,
-                  get_defect_name_from_entry(defect_entry, relaxed=False),
-                  get_defect_name_from_entry(defect_entry), "\n")
-
-    And if the point symmetries match in each case, then using this function on
-    your parsed `relaxed` |DefectEntry| objects should correctly determine the
-    relaxed defect symmetry (and closest site info) -- otherwise
-    periodicity-breaking prevents this.
+    Note: If relaxed = True (default), then this uses the
+    ``defect_entry.defect_supercell`` to determine the point symmetry of the
+    (relaxed) defect structure, via direct isometry analysis of the local
+    defect environment (see ``point_symmetry_from_defect_entry``; insensitive
+    to periodicity-breaking supercell shapes, unlike global space-group
+    analysis).
+    # TODO: Update see ``point_symmetry_from_defect_entry``; usages to give sphinx link
 
     Args:
         defect_entry (|DefectEntry|): |DefectEntry| object.
@@ -460,20 +442,20 @@ def get_defect_name_from_entry(
             different elements located at the same distance from defect site).
             Default is None.
         symprec (float):
-            Symmetry tolerance for ``spglib``. Default is 0.01 for unrelaxed
-            structures, 0.2 for relaxed (to account for residual structural
-            noise). You may want to adjust for your system (e.g. if there are
-            very slight octahedral distortions etc).
+            Distance tolerance (in Å) for symmetry determination (see
+            ``point_symmetry_from_defect_entry``). Default is 0.01 Å for
+            unrelaxed structures, 0.1 Å for relaxed (to account for residual
+            structural noise). You may want to adjust for your system (e.g.
+            if there are very slight octahedral distortions etc).
         relaxed (bool):
             If ``False``, determines the site symmetry using the defect site
-            `in the unrelaxed bulk supercell`, otherwise tries to determine the
-            point symmetry of the relaxed defect in the defect supercell).
-            Default is ``True``.
+            `in the unrelaxed bulk supercell`, otherwise determines the point
+            symmetry of the relaxed defect in the defect supercell. Default is
+            ``True``.
         **kwargs:
             Additional keyword arguments to pass to
             ``point_symmetry_from_defect_entry``, such as ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose``, or
-            ``attempt_periodicity_restoration``.
+            ``fixed_symprec_and_dist_tol_factor`` or ``verbose``.
 
     Returns:
         str: Defect name.
