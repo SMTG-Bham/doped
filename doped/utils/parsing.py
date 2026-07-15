@@ -635,7 +635,9 @@ def get_defect_type_and_site_indices(
     defect_composition = defect_supercell.composition
 
     try:
-        defect_type, comp_diff = get_defect_type_and_composition_diff(defect_composition, bulk_composition)
+        defect_type, comp_diff = get_defect_type_and_composition_diff(
+            defect_composition, bulk_composition, _parameter_order_warn=False
+        )  # internal call with correct (defect, bulk) ordering; don't warn
     except RuntimeError as exc:
         raise ValueError(
             "Could not identify defect type from number of sites in structure: "
@@ -670,10 +672,10 @@ def get_defect_type_and_site_indices(
     distance_matrix = bulk_supercell.distance_matrix
 
     for elt_symbol in elt_symbols:
-        bulk_species_coords, bulk_species_indices = get_coords_and_idx_of_species(
+        bulk_species_fcoords, bulk_species_indices = get_coords_and_idx_of_species(
             bulk_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
-        defect_species_coords, defect_species_indices = get_coords_and_idx_of_species(
+        defect_species_fcoords, defect_species_indices = get_coords_and_idx_of_species(
             defect_supercell, elt_symbol, use_oxi_states=use_oxi_states
         )
         if bulk_species_indices.size == 0:  # extrinsic species
@@ -684,11 +686,11 @@ def get_defect_type_and_site_indices(
             site_dist_tol = site_tol if site_tol is None or abs_tol else site_tol * species_min_dist
 
         site_mapping = _get_site_mapping_from_coords_and_indices(
-            bulk_species_coords,
-            defect_species_coords,
+            defect_species_fcoords,
+            bulk_species_fcoords,
             lattice=bulk_supercell.lattice,
-            s1_indices=bulk_species_indices,
-            s2_indices=defect_species_indices,
+            s1_indices=defect_species_indices,
+            s2_indices=bulk_species_indices,
             use_rms=use_rms,
         )
         defect_site_mappings = [
@@ -696,11 +698,11 @@ def get_defect_type_and_site_indices(
             for mapping in site_mapping
             if mapping[0] is None or (site_dist_tol is not None and mapping[0] > site_dist_tol)
         ]
-        for mapping in defect_site_mappings:
-            if mapping[1] is not None:  # missing bulk site
-                missing_bulk_site_indices.append(mapping[1])
-            if mapping[2] is not None:  # additional defect site (may be from same matched tuple if dist
-                additional_defect_site_indices.append(mapping[2])  # greater than site_dist_tol)
+        for _dist, defect_idx, bulk_idx in defect_site_mappings:
+            if bulk_idx is not None:  # missing bulk site
+                missing_bulk_site_indices.append(bulk_idx)
+            if defect_idx is not None:  # additional defect site (may be from same matched tuple if dist
+                additional_defect_site_indices.append(defect_idx)  # greater than site_dist_tol)
 
     return defect_type, missing_bulk_site_indices, additional_defect_site_indices
 
@@ -1051,24 +1053,24 @@ def check_atom_mapping_far_from_defect(
 
     disps_outside_ws: dict[str, list[float]] = {site.specie.symbol: [] for site in bulk_supercell}
     for species in bulk_supercell.composition.elements:  # divide and vectorise calc for efficiency
-        bulk_species_outside_near_ws_coords = get_coords_and_idx_of_species(
+        bulk_species_outside_near_ws_fcoords = get_coords_and_idx_of_species(
             bulk_sites_outside_or_at_ws_radius, species.name
         )[0]
-        defect_species_outside_ws_coords = get_coords_and_idx_of_species(
+        defect_species_outside_ws_fcoords = get_coords_and_idx_of_species(
             defect_sites_outside_wigner_radius, species.name
         )[0]
         if (
             min(
-                len(bulk_species_outside_near_ws_coords),
-                len(defect_species_outside_ws_coords),
+                len(bulk_species_outside_near_ws_fcoords),
+                len(defect_species_outside_ws_fcoords),
             )
             == 0
         ):
             continue  # if no sites of this species outside the WS radius, skip
 
         site_mapping_outside_ws = _get_site_mapping_from_coords_and_indices(
-            defect_species_outside_ws_coords,
-            bulk_species_outside_near_ws_coords,
+            defect_species_outside_ws_fcoords,
+            bulk_species_outside_near_ws_fcoords,
             lattice=bulk_supercell.lattice,
         )
         displacement_dists = [dist for dist, _i, _j in site_mapping_outside_ws if dist is not None]
@@ -1102,8 +1104,8 @@ def check_atom_mapping_far_from_defect(
 
 
 def _get_site_mapping_from_coords_and_indices(
-    s1_coords: ArrayLike,
-    s2_coords: ArrayLike,
+    s1_frac_coords: ArrayLike,
+    s2_frac_coords: ArrayLike,
     s1_indices: np.ndarray | None = None,
     s2_indices: np.ndarray | None = None,
     lattice: Lattice | None = None,
@@ -1113,24 +1115,22 @@ def _get_site_mapping_from_coords_and_indices(
     Get the site mapping between two sets of coordinates and indices, based on
     the shortest distances between sites.
 
-    The coordinates are treated as fractional coordinates if ``lattice`` is
-    provided, otherwise they are treated as Cartesian coordinates.
-
     Args:
-        s1_coords (np.ndarray[float]):
+        s1_frac_coords (np.ndarray[float]):
             The fractional coordinates of the first set of sites.
-        s2_coords (np.ndarray[float]):
+        s2_frac_coords (np.ndarray[float]):
             The fractional coordinates of the second set of sites.
         s1_indices (np.ndarray[int] | None):
             The indices of the first set of sites. If ``None``, the indices are
-            assumed to be the range of the number of sites in ``s1_coords``.
+            assumed to be the range of the number of sites in
+            ``s1_frac_coords``.
         s2_indices (np.ndarray[int] | None):
-            The indices of the second set of sites. If ``None``, the indices are
-            assumed to be the range of the number of sites in ``s2_coords``.
+            The indices of the second set of sites. If ``None``, the indices
+            are assumed to be the range of the number of sites in
+            ``s2_frac_coords``.
         lattice (Lattice | None):
             The lattice of the structures. If ``None``, the identity matrix is
-            used (corresponding to the assumption that the input coordinates
-            are Cartesian).
+            used.
         use_rms (bool):
             The returned site mapping (using linear assignment) will be that
             which minimises either the summed RMS distances (if ``use_rms`` is
@@ -1143,14 +1143,17 @@ def _get_site_mapping_from_coords_and_indices(
             and index from ``s2_indices`` for each matched site.
     """
     lattice = lattice or Lattice(np.eye(3))
-    s1_coords = np.array(s1_coords)
-    s2_coords = np.array(s2_coords)
+    s1_frac_coords = np.asarray(s1_frac_coords)
+    s2_frac_coords = np.asarray(s2_frac_coords)
     if s1_indices is None:
-        s1_indices = np.arange(len(s1_coords))
+        s1_indices = np.arange(len(s1_frac_coords))
     if s2_indices is None:
-        s2_indices = np.arange(len(s2_coords))
+        s2_indices = np.arange(len(s2_frac_coords))
 
-    for empty_coords, indices, tuple_idx in [(s1_coords, s2_indices, 2), (s2_coords, s1_indices, 1)]:
+    for empty_coords, indices, tuple_idx in [
+        (s1_frac_coords, s2_indices, 2),
+        (s2_frac_coords, s1_indices, 1),
+    ]:
         if empty_coords.size == 0:  # handly case of empty input coords
             if indices is None:
                 return [(None, None, None)]
@@ -1159,11 +1162,16 @@ def _get_site_mapping_from_coords_and_indices(
                 for i in indices
             ]
 
-    s1_is_subset = len(s1_coords) < len(s2_coords)
-    subset_fcoords, subset_indices = (s1_coords, s1_indices) if s1_is_subset else (s2_coords, s2_indices)
-    superset_fcoords, superset_indices = (
-        (s2_coords, s2_indices) if s1_is_subset else (s1_coords, s1_indices)
+    s1_is_subset = len(s1_frac_coords) < len(s2_frac_coords)
+    subset_fcoords, subset_indices = (
+        (s1_frac_coords, s1_indices) if s1_is_subset else (s2_frac_coords, s2_indices)
     )
+    superset_fcoords, superset_indices = (
+        (s2_frac_coords, s2_indices) if s1_is_subset else (s1_frac_coords, s1_indices)
+    )
+    # Note: if needed in future, could be sped up by using k-D trees and/or k-NN searching (rather than
+    # global PBC dists over all sites of the same species), but not a bottleneck for typical (~<10,000
+    # atom) supercells currently
     _vecs, d_2 = pbc_shortest_vectors(lattice, subset_fcoords, superset_fcoords, return_d2=True)
     dists = np.sqrt(d_2)
     site_matches, _ = get_linear_assignment_solution(d_2 if use_rms else dists)
@@ -1196,7 +1204,7 @@ def get_site_mappings(
 
     The two structures may have different species orderings.
 
-    NOTE: if ``frac_coords = True`` (default), this assumes that both
+    NOTE: If ``frac_coords = True`` (default), this assumes that both
     structures have the same lattice definitions (i.e. that they match, and
     aren't rigidly translated/rotated with respect to each other), which is
     mostly the case unless we have a mismatching defect/bulk supercell (in
