@@ -11,8 +11,6 @@ from pymatgen.core.structure import Structure
 from pymatgen.transformations.advanced_transformations import CubicSupercellTransformation
 from tqdm import tqdm
 
-from doped.utils.symmetry import get_clean_structure, get_sga
-
 
 def get_min_image_distance(structure: Structure) -> float:
     """
@@ -661,6 +659,8 @@ def _min_sum_off_diagonals(prim_struct: Structure, supercell_matrix: np.ndarray)
     """
     num_off_diagonals_prim = np.sum(np.abs(supercell_matrix - np.diag(np.diag(supercell_matrix))))
 
+    from doped.utils.symmetry import get_sga  # avoid circular import
+
     sga = get_sga(prim_struct)
     conv_supercell_matrix = np.matmul(
         supercell_matrix, sga.get_conventional_to_primitive_transformation_matrix()
@@ -780,6 +780,8 @@ def find_ideal_supercell(
     )  # sort by max min dist, then by sorting func
 
     optimal_P, min_dist = sc_fcc_P_and_min_dists[0]
+
+    from doped.utils.symmetry import get_clean_structure  # avoid circular import
 
     if clean and not (
         optimal_P[0, 0] != 0 and np.allclose(np.abs(optimal_P / optimal_P[0, 0]), np.eye(3))
