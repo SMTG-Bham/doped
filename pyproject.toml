@@ -16,17 +16,16 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Chemistry",
     "Topic :: Software Development :: Libraries :: Python Modules",
     ]
-requires-python = ">=3.11"  # dictated by pymatgen-core>2026.4
+requires-python = ">=3.11"  # dictated by pymatgen-core>=2026.7.16
 dependencies = [
     "tabulate",
     "matplotlib>=3.5.2",
     "numpy>=1.21.0",
-    "pymatgen-core>=2026.4.7",  # pymatgen-core refactor, with chempot/phase diagram code
+    "pymatgen-core>=2026.7.16",  # ROPT fix; https://github.com/materialsproject/pymatgen-core/pull/69
     # requires spglib >= 2.5
     "pymatgen-analysis-defects>=2023.8.22",  # TODO: Update to (fully) pymatgen-core compatible version
     "mp-api>=0.45",  # for Materials Project queries via ``mp_api.client.MPRester``
     "shakenbreak>=3.4.5",  # parameter re-ordering for ``get_defect_type_...`` functions
-    "ase",  # required by ShakeNBreak anyway
     "pandas",
     "pydefect>=0.9.9",  # eigenvalue parsing updates
     "filelock",
@@ -49,6 +48,7 @@ tests = [
     "pytest-mpl>=0.16.1",
     "py-sc-fermi>=2.2.0",  # not required, but allows `FermiSolver` with `py-sc-fermi` backend to be tested, this version ensures full consistency
     "pytest-split>=0.10.0",  # for test splitting
+    "ase",  # ase build utilities used in some tests
 ]
 docs = [
     "sphinx>7,<9",  # current issue with Sphinx 9: https://github.com/sphinx-doc/sphinx/issues/14270; remove limit once resolved
@@ -139,3 +139,10 @@ wrap-descriptions = 79
 
 [tool.codespell]
 ignore-words-list = "titel,te,bu,aack,unx,nd,efect,vise,mater,sise,dscribe,smll,atomate,coo,inout,bacup"  # lowercase!
+
+[tool.pytest.ini_options]
+filterwarnings = [  # later entries take precedence over earlier ones
+    "error::DeprecationWarning",  # throw errors with Deprecation/Future warnings, to track
+    "error::PendingDeprecationWarning",
+    "error::FutureWarning",
+]  # if needed to pass CI, can add warnings catch and ignore if running locally (POTCARs available), w/note to remove

@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(".."))
 
 # -- Project information -----------------------------------------------------
 project = "doped"
-copyright = "2023, Seán R. Kavanagh"
+copyright = "2026, Seán R. Kavanagh"
 author = "Seán R. Kavanagh"  # https://sam-lab.net
 
 # The full version, including alpha/beta/rc tags

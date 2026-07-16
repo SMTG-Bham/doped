@@ -1493,7 +1493,7 @@ class DefectsGenerator(MSONable):
         self.defect_entries: dict[str, DefectEntry] = {}  # {defect_species: DefectEntry}
         if isinstance(structure, str | PathLike):
             structure = Structure.from_file(structure)
-        elif not isinstance(structure, Structure):
+        elif not isinstance(structure, Structure):  # assume ASE Atoms
             structure = Structure.from_ase_atoms(structure)
 
         self.structure = structure
