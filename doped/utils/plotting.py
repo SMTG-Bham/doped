@@ -588,6 +588,7 @@ def format_defect_name(
     include_site_info: bool = False,
     include_charge: bool = True,
     wout_charge: bool | None = None,
+    include_site_info_in_name: bool | None = None,
 ) -> str | None:
     r"""
     Format defect name using LaTeX styling, intended for plot labelling/titles.
@@ -616,6 +617,9 @@ def format_defect_name(
             Deprecated alias for ``not include_charge`` (i.e. whether to
             *exclude* the charge state). Will be removed in ``doped`` v4.1;
             use ``include_charge`` instead.
+        include_site_info_in_name (bool):
+            Deprecated alias for ``include_site_info``. Will be removed in
+            ``doped`` v4.1; use ``include_site_info`` instead.
 
     Returns:
         str | None:
@@ -636,6 +640,15 @@ def format_defect_name(
             stacklevel=2,
         )  # TODO: Remove in v4.1
         include_charge = not wout_charge
+
+    if include_site_info_in_name is not None:
+        warnings.warn(
+            "The `include_site_info_in_name` argument of `format_defect_name` is deprecated and will be "
+            "removed in doped v4.1. Use `include_site_info` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )  # TODO: Remove in v4.1
+        include_site_info = include_site_info_in_name
 
     if not include_charge:
         defect_species += "_99"  # add dummy charge for parsing; 99 red balloons go by...
