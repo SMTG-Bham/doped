@@ -34,6 +34,8 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          # TODO: temporary until doped v4 released:
+          pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
           pip install -e .[tests]
 
       - name: Test

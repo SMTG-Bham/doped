@@ -40,6 +40,8 @@ jobs:
         run: |
           sleep 360  # wait 10 minutes for PyPI to update with the new release
           python -m pip install --upgrade pip
+          # TODO: temporary until doped v4 released:
+          pip install --no-deps git+https://github.com/SMTG-Bham/ShakeNBreak@develop
           pip install doped[tests]  # install only from PyPI
 
       - name: Test
