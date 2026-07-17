@@ -69,26 +69,17 @@ from doped.utils.plotting import doped_plot_style, format_defect_name
 
 def _monty_decode_nested_dicts(d):
     """
-    Recursively find any dictionaries in defect_entry.calculation_metadata,
-    which may be nested in dicts or in lists of dicts, and decode them.
+    Decode any MSON dicts in ``d`` (in place), which may be nested in dicts or
+    lists, tolerating per-key decoding failures.
+
+    Used to ensure ``DefectEntry.calculation_metadata`` is decoded (after
+    reloading from JSON).
     """
     for key, value in d.items():
-        if isinstance(value, dict) and all(k not in value for k in ["@module", "@class"]):
-            _monty_decode_nested_dicts(value)
-        elif (
-            isinstance(value, list)
-            and all(isinstance(i, dict) for i in value)
-            and all(k in i for k in ["@module", "@class"] for i in value)
-        ):
-            try:
-                d[key] = [MontyDecoder().process_decoded(i) for i in value]
-            except Exception as exc:
-                print(f"Failed to decode {key} with error {exc!r}")
-        if isinstance(value, dict) and all(k in value for k in ["@module", "@class"]):
-            try:
-                d[key] = MontyDecoder().process_decoded(value)
-            except Exception as exc:
-                print(f"Failed to decode {key} with error {exc!r}")
+        try:
+            d[key] = MontyDecoder().process_decoded(value)
+        except Exception as exc:
+            print(f"Failed to decode {key} with error {exc!r}")
 
 
 def _check_if_None_and_raise_error_if_so(var, var_name, display_name):

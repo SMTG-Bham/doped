@@ -2269,82 +2269,10 @@ class DefectsGenerator(MSONable):
         Returns:
             |DefectsGenerator| object
         """
-
-        def process_attributes(attributes, iterable):
-            result = {}
-            for attr in attributes:
-                result[attr] = MontyDecoder().process_decoded(iterable.pop(attr))
-            return result
-
-        def decode_dict(iterable):
-            if isinstance(iterable, dict) and "@module" in iterable:
-                class_name = iterable["@class"]
-
-                defect_additional_attributes = [
-                    "conventional_structure",
-                    "conv_cell_frac_coords",
-                    "equiv_conv_cell_frac_coords",
-                    "_BilbaoCS_conv_cell_vector_mapping",
-                    "wyckoff",
-                ]
-                attribute_groups = {
-                    "DefectEntry": [
-                        "conventional_structure",
-                        "conv_cell_frac_coords",
-                        "equiv_conv_cell_frac_coords",
-                        "_BilbaoCS_conv_cell_vector_mapping",
-                        "wyckoff",
-                        "charge_state_guessing_log",
-                        "defect_supercell",
-                        "defect_supercell_site",
-                        "equivalent_supercell_sites",
-                        "bulk_supercell",
-                        "name",
-                    ],
-                    **dict.fromkeys(
-                        [
-                            "Interstitial",
-                            "Substitution",
-                            "Vacancy",
-                            "Defect",
-                            "DefectComplex",
-                            "Adsorbate",
-                        ],
-                        defect_additional_attributes,
-                    ),
-                }
-
-                if class_name in attribute_groups:
-                    # pull attributes not in __init__ signature and define after object creation
-                    attributes = process_attributes(attribute_groups[class_name], iterable)
-                    if class_name == "DefectEntry":
-                        attributes["defect"] = decode_dict(iterable["defect"])
-                    decoded_obj = MontyDecoder().process_decoded(iterable)
-                    for attr, value in attributes.items():
-                        setattr(decoded_obj, attr, value)
-
-                    return decoded_obj
-
-                return MontyDecoder().process_decoded(iterable)
-
-            if isinstance(iterable, dict):
-                return {k: decode_dict(v) for k, v in iterable.items()}
-
-            if isinstance(iterable, list):
-                return [decode_dict(v) for v in iterable]
-
-            return iterable
-
-        # recursively decode nested dicts (in dicts or lists) with @module key
-        d_decoded = {k: decode_dict(v) for k, v in d.items()}
-        defects_generator = cls.__new__(
-            cls
-        )  # Create new DefectsGenerator object without invoking __init__
-
-        # set the instance variables directly from the dictionary
-        for key, value in d_decoded.items():
-            if key not in ["@module", "@class", "@version"]:
-                setattr(defects_generator, key, value)
+        defects_generator = cls.__new__(cls)  # create new object without invoking __init__
+        for key, value in d.items():  # set instance variables directly, decoding nested MSON dicts
+            if key not in {"@module", "@class", "@version"}:
+                setattr(defects_generator, key, MontyDecoder().process_decoded(value))
 
         return defects_generator
 
