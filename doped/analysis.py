@@ -842,27 +842,13 @@ def guess_defect_position(
         avg_cos_dissimilarity = max(np.mean(elt_cos_dissimilarities), 1e-6)  # avoid divide-by-zero
         rel_cos_dissimilarities[indices] = elt_cos_dissimilarities / avg_cos_dissimilarity
 
-    largest_outlier = defect_supercell.sites[
-        np.where(rel_cos_dissimilarities == np.max(rel_cos_dissimilarities))[0][0]
-    ]
-    cos_diss_frac_coords_dict = {np.max(rel_cos_dissimilarities): largest_outlier.frac_coords}
-    for i, site in enumerate(defect_supercell.sites):
-        if not np.all(site.frac_coords == largest_outlier.frac_coords):
-            image = largest_outlier.distance_and_image(site)[1]
-            cos_diss_frac_coords_dict[rel_cos_dissimilarities[i]] = site.frac_coords + image
-
-    cos_diss_coords_dict = dict(
-        zip(
-            cos_diss_frac_coords_dict.keys(),
-            defect_supercell.lattice.get_cartesian_coords(
-                np.array(list(cos_diss_frac_coords_dict.values()))
-            ),
-            strict=False,
-        )
-    )
-    squared_cosine_dissimilarities = np.array(list(cos_diss_coords_dict.keys())) ** 2
+    largest_outlier = defect_supercell.sites[int(np.argmax(rel_cos_dissimilarities))]
+    unfolded_frac_coords = np.array(  # min-image unfolded about the largest outlier
+        [site.frac_coords + largest_outlier.distance_and_image(site)[1] for site in defect_supercell]
+    )  # frac_coords plus (minimum) image from outlier position
+    squared_cosine_dissimilarities = rel_cos_dissimilarities**2
     return np.average(  # weighted centre of mass
-        np.array(list(cos_diss_coords_dict.values())),
+        defect_supercell.lattice.get_cartesian_coords(unfolded_frac_coords),
         axis=0,
         weights=squared_cosine_dissimilarities if np.sum(squared_cosine_dissimilarities) > 0 else None,
     )  # note we catch the edge case of zero dissimilarity (i.e. same structures); to avoid zero-division
