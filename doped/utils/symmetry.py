@@ -2672,17 +2672,17 @@ def point_symmetry_from_defect(
 
 
 def _extract_defect_cluster(
-    structure: Structure, center_cart: np.ndarray, radius: float
+    structure: Structure, centre_cart: np.ndarray, radius: float
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Extract the atoms within ``radius`` of ``center_cart`` in ``structure``
+    Extract the atoms within ``radius`` of ``centre_cart`` in ``structure``
     (PBC-aware), returning their Cartesian coordinates `relative` to
-    ``center_cart``, and their element symbols.
+    ``centre_cart``, and their element symbols.
 
     Args:
         structure (|Structure|):
             The structure to extract the local atomic cluster from.
-        center_cart (np.ndarray):
+        centre_cart (np.ndarray):
             Cartesian coordinates of the extraction sphere centre.
         radius (float):
             Radius (in Å) of the extraction sphere.
@@ -2690,111 +2690,15 @@ def _extract_defect_cluster(
     Returns:
         tuple[np.ndarray, np.ndarray]:
             ``(N, 3)`` array of atomic Cartesian coordinates relative to
-            ``center_cart``, and ``(N,)`` array of their element symbols.
+            ``centre_cart``, and ``(N,)`` array of their element symbols.
     """
     # Note: We could instead work with ``pymatgen`` ``Site``/``Molecule`` objects here and in the local
     # symmetry functions, to simplify some of the API, but this would incur significant overhead from many
     # property accesses / array unpacking (e.g. Site.specie -> Composition init), so avoided for now.
-    sites = structure.get_sites_in_sphere(center_cart, radius)
-    coords = np.array([site.coords for site in sites]).reshape(-1, 3) - center_cart
+    sites = structure.get_sites_in_sphere(centre_cart, radius)
+    coords = np.array([site.coords for site in sites]).reshape(-1, 3) - centre_cart
     species = np.array([site.specie.symbol for site in sites])
     return coords, species
-
-
-def perturbation_centroid(
-    defect_supercell: Structure,
-    bulk_supercell: Structure,
-    initial_guess: np.ndarray | None = None,
-    radius: float = 5.0,
-) -> np.ndarray:
-    """
-    Centroid of the structural perturbation from defect vs bulk supercell
-    comparison, used as a guess for the centre point (e.g. in local cluster
-    extraction) for local point symmetry analysis.
-
-    Each site is weighted by its `squared` distance to the nearest same-species
-    site match in the other structure; for both defect atoms (matched to bulk
-    sites) and bulk sites (matched to defect atoms, to account for vacancies).
-    For a single point defect this should occur at/near the defect site itself;
-    for a split/complex defect it should be at/near the centroid of the
-    constituent defects.
-
-    Args:
-        defect_supercell (|Structure|):
-            The defect (supercell) structure.
-        bulk_supercell (|Structure|):
-            The bulk (pristine, reference) supercell structure. Assumed to
-            share the same lattice/origin frame as ``defect_supercell``.
-        initial_guess (np.ndarray | None):
-            Initial guess for the defect centre (`in Cartesian coordinates`) to
-            refine; e.g. the (approximate) defect site or (unlikely) a
-            ``guess_defect_position`` output. Only needs to be accurate enough
-            that the perturbation centroid falls within ``radius`` of it. If
-            ``None`` (default), this is determined automatically from
-            ``defect_supercell`` and ``bulk_supercell`` via
-            ``defect_site_from_structures`` (i.e. the relaxed defect site(s)).
-        radius (float):
-            Radius (in Å) of the local environment sphere considered around
-            ``initial_guess``, within which to determine the perturbation
-            (squared-distance-weighted) centroid. Should not exceed half the
-            minimum periodic image distance of the supercell. Default is 5 Å.
-
-    Returns:
-        np.ndarray:
-            Cartesian coordinates of the perturbation centroid (or
-            ``initial_guess`` unchanged, if no significant perturbation is
-            detected within ``radius``).
-    """
-    if initial_guess is None:
-        from doped.analysis import defect_site_from_structures  # avoid circular import
-
-        site = defect_site_from_structures(defect_supercell, bulk_supercell, _parameter_order_warn=False)
-        assert isinstance(site, PeriodicSite)
-        initial_guess = site.coords  # Cartesian coordinates
-
-    min_image_half_dist = get_min_image_distance(defect_supercell) / 2
-    if radius > min_image_half_dist:
-        warnings.warn(
-            f"The input `radius` ({radius:.2f} Å) exceeds half the minimum periodic image distance of "
-            f"`defect_supercell` ({min_image_half_dist:.2f} Å); the local extraction sphere then overlaps "
-            f"its own periodic images, which can distort the computed centroid."
-        )
-
-    # get Cartesian coords and species of sites, `relative` to ``initial_guess``:
-    defect_coords, defect_species = _extract_defect_cluster(defect_supercell, initial_guess, radius)
-    bulk_coords, bulk_species = _extract_defect_cluster(bulk_supercell, initial_guess, radius)
-
-    weight_sum, weighted_coord_sum = 0.0, np.zeros(3)
-    # Note: Could alternatively use ``get_site_mappings`` here, but more involved to get weighted
-    # displacement centroid with PBC, and faster with KDTree here:
-    for species in set(defect_species) | set(bulk_species):  # species intersection
-        defect_species_coords = defect_coords[defect_species == species]
-        bulk_species_coords = bulk_coords[bulk_species == species]
-        defect_dists = np.full(len(defect_species_coords), radius)  # default fill with ``radius``
-        reverse_dists = np.full(len(bulk_species_coords), radius)  # default fill with ``radius``
-        if len(defect_species_coords) and len(bulk_species_coords):  # non-zero species-matched sites
-            # ``query(coords)`` returns a tuple of nearest-neighbour ``(distances, indices)``:
-            defect_dists = np.asarray(KDTree(bulk_species_coords).query(defect_species_coords)[0])
-            reverse_dists = np.asarray(KDTree(defect_species_coords).query(bulk_species_coords)[0])
-
-        # smooth squared-distance weights, soft-shrunk by a noise floor (``max(d^2 - floor^2, 0)``;
-        # continuous in ``d``) so that sub-floor (elastic/noise-level) displacements contribute zero weight
-        # and cannot drag the centroid:
-        noise_floor = np.max(np.concatenate((defect_dists, reverse_dists))) * 0.1  # 10% of largest disp
-        for coords_array, dists_array in [
-            (defect_species_coords, defect_dists),  # added/relocated (interstitial-like) atoms dominate
-            (bulk_species_coords, reverse_dists),  # removed (vacancy-like) sites dominate
-        ]:
-            weights = np.maximum(dists_array**2 - noise_floor**2, 0.0)
-            weights[np.linalg.norm(coords_array, axis=1) >= radius] = 0.0
-            weight_sum += weights.sum()
-            weighted_coord_sum += weights @ coords_array
-
-    return initial_guess + (weighted_coord_sum / weight_sum)  # initial guess plus normalised refinement
-
-
-# TODO: Is the perturbation_centroid refinement actually necessary/helpful? Can just skip? (Our code
-#  will soon be update so that defect-site-from-structures returns the complex defect centroid...)
 
 
 def _matching_rot_index(rotations: Sequence[np.ndarray], rotation: np.ndarray, rot_tol: float = 0.3):
@@ -3238,6 +3142,17 @@ def _schoenflies_from_cartesian_ops(rotations: Sequence[np.ndarray]) -> str:
     return symbol
 
 
+def _defect_coords_from_structures(defect_supercell: Structure, bulk_supercell: Structure) -> np.ndarray:
+    """
+    Cartesian defect-site coordinates from bulk vs defect structure comparison.
+    """
+    from doped.analysis import defect_site_from_structures  # avoid circular import
+
+    site = defect_site_from_structures(defect_supercell, bulk_supercell, _parameter_order_warn=False)
+    assert isinstance(site, PeriodicSite)
+    return site.coords
+
+
 def local_point_symmetry(
     defect_supercell: Structure,
     bulk_supercell: Structure | None = None,
@@ -3245,6 +3160,7 @@ def local_point_symmetry(
     dist_tol: float = 0.1,
     centre_error_range: float | None = None,
     verbose: bool = False,
+    _first_pass: bool = True,
 ) -> tuple[str, list[tuple[np.ndarray, np.ndarray]], dict]:
     r"""
     Determine the point symmetry of the local environment around a defect (or
@@ -3262,12 +3178,11 @@ def local_point_symmetry(
     structure of ``spglib`` point symmetry analysis but adapted to a finite
     cluster size:
 
-    1. Place a rough cluster centre at the defect site (provided
-       ``defect_frac_coords``; else ``defect_site_from_structures`` with a
-       bulk reference, or ``guess_defect_position`` without), refining to the
-       displacement-weighted perturbation centroid when a bulk reference cell
-       is provided, and extract the local atomic cluster with this centre point
-       and a radius equal to half the minimum periodic image distance.
+    1. Place a rough cluster centre at the defect site (``defect_frac_coords``;
+       else taken from ``defect_site_from_structures`` if ``bulk_supercell``
+       provided, or ``guess_defect_position`` without), and extract the local
+       atomic cluster with this centre point and a radius equal to half the
+       minimum periodic image distance.
     2. Candidate rotations are taken as the host crystal's point operations
        in the Cartesian frame (from the bulk primitive cell; independent of
        supercell shape), or generated directly from the local atomic geometry
@@ -3281,9 +3196,16 @@ def local_point_symmetry(
     5. Group closure (i.e. combining any two operations gives another operation
        in the group, required for any valid set of symmetry operations) is
        enforced on the accepted operation set (dropping the worst-residual
-       operations until closed). The defect symmetry centre is then derived
+       operations until closed). The defect symmetry centre is then `derived`
        from the accepted operations as their common fixed point (least-squares
        fit), and point group identified from the fitted symmetry operations.
+
+       If this derived centre differs appreciably (> ``dist_tol``) from the
+       cluster centre used, the analysis is re-run once, recentred on the
+       `derived` centre, keeping the result which certifies the most operations
+       -- extending the tolerance for imperfect defect/perturbation (cluster)
+       centre positions (off-centre cluster placement can only spuriously
+       `lower` the certified symmetry).
 
     Args:
         defect_supercell (|Structure|):
@@ -3291,21 +3213,21 @@ def local_point_symmetry(
         bulk_supercell (|Structure| | None):
             The bulk (pristine, reference) supercell structure, if available.
             If provided, candidate rotations are taken from the bulk crystal
-            symmetry (recommended; most robust) and the defect position is
-            automatically refined from bulk vs defect structure comparison.
-            Otherwise, candidate operations are generated directly from the
-            atomic geometry about the (guessed) defect position. Default is
-            ``None``.
+            symmetry (recommended; most robust) and the defect position (if not
+            provided) is determined from bulk vs defect structure comparison
+            (``defect_site_from_structures``). Otherwise, candidate operations
+            are generated directly from the atomic geometry about the (guessed)
+            defect position. Default is ``None``.
         defect_frac_coords (ArrayLike | None):
             Approximate fractional coordinates of the defect position in
             ``defect_supercell``. Only used to place the cluster sphere for
-            symmetry analysis (the symmetry centre itself is derived from the
-            determined symmetry operations). With a ``bulk_supercell``
-            reference, the placement is refined via the perturbation centroid,
-            so a rough (~few Å) input suffices; without one there is no
-            recentring, so the true centre must lie within
+            symmetry analysis; the symmetry centre itself is derived from the
+            identified symmetry operations, with the analysis re-run recentred
+            on the derived centre when it differs appreciably from the input
+            (see step 5 above). The true centre must lie within
             ~``centre_error_range`` of the input (tightening in small
-            supercells; see ``centre_error_range``) to be recovered. If
+            supercells; see ``centre_error_range``) to be recovered, with the
+            recentring re-run typically extending this somewhat further. If
             ``None`` (default), the defect position is taken from
             ``defect_site_from_structures`` when ``bulk_supercell`` is
             provided, or ``guess_defect_position`` otherwise.
@@ -3339,11 +3261,11 @@ def local_point_symmetry(
             the frame of the extracted local cluster); and an info dict with
             diagnostics:
 
-            - ``"center_cart"``: the `derived` defect symmetry centre in
+            - ``"centre_cart"``: the `derived` defect symmetry centre in
               Cartesian coordinates;
-            - ``"perturbation_centroid_cart"``: the local cluster centre used
-              -- the ``perturbation_centroid`` output when a bulk reference is
-              available, otherwise the input/guessed defect position;
+            - ``"cluster_centre_cart"``: the local cluster centre used for the
+              (final) analysis pass -- the input/determined defect position,
+              or the ops-derived centre of the first pass if recentred;
             - ``"fixed_point_consistency"``: max deviation (Å) of the `derived`
               centre from being a true fixed point of each fitted operation;
             - ``"closed"``: whether the accepted operations formed a closed
@@ -3355,32 +3277,26 @@ def local_point_symmetry(
     radius = min(get_min_image_distance(defect_supercell) / 2, 12)  # cap at 12 Å for very large supercells
 
     # determine cluster centre:
-    # only needs to be accurate to a few Å (assuming bulk reference provided), as it is just used to place
-    # the local cluster sphere; while the symmetry centre itself is then derived from the fitted symmetry
-    # operations
-    center_cart: np.ndarray | None = None
-    if defect_frac_coords is not None:  # use the provided defect position for initial guess
-        center_cart = defect_supercell.lattice.get_cartesian_coords(defect_frac_coords)
-
-    if bulk_supercell is not None:  # then refine the initial guess via the bulk reference
-        # if ``center_cart`` is ``None`` here (no defect position provided), then ``perturbation_centroid``
-        # will call ``defect_site_from_structures``, for the initial guess:
-        center_cart = perturbation_centroid(defect_supercell, bulk_supercell, center_cart, radius)
-
-    if defect_frac_coords is None and bulk_supercell is None:  # then guess the defect position
+    # only needs to be accurate to ~centre_error_range, as it is just used to place the local cluster
+    # sphere; while the symmetry centre itself is then derived from the fitted symmetry operations (with
+    # a recentred re-run if it differs appreciably from the input)
+    if defect_frac_coords is not None:  # use the provided defect position
+        centre_cart = defect_supercell.lattice.get_cartesian_coords(defect_frac_coords)
+    elif bulk_supercell is not None:  # determine from bulk vs defect structure comparison
+        centre_cart = _defect_coords_from_structures(defect_supercell, bulk_supercell)
+    else:  # no bulk reference either; guess the defect position
         from doped.analysis import guess_defect_position  # avoid circular import
 
-        center_cart = guess_defect_position(defect_supercell)
+        centre_cart = guess_defect_position(defect_supercell)
         centre_error_range = centre_error_range or 3.0  # default = 3.0 Å w/guessed position (larger error)
 
     centre_error_range = centre_error_range or 1.5  # default = 1.5 Å, except w/``guess_defect_position``
 
-    assert center_cart is not None
-    coords, species = _extract_defect_cluster(defect_supercell, center_cart, radius)
+    coords, species = _extract_defect_cluster(defect_supercell, centre_cart, radius)
     point_symmetry_info: dict = {
         "closed": True,
-        "center_cart": center_cart,
-        "perturbation_centroid_cart": center_cart,
+        "centre_cart": centre_cart,
+        "cluster_centre_cart": centre_cart,
         "fixed_point_consistency": 0.0,
         "residuals": [],
     }
@@ -3498,7 +3414,7 @@ def local_point_symmetry(
 
     # the defect symmetry centre is _derived_ from the accepted operations, as their common fixed point
     # (least squares fit); free directions (e.g. along rotation axes, within mirror planes) are pinned to
-    # the perturbation centroid by the small regularisation term:
+    # the cluster centre by the small regularisation term:
     # each operation x -> R @ x + t fixes a point c where c = R @ c + t = I @ c;
     # R @ c - I @ c = -t; (R - I) @ c = -t
     lhs, rhs = 1e-6 * np.eye(3), np.zeros(3)  # regularisation term
@@ -3507,10 +3423,10 @@ def local_point_symmetry(
         lhs += displacement_matrix.T @ displacement_matrix  # (R - I) @ (R - I)^T
         rhs -= displacement_matrix.T @ translation  # (R - I) @ t
 
-    center_offset = np.linalg.solve(lhs, rhs)  # solve for c
-    point_symmetry_info["center_cart"] = center_cart + center_offset
+    centre_offset = np.linalg.solve(lhs, rhs)  # solve for c
+    point_symmetry_info["centre_cart"] = centre_cart + centre_offset
     point_symmetry_info["fixed_point_consistency"] = max(
-        np.linalg.norm((rotation - np.eye(3)) @ center_offset + translation)
+        np.linalg.norm((rotation - np.eye(3)) @ centre_offset + translation)
         for rotation, translation, _residual in kept
     )  # max deviation from fixed point
     point_symmetry_info["residuals"] = sorted(best_residuals)
@@ -3520,9 +3436,38 @@ def local_point_symmetry(
         print(
             f"Local symmetry analysis: radius {radius:.2f} Å, {len(coords)} atoms, {len(kept)} operations "
             f"kept (initial group closure: {point_symmetry_info['closed']}), point group {symbol}, "
-            f"derived centre {np.round(point_symmetry_info['center_cart'], 3)} (fixed-point consistency: "
+            f"derived centre {np.round(point_symmetry_info['centre_cart'], 3)} (fixed-point consistency: "
             f"{point_symmetry_info['fixed_point_consistency']:.3f} Å)."
         )
+
+    # an off-centre cluster placement can only spuriously _lower_ the certified symmetry, so if not all
+    # candidate rotations were certified, re-run recentred on any plausibly-better centres -- the
+    # ops-derived symmetry centre (if it differs appreciably from the cluster centre used), and, if a bulk
+    # reference is provided, the structure-comparison defect site -- keeping the highest-symmetry result
+    if _first_pass and len(kept) < len(rotations):
+        best_result = (symbol, [(op[0], op[1]) for op in kept], point_symmetry_info)
+        candidate_centres = [point_symmetry_info["centre_cart"]]  # ops-derived centre
+        if bulk_supercell is not None and defect_frac_coords is not None:
+            candidate_centres.append(_defect_coords_from_structures(defect_supercell, bulk_supercell))
+
+        tried_centres = [centre_cart]
+        for candidate_centre in candidate_centres:
+            if any(np.linalg.norm(candidate_centre - prev) <= dist_tol for prev in tried_centres):
+                continue  # <``dist_tol`` from previous centre, (effectively) already tried
+            retry_result = local_point_symmetry(
+                defect_supercell,
+                bulk_supercell,
+                defect_frac_coords=defect_supercell.lattice.get_fractional_coords(candidate_centre),
+                dist_tol=dist_tol,
+                centre_error_range=centre_error_range,
+                verbose=verbose,
+                _first_pass=False,
+            )
+            tried_centres.append(candidate_centre)
+            if len(retry_result[1]) > len(best_result[1]):  # more certified ops (higher symmetry)
+                best_result = retry_result
+        return best_result
+
     return symbol, [(op[0], op[1]) for op in kept], point_symmetry_info
 
 
@@ -3546,12 +3491,11 @@ def point_symmetry_from_defect_entry(
     non-diagonal supercell expansions), which otherwise prevent relaxed
     defect point symmetry determination.
 
-    When ``relaxed=True``, the perturbation centroid (displacement-weighted
-    centre of defect-induced structural perturbation; see
-    ``perturbation_centroid``) and the derived defect point symmetry centre
-    (the common fixed point of the determined symmetry operations) are also
+    When ``relaxed=True``, the local analysis cluster centre (see
+    ``local_point_symmetry``) and the derived defect point symmetry centre
+    (the common fixed point of the identified symmetry operations) are also
     stored in ``defect_entry.calculation_metadata``, under the
-    ``"perturbation centroid"`` and ``"defect symmetry centre"`` keys, as
+    ``"symmetry cluster centre"`` and ``"defect symmetry centre"`` keys, as
     fractional coordinates of the defect supercell.
 
     If ``relaxed = False``, determines the site symmetry of the defect site
@@ -3627,8 +3571,8 @@ def point_symmetry_from_defect_entry(
             verbose=bool(verbose),
         )
         for key, cart_coords in [
-            ("perturbation centroid", info["perturbation_centroid_cart"]),
-            ("defect symmetry centre", info["center_cart"]),
+            ("symmetry cluster centre", info["cluster_centre_cart"]),
+            ("defect symmetry centre", info["centre_cart"]),
         ]:
             defect_entry.calculation_metadata[key] = (
                 defect_supercell.lattice.get_fractional_coords(cart_coords) % 1
@@ -3710,11 +3654,20 @@ def point_symmetry_from_structure(
     from ``defect_position`` if provided, or guessed using SOAP-based local
     environment analysis (``guess_defect_position``; requires ``dscribe``), and
     candidate symmetry operations are generated directly from the local atomic
-    geometry. Note that the defect position only needs to be accurate to a few
-    Å if a bulk reference structure is provided (as the centre position is
-    refined from the perturbation centroid), but without it the tolerable error
-    range shrinks to ~1 - 3 Å (depending on the supercell size). The final
-    symmetry centre is itself derived from the fitted symmetry operations.
+    geometry. This position is only used to place the cluster sphere for local
+    symmetry analysis; the symmetry centre itself is derived from the
+    identified symmetry operations, with the analysis re-run recentred on the
+    derived centre when it differs appreciably from the initial (guessed)
+    position. Without a bulk reference cell, the (guessed) defect position
+    (i.e. cluster centre) needs to be accurate to ~1 - 2 Å (depending on the
+    supercell size).
+
+    To sanity-check results, the derived symmetry centre and the cluster
+    centre used can be obtained by calling ``local_point_symmetry`` directly
+    (returned info dict, ``"centre_cart"`` and ``"cluster_centre_cart"`` keys),
+    or printed with ``verbose=True``; when working from a |DefectEntry|, they
+    are stored in ``calculation_metadata`` (under ``"defect symmetry centre"``
+    and ``"symmetry cluster centre"``) by ``point_symmetry_from_defect_entry``.
 
     In the bulk-reference-free case, the local isometry result is also
     cross-checked against global space-group analysis of the defect supercell
@@ -3722,8 +3675,7 @@ def point_symmetry_from_structure(
     containing a single defect and without spurious periodicity-breaking),
     taking the higher-symmetry result -- as each approach can only spuriously
     `lower` the true symmetry (periodicity-breaking supercell shapes for the
-    global analysis; imperfect perturbation centring for the local analysis,
-    having no bulk reference to refine perturbation centring with).
+    global analysis; imperfect cluster centring for the local analysis).
 
     If ``bulk_structure`` is supplied and ``relaxed`` is set to ``False``, then
     returns the bulk site symmetry of the defect / local perturbation, which
@@ -3836,8 +3788,8 @@ def point_symmetry_from_structure(
     # cross-check against global space-group analysis of the defect supercell, whose point group matches
     # the defect site symmetry for supercells containing a single defect and no periodicity-breaking. Each
     # approach can only spuriously _lower_ the true symmetry (global analysis: periodicity-breaking
-    # supercell shapes; local analysis: imperfect cluster sphere centring (due to imperfect perturbation
-    # centring), with no bulk reference here to recentre with), so the higher-symmetry result is taken:
+    # supercell shapes; local analysis: imperfect cluster sphere centring, beyond what the ops-derived
+    # recentring re-run can recover), so the higher-symmetry result is taken:
     spglib_symbol = schoenflies_from_hermann(get_sga(structure, symprec=symprec).get_point_group_symbol())
     if spglib_symbol is not None and group_order_from_schoenflies(
         spglib_symbol
