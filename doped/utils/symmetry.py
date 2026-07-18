@@ -7,7 +7,7 @@ import math
 import os
 import warnings
 from collections.abc import Iterable, Sequence
-from functools import lru_cache
+from functools import lru_cache, partial
 from itertools import permutations, product
 from typing import cast
 
@@ -3338,6 +3338,20 @@ def local_point_symmetry(
 
     kept: list[list] = []  # accepted operations, as [rotation, translation, residual]
     best_residuals: list[float] = []  # best residual per candidate rotation (diagnostics)
+    # shared cluster/tolerance args for repeated residual/refinement calls below:
+    refine_op = partial(
+        _refine_symm_op,
+        coords,
+        species,
+        trees,
+        species_coords,
+        radius=radius,
+        symprec=symprec,
+        match_tol=match_tol,
+    )
+    map_residual = partial(
+        _map_residual, coords, species, trees, radius=radius, symprec=symprec, dists=dists
+    )
     for candidate_rotation in rotations:
         # get candidate translations from anchor -> orbit-partner correspondences, deduped within 0.05 Å:
         candidate_translations: list[np.ndarray] = []
@@ -3354,22 +3368,9 @@ def local_point_symmetry(
         for candidate_translation in candidate_translations:
             rotation, translation = candidate_rotation, candidate_translation
             if bulk_supercell is None:  # noisy geometry-derived rotation; refine before testing
-                rotation, translation = _refine_symm_op(
-                    coords,
-                    species,
-                    trees,
-                    species_coords,
-                    rotation,
-                    translation,
-                    radius,
-                    symprec,
-                    match_tol,
-                    refine_rotation=True,
-                )
+                rotation, translation = refine_op(rotation, translation, refine_rotation=True)
 
-            accepted, residual, _n_test = _map_residual(
-                coords, species, trees, rotation, translation, radius, symprec, dists
-            )
+            accepted, residual, _n_test = map_residual(rotation, translation)
             best_residual = min(best_residual, residual)
             if accepted:  # keep the best-residual op per distinct rotation -- Procrustes refinement may
                 # result in duplicate rotations, so check and de-dup (taking that with the best residual):
@@ -3382,13 +3383,8 @@ def local_point_symmetry(
 
     # refine each kept operation's translation by the mean matched-pair offset (removes anchor noise):
     for op in kept:
-        # TODO: Use partial functions for _refine_symm_op and _map_residual; mostly the same between calls
-        rotation, translation = _refine_symm_op(
-            coords, species, trees, species_coords, op[0], op[1], radius, symprec, match_tol
-        )
-        accepted, residual, _n_test = _map_residual(
-            coords, species, trees, rotation, translation, radius, symprec, dists
-        )
+        rotation, translation = refine_op(op[0], op[1])
+        accepted, residual, _n_test = map_residual(rotation, translation)
         if accepted and residual < op[2]:  # improved residual after refinement; overwrite list entries
             op[:] = [rotation, translation, residual]
 
