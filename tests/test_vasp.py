@@ -586,8 +586,8 @@ class DefectDictSetTest(unittest.TestCase):
         if kwargs.get("poscar", True):
             written_poscar = Poscar.from_file(f"{output_path}/POSCAR")
             # `get_defect_name_from_entry(relaxed=True)` causes |Defect| initialisation which adds oxi
-            # states to `structure` (`defect_entry.bulk_supercell` in this case), which is used in our
-            # YTOS defect gen tests (to test periodicity breaking warning), so remove these for comparison:
+            # states to `structure` (`defect_entry.bulk_supercell` in this case), which is used in our YTOS
+            # defect gen tests, so remove these for comparison:
             written_poscar.structure.remove_oxidation_states()
             dds.structure.remove_oxidation_states()
             assert written_poscar.structure == dds.structure

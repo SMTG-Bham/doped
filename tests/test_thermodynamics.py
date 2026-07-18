@@ -954,8 +954,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
             for entry in defect_thermo.defect_entries.values()
         ]
         print(np.mean(guessed_def_pos_deviations_w_bulk))
-        if defect_thermo.bulk_formula not in ["MgO", "ZnS"]:
-            # odd cases; guessing w/out bulk acc does slightly better
+        if defect_thermo.bulk_formula not in ["MgO", "ZnS", "SiSbTe3"]:
+            # odd cases; guessing w/out bulk acc does very slightly (or negligibly; SiSbTe3) better
             assert np.mean(guessed_def_pos_deviations_w_bulk) <= np.mean(guessed_def_pos_deviations)
         else:
             assert np.isclose(
@@ -1033,8 +1033,8 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
 
                 for entry, min_dist in zip(cluster_list, min_dists, strict=True):
                     print(f"Checking dist_tol for {entry.name}")
-                    # get_min_dist_between_equiv_sites checks min dists in the primitive cells now
-                    # by default, so this works even for periodicity-breaking supercells now:
+                    # get_min_dist_between_equiv_sites checks min dists `in the primitive cells` by
+                    # default, so this works even for periodicity-breaking supercells:
                     assert min_dist < defect_thermo.dist_tol  # min dist less than dist_tol
 
                     # pick some random entries from other clusters and check distances:
@@ -2534,13 +2534,6 @@ class DefectThermodynamicsTestCase(DefectThermodynamicsSetupMixin):
                 )
                 == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
             )
-            symm, periodicity_breaking = point_symmetry_from_structure(
-                defect_entry.defect_supercell,
-                bulk_structure=defect_entry.bulk_supercell,
-                return_periodicity_breaking=True,
-            )
-            assert symm == sym_degen_dict[defect_entry.name]["relaxed point symmetry"]
-            assert not periodicity_breaking
 
             assert (
                 point_symmetry_from_structure(
@@ -4549,21 +4542,19 @@ class DefectThermodynamicsCdTePlotsTestCases(unittest.TestCase):
             "return_annealing_values": True,
             "skip_formatting": True,
         }
-        with warnings.catch_warnings():  # ignore periodicity-breaking warning
-            warnings.filterwarnings("ignore", category=UserWarning, message="The defect supercell has ")
-            for T in anneal_temperatures:
-                results["none"][T] = zgo_thermo.get_fermi_level_and_concentrations(
-                    annealing_temperature=T, **common
-                )
-                results["asymmetric"][T] = zgo_thermo.get_fermi_level_and_concentrations(
-                    annealing_temperature=T, delta_VBM=VBM_shift(T), delta_CBM=CBM_shift(T), **common
-                )
-                results["symmetric"][T] = zgo_thermo.get_fermi_level_and_concentrations(
-                    annealing_temperature=T,
-                    delta_VBM=-delta_gap(T) / 2,
-                    delta_CBM=+delta_gap(T) / 2,
-                    **common,
-                )
+        for T in anneal_temperatures:
+            results["none"][T] = zgo_thermo.get_fermi_level_and_concentrations(
+                annealing_temperature=T, **common
+            )
+            results["asymmetric"][T] = zgo_thermo.get_fermi_level_and_concentrations(
+                annealing_temperature=T, delta_VBM=VBM_shift(T), delta_CBM=CBM_shift(T), **common
+            )
+            results["symmetric"][T] = zgo_thermo.get_fermi_level_and_concentrations(
+                annealing_temperature=T,
+                delta_VBM=-delta_gap(T) / 2,
+                delta_CBM=+delta_gap(T) / 2,
+                **common,
+            )
 
         # Numerical assertions at T_anneal = 1500 K:
         T_anneal = 1500  # K -- typical ZGO processing temperature

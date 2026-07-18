@@ -136,9 +136,8 @@ def warn_once(message: str, category: type[Warning] = UserWarning, key: Any = No
     already been called for a given object/situation; e.g. a |DefectEntry|
     ``name`` to warn once `per defect entry`.
 
-    Used for the periodicity-breaking supercell and missing-degeneracy-factor
-    warnings, which can otherwise be emitted many times in thermodynamic
-    analysis loops.
+    Used for the missing-degeneracy-factor warnings in ``doped.core``, which
+    can otherwise be emitted many times in thermodynamic analysis loops.
     """
     warnings.warn(message, category, stacklevel=3)
 

@@ -3738,19 +3738,17 @@ class TestFermiSolverWithLoadedData3D(unittest.TestCase):
             "per_charge": False,
             "return_annealing_values": True,
         }
-        with warnings.catch_warnings():  # ignore periodicity-breaking warning
-            warnings.filterwarnings("ignore", category=UserWarning, message="The defect supercell has ")
-            df_none = zgo_solver.scan_temperature(**common_kwargs)
-            df_asym = zgo_solver.scan_temperature(
-                **common_kwargs,
-                delta_VBM=VBM_shift,
-                delta_CBM=CBM_shift,
-            )
-            df_sym = zgo_solver.scan_temperature(
-                **common_kwargs,
-                delta_VBM=lambda T: -delta_gap(T) / 2,
-                delta_CBM=lambda T: +delta_gap(T) / 2,
-            )
+        df_none = zgo_solver.scan_temperature(**common_kwargs)
+        df_asym = zgo_solver.scan_temperature(
+            **common_kwargs,
+            delta_VBM=VBM_shift,
+            delta_CBM=CBM_shift,
+        )
+        df_sym = zgo_solver.scan_temperature(
+            **common_kwargs,
+            delta_VBM=lambda T: -delta_gap(T) / 2,
+            delta_CBM=lambda T: +delta_gap(T) / 2,
+        )
 
         # Sanity checks at T_anneal = 1500 K (mirrors thermo test):
         T_anneal = 1500

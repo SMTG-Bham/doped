@@ -451,8 +451,7 @@ def _group_defects_by_distance(
     #    already members of an earlier defect entry cluster.
 
     for entry in entry_list:
-        # using primitive structure rather than bulk supercell here should mostly avoid
-        # periodicity-breaking issues
+        # using primitive (rather than bulk supercell) here should mostly avoid periodicity-breaking issues
         entry_bulk_structure = entry.defect.structure
         entry_bulk_site = entry.defect.site
         entry_equiv_sites = getattr(entry.defect, "equivalent_sites", None)

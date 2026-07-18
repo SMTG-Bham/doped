@@ -3560,7 +3560,6 @@ def point_symmetry_from_defect_entry(
     Returns:
         str: Defect point symmetry (Schoenflies symbol).
     """
-    # TODO: Check all usages/mentions of periodicity-breaking
     # TODO: Codex/Fable review diff
     if symprec is None:
         symprec = 0.1 if relaxed else 0.01  # relaxed structures likely have structural noise
