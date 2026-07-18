@@ -35,7 +35,6 @@ from doped.analysis import (
     parse_symmetry_and_degeneracy_metadata,
     shallow_dopant_binding_energy,
 )
-from doped.core import _orientational_degeneracy_warning
 from doped.generation import DefectsGenerator, get_defect_name_from_defect, get_defect_name_from_entry
 from doped.utils.efficiency import Structure
 from doped.utils.eigenvalues import get_eigenvalue_analysis
@@ -935,11 +934,17 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @custom_mpl_image_compare(filename="Sb2Si2Te6_v_Sb_-3_eFNV_plot_no_intralayer.png")
     def test_sb2si2te6_eFNV_and_periodicity_breaking_handling(self):
+        """
+        Test parsing Sb2Si2Te6 calculations.
+
+        Periodicity-breaking supercell, but symmetry (and degeneracy etc)
+        handled without issue due to local point symmetry functions.
+        """
         dp, w = _create_dp_and_capture_warnings(
             self.Sb2Si2Te6_EXAMPLE_DIR,
             dielectric=self.Sb2Si2Te6_dielectric,
+            json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
             parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-            attempt_periodicity_restoration=False,
         )
         assert any(
             "Estimated error in the Kumagai (eFNV) charge correction for certain defects"
@@ -951,31 +956,17 @@ class DefectsParsingTestCase(unittest.TestCase):
             not in str(warning.message)
             for warning in w
         )  # no individual-level warning
-        # Sb2Si2Te6 supercell breaks periodicity, but we don't throw warning when just parsing defects
-        assert all("The defect supercell has been detected" not in str(warning.message) for warning in w)
 
         check_DefectsParser(dp)
         sb2si2te6_thermo = dp.get_defect_thermodynamics()
         with warnings.catch_warnings(record=True) as w:
             sb2si2te6_thermo.get_symmetries_and_degeneracies()
         _print_warning_info(w)
-        assert any(_orientational_degeneracy_warning in str(warning.message) for warning in w)
-        assert sb2si2te6_thermo["v_Sb_-3"].calculation_metadata["periodicity_breaking_supercell"] is True
-
-        dp, w = _create_dp_and_capture_warnings(
-            self.Sb2Si2Te6_EXAMPLE_DIR,
-            dielectric=self.Sb2Si2Te6_dielectric,
-            json_filename="Sb2Si2Te6_example_defect_dict.json",  # testing in test_thermodynamics.py
-            parse_projected_eigen=False,  # just for fast testing, not recommended in general!
-        )  # attempt periodicity restoration
-        sb2si2te6_thermo = dp.get_defect_thermodynamics()
-        with warnings.catch_warnings(record=True) as w:
-            sb2si2te6_thermo.get_symmetries_and_degeneracies()
-        _print_warning_info(w)
         dumpfn(sb2si2te6_thermo, os.path.join(self.Sb2Si2Te6_EXAMPLE_DIR, "Sb2Si2Te6_example_thermo.json"))
-        assert not w  # periodicity automatically restored now!
-        assert sb2si2te6_thermo["v_Sb_-3"].calculation_metadata["periodicity_breaking_supercell"] is False
+        assert not w  # Sb2Si2Te6 supercell breaks the host periodicity, but relaxed point symmetries
+        # are determined fine (via local isometry analyses in ``point_symmetry_from_defect_entry``)
         assert sb2si2te6_thermo["v_Sb_-3"].calculation_metadata["relaxed point symmetry"] == "C3"
+        assert "periodicity_breaking_supercell" not in sb2si2te6_thermo["v_Sb_-3"].calculation_metadata
 
         v_Sb_minus_3_ent = dp.defect_dict["v_Sb_-3"]
         with warnings.catch_warnings(record=True) as w:
@@ -1292,32 +1283,63 @@ class DefectsParsingTestCase(unittest.TestCase):
             thermo = dp.get_defect_thermodynamics()
         assert not w  # no warnings (e.g. for grouping defects by distance etc)
 
-        with warnings.catch_warnings(record=True) as w:
-            symm_df = thermo.get_symmetries_and_degeneracies()
-        print(symm_df)  # for debugging
-        _print_warning_info(w)
-        assert len(w) == 1
-        assert all(
-            i in str(w[0].message)
-            for i in [
-                "The defect supercell has been detected to possibly have a non-scalar matrix expansion",
-                "breaking the cell periodicity",
-                "This will not affect defect formation energies / transition levels,",
-                "but can be important for concentrations/doping/Fermi level behaviour",
-                "You can manually check (and edit) the computed defect point",
+        # the ZnS non-diagonal supercell breaks the host periodicity (and stenciling to a
+        # periodicity-restored supercell is not possible either, as it is a different lattice definition
+        # / supercell tiling), but relaxed point symmetries are determined fine via local isometry analyses
+        # in ``point_symmetry_from_defect_entry`` (previously all gave C1, with global ``spglib``
+        # analysis).
+        # v_Zn is noisy/difficult to classify due to the very small supercell (~7.5 Å min-image distance),
+        # so highly symprec-dependent.
+        expected_symms = {  # symprec: (v_Zn Defect_Symms, vac/sub Defect_Symms, inter Defect_Symms)
+            None: (  # ``None`` (cached parse-time symmetries) first -- later ``symprec`` calls mutate
+                {"0": "C1", "-1": "C2v", "-2": "C2v"},
+                {"C1", "C2v", "Cs", "Td"},
+                {"C1", "C2v", "Cs", "Td"},
+            ),
+            0.15: (
+                {"0": "Cs", "-1": "C2v", "-2": "Td"},
+                {"C2v", "Cs", "Td"},
+                {"C1", "Cs", "Td"},
+            ),
+            0.2: (
+                {"0": "C2v", "-1": "C2v", "-2": "Td"},
+                {"C2v", "Cs", "Td"},
+                {"C1", "Cs", "Td"},
+            ),
+        }
+        for symprec, (v_Zn, vac_sub_defect, inter_defect) in expected_symms.items():
+            kwargs = {} if symprec is None else {"symprec": symprec}
+            with warnings.catch_warnings(record=True) as w:
+                symm_df = thermo.get_symmetries_and_degeneracies(**kwargs)
+            print(symm_df)  # for debugging
+            _print_warning_info(w)
+            assert not w
+            assert set(symm_df["Site_Symm"]) == {"Td", "C3v", "Cs", "C1"}
+
+            vacancy_and_sub_rows = symm_df[
+                np.array(["vac" in i for i in symm_df.index.get_level_values("Defect")])
+                | np.array(["sub" in i for i in symm_df.index.get_level_values("Defect")])
             ]
-        )  # auto-stenciling not possible with ZnS
+            assert list(vacancy_and_sub_rows["Site_Symm"].unique()) == ["Td"]
+            assert set(vacancy_and_sub_rows["Defect_Symm"]) == vac_sub_defect
+            # all subgroups of the (Td) bulk site symmetry, with integer orientational degeneracies:
+            assert all(
+                float(g_orient).is_integer() and float(g_orient) >= 1.0  # >=1 for vacancy degeneracies
+                for g_orient in vacancy_and_sub_rows["g_Orient"]
+            )
+            for q, defect_symm in v_Zn.items():
+                assert symm_df.loc[("vac_1_Zn", q), "Defect_Symm"] == defect_symm
 
-        vacancy_and_sub_rows = symm_df[
-            np.array(["vac" in i for i in symm_df.index.get_level_values("Defect")])
-            | np.array(["sub" in i for i in symm_df.index.get_level_values("Defect")])
-        ]
-        assert list(vacancy_and_sub_rows["Site_Symm"].unique()) == ["Td"]
-        assert list(vacancy_and_sub_rows["Defect_Symm"].unique()) == ["C1"]
-
-        interstitial_rows = symm_df[["inter" in i for i in symm_df.index.get_level_values("Defect")]]
-        assert list(interstitial_rows["Site_Symm"].unique()) == ["C3v", "Cs", "C1"]
-        assert list(interstitial_rows["Defect_Symm"].unique()) == ["C1"]
+            interstitial_rows = symm_df[["inter" in i for i in symm_df.index.get_level_values("Defect")]]
+            assert list(interstitial_rows["Site_Symm"].unique()) == ["C3v", "Cs", "C1"]
+            assert set(interstitial_rows["Defect_Symm"]) == inter_defect
+            # several Al interstitials migrate to (higher-symmetry) sites during relaxation
+            # (-> orientational degeneracies mostly < 1; see ``get_orientational_degeneracy`` docstring):
+            assert any(float(g) < 1.0 for g in interstitial_rows["g_Orient"])
+            if symprec is None:  # inter_26_Al_+3: C3v -> C2v (symmetry lowering, g_Orient = 1.5)
+                assert any(float(g) > 1.0 for g in interstitial_rows["g_Orient"])
+            else:
+                assert all(float(g) < 1.0 for g in interstitial_rows["g_Orient"])
 
         thermo.dist_tol = 2.5  # merges Al interstitials together
         # remove eigenvalue_data and run_metadata from each entry to save space:
