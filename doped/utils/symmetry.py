@@ -3204,8 +3204,11 @@ def local_point_symmetry(
        cluster centre used, the analysis is re-run once, recentred on the
        `derived` centre, keeping the result which certifies the most operations
        -- extending the tolerance for imperfect defect/perturbation (cluster)
-       centre positions (off-centre cluster placement can only spuriously
-       `lower` the certified symmetry).
+       centre positions. `In the noise-free limit`, off-centre cluster
+       placement can only spuriously `lower` the certified symmetry; for
+       borderline distortions of magnitude ~``dist_tol``, however, a shifted
+       placement can alter cluster membership (test region) and flip the
+       symmetry assignment in either direction.
 
     Args:
         defect_supercell (|Structure|):
@@ -3440,10 +3443,14 @@ def local_point_symmetry(
             f"{point_symmetry_info['fixed_point_consistency']:.3f} Å)."
         )
 
-    # an off-centre cluster placement can only spuriously _lower_ the certified symmetry, so if not all
-    # candidate rotations were certified, re-run recentred on any plausibly-better centres -- the
-    # ops-derived symmetry centre (if it differs appreciably from the cluster centre used), and, if a bulk
-    # reference is provided, the structure-comparison defect site -- keeping the highest-symmetry result
+    # in the noise-free limit, an off-centre cluster placement can only spuriously _lower_ the certified
+    # symmetry, so if not all candidate rotations were certified, re-run recentred on any plausibly-better
+    # centres -- the ops-derived symmetry centre (if it differs appreciably from the cluster centre used),
+    # and, if a bulk reference is provided, the structure-comparison defect site -- keeping the
+    # highest-symmetry result. Note that for knife-edge cases (distortions of magnitude ``~dist_tol``), a
+    # shifted placement can instead certify _more_ ops than the true centre (borderline ops slipping under
+    # tolerance), but expected to be rare in practice (and they are cases at the borderline of ``dist_tol``
+    # anyway)
     if _first_pass and len(kept) < len(rotations):
         best_result = (symbol, [(op[0], op[1]) for op in kept], point_symmetry_info)
         candidate_centres = [point_symmetry_info["centre_cart"]]  # ops-derived centre

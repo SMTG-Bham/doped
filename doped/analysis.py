@@ -779,6 +779,11 @@ def guess_defect_position(
         np.ndarray:
             Guessed position of the defect in **Cartesian** coordinates.
     """
+    # Note: In theory, we could improve the match between this function and defect_site_from_structures, by
+    # trying to stencil out part of the cell far from the defect, determine a symmetrised unit cell, and
+    # re-generate a matching reference bulk supercell (to then apply ``defect_site_from_structures`` as
+    # usual), but would require a lot of engineering, with no clear demand yet.
+
     # if there is only one site of a particular element in the defect supercell, then we guess it as the
     # defect site (extrinsic substitution/interstitial):
     i_elt_dict = {
