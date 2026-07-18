@@ -2753,7 +2753,7 @@ def _candidate_rotations_from_cluster(
     coords: np.ndarray,
     species: np.ndarray,
     dists: np.ndarray | None = None,
-    dist_tol: float = 0.1,
+    symprec: float = 0.1,
     t_max: float = 3.0,
     min_leg: float = 1.5,
     min_sin: float = 0.4,
@@ -2776,11 +2776,11 @@ def _candidate_rotations_from_cluster(
        triangle with it.
     2. Build a right-handed orthonormal frame ``F_a`` from the anchor triple.
     3. For each anchor atom, collect same-species image candidates whose
-       distance from the centre is within ``t_max + dist_tol`` of the
-       anchor's (rotations preserve ``|x|``, so partners cannot lie much
-       farther out once a translation of size ``<= t_max`` is allowed).
+       distance from the centre is within ``t_max + symprec`` of the anchor's
+       (rotations preserve ``|x|``, so partners cannot lie much farther out
+       once a translation of size ``<= t_max`` is allowed).
     4. Enumerate image triples ``(j0, j1, j2)``, pruning any whose pairwise
-       separations do not match the anchor's (within ``2 * dist_tol``).
+       separations do not match the anchor's (within ``2 * symprec``).
     5. For each surviving triple, build another right-handed orthonormal frame
        ``F_b`` and take the proper rotation ``R = F_b @ F_a^{-1}``, plus its
        improper (reflected) counterpart; deduplicate within a loose rotation
@@ -2799,7 +2799,7 @@ def _candidate_rotations_from_cluster(
         dists (np.ndarray | None):
             ``(N,)`` distances of each atom from the (rough) defect centre.
             If ``None`` or empty (default), recomputed from ``coords``.
-        dist_tol (float):
+        symprec (float):
             Distance tolerance (in Å), as in ``local_point_symmetry``.
             Default is 0.1 Å.
         t_max (float):
@@ -2809,9 +2809,9 @@ def _candidate_rotations_from_cluster(
             centre; that offset appears as nonzero ``t``, so image partners can
             sit up to ``~t_max`` (-> ``2 * error in centre position``) farther
             from the origin than their anchors. Used to prune same-species
-            image candidates; ``dists[j] <= dists[anchor] + t_max + dist_tol``.
+            image candidates; ``dists[j] <= dists[anchor] + t_max + symprec``.
             If the origin were exact, ``t_max`` could be ~0 (noise covered by
-            ``dist_tol``). Default is 3.0 Å (matching ``t_max`` from
+            ``symprec``). Default is 3.0 Å (matching ``t_max`` from
             ``local_point_symmetry`` with ``centre_error_range`` of 1.5 Å).
         min_leg (float):
             Minimum anchor-triangle leg length (in Å), ensuring a
@@ -2864,7 +2864,7 @@ def _candidate_rotations_from_cluster(
     anchor_pair_dists = {
         (i, j): np.linalg.norm(anchor_coords[i] - anchor_coords[j]) for i in (0, 1) for j in (1, 2)
     }
-    pair_tol = 2 * dist_tol  # atoms each matched within dist_tol -> pair distances within 2*dist_tol
+    pair_tol = 2 * symprec  # atoms each matched within symprec -> pair distances within 2*symprec
     frame_a_inv = orthonormal_frame(*anchor_coords).T  # orthogonal, so inverse = transpose
     reflection = np.diag([1.0, 1.0, -1.0])
     # candidate image atoms for each anchor: same species, and within |t| + noise of its distance from the
@@ -2873,7 +2873,7 @@ def _candidate_rotations_from_cluster(
         [
             int(j)
             for j in np.where(species == species[anchor_idxs[k]])[0]  # matching species
-            if dists[j] <= dists[anchor_idxs[k]] + t_max + dist_tol  # distance within tolerange range
+            if dists[j] <= dists[anchor_idxs[k]] + t_max + symprec  # distance within tolerange range
         ]
         for k in range(3)  # for each atom in triple
     ]
@@ -2908,7 +2908,7 @@ def _map_residual(
     rotation: np.ndarray | None = None,
     translation: np.ndarray | None = None,
     radius: float | None = None,
-    dist_tol: float = 0.1,
+    symprec: float = 0.1,
     dists: np.ndarray | None = None,
 ) -> tuple[bool, float, int]:
     """
@@ -2916,8 +2916,8 @@ def _map_residual(
     ``x -> rotation @ x + translation``.
 
     An atom is tested if and only if its predicted image lands within
-    ``radius - dist_tol`` of the centre, where its true partner (within
-    ``dist_tol``, if the operation is genuine) is guaranteed to be inside the
+    ``radius - symprec`` of the centre, where its true partner (within
+    ``symprec``, if the operation is genuine) is guaranteed to be inside the
     extracted local sphere -- so boundary truncation can never falsely reject
     a true operation, while every observable atom image is still checked.
 
@@ -2939,9 +2939,9 @@ def _map_residual(
             the zero vector.
         radius (float | None):
             Radius (in Å) of the local environment extraction sphere. If
-            ``None`` (default), set to ``max(dists) + dist_tol`` so the
-            provided cluster is fully observable.
-        dist_tol (float):
+            ``None`` (default), set to ``max(dists) + symprec`` so the provided
+            cluster is fully observable.
+        symprec (float):
             Distance tolerance (in Å), as in ``local_point_symmetry``.
             Default is 0.1 Å.
         dists (np.ndarray | None):
@@ -2959,28 +2959,28 @@ def _map_residual(
     trees = trees or {sp: KDTree(coords[species == sp]) for sp in set(species)}
     rotation = np.eye(3) if rotation is None else rotation
     translation = np.zeros(3) if translation is None else translation
-    radius = radius or float(dists.max()) + dist_tol
+    radius = radius or float(dists.max()) + symprec
 
     mapped = coords @ rotation.T + translation  # apply the candidate operation to all atoms
 
     # only test atoms whose images land observably inside the sphere; ``coords`` are relative to centre:
-    mask = np.linalg.norm(mapped, axis=1) < radius - dist_tol  # mask for sites within radius - dist_tol
+    mask = np.linalg.norm(mapped, axis=1) < radius - symprec  # mask for sites within radius - symprec
     n_test, max_residual = int(mask.sum()), 0.0
 
     # enforce minimum test-set size to prevent vacuous certification (a spurious operation trivially
     # "passing" against a near-empty test region); the bar is set per-operation as half the number of atoms
-    # whose images are guaranteed testable (i.e. atoms within ``radius - dist_tol - |translation|``).
+    # whose images are guaranteed testable (i.e. atoms within ``radius - symprec - |translation|``).
     # Some near-boundary atoms may be untestable due to noise/truncation effects, but upstream ``t_max``
     # handling should ensure this is never a majority of the test set (preventing any true ops from
     # breaking here):
-    n_guaranteed = (dists < radius - dist_tol - np.linalg.norm(translation)).sum()  # guaranteed testable
+    n_guaranteed = (dists < radius - symprec - np.linalg.norm(translation)).sum()  # guaranteed testable
     if n_test == 0 or n_test < round(0.5 * n_guaranteed):  # vacuous test region -> cannot certify anything
         return False, np.inf, n_test
 
     # per-species nearest-neighbour residual, early exit on failure:
     for _sp, _sp_mask, nn_dists, _nn_idxs in _mapped_species_matches(species, trees, mapped, mask):
         max_residual = max(max_residual, nn_dists.max())
-        if max_residual > dist_tol:  # break early when maximum residual exceeds tolerance
+        if max_residual > symprec:  # break early when maximum residual exceeds tolerance
             return False, max_residual, n_test
     return True, max_residual, n_test
 
@@ -3031,7 +3031,7 @@ def _refine_symm_op(
     rotation: np.ndarray,
     translation: np.ndarray,
     radius: float,
-    dist_tol: float,
+    symprec: float,
     match_tol: float,
     refine_rotation: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -3058,7 +3058,7 @@ def _refine_symm_op(
     """
     for _ in range(3 if refine_rotation else 1):  # rematch & refit when refining R; one-shot for t-only:
         mapped = coords @ rotation.T + translation  # map atoms with the current candidate operation
-        mask = np.linalg.norm(mapped, axis=1) < radius - dist_tol  # only test images within local sphere
+        mask = np.linalg.norm(mapped, axis=1) < radius - symprec  # only test images within local sphere
         matched_src, matched_dst = [], []
         # match mapped atoms to their nearest same-species partner:
         for species_symbol, species_mask, nn_dists, nn_idxs in _mapped_species_matches(
@@ -3157,7 +3157,7 @@ def local_point_symmetry(
     defect_supercell: Structure,
     bulk_supercell: Structure | None = None,
     defect_frac_coords: ArrayLike | None = None,
-    dist_tol: float = 0.1,
+    symprec: float = 0.1,
     centre_error_range: float | None = None,
     verbose: bool = False,
     _first_pass: bool = True,
@@ -3192,7 +3192,7 @@ def local_point_symmetry(
        local cluster -- as ``spglib`` does for space-group translations.
     4. ``(R, t)`` is accepted if it maps every atom whose predicted image
        lies within the local cluster onto a matching same-species atom within
-       ``dist_tol``, accounting for boundary truncation.
+       ``symprec``, accounting for boundary truncation.
     5. Group closure (i.e. combining any two operations gives another operation
        in the group, required for any valid set of symmetry operations) is
        enforced on the accepted operation set (dropping the worst-residual
@@ -3200,13 +3200,13 @@ def local_point_symmetry(
        from the accepted operations as their common fixed point (least-squares
        fit), and point group identified from the fitted symmetry operations.
 
-       If this derived centre differs appreciably (> ``dist_tol``) from the
+       If this derived centre differs appreciably (> ``symprec``) from the
        cluster centre used, the analysis is re-run once, recentred on the
        `derived` centre, keeping the result which certifies the most operations
        -- extending the tolerance for imperfect defect/perturbation (cluster)
        centre positions. `In the noise-free limit`, off-centre cluster
        placement can only spuriously `lower` the certified symmetry; for
-       borderline distortions of magnitude ~``dist_tol``, however, a shifted
+       borderline distortions of magnitude ~``symprec``, however, a shifted
        placement can alter cluster membership (test region) and flip the
        symmetry assignment in either direction.
 
@@ -3234,13 +3234,15 @@ def local_point_symmetry(
             ``None`` (default), the defect position is taken from
             ``defect_site_from_structures`` when ``bulk_supercell`` is
             provided, or ``guess_defect_position`` otherwise.
-        dist_tol (float):
+        symprec (float):
             Distance tolerance (in Å) for symmetry determination; an operation
             is accepted if it maps each (locally observable) atomic position
-            onto a matching position within ``dist_tol`` (analogous to
-            ``symprec`` in ``spglib``). Default is 0.1 Å (appropriate for
-            relaxed structures with residual structural noise; while ~0.01 Å is
-            typically more appropriate for unrelaxed/ideal geometries).
+            onto a matching position within ``symprec`` (matching the role of
+            ``symprec`` in ``spglib`` and other ``doped`` symmetry functions;
+            here a strict Cartesian distance tolerance on the atom-mapping
+            residuals). Default is 0.1 Å (appropriate for relaxed structures
+            with residual structural noise; while ~0.01 Å is typically more
+            appropriate for unrelaxed/idealised/noise-free geometries).
         centre_error_range (float | None):
             Maximum expected error (in Å) in the rough defect centre placement,
             setting the (upper) bound ``t_max`` on candidate operation
@@ -3314,16 +3316,16 @@ def local_point_symmetry(
     trees = {sp: KDTree(species_coords[sp]) for sp in unique_species}
 
     # translation |t| bound: symmetry operation fixed point(s) must stay local (near the defect / cluster
-    # centre), and the test region ``(radius - |t| - 2*dist_tol)`` must cover the defect's first
+    # centre), and the test region ``(radius - |t| - 2*symprec)`` must cover the defect's first
     # coordination shell:
     min_coordination_shell_distance = float(dists.min()) + 0.5  # just past the 1st coordination shell
-    t_max = max(min(2 * centre_error_range, radius - 2 * dist_tol - min_coordination_shell_distance), 1e-3)
-    match_tol = max(4 * dist_tol, 0.5)  # generous pair-matching radius for iterative refinement
+    t_max = max(min(2 * centre_error_range, radius - 2 * symprec - min_coordination_shell_distance), 1e-3)
+    match_tol = max(4 * symprec, 0.5)  # generous pair-matching radius for iterative refinement
 
     # get the candidate rotations for local (defect/point) symmetry analysis, independent of the
     # (supercell) shape, and thus immune to periodicity-breaking:
     rotations = (  # either from triplet transformations in the cluster, or from the bulk primitive cell:
-        _candidate_rotations_from_cluster(coords, species, dists, dist_tol, t_max)
+        _candidate_rotations_from_cluster(coords, species, dists, symprec, t_max)
         if bulk_supercell is None
         else _bulk_cartesian_rotations(bulk_supercell)
     )
@@ -3360,13 +3362,13 @@ def local_point_symmetry(
                     rotation,
                     translation,
                     radius,
-                    dist_tol,
+                    symprec,
                     match_tol,
                     refine_rotation=True,
                 )
 
             accepted, residual, _n_test = _map_residual(
-                coords, species, trees, rotation, translation, radius, dist_tol, dists
+                coords, species, trees, rotation, translation, radius, symprec, dists
             )
             best_residual = min(best_residual, residual)
             if accepted:  # keep the best-residual op per distinct rotation -- Procrustes refinement may
@@ -3380,11 +3382,12 @@ def local_point_symmetry(
 
     # refine each kept operation's translation by the mean matched-pair offset (removes anchor noise):
     for op in kept:
+        # TODO: Use partial functions for _refine_symm_op and _map_residual; mostly the same between calls
         rotation, translation = _refine_symm_op(
-            coords, species, trees, species_coords, op[0], op[1], radius, dist_tol, match_tol
+            coords, species, trees, species_coords, op[0], op[1], radius, symprec, match_tol
         )
         accepted, residual, _n_test = _map_residual(
-            coords, species, trees, rotation, translation, radius, dist_tol, dists
+            coords, species, trees, rotation, translation, radius, symprec, dists
         )
         if accepted and residual < op[2]:  # improved residual after refinement; overwrite list entries
             op[:] = [rotation, translation, residual]
@@ -3408,7 +3411,7 @@ def local_point_symmetry(
             for op2 in ops
         )
 
-    t_tol = max(0.3, 2 * dist_tol)
+    t_tol = max(0.3, 2 * symprec)
     point_symmetry_info["closed"] = _is_closed(kept, t_tol)
     while not _is_closed(kept, t_tol):
         # ensure identity operation is not considered for removal:
@@ -3447,9 +3450,9 @@ def local_point_symmetry(
     # symmetry, so if not all candidate rotations were certified, re-run recentred on any plausibly-better
     # centres -- the ops-derived symmetry centre (if it differs appreciably from the cluster centre used),
     # and, if a bulk reference is provided, the structure-comparison defect site -- keeping the
-    # highest-symmetry result. Note that for knife-edge cases (distortions of magnitude ``~dist_tol``), a
+    # highest-symmetry result. Note that for knife-edge cases (distortions of magnitude ``~symprec``), a
     # shifted placement can instead certify _more_ ops than the true centre (borderline ops slipping under
-    # tolerance), but expected to be rare in practice (and they are cases at the borderline of ``dist_tol``
+    # tolerance), but expected to be rare in practice (and they are cases at the borderline of ``symprec``
     # anyway)
     if _first_pass and len(kept) < len(rotations):
         best_result = (symbol, [(op[0], op[1]) for op in kept], point_symmetry_info)
@@ -3459,13 +3462,13 @@ def local_point_symmetry(
 
         tried_centres = [centre_cart]
         for candidate_centre in candidate_centres:
-            if any(np.linalg.norm(candidate_centre - prev) <= dist_tol for prev in tried_centres):
-                continue  # <``dist_tol`` from previous centre, (effectively) already tried
+            if any(np.linalg.norm(candidate_centre - prev) <= symprec for prev in tried_centres):
+                continue  # <``symprec`` from previous centre, (effectively) already tried
             retry_result = local_point_symmetry(
                 defect_supercell,
                 bulk_supercell,
                 defect_frac_coords=defect_supercell.lattice.get_fractional_coords(candidate_centre),
-                dist_tol=dist_tol,
+                symprec=symprec,
                 centre_error_range=centre_error_range,
                 verbose=verbose,
                 _first_pass=False,
@@ -3574,7 +3577,7 @@ def point_symmetry_from_defect_entry(
             defect_supercell,
             bulk_supercell=_get_bulk_supercell(defect_entry),
             defect_frac_coords=_get_defect_supercell_frac_coords(defect_entry, relaxed=True),
-            dist_tol=symprec,
+            symprec=symprec,
             verbose=bool(verbose),
         )
         for key, cart_coords in [
@@ -3788,7 +3791,7 @@ def point_symmetry_from_structure(
         structure,
         bulk_supercell=None,
         defect_frac_coords=defect_frac_coords,  # if still None, guessed in ``local_point_symmetry``
-        dist_tol=symprec,
+        symprec=symprec,
         verbose=bool(verbose),
     )
 
