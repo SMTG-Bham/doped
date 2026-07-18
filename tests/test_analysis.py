@@ -170,15 +170,18 @@ class DefectsParsingTestCase(unittest.TestCase):
     def setUpClass(cls):
         cls.CdTe_EXAMPLE_DIR = os.path.abspath(os.path.join(EXAMPLE_DIR, "CdTe"))
         cls.v_Cd_example_dir = os.path.join(cls.CdTe_EXAMPLE_DIR, "v_Cd_example_data")
-
         cls.moved_v_Cd_example_dirs = []
 
-        for i in os.listdir(cls.v_Cd_example_dir):
-            # first clear these directories from higher level CdTe example folder, in case previous test
-            # failed without clearing the directories:
-            if_present_rm(os.path.join(cls.CdTe_EXAMPLE_DIR, i))
-            shutil.move(os.path.join(cls.v_Cd_example_dir, i), os.path.join(cls.CdTe_EXAMPLE_DIR, i))
-            cls.moved_v_Cd_example_dirs.append(i)
+        try:
+            for i in os.listdir(cls.v_Cd_example_dir):
+                # first clear these directories from higher level CdTe example folder, in case a previous
+                # test failed without clearing the directories:
+                if_present_rm(os.path.join(cls.CdTe_EXAMPLE_DIR, i))
+                shutil.move(os.path.join(cls.v_Cd_example_dir, i), os.path.join(cls.CdTe_EXAMPLE_DIR, i))
+                cls.moved_v_Cd_example_dirs.append(i)
+        except Exception:
+            cls.tearDownClass()
+            raise  # tearDownClass skipped if setUpClass fails; but we still want to (attempt) clean up
 
     def setUp(self):
         self.CdTe_BULK_DATA_DIR = os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_bulk/vasp_ncl")
@@ -218,9 +221,17 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        for i in ["CdTe_bulk", "v_Cd_0", "v_Cd_-1", "v_Cd_-2"]:
-            shutil.move(os.path.join(cls.CdTe_EXAMPLE_DIR, i), os.path.join(cls.v_Cd_example_dir, i))
-            if_present_rm(os.path.join(cls.CdTe_EXAMPLE_DIR, i))
+        # Use moved list when available (partial setUpClass failure); else hardcoded fallback:
+        for i in getattr(cls, "moved_v_Cd_example_dirs", None) or [
+            "CdTe_bulk",
+            "v_Cd_0",
+            "v_Cd_-1",
+            "v_Cd_-2",
+        ]:
+            src = os.path.join(cls.CdTe_EXAMPLE_DIR, i)
+            if os.path.exists(src):
+                shutil.move(src, os.path.join(cls.v_Cd_example_dir, i))
+            if_present_rm(src)
 
     def tearDown(self):
         if_present_rm(os.path.join(self.CdTe_EXAMPLE_DIR, "CdTe_defect_dict.json.gz"))
