@@ -1028,10 +1028,11 @@ def _raw_get_all_equiv_sites(
         )
         struct_with_all_X = _get_struct_with_all_X(structure, equiv_sites)
         sga_with_all_X = get_sga(struct_with_all_X, symprec=trial_symprec)
-        if len(set(sga_with_all_X.get_symmetry_dataset().site_symmetry_symbols[-len(equiv_sites) :])) == 1:
+        site_sym_symbols = sga_with_all_X.get_symmetry_dataset().site_symmetry_symbols[-len(equiv_sites) :]
+        if len(set(site_sym_symbols)) == 1:
             symprec = trial_symprec
             dist_tol_factor = trial_dist_tol_factor
-            equiv_sites = [site.frac_coords for site in equiv_sites] if just_frac_coords else equiv_sites
+            equiv_sites = [s.frac_coords for s in equiv_sites] if just_frac_coords else equiv_sites
             if verbose:
                 print(
                     f"Equivalent site generation succeeded (with consistent site symmetries) with symprec "
@@ -1321,6 +1322,70 @@ def _get_struct_with_all_X(struct, unique_sites):
     return struct_with_all_X
 
 
+@lru_cache(maxsize=int(1e3))
+def _get_supercell_to_prim_fold_map(
+    supercell: Structure, primitive: Structure, symprec: float = 0.01, dist_tol_factor: float = 1.0
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """
+    Get the affine map ``f -> (f @ M + t) % 1`` taking fractional coordinates
+    in ``supercell`` to fractional coordinates in ``primitive``, as an ``(M,
+    t)`` tuple -- or ``None`` if no such map can be verified (e.g. for
+    distorted/noisy cells), in which case callers should fall back to explicit
+    structure-based folding.
+
+    ``M`` is the integer supercell matrix relating the two lattices (accounting
+    for any rigid rotation between their Cartesian frames, which leaves
+    fractional coordinates unchanged) and ``t`` aligns their origins. The map
+    is certified as a rigid isometry mapping every ``supercell`` atom onto a
+    ``primitive`` atom of the same element (within ``symprec*dist_tol_factor``
+    Å), so any two certified maps differ only by a symmetry operation of
+    ``primitive``, and downstream equivalent site generation is independent of
+    the choice made here. Cached, as the map depends only on the host
+    (supercell, primitive) pair and tolerances, not on individual sites.
+    """
+    dist_tol = symprec * dist_tol_factor
+    T = supercell.lattice.matrix @ np.linalg.inv(primitive.lattice.matrix)
+    if np.allclose(T, np.round(T), atol=1e-4):  # common case; Cartesian frames already aligned
+        M = np.round(T).astype(int)
+    else:  # frames differ by a rigid rotation; get the integer supercell matrix relating the lattices
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="No mapping")
+            _rotated_prim, M = _rotate_and_get_supercell_matrix(
+                primitive, supercell, ltol=symprec, atol=100 * symprec
+            )
+        if M is None or not np.allclose(M, np.round(M), atol=1e-4):
+            return None
+        M = np.round(M).astype(int)
+
+    if round(abs(np.linalg.det(M))) * len(primitive) != len(supercell):  # incorrect mapping
+        return None
+    W = np.linalg.inv(supercell.lattice.matrix) @ M @ primitive.lattice.matrix  # Cartesian linear part
+    if not np.allclose(W @ W.T, np.eye(3), atol=1e-4):  # must be a rigid isometry
+        return None
+
+    sc_elts = np.array([site.specie.symbol for site in supercell])
+    prim_elts = np.array([site.specie.symbol for site in primitive])
+    species_mismatch = sc_elts[:, None] != prim_elts[None, :]  # (N_supercell, N_primitive)
+    mapped_fracs = supercell.frac_coords @ M
+    # anchoring on the least-common element (fewest candidates), each primitive site of that element gives
+    # a candidate translation (mapping the first such supercell atom onto it); certify by checking all
+    # supercell atoms then map onto matching primitive atoms:
+    unique_elts, counts = np.unique(prim_elts, return_counts=True)
+    anchor_elt = unique_elts[np.argmin(counts)]
+    anchor_mapped_frac = mapped_fracs[np.argmax(sc_elts == anchor_elt)]  # first supercell atom of elt
+    for anchor_prim_frac in primitive.frac_coords[prim_elts == anchor_elt]:
+        translation = (anchor_prim_frac - anchor_mapped_frac) % 1
+        dists = primitive.lattice.get_all_distances(
+            (mapped_fracs + translation) % 1, primitive.frac_coords
+        )
+        dists[species_mismatch] = np.inf
+        if dists.min(axis=1).max() < dist_tol:
+            M.flags.writeable = translation.flags.writeable = False  # cached output; guard mutation
+            return M, translation
+
+    return None
+
+
 def get_equiv_frac_coords_in_primitive(
     frac_coords: ArrayLike,
     primitive: Structure,
@@ -1403,92 +1468,135 @@ def get_equiv_frac_coords_in_primitive(
             ``True``, also returns the final ``symprec`` and
             ``dist_tol_factor`` used for the equivalent site generation.
     """
-    trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
-    trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
-    for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
-        # sometimes we can have edge cases where slight numerical differences cause issues with
-        # dist_tol/symprec choices, and then primitive cell determination as a result, so scan over
-        # some values if necessary. Here we scan over symprec values first (following the approach in
-        # ``get_all_equiv_sites``), then dist_tol values -- this approach was found to be best from testing
+    fold_map = _get_supercell_to_prim_fold_map(supercell, primitive, symprec, dist_tol_factor)
+    if fold_map is not None:
+        # verified affine map from supercell to primitive frac coords, so just generate the equivalent
+        # supercell sites and fold directly (much faster than the structure-based folding below):
+        M, translation = fold_map
         equiv_sites_output = get_all_equiv_sites(
             frac_coords,
             supercell,
-            symprec=trial_symprec,
-            dist_tol_factor=trial_dist_tol_factor,
+            symprec=symprec,
+            dist_tol_factor=dist_tol_factor,
             return_symprec_and_dist_tol_factor=True,
             fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
             fold_to_primitive=False,  # this function performs its own folding, just needs seed sites
             verbose=verbose,
         )
         assert isinstance(equiv_sites_output, tuple)  # return_symprec_and_dist_tol_factor = True
-        unique_sites, adjusted_trial_symprec, adjusted_trial_dist_tol_factor = equiv_sites_output
-        supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
-        prim_with_all_X = get_primitive_structure(
-            supercell_with_all_X, ignored_species=["X"], symprec=adjusted_trial_symprec
-        )
+        unique_sites, symprec, dist_tol_factor = equiv_sites_output
+        dist_tol = symprec * dist_tol_factor
+        folded_frac_coords = (
+            np.array([cast("PeriodicSite", site).frac_coords for site in unique_sites]) @ M + translation
+        ) % 1
+        # collapse primitive-translation-equivalent folded images to unique sites before re-expansion:
+        prim_X_frac_coords = cluster_sites_by_dist_tol(folded_frac_coords, primitive.lattice, dist_tol)
+        # symmetrize folded coords by averaging over their site-symmetry images (as effectively done by
+        # ``spglib`` standardization in the structure-based folding path below), so slightly-off-symmetry
+        # input ``frac_coords`` fold to their ideal (symmetrized) primitive cell sites:
+        dataset = get_sga(primitive, symprec=symprec).get_symmetry_dataset()
+        for i, frac_coords_i in enumerate(prim_X_frac_coords):
+            images = np.einsum("nij,j->ni", dataset.rotations, frac_coords_i) + dataset.translations
+            diffs = (images - frac_coords_i + 0.5) % 1 - 0.5  # min-image fractional differences
+            site_symm_images = np.linalg.norm(diffs @ primitive.lattice.matrix, axis=1) < dist_tol
+            shift = diffs[site_symm_images].mean(axis=0)  # shift to mean position of site-symmetry images
+            if np.linalg.norm(shift @ primitive.lattice.matrix) > 1e-6:  # keep exact coords (and thus
+                prim_X_frac_coords[i] = frac_coords_i + shift  # cache keys) unchanged for clean inputs
 
-        # NOTE: If "No mapping between the primitive and supercell structures" difficulties ever prove
-        # recurrent here, this could be restructured to fold via the orientation-preserving primitive
-        # (``_get_orientation_preserving_primitive``, as in ``_raw_get_all_equiv_sites``), leaving only a
-        # single primitive <-> reference-primitive match rather than this supercell -> primitive matching:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="No mapping")
-            rotated_struct, matrix = _rotate_and_get_supercell_matrix(
-                prim_with_all_X,
-                primitive,
-                ltol=adjusted_trial_symprec,
-                atol=100 * adjusted_trial_symprec,  # default is 1
+    else:  # no verified affine map (e.g. distorted/noisy cells); fold via X-decorated structures instead
+        trial_symprecs = _TRIAL_SYMPREC_DIST_TOL_FACTORS * symprec
+        trial_dist_tol_factors = _TRIAL_SYMPREC_DIST_TOL_FACTORS * dist_tol_factor
+        for trial_dist_tol_factor, trial_symprec in product(trial_dist_tol_factors, trial_symprecs):
+            # sometimes we can have edge cases where slight numerical differences cause issues with
+            # dist_tol/symprec choices, and then primitive cell determination as a result, so scan over
+            # some values if necessary. Here we scan over symprec values first (following the approach in
+            # ``get_all_equiv_sites``), then dist_tol values -- this approach was found best from testing
+            equiv_sites_output = get_all_equiv_sites(
+                frac_coords,
+                supercell,
+                symprec=trial_symprec,
+                dist_tol_factor=trial_dist_tol_factor,
+                return_symprec_and_dist_tol_factor=True,
+                fixed_symprec_and_dist_tol_factor=fixed_symprec_and_dist_tol_factor,
+                fold_to_primitive=False,  # this function performs its own folding, just needs seed sites
+                verbose=verbose,
             )
-        if fixed_symprec_and_dist_tol_factor:
-            break  # just take first attempt
+            assert isinstance(equiv_sites_output, tuple)  # return_symprec_and_dist_tol_factor = True
+            unique_sites, adjusted_trial_symprec, adjusted_trial_dist_tol_factor = equiv_sites_output
+            supercell_with_all_X = _get_struct_with_all_X(supercell, unique_sites)
+            prim_with_all_X = get_primitive_structure(
+                supercell_with_all_X, ignored_species=["X"], symprec=adjusted_trial_symprec
+            )
 
-        if rotated_struct is not None:
-            symprec = adjusted_trial_symprec
-            dist_tol_factor = adjusted_trial_dist_tol_factor
+            # NOTE: If "No mapping between the primitive and supercell structures" difficulties ever prove
+            # recurrent here, this could be restructured to fold via the orientation-preserving primitive
+            # (``_get_orientation_preserving_primitive``, as in ``_raw_get_all_equiv_sites``), leaving only
+            # a single primitive <-> reference-primitive match rather than this supercell -> primitive
+            # matching:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="No mapping")
+                rotated_struct, matrix = _rotate_and_get_supercell_matrix(
+                    prim_with_all_X,
+                    primitive,
+                    ltol=adjusted_trial_symprec,
+                    atol=100 * adjusted_trial_symprec,  # default is 1
+                )
+            if fixed_symprec_and_dist_tol_factor:
+                break  # just take first attempt
+
+            if rotated_struct is not None:
+                symprec = adjusted_trial_symprec
+                dist_tol_factor = adjusted_trial_dist_tol_factor
+                if verbose:
+                    print(
+                        f"Succeeded folding to primitive cell of equivalent supercell sites, with symprec "
+                        f"= {symprec}, dist_tol_factor = {dist_tol_factor}."
+                    )
+                break
+
             if verbose:
                 print(
-                    f"Succeeded folding to primitive cell of equivalent supercell sites, with symprec = "
+                    f"Failed folding to primitive cell of equivalent supercell sites, with symprec = "
                     f"{symprec}, dist_tol_factor = {dist_tol_factor}."
                 )
-            break
 
-        if verbose:
-            print(
-                f"Failed folding to primitive cell of equivalent supercell sites, with symprec = "
-                f"{symprec}, dist_tol_factor = {dist_tol_factor}."
+        if rotated_struct is None:
+            warnings.warn(
+                "Could not find a mapping between the primitive and supercell structures! You may need to "
+                "tune the symprec/dist_tol parameters for this system."
             )
+            return None
 
-    if rotated_struct is None:
-        warnings.warn(
-            "Could not find a mapping between the primitive and supercell structures! You may need to "
-            "tune the symprec/dist_tol parameters for this system."
-        )
-        return None
+        dist_tol = symprec * dist_tol_factor
+        primitive_with_all_X = rotated_struct * matrix
+        orig_summed_dist = summed_dist(primitive, primitive_with_all_X, ignored_species=["X"])
+        if orig_summed_dist != 0:
+            # may have different primitive cell definitions, try re-orienting
+            orig_min_dist = min_dist(primitive_with_all_X, ignored_species=["X"])
+            reoriented_primitive_with_all_X = orient_s2_like_s1(
+                primitive,
+                primitive_with_all_X,
+                primitive_cell=False,
+                ignored_species=["X"],
+                comparator=ElementComparator(),
+            )
+            new_min_dist = min_dist(reoriented_primitive_with_all_X, ignored_species=["X"])
+            new_summed_dist = summed_dist(
+                primitive, reoriented_primitive_with_all_X, ignored_species=["X"]
+            )
+            if (
+                abs(new_summed_dist - orig_summed_dist) > abs(orig_min_dist - new_min_dist)
+                and abs(orig_min_dist - new_min_dist) < dist_tol * 2
+            ):  # only take re-oriented cell if it improves RMS diff & doesn't much change min_dist
+                primitive_with_all_X = reoriented_primitive_with_all_X
+                dist_tol = max(dist_tol, abs(orig_min_dist - new_min_dist))
+                dist_tol_factor = dist_tol / symprec
 
-    dist_tol = symprec * dist_tol_factor
-    primitive_with_all_X = rotated_struct * matrix
-    orig_summed_dist = summed_dist(primitive, primitive_with_all_X, ignored_species=["X"])
-    if orig_summed_dist != 0:
-        # may have different primitive cell definitions, try re-orienting
-        orig_min_dist = min_dist(primitive_with_all_X, ignored_species=["X"])
-        reoriented_primitive_with_all_X = orient_s2_like_s1(
-            primitive,
-            primitive_with_all_X,
-            primitive_cell=False,
-            ignored_species=["X"],
-            comparator=ElementComparator(),
-        )
-        new_min_dist = min_dist(reoriented_primitive_with_all_X, ignored_species=["X"])
-        new_summed_dist = summed_dist(primitive, reoriented_primitive_with_all_X, ignored_species=["X"])
-        if (
-            abs(new_summed_dist - orig_summed_dist) > abs(orig_min_dist - new_min_dist)
-            and abs(orig_min_dist - new_min_dist) < dist_tol * 2
-        ):  # only take re-oriented cell if it improves RMS diff and doesn't significantly change min_dist
-            primitive_with_all_X = reoriented_primitive_with_all_X
-            dist_tol = max(dist_tol, abs(orig_min_dist - new_min_dist))
-            dist_tol_factor = dist_tol / symprec
+        prim_X_frac_coords = [
+            site.frac_coords for site in primitive_with_all_X.sites if site.specie.symbol == "X"
+        ]
 
-    # now re-apply ``get_all_equiv_sites`` to each site primitive cell X site, to account for possible
+    # now re-apply ``get_all_equiv_sites`` to each folded primitive cell site, to account for possible
     # periodicity-breaking in the supercell, which would then only give a subset of the actual equivalent
     # sites in the primitive cell:
     if verbose:
@@ -1496,10 +1604,9 @@ def get_equiv_frac_coords_in_primitive(
     all_equiv_prim_frac_coords = cluster_sites_by_dist_tol(
         [
             equiv_frac_coords
-            for site in primitive_with_all_X.sites
-            if site.specie.symbol == "X"
+            for prim_frac_coords in prim_X_frac_coords
             for equiv_frac_coords in get_all_equiv_sites(
-                site.frac_coords,
+                prim_frac_coords,
                 primitive,
                 just_frac_coords=True,
                 symprec=symprec,

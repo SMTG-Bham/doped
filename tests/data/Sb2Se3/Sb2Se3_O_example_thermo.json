@@ -3619,9 +3619,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.0839748423333645,
-                        0.6810171908547086,
-                        0.8640570421504995
+                        0.08398427866007001,
+                        0.5975969999999999,
+                        0.92358444
                     ],
                     "dtype": "float64"
                 },
@@ -5479,16 +5479,6 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "perturbation centroid": {
-                    "@class": "array",
-                    "@module": "numpy",
-                    "data": [
-                        0.12770830036796518,
-                        0.6810171908547086,
-                        0.8640570421504995
-                    ],
-                    "dtype": "float64"
-                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -31370,6 +31360,16 @@
                         "vasp_version": "6.2.0"
                     }
                 },
+                "symmetry cluster centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08384195,
+                        0.5975969999999999,
+                        0.92358444
+                    ],
+                    "dtype": "float64"
+                },
                 "unrelaxed_defect_structure": {
                     "@class": "Structure",
                     "@module": "pymatgen.core.structure",
@@ -40733,9 +40733,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.08392383949126275,
-                        0.412564464626387,
-                        0.9257414420563472
+                        0.08396007428067001,
+                        0.59632664,
+                        0.92598697
                     ],
                     "dtype": "float64"
                 },
@@ -42593,16 +42593,6 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "perturbation centroid": {
-                    "@class": "array",
-                    "@module": "numpy",
-                    "data": [
-                        0.08337037200291328,
-                        0.412564464626387,
-                        0.9257414420563472
-                    ],
-                    "dtype": "float64"
-                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -68544,6 +68534,16 @@
                         "vasp_version": "6.2.0"
                     }
                 },
+                "symmetry cluster centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08369144999999999,
+                        0.59632664,
+                        0.92598697
+                    ],
+                    "dtype": "float64"
+                },
                 "unrelaxed_defect_structure": {
                     "@class": "Structure",
                     "@module": "pymatgen.core.structure",
@@ -77907,9 +77907,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.08396526876578293,
-                        0.394536664626451,
-                        0.9234232218311907
+                        0.08398825820587001,
+                        0.59422508,
+                        0.9175463000000001
                     ],
                     "dtype": "float64"
                 },
@@ -79767,16 +79767,6 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "perturbation centroid": {
-                    "@class": "array",
-                    "@module": "numpy",
-                    "data": [
-                        0.08331411483207812,
-                        0.394536664626451,
-                        0.9234232218311907
-                    ],
-                    "dtype": "float64"
-                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -105658,6 +105648,16 @@
                         "vasp_version": "6.2.0"
                     }
                 },
+                "symmetry cluster centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08376825999999998,
+                        0.59422508,
+                        0.9175463000000001
+                    ],
+                    "dtype": "float64"
+                },
                 "unrelaxed_defect_structure": {
                     "@class": "Structure",
                     "@module": "pymatgen.core.structure",
@@ -115021,9 +115021,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.08397413806033888,
-                        0.5834455492638226,
-                        0.9026148934329051
+                        0.08397962646427751,
+                        0.59254181,
+                        0.91241348
                     ],
                     "dtype": "float64"
                 },
@@ -116881,16 +116881,6 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "perturbation centroid": {
-                    "@class": "array",
-                    "@module": "numpy",
-                    "data": [
-                        0.08362290101493314,
-                        0.5834455492638226,
-                        0.9026148934329051
-                    ],
-                    "dtype": "float64"
-                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -142767,6 +142757,16 @@
                         "vasp_version": "6.2.0"
                     }
                 },
+                "symmetry cluster centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08374978,
+                        0.59254181,
+                        0.91241348
+                    ],
+                    "dtype": "float64"
+                },
                 "unrelaxed_defect_structure": {
                     "@class": "Structure",
                     "@module": "pymatgen.core.structure",
@@ -152063,9 +152063,9 @@
                     "@class": "array",
                     "@module": "numpy",
                     "data": [
-                        0.0839617343592735,
-                        0.5792393744031489,
-                        0.8436671818674429
+                        0.08399602648853502,
+                        0.59788999,
+                        0.92144444
                     ],
                     "dtype": "float64"
                 },
@@ -153856,16 +153856,6 @@
                 "mismatching_INCAR_tags": false,
                 "mismatching_KPOINTS": false,
                 "mismatching_POTCAR_symbols": false,
-                "perturbation centroid": {
-                    "@class": "array",
-                    "@module": "numpy",
-                    "data": [
-                        0.14639882833150422,
-                        0.5792393744031489,
-                        0.8436671818674429
-                    ],
-                    "dtype": "float64"
-                },
                 "relaxed point symmetry": "Cs",
                 "run_metadata": {
                     "bulk_actual_kpoints": [
@@ -179916,6 +179906,16 @@
                         },
                         "vasp_version": "6.2.0"
                     }
+                },
+                "symmetry cluster centre": {
+                    "@class": "array",
+                    "@module": "numpy",
+                    "data": [
+                        0.08386321,
+                        0.59788999,
+                        0.92144444
+                    ],
+                    "dtype": "float64"
                 },
                 "unrelaxed_defect_structure": {
                     "@class": "Structure",
