@@ -698,9 +698,12 @@ class DefectRelaxSetTest(unittest.TestCase):
                     {"reciprocal_density": 100},  # default
                 ]
 
+        entry_name = getattr(  # Structure input has no name; matches ``__repr__`` fallback
+            defect_relax_set.defect_entry, "name", defect_relax_set.defect_supercell.formula
+        )
         for defect_dict_set, type in dds_test_list:
             if defect_dict_set is not None:
-                print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                print(f"Testing {entry_name}, {type}")
                 self.dds_test._check_dds(
                     defect_dict_set,
                     defect_relax_set.defect_supercell,
@@ -708,9 +711,7 @@ class DefectRelaxSetTest(unittest.TestCase):
                     **kwargs,
                 )
                 self.dds_test._write_and_check_dds_files(defect_dict_set)
-                self.dds_test._write_and_check_dds_files(
-                    defect_dict_set, output_path=f"{defect_relax_set.defect_entry.name}"
-                )
+                self.dds_test._write_and_check_dds_files(defect_dict_set, output_path=f"{entry_name}")
                 self.dds_test._write_and_check_dds_files(defect_dict_set, poscar=False)
                 if defect_relax_set.charge_state == 0:
                     self.dds_test._write_and_check_dds_files(defect_dict_set, potcar_spec=True)
@@ -720,7 +721,7 @@ class DefectRelaxSetTest(unittest.TestCase):
 
         for defect_dict_set, type in dds_bulk_test_list:
             if defect_dict_set is not None:
-                print(f"Testing {defect_relax_set.defect_entry.name}, {type}")
+                print(f"Testing {entry_name}, {type}")
                 self.dds_test._check_dds(
                     defect_dict_set, defect_relax_set.bulk_supercell, charge_state=0, **kwargs
                 )
@@ -735,7 +736,7 @@ class DefectRelaxSetTest(unittest.TestCase):
             i in defect_relax_set.__repr__()
             for i in [
                 "doped DefectRelaxSet for bulk composition",
-                f"and defect entry {defect_relax_set.defect_entry.name}. Available attributes:\n",
+                f"and defect entry {entry_name}. Available attributes:\n",
                 "vasp_std",
                 "vasp_gam",
                 "Available methods:\n",
@@ -1160,7 +1161,7 @@ class DefectRelaxSetTest(unittest.TestCase):
         assert any("NKRED settings cannot be automatically determined" in str(i.message) for i in w)
 
         # Structure (rather than DefectEntry) input -> no bulk supercell folder generation, with warning:
-        drs = DefectRelaxSet(self.CdTe_defect_gen.bulk_supercell)
+        drs = DefectRelaxSet(self.CdTe_defect_gen.bulk_supercell, charge_state=-1)
         with warnings.catch_warnings(record=True) as w:
             assert drs.bulk_vasp_gam is None
         _print_warning_info(w)
@@ -1169,6 +1170,31 @@ class DefectRelaxSetTest(unittest.TestCase):
             "provided" in str(i.message)
             for i in w
         )
+        # defect input sets still generated fine from Structure input:
+        for vasp_xxx in [drs.vasp_gam, drs.vasp_std, drs.vasp_nkred_std, drs.vasp_ncl]:
+            assert vasp_xxx is not None
+            assert vasp_xxx.charge_state == -1
+            assert vasp_xxx.structure == self.CdTe_defect_gen.bulk_supercell
+        assert "-1" in drs.vasp_gam.poscar_comment
+        self._general_defect_relax_set_check(drs)  # thorough DDS sub-attribute & file-writing checks
+
+        # DefectRelaxSet.write_xxx() methods with Structure input:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # POTCAR warnings if not available
+            if _potcars_available():  # charged defects with poscar=False require POTCARs to write
+                drs.write_all(vasp_gam=True)
+            else:
+                drs.write_gam()
+        dirname = f"{self.CdTe_defect_gen.bulk_supercell.formula.replace(' ', '')}_-1"
+        assert os.path.exists(f"{dirname}/vasp_gam/KPOINTS")  # default dirname: formula & charge state
+        assert os.path.exists(f"{dirname}/vasp_gam/POSCAR")
+        if _potcars_available():
+            assert os.path.exists(f"{dirname}/vasp_std/KPOINTS")
+            assert os.path.exists(f"{dirname}/vasp_nkred_std/INCAR")
+            assert os.path.exists(f"{dirname}/vasp_ncl/INCAR")
+        # no DefectEntry json written for Structure input:
+        assert not any(f.endswith(".json.gz") for f in os.listdir(f"{dirname}/vasp_gam"))
+        if_present_rm(dirname)
 
 
 class DefectsSetTest(unittest.TestCase):

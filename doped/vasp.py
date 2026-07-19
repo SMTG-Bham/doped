@@ -1416,10 +1416,8 @@ class DefectRelaxSet(MSONable):
 
     def _get_output_path(self, defect_dir: PathLike | None = None, subfolder: PathLike | None = None):
         if defect_dir is None:
-            if isinstance(self.defect_entry, Structure):  # no defect name, use formula & charge state
-                formula = self.defect_entry.composition.get_reduced_formula_and_factor(
-                    iupac_ordering=True
-                )[0]
+            if isinstance(self.defect_entry, Structure):  # no defect name, use unreduced formula & charge
+                formula = self.defect_entry.formula.replace(" ", "")
                 defect_dir = f"{formula}_{'+' if self.charge_state > 0 else ''}{self.charge_state}"
             else:
                 if self.defect_entry.name is None:
