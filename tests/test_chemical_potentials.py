@@ -192,11 +192,12 @@ class CompetingPhasesTestCase(unittest.TestCase):
         )
         assert h2_mol.data["summary"]["total_magnetization"] == 0
 
-        with pytest.raises(ValueError) as exc:
-            chemical_potentials.make_molecule_in_a_box("Te")
-        assert "Element Te is not currently supported for molecule-in-a-box structure generation." in str(
-            exc.value
-        )
+        # elements without tabulated diatomic bond lengths now fall back to ``ShakeNBreak``'s
+        # ``get_dimer_bond_length`` (rather than raising ``ValueError``):
+        te_mol = chemical_potentials.make_molecule_in_a_box("Te")
+        assert te_mol.num_sites == 2
+        assert np.isclose(te_mol.volume, 30**3)
+        assert 2.0 < te_mol.get_distance(0, 1) < 3.2  # reasonable Te dimer bond length
 
     def test_init(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
@@ -646,6 +647,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert os.path.exists(sample_key)
         assert os.path.isfile(os.path.join(sample_key, "INCAR"))
 
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate deprecated-API test
     def test_deprecated_convergence_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
@@ -659,6 +661,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
         assert dict_sets
         assert os.path.exists("CompetingPhases")
 
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate deprecated-API test
     def test_deprecated_vasp_std_setup(self):
         cp = chemical_potentials.CompetingPhases("ZrO2", energy_above_hull=0.03, api_key=api_key)
         if_present_rm("CompetingPhases")
@@ -1031,6 +1034,7 @@ class CompetingPhasesTestCase(unittest.TestCase):
             chemical_potentials.CompetingPhases("ZrO2", full_sub_approach=True)
 
     # TODO: remove with the ``full_sub_approach`` shim in v4.1
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate deprecated-API test
     def test_from_dict_full_sub_approach_translates(self):
         """
         Loading a ``CompetingPhases`` saved under the old ``full_sub_approach``
@@ -3338,6 +3342,7 @@ class TestGetXRichPoorLimit(unittest.TestCase):
         with pytest.raises(ValueError, match="Could not find Cu"):
             chemical_potentials.get_X_rich_poor_limit("Cu", chempots)
 
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate deprecated-API test
     def test_deprecated_aliases_warn_and_forward(self):
         chempots = {
             "limits": {

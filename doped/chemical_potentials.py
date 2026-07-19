@@ -2492,6 +2492,7 @@ class CompetingPhases(MSONable):
             |CompetingPhases| object
         """
         competing_phases = cls.__new__(cls)  # skip __init__ and avoid MP re-querying
+        d = dict(d)  # copy, avoiding mutation of the caller's dict
         if "full_sub_approach" in d:  # TODO: remove ``full_sub_approach`` translation in v4.1
             warnings.warn(
                 "Loading a `CompetingPhases` saved with `full_sub_approach`; this attribute was renamed "
@@ -2500,7 +2501,7 @@ class CompetingPhases(MSONable):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            d = {**d, "single_extrinsic_phase_limits": not d.pop("full_sub_approach", True)}
+            d["single_extrinsic_phase_limits"] = not d.pop("full_sub_approach", True)
         if "extrinsic_species" in d:  # TODO: remove ``extrinsic_species`` translation in v4.1
             warnings.warn(
                 "Loading a `CompetingPhases` saved with `extrinsic_species`; this attribute was renamed "
@@ -2510,7 +2511,7 @@ class CompetingPhases(MSONable):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            d = {**d, "extrinsic_elements": d.pop("extrinsic_species", [])}
+            d["extrinsic_elements"] = d.pop("extrinsic_species", [])
         for key, value in d.items():
             if key not in {"@module", "@class", "@version"}:
                 setattr(competing_phases, key, MontyDecoder().process_decoded(value))

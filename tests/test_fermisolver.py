@@ -2912,6 +2912,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
             assert "Concentration (per site)" in results[(False, True)].columns
 
     @parameterize_backend()
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate (deprecated) delta_gap test
     def test_delta_gap_calculated_fermi_level_k10(self, backend):
         """
         Test calculating the Fermi level using a 10x10x10 k-point mesh DOS
@@ -2943,6 +2944,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         )
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_concentrations_vs_μ_Te_both_backends.png")
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate (deprecated) delta_gap test
     def test_delta_gap_interpolate_chempots_CdTe(self):
         """
         Mirrors ``test_CdTe_concentrations_vs_chempots`` in
@@ -3185,6 +3187,7 @@ class TestFermiSolverWithLoadedData(unittest.TestCase):
         return f
 
     @custom_mpl_image_compare(filename="CdTe_LZ_Te_rich_Fermi_levels_doped_and_py_sc_fermi_comparison.png")
+    @pytest.mark.filterwarnings("always::DeprecationWarning")  # deliberate (deprecated) delta_gap test
     def test_delta_gap_scan_temperature(self):
         """
         Mirrors ``test_calculated_fermi_levels`` in ``test_thermodynamics``,

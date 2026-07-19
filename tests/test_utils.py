@@ -2,6 +2,7 @@
 Utility functions for ``doped`` tests, which are used in multiple test modules.
 """
 
+import numbers
 import os
 import shutil
 import sys
@@ -168,6 +169,11 @@ def _compare_attributes(obj1, obj2, exclude=None):
         val2 = getattr(obj2, attr)
 
         if isinstance(val1, np.ndarray):
+            assert np.allclose(val1, val2)
+        elif isinstance(val1, list | tuple) and all(isinstance(i, numbers.Real) for i in val1):
+            # numeric sequences: compare values, as the container type (tuple vs list) can change on
+            # JSON round-trips (e.g. ``sc_defect_frac_coords``: tuple in generation, list on reload)
+            assert np.shape(val1) == np.shape(val2)
             assert np.allclose(val1, val2)
         elif attr == "prim_interstitial_coords_mult_and_equiv_coords":
             _compare_prim_interstitial_coords(val1, val2)

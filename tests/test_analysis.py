@@ -1439,14 +1439,16 @@ class DefectsParsingTestCase(unittest.TestCase):
         assert len(dp.defect_dict) == 1
         check_DefectsParser(dp, skip_corrections=True)
 
-        # some hardcoded symmetry tests with default `symprec = 0.1` for relaxed structures:
+        # some hardcoded symmetry tests, with symprec = 0.01 Å set in parsing above:
+        # (the local isometry analysis certifies the Cs mirror even at symprec = 0.01 here; the mirror
+        # mapping residual is ~0.008 Å, well-separated from the next-best candidate ops at ~0.28 Å)
         assert dp.defect_dict["v_Bi_+1"].calculation_metadata["bulk site symmetry"] == "C4v"
-        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "C1"
+        assert dp.defect_dict["v_Bi_+1"].calculation_metadata["relaxed point symmetry"] == "Cs"
 
         from doped.utils.symmetry import get_orientational_degeneracy
 
         assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"]) == 4.0
-        assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.01) == 8.0
+        assert get_orientational_degeneracy(dp.defect_dict["v_Bi_+1"], symprec=0.005) == 8.0
 
     def test_shallow_defect_correction_warning_skipping(self):
         """

@@ -408,10 +408,13 @@ def group_defects_by_distance(
     Returns:
         dict: Dictionary of ``{cluster index: {DefectEntry, ...}}``.
     """
-    clustered = _group_defects_by_distance(  # cached on a hashable (tuple) ``entry_list``
+    clustered_indices = _group_defects_by_distance(  # cached on a hashable (tuple) ``entry_list``
         tuple(entry_list), dist_tol=dist_tol, symprec=symprec, method=method
-    )  # return a fresh copy so callers can safely mutate the returned dict without corrupting the cache:
-    return {cluster_idx: set(entries) for cluster_idx, entries in clustered.items()}
+    )
+    return {  # return fresh dict/sets, so callers can safely mutate the output:
+        cluster_idx: {entry_list[i] for i in index_set}
+        for cluster_idx, index_set in clustered_indices.items()
+    }
 
 
 @lru_cache(maxsize=1000)
@@ -420,14 +423,17 @@ def _group_defects_by_distance(
     dist_tol: float = 1.5,
     symprec: float = 0.1,
     method: str = "average",
-) -> dict[int, set[DefectEntry]]:
+) -> dict[int, frozenset[int]]:
     """
-    Cached implementation of :func:`group_defects_by_distance`.
+    Cached implementation of :func:`group_defects_by_distance`, returning
+    clusters of `indices` from ``entry_list``.
 
     Takes a (hashable) ``tuple`` of |DefectEntry| objects so that results can
-    be cached w/``functools.lru_cache``. See :func:`group_defects_by_distance`
-    for details. The returned dict should not be mutated directly (it is the
-    cached object); use the public wrapper, which returns a copy.
+    be cached w/``functools.lru_cache``. Indices (rather than the entry
+    objects) are returned so that cache hits -- possible from equal-hashing
+    but distinct entries, whose un-hashed state (e.g. ``calculation_metadata``)
+    may differ -- never return previously-cached entry objects; the public
+    wrapper rebuilds ``{cluster index: {DefectEntry, ...}}``.
     """
     reference_entry = entry_list[0]
     bulk_structure = reference_entry.defect.structure
@@ -572,7 +578,14 @@ def _group_defects_by_distance(
         }:
             clustered_defect_entries[n] = new_entries_to_cluster
 
-    return clustered_defect_entries
+    # return clusters of indices into ``entry_list`` rather than the entry objects themselves (to avoid
+    # caching issues; docstring); identity-based mapping, as equal-but-distinct duplicate entries share
+    # hash/equality:
+    index_by_id = {id(entry): i for i, entry in enumerate(entry_list)}
+    return {
+        cluster_idx: frozenset(index_by_id[id(entry)] for entry in entries)
+        for cluster_idx, entries in clustered_defect_entries.items()
+    }
 
 
 def group_defects_by_name(entry_list: list[DefectEntry]) -> dict[str, set[DefectEntry]]:
@@ -2041,7 +2054,11 @@ class DefectThermodynamics(MSONable):
                     "qE_VBM": charge * vbm,
                     "qE_F": charge * fermi_level,
                     # ignore missing-elt chempot warnings (already warned in ``get_formation_energies``):
-                    "Σμ_ref": defect_entry._get_chempot_term(el_refs, missing_elts_warning=False),
+                    "Σμ_ref": (
+                        defect_entry._get_chempot_term(el_refs, missing_elts_warning=False)
+                        if el_refs
+                        else "N/A"
+                    ),
                     "Σμ_formal": defect_entry._get_chempot_term(
                         relative_chempots, missing_elts_warning=False
                     ),

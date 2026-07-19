@@ -111,11 +111,12 @@ def _make_stenciled_defect_entry(
     stenciled_entry.bulk_supercell = corresponding_bulk
     (
         defect_site,
-        _defect_type,
+        _,
         defect_site_in_bulk,
-        _defect_site_index,
+        _,
         bulk_site_index,
-        _unrelaxed_defect_structure,
+        _,
+        _,
     ) = defect_site_from_structures(
         stenciled_supercell, corresponding_bulk, return_all_info=True, _parameter_order_warn=False
     )
