@@ -10,6 +10,7 @@ import os
 import random
 import unittest
 import warnings
+from copy import deepcopy
 from threading import Thread
 
 import numpy as np
@@ -1126,6 +1127,49 @@ class DefectRelaxSetTest(unittest.TestCase):
             non_potcar_warnings = [warning for warning in w if "POTCAR" not in str(warning.message)]
             assert not non_potcar_warnings
 
+    def test_initialisation_errors_and_warnings(self):
+        defect_entry = deepcopy(self.CdTe_defect_gen["v_Cd_0"])
+        defect_entry.bulk_supercell = None
+        defect_entry.bulk_entry = None
+        with pytest.raises(ValueError, match="Bulk supercell must be defined in DefectEntry"):
+            DefectRelaxSet(defect_entry)
+
+        with pytest.raises(TypeError, match="must be a doped/pymatgen DefectEntry or Structure"):
+            DefectRelaxSet("v_Cd_0")
+
+        # Γ-only kpoints -> vasp_std is None, with warning:
+        drs = DefectRelaxSet(self.CdTe_defect_gen["v_Cd_0"], user_kpoints_settings=Kpoints())
+        with warnings.catch_warnings(record=True) as w:
+            assert drs.vasp_std is None
+        _print_warning_info(w)
+        assert any(
+            "Thus, vasp_std should not be used, and vasp_gam should be used instead" in str(i.message)
+            for i in w
+        )
+
+        # non-grid-like kpoints -> NKRED cannot be automatically determined, with warning:
+        drs = DefectRelaxSet(
+            self.CdTe_defect_gen["v_Cd_0"],
+            user_kpoints_settings=Kpoints(
+                style=Kpoints.supported_modes.Automatic, num_kpts=0, kpts=[(101,)]
+            ),
+        )
+        with warnings.catch_warnings(record=True) as w:
+            assert drs.vasp_nkred_std is None
+        _print_warning_info(w)
+        assert any("NKRED settings cannot be automatically determined" in str(i.message) for i in w)
+
+        # Structure (rather than DefectEntry) input -> no bulk supercell folder generation, with warning:
+        drs = DefectRelaxSet(self.CdTe_defect_gen.bulk_supercell)
+        with warnings.catch_warnings(record=True) as w:
+            assert drs.bulk_vasp_gam is None
+        _print_warning_info(w)
+        assert any(
+            "DefectRelaxSet.bulk_supercell is None because a Structure object rather than DefectEntry was "
+            "provided" in str(i.message)
+            for i in w
+        )
+
 
 class DefectsSetTest(unittest.TestCase):
     def setUp(self):
@@ -1904,5 +1948,39 @@ class DefectsSetTest(unittest.TestCase):
 
         _check_rattled_and_bulk()
 
+    def test_input_errors_and_warnings(self):
+        v_Cd_entry = deepcopy(self.CdTe_defect_gen["v_Cd_0"])
 
-# TODO: All warnings and errors tested? (So far all DefectDictSet ones done)
+        with pytest.raises(ValueError, match="No `DefectRelaxSet` objects created"):
+            DefectsSet({}, soc=False)
+
+        with pytest.raises(TypeError, match="dict must be of the form"):
+            DefectsSet({"v_Cd_0": "not a DefectEntry"})
+
+        with pytest.raises(TypeError, match="must be of type DefectsGenerator, dict, list or DefectEntry"):
+            DefectsSet(42)
+
+        with pytest.raises(ValueError, match="Some defect entries have the same name"):
+            DefectsSet([v_Cd_entry, deepcopy(v_Cd_entry)])
+
+        no_supercell_entry = deepcopy(v_Cd_entry)
+        no_supercell_entry.defect_supercell = None
+        no_supercell_entry.sc_entry = None
+        with pytest.raises(ValueError, match="Defect supercell needs to be defined"):
+            DefectsSet(no_supercell_entry)
+
+        ds = DefectsSet(v_Cd_entry)
+        with pytest.raises(ValueError, match="Unrecognised input for `bulk` argument"):
+            ds.write_files(bulk=42)
+
+        with pytest.raises(TypeError, match="Value must be a DefectRelaxSet object"):
+            ds["v_Cd_0"] = "not a DefectRelaxSet"
+
+        with warnings.catch_warnings(record=True) as w:
+            ds["v_Cd_0"] = DefectRelaxSet(self.CdTe_defect_gen.bulk_supercell)  # bulk_supercell = None
+        _print_warning_info(w)
+        assert any(
+            "bulk supercell of the input DefectRelaxSet differs from that of the DefectsSet"
+            in str(i.message)
+            for i in w
+        )

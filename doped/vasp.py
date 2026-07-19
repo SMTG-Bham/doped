@@ -1002,7 +1002,7 @@ class DefectRelaxSet(MSONable):
             )
             if warn:
                 warnings.warn(
-                    f"{info_message} Thus vasp_std should not be used, and vasp_gam should be used "
+                    f"{info_message} Thus, vasp_std should not be used, and vasp_gam should be used "
                     f"instead."
                 )
             else:
@@ -1247,8 +1247,8 @@ class DefectRelaxSet(MSONable):
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
-        input kpoint settings correspond to a Γ-only kpoint mesh (in which
-        case ``(bulk_)vasp_gam`` should be used).
+        input kpoint settings correspond to a Γ-only kpoint mesh (in which case
+        ``(bulk_)vasp_gam`` should be used).
 
         The bulk supercell only needs to be calculated once with the same
         settings as the final defect calculations, which is ``vasp_std`` if we
@@ -1301,9 +1301,9 @@ class DefectRelaxSet(MSONable):
     def bulk_vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
-        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint
-        mesh) and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the
-        HF exchange part of the hybrid DFT calculation. By default, sets
+        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
+        and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF
+        exchange part of the hybrid DFT calculation. By default, sets
         ``NKRED(X,Y,Z)`` to 2 or 3 in the directions for which the k-point grid
         is divisible by this factor. Returns None and a warning if the input
         kpoint settings correspond to a Γ-only kpoint mesh (in which case
