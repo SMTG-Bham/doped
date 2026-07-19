@@ -2787,66 +2787,95 @@ class DefectsParsingTestCase(unittest.TestCase):
 
     def test_point_symmetry_periodicity_breaking(self):
         """
-        Test the periodicity-breaking warning with the ``point_symmetry``
-        function from ``doped.utils.symmetry``.
+        Test point symmetry determination in periodicity-breaking supercells,
+        with the ``point_symmetry_from_structure`` function from
+        ``doped.utils.symmetry``.
 
-        Note that this warning & symmetry handling is mostly tested through
-        the ``DefectThermodynamics.get_symmetries_and_degeneracies()`` tests
-        in ``test_thermodynamics.py``.
+        The ZnS non-diagonal supercell here breaks the translational symmetry
+        of the host crystal, which prevents defect point symmetry determination
+        with global space-group analyses (``spglib`` gives ``C1`` for all
+        defects here, even for the unrelaxed defect structures), and stenciling
+        to a periodicity-restoring supercell is also not possible (different
+        lattice definition / supercell tiling) -- but the local isometry
+        analysis in ``point_symmetry_from_defect_entry`` /
+        ``point_symmetry_from_structure`` handles it fine.
+
+        Note that this symmetry handling is mostly tested through the
+        ``DefectThermodynamics.get_symmetries_and_degeneracies()`` tests in
+        ``test_thermodynamics.py``.
         """
         dp, _warnings = _create_dp_and_capture_warnings(self.ZnS_DATA_DIR, dielectric=8.9)
         assert len(dp.defect_dict) == 17
 
-        with warnings.catch_warnings(record=True) as w:
-            point_symm, periodicity_breaking = point_symmetry_from_structure(
-                dp.defect_dict["vac_1_Zn_0"].defect_supercell,
-                bulk_structure=dp.defect_dict["vac_1_Zn_0"].bulk_supercell,
-                return_periodicity_breaking=True,
-            )
-        _print_warning_info(w)
-        assert len(w) == 1
-        assert (
-            str(w[0].message)
-            == "`relaxed` is set to True (i.e. get _relaxed_ defect symmetry), but doped has detected "
-            "that the defect supercell is likely a non-scalar matrix expansion which could be "
-            "breaking the cell periodicity and possibly preventing the correct _relaxed_ point group "
-            "symmetry from being automatically determined. You can set relaxed=False to instead get "
-            "the (unrelaxed) bulk site symmetry, and/or manually check/set/edit the point symmetries "
-            "and corresponding orientational degeneracy factors by inspecting/editing the "
-            "calculation_metadata['relaxed point symmetry']/['bulk site symmetry'] and "
-            "degeneracy_factors['orientational degeneracy'] attributes."
-        )
-        assert periodicity_breaking
-        assert point_symm == "C1"
-
         for name, defect_entry in dp.defect_dict.items():
             print(f"Checking symmetry for {name}")
-            with warnings.catch_warnings(record=True) as w:
-                assert point_symmetry_from_structure(defect_entry.defect_supercell) == "C1"
-            _print_warning_info(w)
-            assert not w  # no warnings with just defect supercell as can't determine periodicity breaking
-            with warnings.catch_warnings(record=True) as w:
-                assert point_symmetry_from_structure(
-                    defect_entry.defect_supercell, defect_entry.bulk_supercell, relaxed=False
-                ) in ["Td", "C3v", "Cs", "C1"]
-            _print_warning_info(w)
-            assert not w  # no periodicity breaking warning with `relaxed=False`
-            with pytest.raises(RuntimeError) as excinfo:
-                point_symmetry_from_structure(defect_entry.defect_supercell, relaxed=False)
-            assert "Please also supply the unrelaxed bulk structure" in str(excinfo.value)
+            bulk_site_symmetry = defect_entry.calculation_metadata["bulk site symmetry"]
+            assert bulk_site_symmetry in ["Td", "C3v", "Cs", "C1"]
+            unrelaxed_defect_structure = defect_entry.calculation_metadata["unrelaxed_defect_structure"]
 
-    def test_periodicity_restoration(self):
+            with warnings.catch_warnings(record=True) as w:
+                # unrelaxed defect structure symmetries are determined _exactly_ in this
+                # periodicity-breaking supercell (global spglib analysis gives C1 for all!):
+                assert (
+                    point_symmetry_from_structure(
+                        unrelaxed_defect_structure, defect_entry.bulk_supercell, symprec=0.01
+                    )
+                    == bulk_site_symmetry
+                )
+                # and also fully reference-free (no bulk structure!), given an approximate defect position
+                # (only needs to be accurate to ~1 Å):
+                assert (
+                    point_symmetry_from_structure(
+                        unrelaxed_defect_structure,
+                        defect_position=defect_entry.sc_defect_frac_coords,
+                        symprec=0.01,
+                    )
+                    == bulk_site_symmetry
+                )
+                assert (
+                    point_symmetry_from_structure(
+                        defect_entry.defect_supercell, defect_entry.bulk_supercell, relaxed=False
+                    )
+                    == bulk_site_symmetry
+                )
+            _print_warning_info(w)
+            assert not w
+
+        # relaxed defect point symmetries; proper subgroups of the bulk site symmetry for vacancies and
+        # substitutions (also tested via ``get_symmetries_and_degeneracies`` in
+        # ``test_ZnS_non_diagonal_NKRED_mismatch``):
+        assert (
+            point_symmetry_from_structure(
+                dp.defect_dict["vac_1_Zn_0"].defect_supercell,
+                bulk_structure=dp.defect_dict["vac_1_Zn_0"].bulk_supercell,
+                symprec=0.15,  # noisy structure, in very small supercell
+            )
+            == "Cs"
+        )
+        assert (
+            point_symmetry_from_structure(
+                dp.defect_dict["sub_1_Al_on_Zn_1"].defect_supercell,
+                bulk_structure=dp.defect_dict["sub_1_Al_on_Zn_1"].bulk_supercell,
+            )
+            == "Td"
+        )
+
+        # the bulk site symmetry (`relaxed=False`) requires a bulk reference structure:
+        with pytest.raises(RuntimeError) as excinfo:
+            point_symmetry_from_structure(dp.defect_dict["vac_1_Zn_0"].defect_supercell, relaxed=False)
+        assert "Please also supply the unrelaxed bulk structure" in str(excinfo.value)
+
+    def test_point_symmetry_periodicity_breaking_ytos(self):
         """
-        Test automatic periodicity restoration in defect parsing, for defect
-        supercells which are periodicity-breaking (thus preventing correct
-        relaxed symmetry determination).
+        Test relaxed symmetry determination for defects in a periodicity-
+        breaking YTOS supercell, which is handled directly by the local
+        isometry analysis in ``point_symmetry_from_defect_entry``.
 
-        Here we use YTOS as an example; a periodicity-breaking cell which
-        should be restored by stenciling into a supercell which retains
-        periodicity, without throwing a warning. This approach doesn't work
-        with the ZnS non-diagonal cell above unfortunately, as it's also a
-        different lattice definition / supercell tiling, so can't be re-
-        oriented to match.
+        Previously this was handled by attempting to stencil the relaxed defect
+        geometry into a periodicity-restoring supercell (giving e.g. ``C2h``
+        for ``O_i_D4h_0`` here if not attempted), which was slower and not
+        guaranteed to succeed (e.g. for the ZnS supercell above, with
+        mis-matching lattice definitions).
         """
         bulk = Structure.from_file(f"{self.YTOS_EXAMPLE_DIR}/Bulk/POSCAR")
         primitive = get_primitive_structure(bulk)
@@ -2862,25 +2891,302 @@ class DefectsParsingTestCase(unittest.TestCase):
 
         assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["relaxed point symmetry"] == "D4h"
         assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["bulk site symmetry"] == "D4h"
-        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["periodicity_breaking_supercell"] is False
+        assert "periodicity_breaking_supercell" not in YTOS_defect_gen["O_i_D4h_0"].calculation_metadata
+        assert YTOS_defect_gen["O_i_D4h_0"].degeneracy_factors["orientational degeneracy"] == 1.0
 
-        with warnings.catch_warnings(record=True) as w:
-            parse_symmetry_and_degeneracy_metadata(
-                YTOS_defect_gen["O_i_D4h_0"], attempt_periodicity_restoration=False, verbose=True
-            )
-        _print_warning_info(w)
-        assert len(w) == 1
-        assert "`relaxed` is set to True" in str(w[-1].message)
-        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["relaxed point symmetry"] == "C2h"
-        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["bulk site symmetry"] == "D4h"
-        assert YTOS_defect_gen["O_i_D4h_0"].calculation_metadata["periodicity_breaking_supercell"] is True
+    def test_local_point_symmetry_determination(self):
+        """
+        Directly test the local isometry analysis machinery underlying
+        ``point_symmetry_from_structure``/``point_symmetry_from_defect_entry``:
+        synthetic distortions with known ground-truth symmetries (in the
+        periodicity-breaking ZnS supercell, where global space-group analysis
+        gives C1 for everything), robustness to approximate defect positions,
+        point group identification from symmetry operation sets, and position-
+        error sweeps on the real relaxed ZnS defect supercells (with bulk
+        reference, reference-free, and fully-auto position guessing).
 
-        with warnings.catch_warnings(record=True) as w:
-            parse_symmetry_and_degeneracy_metadata(
-                YTOS_defect_gen["O_i_D4h_0"], attempt_periodicity_restoration=False
+        Note that, as mentioned in ``test_ZnS_non_diagonal_NKRED_mismatch``,
+        these ZnS non-diagonal supercells are a particularly difficult test
+        case, due to the very small supercell (~7.5 Å min-image distance) and
+        noisy structures, so highly symprec-dependent.
+        """
+        from shakenbreak.distortions import rattle
+
+        from doped.utils.symmetry import (
+            _bulk_cartesian_rotations,
+            _pointgroup_profile_table,
+            _schoenflies_from_cartesian_ops,
+            get_sga,
+            local_point_symmetry,
+        )
+
+        # point groups are identified from the (determinant, trace) profiles of the operation sets, which
+        # are unique across all 32 crystallographic point groups:
+        assert len(_pointgroup_profile_table()) == 32
+
+        thermo = loadfn(os.path.join(self.ZnS_DATA_DIR, "ZnS_thermo.json"))
+        entry = thermo.defect_entries["vac_1_Zn_0"]
+        unrelaxed_defect_structure = entry.calculation_metadata["unrelaxed_defect_structure"]
+        center_frac = entry.sc_defect_frac_coords
+        center_cart = unrelaxed_defect_structure.lattice.get_cartesian_coords(center_frac)
+
+        # candidate rotations from the bulk supercell = the host crystal point group (Td for zinc-blende
+        # ZnS), in the Cartesian frame -- independent of the supercell shape:
+        zns_rotations = _bulk_cartesian_rotations(entry.bulk_supercell)
+        assert len(zns_rotations) == 24
+        assert _schoenflies_from_cartesian_ops(zns_rotations) == "Td"
+
+        # i) symmetric breathing distortion (+0.2 Å radial on the neighbours) plus SnB rattle (0.01 Å
+        # stdev) -> retains the Td site symmetry (at default symprec=0.1 > noise level):
+        breathing = unrelaxed_defect_structure.copy()
+        nn_sites = [(site.index, site.coords) for site in breathing.get_sites_in_sphere(center_cart, 3.0)]
+        for idx, image_coords in nn_sites:  # breathing distortion
+            vec = image_coords - center_cart
+            breathing.translate_sites([idx], vec / np.linalg.norm(vec) * 0.2, frac_coords=False)  # +0.2 Å
+        breathing = rattle(breathing, stdev=0.01, seed=42)  # random noise (rattle)
+        assert point_symmetry_from_structure(breathing, entry.bulk_supercell) == "Td"
+        # and fully reference-free (no bulk), with an approximate defect position:
+        assert point_symmetry_from_structure(breathing, defect_position=center_frac) == "Td"
+        # A spglib failure in the optional global cross-check must not discard the local result:
+        from pymatgen.symmetry.analyzer import SymmetryUndeterminedError
+
+        with patch("doped.utils.symmetry.get_sga", side_effect=SymmetryUndeterminedError("test")):
+            assert point_symmetry_from_structure(breathing, defect_position=center_frac) == "Td"
+
+        # ii) symmetry-lowering distortion: pull _one_ neighbour towards the vacancy by 0.4 Å -> C3v:
+        c3v_distorted = unrelaxed_defect_structure.copy()
+        idx, image_coords = nn_sites[0]
+        vec = center_cart - image_coords  # towards vacancy
+        c3v_distorted.translate_sites([idx], vec / np.linalg.norm(vec) * 0.4, frac_coords=False)
+        assert point_symmetry_from_structure(c3v_distorted, entry.bulk_supercell) == "C3v"
+        assert point_symmetry_from_structure(c3v_distorted, defect_position=center_frac) == "C3v"
+
+        # iii) robustness to approximate defect positions: the defect position input is only used to place
+        # the local analysis region (with the symmetry centre itself derived from the determined
+        # operations, and the analysis re-run recentred on the derived centre when not all candidate
+        # operations certify). An explicitly provided ``defect_frac_coords`` is otherwise respected (it may
+        # deliberately target a specific site, e.g. in a defect complex or multi-defect cell), so the guess
+        # must lie within ~``t_max/2`` of the true centre (see the note in (iv) below) -- only ~0.3 Å in
+        # this small (~3.8 Å radius), noisy supercell:
+        offset_frac = unrelaxed_defect_structure.lattice.get_fractional_coords(
+            center_cart + np.array([0.2, 0.2, 0.1])
+        )  # 0.3 Å off the true site
+        symbol, ops, info = local_point_symmetry(
+            breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
+        )
+        assert symbol == "Td"
+        assert len(ops) == 24
+        assert np.linalg.norm(info["centre_cart"] - center_cart) < 0.1  # derived centre = true site
+        symbol, ops, _info = local_point_symmetry(
+            c3v_distorted, entry.bulk_supercell, defect_frac_coords=offset_frac
+        )
+        assert symbol == "C3v"
+        assert len(ops) == 6
+
+        # while a too-far-off guess (beyond the ~``t_max/2`` single-pass tolerance) returns a spuriously
+        # _lowered_ symmetry: only the subgroup (nearly) fixing the offset direction certifies, and its
+        # ops-derived centre is then self-consistently wrong (the C3v fixed-point set is a _line_ -- its
+        # axis -- so the recentring re-run cannot recover the true centre; see the note in (iv) below):
+        offset_frac = np.array(center_frac) + unrelaxed_defect_structure.lattice.get_fractional_coords(
+            [0.5, 0.5, 0.3]
+        )  # 0.77 Å off the true site
+        symbol, ops, info = local_point_symmetry(
+            breathing, entry.bulk_supercell, defect_frac_coords=offset_frac
+        )
+        assert len(ops) < 24  # spuriously lowered (currently C3v)
+        assert np.linalg.norm(info["centre_cart"] - center_cart) > 0.5  # stuck near the (wrong) input
+
+        # for unknown or poor position guesses with a bulk reference available, ``defect_frac_coords``
+        # should instead be omitted -- the cluster centre is then auto-determined from bulk vs defect
+        # structure comparison (``defect_site_from_structures``), giving exact recovery independent of any
+        # position input:
+        symbol, ops, info = local_point_symmetry(breathing, entry.bulk_supercell)
+        assert symbol == "Td"
+        assert len(ops) == 24
+        assert np.linalg.norm(info["centre_cart"] - center_cart) < 0.1
+
+        # iv) fully reference-free path (``bulk_supercell=None``), calling ``local_point_symmetry``
+        # directly (rather than via the ``point_symmetry_from_structure`` wrapper used in (i)/(ii) above)
+        # so the returned operations can also be checked; candidate rotations are then generated purely
+        # from the local atomic geometry (``_candidate_rotations_from_cluster``), with no bulk crystal
+        # reference used at all. Covers the Td and C3v cases from (i)/(ii) above, plus a third,
+        # lower-symmetry case:
+        symbol, ops, _info = local_point_symmetry(breathing, defect_frac_coords=center_frac)
+        assert symbol == "Td"
+        assert len(ops) == 24
+        symbol, ops, _info = local_point_symmetry(c3v_distorted, defect_frac_coords=center_frac)
+        assert symbol == "C3v"
+        assert len(ops) == 6
+
+        # a third, lower-symmetry case: pulling _two_ (of the four, symmetry-equivalent under Td)
+        # tetrahedral neighbours in towards the vacancy by 0.4 Å (rather than just one as in (ii) above) is
+        # the next step in the standard tetrahedral descent-of-symmetry series (Td -> C3v -> C2v -> Cs ->
+        # C1), giving C2v:
+        c2v_distorted = unrelaxed_defect_structure.copy()
+        for idx, image_coords in nn_sites[:2]:
+            vec = center_cart - image_coords
+            c2v_distorted.translate_sites([idx], vec / np.linalg.norm(vec) * 0.4, frac_coords=False)
+        assert point_symmetry_from_structure(c2v_distorted, entry.bulk_supercell) == "C2v"  # sanity check
+        symbol, ops, _info = local_point_symmetry(c2v_distorted, defect_frac_coords=center_frac)
+        assert symbol == "C2v"
+        assert len(ops) == 4
+
+        # Note: an explicitly provided (approximate) input position is corrected only by the recentring
+        # re-run on the ops-derived centre -- the auto-determined defect site is deliberately not retried
+        # (respecting explicit centre choices; see (iii) above), and the reference-free path has no
+        # structure-comparison site anyway. In a single pass, a centre error ``d`` requires a fixing
+        # translation of
+        # up to ~``2*d`` per operation (``(R - I)`` applied to the offset), which must satisfy the
+        # translation bound ``|t| <= t_max = min(2*centre_range, radius - 2*symprec - shell_dist)``; the
+        # guess must therefore lie within ~``t_max/2`` of the true symmetry centre. This is
+        # ~``centre_range`` in roomy supercells, but is radius-limited to ~1 Å or below in smaller cells
+        # (extraction radius capped by the periodic boundary). The recentring re-run typically extends this
+        # (recovering the 1.62 Å-off guess below), but beyond ~2 Å the reference-free analysis returns a
+        # spuriously _lowered_ symmetry -- a certified-but-off-centre subgroup can have a self-consistent
+        # fixed point near the wrong input position, leaving the residual offset unobservable from the
+        # operations alone. This is mitigated in the ``point_symmetry_from_structure`` wrapper by
+        # cross-checking the reference-free local result against global spglib analysis of the defect
+        # supercell, taking the higher-symmetry result (each approach can only spuriously _lower_ the true
+        # symmetry, _in the noise free limit_). Global analysis gives C1 in this periodicity-breaking ZnS
+        # supercell, so demonstrate with a (non-periodicity-breaking) cubic conventional supercell and low
+        # noise (0.01 Å stdev; global spglib analysis requires _max_ deviations within ``symprec`` so is
+        # much less noise-tolerant than the local isometry analysis), with a position guess beyond the
+        # single-pass ~``t_max/2`` tolerance (1.62 Å off), recovered by the ops-derived recentring re-run:
+        conv_structure = get_sga(
+            get_primitive_structure(entry.bulk_supercell)
+        ).get_conventional_standard_structure()
+        cubic = conv_structure * 2  # 64-atom cubic supercell
+        vac_index = next(i for i, site in enumerate(cubic) if site.specie.symbol == "Zn")
+        cubic_center_cart = cubic[vac_index].coords.copy()
+        cubic.remove_sites([vac_index])
+        for site in cubic.get_sites_in_sphere(cubic_center_cart, 3.0):  # breathing mode, as in (i)
+            vec = site.coords - cubic_center_cart
+            cubic.translate_sites([site.index], vec / np.linalg.norm(vec) * 0.2, frac_coords=False)
+        cubic = rattle(cubic, stdev=0.01, seed=42)
+        symbol, ops, info = local_point_symmetry(
+            cubic,
+            defect_frac_coords=cubic.lattice.get_fractional_coords(
+                cubic_center_cart + np.array([1.2, 0.9, 0.6])  # 1.62 Å off
+            ),
+        )
+        assert symbol == "Td"  # recovered by the ops-derived recentring re-run
+        assert len(ops) == 24
+        assert np.linalg.norm(info["centre_cart"] - cubic_center_cart) < 0.1
+        assert (
+            point_symmetry_from_structure(
+                cubic,
+                defect_position=cubic_center_cart + np.array([1.2, 0.9, 0.6]),  # 1.62 Å off
+                coords_are_cartesian=True,
             )
-        _print_warning_info(w)
-        assert not w  # no warnings (on initial parsing) by default, when verbose is not set
+            == "Td"
+        )
+
+        # track the current reference-free tolerance ceiling: the ops-derived re-run recovers the true
+        # centre up to ~2.2 Å; beyond that the first-pass subgroup's fixed point carries no information
+        # along its free directions (e.g. along its rotation axis), and there is no bulk reference to
+        # recentre with, so local analysis alone returns a spuriously lowered symmetry -- pinned here to
+        # track future tolerance changes -- while the wrapper's global cross-check still recovers Td in
+        # this (non-periodicity-breaking) cell:
+        offset_direction = np.array([1.2, 0.9, 0.6]) / np.linalg.norm([1.2, 0.9, 0.6])
+        for offset_magnitude in [2.0, 2.2, 2.5, 3.0]:
+            offset = offset_magnitude * offset_direction
+            symbol, ops, _info = local_point_symmetry(
+                cubic, defect_frac_coords=cubic.lattice.get_fractional_coords(cubic_center_cart + offset)
+            )
+            if offset_magnitude <= 2.2:  # still recovers
+                assert symbol == "Td", f"{offset_magnitude} Å: expected Td, got {symbol}"
+                assert len(ops) == 24
+            else:  # beyond ceiling -- spuriously lowered (currently C3v)
+                assert len(ops) < 24, f"{offset_magnitude} Å: expected lowered symmetry, got {symbol}"
+            assert (
+                point_symmetry_from_structure(
+                    cubic, defect_position=cubic_center_cart + offset, coords_are_cartesian=True
+                )
+                == "Td"
+            )
+
+        # v) the symmetry-analysis cluster centre and derived defect symmetry centre are stored in the
+        # calculation metadata (as fractional coordinates) when determined from a DefectEntry:
+        point_symmetry_from_defect_entry(entry, relaxed=True)
+        for key in ["symmetry cluster centre", "defect symmetry centre"]:  # within 1 Å of defect site:
+            frac_sep = (np.asarray(entry.calculation_metadata[key]) - center_frac + 0.5) % 1 - 0.5
+            assert np.linalg.norm(entry.bulk_supercell.lattice.get_cartesian_coords(frac_sep)) < 1.0
+
+        # vi) centre-position-error sweeps on the _real_ relaxed ZnS defect supercells: unlike the
+        # synthetic cases above these carry real DFT relaxation noise, and the periodicity-breaking
+        # supercell means global spglib analysis gives C1 -- so the wrapper's global cross-check cannot
+        # rescue local misassignments here and the local analysis must stand on its own. With a bulk
+        # reference, omitting ``defect_frac_coords`` (recommended when the position is not precisely
+        # known) auto-determines the centre by structure comparison, reproducing the exact-position labels
+        # for all entries; explicitly provided positions are respected (no auto-site retry; see (iii)),
+        # with labels stable under input position errors up to ~0.5 Å for all entries, except two
+        # documented knife-edge flips at 0.77 Å: ``vac_1_Zn_-2`` and ``vac_2_S_2`` have borderline
+        # distortions (second-shell site spreads ~``symprec``), where sub-``symprec`` centre shifts
+        # legitimately flip between neighbouring groups in the tetrahedral descent-of-symmetry series.
+        # Note that this knife-edge sensitivity is mostly a
+        # consequence of the extremely-small ZnS test supercells (min-image ~7.7 Å, so local cluster radius
+        # ~3.8 Å -- barely spanning two coordination shells, leaving few atoms to certify against) rather
+        # than an inaccuracy of the local isometry approach: the other (larger-supercell) test systems here
+        # and in ``test_thermodynamics`` (cluster radii >= ~5.4 Å) show far less sensitivity, with labels
+        # fully stable under centre-offset and parameter sweeps -- as expected for production-scale
+        # supercells (min-image >= 10 Å). Reference-free, labels are stable to ~0.5 Å for all entries,
+        # degrading beyond ~1 Å (tracked below) -- a tighter practical ceiling than the ~2.2 Å synthetic
+        # one in (iv), due to the real relaxation noise. Labels with fully-auto positions
+        # (``guess_defect_position``; ~0.7-3.4 Å off the true site for these intrinsic vacancies, exact for
+        # the extrinsic Al defects) also match the exact-position reference-free labels, except the
+        # knife-edge ``vac_1_Zn_-2`` and ``vac_2_S_1`` cases (guess errors of ~0.7 Å and ~2.5 Å here,
+        # near/beyond the ~1 Å real-data ceiling tracked below):
+        offset_direction = np.array([1.2, 0.9, 0.6]) / np.linalg.norm([1.2, 0.9, 0.6])
+        with_bulk_flips = set()
+        auto_guess_flips = set()
+        for name, defect_entry in thermo.defect_entries.items():
+            defect_sc = defect_entry.defect_supercell
+            site_frac = defect_entry.defect_supercell_site.frac_coords
+            site_cart = defect_sc.lattice.get_cartesian_coords(site_frac)
+
+            ref_symbol, _ops, _info = local_point_symmetry(
+                defect_sc, defect_entry.bulk_supercell, defect_frac_coords=site_frac
+            )
+            symbol, _ops, _info = local_point_symmetry(defect_sc, defect_entry.bulk_supercell)
+            assert symbol == ref_symbol, f"{name}: auto-centre flip {ref_symbol}->{symbol}"
+            for offset_magnitude in [0.3, 0.5, 0.77]:
+                offset_frac = defect_sc.lattice.get_fractional_coords(
+                    site_cart + offset_magnitude * offset_direction
+                )
+                symbol, _ops, _info = local_point_symmetry(
+                    defect_sc, defect_entry.bulk_supercell, defect_frac_coords=offset_frac
+                )
+                if symbol != ref_symbol:
+                    with_bulk_flips.add((name, offset_magnitude))
+
+            ref_free_symbol, _ops, _info = local_point_symmetry(defect_sc, defect_frac_coords=site_frac)
+            offset_frac = defect_sc.lattice.get_fractional_coords(site_cart + 0.5 * offset_direction)
+            symbol, _ops, _info = local_point_symmetry(defect_sc, defect_frac_coords=offset_frac)
+            assert symbol == ref_free_symbol, f"{name}: 0.5 Å ref-free flip {ref_free_symbol}->{symbol}"
+
+            symbol, _ops, _info = local_point_symmetry(defect_sc)  # position auto-guessed (SOAP)
+            if symbol != ref_free_symbol:
+                auto_guess_flips.add(name)
+
+        assert with_bulk_flips == {("vac_1_Zn_-2", 0.77), ("vac_2_S_2", 0.77)}
+        assert auto_guess_flips == {"vac_1_Zn_-2", "vac_2_S_1"}
+
+        # track the current reference-free tolerance ceiling on real relaxed data (cf. the ~2.2 Å synthetic
+        # ceiling in (iv)): stable at 1.0 Å, spuriously lowered at ~1.5 Å (again a ceiling set mostly by
+        # the small ZnS supercells -- see the small-cell note above -- rather than the approach itself):
+        sub_entry = thermo.defect_entries["sub_1_Al_on_Zn_0"]
+        sub_sc = sub_entry.defect_supercell
+        sub_cart = sub_sc.lattice.get_cartesian_coords(sub_entry.defect_supercell_site.frac_coords)
+        symbol, ops, _info = local_point_symmetry(
+            sub_sc, defect_frac_coords=sub_sc.lattice.get_fractional_coords(sub_cart + offset_direction)
+        )
+        assert symbol == "Td"
+        assert len(ops) == 24
+        symbol, ops, _info = local_point_symmetry(
+            sub_sc,
+            defect_frac_coords=sub_sc.lattice.get_fractional_coords(sub_cart + 1.5 * offset_direction),
+        )
+        assert len(ops) < 24  # spuriously lowered (currently C3v)
 
     def test_bulk_defect_compatibility_checks(self):
         """
@@ -3588,11 +3894,11 @@ class DefectsParsingTestCase(unittest.TestCase):
         """
         ``Int_F_-1`` in YTOS is a good test case here.
 
-        The determined bulk site
-        symmetry of this defect is sensitive to the choice of ``symprec``, and
-        ``spglib`` sometimes gives both ``C1`` and ``Cs`` site symmetries for
-        the generated equivalent sites with default bulk ``symprec=0.01``
-        (which previously caused false periodicity breaking warnings).
+        The determined bulk site symmetry of this defect is sensitive to the
+        choice of ``symprec``, and ``spglib`` sometimes gives both ``C1`` and
+        ``Cs`` site symmetries for the generated equivalent sites with default
+        bulk ``symprec=0.01`` (which previously caused false periodicity
+        breaking warnings).
         """
         symprec_settings_and_expected_syms = [
             ({"bulk_symprec": 0.01}, "C4v", "C4v"),
