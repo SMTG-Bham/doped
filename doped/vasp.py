@@ -887,8 +887,12 @@ class DefectRelaxSet(MSONable):
 
             Input parameters are also set as attributes.
         """
+        if not isinstance(defect_entry, DefectEntry | Structure):
+            raise TypeError("defect_entry must be a doped/pymatgen DefectEntry or Structure object.")
         self.defect_entry = defect_entry
-        self.charge_state = charge_state or self.defect_entry.charge_state
+        if charge_state is None:  # getattr with default 0 for Structure input:
+            charge_state = getattr(defect_entry, "charge_state", 0)
+        self.charge_state = charge_state
         self.user_incar_settings = user_incar_settings or {}
         self.user_kpoints_settings = user_kpoints_settings or {}
         self.user_potcar_functional = user_potcar_functional
@@ -914,7 +918,7 @@ class DefectRelaxSet(MSONable):
 
             # get POSCAR comment:
             sc_frac_coords = _get_defect_supercell_frac_coords(self.defect_entry)
-            if sc_frac_coords is None:
+            if sc_frac_coords is None:  # should basically never happen
                 raise ValueError(
                     "Fractional coordinates of defect in the supercell must be defined in "
                     "DefectEntry object attributes, but DefectEntry.sc_defect_frac_coords "
@@ -930,9 +934,6 @@ class DefectRelaxSet(MSONable):
             self.poscar_comment = self.dict_set_kwargs.pop("poscar_comment", None) or (
                 f"{name} {approx_coords} {'+' if self.charge_state > 0 else ''}{self.charge_state}"
             )
-
-        else:
-            raise TypeError("defect_entry must be a doped/pymatgen DefectEntry or Structure object.")
 
         if soc is not None:
             self.soc = soc
@@ -1246,8 +1247,8 @@ class DefectRelaxSet(MSONable):
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
         ``vasp_std`` supercell calculation. Returns None and a warning if the
-        input kpoint settings correspond to a Γ-only kpoint mesh (in which case
-        ``(bulk_)vasp_gam`` should be used).
+        input kpoint settings correspond to a Γ-only kpoint mesh (in which
+        case ``(bulk_)vasp_gam`` should be used).
 
         The bulk supercell only needs to be calculated once with the same
         settings as the final defect calculations, which is ``vasp_std`` if we
@@ -1300,9 +1301,9 @@ class DefectRelaxSet(MSONable):
     def bulk_vasp_nkred_std(self) -> DefectDictSet | None:
         """
         Returns a ``DefectDictSet`` object for a single-point (static) `bulk`
-        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint mesh)
-        and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the HF
-        exchange part of the hybrid DFT calculation. By default, sets
+        ``vasp_std`` supercell calculation (i.e. with a non-Γ-only kpoint
+        mesh) and ``NKRED(X,Y,Z)`` INCAR tag(s) to downsample kpoints for the
+        HF exchange part of the hybrid DFT calculation. By default, sets
         ``NKRED(X,Y,Z)`` to 2 or 3 in the directions for which the k-point grid
         is divisible by this factor. Returns None and a warning if the input
         kpoint settings correspond to a Γ-only kpoint mesh (in which case
@@ -2119,7 +2120,7 @@ class DefectRelaxSet(MSONable):
                     ),
                     None,
                 )
-                if top_vasp is None:
+                if top_vasp is None:  # should basically never happen
                     raise ValueError("No VASP input files to generate for the bulk supercell.")
 
                 bulk_vasp = [top_vasp]

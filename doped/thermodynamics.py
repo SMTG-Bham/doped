@@ -3354,7 +3354,7 @@ class DefectThermodynamics(MSONable):
         be, if parsed with doped), otherwise are attempted to be recalculated.
         Relaxed point symmetries are determined by direct isometry analysis of
         the local defect environment (see
-        ``point_symmetry_from_defect_entry``), which is insensitive to
+        |point_symmetry_from_defect_entry|), which is insensitive to
         periodicity-breaking supercell shapes (unlike global space-group
         analysis).
 
@@ -3385,7 +3385,7 @@ class DefectThermodynamics(MSONable):
                 (default: ``False``)
             symprec (float):
                 Distance tolerance (in Å) for `relaxed` defect point symmetry
-                determination (see ``point_symmetry_from_defect_entry``).
+                determination (see |point_symmetry_from_defect_entry|).
                 Default in ``doped`` is ``0.1`` which matches that used by the
                 ``Materials Project`` and is larger than the ``pymatgen``
                 default of ``0.01`` to account for residual structural noise in

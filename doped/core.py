@@ -133,8 +133,8 @@ class DefectEntry(thermo.DefectEntry):
                 determined by ``doped`` during parsing (for details, see the
                 ``spin_degeneracy_from_vasprun()``,
                 |get_orientational_degeneracy| and
-                ``point_symmetry_from_defect_entry`` functions), but can also
-                be edited in ``DefectEntry.degeneracy_factors``.
+                |point_symmetry_from_defect_entry| functions), but can also be
+                edited in ``DefectEntry.degeneracy_factors``.
                 For discussion, see the :ref:`Tips:Magnetization` tips section.
 
         Generation Attributes:
@@ -2790,7 +2790,7 @@ class Defect(core.Defect):
         if primitive_structure != self.structure:
             # accounts for potential periodicity breaking in Defect.structure (which may be a supercell):
             volume_factor = len(self.structure) / len(primitive_structure)
-            with contextlib.suppress(Exception):
+            try:
                 equiv_frac_coords_in_prim = get_equiv_frac_coords_in_primitive(
                     self.site.frac_coords,
                     primitive_structure,
@@ -2799,7 +2799,14 @@ class Defect(core.Defect):
                     dist_tol_factor=dist_tol_factor,
                     **kwargs,
                 )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
-                assert isinstance(equiv_frac_coords_in_prim, list[np.ndarray] | np.ndarray)
+            except Exception as exc:
+                warnings.warn(
+                    f"Multiplicity determination via primitive-cell folding failed with error: {exc!r}. "
+                    f"Falling back to direct symmetry analysis of Defect.structure, which can undercount "
+                    f"multiplicities in periodicity-breaking supercells."
+                )
+            else:
+                assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)  # type check (for mypy)
                 return len(equiv_frac_coords_in_prim) * round(volume_factor)
 
         return len(

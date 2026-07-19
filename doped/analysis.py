@@ -1039,7 +1039,7 @@ class DefectsParser:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
-                ``point_symmetry_from_defect_entry()``,
+                |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures`` or ``get_dimer_bonds()``,
                 including ``bulk_locpot_dict``, ``bulk_site_potentials``,
@@ -1231,9 +1231,9 @@ class DefectsParser:
                 The parsed |DefectEntry| object, or ``None`` if parsing
                 failed.
         """
+        assert isinstance(self.subfolder, str)  # typing, converted to str by this point
         try:
             self.kwargs.update(self.bulk_corrections_data)  # update with bulk corrections data
-            assert isinstance(self.subfolder, str)  # typing, converted to str by this point
             dp = DefectParser.from_paths(
                 defect_path=os.path.join(self.output_path, defect_folder, self.subfolder),
                 bulk_path=self.bulk_path,
@@ -2210,10 +2210,9 @@ def parse_symmetry_and_degeneracy_metadata(defect_entry: DefectEntry, **kwargs):
             of the |DefectEntry|.
         **kwargs:
             Additional keyword arguments to pass to the
-            ``point_symmetry_from_defect_entry`` function,
-            such as ``symprec``, ``dist_tol_factor``,
-            ``fixed_symprec_and_dist_tol_factor``, ``verbose`` and
-            ``bulk_symprec``.
+            |point_symmetry_from_defect_entry| function, such as ``symprec``,
+            ``dist_tol_factor``, ``fixed_symprec_and_dist_tol_factor``,
+            ``verbose`` and ``bulk_symprec``.
     """
     relaxed_point_group = point_symmetry_from_defect_entry(
         defect_entry,
@@ -2356,7 +2355,7 @@ class DefectParser:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
-                ``point_symmetry_from_defect_entry()``,
+                |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures``, including
                 ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,
@@ -2485,7 +2484,7 @@ class DefectParser:
                 Keyword arguments to pass to ``DefectParser()`` methods
                 (``load_FNV_data()``, ``load_eFNV_data()``,
                 ``load_bulk_gap_data()``),
-                ``point_symmetry_from_defect_entry()``,
+                |point_symmetry_from_defect_entry|,
                 ``parse_symmetry_and_degeneracy_metadata`` or
                 ``defect_and_info_from_structures``, including
                 ``bulk_locpot_dict``, ``bulk_site_potentials``, ``use_MP``,

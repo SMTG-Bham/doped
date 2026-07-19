@@ -149,6 +149,7 @@ rst_prolog = """
 .. |DefectEntry| replace:: :class:`~doped.core.DefectEntry`
 .. |DefectsSet| replace:: :class:`~doped.vasp.DefectsSet`
 .. |get_orientational_degeneracy| replace:: :func:`~doped.utils.symmetry.get_orientational_degeneracy()`
+.. |point_symmetry_from_defect_entry| replace:: :func:`~doped.utils.symmetry.point_symmetry_from_defect_entry()`
 .. |Structure| replace:: :class:`~pymatgen.core.structure.Structure`
 .. |PeriodicSite| replace:: :class:`~pymatgen.core.structure.PeriodicSite`
 .. |Composition| replace:: :class:`~pymatgen.core.composition.Composition`

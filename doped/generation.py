@@ -429,10 +429,8 @@ def get_defect_name_from_entry(
     Note: If relaxed = True (default), then this uses the
     ``defect_entry.defect_supercell`` to determine the point symmetry of the
     (relaxed) defect structure, via direct isometry analysis of the local
-    defect environment (see ``point_symmetry_from_defect_entry``; insensitive
-    to periodicity-breaking supercell shapes, unlike global space-group
-    analysis).
-    # TODO: Update see ``point_symmetry_from_defect_entry``; usages to give sphinx link
+    defect environment (see |point_symmetry_from_defect_entry|; insensitive to
+    periodicity-breaking supercell shapes, unlike global space-group analysis).
 
     Args:
         defect_entry (|DefectEntry|): |DefectEntry| object.
@@ -443,7 +441,7 @@ def get_defect_name_from_entry(
             Default is None.
         symprec (float):
             Distance tolerance (in Å) for symmetry determination (see
-            ``point_symmetry_from_defect_entry``). Default is 0.01 Å for
+            |point_symmetry_from_defect_entry|). Default is 0.01 Å for
             unrelaxed structures, 0.1 Å for relaxed (to account for residual
             structural noise). You may want to adjust for your system (e.g.
             if there are very slight octahedral distortions etc).
@@ -454,7 +452,7 @@ def get_defect_name_from_entry(
             ``True``.
         **kwargs:
             Additional keyword arguments to pass to
-            ``point_symmetry_from_defect_entry``, such as ``dist_tol_factor``,
+            |point_symmetry_from_defect_entry|, such as ``dist_tol_factor``,
             ``fixed_symprec_and_dist_tol_factor`` or ``verbose``.
 
     Returns:
@@ -1887,7 +1885,7 @@ class DefectsGenerator(MSONable):
                     ),
                     verbose=self.kwargs.get("verbose", False),
                 )  # equiv_coords=True, return_symprec_and_dist_tol_factor=False (default)
-                assert isinstance(equiv_frac_coords_in_prim, list[np.ndarray] | np.ndarray)
+                assert isinstance(equiv_frac_coords_in_prim, list | np.ndarray)
                 self.prim_interstitial_coords_mult_and_equiv_coords.append(
                     (
                         equiv_frac_coords_in_prim[0],
